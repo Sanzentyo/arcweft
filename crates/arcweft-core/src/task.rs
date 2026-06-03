@@ -1,36 +1,43 @@
 use crate::value::{RuntimeExpr, RuntimePayload};
+use serde::{Deserialize, Serialize};
 
 pub const AWAIT_MANY_ITEM_BINDING: &str = "__arcweft_await_many_item";
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct TaskId(pub String);
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct TaskKey(pub String);
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct NeedId(pub String);
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CancelScopeId(pub String);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
 pub struct LogicalEpoch(pub u64);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
 pub struct TaskSequence(pub u64);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
 pub struct TaskPriority(pub i32);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AwaitTarget {
     pub need: NeedId,
     pub task: TaskId,
     pub request: HostTaskRequestTemplate,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AwaitManyTarget {
     pub need: NeedId,
     pub task: TaskId,
@@ -40,21 +47,21 @@ pub struct AwaitManyTarget {
     pub request: HostTaskRequestTemplate,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostTaskRequestTemplate {
     pub capability: HostCapabilityId,
     pub operation: String,
     pub args: Vec<HostTaskArgTemplate>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum HostTaskArgTemplate {
     Positional(RuntimeExpr),
     Named { name: String, value: RuntimeExpr },
     Spread(RuntimeExpr),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskSpec {
     pub id: TaskId,
     pub key: TaskKey,
@@ -66,18 +73,18 @@ pub struct TaskSpec {
     pub debug_label: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskHandle {
     pub id: TaskId,
     pub key: TaskKey,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct SchedulerBudget {
     pub max_events: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskClass {
     LocalUi,
     Io,
@@ -94,16 +101,16 @@ pub enum TaskClass {
     Background,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskPolicy {
     JoinSameKey,
     AlwaysStart,
 }
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct HostCapabilityId(pub String);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum HostTaskRequest {
     FileReadText(FileReadTextRequest),
     FileReadBytes(FileReadBytesRequest),
@@ -125,29 +132,29 @@ pub enum HostTaskRequest {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileReadTextRequest {
     pub path: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileReadBytesRequest {
     pub path: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileWriteTextRequest {
     pub path: String,
     pub text: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileWriteBytesRequest {
     pub path: String,
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HttpFetchRequest {
     pub url: String,
     pub method: String,
@@ -155,7 +162,7 @@ pub struct HttpFetchRequest {
     pub body: Option<RuntimePayload>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HttpRespondRequest {
     pub request_id: String,
     pub status: u16,
@@ -163,56 +170,56 @@ pub struct HttpRespondRequest {
     pub body: Option<RuntimePayload>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProcessRunRequest {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AssetRequest {
     pub id: String,
     pub kind: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ShaderRequest {
     pub id: String,
     pub entry: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AudioDecodeRequest {
     pub id: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TtsRequest {
     pub voice: Option<String>,
     pub text: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WasmCallRequest {
     pub module: String,
     pub function: String,
     pub args: Vec<RuntimePayload>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SystemInfoRequest {
     pub kind: SystemInfoKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum SystemInfoKind {
     CoreCount,
     ThreadCount,
     AvailableParallelism,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskEvent {
     pub logical_epoch: LogicalEpoch,
     pub task_id: TaskId,
@@ -220,7 +227,7 @@ pub struct TaskEvent {
     pub kind: TaskEventKind,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskEventKind {
     Ready(RuntimePayload),
     Err(String),

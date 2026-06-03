@@ -63,6 +63,23 @@ game.awfb
   source
     label
     text
+  bytecode
+    encoding = structured_json
+    program
+      entry_flow
+      entries
+      flows
+      pure_helpers
+      line_task_groups
+      stream_plans
+      source_plans
+  adapter_manifests[]
+    id
+    display_name
+    effects
+    host_calls[]
+      id
+      effects
   virtual_files[]
     space
     path
@@ -73,14 +90,17 @@ The implemented `.awfb` codec is deterministic JSON owned by
 `arcweft-bundle`. The crate performs no filesystem, clock, network, signing, or
 compression work. CLI/build/player adapters are responsible for turning source
 trees and virtual file roots into bundle values, and for materializing bundle
-values into a runnable host workspace.
+values into a runnable host workspace. `arcw run-bundle` executes the decoded
+bytecode section directly and does not parse, typecheck, or lower the source
+text again.
 
 The CLI includes `.arcweft/asset` by default and can opt into `.arcweft/save`,
 `.arcweft/temp`, and `.arcweft/export`. Packaged virtual paths use only normal
 relative components. Parent traversal, absolute paths, and host path prefixes
 are rejected or omitted before encoding.
 
-Future product bundle slices can add binary bytecode, graph indexes, entity
+Future product bundle slices can replace structured JSON bytecode with a
+compact deterministic binary bytecode section and add graph indexes, entity
 tables, source maps, contracts, shaders, UI, audio, and text resources as typed
 bundle sections:
 

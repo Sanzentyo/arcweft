@@ -5,9 +5,10 @@ use crate::plan::{
 };
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
+use serde::{Deserialize, Serialize};
 
 /// Pure executable bytecode bundle used by VM, AOT, replay, and future JIT tiers.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct BytecodeProgram {
     pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<BytecodeEntry>,
@@ -19,7 +20,7 @@ pub struct BytecodeProgram {
 }
 
 /// Lowered launch entry preserved in bytecode bundles.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BytecodeEntry {
     pub id: EntryRuntimeId,
     pub kind: RuntimeEntryKind,
@@ -27,7 +28,7 @@ pub struct BytecodeEntry {
 }
 
 /// One flow's bytecode instruction stream.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct BytecodeFlow {
     pub id: FlowRuntimeId,
     pub instructions: Vec<BytecodeInstruction>,
@@ -38,7 +39,7 @@ pub struct BytecodeFlow {
 /// Phase 2 keeps the structured runtime operation as the instruction payload so
 /// bytecode generation remains semantics-preserving while the evaluator is
 /// still being split from `RuntimePlan`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum BytecodeInstruction {
     Flow(FlowOp),
 }

@@ -92,6 +92,13 @@ impl HostCallPolicy {
         }
     }
 
+    /// Creates a policy from serialized host-call ids.
+    pub fn from_host_call_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Self {
+        Self {
+            ids: ids.into_iter().map(str::to_owned).collect(),
+        }
+    }
+
     /// Returns a new policy containing ids from both inputs.
     #[must_use]
     pub fn union(mut self, other: Self) -> Self {

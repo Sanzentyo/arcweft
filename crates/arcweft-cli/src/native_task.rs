@@ -432,7 +432,7 @@ fn registry_with_registrars(
         .map(HostAdapterRegistryBuilder::build)
 }
 
-fn internal_scheduler_manifest() -> AdapterManifest {
+pub(crate) fn internal_scheduler_manifest() -> AdapterManifest {
     AdapterManifest::new(INTERNAL_SCHEDULER_ADAPTER_ID, "Internal Scheduler")
         .with_host_call(AdapterHostCall::new("line_task.run_child", []))
         .with_host_call(AdapterHostCall::new("flow_thread.run_child", []))

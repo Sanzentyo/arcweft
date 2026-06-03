@@ -1,10 +1,11 @@
 use crate::value::{
     RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue, runtime_sequence_values,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 /// Pattern subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimePattern {
     Ident(String),
     MutIdent(String),
@@ -37,7 +38,7 @@ pub enum RuntimePattern {
 }
 
 /// One field inside a runtime record pattern.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeRecordPatternField {
     pub name: String,
     pub pattern: RuntimePattern,

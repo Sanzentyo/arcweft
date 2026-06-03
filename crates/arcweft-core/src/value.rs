@@ -2,10 +2,11 @@ use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64
 use crate::pattern::RuntimePattern;
 use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeBinding {
     pub name: String,
     pub value: RuntimeValue,
@@ -16,14 +17,14 @@ pub struct RuntimeBinding {
 /// Payloads intentionally retain `RuntimeValue` shape instead of collapsing
 /// source and stream items to debug strings. Hosts may still display `label()`
 /// for logs, but replay and downstream runtime consumers keep typed data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimePayload(pub RuntimeValue);
 
 /// Deterministic value domain used by the Sans I/O flow runtime.
 ///
 /// Typed floats use Rust's native `f32`/`f64` values. Exact bit identity is an
 /// explicit operation rather than language equality.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeValue {
     Unit,
     Bool(bool),
@@ -50,7 +51,7 @@ pub enum RuntimeValue {
 }
 
 /// Width-preserving signed integer scalar.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeInt {
     I8(i8),
     I16(i16),
@@ -141,7 +142,7 @@ impl fmt::Display for RuntimeInt {
 }
 
 /// Width-preserving unsigned integer scalar.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeUInt {
     U8(u8),
     U16(u16),
@@ -242,7 +243,7 @@ impl fmt::Display for RuntimeUInt {
 }
 
 /// Runtime call target after syntax lowering.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Named(String),
@@ -284,7 +285,7 @@ impl fmt::Display for RuntimeCallTarget {
 }
 
 /// Built-in runtime calls that use typed dispatch instead of string matching.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeIntrinsic {
     Add,
     StdF32Abs,
@@ -633,7 +634,7 @@ impl RuntimeValue {
 }
 
 /// Storage strategy for runtime sequence values.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
     Dense(DenseSeq),
@@ -642,7 +643,7 @@ pub enum RuntimeSeq {
 }
 
 /// Columnar storage for a sequence of homogeneous tuple values.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TupleSeq {
     len: usize,
     columns: Vec<RuntimeSeq>,
@@ -722,13 +723,13 @@ impl TupleSeq {
 }
 
 /// Columnar storage for a sequence of records with a stable field order.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RecordSeq {
     len: usize,
     fields: Vec<RecordSeqField>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RecordSeqField {
     pub name: String,
     pub values: RuntimeSeq,
@@ -842,7 +843,7 @@ pub enum RuntimeSeqError {
 }
 
 /// Storage value for `isize`-semantic runtime integers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeISizeValue(i64);
 
 impl RuntimeISizeValue {
@@ -867,7 +868,7 @@ impl std::fmt::Display for RuntimeISizeValue {
 }
 
 /// Storage value for `usize`-semantic runtime integers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeUSizeValue(u64);
 
 impl RuntimeUSizeValue {
@@ -1559,7 +1560,7 @@ impl RuntimeExactInteger for RuntimeUSizeValue {
 }
 
 /// Homogeneous storage kind used by a dense runtime sequence.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum DenseSeqKind {
     Units,
     I8,
@@ -1585,7 +1586,7 @@ pub enum DenseSeqKind {
 }
 
 /// Dense sequence storage for homogeneous scalar data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum DenseSeq {
     Units(usize),
     I8(DenseSeqStorage<i8>),
@@ -2248,7 +2249,7 @@ impl DenseSeq {
 }
 
 /// Generic backing store for one dense homogeneous sequence.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DenseSeqStorage<T> {
     values: Vec<T>,
 }
@@ -2283,14 +2284,14 @@ impl<T: Clone> DenseSeqStorage<T> {
 }
 
 /// One field inside a runtime record value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeFieldValue {
     pub name: String,
     pub value: RuntimeValue,
 }
 
 /// Expression subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeExpr {
     Value(RuntimeValue),
     Local(String),
@@ -2466,7 +2467,7 @@ impl fmt::Display for RuntimeBinaryOp {
 }
 
 /// One value-producing `match` arm in a runtime expression.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeExprMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
@@ -2474,21 +2475,21 @@ pub struct RuntimeExprMatchArm {
 }
 
 /// One field inside a runtime record expression.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeFieldExpr {
     pub name: String,
     pub value: RuntimeExpr,
 }
 
 /// Unary operator supported by the Sans I/O expression evaluator.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeUnaryOp {
     Not,
     Neg,
 }
 
 /// Binary operator supported by the Sans I/O expression evaluator.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeBinaryOp {
     Eq,
     Ne,

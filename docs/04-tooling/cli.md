@@ -305,9 +305,11 @@ runtime-lowering error instead of being silently dropped.
 ## Bundle
 
 `arcw bundle <file.arcw> --output game.awfb [--include-save] [--include-temp] [--include-export] [--json]`
-packages the current source, a runtime summary, required host-call ids, adapter
-manifest ids, and selected virtual files into an `.awfb` JSON data artifact.
-The bundle crate is Sans I/O; the CLI owns reading the source, reading
+packages the current source, executable bytecode, a runtime summary, required
+host-call ids, adapter manifest bodies, adapter manifest ids, and selected
+virtual files into an `.awfb` JSON data artifact. `arcw build bundle ...` is
+the profile-aware product-build spelling for the same pipeline. The bundle
+crate is Sans I/O; the CLI owns reading the source, reading
 `.arcweft/<space>/...`, and writing the artifact. Artifact paths are source
 labels and relative virtual paths only, so generated bundle JSON must not carry
 host absolute paths.
@@ -319,15 +321,24 @@ validated as normal relative components before encoding.
 ```bash
 arcw bundle game/main.arcw --output dist/game.awfb --json
 arcw bundle game/main.arcw --output dist/game.awfb --include-save --json
+arcw build bundle --manifest arcw.toml --profile game.release --output dist/game.awfb --json
 ```
 
 `arcw run-bundle <game.awfb> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]`
-materializes the packaged source and virtual files into a temporary CLI
-workspace, then runs the same native task bridge used by `arcw run`.
-`--entry` and `--flow` override the bundled entry selection. The current
-implementation supports the standard CLI native file, system-info, and
-internal scheduler adapters; custom profile adapter implementations still need
-an embedding runner or future player adapter to provide concrete host code.
+decodes the packaged bytecode, materializes the packaged source and virtual
+files into a temporary CLI workspace for source-local virtual I/O roots, then
+runs the same native task bridge used by `arcw run`. It does not parse,
+typecheck, or lower the source again. `--entry` and `--flow` override the
+bundled entry selection by rewriting the decoded runtime entry selection before
+execution. The current implementation supports the standard CLI native file,
+system-info, and internal scheduler adapters; custom profile adapter
+implementations still need an embedding runner or future player adapter to
+provide concrete host code.
+
+JSON output includes `phases` for compile/package work on `bundle` and
+read/decode/materialize/bytecode/run work on `run-bundle`. These counters let
+CI and benchmark fixtures compare source execution against bytecode-bundle
+execution without recording host absolute paths.
 
 ```bash
 arcw run-bundle dist/game.awfb --mode drain --steps 8 --json

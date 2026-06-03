@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
 use thiserror::Error;
 
 /// Row-major two-dimensional matrix shape.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MatrixShape {
     rows: usize,
     cols: usize,
@@ -27,7 +28,7 @@ impl MatrixShape {
 }
 
 /// Dense row-major matrix used as the deterministic runtime baseline.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DenseMatrix<T> {
     shape: MatrixShape,
     values: Vec<T>,
@@ -136,7 +137,7 @@ where
 }
 
 /// Dense row-major tensor shape.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TensorShape {
     dims: Vec<usize>,
 }
@@ -163,7 +164,7 @@ impl TensorShape {
 }
 
 /// Dense row-major tensor used by runtime values and accelerator views.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DenseTensor<T> {
     shape: TensorShape,
     values: Vec<T>,

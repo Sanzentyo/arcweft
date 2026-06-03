@@ -2,9 +2,10 @@ use crate::pattern::RuntimePattern;
 use crate::source::SourceEventKind;
 use crate::task::TaskSequence;
 use crate::value::{RuntimeExpr, RuntimePayload};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct StreamRuntimeId(pub String);
 
 /// Lowered stream transform state machine.
@@ -12,7 +13,7 @@ pub struct StreamRuntimeId(pub String);
 /// The core runtime keeps this as deterministic data. Host adapters may execute
 /// the state machine or replace it with an equivalent backend implementation,
 /// but device acquisition never happens inside this plan.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct StreamPlan {
     pub id: StreamRuntimeId,
     pub item_ty: String,
@@ -21,7 +22,7 @@ pub struct StreamPlan {
 }
 
 /// One operation in a lowered stream transform.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum StreamOp {
     Let {
         pattern: RuntimePattern,
@@ -52,7 +53,7 @@ pub enum StreamOp {
 }
 
 /// One stream `match` arm.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
@@ -61,7 +62,7 @@ pub struct StreamMatchArm {
 
 /// Lowered live source declaration.
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamRuntimeState {
     pub id: StreamRuntimeId,
     pub queue: VecDeque<RuntimePayload>,
@@ -71,7 +72,7 @@ pub struct StreamRuntimeState {
 
 /// Runtime stack frame used to make scope exit and loop transfer explicit.
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamEvent<T, E> {
     pub stream: StreamRuntimeId,
     pub sequence: TaskSequence,

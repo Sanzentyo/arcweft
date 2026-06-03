@@ -1733,6 +1733,24 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 
 #[test]
 fn bundle_json_packages_save_files_and_run_bundle_executes_native_file_tasks() {
+    let fixture = bundle_native_file_fixture();
+    let bundle_stdout = run_bundle_package_command(&fixture);
+    assert_bundle_package_output(&fixture, &bundle_stdout);
+
+    let run_stdout = run_bundle_fixture_command(&fixture);
+    assert_run_bundle_output(&fixture, &run_stdout);
+
+    let build_stdout = run_build_bundle_command(&fixture);
+    assert_build_bundle_output(&fixture, &build_stdout);
+}
+
+struct BundleNativeFileFixture {
+    dir: PathBuf,
+    source_path: PathBuf,
+    bundle_path: PathBuf,
+}
+
+fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     let dir = temp_dir("bundle-native-file-task");
     let source_path = dir.join("main.arcw");
     let save_dir = dir.join(".arcweft").join("save");
@@ -1757,12 +1775,19 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 "#,
     )
     .expect("write bundle fixture");
+    BundleNativeFileFixture {
+        dir,
+        source_path,
+        bundle_path,
+    }
+}
 
+fn run_bundle_package_command(fixture: &BundleNativeFileFixture) -> String {
     let bundle_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("bundle")
-        .arg(&source_path)
+        .arg(&fixture.source_path)
         .arg("--output")
-        .arg(&bundle_path)
+        .arg(&fixture.bundle_path)
         .arg("--include-save")
         .arg("--json")
         .output()
@@ -1773,35 +1798,47 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
         "bundle should succeed, stderr: {}",
         String::from_utf8_lossy(&bundle_output.stderr)
     );
-    let bundle_stdout = String::from_utf8_lossy(&bundle_output.stdout);
+    String::from_utf8_lossy(&bundle_output.stdout).into_owned()
+}
+
+fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout: &str) {
     assert!(
         bundle_stdout.contains("\"source\": \"main.arcw\"")
             && bundle_stdout.contains("\"required_host_calls\"")
             && bundle_stdout.contains("fs.read_text")
             && bundle_stdout.contains("fs.write_text")
+            && bundle_stdout.contains("\"adapter_manifests\": 2")
+            && bundle_stdout.contains("\"bytecode_instructions\"")
+            && bundle_stdout.contains("\"name\": \"bytecode_lower\"")
+            && bundle_stdout.contains("\"name\": \"encode_bundle\"")
             && bundle_stdout.contains("\"virtual_files\": 1"),
         "bundle JSON should describe native requirements and packaged save input: {bundle_stdout}"
     );
     assert!(
-        !bundle_stdout.contains(&dir.display().to_string()),
+        !bundle_stdout.contains(&fixture.dir.display().to_string()),
         "bundle JSON must not record absolute temp paths: {bundle_stdout}"
     );
-    let bundle_json = fs::read_to_string(&bundle_path).expect("bundle JSON is written");
+    let bundle_json = fs::read_to_string(&fixture.bundle_path).expect("bundle JSON is written");
     assert!(
         bundle_json.contains("\"adapter_manifest_ids\"")
+            && bundle_json.contains("\"adapter_manifests\"")
+            && bundle_json.contains("\"bytecode\"")
+            && bundle_json.contains("\"program\"")
             && bundle_json.contains("native-file")
             && bundle_json.contains("save")
             && bundle_json.contains("input.txt"),
-        "bundle artifact should include native-file adapter metadata and relative save file: {bundle_json}"
+        "bundle artifact should include executable bytecode, native-file adapter metadata, and relative save file: {bundle_json}"
     );
     assert!(
-        !bundle_json.contains(&dir.display().to_string()),
+        !bundle_json.contains(&fixture.dir.display().to_string()),
         "bundle artifact must not record absolute temp paths: {bundle_json}"
     );
+}
 
+fn run_bundle_fixture_command(fixture: &BundleNativeFileFixture) -> String {
     let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run-bundle")
-        .arg(&bundle_path)
+        .arg(&fixture.bundle_path)
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -1815,10 +1852,20 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
         "run-bundle should succeed, stderr: {}",
         String::from_utf8_lossy(&run_output.stderr)
     );
-    let run_stdout = String::from_utf8_lossy(&run_output.stdout);
+    String::from_utf8_lossy(&run_output.stdout).into_owned()
+}
+
+fn assert_run_bundle_output(fixture: &BundleNativeFileFixture, run_stdout: &str) {
+    let run_json: serde_json::Value =
+        serde_json::from_str(run_stdout).expect("run-bundle output is structured JSON");
     assert!(
         run_stdout.contains("\"source\": \"main.arcw\"")
             && run_stdout.contains("\"executor\": \"bytecode_vm\"")
+            && run_stdout.contains("\"bytecode_instructions\"")
+            && run_stdout.contains("\"adapter_manifests\": 2")
+            && run_stdout.contains("\"name\": \"decode_bundle\"")
+            && run_stdout.contains("\"name\": \"bytecode_decode\"")
+            && run_stdout.contains("\"name\": \"run\"")
             && run_stdout.contains("\"completed_tasks\": 2")
             && run_stdout.contains("\"failed_tasks\": 0")
             && run_stdout.contains("\"read_ops\": 1")
@@ -1827,8 +1874,52 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
         "run-bundle JSON should show packaged native I/O completion: {run_stdout}"
     );
     assert!(
-        !run_stdout.contains(&dir.display().to_string()),
+        !run_stdout.contains(&fixture.dir.display().to_string()),
         "run-bundle JSON must not record absolute temp paths: {run_stdout}"
+    );
+    assert!(
+        !run_json["phases"]
+            .as_array()
+            .expect("phases are present")
+            .iter()
+            .any(|phase| matches!(
+                phase["name"].as_str(),
+                Some("parse" | "typecheck" | "runtime_plan_lower")
+            )),
+        "run-bundle should execute decoded bytecode without source recompilation: {run_stdout}"
+    );
+}
+
+fn run_build_bundle_command(fixture: &BundleNativeFileFixture) -> String {
+    let build_bundle_path = fixture.dir.join("game-build.awfb");
+    let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("build")
+        .arg("bundle")
+        .arg(&fixture.source_path)
+        .arg("--output")
+        .arg(&build_bundle_path)
+        .arg("--include-save")
+        .arg("--json")
+        .output()
+        .expect("arcw build bundle packages native file task");
+    assert!(
+        build_output.status.success(),
+        "build bundle should succeed, stderr: {}",
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+    String::from_utf8_lossy(&build_output.stdout).into_owned()
+}
+
+fn assert_build_bundle_output(fixture: &BundleNativeFileFixture, build_stdout: &str) {
+    assert!(
+        build_stdout.contains("\"bundle\": \"game-build.awfb\"")
+            && build_stdout.contains("\"bytecode_instructions\"")
+            && build_stdout.contains("\"adapter_manifests\": 2"),
+        "build bundle JSON should use the same executable bundle pipeline: {build_stdout}"
+    );
+    assert!(
+        !build_stdout.contains(&fixture.dir.display().to_string()),
+        "build bundle JSON must not record absolute temp paths: {build_stdout}"
     );
 }
 

@@ -1,15 +1,19 @@
 //! Sans I/O bundle data model and deterministic JSON codec.
 
+use arcweft_core::bytecode::BytecodeProgram;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
     pub schema_version: u32,
     pub manifest: BundleManifest,
     pub source: BundleSource,
+    pub bytecode: BundleBytecodeProgram,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapter_manifests: Vec<BundleAdapterManifest>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub virtual_files: Vec<BundleVirtualFile>,
 }
@@ -36,6 +40,35 @@ pub struct BundleManifest {
 pub struct BundleSource {
     pub label: String,
     pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BundleBytecodeProgram {
+    pub encoding: BundleBytecodeEncoding,
+    pub program: BytecodeProgram,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleBytecodeEncoding {
+    StructuredJson,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleAdapterManifest {
+    pub id: String,
+    pub display_name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_calls: Vec<BundleAdapterHostCall>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleAdapterHostCall {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -85,13 +118,31 @@ pub enum BundleCodecError {
 }
 
 impl ArcweftBundle {
-    pub fn new(manifest: BundleManifest, source: BundleSource) -> Self {
+    pub fn new(manifest: BundleManifest, source: BundleSource, bytecode: BytecodeProgram) -> Self {
         Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             manifest,
             source,
+            bytecode: BundleBytecodeProgram {
+                encoding: BundleBytecodeEncoding::StructuredJson,
+                program: bytecode,
+            },
+            adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_adapter_manifests(
+        mut self,
+        manifests: impl IntoIterator<Item = BundleAdapterManifest>,
+    ) -> Self {
+        self.adapter_manifests.extend(manifests);
+        self.adapter_manifests
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        self.adapter_manifests
+            .dedup_by(|left, right| left.id == right.id);
+        self
     }
 
     #[must_use]
@@ -136,6 +187,14 @@ impl BundleVirtualFileSpace {
     }
 }
 
+impl BundleAdapterManifest {
+    pub fn host_call_ids(&self) -> impl Iterator<Item = &str> {
+        self.host_calls
+            .iter()
+            .map(|host_call| host_call.id.as_str())
+    }
+}
+
 impl std::fmt::Display for BundleVirtualFileSpace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -170,7 +229,17 @@ mod tests {
                 label: "main.arcw".to_owned(),
                 text: "flow @flow.main main { return \"ok\" }".to_owned(),
             },
+            BytecodeProgram::default(),
         )
+        .with_adapter_manifests([BundleAdapterManifest {
+            id: "native-file".to_owned(),
+            display_name: "Native File".to_owned(),
+            effects: vec!["fs.read".to_owned()],
+            host_calls: vec![BundleAdapterHostCall {
+                id: "fs.read_text".to_owned(),
+                effects: vec!["fs.read".to_owned()],
+            }],
+        }])
         .with_virtual_files([BundleVirtualFile {
             space: BundleVirtualFileSpace::Asset,
             path: "dialogue/opening.txt".to_owned(),

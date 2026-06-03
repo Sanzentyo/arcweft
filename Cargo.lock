@@ -152,6 +152,7 @@ dependencies = [
 name = "arcweft-bundle"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -194,6 +195,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-need",
  "arcweft-source",
+ "serde",
  "thiserror 2.0.18",
 ]
 

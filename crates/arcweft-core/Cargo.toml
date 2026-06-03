@@ -19,6 +19,7 @@ mcp = []
 arcweft-id = { path = "../arcweft-id" }
 arcweft-need = { path = "../arcweft-need" }
 arcweft-source = { path = "../arcweft-source" }
+serde = { workspace = true, features = ["derive", "rc"] }
 thiserror.workspace = true
 
 [lib]
