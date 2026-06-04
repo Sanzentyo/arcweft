@@ -1,5 +1,9 @@
 //! Browser WebGPU math benchmark harness.
 
+use arcweft_runtime_accelerator::math::browser_webgpu_policy::{
+    BrowserMatmulCapacity, BrowserWebGpuLimits, BrowserWebGpuMathAutoPolicy,
+    BrowserWebGpuMathAutoReason, BrowserWebGpuMathMode,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -172,6 +176,16 @@ pub enum BrowserMathBenchCapacity {
     },
 }
 
+impl From<BrowserMatmulCapacity> for BrowserMathBenchCapacity {
+    fn from(capacity: BrowserMatmulCapacity) -> Self {
+        Self::Matmul {
+            rows: capacity.rows,
+            shared: capacity.shared,
+            cols: capacity.cols,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BrowserMathBenchRecommendation {
     pub op: &'static str,
@@ -179,6 +193,14 @@ pub struct BrowserMathBenchRecommendation {
     pub selected_mode: Option<BrowserBenchMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_capacity: Option<BrowserMathBenchCapacity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_mode: Option<BrowserBenchMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_capacity: Option<BrowserMathBenchCapacity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_reason: Option<BrowserMathBenchPolicyReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_matches_selected: Option<bool>,
     pub selected_median_ms: Option<f64>,
     pub cpu_median_ms: Option<f64>,
     pub speedup: Option<f64>,
@@ -192,6 +214,17 @@ pub enum BrowserMathBenchRecommendationReason {
     CpuFasterOrEqual,
     MissingCpuBaseline,
     NoMeasuredWebGpuCase,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserMathBenchPolicyReason {
+    MatmulPreparedResidentPipelined,
+    MatmulPreparedCapacityResidentPipelined,
+    MatmulCpuDefault,
+    ElementwisePreparedResidentPipelined,
+    ElementwiseCpuReadbackDominated,
+    StorageLimit,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -209,6 +242,7 @@ pub struct BrowserMathBenchSkip {
 
 pub fn browser_math_bench_recommendations(
     cases: &[BrowserMathBenchCase],
+    limits: Option<BrowserMathBenchLimits>,
 ) -> Vec<BrowserMathBenchRecommendation> {
     let mut groups = Vec::<(&'static str, BrowserMathBenchShape)>::new();
     for case in cases {
@@ -221,7 +255,7 @@ pub fn browser_math_bench_recommendations(
     }
     groups
         .into_iter()
-        .map(|(op, shape)| recommend_browser_math_case(op, shape, cases))
+        .map(|(op, shape)| recommend_browser_math_case(op, shape, cases, limits))
         .collect()
 }
 
@@ -229,6 +263,7 @@ fn recommend_browser_math_case(
     op: &'static str,
     shape: BrowserMathBenchShape,
     cases: &[BrowserMathBenchCase],
+    limits: Option<BrowserMathBenchLimits>,
 ) -> BrowserMathBenchRecommendation {
     let matching = cases
         .iter()
@@ -248,7 +283,7 @@ fn recommend_browser_math_case(
                 .total_cmp(&rhs.median_ms.unwrap_or(f64::INFINITY))
         });
 
-    match (cpu, fastest_gpu) {
+    let mut recommendation = match (cpu, fastest_gpu) {
         (Some(cpu), Some(gpu)) => {
             let cpu_ms = cpu.median_ms.expect("measured cpu case has median");
             let gpu_ms = gpu.median_ms.expect("measured gpu case has median");
@@ -258,6 +293,10 @@ fn recommend_browser_math_case(
                     shape,
                     selected_mode: Some(gpu.mode),
                     selected_capacity: gpu.capacity,
+                    policy_mode: None,
+                    policy_capacity: None,
+                    policy_reason: None,
+                    policy_matches_selected: None,
                     selected_median_ms: Some(gpu_ms),
                     cpu_median_ms: Some(cpu_ms),
                     speedup: Some(cpu_ms / gpu_ms),
@@ -269,6 +308,10 @@ fn recommend_browser_math_case(
                     shape,
                     selected_mode: Some(BrowserBenchMode::CpuWasm),
                     selected_capacity: None,
+                    policy_mode: None,
+                    policy_capacity: None,
+                    policy_reason: None,
+                    policy_matches_selected: None,
                     selected_median_ms: Some(cpu_ms),
                     cpu_median_ms: Some(cpu_ms),
                     speedup: Some(1.0),
@@ -281,6 +324,10 @@ fn recommend_browser_math_case(
             shape,
             selected_mode: Some(BrowserBenchMode::CpuWasm),
             selected_capacity: None,
+            policy_mode: None,
+            policy_capacity: None,
+            policy_reason: None,
+            policy_matches_selected: None,
             selected_median_ms: cpu.median_ms,
             cpu_median_ms: cpu.median_ms,
             speedup: Some(1.0),
@@ -291,6 +338,10 @@ fn recommend_browser_math_case(
             shape,
             selected_mode: Some(gpu.mode),
             selected_capacity: gpu.capacity,
+            policy_mode: None,
+            policy_capacity: None,
+            policy_reason: None,
+            policy_matches_selected: None,
             selected_median_ms: gpu.median_ms,
             cpu_median_ms: None,
             speedup: None,
@@ -301,18 +352,122 @@ fn recommend_browser_math_case(
             shape,
             selected_mode: None,
             selected_capacity: None,
+            policy_mode: None,
+            policy_capacity: None,
+            policy_reason: None,
+            policy_matches_selected: None,
             selected_median_ms: None,
             cpu_median_ms: None,
             speedup: None,
             reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
         },
-    }
+    };
+    attach_policy_recommendation(&mut recommendation, limits);
+    recommendation
 }
 
 fn measured_case(case: &BrowserMathBenchCase) -> bool {
     case.fallback_reason.is_none()
         && case.correctness.passed
         && case.median_ms.is_some_and(f64::is_finite)
+}
+
+fn attach_policy_recommendation(
+    recommendation: &mut BrowserMathBenchRecommendation,
+    limits: Option<BrowserMathBenchLimits>,
+) {
+    let Some(limits) = limits else {
+        return;
+    };
+    let Some(policy) =
+        browser_math_policy_selection(recommendation.op, recommendation.shape, limits)
+    else {
+        return;
+    };
+    recommendation.policy_mode = Some(policy.mode);
+    recommendation.policy_capacity = policy.capacity;
+    recommendation.policy_reason = Some(policy.reason);
+    recommendation.policy_matches_selected = recommendation
+        .selected_mode
+        .map(|selected_mode| selected_mode == policy.mode);
+}
+
+fn browser_math_policy_selection(
+    op: &'static str,
+    shape: BrowserMathBenchShape,
+    limits: BrowserMathBenchLimits,
+) -> Option<BrowserMathBenchPolicySelection> {
+    let limits = BrowserWebGpuLimits {
+        max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
+        max_buffer_size: limits.max_buffer_size,
+        max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+        max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
+    };
+    let policy = BrowserWebGpuMathAutoPolicy::default();
+    let selection = match (op, shape) {
+        ("matmul_f32", BrowserMathBenchShape::Matmul { rows, shared, cols }) => {
+            policy.select_matmul_f32(rows, shared, cols, limits)
+        }
+        ("matrix_add_f32" | "tensor_add_f32", BrowserMathBenchShape::Len { len }) => {
+            policy.select_elementwise_f32(len, limits)
+        }
+        (
+            "matrix_add_f32",
+            BrowserMathBenchShape::Matmul {
+                rows,
+                shared: _,
+                cols,
+            },
+        ) => policy.select_elementwise_f32(rows.saturating_mul(cols), limits),
+        _ => return None,
+    };
+    Some(BrowserMathBenchPolicySelection {
+        mode: browser_bench_mode_for_policy(selection.mode()),
+        capacity: selection.capacity().map(Into::into),
+        reason: browser_math_policy_reason(selection.reason()),
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BrowserMathBenchPolicySelection {
+    mode: BrowserBenchMode,
+    capacity: Option<BrowserMathBenchCapacity>,
+    reason: BrowserMathBenchPolicyReason,
+}
+
+const fn browser_bench_mode_for_policy(mode: BrowserWebGpuMathMode) -> BrowserBenchMode {
+    match mode {
+        BrowserWebGpuMathMode::CpuWasm => BrowserBenchMode::CpuWasm,
+        BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined => {
+            BrowserBenchMode::WebGpuPreparedResidentPipelined
+        }
+        BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+            BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined
+        }
+    }
+}
+
+const fn browser_math_policy_reason(
+    reason: BrowserWebGpuMathAutoReason,
+) -> BrowserMathBenchPolicyReason {
+    match reason {
+        BrowserWebGpuMathAutoReason::MatmulPreparedResidentPipelined => {
+            BrowserMathBenchPolicyReason::MatmulPreparedResidentPipelined
+        }
+        BrowserWebGpuMathAutoReason::MatmulPreparedCapacityResidentPipelined => {
+            BrowserMathBenchPolicyReason::MatmulPreparedCapacityResidentPipelined
+        }
+        BrowserWebGpuMathAutoReason::MatmulCpuDefault => {
+            BrowserMathBenchPolicyReason::MatmulCpuDefault
+        }
+        BrowserWebGpuMathAutoReason::ElementwisePreparedResidentPipelined => {
+            BrowserMathBenchPolicyReason::ElementwisePreparedResidentPipelined
+        }
+        BrowserWebGpuMathAutoReason::ElementwiseCpuReadbackDominated => {
+            BrowserMathBenchPolicyReason::ElementwiseCpuReadbackDominated
+        }
+        BrowserWebGpuMathAutoReason::StorageLimit => BrowserMathBenchPolicyReason::StorageLimit,
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -330,16 +485,6 @@ mod wasm {
     };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
-
-    impl From<BrowserMatmulCapacity> for BrowserMathBenchCapacity {
-        fn from(capacity: BrowserMatmulCapacity) -> Self {
-            Self::Matmul {
-                rows: capacity.rows,
-                shared: capacity.shared,
-                cols: capacity.cols,
-            }
-        }
-    }
 
     #[wasm_bindgen]
     pub async fn run_arcweft_browser_math_bench(config_json: String) -> Result<JsValue, JsValue> {
@@ -383,7 +528,7 @@ mod wasm {
                 cases.push(run_matmul_case(&config, context.as_mut(), *mode, *shape).await);
             }
         }
-        let recommendations = browser_math_bench_recommendations(&cases);
+        let recommendations = browser_math_bench_recommendations(&cases, limits);
         BrowserMathBenchReport {
             schema_version: "arcweft.browser_webgpu_bench.v1",
             run: BrowserMathBenchRun {
@@ -1219,7 +1364,7 @@ mod tests {
             Some(0.0),
             true,
         )];
-        let recommendations = browser_math_bench_recommendations(&cases);
+        let recommendations = browser_math_bench_recommendations(&cases, None);
         let report = BrowserMathBenchReport {
             schema_version: "arcweft.browser_webgpu_bench.v1",
             run: BrowserMathBenchRun {
@@ -1303,7 +1448,7 @@ mod tests {
             ),
         ];
 
-        let recommendations = browser_math_bench_recommendations(&cases);
+        let recommendations = browser_math_bench_recommendations(&cases, Some(large_limits()));
 
         assert_eq!(recommendations.len(), 1);
         let recommendation = &recommendations[0];
@@ -1323,6 +1468,23 @@ mod tests {
                 cols: 512,
             })
         );
+        assert_eq!(
+            recommendation.policy_mode,
+            Some(BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined)
+        );
+        assert_eq!(
+            recommendation.policy_capacity,
+            Some(BrowserMathBenchCapacity::Matmul {
+                rows: 512,
+                shared: 512,
+                cols: 512,
+            })
+        );
+        assert_eq!(
+            recommendation.policy_reason,
+            Some(BrowserMathBenchPolicyReason::MatmulPreparedCapacityResidentPipelined)
+        );
+        assert_eq!(recommendation.policy_matches_selected, Some(true));
         assert_eq!(recommendation.speedup, Some(8.0));
     }
 
@@ -1350,7 +1512,7 @@ mod tests {
             ),
         ];
 
-        let recommendations = browser_math_bench_recommendations(&cases);
+        let recommendations = browser_math_bench_recommendations(&cases, Some(large_limits()));
 
         assert_eq!(recommendations.len(), 1);
         assert_eq!(
@@ -1361,7 +1523,25 @@ mod tests {
             recommendations[0].selected_mode,
             Some(BrowserBenchMode::CpuWasm)
         );
+        assert_eq!(
+            recommendations[0].policy_mode,
+            Some(BrowserBenchMode::CpuWasm)
+        );
+        assert_eq!(
+            recommendations[0].policy_reason,
+            Some(BrowserMathBenchPolicyReason::ElementwiseCpuReadbackDominated)
+        );
+        assert_eq!(recommendations[0].policy_matches_selected, Some(true));
         assert_eq!(recommendations[0].speedup, Some(1.0));
+    }
+
+    const fn large_limits() -> BrowserMathBenchLimits {
+        BrowserMathBenchLimits {
+            max_storage_buffer_binding_size: 1_u64 << 34,
+            max_buffer_size: 1_u64 << 34,
+            max_compute_invocations_per_workgroup: 256,
+            max_compute_workgroups_per_dimension: 65_535,
+        }
     }
 
     fn bench_case(

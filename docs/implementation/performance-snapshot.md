@@ -580,12 +580,15 @@ overprovisioned capacity storage without recording host paths. The same report
 also includes typed `recommendations` per operation/shape. A recommendation
 records the selected mode, selected capacity, CPU median, selected median,
 speedup, and reason (`web_gpu_faster`, `cpu_faster_or_equal`,
-`missing_cpu_baseline`, or `no_measured_web_gpu_case`), giving browser-side
-`Auto` threshold tuning a Rust-produced source of truth instead of a JS-only
-summary. If WebGPU is unavailable, the report records a structured skip reason
-instead of failing the whole run. The smoke recipe drives local Chrome/Edge
-through DevTools when available. If the browser executable is not discoverable
-from the environment, set `CHROME` or `CHROME_BIN` before running the recipe.
+`missing_cpu_baseline`, or `no_measured_web_gpu_case`). When WebGPU limits are
+available, the same recommendation also records the runtime policy mode,
+policy capacity, policy reason, and whether the policy matches the measured
+winner. This gives browser-side `Auto` threshold tuning a Rust-produced source
+of truth instead of a JS-only summary. If WebGPU is unavailable, the report
+records a structured skip reason instead of failing the whole run. The smoke
+recipe drives local Chrome/Edge through DevTools when available. If the browser
+executable is not discoverable from the environment, set `CHROME` or
+`CHROME_BIN` before running the recipe.
 
 Local browser WebGPU measurements on the current Windows/Chrome environment:
 

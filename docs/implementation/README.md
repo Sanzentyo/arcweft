@@ -270,9 +270,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   modes with typed `shape` and `capacity` fields, so native and browser GPU
   measurements can both show whether work used exact or overprovisioned
   resident buffers. Browser bench reports now also include typed per-shape
-  recommendations with selected mode, selected capacity, speedup, and reason;
-  this moves browser-side `Auto` threshold evidence into the Rust-produced JSON
-  schema instead of leaving it as a JS-only smoke summary.
+  recommendations with measured selected mode, selected capacity, speedup, and
+  reason plus the runtime policy mode, policy capacity, policy reason, and
+  policy/measurement match flag; this moves browser-side `Auto` threshold
+  evidence into the Rust-produced JSON schema instead of leaving it as a
+  JS-only smoke summary.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
