@@ -2745,6 +2745,14 @@ pub mod browser_webgpu {
         submitted_at_ms: f64,
     }
 
+    /// Result of a browser Auto math operation.
+    #[derive(Clone, Debug)]
+    pub struct BrowserWebGpuAutoMathResult<T> {
+        value: T,
+        selection: BrowserWebGpuMathSelection,
+        stats: BrowserWebGpuMathStats,
+    }
+
     impl BrowserPreparedElementwiseF32 {
         pub const fn capacity_len(&self) -> usize {
             self.capacity_len
@@ -2760,6 +2768,28 @@ pub mod browser_webgpu {
     impl BrowserSubmittedF32 {
         pub const fn len(&self) -> usize {
             self.len
+        }
+
+        pub const fn is_empty(&self) -> bool {
+            self.len == 0
+        }
+    }
+
+    impl<T> BrowserWebGpuAutoMathResult<T> {
+        pub const fn value(&self) -> &T {
+            &self.value
+        }
+
+        pub fn into_value(self) -> T {
+            self.value
+        }
+
+        pub const fn selection(&self) -> BrowserWebGpuMathSelection {
+            self.selection
+        }
+
+        pub const fn stats(&self) -> BrowserWebGpuMathStats {
+            self.stats
         }
     }
 
@@ -2892,6 +2922,124 @@ pub mod browser_webgpu {
         pub fn reset_stats(&mut self) {
             self.stats = BrowserWebGpuMathStats::default();
             self.in_flight = 0;
+        }
+
+        pub async fn auto_matmul_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+            policy: BrowserWebGpuMathAutoPolicy,
+        ) -> Result<BrowserWebGpuAutoMathResult<DenseMatrixF32>, BrowserWebGpuError> {
+            if lhs.cols() != rhs.rows() {
+                return Err(RuntimeMathError::MatrixShapeMismatch {
+                    lhs: lhs.shape(),
+                    rhs: rhs.shape(),
+                    op: "matmul",
+                }
+                .into());
+            }
+            let selection =
+                policy.select_matmul_f32(lhs.rows(), lhs.cols(), rhs.cols(), self.limits);
+            let value = match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => lhs.matmul_scalar(rhs)?,
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let capacity = selection.capacity().unwrap_or(BrowserMatmulCapacity {
+                        rows: lhs.rows(),
+                        shared: lhs.cols(),
+                        cols: rhs.cols(),
+                    });
+                    let prepared = self.prepare_matmul_f32(capacity)?;
+                    self.upload_prepared_matmul_f32(
+                        &prepared,
+                        lhs.values(),
+                        rhs.values(),
+                        lhs.rows(),
+                        lhs.cols(),
+                        rhs.cols(),
+                    )?;
+                    let submitted =
+                        self.submit_resident_matmul_f32(&prepared, lhs.rows(), rhs.cols())?;
+                    let mut out = vec![0.0; lhs.rows() * rhs.cols()];
+                    self.read_submitted_f32(submitted, &mut out).await?;
+                    DenseMatrixF32::new(lhs.rows(), rhs.cols(), out)?
+                }
+            };
+            Ok(BrowserWebGpuAutoMathResult {
+                value,
+                selection,
+                stats: self.stats,
+            })
+        }
+
+        pub async fn auto_matrix_add_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+            policy: BrowserWebGpuMathAutoPolicy,
+        ) -> Result<BrowserWebGpuAutoMathResult<DenseMatrixF32>, BrowserWebGpuError> {
+            if lhs.shape() != rhs.shape() {
+                return Err(RuntimeMathError::MatrixShapeMismatch {
+                    lhs: lhs.shape(),
+                    rhs: rhs.shape(),
+                    op: "add",
+                }
+                .into());
+            }
+            let selection = policy.select_elementwise_f32(lhs.values().len(), self.limits);
+            let value = match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => lhs.add_scalar(rhs)?,
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let prepared = self.prepare_elementwise_f32(lhs.values().len())?;
+                    self.upload_prepared_elementwise_f32(&prepared, lhs.values(), rhs.values())?;
+                    let submitted =
+                        self.submit_resident_elementwise_f32(&prepared, lhs.values().len())?;
+                    let mut out = vec![0.0; lhs.values().len()];
+                    self.read_submitted_f32(submitted, &mut out).await?;
+                    DenseMatrixF32::new(lhs.rows(), lhs.cols(), out)?
+                }
+            };
+            Ok(BrowserWebGpuAutoMathResult {
+                value,
+                selection,
+                stats: self.stats,
+            })
+        }
+
+        pub async fn auto_tensor_add_f32(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+            policy: BrowserWebGpuMathAutoPolicy,
+        ) -> Result<BrowserWebGpuAutoMathResult<DenseTensorF32>, BrowserWebGpuError> {
+            if lhs.shape() != rhs.shape() {
+                return Err(RuntimeMathError::TensorShapeMismatch {
+                    lhs: lhs.shape().clone(),
+                    rhs: rhs.shape().clone(),
+                    op: "add",
+                }
+                .into());
+            }
+            let selection = policy.select_elementwise_f32(lhs.values().len(), self.limits);
+            let value = match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => lhs.add_scalar(rhs)?,
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let prepared = self.prepare_elementwise_f32(lhs.values().len())?;
+                    self.upload_prepared_elementwise_f32(&prepared, lhs.values(), rhs.values())?;
+                    let submitted =
+                        self.submit_resident_elementwise_f32(&prepared, lhs.values().len())?;
+                    let mut out = vec![0.0; lhs.values().len()];
+                    self.read_submitted_f32(submitted, &mut out).await?;
+                    DenseTensorF32::new(lhs.shape().dims().to_vec(), out)?
+                }
+            };
+            Ok(BrowserWebGpuAutoMathResult {
+                value,
+                selection,
+                stats: self.stats,
+            })
         }
 
         pub async fn matmul_f32(
@@ -3489,7 +3637,7 @@ pub mod browser_webgpu {
         ) -> Result<(), BrowserWebGpuError> {
             let byte_len = checked_f32_bytes(elements)?;
             let readback = self.ensure_readback_buffer(byte_len)?;
-            encoder.copy_buffer_to_buffer(source, 0, readback, 0, byte_len as u64);
+            encoder.copy_buffer_to_buffer(source, 0, readback, 0, byte_len);
             Ok(())
         }
 
@@ -3498,10 +3646,11 @@ pub mod browser_webgpu {
             byte_len: u64,
         ) -> Result<&wgpu::Buffer, BrowserWebGpuError> {
             validate_byte_len(self.limits, byte_len)?;
+            let byte_len_usize = checked_usize_bytes(byte_len)?;
             let needs_new = self
                 .readback
                 .as_ref()
-                .is_none_or(|buffer| buffer.byte_len < byte_len as usize);
+                .is_none_or(|buffer| buffer.byte_len < byte_len_usize);
             if needs_new {
                 self.readback = Some(ReusableReadbackBuffer {
                     buffer: self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -3510,7 +3659,7 @@ pub mod browser_webgpu {
                         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                         mapped_at_creation: false,
                     }),
-                    byte_len: byte_len as usize,
+                    byte_len: byte_len_usize,
                 });
                 self.stats.readback_buffer_creations += 1;
             } else {
@@ -3528,11 +3677,12 @@ pub mod browser_webgpu {
             byte_len: u64,
         ) -> Result<ReusableReadbackBuffer, BrowserWebGpuError> {
             validate_byte_len(self.limits, byte_len)?;
-            if let Some(buffer) = self.async_readback.take() {
-                if buffer.byte_len >= byte_len as usize {
-                    self.stats.readback_buffer_reuse_hits += 1;
-                    return Ok(buffer);
-                }
+            let byte_len_usize = checked_usize_bytes(byte_len)?;
+            if let Some(buffer) = self.async_readback.take()
+                && buffer.byte_len >= byte_len_usize
+            {
+                self.stats.readback_buffer_reuse_hits += 1;
+                return Ok(buffer);
             }
             self.stats.readback_buffer_creations += 1;
             Ok(ReusableReadbackBuffer {
@@ -3542,7 +3692,7 @@ pub mod browser_webgpu {
                     usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                     mapped_at_creation: false,
                 }),
-                byte_len: byte_len as usize,
+                byte_len: byte_len_usize,
             })
         }
 
@@ -3709,7 +3859,7 @@ pub mod browser_webgpu {
     impl From<wgpu::Limits> for BrowserWebGpuLimits {
         fn from(limits: wgpu::Limits) -> Self {
             Self {
-                max_storage_buffer_binding_size: u64::from(limits.max_storage_buffer_binding_size),
+                max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
                 max_buffer_size: limits.max_buffer_size,
                 max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
                 max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
@@ -3744,6 +3894,15 @@ pub mod browser_webgpu {
                     "f32 buffer byte size overflowed",
                 )
             })
+    }
+
+    fn checked_usize_bytes(byte_len: u64) -> Result<usize, BrowserWebGpuError> {
+        usize::try_from(byte_len).map_err(|_| {
+            BrowserWebGpuError::fallback(
+                BrowserWebGpuFallbackReason::BufferSizeTooLarge,
+                "browser WebGPU buffer byte size exceeds usize",
+            )
+        })
     }
 
     fn validate_f32_storage(
@@ -3821,8 +3980,7 @@ pub mod browser_webgpu {
     fn browser_now_ms() -> f64 {
         web_sys::window()
             .and_then(|window| window.performance())
-            .map(|performance| performance.now())
-            .unwrap_or(0.0)
+            .map_or(0.0, |performance| performance.now())
     }
 
     const MATMUL_SHADER: &str = r"

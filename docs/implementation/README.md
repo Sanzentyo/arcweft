@@ -274,7 +274,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   reason plus the runtime policy mode, policy capacity, policy reason, and
   policy/measurement match flag; this moves browser-side `Auto` threshold
   evidence into the Rust-produced JSON schema instead of leaving it as a
-  JS-only smoke summary.
+  JS-only smoke summary. Browser WebGPU contexts now also expose policy-driven
+  async Auto calls for `matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`, so
+  browser embeddings can use the calibrated policy at the adapter boundary
+  without copying the threshold logic into player code.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

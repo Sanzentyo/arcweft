@@ -612,6 +612,15 @@ matmul and larger when storage limits allow it. The browser benchmark harness
 uses the same typed capacity growth policy for overprovisioned prepared cases,
 so measured `capacity` fields and runtime Auto decisions do not drift through
 duplicated arithmetic.
+`BrowserWebGpuMathContext` now exposes policy-driven async Auto calls for
+`matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`. Browser embeddings can
+call these methods at the adapter boundary: CPU-selected work runs through the
+deterministic scalar baseline, while WebGPU-selected work uses prepared
+resident buffers, submits GPU work asynchronously, awaits readback, and returns
+the dense deterministic value plus the policy selection and transfer counters.
+This keeps browser GPU work outside the Sans I/O core while letting natural
+browser-side math calls use the calibrated policy without duplicating threshold
+logic in the player.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph
