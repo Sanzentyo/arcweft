@@ -295,7 +295,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   node. `AcceleratedInferenceAdapter` routes that hook into
   `RuntimeMathAccelerator::matmul_bias_add_f32`; the scalar backend fuses
   matmul and bias application in one loop, and runtime math stats record
-  `fused_matmul_bias_add_calls`.
+  `fused_matmul_bias_add_calls`. The standalone `math_bench` example accepts
+  `--op matmul-bias-add`, so scalar/Glam/ndarray/wgpu/Auto selection and fused
+  call counts are measurable through the same path-free JSON schema as the
+  existing matmul and elementwise benchmarks.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

@@ -38,6 +38,7 @@ fn run_backend(backend: RuntimeMathBackend, options: &BenchOptions) -> BackendRe
     });
     match options.op {
         BenchOp::Matmul => run_matmul(&mut accelerator, backend, options),
+        BenchOp::MatmulBiasAdd => run_matmul_bias_add(&mut accelerator, backend, options),
         BenchOp::MatrixAdd => run_matrix_add(&mut accelerator, backend, options),
         BenchOp::TensorAdd => run_tensor_add(&mut accelerator, backend, options),
     }
@@ -75,6 +76,48 @@ fn run_matmul(
         let elapsed = started.elapsed().as_nanos();
         if !approx_eq(output.values(), reference.values(), 1.0e-3) {
             return BackendReport::failed(backend, "matmul result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_matmul_bias_add(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+) -> BackendReport {
+    if options.reuse {
+        return BackendReport::skipped_or_failed(
+            backend,
+            "prepared GPU reuse is not yet available for matmul-bias-add".to_owned(),
+        );
+    }
+    let lhs = matrix_fixture(options.size, options.size, 1.0);
+    let rhs = matrix_fixture(options.size, options.size, 0.25);
+    let bias = bias_fixture(options.size);
+    let mut reference = match lhs.matmul_scalar(&rhs) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::failed(backend, error.to_string()),
+    };
+    apply_bias_to_reference(&mut reference, &bias);
+
+    for _ in 0..options.warmup {
+        if let Err(error) = accelerator.matmul_bias_add_f32(&lhs, &rhs, &bias) {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+
+    let mut samples = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let output = match accelerator.matmul_bias_add_f32(&lhs, &rhs, &bias) {
+            Ok(value) => value,
+            Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+        };
+        let elapsed = started.elapsed().as_nanos();
+        if !approx_eq(output.values(), reference.values(), 1.0e-3) {
+            return BackendReport::failed(backend, "matmul-bias result mismatch".to_owned());
         }
         samples.push(elapsed);
     }
@@ -461,6 +504,24 @@ fn tensor_fixture(elements: usize, scale: f32) -> DenseTensorF32 {
     .expect("fixture shape is valid")
 }
 
+fn bias_fixture(cols: usize) -> DenseTensorF32 {
+    DenseTensorF32::new(
+        vec![cols],
+        (0..cols)
+            .map(|index| (small_f32(index % 17) - 8.0) * 0.125)
+            .collect(),
+    )
+    .expect("bias fixture shape is valid")
+}
+
+fn apply_bias_to_reference(matrix: &mut DenseMatrixF32, bias: &DenseTensorF32) {
+    for row in matrix.values_mut().chunks_exact_mut(bias.values().len()) {
+        for (value, bias) in row.iter_mut().zip(bias.values().iter().copied()) {
+            *value += bias;
+        }
+    }
+}
+
 fn matrix_update_cases(
     size: usize,
     count: usize,
@@ -510,6 +571,7 @@ fn approx_eq(lhs: &[f32], rhs: &[f32], epsilon: f32) -> bool {
 #[derive(Clone, Copy)]
 enum BenchOp {
     Matmul,
+    MatmulBiasAdd,
     MatrixAdd,
     TensorAdd,
 }
@@ -518,6 +580,7 @@ impl BenchOp {
     const fn label(self) -> &'static str {
         match self {
             Self::Matmul => "matmul_f32",
+            Self::MatmulBiasAdd => "matmul_bias_add_f32",
             Self::MatrixAdd => "matrix_add_f32",
             Self::TensorAdd => "tensor_add_f32",
         }
@@ -567,6 +630,13 @@ impl BenchOptions {
                 "--op" => {
                     index += 1;
                     options.op = match args.get(index).map(String::as_str) {
+                        Some(
+                            "matmul-bias"
+                            | "matmul_bias"
+                            | "matmul-bias-add"
+                            | "matmul_bias_add"
+                            | "matmul_bias_add_f32",
+                        ) => BenchOp::MatmulBiasAdd,
                         Some("matrix-add" | "matrix_add" | "matrix_add_f32") => BenchOp::MatrixAdd,
                         Some("tensor-add" | "tensor_add" | "tensor_add_f32") => BenchOp::TensorAdd,
                         _ => BenchOp::Matmul,
@@ -672,7 +742,9 @@ impl MathBenchReport {
             reuse_capacity: options.reuse_capacity,
             capacity_size: options.reuse_capacity.then(|| match options.op {
                 BenchOp::TensorAdd => options.tensor_capacity_len(),
-                BenchOp::Matmul | BenchOp::MatrixAdd => options.matrix_capacity_size(),
+                BenchOp::Matmul | BenchOp::MatmulBiasAdd | BenchOp::MatrixAdd => {
+                    options.matrix_capacity_size()
+                }
             }),
             results: results.into_iter().map(BackendReport::into_json).collect(),
         }
@@ -696,6 +768,7 @@ struct RuntimeMathStatsJson {
     glam_calls: usize,
     ndarray_calls: usize,
     wgpu_calls: usize,
+    fused_matmul_bias_add_calls: usize,
     fallback_calls: usize,
     bytes_borrowed: usize,
     bytes_copied: usize,
@@ -717,6 +790,7 @@ impl From<RuntimeMathStats> for RuntimeMathStatsJson {
             glam_calls: stats.glam_calls,
             ndarray_calls: stats.ndarray_calls,
             wgpu_calls: stats.wgpu_calls,
+            fused_matmul_bias_add_calls: stats.fused_matmul_bias_add_calls,
             fallback_calls: stats.fallback_calls,
             bytes_borrowed: stats.bytes_borrowed,
             bytes_copied: stats.bytes_copied,
@@ -853,6 +927,7 @@ mod tests {
         let json = serde_json::to_string(&report).expect("report serializes");
 
         assert!(json.contains("\"last_auto_reason\":\"matmul_4x4_glam\""));
+        assert!(json.contains("\"fused_matmul_bias_add_calls\":0"));
         let windows_drive_prefixes = ["C:", "D:"].map(|drive| format!("{drive}\\"));
         for prefix in windows_drive_prefixes {
             assert!(!json.contains(&prefix));
@@ -915,5 +990,35 @@ mod tests {
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"reuse_capacity\":true"));
         assert!(json.contains("\"capacity_size\":128"));
+    }
+
+    #[test]
+    fn parse_matmul_bias_add_op_and_report_stats() {
+        let args = [
+            "--backend".to_owned(),
+            "scalar".to_owned(),
+            "--op".to_owned(),
+            "matmul-bias-add".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::measured(
+                RuntimeMathBackend::Scalar,
+                vec![100],
+                RuntimeMathStats {
+                    fused_matmul_bias_add_calls: 1,
+                    scalar_calls: 1,
+                    last_backend: Some(RuntimeMathBackend::Scalar),
+                    ..RuntimeMathStats::default()
+                },
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(matches!(options.op, BenchOp::MatmulBiasAdd));
+        assert!(json.contains("\"op\":\"matmul_bias_add_f32\""));
+        assert!(json.contains("\"fused_matmul_bias_add_calls\":1"));
     }
 }

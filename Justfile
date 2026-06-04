@@ -152,6 +152,12 @@ bench-math-glam:
 bench-math-wgpu:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul --size 512 --iterations 3 --warmup 1
 
+bench-math-matmul-bias:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul-bias-add --size 64 --iterations 10 --warmup 2
+
+bench-math-matmul-bias-wgpu:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul-bias-add --size 512 --iterations 3 --warmup 1
+
 bench-math-matmul-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
 

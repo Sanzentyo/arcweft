@@ -822,9 +822,15 @@ changing the graph's public op set. The default accelerated adapter now routes
 that hook through `RuntimeMathAccelerator::matmul_bias_add_f32`; scalar
 execution fuses the matmul and bias application loop, while Glam, ndarray, and
 wgpu keep the existing matmul backend selection and then apply the last-axis
-bias. `RuntimeMathStats` records `fused_matmul_bias_add_calls` so future bench
-JSON can distinguish fused inference execution from separate matmul and
-bias-add calls. The current deterministic `f32` op set is:
+bias. `RuntimeMathStats` records `fused_matmul_bias_add_calls` so bench JSON can
+distinguish fused inference execution from separate matmul and bias-add calls.
+`math_bench --op matmul-bias-add` now measures that fused path with the same
+backend selection report used by the existing matmul, matrix add, and tensor add
+probes. A small path-free smoke run
+(`--backend all --op matmul-bias-add --size 16 --iterations 3 --warmup 1`)
+reported measured scalar, ndarray, and Auto cases, skipped wgpu when
+`math-wgpu` was disabled, and recorded `fused_matmul_bias_add_calls = 4` for
+each measured backend. The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`
@@ -859,6 +865,8 @@ Local path-free measurements:
 just bench-math-cpu
 just bench-math-glam
 just bench-math-wgpu
+just bench-math-matmul-bias
+just bench-math-matmul-bias-wgpu
 just bench-math-matrix-add
 just bench-math-tensor-add
 just bench-024
