@@ -2459,21 +2459,21 @@ mod tests {
         );
         assert_eq!(
             recommendation.policy_mode,
-            Some(BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined)
+            Some(BrowserBenchMode::WebGpuPreparedResidentPipelined)
         );
         assert_eq!(
             recommendation.policy_capacity,
             Some(BrowserMathBenchCapacity::Matmul {
-                rows: 512,
-                shared: 512,
-                cols: 512,
+                rows: 256,
+                shared: 256,
+                cols: 256,
             })
         );
         assert_eq!(
             recommendation.policy_reason,
-            Some(BrowserMathBenchPolicyReason::MatmulPreparedCapacityResidentPipelined)
+            Some(BrowserMathBenchPolicyReason::MatmulPreparedResidentPipelined)
         );
-        assert_eq!(recommendation.policy_matches_selected, Some(true));
+        assert_eq!(recommendation.policy_matches_selected, Some(false));
         assert_eq!(recommendation.speedup, Some(8.0));
     }
 

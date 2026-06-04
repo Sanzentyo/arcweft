@@ -644,7 +644,7 @@ to Wasm each iteration.
 target-independent browser Auto policy used to preserve that measured
 crossover in code. Its default policy keeps elementwise `f32` on CPU Wasm,
 selects exact prepared resident pipelined WebGPU for `128x128x128` matmul and
-larger, and selects capacity-prepared pipelined WebGPU for `256x256x256`
+larger, and selects capacity-prepared pipelined WebGPU for `512x512x512`
 matmul and larger when storage limits allow it. The browser benchmark harness
 uses the same typed capacity growth policy for overprovisioned prepared cases,
 so measured `capacity` fields and runtime Auto decisions do not drift through
@@ -713,23 +713,26 @@ harness stability, not another compatibility path around the adapter.
 
 The stability preset adds six repeated rounds of the same `256x256x256` matmul
 isolation set and rotates mode order in each round. A local path-free run after
-switching recommendations to median-of-medians recorded 36 measured cases, no
-skips, and no correctness failures. Median of per-round medians and spread
-ratios were:
+switching recommendations and browser Auto policy to median-of-medians evidence
+recorded 36 measured cases, no skips, and no correctness failures. Median of
+per-round medians and spread ratios were:
 
 | Mode | Rounds | Median-of-medians ms | Min ms | Max ms | Spread ratio |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `web_gpu_prepared_resident_pipelined` | 6 | 0.70750 | 0.65125 | 0.74250 | 1.14x |
-| `auto_resident_direct_pipelined` | 6 | 0.76125 | 0.71750 | 0.90875 | 1.27x |
-| `auto_resident_pipelined` | 6 | 0.80250 | 0.67625 | 0.84625 | 1.25x |
-| `web_gpu_prepared_capacity_resident_pipelined` | 6 | 0.82000 | 0.62500 | 1.17625 | 1.88x |
-| `auto_pipelined` | 6 | 1.18750 | 1.05375 | 1.21250 | 1.15x |
-| `cpu_wasm` | 6 | 7.36500 | 7.20500 | 7.67000 | 1.06x |
+| `web_gpu_prepared_resident_pipelined` | 6 | 0.61000 | 0.48250 | 0.86000 | 1.78x |
+| `web_gpu_prepared_capacity_resident_pipelined` | 6 | 0.68750 | 0.53375 | 0.82000 | 1.54x |
+| `auto_resident_pipelined` | 6 | 0.75500 | 0.43625 | 0.91625 | 2.10x |
+| `auto_resident_direct_pipelined` | 6 | 0.91875 | 0.48000 | 1.02625 | 2.14x |
+| `auto_pipelined` | 6 | 1.04750 | 0.83000 | 1.22875 | 1.48x |
+| `cpu_wasm` | 6 | 6.63000 | 6.38000 | 7.50000 | 1.18x |
 
 This confirms that browser WebGPU `256x256x256` matmul is consistently faster
 than CPU Wasm. Recommendations now choose the measured backend by
 median-of-medians, which selected exact prepared resident pipelining at 10.41x
-CPU speedup in this run. Individual browser GPU samples can still vary by more
+CPU speedup before the policy update and 10.87x CPU speedup after the policy
+update. The browser Auto policy now keeps `256x256x256` matmul on exact
+prepared resident pipelining and reserves capacity-prepared pipelining for
+`512x512x512` and larger shapes. Individual browser GPU samples can still vary by more
 than 1.5x across rounds, so browser-side Auto policy changes should be
 calibrated against repeated stability summaries, not one fixed-order perf run.
 
