@@ -200,6 +200,19 @@ enum LoweredI64Binding {
 }
 
 #[derive(Clone, Copy, Debug)]
+enum LoweredSmallIntBinding {
+    Const(SmallIntLiteral),
+    Value(Value),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SmallIntLiteral {
+    Narrow(i64),
+    I128(i128),
+    U128(u128),
+}
+
+#[derive(Clone, Copy, Debug)]
 enum LoweredF32Binding {
     Const(f32),
     Value(Value),
@@ -253,15 +266,25 @@ impl SmallIntKind {
         matches!(self, Self::I8 | Self::I16 | Self::I128)
     }
 
-    fn literal(self, value: &RuntimeValue) -> Option<i64> {
+    fn literal(self, value: &RuntimeValue) -> Option<SmallIntLiteral> {
         match (self, value) {
-            (Self::I8, RuntimeValue::Int(RuntimeInt::I8(value))) => Some(i64::from(*value)),
-            (Self::I16, RuntimeValue::Int(RuntimeInt::I16(value))) => Some(i64::from(*value)),
-            (Self::I128, RuntimeValue::Int(RuntimeInt::I128(value))) => i64::try_from(*value).ok(),
-            (Self::U8, RuntimeValue::UInt(RuntimeUInt::U8(value))) => Some(i64::from(*value)),
-            (Self::U16, RuntimeValue::UInt(RuntimeUInt::U16(value))) => Some(i64::from(*value)),
+            (Self::I8, RuntimeValue::Int(RuntimeInt::I8(value))) => {
+                Some(SmallIntLiteral::Narrow(i64::from(*value)))
+            }
+            (Self::I16, RuntimeValue::Int(RuntimeInt::I16(value))) => {
+                Some(SmallIntLiteral::Narrow(i64::from(*value)))
+            }
+            (Self::I128, RuntimeValue::Int(RuntimeInt::I128(value))) => {
+                Some(SmallIntLiteral::I128(*value))
+            }
+            (Self::U8, RuntimeValue::UInt(RuntimeUInt::U8(value))) => {
+                Some(SmallIntLiteral::Narrow(i64::from(*value)))
+            }
+            (Self::U16, RuntimeValue::UInt(RuntimeUInt::U16(value))) => {
+                Some(SmallIntLiteral::Narrow(i64::from(*value)))
+            }
             (Self::U128, RuntimeValue::UInt(RuntimeUInt::U128(value))) => {
-                i64::try_from(*value).ok()
+                Some(SmallIntLiteral::U128(*value))
             }
             _ => None,
         }
@@ -466,9 +489,9 @@ impl CraneliftPureFunctionBackend {
     /// The generated functions use pointer-based row buffers only. Scalar
     /// `i128` calls stay on the VM/AOT path because Cranelift's platform ABI
     /// handling for by-value i128 requires target-specific care. Runtime
-    /// inputs are loaded and stored as full-width `i128` values; literals and
-    /// captured constants are currently limited to values representable by an
-    /// `i64` immediate and are sign-extended in IR.
+    /// inputs are loaded and stored as full-width `i128` values. Full-width
+    /// literals and captured constants are lowered from two 64-bit halves with
+    /// `iconcat`, avoiding invalid `iconst.i128` construction.
     pub fn compile_i128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -730,9 +753,9 @@ impl CraneliftPureFunctionBackend {
     /// The generated functions use pointer-based row buffers only. Scalar
     /// `u128` calls stay on the VM/AOT path because Cranelift's platform ABI
     /// handling for by-value i128 requires target-specific care. Runtime
-    /// inputs are loaded and stored as full-width `u128` values; literals and
-    /// captured constants are currently limited to values representable by an
-    /// `i64` immediate and are zero-extended in IR.
+    /// inputs are loaded and stored as full-width `u128` values. Full-width
+    /// literals and captured constants are lowered from two 64-bit halves with
+    /// `iconcat`, avoiding invalid `iconst.i128` construction.
     pub fn compile_u128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -1191,7 +1214,7 @@ fn compile_small_int_with_inputs(
         builder.switch_to_block(block);
         let params = builder.block_params(block);
         for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, &request.expr, &mut stats, kind)?;
         builder.ins().return_(&[value]);
@@ -1281,7 +1304,7 @@ fn compile_wide_int_batch_with_inputs(
 fn compile_small_int_rows_batch_function(
     module: &mut JITModule,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
 ) -> Result<FuncId, CraneliftJitError> {
@@ -1348,7 +1371,7 @@ fn compile_small_int_rows_batch_function(
                 param_index,
                 kind,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
         store_small_int_batch_output(&mut builder, out_ptr, row, value, kind);
@@ -1372,7 +1395,7 @@ fn compile_small_int_rows_batch_function(
 fn compile_small_int_rows_batch_sum_function(
     module: &mut JITModule,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
 ) -> Result<FuncId, CraneliftJitError> {
@@ -1441,7 +1464,7 @@ fn compile_small_int_rows_batch_sum_function(
                 param_index,
                 kind,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
         let value = if kind.cranelift_type().bits() > 64 {
@@ -3295,12 +3318,12 @@ fn int_bindings(
 fn small_int_bindings(
     bindings: &[RuntimeBinding],
     kind: SmallIntKind,
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredSmallIntBinding>, CraneliftJitError> {
     bindings
         .iter()
         .map(|binding| {
             kind.literal(&binding.value)
-                .map(|value| (binding.name.clone(), LoweredI64Binding::Const(value)))
+                .map(|value| (binding.name.clone(), LoweredSmallIntBinding::Const(value)))
                 .ok_or_else(|| {
                     CraneliftJitError::UnsupportedExpr(format!(
                         "binding `{}` is not an {} integer",
@@ -3578,7 +3601,7 @@ fn u64_iconst_value(value: u64) -> i64 {
 
 fn lower_small_int_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
@@ -3595,8 +3618,10 @@ fn lower_small_int_expr(
                 ))
             }),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(small_int_const(builder, kind, *value)),
-            Some(LoweredI64Binding::Value(value)) => Ok(*value),
+            Some(LoweredSmallIntBinding::Const(value)) => {
+                Ok(small_int_const(builder, kind, *value))
+            }
+            Some(LoweredSmallIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftJitError::UnsupportedExpr(format!(
                 "unknown {} binding `{name}`",
                 kind.label()
@@ -3605,7 +3630,7 @@ fn lower_small_int_expr(
         RuntimeExpr::Let { name, expr, body } => {
             let value = lower_small_int_expr(builder, bindings, expr, stats, kind)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            scoped_bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
             lower_small_int_expr(builder, &scoped_bindings, body, stats, kind)
         }
         RuntimeExpr::Unary {
@@ -3664,18 +3689,50 @@ fn lower_small_int_expr(
     }
 }
 
-fn small_int_const(builder: &mut FunctionBuilder<'_>, kind: SmallIntKind, value: i64) -> Value {
+fn small_int_const(
+    builder: &mut FunctionBuilder<'_>,
+    kind: SmallIntKind,
+    value: SmallIntLiteral,
+) -> Value {
     let ty = kind.cranelift_type();
-    if ty.bits() <= 64 {
-        builder.ins().iconst(ty, value)
-    } else {
-        let value = builder.ins().iconst(types::I64, value);
-        if kind.signed() {
-            builder.ins().sextend(ty, value)
-        } else {
-            builder.ins().uextend(ty, value)
+    match value {
+        SmallIntLiteral::Narrow(value) if ty.bits() <= 64 => builder.ins().iconst(ty, value),
+        SmallIntLiteral::Narrow(value) => {
+            let value = builder.ins().iconst(types::I64, value);
+            if kind.signed() {
+                builder.ins().sextend(ty, value)
+            } else {
+                builder.ins().uextend(ty, value)
+            }
+        }
+        SmallIntLiteral::I128(value) if matches!(kind, SmallIntKind::I128) => {
+            i128_const(builder, value)
+        }
+        SmallIntLiteral::U128(value) if matches!(kind, SmallIntKind::U128) => {
+            u128_const(builder, value)
+        }
+        SmallIntLiteral::I128(_) | SmallIntLiteral::U128(_) => {
+            unreachable!("literal kind is validated by SmallIntKind::literal")
         }
     }
+}
+
+fn i128_const(builder: &mut FunctionBuilder<'_>, value: i128) -> Value {
+    u128_const(builder, value as u128)
+}
+
+fn u128_const(builder: &mut FunctionBuilder<'_>, value: u128) -> Value {
+    let lo = builder
+        .ins()
+        .iconst(types::I64, bitpattern_i64(value as u64));
+    let hi = builder
+        .ins()
+        .iconst(types::I64, bitpattern_i64((value >> 64) as u64));
+    builder.ins().iconcat(lo, hi)
+}
+
+fn bitpattern_i64(value: u64) -> i64 {
+    i64::from_ne_bytes(value.to_ne_bytes())
 }
 
 fn lower_u32_expr(
@@ -4128,7 +4185,7 @@ fn lower_i32_if_expr(
 
 fn lower_small_int_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -4330,7 +4387,7 @@ fn lower_i32_condition(
 
 fn lower_small_int_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
@@ -5420,40 +5477,70 @@ mod tests {
     }
 
     #[test]
-    fn cranelift_i128_batch_rejects_literals_outside_i64_immediate_subset() {
+    fn cranelift_i128_batch_lowers_full_width_literals() {
         let request = PureFunctionRequest::new(
             "wide_i128_literal",
-            RuntimeExpr::Value(RuntimeValue::i128(i128::from(i64::MAX) + 1)),
+            RuntimeExpr::Value(RuntimeValue::i128(i128::MIN + 123)),
             [],
         );
 
-        let error = match CraneliftPureFunctionBackend
+        let compiled = CraneliftPureFunctionBackend
             .compile_i128_batch_with_inputs(&request, std::iter::empty::<&str>())
-        {
-            Ok(_) => panic!("i128 literals outside the i64-backed IR subset must be rejected"),
-            Err(error) => error.to_string(),
-        };
+            .expect("Cranelift lowers full-width i128 literal with iconcat");
+        let mut out = [0_i128; 2];
 
-        assert!(error.contains("literal"));
-        assert!(error.contains("i128"));
+        compiled
+            .call_flat_batch(&[], &mut out)
+            .expect("zero-arity i128 literal batch succeeds");
+
+        assert_eq!(out, [i128::MIN + 123, i128::MIN + 123]);
     }
 
     #[test]
-    fn cranelift_u128_batch_rejects_literals_outside_i64_immediate_subset() {
+    fn cranelift_i128_batch_lowers_full_width_captured_bindings() {
         let request = PureFunctionRequest::new(
-            "wide_u128_literal",
-            RuntimeExpr::Value(RuntimeValue::u128(u128::try_from(i64::MAX).unwrap() + 1)),
-            [],
+            "wide_i128_binding",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i128(123))),
+            },
+            [i128_binding("base", i128::MIN)],
         );
 
-        let error = match CraneliftPureFunctionBackend
-            .compile_u128_batch_with_inputs(&request, std::iter::empty::<&str>())
-        {
-            Ok(_) => panic!("u128 literals outside the i64-backed IR subset must be rejected"),
-            Err(error) => error.to_string(),
-        };
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i128_batch_with_inputs(&request, std::iter::empty::<&str>())
+            .expect("Cranelift lowers full-width i128 captured binding with iconcat");
+        let mut out = [0_i128; 2];
 
-        assert!(error.contains("literal"));
-        assert!(error.contains("u128"));
+        compiled
+            .call_flat_batch(&[], &mut out)
+            .expect("zero-arity i128 captured-binding batch succeeds");
+
+        assert_eq!(out, [i128::MIN + 123, i128::MIN + 123]);
+    }
+
+    #[test]
+    fn cranelift_u128_batch_lowers_full_width_literals_and_bindings() {
+        let request = PureFunctionRequest::new(
+            "wide_u128_literal",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::u128(1_u128 << 96))),
+            },
+            [u128_binding("base", 1_u128 << 100)],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_u128_batch_with_inputs(&request, std::iter::empty::<&str>())
+            .expect("Cranelift lowers full-width u128 literal and captured binding with iconcat");
+        let mut out = [0_u128; 2];
+
+        compiled
+            .call_flat_batch(&[], &mut out)
+            .expect("zero-arity u128 literal batch succeeds");
+
+        assert_eq!(out, [(1_u128 << 100) + (1_u128 << 96); 2]);
     }
 }

@@ -428,9 +428,18 @@ conversion. This confirms the hot boundary is not doing
 `i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and
 `f64`. The `i128` and `u128` JIT path is batch-only: the native ABI receives
 flat row buffers by pointer and never exposes by-value wide integers at the
-function boundary. Scalar AOT and VM remain the semantic scalar tiers for
-wide-integer calls outside the batch shape. Target-sized dense storage already
-uses stable `i64`/`u64` backing at the runtime boundary.
+function boundary. Full-width wide-integer literals and captured constants are
+lowered inside Cranelift with two 64-bit halves plus `iconcat`, so the batch
+path no longer depends on an i64-backed immediate subset. Scalar AOT and VM
+remain the semantic scalar tiers for wide-integer calls outside the batch
+shape. Target-sized dense storage already uses stable `i64`/`u64` backing at
+the runtime boundary. A path-free JIT bench run of the checked-in
+`019_dense_i128_map_pure_batch.arcw` and `020_dense_u128_map_pure_batch.arcw`
+fixtures reported median elapsed times of 16400 ns and 15500 ns respectively,
+with `pure_jit_calls_median = 128`,
+`pure_flat_batch_bytes_borrowed_median = 4096`,
+`pure_flatten_materializations_median = 0`, and
+`pure_arg_vec_allocations_median = 0`.
 
 The i32 JIT ABI emits `extern "C" fn(i32, ...) -> i32` helpers plus row-major
 `*const i32` flat batch and batch-sum entry points. A local path-free bench run

@@ -130,6 +130,8 @@ Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
 these checked-in fixtures. The `i128` and `u128` JIT entries are batch-only and
 use pointer-based flat buffers at the native boundary; scalar by-value
 `i128`/`u128` calls remain on VM/AOT paths to avoid target-specific wide-integer
-ABI assumptions. The VM dense fixtures cover exact-width storage, length, and
-integer reduction, while the pure helper fixtures cover batched helper
-execution and backend selection counters.
+ABI assumptions. Within that batch path, Cranelift lowering handles full-width
+wide-integer literals and captured constants by building the `i128` value from
+two 64-bit halves with `iconcat`. The VM dense fixtures cover exact-width
+storage, length, and integer reduction, while the pure helper fixtures cover
+batched helper execution and backend selection counters.
