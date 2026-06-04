@@ -78,8 +78,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   notifications, loads project-local adapter manifests and Rust ABI JSON into
   the selected adapter, and reports profile metadata diagnostics with profile
   ids and profile-relative resource labels without recording host absolute
-  paths in checked-in artifacts. Completion, hover, and signature help use the
-  refreshed document-scoped profile context. `arcweft-cli` remains both a
+  paths in checked-in artifacts. Source diagnostics now run the same
+  profile-aware semantic path as CLI checks, using the selected adapter
+  environment for type analysis and verifier diagnostics after parse, HIR,
+  reference resolution, and readiness pass. Completion, hover, and signature
+  help use the refreshed document-scoped profile context. `arcweft-cli` remains both a
   library and a binary for argv-compatible execution through
   `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic

@@ -3,6 +3,7 @@ use arcweft_adapter_context::{
     manifest::{AdapterManifest, AdapterRegistry},
     standard::{self, SANS_IO_ADAPTER_ID},
 };
+use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::{LaunchProfileError, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use arcweft_rust_abi::{ArcweftRustAbiError, ArcweftRustManifest};
@@ -70,6 +71,11 @@ impl LspProfile {
         ArcweftLspProfileContextBuilder::new(&self.adapter)
             .with_runner_kind(self.runner)
             .build()
+    }
+
+    /// Builds the semantic environment selected by this profile.
+    pub fn typecheck_env(&self) -> TypeCheckEnv {
+        self.adapter.apply_to_env(TypeCheckEnv::new())
     }
 }
 

@@ -139,6 +139,13 @@ manifest is treated as a declared profile surface, not as proof that the
 selected runner implements its host calls; conformance diagnostics compare the
 declared manifest against the runner capability preset.
 
+Source diagnostics use the same profile-aware semantic pipeline as CLI checks:
+syntax parse, HIR lowering, HIR reference resolution, typecheck readiness,
+profile-selected adapter/Rust ABI type analysis, and then verifier diagnostics
+with the same `TypeCheckEnv`. Later phases are skipped when an earlier phase
+fails, so LSP diagnostics do not report verifier obligations for source that
+has not passed profile-aware type checking.
+
 Workspace edits are negotiated in the transport. If the client advertises
 `workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
 `workspace/executeCommand` results are returned as versioned

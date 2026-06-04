@@ -284,8 +284,11 @@ impl ArcweftLspSession {
 
     fn code_actions(&self, params: &CodeActionParams) -> Option<CodeActionResponse> {
         let document = self.document_for_params(&params.text_document.uri)?;
-        let analysis =
-            DocumentAnalysis::analyze(document.text(), document.line_index().position_encoding());
+        let analysis = DocumentAnalysis::analyze(
+            document.text(),
+            document.line_index().position_encoding(),
+            self.profile_for_uri(document.uri()),
+        );
         let actions = features::actions::actions(&params.text_document.uri, document, &analysis)
             .into_iter()
             .map(|mut action| {
