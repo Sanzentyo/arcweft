@@ -613,8 +613,11 @@ thresholds are changed. The same report also includes typed
 `recommendations` per operation/shape. A recommendation records the selected
 mode, selected capacity, CPU median, selected median, speedup, and reason
 (`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
-`no_measured_web_gpu_case`). Auto cases are reported as policy observations and
-are not treated as independent candidate modes for choosing the fastest backend.
+`no_measured_web_gpu_case`). When the same op/shape/mode appears in repeated
+rounds, recommendation selection uses the mode's median-of-medians rather than
+the fastest single case, so low outlier rounds do not drive backend policy
+calibration. Auto cases are reported as policy observations and are not treated
+as independent candidate modes for choosing the fastest backend.
 When WebGPU limits are available, the same recommendation also records the
 runtime policy mode, policy capacity, policy reason, and whether the policy
 matches the measured winner. This gives browser-side `Auto` threshold tuning a
@@ -709,22 +712,25 @@ wrapper. The remaining tuning target is therefore policy calibration and bench
 harness stability, not another compatibility path around the adapter.
 
 The stability preset adds six repeated rounds of the same `256x256x256` matmul
-isolation set and rotates mode order in each round. A local path-free run
-recorded 36 measured cases, no skips, and no correctness failures. Median of
-per-round medians and spread ratios were:
+isolation set and rotates mode order in each round. A local path-free run after
+switching recommendations to median-of-medians recorded 36 measured cases, no
+skips, and no correctness failures. Median of per-round medians and spread
+ratios were:
 
 | Mode | Rounds | Median-of-medians ms | Min ms | Max ms | Spread ratio |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `web_gpu_prepared_capacity_resident_pipelined` | 6 | 0.73625 | 0.50875 | 0.90000 | 1.77x |
-| `auto_resident_direct_pipelined` | 6 | 0.72125 | 0.57375 | 0.88625 | 1.54x |
-| `web_gpu_prepared_resident_pipelined` | 6 | 0.86000 | 0.77000 | 1.08250 | 1.41x |
-| `auto_resident_pipelined` | 6 | 0.88125 | 0.62125 | 1.27125 | 2.05x |
-| `auto_pipelined` | 6 | 1.16375 | 0.76125 | 1.37875 | 1.81x |
-| `cpu_wasm` | 6 | 7.19000 | 7.03500 | 7.47500 | 1.06x |
+| `web_gpu_prepared_resident_pipelined` | 6 | 0.70750 | 0.65125 | 0.74250 | 1.14x |
+| `auto_resident_direct_pipelined` | 6 | 0.76125 | 0.71750 | 0.90875 | 1.27x |
+| `auto_resident_pipelined` | 6 | 0.80250 | 0.67625 | 0.84625 | 1.25x |
+| `web_gpu_prepared_capacity_resident_pipelined` | 6 | 0.82000 | 0.62500 | 1.17625 | 1.88x |
+| `auto_pipelined` | 6 | 1.18750 | 1.05375 | 1.21250 | 1.15x |
+| `cpu_wasm` | 6 | 7.36500 | 7.20500 | 7.67000 | 1.06x |
 
 This confirms that browser WebGPU `256x256x256` matmul is consistently faster
-than CPU Wasm, but also that individual browser GPU samples can vary by more
-than 1.5x across rounds. Browser-side Auto policy changes should therefore be
+than CPU Wasm. Recommendations now choose the measured backend by
+median-of-medians, which selected exact prepared resident pipelining at 10.41x
+CPU speedup in this run. Individual browser GPU samples can still vary by more
+than 1.5x across rounds, so browser-side Auto policy changes should be
 calibrated against repeated stability summaries, not one fixed-order perf run.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference

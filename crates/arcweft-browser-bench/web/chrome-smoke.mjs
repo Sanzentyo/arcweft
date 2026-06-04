@@ -263,9 +263,77 @@ function summarizeStability(report) {
 }
 
 function summarizeSpeedups(report) {
+  const stabilityRows = summarizeStabilitySpeedups(report);
+  if (stabilityRows.length > 0) {
+    return stabilityRows;
+  }
+  return summarizeCaseSpeedups(report);
+}
+
+function summarizeStabilitySpeedups(report) {
+  const groups = new Map();
+  for (const entry of report.stability ?? []) {
+    if (
+      entry.measured_rounds <= 1 ||
+      typeof entry.median_of_medians_ms !== "number" ||
+      entry.median_of_medians_ms === 0
+    ) {
+      continue;
+    }
+    const key = shapeKey(entry.op, entry.shape);
+    if (!groups.has(key)) {
+      groups.set(key, {});
+    }
+    groups.get(key)[entry.mode] = entry;
+  }
+  const rows = [];
+  for (const [key, modes] of groups) {
+    const cpu = modes.cpu_wasm;
+    if (!cpu || typeof cpu.median_of_medians_ms !== "number") {
+      continue;
+    }
+    for (const entry of Object.values(modes)) {
+      if (
+        entry.mode === "cpu_wasm" ||
+        typeof entry.median_of_medians_ms !== "number" ||
+        entry.median_of_medians_ms === 0
+      ) {
+        continue;
+      }
+      const representative = representativeCase(
+        report,
+        entry.op,
+        entry.shape,
+        entry.mode,
+      );
+      rows.push({
+        case: key,
+        mode: entry.mode,
+        cpu_ms: cpu.median_of_medians_ms,
+        gpu_ms: entry.median_of_medians_ms,
+        speedup: cpu.median_of_medians_ms / entry.median_of_medians_ms,
+        effective_gflops:
+          representative?.estimated_flops && entry.median_of_medians_ms > 0
+            ? representative.estimated_flops / (entry.median_of_medians_ms * 1_000_000)
+            : null,
+        submit_ms: representative?.submit_median_ms ?? null,
+        readback_ms: representative?.readback_median_ms ?? null,
+        submit_share: representative?.submit_median_share ?? null,
+        readback_share: representative?.readback_median_share ?? null,
+        workgroups: representative?.workgroups ?? null,
+        estimated_flops: representative?.estimated_flops ?? null,
+        rounds: entry.measured_rounds,
+        spread_ratio: entry.spread_ratio,
+      });
+    }
+  }
+  return rows.sort((lhs, rhs) => rhs.speedup - lhs.speedup);
+}
+
+function summarizeCaseSpeedups(report) {
   const groups = new Map();
   for (const entry of report.cases) {
-    const key = caseKey(entry);
+    const key = shapeKey(entry.op, entry.shape);
     if (!groups.has(key)) {
       groups.set(key, {});
     }
@@ -304,12 +372,21 @@ function summarizeSpeedups(report) {
   return rows.sort((lhs, rhs) => rhs.speedup - lhs.speedup);
 }
 
-function caseKey(entry) {
-  if (entry.shape.len !== undefined) {
-    return `${entry.op}_len${entry.shape.len.len}`;
+function representativeCase(report, op, shape, mode) {
+  return report.cases.find(
+    (entry) =>
+      entry.op === op &&
+      entry.mode === mode &&
+      JSON.stringify(entry.shape) === JSON.stringify(shape),
+  );
+}
+
+function shapeKey(op, shape) {
+  if (shape.len !== undefined) {
+    return `${op}_len${shape.len.len}`;
   }
-  const shape = entry.shape.matmul;
-  return `${entry.op}_m${shape.rows}_k${shape.shared}_n${shape.cols}`;
+  const matmul = shape.matmul;
+  return `${op}_m${matmul.rows}_k${matmul.shared}_n${matmul.cols}`;
 }
 
 function waitForHttp(url, timeoutMs) {
