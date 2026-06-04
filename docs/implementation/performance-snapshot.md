@@ -600,6 +600,15 @@ The measured browser crossover is currently matmul-oriented: `128x128x128` and
 larger dense `f32` matmul can benefit from pipelined resident WebGPU, while
 simple elementwise add remains CPU-preferred when the result must be read back
 to Wasm each iteration.
+`arcweft-runtime-accelerator::math::browser_webgpu_policy` now owns the
+target-independent browser Auto policy used to preserve that measured
+crossover in code. Its default policy keeps elementwise `f32` on CPU Wasm,
+selects exact prepared resident pipelined WebGPU for `128x128x128` matmul and
+larger, and selects capacity-prepared pipelined WebGPU for `256x256x256`
+matmul and larger when storage limits allow it. The browser benchmark harness
+uses the same typed capacity growth policy for overprovisioned prepared cases,
+so measured `capacity` fields and runtime Auto decisions do not drift through
+duplicated arithmetic.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

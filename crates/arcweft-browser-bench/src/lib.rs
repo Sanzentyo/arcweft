@@ -325,7 +325,8 @@ mod wasm {
     };
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
-        BrowserMatmulCapacity, BrowserWebGpuError, BrowserWebGpuMathContext, BrowserWebGpuMathStats,
+        BrowserMatmulCapacity, BrowserWebGpuCapacityGrowth, BrowserWebGpuError,
+        BrowserWebGpuMathContext, BrowserWebGpuMathStats,
     };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
@@ -1057,8 +1058,7 @@ mod wasm {
     }
 
     fn overcapacity_len(len: usize) -> usize {
-        let doubled = len.saturating_mul(2);
-        if doubled == 0 { 1 } else { doubled }
+        BrowserWebGpuCapacityGrowth::Double.grow(len)
     }
 
     fn skipped_case(mut case: BrowserMathBenchCase, reason: &str) -> BrowserMathBenchCase {

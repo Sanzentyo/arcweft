@@ -2371,6 +2371,219 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 ";
 }
 
+/// Target-independent Browser WebGPU math auto-selection policy.
+///
+/// The policy is separated from the wasm adapter so benchmark and native tests
+/// can validate browser Auto thresholds without linking browser-only APIs.
+pub mod browser_webgpu_policy {
+    /// Browser WebGPU limits captured without host paths.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct BrowserWebGpuLimits {
+        pub max_storage_buffer_binding_size: u64,
+        pub max_buffer_size: u64,
+        pub max_compute_invocations_per_workgroup: u32,
+        pub max_compute_workgroups_per_dimension: u32,
+    }
+
+    /// Capacity for prepared browser `f32` matrix multiplication.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct BrowserMatmulCapacity {
+        pub rows: usize,
+        pub shared: usize,
+        pub cols: usize,
+    }
+
+    /// Browser-side math operation family used by the async WebGPU policy.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum BrowserWebGpuMathOp {
+        MatmulF32,
+        ElementwiseF32,
+    }
+
+    /// Runtime execution mode selected for a browser math operation.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum BrowserWebGpuMathMode {
+        CpuWasm,
+        WebGpuPreparedResidentPipelined,
+        WebGpuPreparedCapacityResidentPipelined,
+    }
+
+    /// Reason recorded when browser-side Auto chooses a math execution mode.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum BrowserWebGpuMathAutoReason {
+        MatmulPreparedResidentPipelined,
+        MatmulPreparedCapacityResidentPipelined,
+        MatmulCpuDefault,
+        ElementwisePreparedResidentPipelined,
+        ElementwiseCpuReadbackDominated,
+        StorageLimit,
+    }
+
+    /// Selection returned by [`BrowserWebGpuMathAutoPolicy`].
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct BrowserWebGpuMathSelection {
+        mode: BrowserWebGpuMathMode,
+        reason: BrowserWebGpuMathAutoReason,
+        capacity: Option<BrowserMatmulCapacity>,
+    }
+
+    impl BrowserWebGpuMathSelection {
+        pub const fn mode(self) -> BrowserWebGpuMathMode {
+            self.mode
+        }
+
+        pub const fn reason(self) -> BrowserWebGpuMathAutoReason {
+            self.reason
+        }
+
+        pub const fn capacity(self) -> Option<BrowserMatmulCapacity> {
+            self.capacity
+        }
+    }
+
+    /// Browser WebGPU Auto policy derived from path-free benchmark evidence.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct BrowserWebGpuMathAutoPolicy {
+        pub matmul_exact_min_elements: usize,
+        pub matmul_capacity_min_elements: usize,
+        pub elementwise_gpu_min_elements: usize,
+        pub capacity_growth: BrowserWebGpuCapacityGrowth,
+    }
+
+    /// Capacity growth policy for prepared browser buffers.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum BrowserWebGpuCapacityGrowth {
+        Exact,
+        PowerOfTwo,
+        Double,
+    }
+
+    impl Default for BrowserWebGpuMathAutoPolicy {
+        fn default() -> Self {
+            Self {
+                matmul_exact_min_elements: 128 * 128 * 128,
+                matmul_capacity_min_elements: 256 * 256 * 256,
+                elementwise_gpu_min_elements: usize::MAX,
+                capacity_growth: BrowserWebGpuCapacityGrowth::Double,
+            }
+        }
+    }
+
+    impl BrowserWebGpuMathAutoPolicy {
+        pub fn select_matmul_f32(
+            self,
+            rows: usize,
+            shared: usize,
+            cols: usize,
+            limits: BrowserWebGpuLimits,
+        ) -> BrowserWebGpuMathSelection {
+            let work = rows.saturating_mul(shared).saturating_mul(cols);
+            if work >= self.matmul_capacity_min_elements {
+                let capacity = BrowserMatmulCapacity {
+                    rows: self.capacity_growth.grow(rows),
+                    shared: self.capacity_growth.grow(shared),
+                    cols: self.capacity_growth.grow(cols),
+                };
+                if matmul_capacity_fits(capacity, limits) {
+                    return BrowserWebGpuMathSelection {
+                        mode: BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined,
+                        reason:
+                            BrowserWebGpuMathAutoReason::MatmulPreparedCapacityResidentPipelined,
+                        capacity: Some(capacity),
+                    };
+                }
+                return BrowserWebGpuMathSelection {
+                    mode: BrowserWebGpuMathMode::CpuWasm,
+                    reason: BrowserWebGpuMathAutoReason::StorageLimit,
+                    capacity: None,
+                };
+            }
+            if work >= self.matmul_exact_min_elements {
+                let capacity = BrowserMatmulCapacity { rows, shared, cols };
+                if matmul_capacity_fits(capacity, limits) {
+                    return BrowserWebGpuMathSelection {
+                        mode: BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined,
+                        reason: BrowserWebGpuMathAutoReason::MatmulPreparedResidentPipelined,
+                        capacity: Some(capacity),
+                    };
+                }
+                return BrowserWebGpuMathSelection {
+                    mode: BrowserWebGpuMathMode::CpuWasm,
+                    reason: BrowserWebGpuMathAutoReason::StorageLimit,
+                    capacity: None,
+                };
+            }
+            BrowserWebGpuMathSelection {
+                mode: BrowserWebGpuMathMode::CpuWasm,
+                reason: BrowserWebGpuMathAutoReason::MatmulCpuDefault,
+                capacity: None,
+            }
+        }
+
+        pub fn select_elementwise_f32(
+            self,
+            len: usize,
+            limits: BrowserWebGpuLimits,
+        ) -> BrowserWebGpuMathSelection {
+            if len >= self.elementwise_gpu_min_elements {
+                if f32_storage_fits(len, limits) {
+                    return BrowserWebGpuMathSelection {
+                        mode: BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined,
+                        reason: BrowserWebGpuMathAutoReason::ElementwisePreparedResidentPipelined,
+                        capacity: None,
+                    };
+                }
+                return BrowserWebGpuMathSelection {
+                    mode: BrowserWebGpuMathMode::CpuWasm,
+                    reason: BrowserWebGpuMathAutoReason::StorageLimit,
+                    capacity: None,
+                };
+            }
+            BrowserWebGpuMathSelection {
+                mode: BrowserWebGpuMathMode::CpuWasm,
+                reason: BrowserWebGpuMathAutoReason::ElementwiseCpuReadbackDominated,
+                capacity: None,
+            }
+        }
+    }
+
+    impl BrowserWebGpuCapacityGrowth {
+        pub fn grow(self, value: usize) -> usize {
+            match self {
+                Self::Exact => value.max(1),
+                Self::PowerOfTwo => value.checked_next_power_of_two().unwrap_or(value).max(1),
+                Self::Double => value.saturating_mul(2).max(1),
+            }
+        }
+    }
+
+    fn f32_storage_fits(len: usize, limits: BrowserWebGpuLimits) -> bool {
+        checked_f32_bytes(len).is_some_and(|byte_len| {
+            byte_len <= limits.max_buffer_size && byte_len <= limits.max_storage_buffer_binding_size
+        })
+    }
+
+    fn matmul_capacity_fits(capacity: BrowserMatmulCapacity, limits: BrowserWebGpuLimits) -> bool {
+        let Some(lhs_len) = capacity.rows.checked_mul(capacity.shared) else {
+            return false;
+        };
+        let Some(rhs_len) = capacity.shared.checked_mul(capacity.cols) else {
+            return false;
+        };
+        let Some(out_len) = capacity.rows.checked_mul(capacity.cols) else {
+            return false;
+        };
+        f32_storage_fits(lhs_len, limits)
+            && f32_storage_fits(rhs_len, limits)
+            && f32_storage_fits(out_len, limits)
+    }
+
+    fn checked_f32_bytes(len: usize) -> Option<u64> {
+        len.checked_mul(std::mem::size_of::<f32>())
+            .and_then(|bytes| u64::try_from(bytes).ok())
+    }
+}
+
 /// Browser WebGPU math adapter for `wasm32` players.
 ///
 /// Browser WebGPU is asynchronous, so this adapter intentionally does not
@@ -2379,6 +2592,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 /// dense values back into the VM.
 #[cfg(all(feature = "math-wgpu", target_arch = "wasm32"))]
 pub mod browser_webgpu {
+    pub use super::browser_webgpu_policy::{
+        BrowserMatmulCapacity, BrowserWebGpuCapacityGrowth, BrowserWebGpuLimits,
+        BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathAutoReason, BrowserWebGpuMathMode,
+        BrowserWebGpuMathOp, BrowserWebGpuMathSelection,
+    };
     use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathError};
     use bytemuck::{Pod, Zeroable};
     use futures_channel::oneshot;
@@ -2404,15 +2622,6 @@ pub mod browser_webgpu {
         MapFailed,
         CorrectnessMismatch,
         AutoCpuThreshold,
-    }
-
-    /// Browser WebGPU limits captured without host paths.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct BrowserWebGpuLimits {
-        pub max_storage_buffer_binding_size: u64,
-        pub max_buffer_size: u64,
-        pub max_compute_invocations_per_workgroup: u32,
-        pub max_compute_workgroups_per_dimension: u32,
     }
 
     /// Browser WebGPU feature-detection result.
@@ -2507,14 +2716,6 @@ pub mod browser_webgpu {
         x_threads: u32,
         _pad1: u32,
         _pad2: u32,
-    }
-
-    /// Capacity for prepared browser `f32` matrix multiplication.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct BrowserMatmulCapacity {
-        pub rows: usize,
-        pub shared: usize,
-        pub cols: usize,
     }
 
     /// Prepared browser buffers for repeated `f32` elementwise add.
@@ -4203,5 +4404,124 @@ mod tests {
             accelerator.stats().bytes_downloaded,
             std::mem::size_of_val(lhs.values())
         );
+    }
+
+    #[test]
+    fn browser_webgpu_auto_policy_selects_matmul_modes_by_work_size() {
+        use browser_webgpu_policy::{
+            BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathAutoReason, BrowserWebGpuMathMode,
+        };
+
+        let policy = BrowserWebGpuMathAutoPolicy::default();
+        let limits = large_browser_webgpu_limits();
+
+        let small = policy.select_matmul_f32(64, 64, 64, limits);
+        assert_eq!(small.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(
+            small.reason(),
+            BrowserWebGpuMathAutoReason::MatmulCpuDefault
+        );
+        assert_eq!(small.capacity(), None);
+
+        let exact = policy.select_matmul_f32(128, 128, 128, limits);
+        assert_eq!(
+            exact.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+        );
+        assert_eq!(
+            exact.reason(),
+            BrowserWebGpuMathAutoReason::MatmulPreparedResidentPipelined
+        );
+        let exact_capacity = exact
+            .capacity()
+            .expect("exact prepared matmul records exact capacity");
+        assert_eq!(exact_capacity.rows, 128);
+        assert_eq!(exact_capacity.shared, 128);
+        assert_eq!(exact_capacity.cols, 128);
+
+        let grown = policy.select_matmul_f32(256, 256, 256, limits);
+        assert_eq!(
+            grown.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined
+        );
+        assert_eq!(
+            grown.reason(),
+            BrowserWebGpuMathAutoReason::MatmulPreparedCapacityResidentPipelined
+        );
+        let grown_capacity = grown
+            .capacity()
+            .expect("capacity-prepared matmul records grown capacity");
+        assert_eq!(grown_capacity.rows, 512);
+        assert_eq!(grown_capacity.shared, 512);
+        assert_eq!(grown_capacity.cols, 512);
+    }
+
+    #[test]
+    fn browser_webgpu_auto_policy_keeps_elementwise_cpu_by_default() {
+        use browser_webgpu_policy::{
+            BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathAutoReason, BrowserWebGpuMathMode,
+        };
+
+        let policy = BrowserWebGpuMathAutoPolicy::default();
+        let limits = large_browser_webgpu_limits();
+
+        let selection = policy.select_elementwise_f32(4 * 1024 * 1024, limits);
+        assert_eq!(selection.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(
+            selection.reason(),
+            BrowserWebGpuMathAutoReason::ElementwiseCpuReadbackDominated
+        );
+
+        let gpu_policy = BrowserWebGpuMathAutoPolicy {
+            elementwise_gpu_min_elements: 1024,
+            ..BrowserWebGpuMathAutoPolicy::default()
+        };
+        let gpu_selection = gpu_policy.select_elementwise_f32(1024, limits);
+        assert_eq!(
+            gpu_selection.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+        );
+        assert_eq!(
+            gpu_selection.reason(),
+            BrowserWebGpuMathAutoReason::ElementwisePreparedResidentPipelined
+        );
+    }
+
+    #[test]
+    fn browser_webgpu_auto_policy_falls_back_on_storage_limits() {
+        use browser_webgpu_policy::{
+            BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathAutoReason, BrowserWebGpuMathMode,
+        };
+
+        let limits = browser_webgpu_policy::BrowserWebGpuLimits {
+            max_storage_buffer_binding_size: 1024,
+            max_buffer_size: 1024,
+            max_compute_invocations_per_workgroup: 256,
+            max_compute_workgroups_per_dimension: 65_535,
+        };
+        let policy = BrowserWebGpuMathAutoPolicy {
+            elementwise_gpu_min_elements: 1024,
+            ..BrowserWebGpuMathAutoPolicy::default()
+        };
+
+        let matmul = policy.select_matmul_f32(256, 256, 256, limits);
+        assert_eq!(matmul.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(matmul.reason(), BrowserWebGpuMathAutoReason::StorageLimit);
+
+        let elementwise = policy.select_elementwise_f32(1024, limits);
+        assert_eq!(elementwise.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(
+            elementwise.reason(),
+            BrowserWebGpuMathAutoReason::StorageLimit
+        );
+    }
+
+    const fn large_browser_webgpu_limits() -> browser_webgpu_policy::BrowserWebGpuLimits {
+        browser_webgpu_policy::BrowserWebGpuLimits {
+            max_storage_buffer_binding_size: 1_u64 << 34,
+            max_buffer_size: 1_u64 << 34,
+            max_compute_invocations_per_workgroup: 256,
+            max_compute_workgroups_per_dimension: 65_535,
+        }
     }
 }
