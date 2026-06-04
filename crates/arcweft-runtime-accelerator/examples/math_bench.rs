@@ -747,4 +747,30 @@ mod tests {
         assert!(!json.contains(&["/", "home", "/"].concat()));
         assert!(!json.contains("/tmp/"));
     }
+
+    #[test]
+    fn parse_reuse_update_inputs_marks_reuse_and_report_field() {
+        let args = [
+            "--backend".to_owned(),
+            "wgpu".to_owned(),
+            "--op".to_owned(),
+            "matmul".to_owned(),
+            "--reuse-update-inputs".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::skipped_or_failed(
+                RuntimeMathBackend::Wgpu,
+                "adapter unavailable".to_owned(),
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(options.reuse);
+        assert!(options.reuse_update_inputs);
+        assert!(json.contains("\"reuse\":true"));
+        assert!(json.contains("\"reuse_update_inputs\":true"));
+    }
 }

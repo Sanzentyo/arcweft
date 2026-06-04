@@ -641,6 +641,7 @@ just bench-026
 arcw bench tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2,3.25,4.5 --value rhs=matrix/f64/2x2:5,6.5,7,8.25 --json
 arcw bench tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw --math-backend ndarray --value lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=tensor/f64/2x2:5,6.25,7.5,8.75 --json
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
+just bench-math-matmul-reuse-update
 just bench-math-matrix-add-reuse
 just bench-math-matrix-add-reuse-update
 just bench-math-tensor-add-reuse
@@ -666,6 +667,7 @@ Representative release results on the local machine:
 | 128x128 matmul_f32 | ndarray | measured | 98500 | CPU backend with wgpu feature enabled |
 | 128x128 matmul_f32 | wgpu | measured | 217800 | upload/download dominates |
 | 128x128 matmul_f32 | wgpu prepared | measured | 135800 | 4 buffer creations, 16 buffer reuse hits, 3 staging reuse hits |
+| 128x128 matmul_f32 | wgpu prepared update | measured | 283000 | `--reuse-update-inputs`, one initial buffer allocation, four upload+dispatch passes, `gpu_buffer_reuse_hits = 28` |
 | 128x128 matmul_f32 | auto | measured | 43700 | selected ndarray |
 | 256x256 matmul_f32 | ndarray | measured | 404400 | CPU backend |
 | 256x256 matmul_f32 | wgpu | measured | 444300 | still not consistently faster |

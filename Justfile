@@ -152,6 +152,9 @@ bench-math-glam:
 bench-math-wgpu:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul --size 512 --iterations 3 --warmup 1
 
+bench-math-matmul-reuse-update:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
+
 bench-math-matrix-add:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matrix-add --size 4096 --iterations 5 --warmup 1
 
