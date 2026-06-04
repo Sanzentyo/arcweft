@@ -636,24 +636,30 @@ delayed readback.
 Submitted work can also be read directly into a caller-owned `&mut [f32]` with
 typed output metadata, avoiding the extra dense-value construction and `Vec`
 copy when a browser flow or benchmark already owns the output buffer.
+For repeated resident work, `prepare_resident` returns either the CPU policy
+selection or a WebGPU prepared resident handle with inputs already uploaded.
+Browser hosts can then call `submit_prepared` repeatedly without paying upload
+cost for every submission.
 This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
 
-Latest path-free browser perf run after the split submission API:
+Latest path-free browser perf run after direct readback and resident prepared
+Auto submission:
 
 | Case | Mode | CPU median ms | Mode median ms | Speedup | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 6.75 | 1.05375 | 6.41x | policy-selected WebGPU, submit median 0.215 ms, readback median 0.41 ms |
-| `matmul_f32_m256_k256_n256` | direct auto dispatch | 6.75 | 4.405 | 1.53x | value-returning path still waits for readback per call |
-| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 6.75 | 1.0375 | 6.51x | current best measured manual backend |
-| `matmul_f32_m128_k128_n128` | auto pipelined direct readback | 0.815 | 0.5225 | 1.56x | policy-selected WebGPU with split submission/readback |
-| `tensor_add_f32_len65536` | auto pipelined direct readback | 0.06 | 0.0425 | 1.41x | policy selected CPU immediate work in the same split API |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 7.17 | 0.52875 | 13.56x | current best measured manual backend, submit median 0.02 ms, readback median 0.31 ms |
+| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 7.17 | 0.99125 | 7.23x | policy-selected WebGPU, submit median 0.13 ms, readback median 0.38 ms |
+| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 7.17 | 1.2525 | 5.72x | manual capacity backend, submit median 0.065 ms, readback median 0.35 ms |
+| `matmul_f32_m256_k256_n256` | auto resident pipelined | 7.17 | 1.43 | 5.01x | WebGPU prepared resident handle, submit median 0.055 ms, readback median 0.49 ms |
+| `matmul_f32_m256_k256_n256` | direct auto dispatch | 7.17 | 3.37 | 2.13x | value-returning path still waits for readback per call |
+| `tensor_add_f32_len65536` | auto resident pipelined | 0.065 | 0.045 | 1.44x | policy selected CPU; measured via real per-iteration auto dispatch, not response reuse |
 
-The `auto_pipelined` benchmark mode is a policy observation, not a backend
-recommendation candidate. Manual prepared modes remain the source for backend
-recommendations, while auto modes show the overhead and scheduling behavior
-that natural browser-side calls see.
+The `auto_pipelined` and `auto_resident_pipelined` benchmark modes are policy
+observations, not backend recommendation candidates. Manual prepared modes
+remain the source for backend recommendations, while auto modes show the
+overhead and scheduling behavior that natural browser-side calls see.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

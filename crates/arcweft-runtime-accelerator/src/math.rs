@@ -2791,6 +2791,36 @@ pub mod browser_webgpu {
         Submitted(BrowserWebGpuSubmittedMath),
     }
 
+    /// Result of preparing a browser math request for resident repeated
+    /// submission.
+    pub enum BrowserWebGpuPreparedMathDispatch {
+        Cpu(BrowserWebGpuMathSelection),
+        Prepared(BrowserWebGpuPreparedMath),
+    }
+
+    /// Browser GPU resident math work with inputs already uploaded.
+    pub enum BrowserWebGpuPreparedMath {
+        MatmulF32 {
+            prepared: BrowserPreparedMatmulF32,
+            rows: usize,
+            cols: usize,
+            selection: BrowserWebGpuMathSelection,
+        },
+        MatrixAddF32 {
+            prepared: BrowserPreparedElementwiseF32,
+            rows: usize,
+            cols: usize,
+            len: usize,
+            selection: BrowserWebGpuMathSelection,
+        },
+        TensorAddF32 {
+            prepared: BrowserPreparedElementwiseF32,
+            dims: Vec<usize>,
+            len: usize,
+            selection: BrowserWebGpuMathSelection,
+        },
+    }
+
     /// Submitted browser math work with typed output reconstruction metadata.
     pub enum BrowserWebGpuSubmittedMath {
         MatrixF32 {
@@ -2926,6 +2956,40 @@ pub mod browser_webgpu {
         }
     }
 
+    impl BrowserWebGpuPreparedMathDispatch {
+        pub const fn selection(&self) -> BrowserWebGpuMathSelection {
+            match self {
+                Self::Cpu(selection) => *selection,
+                Self::Prepared(prepared) => prepared.selection(),
+            }
+        }
+
+        pub const fn is_prepared(&self) -> bool {
+            matches!(self, Self::Prepared(_))
+        }
+    }
+
+    impl BrowserWebGpuPreparedMath {
+        pub const fn selection(&self) -> BrowserWebGpuMathSelection {
+            match self {
+                Self::MatmulF32 { selection, .. }
+                | Self::MatrixAddF32 { selection, .. }
+                | Self::TensorAddF32 { selection, .. } => *selection,
+            }
+        }
+
+        pub fn len(&self) -> usize {
+            match self {
+                Self::MatmulF32 { rows, cols, .. } => rows * cols,
+                Self::MatrixAddF32 { len, .. } | Self::TensorAddF32 { len, .. } => *len,
+            }
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+    }
+
     impl BrowserWebGpuSubmittedMath {
         pub const fn selection(&self) -> BrowserWebGpuMathSelection {
             match self {
@@ -3034,6 +3098,79 @@ pub mod browser_webgpu {
                 }
                 BrowserWebGpuMathRequest::TensorAddF32 { lhs, rhs } => {
                     self.submit_tensor_add_f32(lhs, rhs)
+                }
+            }
+        }
+
+        pub fn prepare_resident(
+            &mut self,
+            request: BrowserWebGpuMathRequest<'_>,
+        ) -> Result<BrowserWebGpuPreparedMathDispatch, BrowserWebGpuError> {
+            match request {
+                BrowserWebGpuMathRequest::MatmulF32 { lhs, rhs } => {
+                    self.prepare_resident_matmul_f32(lhs, rhs)
+                }
+                BrowserWebGpuMathRequest::MatrixAddF32 { lhs, rhs } => {
+                    self.prepare_resident_matrix_add_f32(lhs, rhs)
+                }
+                BrowserWebGpuMathRequest::TensorAddF32 { lhs, rhs } => {
+                    self.prepare_resident_tensor_add_f32(lhs, rhs)
+                }
+            }
+        }
+
+        pub fn submit_prepared(
+            &mut self,
+            prepared: &BrowserWebGpuPreparedMath,
+        ) -> Result<BrowserWebGpuSubmittedMath, BrowserWebGpuError> {
+            match prepared {
+                BrowserWebGpuPreparedMath::MatmulF32 {
+                    prepared,
+                    rows,
+                    cols,
+                    selection,
+                } => {
+                    let submitted = self
+                        .context
+                        .submit_resident_matmul_f32(prepared, *rows, *cols)?;
+                    Ok(BrowserWebGpuSubmittedMath::MatrixF32 {
+                        submitted,
+                        rows: *rows,
+                        cols: *cols,
+                        selection: *selection,
+                    })
+                }
+                BrowserWebGpuPreparedMath::MatrixAddF32 {
+                    prepared,
+                    rows,
+                    cols,
+                    len,
+                    selection,
+                } => {
+                    let submitted = self
+                        .context
+                        .submit_resident_elementwise_f32(prepared, *len)?;
+                    Ok(BrowserWebGpuSubmittedMath::MatrixF32 {
+                        submitted,
+                        rows: *rows,
+                        cols: *cols,
+                        selection: *selection,
+                    })
+                }
+                BrowserWebGpuPreparedMath::TensorAddF32 {
+                    prepared,
+                    dims,
+                    len,
+                    selection,
+                } => {
+                    let submitted = self
+                        .context
+                        .submit_resident_elementwise_f32(prepared, *len)?;
+                    Ok(BrowserWebGpuSubmittedMath::TensorF32 {
+                        submitted,
+                        dims: dims.clone(),
+                        selection: *selection,
+                    })
                 }
             }
         }
@@ -3177,6 +3314,57 @@ pub mod browser_webgpu {
             }
         }
 
+        fn prepare_resident_matmul_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<BrowserWebGpuPreparedMathDispatch, BrowserWebGpuError> {
+            if lhs.cols() != rhs.rows() {
+                return Err(RuntimeMathError::MatrixShapeMismatch {
+                    lhs: lhs.shape(),
+                    rhs: rhs.shape(),
+                    op: "matmul",
+                }
+                .into());
+            }
+            let selection = self.policy.select_matmul_f32(
+                lhs.rows(),
+                lhs.cols(),
+                rhs.cols(),
+                self.context.limits,
+            );
+            match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => {
+                    Ok(BrowserWebGpuPreparedMathDispatch::Cpu(selection))
+                }
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let capacity = selection.capacity().unwrap_or(BrowserMatmulCapacity {
+                        rows: lhs.rows(),
+                        shared: lhs.cols(),
+                        cols: rhs.cols(),
+                    });
+                    let prepared = self.context.prepare_matmul_f32(capacity)?;
+                    self.context.upload_prepared_matmul_f32(
+                        &prepared,
+                        lhs.values(),
+                        rhs.values(),
+                        lhs.rows(),
+                        lhs.cols(),
+                        rhs.cols(),
+                    )?;
+                    Ok(BrowserWebGpuPreparedMathDispatch::Prepared(
+                        BrowserWebGpuPreparedMath::MatmulF32 {
+                            prepared,
+                            rows: lhs.rows(),
+                            cols: rhs.cols(),
+                            selection,
+                        },
+                    ))
+                }
+            }
+        }
+
         fn submit_matrix_add_f32(
             &mut self,
             lhs: &DenseMatrixF32,
@@ -3216,6 +3404,47 @@ pub mod browser_webgpu {
             }
         }
 
+        fn prepare_resident_matrix_add_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<BrowserWebGpuPreparedMathDispatch, BrowserWebGpuError> {
+            if lhs.shape() != rhs.shape() {
+                return Err(RuntimeMathError::MatrixShapeMismatch {
+                    lhs: lhs.shape(),
+                    rhs: rhs.shape(),
+                    op: "add",
+                }
+                .into());
+            }
+            let selection = self
+                .policy
+                .select_elementwise_f32(lhs.values().len(), self.context.limits);
+            match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => {
+                    Ok(BrowserWebGpuPreparedMathDispatch::Cpu(selection))
+                }
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let prepared = self.context.prepare_elementwise_f32(lhs.values().len())?;
+                    self.context.upload_prepared_elementwise_f32(
+                        &prepared,
+                        lhs.values(),
+                        rhs.values(),
+                    )?;
+                    Ok(BrowserWebGpuPreparedMathDispatch::Prepared(
+                        BrowserWebGpuPreparedMath::MatrixAddF32 {
+                            prepared,
+                            rows: lhs.rows(),
+                            cols: lhs.cols(),
+                            len: lhs.values().len(),
+                            selection,
+                        },
+                    ))
+                }
+            }
+        }
+
         fn submit_tensor_add_f32(
             &mut self,
             lhs: &DenseTensorF32,
@@ -3247,6 +3476,46 @@ pub mod browser_webgpu {
                         BrowserWebGpuSubmittedMath::TensorF32 {
                             submitted,
                             dims: lhs.shape().dims().to_vec(),
+                            selection,
+                        },
+                    ))
+                }
+            }
+        }
+
+        fn prepare_resident_tensor_add_f32(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+        ) -> Result<BrowserWebGpuPreparedMathDispatch, BrowserWebGpuError> {
+            if lhs.shape() != rhs.shape() {
+                return Err(RuntimeMathError::TensorShapeMismatch {
+                    lhs: lhs.shape().clone(),
+                    rhs: rhs.shape().clone(),
+                    op: "add",
+                }
+                .into());
+            }
+            let selection = self
+                .policy
+                .select_elementwise_f32(lhs.values().len(), self.context.limits);
+            match selection.mode() {
+                BrowserWebGpuMathMode::CpuWasm => {
+                    Ok(BrowserWebGpuPreparedMathDispatch::Cpu(selection))
+                }
+                BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+                | BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined => {
+                    let prepared = self.context.prepare_elementwise_f32(lhs.values().len())?;
+                    self.context.upload_prepared_elementwise_f32(
+                        &prepared,
+                        lhs.values(),
+                        rhs.values(),
+                    )?;
+                    Ok(BrowserWebGpuPreparedMathDispatch::Prepared(
+                        BrowserWebGpuPreparedMath::TensorAddF32 {
+                            prepared,
+                            dims: lhs.shape().dims().to_vec(),
+                            len: lhs.values().len(),
                             selection,
                         },
                     ))

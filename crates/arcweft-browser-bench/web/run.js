@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
   modes: [
     "auto",
     "auto_pipelined",
+    "auto_resident_pipelined",
     "cpu_wasm",
     "web_gpu_one_shot",
     "web_gpu_prepared_upload",
@@ -42,6 +43,7 @@ const PERF_CONFIG = {
   modes: [
     "auto",
     "auto_pipelined",
+    "auto_resident_pipelined",
     "cpu_wasm",
     "web_gpu_prepared_upload",
     "web_gpu_prepared_resident",
