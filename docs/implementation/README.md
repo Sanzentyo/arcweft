@@ -61,7 +61,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   runner does not implement. `arcweft-runtime-host` owns native and browser-web
   capability presets plus a typed conformance report so transports can
   distinguish native virtual-file support from browser-only host capabilities
-  and share the same manifest-vs-runner host-call check. `arcweft-cli` remains
+  and share the same manifest-vs-runner host-call check. `arcweft-lsp` now owns
+  the first actual stdio language-server transport on top of `lsp-server`,
+  while `arcweft-verify-lsp` remains Sans I/O. The transport negotiates LSP
+  position encoding, keeps a FULL-sync open-document cache, publishes syntax /
+  HIR / verifier diagnostics, and routes completion, hover, signature help,
+  inlay hints, and code actions through the helper crates. `arcweft-cli` remains
   both a library and a binary for argv-compatible execution through
   `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic

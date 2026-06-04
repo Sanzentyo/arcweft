@@ -36,6 +36,7 @@ arcweft-runtime-plan
 arcweft-lang-ir
 arcweft-lang-vm
 arcweft-verify-lsp
+arcweft-lsp
 arcweft-lang-jit-cranelift
 arcweft-lang-aot-rust
 arcweft-id
@@ -152,6 +153,7 @@ arcweft-lang-hir
 arcweft-lang-sema
 arcweft-runtime-plan
 arcweft-verify-lsp
+arcweft-lsp
 arcweft-verify
 arcweft-verify-z3
 arcweft-verify-oxiz
@@ -183,7 +185,16 @@ arcweft-launch
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。
 - `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
-- `arcweft-verify-lsp` は transportなしの LSP helper crate とし、`arcweft-verify` report から diagnostics / code actions を作る。
+- `arcweft-verify-lsp` は transportなしの LSP helper crate とし、
+  `arcweft-verify` report から diagnostics / code actions を作る。
+  Source-aware position conversion is exposed through a mapper trait; stdio,
+  client state, file watching, and request dispatch stay outside this crate.
+- `arcweft-lsp` は `lsp-server` based stdio transport crate とし、
+  initialize/shutdown、client capability negotiation、FULL text sync document
+  cache、publish diagnostics、request dispatch、workspace command routing を
+  所有する。Rust metadata generation and profile/adapter file I/O remain
+  build/CLI/adapter responsibilities and are read as resolved metadata by the
+  transport.
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
 - `arcweft-launch` は `arcw.toml` launch profiles を typed data と TOML codec
   として所有する Sans I/O crate とする。ファイル探索、current directory、

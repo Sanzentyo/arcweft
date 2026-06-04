@@ -83,14 +83,27 @@ CLI/LSP は `arcweft-verify` の machine-readable diagnostics を共有する。
 ```
 
 `arcweft-verify-lsp` is a Sans I/O helper crate. It converts verifier reports into
-`lsp-types` diagnostics and code actions. A transport server can wrap this
-crate later without changing verifier semantics.
+`lsp-types` diagnostics and code actions. It does not own stdio, sockets, open
+document state, file watching, request cancellation, or client capability
+negotiation.
+
+`arcweft-lsp` is the transport crate. It uses `lsp-server` with synchronous stdio
+transport and keeps the language-server session, FULL text-document cache,
+client capability negotiation, publish-diagnostics notifications, and request
+dispatch outside the verifier helper. MVP document sync is
+`TextDocumentSyncKind::FULL`; incremental sync and `ropey` remain future work.
 
 It also exposes source-level helpers backed by `arcweft-tooling`: sugar
 expansion actions, relative-ID materialization actions, and inferred-ID inlay
 hints. These helpers return `lsp-types` data only; opening documents, applying
 workspace edits, watching files, and resolving editor capabilities remain
 transport-adapter responsibilities.
+
+Actual LSP ranges must not treat byte offsets as `Position.character` values.
+`arcweft-verify-lsp` exposes `LspPositionMapper`, while `arcweft-lsp` owns a
+source-aware `LineIndex` that maps Arcweft UTF-8 byte spans to the negotiated LSP
+encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
+advertises it through initialize capabilities.
 
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
 consumes an already-resolved adapter manifest containing standard adapter facts,
