@@ -775,19 +775,20 @@ the same `512x512x512` matmul shape. The submit-only mode defers `map_async`
 but still copies the output into a staging buffer for every submitted sample.
 The dispatch-only mode submits resident compute work without per-sample
 GPU-to-staging copies and performs one explicit readback after timing for
-correctness. The chained dispatch-only mode submits `matmul -> add(0)` in one
-resident sequence and reads back only the final add output after timing. A local
-path-free run recorded 24 measured cases, no skips, and no correctness
-failures:
+correctness. The chained dispatch-only mode now uses a prepared
+`matmul -> add(0)` resident plan: the intermediate add bind group is created
+with the plan rather than rebuilt during each measured submit, and only the
+final add output is read back after timing. A local path-free run recorded 24
+measured cases, no skips, and no correctness failures:
 
 | Mode | Rounds | Median-of-medians ms | Submit median ms | Readback median ms | Notes |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `web_gpu_prepared_resident_dispatch_only_pipelined` | 4 | 0.01250 | 0.01500 | n/a | resident compute dispatch only; no per-sample readback copy/map; one explicit correctness readback after timing |
-| `web_gpu_prepared_resident_chained_dispatch_only_pipelined` | 4 | 0.02000 | 0.02500 | n/a | resident `matmul -> add(0)` chain; no intermediate readback; one final correctness readback after timing |
-| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.03500 | 0.03500 | n/a | measured samples submit compute plus staging copy; final map happens after timing |
-| `auto_resident_pipelined` | 4 | 2.29500 | 0.08500 | 1.75500 | natural Auto resident call shape |
-| `web_gpu_prepared_resident_pipelined` | 4 | 2.46500 | 0.10500 | 1.53500 | value-returning benchmark path |
-| `cpu_wasm` | 4 | 63.12500 | n/a | n/a | CPU baseline |
+| `web_gpu_prepared_resident_chained_dispatch_only_pipelined` | 4 | 0.01250 | 0.01000 | n/a | prepared resident `matmul -> add(0)` plan; no intermediate readback or per-submit bind-group rebuild; one final correctness readback after timing |
+| `web_gpu_prepared_resident_dispatch_only_pipelined` | 4 | 0.01375 | 0.01000 | n/a | resident compute dispatch only; no per-sample readback copy/map; one explicit correctness readback after timing |
+| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.04750 | 0.04000 | n/a | measured samples submit compute plus staging copy; final map happens after timing |
+| `web_gpu_prepared_resident_pipelined` | 4 | 2.41875 | 0.12500 | 2.02500 | value-returning benchmark path |
+| `auto_resident_pipelined` | 4 | 2.46250 | 0.08000 | 1.95500 | natural Auto resident call shape |
+| `cpu_wasm` | 4 | 63.07500 | n/a | n/a | CPU baseline |
 
 The diagnostic results are not backend speedup claims. They show that command
 submission without a per-sample readback copy is three orders of magnitude
@@ -795,8 +796,9 @@ below the value-returning path on this browser/GPU, while staging-copy submit is
 still much cheaper than mapping the result. Browser-side optimization should
 therefore keep intermediate tensor/matrix values resident across graph edges
 and read back only at an explicit host boundary. The chained diagnostic shows
-that adding a second resident kernel is still far below the value-returning
-path when the intermediate matrix never leaves GPU storage.
+that adding a second resident kernel stays far below the value-returning path
+when the intermediate matrix never leaves GPU storage and chain bindings are
+prepared once with the graph fragment.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

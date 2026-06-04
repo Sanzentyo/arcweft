@@ -1881,26 +1881,20 @@ mod wasm {
                     cols: shape.cols,
                 };
                 case.capacity = Some(capacity.into());
-                let matmul = match context.prepare_matmul_f32(capacity) {
+                let prepared = match context.prepare_matmul_add_f32(capacity) {
                     Ok(prepared) => prepared,
                     Err(error) => return skipped_case(case, &fallback_reason(&error)),
                 };
-                let add = match context.prepare_elementwise_f32(shape.rows * shape.cols) {
-                    Ok(prepared) => prepared,
-                    Err(error) => return skipped_case(case, &fallback_reason(&error)),
-                };
-                if let Err(error) = context.upload_prepared_matmul_f32(
-                    &matmul,
+                let add_rhs = vec![0.0; shape.rows * shape.cols];
+                if let Err(error) = context.upload_prepared_matmul_add_f32(
+                    &prepared,
                     &lhs,
                     &rhs,
+                    &add_rhs,
                     shape.rows,
                     shape.shared,
                     shape.cols,
                 ) {
-                    return skipped_case(case, &fallback_reason(&error));
-                }
-                let add_rhs = vec![0.0; shape.rows * shape.cols];
-                if let Err(error) = context.upload_prepared_elementwise_rhs_f32(&add, &add_rhs) {
                     return skipped_case(case, &fallback_reason(&error));
                 }
                 let mut out = vec![0.0; shape.rows * shape.cols];
@@ -1911,8 +1905,8 @@ mod wasm {
                 for _ in 0..config.warmup_iters {
                     let mut submitted = None;
                     for _ in 0..batch_depth {
-                        match context.submit_resident_matmul_then_add_f32_without_readback(
-                            &matmul, &add, shape.rows, shape.cols,
+                        match context.submit_resident_matmul_add_f32_without_readback(
+                            &prepared, shape.rows, shape.cols,
                         ) {
                             Ok(current) => submitted = Some(current),
                             Err(current) => {
@@ -1924,7 +1918,9 @@ mod wasm {
                     yield_to_browser().await;
                     if let Some(current) = submitted
                         && let Err(current) = context
-                            .read_resident_elementwise_f32(&add, current, &mut out)
+                            .read_resident_matmul_add_f32(
+                                &prepared, current, shape.rows, shape.cols, &mut out,
+                            )
                             .await
                     {
                         error = Some(current);
@@ -1938,8 +1934,8 @@ mod wasm {
                         let total_start = now_ms();
                         for _ in 0..batch_depth {
                             let submit_start = now_ms();
-                            match context.submit_resident_matmul_then_add_f32_without_readback(
-                                &matmul, &add, shape.rows, shape.cols,
+                            match context.submit_resident_matmul_add_f32_without_readback(
+                                &prepared, shape.rows, shape.cols,
                             ) {
                                 Ok(current) => latest = Some(current),
                                 Err(current) => {
@@ -1959,7 +1955,9 @@ mod wasm {
                 if error.is_none()
                     && let Some(current) = latest
                     && let Err(current) = context
-                        .read_resident_elementwise_f32(&add, current, &mut out)
+                        .read_resident_matmul_add_f32(
+                            &prepared, current, shape.rows, shape.cols, &mut out,
+                        )
                         .await
                 {
                     error = Some(current);

@@ -2738,6 +2738,17 @@ pub mod browser_webgpu {
         bind_group: wgpu::BindGroup,
     }
 
+    /// Prepared resident browser buffers for `matmul(lhs, rhs) + add_rhs`.
+    ///
+    /// This is a small forward-graph fragment: the matmul output remains on the
+    /// GPU and is bound directly as the add lhs input. Host-visible readback is
+    /// explicit and delayed until the caller crosses the value boundary.
+    pub struct BrowserPreparedMatmulAddF32 {
+        matmul: BrowserPreparedMatmulF32,
+        add: BrowserPreparedElementwiseF32,
+        add_bind_group: wgpu::BindGroup,
+    }
+
     /// Submitted browser GPU work whose readback can be awaited later.
     pub struct BrowserSubmittedF32 {
         readback: Option<ReusableReadbackBuffer>,
@@ -2881,6 +2892,16 @@ pub mod browser_webgpu {
     impl BrowserPreparedMatmulF32 {
         pub const fn capacity(&self) -> BrowserMatmulCapacity {
             self.capacity
+        }
+    }
+
+    impl BrowserPreparedMatmulAddF32 {
+        pub const fn capacity(&self) -> BrowserMatmulCapacity {
+            self.matmul.capacity()
+        }
+
+        pub const fn output_capacity_len(&self) -> usize {
+            self.add.capacity_len()
         }
     }
 
@@ -3995,6 +4016,28 @@ pub mod browser_webgpu {
             })
         }
 
+        pub fn prepare_matmul_add_f32(
+            &mut self,
+            capacity: BrowserMatmulCapacity,
+        ) -> Result<BrowserPreparedMatmulAddF32, BrowserWebGpuError> {
+            let output_len = checked_len_mul(capacity.rows, capacity.cols)?;
+            let matmul = self.prepare_matmul_f32(capacity)?;
+            let add = self.prepare_elementwise_f32(output_len)?;
+            let add_layout = self.add_pipeline.get_bind_group_layout(0);
+            let add_entries = bind_group_entries(&matmul.out, &add.rhs, &add.out, &add.params);
+            let add_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-browser-prepared-matmul-add-bind-group"),
+                layout: &add_layout,
+                entries: &add_entries,
+            });
+            self.stats.bind_group_rebuilds += 1;
+            Ok(BrowserPreparedMatmulAddF32 {
+                matmul,
+                add,
+                add_bind_group,
+            })
+        }
+
         pub async fn dispatch_prepared_elementwise_f32(
             &mut self,
             prepared: &BrowserPreparedElementwiseF32,
@@ -4230,6 +4273,27 @@ pub mod browser_webgpu {
             Ok(())
         }
 
+        pub fn upload_prepared_matmul_add_f32(
+            &mut self,
+            prepared: &BrowserPreparedMatmulAddF32,
+            lhs: &[f32],
+            rhs: &[f32],
+            add_rhs: &[f32],
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<(), BrowserWebGpuError> {
+            let output_len = checked_len_mul(rows, cols)?;
+            if add_rhs.len() != output_len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "prepared matmul-add shape and add rhs length differ",
+                ));
+            }
+            self.upload_prepared_matmul_f32(&prepared.matmul, lhs, rhs, rows, shared, cols)?;
+            self.upload_prepared_elementwise_rhs_f32(&prepared.add, add_rhs)
+        }
+
         pub async fn dispatch_resident_matmul_f32(
             &mut self,
             prepared: &BrowserPreparedMatmulF32,
@@ -4326,24 +4390,23 @@ pub mod browser_webgpu {
             )
         }
 
-        pub fn submit_resident_matmul_then_add_f32_without_readback(
+        pub fn submit_resident_matmul_add_f32_without_readback(
             &mut self,
-            matmul: &BrowserPreparedMatmulF32,
-            add: &BrowserPreparedElementwiseF32,
+            prepared: &BrowserPreparedMatmulAddF32,
             rows: usize,
             cols: usize,
         ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
-            if rows > matmul.capacity.rows || cols > matmul.capacity.cols {
+            if rows > prepared.matmul.capacity.rows || cols > prepared.matmul.capacity.cols {
                 return Err(BrowserWebGpuError::fallback(
                     BrowserWebGpuFallbackReason::StorageBufferTooLarge,
-                    "resident matmul chain exceeded prepared matmul capacity",
+                    "resident matmul-add exceeded prepared matmul capacity",
                 ));
             }
             let len = checked_len_mul(rows, cols)?;
-            if len > add.capacity_len {
+            if len > prepared.add.capacity_len {
                 return Err(BrowserWebGpuError::fallback(
                     BrowserWebGpuFallbackReason::StorageBufferTooLarge,
-                    "resident matmul chain exceeded prepared add capacity",
+                    "resident matmul-add exceeded prepared add capacity",
                 ));
             }
             if len == 0 {
@@ -4354,28 +4417,20 @@ pub mod browser_webgpu {
             }
             self.ensure_healthy()?;
             validate_f32_storage(self.limits, len)?;
-            let add_layout = self.add_pipeline.get_bind_group_layout(0);
-            let add_entries = bind_group_entries(&matmul.out, &add.rhs, &add.out, &add.params);
-            let add_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("arcweft-browser-chained-add-bind-group"),
-                layout: &add_layout,
-                entries: &add_entries,
-            });
-            self.stats.bind_group_rebuilds += 1;
             let matmul_pipeline = self.matmul_pipeline.clone();
             let add_pipeline = self.add_pipeline.clone();
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("arcweft-browser-resident-chain-encoder"),
+                    label: Some("arcweft-browser-resident-matmul-add-encoder"),
                 });
             {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("arcweft-browser-resident-chain-matmul-pass"),
+                    label: Some("arcweft-browser-resident-matmul-add-matmul-pass"),
                     timestamp_writes: None,
                 });
                 pass.set_pipeline(&matmul_pipeline);
-                pass.set_bind_group(0, &matmul.bind_group, &[]);
+                pass.set_bind_group(0, &prepared.matmul.bind_group, &[]);
                 pass.dispatch_workgroups(
                     checked_workgroups(self.limits, cols.div_ceil(16))?,
                     checked_workgroups(self.limits, rows.div_ceil(16))?,
@@ -4385,11 +4440,11 @@ pub mod browser_webgpu {
             {
                 let (groups_x, groups_y) = add_groups(self.limits, len)?;
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("arcweft-browser-resident-chain-add-pass"),
+                    label: Some("arcweft-browser-resident-matmul-add-add-pass"),
                     timestamp_writes: None,
                 });
                 pass.set_pipeline(&add_pipeline);
-                pass.set_bind_group(0, &add_bind_group, &[]);
+                pass.set_bind_group(0, &prepared.add_bind_group, &[]);
                 pass.dispatch_workgroups(groups_x.max(1), groups_y.max(1), 1);
             }
             self.queue.submit(Some(encoder.finish()));
@@ -4400,6 +4455,30 @@ pub mod browser_webgpu {
                 len,
                 submitted_at_ms: browser_now_ms(),
             })
+        }
+
+        pub async fn read_resident_matmul_add_f32(
+            &mut self,
+            prepared: &BrowserPreparedMatmulAddF32,
+            submission: BrowserResidentSubmission,
+            rows: usize,
+            cols: usize,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if rows > prepared.matmul.capacity.rows || cols > prepared.matmul.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul-add exceeded prepared capacity",
+                ));
+            }
+            if out.len() != submission.len || out.len() != checked_len_mul(rows, cols)? {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "resident matmul-add output length differs from readback target",
+                ));
+            }
+            self.read_resident_f32(&prepared.add.out, submission, out)
+                .await
         }
 
         pub async fn read_resident_matmul_f32(

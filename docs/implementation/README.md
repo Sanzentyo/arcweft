@@ -281,9 +281,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   context also separates resident compute submission from explicit readback:
   `submit_resident_*_without_readback` keeps prepared output on the GPU, and
   `read_resident_*` performs the host-visible copy/map only at the requested
-  boundary. A resident chain helper now submits `matmul -> add` without
-  copying the intermediate matrix out of GPU storage, giving browser graph
-  execution a concrete API shape for readback-free intermediate values.
+  boundary. Browser WebGPU also has a prepared `matmul -> add` resident plan:
+  the plan owns the matmul buffers, add buffers, and chained add bind group, so
+  repeated graph-edge submissions do not rebuild the intermediate binding and
+  never copy the matmul result out of GPU storage.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
