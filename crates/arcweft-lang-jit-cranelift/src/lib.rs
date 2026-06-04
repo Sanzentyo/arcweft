@@ -465,7 +465,10 @@ impl CraneliftPureFunctionBackend {
     ///
     /// The generated functions use pointer-based row buffers only. Scalar
     /// `i128` calls stay on the VM/AOT path because Cranelift's platform ABI
-    /// handling for by-value i128 requires target-specific care.
+    /// handling for by-value i128 requires target-specific care. Runtime
+    /// inputs are loaded and stored as full-width `i128` values; literals and
+    /// captured constants are currently limited to values representable by an
+    /// `i64` immediate and are sign-extended in IR.
     pub fn compile_i128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -726,7 +729,10 @@ impl CraneliftPureFunctionBackend {
     ///
     /// The generated functions use pointer-based row buffers only. Scalar
     /// `u128` calls stay on the VM/AOT path because Cranelift's platform ABI
-    /// handling for by-value i128 requires target-specific care.
+    /// handling for by-value i128 requires target-specific care. Runtime
+    /// inputs are loaded and stored as full-width `u128` values; literals and
+    /// captured constants are currently limited to values representable by an
+    /// `i64` immediate and are zero-extended in IR.
     pub fn compile_u128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -4561,6 +4567,13 @@ mod tests {
         }
     }
 
+    fn i128_binding(name: &str, value: i128) -> RuntimeBinding {
+        RuntimeBinding {
+            name: name.to_owned(),
+            value: RuntimeValue::i128(value),
+        }
+    }
+
     fn u32_binding(name: &str, value: u32) -> RuntimeBinding {
         RuntimeBinding {
             name: name.to_owned(),
@@ -4579,6 +4592,13 @@ mod tests {
         RuntimeBinding {
             name: name.to_owned(),
             value: RuntimeValue::u16(value),
+        }
+    }
+
+    fn u128_binding(name: &str, value: u128) -> RuntimeBinding {
+        RuntimeBinding {
+            name: name.to_owned(),
+            value: RuntimeValue::u128(value),
         }
     }
 
@@ -5347,5 +5367,93 @@ mod tests {
             .to_string();
 
         assert!(error.contains("binary operator `&&` is outside the JIT subset"));
+    }
+
+    #[test]
+    fn cranelift_i128_batch_preserves_full_width_runtime_inputs() {
+        let request = PureFunctionRequest::new(
+            "wide_i128_add",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("delta".to_owned())),
+            },
+            [i128_binding("value", 0), i128_binding("delta", 0)],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i128_batch_with_inputs(&request, ["value", "delta"])
+            .expect("Cranelift compiles pointer-ABI i128 batch helper");
+        let inputs = [i128::MAX - 5, 3, i128::MIN + 9, -4];
+        let mut out = [0_i128; 2];
+
+        compiled
+            .call_flat_batch(&inputs, &mut out)
+            .expect("full-width i128 runtime inputs are loaded through pointers");
+
+        assert_eq!(out, [i128::MAX - 2, i128::MIN + 5]);
+    }
+
+    #[test]
+    fn cranelift_u128_batch_preserves_full_width_runtime_inputs() {
+        let request = PureFunctionRequest::new(
+            "wide_u128_add",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("delta".to_owned())),
+            },
+            [u128_binding("value", 0), u128_binding("delta", 0)],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_u128_batch_with_inputs(&request, ["value", "delta"])
+            .expect("Cranelift compiles pointer-ABI u128 batch helper");
+        let inputs = [u128::MAX - 7, 2, 1_u128 << 100, 5];
+        let mut out = [0_u128; 2];
+
+        compiled
+            .call_flat_batch(&inputs, &mut out)
+            .expect("full-width u128 runtime inputs are loaded through pointers");
+
+        assert_eq!(out, [u128::MAX - 5, (1_u128 << 100) + 5]);
+    }
+
+    #[test]
+    fn cranelift_i128_batch_rejects_literals_outside_i64_immediate_subset() {
+        let request = PureFunctionRequest::new(
+            "wide_i128_literal",
+            RuntimeExpr::Value(RuntimeValue::i128(i128::from(i64::MAX) + 1)),
+            [],
+        );
+
+        let error = match CraneliftPureFunctionBackend
+            .compile_i128_batch_with_inputs(&request, std::iter::empty::<&str>())
+        {
+            Ok(_) => panic!("i128 literals outside the i64-backed IR subset must be rejected"),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(error.contains("literal"));
+        assert!(error.contains("i128"));
+    }
+
+    #[test]
+    fn cranelift_u128_batch_rejects_literals_outside_i64_immediate_subset() {
+        let request = PureFunctionRequest::new(
+            "wide_u128_literal",
+            RuntimeExpr::Value(RuntimeValue::u128(u128::try_from(i64::MAX).unwrap() + 1)),
+            [],
+        );
+
+        let error = match CraneliftPureFunctionBackend
+            .compile_u128_batch_with_inputs(&request, std::iter::empty::<&str>())
+        {
+            Ok(_) => panic!("u128 literals outside the i64-backed IR subset must be rejected"),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(error.contains("literal"));
+        assert!(error.contains("u128"));
     }
 }
