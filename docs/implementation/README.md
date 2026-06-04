@@ -292,7 +292,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `InferenceAdapter::matmul_bias_add` hook instead of forcing all adapters
   through a materialized intermediate tensor. The fusion is not applied when the
   matmul output is also an observable graph output or is consumed by another
-  node.
+  node. `AcceleratedInferenceAdapter` routes that hook into
+  `RuntimeMathAccelerator::matmul_bias_add_f32`; the scalar backend fuses
+  matmul and bias application in one loop, and runtime math stats record
+  `fused_matmul_bias_add_calls`.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

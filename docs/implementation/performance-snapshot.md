@@ -818,7 +818,13 @@ kernels for non-matmul forward ops. `InferenceAdapter` also exposes a typed
 `matmul -> bias_add` pairs and leaves the unfused path in place when the matmul
 output is observable or shared by another node. This gives native and browser
 adapters a single boundary for resident `matmul -> bias_add` execution without
-changing the graph's public op set. The current deterministic `f32` op set is:
+changing the graph's public op set. The default accelerated adapter now routes
+that hook through `RuntimeMathAccelerator::matmul_bias_add_f32`; scalar
+execution fuses the matmul and bias application loop, while Glam, ndarray, and
+wgpu keep the existing matmul backend selection and then apply the last-axis
+bias. `RuntimeMathStats` records `fused_matmul_bias_add_calls` so future bench
+JSON can distinguish fused inference execution from separate matmul and
+bias-add calls. The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`

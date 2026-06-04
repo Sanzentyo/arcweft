@@ -48,6 +48,7 @@ pub struct RuntimeMathStats {
     pub glam_calls: usize,
     pub ndarray_calls: usize,
     pub wgpu_calls: usize,
+    pub fused_matmul_bias_add_calls: usize,
     pub fallback_calls: usize,
     pub bytes_borrowed: usize,
     pub bytes_copied: usize,
@@ -195,6 +196,35 @@ impl RuntimeMathAccelerator {
             RuntimeMathBackend::Glam => self.matmul_glam(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.matmul_ndarray(lhs, rhs),
             RuntimeMathBackend::Wgpu => self.matmul_wgpu(lhs, rhs),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn matmul_bias_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        validate_matmul_bias(lhs, rhs, bias)?;
+        self.record_matmul_bias_inputs(lhs, rhs, bias);
+        self.stats.fused_matmul_bias_add_calls += 1;
+        let selection = self.select_matmul_backend(lhs, rhs);
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
+            RuntimeMathBackend::Scalar => self.matmul_bias_add_scalar(lhs, rhs, bias),
+            RuntimeMathBackend::Glam => {
+                let out = self.matmul_glam(lhs, rhs)?;
+                add_bias_to_matrix(out, bias)
+            }
+            RuntimeMathBackend::Ndarray => {
+                let out = self.matmul_ndarray(lhs, rhs)?;
+                add_bias_to_matrix(out, bias)
+            }
+            RuntimeMathBackend::Wgpu => {
+                let out = self.matmul_wgpu(lhs, rhs)?;
+                add_bias_to_matrix(out, bias)
+            }
             RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
         }
     }
@@ -945,6 +975,32 @@ impl RuntimeMathAccelerator {
         lhs.add_scalar(rhs).map_err(Into::into)
     }
 
+    fn matmul_bias_add_scalar(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        self.stats.scalar_calls += 1;
+        self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
+        let rows = lhs.rows();
+        let shared = lhs.cols();
+        let cols = rhs.cols();
+        let mut out = vec![0.0; rows * cols];
+        for row in 0..rows {
+            let out_row = &mut out[row * cols..(row + 1) * cols];
+            out_row.copy_from_slice(bias.values());
+            let lhs_row = &lhs.values()[row * shared..(row + 1) * shared];
+            for (k, lhs_value) in lhs_row.iter().copied().enumerate() {
+                let rhs_row = &rhs.values()[k * cols..(k + 1) * cols];
+                for (out_value, rhs_value) in out_row.iter_mut().zip(rhs_row.iter().copied()) {
+                    *out_value += lhs_value * rhs_value;
+                }
+            }
+        }
+        DenseMatrixF32::new(rows, cols, out).map_err(Into::into)
+    }
+
     fn matmul_glam(
         &mut self,
         lhs: &DenseMatrixF32,
@@ -1344,6 +1400,17 @@ impl RuntimeMathAccelerator {
             (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
     }
 
+    fn record_matmul_bias_inputs(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) {
+        self.stats.bytes_borrowed +=
+            (lhs.values().len() + rhs.values().len() + bias.values().len())
+                * std::mem::size_of::<f32>();
+    }
+
     fn record_tensor_inputs<T>(&mut self, lhs: &DenseTensor<T>, rhs: &DenseTensor<T>) {
         self.stats.bytes_borrowed +=
             (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
@@ -1420,6 +1487,48 @@ fn cols_4x4_to_row_major<T: Copy>(values: [T; 16]) -> Vec<T> {
         values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
         values[2], values[6], values[10], values[14], values[3], values[7], values[11], values[15],
     ]
+}
+
+fn validate_matmul_bias(
+    lhs: &DenseMatrixF32,
+    rhs: &DenseMatrixF32,
+    bias: &DenseTensorF32,
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if lhs.cols() != rhs.rows() {
+        return Err(RuntimeMathError::MatrixShapeMismatch {
+            lhs: lhs.shape(),
+            rhs: rhs.shape(),
+            op: "matmul_bias_add",
+        }
+        .into());
+    }
+    match bias.shape().dims() {
+        [cols] if *cols == rhs.cols() => Ok(()),
+        dims => Err(RuntimeMathAcceleratorError::Backend(format!(
+            "matmul_bias_add expected bias shape [{}], found {:?}",
+            rhs.cols(),
+            dims
+        ))),
+    }
+}
+
+fn add_bias_to_matrix(
+    mut matrix: DenseMatrixF32,
+    bias: &DenseTensorF32,
+) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+    if bias.shape().dims() != [matrix.cols()] {
+        return Err(RuntimeMathAcceleratorError::Backend(format!(
+            "matmul_bias_add expected bias shape [{}], found {:?}",
+            matrix.cols(),
+            bias.shape().dims()
+        )));
+    }
+    for row in matrix.values_mut().chunks_exact_mut(bias.values().len()) {
+        for (value, bias) in row.iter_mut().zip(bias.values().iter().copied()) {
+            *value += bias;
+        }
+    }
+    Ok(matrix)
 }
 
 fn matmul_work_items<T>(lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) -> usize {
@@ -5670,6 +5779,27 @@ mod tests {
         assert_eq!(ndarray.matmul_f32(&lhs, &rhs).unwrap(), expected);
         assert_eq!(glam.stats().glam_calls, 1);
         assert_eq!(ndarray.stats().ndarray_calls, 1);
+    }
+
+    #[test]
+    fn matmul_bias_add_fuses_scalar_work_and_records_backend_stats() {
+        let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+        let bias = DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Scalar,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let out = accelerator.matmul_bias_add_f32(&lhs, &rhs, &bias).unwrap();
+
+        assert_eq!(out.values(), &[58.5, 63.75, 139.5, 153.75]);
+        assert_eq!(accelerator.stats().fused_matmul_bias_add_calls, 1);
+        assert_eq!(accelerator.stats().scalar_calls, 1);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Scalar)
+        );
     }
 
     #[cfg(all(feature = "math-glam", feature = "math-ndarray"))]

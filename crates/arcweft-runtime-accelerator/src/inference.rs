@@ -563,8 +563,8 @@ impl InferenceAdapter for AcceleratedInferenceAdapter {
     ) -> Result<DenseTensorF32, InferenceError> {
         let lhs = tensor_as_matrix(lhs, InferenceOp::Matmul)?;
         let rhs = tensor_as_matrix(rhs, InferenceOp::Matmul)?;
-        let out = self.accelerator.matmul_f32(&lhs, &rhs)?;
-        bias_add(&DenseTensorF32::from_matrix(out), bias)
+        let out = self.accelerator.matmul_bias_add_f32(&lhs, &rhs, bias)?;
+        Ok(DenseTensorF32::from_matrix(out))
     }
 
     fn conv2d_valid(
@@ -1308,6 +1308,15 @@ mod tests {
         assert_eq!(session.adapter().fused_matmul_bias_add_calls, 1);
         assert_eq!(session.adapter().matmul_calls, 0);
         assert_eq!(session.adapter().bias_add_calls, 0);
+        assert_eq!(
+            session
+                .adapter()
+                .inner
+                .accelerator()
+                .stats()
+                .fused_matmul_bias_add_calls,
+            1
+        );
     }
 
     #[test]
