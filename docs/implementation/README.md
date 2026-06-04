@@ -282,9 +282,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `submit_resident_*_without_readback` keeps prepared output on the GPU, and
   `read_resident_*` performs the host-visible copy/map only at the requested
   boundary. Browser WebGPU also has a typed resident `f32` graph fragment API.
-  The current `matmul -> add` fragment owns the matmul buffers, add buffers,
-  and chained add bind group, so repeated graph-edge submissions do not rebuild
-  the intermediate binding and never copy the matmul result out of GPU storage.
+  The current fragments cover `matmul -> add` and `matmul -> bias_add`. The
+  `matmul -> add` fragment owns the matmul buffers, add buffers, and chained
+  add bind group. The `matmul -> bias_add` fragment stores only the last-axis
+  bias vector and broadcasts it in the second GPU kernel. Repeated graph-edge
+  submissions do not rebuild intermediate bindings and never copy the matmul
+  result out of GPU storage.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

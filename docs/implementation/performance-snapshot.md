@@ -775,21 +775,24 @@ the same `512x512x512` matmul shape. The submit-only mode defers `map_async`
 but still copies the output into a staging buffer for every submitted sample.
 The dispatch-only mode submits resident compute work without per-sample
 GPU-to-staging copies and performs one explicit readback after timing for
-correctness. The chained dispatch-only mode now uses the typed resident `f32`
-graph fragment API for a prepared `matmul -> add(0)` plan: the intermediate add
-bind group is created with the plan rather than rebuilt during each measured
-submit, and only the final add output is read back after timing. A local
-path-free run recorded 24 measured cases, no skips, and no correctness
-failures:
+correctness. The chained dispatch-only modes use the typed resident `f32` graph
+fragment API for prepared `matmul -> add(0)` and `matmul -> bias_add(0)` plans:
+intermediate bind groups are created with the plans rather than rebuilt during
+each measured submit, and only the final graph output is read back after
+timing. The bias-add diagnostic stores only the bias vector and broadcasts it
+in the second resident kernel, so it validates a graph fragment that does not
+expand the bias into a full host-side add matrix. A local path-free run
+recorded 28 measured cases, no skips, and no correctness failures:
 
 | Mode | Rounds | Median-of-medians ms | Submit median ms | Readback median ms | Notes |
 | --- | ---: | ---: | ---: | ---: | --- |
+| `web_gpu_prepared_resident_dispatch_only_pipelined` | 4 | 0.01250 | 0.01000 | n/a | resident compute dispatch only; no per-sample readback copy/map; one explicit correctness readback after timing |
 | `web_gpu_prepared_resident_chained_dispatch_only_pipelined` | 4 | 0.01375 | 0.01500 | n/a | typed resident graph fragment for `matmul -> add(0)`; no intermediate readback or per-submit bind-group rebuild; one final correctness readback after timing |
-| `web_gpu_prepared_resident_dispatch_only_pipelined` | 4 | 0.01875 | 0.02000 | n/a | resident compute dispatch only; no per-sample readback copy/map; one explicit correctness readback after timing |
-| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.05500 | 0.03000 | n/a | measured samples submit compute plus staging copy; final map happens after timing |
-| `auto_resident_pipelined` | 4 | 2.47625 | 0.02500 | 0.94000 | natural Auto resident call shape |
-| `web_gpu_prepared_resident_pipelined` | 4 | 2.64625 | 0.15000 | 2.15000 | value-returning benchmark path |
-| `cpu_wasm` | 4 | 68.00500 | n/a | n/a | CPU baseline |
+| `web_gpu_prepared_resident_matmul_bias_dispatch_only_pipelined` | 4 | 0.01500 | 0.01500 | n/a | typed resident graph fragment for `matmul -> bias_add(0)`; stores a last-axis bias vector instead of a full add matrix; one final correctness readback after timing |
+| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.03750 | 0.03500 | n/a | measured samples submit compute plus staging copy; final map happens after timing |
+| `web_gpu_prepared_resident_pipelined` | 4 | 2.15500 | 0.08500 | 1.50000 | value-returning benchmark path |
+| `auto_resident_pipelined` | 4 | 2.22375 | 0.09500 | 1.76000 | natural Auto resident call shape |
+| `cpu_wasm` | 4 | 56.87500 | n/a | n/a | CPU baseline |
 
 The diagnostic results are not backend speedup claims. They show that command
 submission without a per-sample readback copy is three orders of magnitude
@@ -799,9 +802,11 @@ therefore keep intermediate tensor/matrix values resident across graph edges
 and read back only at an explicit host boundary. The chained diagnostic shows
 that adding a second resident kernel stays far below the value-returning path
 when the intermediate matrix never leaves GPU storage and chain bindings are
-prepared once with the graph fragment. The graph-fragment wrapper did not move
-the diagnostic out of the resident lower-bound band; the latest chained run
-measured roughly the same submit-only floor as the direct prepared-plan path.
+prepared once with the graph fragment. The bias-add diagnostic shows the same
+lower-bound behavior while avoiding a full host-side add matrix. The
+graph-fragment wrappers did not move the diagnostics out of the resident
+lower-bound band; the latest chained and bias-add runs measured roughly the
+same submit-only floor as the direct prepared-plan path.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

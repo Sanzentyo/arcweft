@@ -14,6 +14,7 @@ const DIAGNOSTIC_MODES = new Set([
   "web_gpu_prepared_resident_dispatch_only_pipelined",
   "web_gpu_prepared_capacity_resident_dispatch_only_pipelined",
   "web_gpu_prepared_resident_chained_dispatch_only_pipelined",
+  "web_gpu_prepared_resident_matmul_bias_dispatch_only_pipelined",
 ]);
 const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
   stdio: ["ignore", "pipe", "pipe"],

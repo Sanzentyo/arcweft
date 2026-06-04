@@ -2686,6 +2686,7 @@ pub mod browser_webgpu {
         queue: wgpu::Queue,
         matmul_pipeline: wgpu::ComputePipeline,
         add_pipeline: wgpu::ComputePipeline,
+        bias_add_pipeline: wgpu::ComputePipeline,
         readback: Option<ReusableReadbackBuffer>,
         async_readback: Option<ReusableReadbackBuffer>,
         limits: BrowserWebGpuLimits,
@@ -2714,6 +2715,15 @@ pub mod browser_webgpu {
     struct AddParams {
         len: u32,
         x_threads: u32,
+        _pad1: u32,
+        _pad2: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct BiasAddParams {
+        rows: u32,
+        cols: u32,
         _pad1: u32,
         _pad2: u32,
     }
@@ -2749,6 +2759,16 @@ pub mod browser_webgpu {
         add_bind_group: wgpu::BindGroup,
     }
 
+    /// Prepared resident browser buffers for `bias_add(matmul(lhs, rhs), bias)`.
+    pub struct BrowserPreparedMatmulBiasAddF32 {
+        matmul: BrowserPreparedMatmulF32,
+        bias: wgpu::Buffer,
+        out: wgpu::Buffer,
+        params: wgpu::Buffer,
+        bias_bind_group: wgpu::BindGroup,
+        output_capacity_len: usize,
+    }
+
     /// Shape for a resident browser `matmul(lhs, rhs) + add_rhs` graph fragment.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct BrowserMatmulAddF32Shape {
@@ -2761,6 +2781,7 @@ pub mod browser_webgpu {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum BrowserResidentF32GraphSpec {
         MatmulAdd { capacity: BrowserMatmulCapacity },
+        MatmulBiasAdd { capacity: BrowserMatmulCapacity },
     }
 
     /// Borrowed inputs for a resident browser `matmul(lhs, rhs) + add_rhs` graph fragment.
@@ -2772,15 +2793,26 @@ pub mod browser_webgpu {
         pub shape: BrowserMatmulAddF32Shape,
     }
 
+    /// Borrowed inputs for a resident browser `bias_add(matmul(lhs, rhs), bias)` fragment.
+    #[derive(Clone, Copy, Debug)]
+    pub struct BrowserResidentMatmulBiasAddF32Inputs<'a> {
+        pub lhs: &'a [f32],
+        pub rhs: &'a [f32],
+        pub bias: &'a [f32],
+        pub shape: BrowserMatmulAddF32Shape,
+    }
+
     /// Borrowed inputs for a prepared resident browser `f32` graph fragment.
     #[derive(Clone, Copy, Debug)]
     pub enum BrowserResidentF32GraphInputs<'a> {
         MatmulAdd(BrowserResidentMatmulAddF32Inputs<'a>),
+        MatmulBiasAdd(BrowserResidentMatmulBiasAddF32Inputs<'a>),
     }
 
     /// Prepared resident browser `f32` graph fragment.
     pub enum BrowserPreparedResidentF32Graph {
         MatmulAdd(BrowserPreparedMatmulAddF32),
+        MatmulBiasAdd(BrowserPreparedMatmulBiasAddF32),
     }
 
     /// Submitted browser GPU work whose readback can be awaited later.
@@ -2939,6 +2971,16 @@ pub mod browser_webgpu {
         }
     }
 
+    impl BrowserPreparedMatmulBiasAddF32 {
+        pub const fn capacity(&self) -> BrowserMatmulCapacity {
+            self.matmul.capacity()
+        }
+
+        pub const fn output_capacity_len(&self) -> usize {
+            self.output_capacity_len
+        }
+    }
+
     impl BrowserMatmulAddF32Shape {
         pub const fn new(rows: usize, shared: usize, cols: usize) -> Self {
             Self { rows, shared, cols }
@@ -2961,6 +3003,10 @@ pub mod browser_webgpu {
         pub const fn matmul_add(capacity: BrowserMatmulCapacity) -> Self {
             Self::MatmulAdd { capacity }
         }
+
+        pub const fn matmul_bias_add(capacity: BrowserMatmulCapacity) -> Self {
+            Self::MatmulBiasAdd { capacity }
+        }
     }
 
     impl<'a> BrowserResidentMatmulAddF32Inputs<'a> {
@@ -2979,10 +3025,27 @@ pub mod browser_webgpu {
         }
     }
 
+    impl<'a> BrowserResidentMatmulBiasAddF32Inputs<'a> {
+        pub const fn new(
+            lhs: &'a [f32],
+            rhs: &'a [f32],
+            bias: &'a [f32],
+            shape: BrowserMatmulAddF32Shape,
+        ) -> Self {
+            Self {
+                lhs,
+                rhs,
+                bias,
+                shape,
+            }
+        }
+    }
+
     impl BrowserPreparedResidentF32Graph {
         pub const fn output_capacity_len(&self) -> usize {
             match self {
                 Self::MatmulAdd(prepared) => prepared.output_capacity_len(),
+                Self::MatmulBiasAdd(prepared) => prepared.output_capacity_len(),
             }
         }
     }
@@ -3780,6 +3843,10 @@ pub mod browser_webgpu {
                 label: Some("arcweft-browser-add-f32"),
                 source: wgpu::ShaderSource::Wgsl(ADD_SHADER.into()),
             });
+            let bias_add_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-browser-bias-add-f32"),
+                source: wgpu::ShaderSource::Wgsl(BIAS_ADD_SHADER.into()),
+            });
             let matmul_pipeline =
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("arcweft-browser-matmul-f32"),
@@ -3797,11 +3864,21 @@ pub mod browser_webgpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
             });
+            let bias_add_pipeline =
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("arcweft-browser-bias-add-f32"),
+                    layout: None,
+                    module: &bias_add_shader,
+                    entry_point: Some("main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
             Ok(Self {
                 device,
                 queue,
                 matmul_pipeline,
                 add_pipeline,
+                bias_add_pipeline,
                 readback: None,
                 async_readback: None,
                 limits,
@@ -4120,6 +4197,45 @@ pub mod browser_webgpu {
             })
         }
 
+        pub fn prepare_matmul_bias_add_f32(
+            &mut self,
+            capacity: BrowserMatmulCapacity,
+        ) -> Result<BrowserPreparedMatmulBiasAddF32, BrowserWebGpuError> {
+            let output_len = checked_len_mul(capacity.rows, capacity.cols)?;
+            validate_f32_storage(self.limits, capacity.cols)?;
+            validate_f32_storage(self.limits, output_len)?;
+            let matmul = self.prepare_matmul_f32(capacity)?;
+            let bias = self.storage_buffer_capacity(
+                checked_f32_bytes(capacity.cols)?.max(std::mem::size_of::<f32>() as u64),
+                "arcweft-browser-prepared-bias-add-bias",
+            );
+            let out = self.output_buffer_capacity(
+                checked_f32_bytes(output_len)?.max(std::mem::size_of::<f32>() as u64),
+                "arcweft-browser-prepared-bias-add-out",
+            );
+            let params = self.storage_buffer_capacity(
+                std::mem::size_of::<BiasAddParams>() as u64,
+                "arcweft-browser-prepared-bias-add-params",
+            );
+            let layout = self.bias_add_pipeline.get_bind_group_layout(0);
+            let entries = bind_group_entries(&matmul.out, &bias, &out, &params);
+            let bias_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-browser-prepared-matmul-bias-add-bind-group"),
+                layout: &layout,
+                entries: &entries,
+            });
+            self.stats.buffer_creations += 3;
+            self.stats.bind_group_rebuilds += 1;
+            Ok(BrowserPreparedMatmulBiasAddF32 {
+                matmul,
+                bias,
+                out,
+                params,
+                bias_bind_group,
+                output_capacity_len: output_len,
+            })
+        }
+
         pub fn prepare_resident_f32_graph(
             &mut self,
             spec: BrowserResidentF32GraphSpec,
@@ -4128,6 +4244,9 @@ pub mod browser_webgpu {
                 BrowserResidentF32GraphSpec::MatmulAdd { capacity } => self
                     .prepare_matmul_add_f32(capacity)
                     .map(BrowserPreparedResidentF32Graph::MatmulAdd),
+                BrowserResidentF32GraphSpec::MatmulBiasAdd { capacity } => self
+                    .prepare_matmul_bias_add_f32(capacity)
+                    .map(BrowserPreparedResidentF32Graph::MatmulBiasAdd),
             }
         }
 
@@ -4387,6 +4506,39 @@ pub mod browser_webgpu {
             self.upload_prepared_elementwise_rhs_f32(&prepared.add, add_rhs)
         }
 
+        pub fn upload_prepared_matmul_bias_add_f32(
+            &mut self,
+            prepared: &BrowserPreparedMatmulBiasAddF32,
+            lhs: &[f32],
+            rhs: &[f32],
+            bias: &[f32],
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<(), BrowserWebGpuError> {
+            if bias.len() != cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "prepared matmul-bias-add shape and bias length differ",
+                ));
+            }
+            self.upload_prepared_matmul_f32(&prepared.matmul, lhs, rhs, rows, shared, cols)?;
+            let params = BiasAddParams {
+                rows: checked_u32(rows)?,
+                cols: checked_u32(cols)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            self.queue
+                .write_buffer(&prepared.bias, 0, bytemuck::cast_slice(bias));
+            self.queue
+                .write_buffer(&prepared.params, 0, bytemuck::bytes_of(&params));
+            self.stats.bytes_uploaded += std::mem::size_of_val(bias);
+            self.stats.bytes_copied += std::mem::size_of_val(bias);
+            self.stats.buffer_reuse_hits += 2;
+            Ok(())
+        }
+
         pub fn upload_prepared_resident_f32_graph(
             &mut self,
             prepared: &BrowserPreparedResidentF32Graph,
@@ -4405,6 +4557,29 @@ pub mod browser_webgpu {
                     inputs.shape.shared,
                     inputs.shape.cols,
                 ),
+                (
+                    BrowserPreparedResidentF32Graph::MatmulBiasAdd(prepared),
+                    BrowserResidentF32GraphInputs::MatmulBiasAdd(inputs),
+                ) => self.upload_prepared_matmul_bias_add_f32(
+                    prepared,
+                    inputs.lhs,
+                    inputs.rhs,
+                    inputs.bias,
+                    inputs.shape.rows,
+                    inputs.shape.shared,
+                    inputs.shape.cols,
+                ),
+                (
+                    BrowserPreparedResidentF32Graph::MatmulAdd(_),
+                    BrowserResidentF32GraphInputs::MatmulBiasAdd(_),
+                )
+                | (
+                    BrowserPreparedResidentF32Graph::MatmulBiasAdd(_),
+                    BrowserResidentF32GraphInputs::MatmulAdd(_),
+                ) => Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "prepared resident graph inputs do not match the prepared graph fragment",
+                )),
             }
         }
 
@@ -4571,6 +4746,76 @@ pub mod browser_webgpu {
             })
         }
 
+        pub fn submit_resident_matmul_bias_add_f32_without_readback(
+            &mut self,
+            prepared: &BrowserPreparedMatmulBiasAddF32,
+            rows: usize,
+            cols: usize,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            if rows > prepared.matmul.capacity.rows || cols > prepared.matmul.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul-bias-add exceeded prepared matmul capacity",
+                ));
+            }
+            let len = checked_len_mul(rows, cols)?;
+            if len > prepared.output_capacity_len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul-bias-add exceeded prepared output capacity",
+                ));
+            }
+            if len == 0 {
+                return Ok(BrowserResidentSubmission {
+                    len,
+                    submitted_at_ms: browser_now_ms(),
+                });
+            }
+            self.ensure_healthy()?;
+            validate_f32_storage(self.limits, len)?;
+            let matmul_pipeline = self.matmul_pipeline.clone();
+            let bias_add_pipeline = self.bias_add_pipeline.clone();
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-browser-resident-matmul-bias-add-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-resident-matmul-bias-add-matmul-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&matmul_pipeline);
+                pass.set_bind_group(0, &prepared.matmul.bind_group, &[]);
+                pass.dispatch_workgroups(
+                    checked_workgroups(self.limits, cols.div_ceil(16))?,
+                    checked_workgroups(self.limits, rows.div_ceil(16))?,
+                    1,
+                );
+            }
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-resident-matmul-bias-add-bias-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&bias_add_pipeline);
+                pass.set_bind_group(0, &prepared.bias_bind_group, &[]);
+                pass.dispatch_workgroups(
+                    checked_workgroups(self.limits, cols.div_ceil(16))?,
+                    checked_workgroups(self.limits, rows.div_ceil(16))?,
+                    1,
+                );
+            }
+            self.queue.submit(Some(encoder.finish()));
+            self.stats.dispatches += 2;
+            self.stats.async_submissions += 1;
+            self.stats.pipeline_cache_hits += 2;
+            Ok(BrowserResidentSubmission {
+                len,
+                submitted_at_ms: browser_now_ms(),
+            })
+        }
+
         pub fn submit_prepared_resident_f32_graph_without_readback(
             &mut self,
             prepared: &BrowserPreparedResidentF32Graph,
@@ -4579,6 +4824,10 @@ pub mod browser_webgpu {
             match prepared {
                 BrowserPreparedResidentF32Graph::MatmulAdd(prepared) => self
                     .submit_resident_matmul_add_f32_without_readback(
+                        prepared, shape.rows, shape.cols,
+                    ),
+                BrowserPreparedResidentF32Graph::MatmulBiasAdd(prepared) => self
+                    .submit_resident_matmul_bias_add_f32_without_readback(
                         prepared, shape.rows, shape.cols,
                     ),
             }
@@ -4608,6 +4857,29 @@ pub mod browser_webgpu {
                 .await
         }
 
+        pub async fn read_resident_matmul_bias_add_f32(
+            &mut self,
+            prepared: &BrowserPreparedMatmulBiasAddF32,
+            submission: BrowserResidentSubmission,
+            rows: usize,
+            cols: usize,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if rows > prepared.matmul.capacity.rows || cols > prepared.matmul.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul-bias-add exceeded prepared capacity",
+                ));
+            }
+            if out.len() != submission.len || out.len() != checked_len_mul(rows, cols)? {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "resident matmul-bias-add output length differs from readback target",
+                ));
+            }
+            self.read_resident_f32(&prepared.out, submission, out).await
+        }
+
         pub async fn read_prepared_resident_f32_graph(
             &mut self,
             prepared: &BrowserPreparedResidentF32Graph,
@@ -4618,6 +4890,12 @@ pub mod browser_webgpu {
             match prepared {
                 BrowserPreparedResidentF32Graph::MatmulAdd(prepared) => {
                     self.read_resident_matmul_add_f32(
+                        prepared, submission, shape.rows, shape.cols, out,
+                    )
+                    .await
+                }
+                BrowserPreparedResidentF32Graph::MatmulBiasAdd(prepared) => {
+                    self.read_resident_matmul_bias_add_f32(
                         prepared, submission, shape.rows, shape.cols, out,
                     )
                     .await
@@ -5329,6 +5607,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     out[index] = lhs[index] + rhs[index];
+}
+";
+
+    const BIAS_ADD_SHADER: &str = r"
+struct BiasAddParams {
+    rows: u32,
+    cols: u32,
+    pad1: u32,
+    pad2: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> bias: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: BiasAddParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let col = id.x;
+    let row = id.y;
+    if (row >= params.rows || col >= params.cols) {
+        return;
+    }
+    let index = row * params.cols + col;
+    out[index] = lhs[index] + bias[col];
 }
 ";
 }

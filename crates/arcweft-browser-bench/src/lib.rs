@@ -73,6 +73,7 @@ impl Default for BrowserMathBenchConfig {
                 BrowserBenchMode::WebGpuPreparedResidentDispatchOnlyPipelined,
                 BrowserBenchMode::WebGpuPreparedCapacityResidentDispatchOnlyPipelined,
                 BrowserBenchMode::WebGpuPreparedResidentChainedDispatchOnlyPipelined,
+                BrowserBenchMode::WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined,
             ],
             mode_order: BrowserBenchModeOrder::AsListed,
             async_batch_depth: 4,
@@ -107,6 +108,7 @@ pub enum BrowserBenchMode {
     WebGpuPreparedResidentDispatchOnlyPipelined,
     WebGpuPreparedCapacityResidentDispatchOnlyPipelined,
     WebGpuPreparedResidentChainedDispatchOnlyPipelined,
+    WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Default, Eq, PartialEq, Serialize)]
@@ -397,6 +399,7 @@ fn recommend_browser_math_case(
                     | BrowserBenchMode::WebGpuPreparedResidentDispatchOnlyPipelined
                     | BrowserBenchMode::WebGpuPreparedCapacityResidentDispatchOnlyPipelined
                     | BrowserBenchMode::WebGpuPreparedResidentChainedDispatchOnlyPipelined
+                    | BrowserBenchMode::WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined
             )
         })
         .min_by(|lhs, rhs| lhs.median_ms.total_cmp(&rhs.median_ms));
@@ -654,11 +657,12 @@ mod wasm {
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
         BrowserMatmulAddF32Shape, BrowserMatmulCapacity, BrowserResidentF32GraphInputs,
-        BrowserResidentF32GraphSpec, BrowserResidentMatmulAddF32Inputs, BrowserSubmittedF32,
-        BrowserWebGpuAutoMathAdapter, BrowserWebGpuCapacityGrowth, BrowserWebGpuError,
-        BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathContext, BrowserWebGpuMathDispatch,
-        BrowserWebGpuMathRequest, BrowserWebGpuMathResponse, BrowserWebGpuMathStats,
-        BrowserWebGpuPreparedMath, BrowserWebGpuPreparedMathDispatch,
+        BrowserResidentF32GraphSpec, BrowserResidentMatmulAddF32Inputs,
+        BrowserResidentMatmulBiasAddF32Inputs, BrowserSubmittedF32, BrowserWebGpuAutoMathAdapter,
+        BrowserWebGpuCapacityGrowth, BrowserWebGpuError, BrowserWebGpuMathAutoPolicy,
+        BrowserWebGpuMathContext, BrowserWebGpuMathDispatch, BrowserWebGpuMathRequest,
+        BrowserWebGpuMathResponse, BrowserWebGpuMathStats, BrowserWebGpuPreparedMath,
+        BrowserWebGpuPreparedMathDispatch,
     };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
@@ -1281,7 +1285,8 @@ mod wasm {
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
                 fill_breakdown(&mut case, submit_samples, Vec::new());
             }
-            BrowserBenchMode::WebGpuPreparedResidentChainedDispatchOnlyPipelined => {
+            BrowserBenchMode::WebGpuPreparedResidentChainedDispatchOnlyPipelined
+            | BrowserBenchMode::WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined => {
                 return skipped_case(case, "mode_only_supports_matmul");
             }
         }
@@ -1968,6 +1973,105 @@ mod wasm {
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
                 fill_breakdown(&mut case, submit_samples, Vec::new());
             }
+            BrowserBenchMode::WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined => {
+                let Some(adapter) = adapter else {
+                    return skipped_case(case, "webgpu_unavailable");
+                };
+                let context = adapter.context_mut();
+                let batch_depth = async_batch_depth(mode, config);
+                context.reset_stats();
+                let capacity = BrowserMatmulCapacity {
+                    rows: shape.rows,
+                    shared: shape.shared,
+                    cols: shape.cols,
+                };
+                let graph_shape =
+                    BrowserMatmulAddF32Shape::new(shape.rows, shape.shared, shape.cols);
+                case.capacity = Some(capacity.into());
+                let prepared = match context.prepare_resident_f32_graph(
+                    BrowserResidentF32GraphSpec::matmul_bias_add(capacity),
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(error) => return skipped_case(case, &fallback_reason(&error)),
+                };
+                let bias = vec![0.0; shape.cols];
+                let inputs = BrowserResidentF32GraphInputs::MatmulBiasAdd(
+                    BrowserResidentMatmulBiasAddF32Inputs::new(&lhs, &rhs, &bias, graph_shape),
+                );
+                if let Err(error) = context.upload_prepared_resident_f32_graph(&prepared, inputs) {
+                    return skipped_case(case, &fallback_reason(&error));
+                }
+                let mut out = vec![0.0; shape.rows * shape.cols];
+                let mut samples = Vec::with_capacity(config.sample_iters);
+                let mut submit_samples = Vec::with_capacity(config.sample_iters * batch_depth);
+                let mut latest = None;
+                let mut error = None;
+                for _ in 0..config.warmup_iters {
+                    let mut submitted = None;
+                    for _ in 0..batch_depth {
+                        match context.submit_prepared_resident_f32_graph_without_readback(
+                            &prepared,
+                            graph_shape,
+                        ) {
+                            Ok(current) => submitted = Some(current),
+                            Err(current) => {
+                                error = Some(current);
+                                break;
+                            }
+                        }
+                    }
+                    yield_to_browser().await;
+                    if let Some(current) = submitted
+                        && let Err(current) = context
+                            .read_prepared_resident_f32_graph(
+                                &prepared,
+                                current,
+                                graph_shape,
+                                &mut out,
+                            )
+                            .await
+                    {
+                        error = Some(current);
+                    }
+                    if error.is_some() {
+                        break;
+                    }
+                }
+                if error.is_none() {
+                    for _ in 0..config.sample_iters {
+                        let total_start = now_ms();
+                        for _ in 0..batch_depth {
+                            let submit_start = now_ms();
+                            match context.submit_prepared_resident_f32_graph_without_readback(
+                                &prepared,
+                                graph_shape,
+                            ) {
+                                Ok(current) => latest = Some(current),
+                                Err(current) => {
+                                    error = Some(current);
+                                    break;
+                                }
+                            }
+                            submit_samples.push(now_ms() - submit_start);
+                        }
+                        if error.is_some() {
+                            break;
+                        }
+                        yield_to_browser().await;
+                        samples.push((now_ms() - total_start) / batch_depth as f64);
+                    }
+                }
+                if error.is_none()
+                    && let Some(current) = latest
+                    && let Err(current) = context
+                        .read_prepared_resident_f32_graph(&prepared, current, graph_shape, &mut out)
+                        .await
+                {
+                    error = Some(current);
+                }
+                case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
+                fill_breakdown(&mut case, submit_samples, Vec::new());
+            }
         }
         case
     }
@@ -2544,6 +2648,7 @@ mod wasm {
                 | BrowserBenchMode::WebGpuPreparedResidentDispatchOnlyPipelined
                 | BrowserBenchMode::WebGpuPreparedCapacityResidentDispatchOnlyPipelined
                 | BrowserBenchMode::WebGpuPreparedResidentChainedDispatchOnlyPipelined
+                | BrowserBenchMode::WebGpuPreparedResidentMatmulBiasDispatchOnlyPipelined
         ) {
             config.async_batch_depth.max(1)
         } else {
