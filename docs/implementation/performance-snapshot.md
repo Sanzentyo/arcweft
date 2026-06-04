@@ -572,16 +572,23 @@ just browser-webgpu-bench-perf
 ```
 
 The exported browser function returns JSON with CPU Wasm, WebGPU one-shot,
-prepared upload, prepared resident, async resident, and pipelined resident
-cases. If WebGPU is unavailable, the report records a structured skip reason
-instead of failing the whole run. The smoke recipe drives local Chrome/Edge
-through DevTools when available. If the browser executable is not discoverable
-from the environment, set `CHROME` or `CHROME_BIN` before running the recipe.
+prepared upload, prepared resident, prepared-capacity resident, async resident,
+pipelined resident, and prepared-capacity pipelined resident cases. Prepared
+cases include an optional typed `capacity` field separate from the actual
+`shape`, so the report can distinguish exact resident storage from
+overprovisioned capacity storage without recording host paths. If WebGPU is
+unavailable, the report records a structured skip reason instead of failing the
+whole run. The smoke recipe drives local Chrome/Edge through DevTools when
+available. If the browser executable is not discoverable from the environment,
+set `CHROME` or `CHROME_BIN` before running the recipe.
 
 Local browser WebGPU measurements on the current Windows/Chrome environment:
 
 | Case | Best browser WebGPU mode | CPU Wasm median ms | GPU median ms | Speedup | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 8.19 | 0.55 | 14.89x | 2026-06-05 smoke/perf rerun, submit median 0.025 ms, readback median 0.325 ms |
+| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 8.19 | 1.19125 | 6.88x | capacity mode, submit median 0.03 ms, readback median 0.36 ms |
+| `matmul_f32_m128_k128_n128` | prepared capacity resident pipelined | 0.875 | 0.68 | 1.29x | capacity mode keeps overprovisioned buffers resident |
 | `matmul_f32_m256_k256_n256` | prepared resident pipelined | 6.985 | 1.5225 | 4.59x | submit median 0.035 ms, readback median 0.47 ms, 256 workgroups |
 | `matmul_f32_m128_k128_n128` | prepared resident pipelined | 0.87 | 0.40375 | 2.15x | submit median 0.025 ms, readback median 0.195 ms, 64 workgroups |
 | `matmul_f32_m64_k64_n64` | prepared resident pipelined | 0.305 | 0.47375 | 0.64x | below crossover on this browser |

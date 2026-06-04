@@ -19,8 +19,10 @@ const DEFAULT_CONFIG = {
     "web_gpu_one_shot",
     "web_gpu_prepared_upload",
     "web_gpu_prepared_resident",
+    "web_gpu_prepared_capacity_resident",
     "web_gpu_prepared_resident_async",
     "web_gpu_prepared_resident_pipelined",
+    "web_gpu_prepared_capacity_resident_pipelined",
   ],
 };
 
@@ -39,8 +41,10 @@ const PERF_CONFIG = {
     "cpu_wasm",
     "web_gpu_prepared_upload",
     "web_gpu_prepared_resident",
+    "web_gpu_prepared_capacity_resident",
     "web_gpu_prepared_resident_async",
     "web_gpu_prepared_resident_pipelined",
+    "web_gpu_prepared_capacity_resident_pipelined",
   ],
 };
 

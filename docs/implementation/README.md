@@ -265,7 +265,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   compatible shapes without recreating GPU storage or bind groups. The
   `math_bench` example exposes the explicit prepared-capacity path with
   `--reuse-capacity`, and the Justfile has matrix, tensor, and matmul recipes
-  for collecting path-free JSON measurements.
+  for collecting path-free JSON measurements. Browser WebGPU benchmarking now
+  exposes matching prepared-capacity resident and prepared-capacity pipelined
+  modes with typed `shape` and `capacity` fields, so native and browser GPU
+  measurements can both show whether work used exact or overprovisioned
+  resident buffers.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
