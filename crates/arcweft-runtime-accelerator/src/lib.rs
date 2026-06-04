@@ -644,6 +644,16 @@ impl MatrixBinaryValueSignature {
             rhs: f32_value_bits(rhs.values()),
         }
     }
+
+    fn matches(&self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> bool {
+        f32_value_bits_match(&self.lhs, lhs.values())
+            && f32_value_bits_match(&self.rhs, rhs.values())
+    }
+
+    fn update(&mut self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) {
+        update_f32_value_bits(&mut self.lhs, lhs.values());
+        update_f32_value_bits(&mut self.rhs, rhs.values());
+    }
 }
 
 impl TensorBinaryShapeSignature {
@@ -698,10 +708,33 @@ impl TensorBinaryValueSignature {
             rhs: f32_value_bits(rhs.values()),
         }
     }
+
+    fn matches(&self, lhs: &DenseTensorF32, rhs: &DenseTensorF32) -> bool {
+        f32_value_bits_match(&self.lhs, lhs.values())
+            && f32_value_bits_match(&self.rhs, rhs.values())
+    }
+
+    fn update(&mut self, lhs: &DenseTensorF32, rhs: &DenseTensorF32) {
+        update_f32_value_bits(&mut self.lhs, lhs.values());
+        update_f32_value_bits(&mut self.rhs, rhs.values());
+    }
 }
 
 fn f32_value_bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|value| value.to_bits()).collect()
+}
+
+fn f32_value_bits_match(bits: &[u32], values: &[f32]) -> bool {
+    bits.len() == values.len()
+        && bits
+            .iter()
+            .zip(values)
+            .all(|(stored, value)| *stored == value.to_bits())
+}
+
+fn update_f32_value_bits(bits: &mut Vec<u32>, values: &[f32]) {
+    bits.clear();
+    bits.extend(values.iter().map(|value| value.to_bits()));
 }
 
 fn power_of_two_capacity(value: usize) -> usize {
@@ -3701,16 +3734,15 @@ impl RuntimePureAccelerator {
         }
         self.math.record_backend_selection(selection);
         let signature = MatrixBinaryShapeSignature::new(lhs, rhs);
-        let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.matmul.take()
             && cache.capacity_signature.contains(&signature)
         {
             let mut cache = cache;
-            if cache.signature != signature || cache.value_signature != value_signature {
+            if cache.signature != signature || !cache.value_signature.matches(lhs, rhs) {
                 self.math
                     .update_prepared_matrix_matmul_f32(&cache.prepared, lhs, rhs)?;
                 cache.signature = signature;
-                cache.value_signature = value_signature;
+                cache.value_signature.update(lhs, rhs);
             }
             let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
             self.math.run_prepared_matrix_matmul_f32_shape_into(
@@ -3742,7 +3774,7 @@ impl RuntimePureAccelerator {
         self.math_prepare_cache.matmul = Some(PreparedMatrixMatmulCache {
             signature,
             capacity_signature,
-            value_signature,
+            value_signature: MatrixBinaryValueSignature::new(lhs, rhs),
             prepared,
         });
         result
@@ -3762,16 +3794,15 @@ impl RuntimePureAccelerator {
         }
         self.math.record_backend_selection(selection);
         let signature = MatrixBinaryShapeSignature::new(lhs, rhs);
-        let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.matrix_add.take()
             && cache.capacity_signature.contains(&signature)
         {
             let mut cache = cache;
-            if cache.signature != signature || cache.value_signature != value_signature {
+            if cache.signature != signature || !cache.value_signature.matches(lhs, rhs) {
                 self.math
                     .update_prepared_matrix_add_f32(&cache.prepared, lhs, rhs)?;
                 cache.signature = signature;
-                cache.value_signature = value_signature;
+                cache.value_signature.update(lhs, rhs);
             }
             let mut out = vec![0.0; lhs.values().len()];
             self.math.run_prepared_matrix_add_f32_shape_into(
@@ -3802,7 +3833,7 @@ impl RuntimePureAccelerator {
         self.math_prepare_cache.matrix_add = Some(PreparedMatrixAddCache {
             signature,
             capacity_signature,
-            value_signature,
+            value_signature: MatrixBinaryValueSignature::new(lhs, rhs),
             prepared,
         });
         result
@@ -3822,16 +3853,15 @@ impl RuntimePureAccelerator {
         }
         self.math.record_backend_selection(selection);
         let signature = TensorBinaryShapeSignature::new(lhs, rhs);
-        let value_signature = TensorBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.tensor_add.take()
             && cache.capacity_signature.contains(&signature)
         {
             let mut cache = cache;
-            if cache.signature != signature || cache.value_signature != value_signature {
+            if cache.signature != signature || !cache.value_signature.matches(lhs, rhs) {
                 self.math
                     .update_prepared_tensor_add_f32(&cache.prepared, lhs, rhs)?;
                 cache.signature = signature;
-                cache.value_signature = value_signature;
+                cache.value_signature.update(lhs, rhs);
             }
             let mut out = vec![0.0; lhs.values().len()];
             self.math.run_prepared_tensor_add_f32_len_into(
@@ -3856,7 +3886,7 @@ impl RuntimePureAccelerator {
         self.math_prepare_cache.tensor_add = Some(PreparedTensorAddCache {
             signature,
             capacity_signature,
-            value_signature,
+            value_signature: TensorBinaryValueSignature::new(lhs, rhs),
             prepared,
         });
         result

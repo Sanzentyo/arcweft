@@ -536,6 +536,12 @@ and `verify-types --run` accept `--math-backend` and
 `--math-wgpu-min-elements`; `[profiles.NAME.pure]` supports
 `math_backend` and `math_wgpu_min_elements`, with CLI flags taking precedence.
 Executor JSON reports both selected values under `pure_config`.
+Native `wgpu` runtime math calls keep a prepared buffer cache inside
+`RuntimePureAccelerator`. Cache hits compare the current `f32` input bits
+against the stored signature and skip `queue.write_buffer` when values are
+unchanged. The comparison now reuses the stored signature allocation and scans
+the current input slices directly, so the unchanged-input path no longer builds
+a fresh `Vec<u32>` copy of every input element before deciding to skip upload.
 
 The wgpu path is feature-gated by `math-wgpu` and keeps Windows DX12 enabled
 alongside Vulkan, Metal, and GLES. The workspace Rust floor is raised to 1.96
