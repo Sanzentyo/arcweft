@@ -1362,7 +1362,7 @@ mod wasm {
         mut submit: impl FnMut(
             &mut BrowserWebGpuAutoMathAdapter,
         ) -> Result<BrowserWebGpuMathDispatch, BrowserWebGpuError>,
-        capture: fn(&BrowserWebGpuMathResponse, &mut Vec<f32>),
+        capture_immediate: fn(&BrowserWebGpuMathResponse, &mut Vec<f32>),
     ) -> BrowserMathBenchCase {
         let batch_depth = async_batch_depth(mode, config);
         adapter.reset_stats();
@@ -1376,7 +1376,7 @@ mod wasm {
             for _ in 0..batch_depth {
                 match submit(adapter) {
                     Ok(BrowserWebGpuMathDispatch::Immediate(response)) => {
-                        capture(&response, &mut out);
+                        capture_immediate(&response, &mut out);
                         case.capacity = response.selection().capacity().map(Into::into);
                     }
                     Ok(BrowserWebGpuMathDispatch::Submitted(current)) => {
@@ -1391,8 +1391,9 @@ mod wasm {
             }
             yield_to_browser().await;
             for current in submitted {
-                match adapter.read_submitted(current).await {
-                    Ok(response) => capture(&response, &mut out),
+                resize_out_for_submitted(&mut out, current.len());
+                match adapter.read_submitted_values_into(current, &mut out).await {
+                    Ok(_) => {}
                     Err(current) => {
                         error = Some(current);
                         break;
@@ -1411,7 +1412,7 @@ mod wasm {
                     let submit_start = now_ms();
                     match submit(adapter) {
                         Ok(BrowserWebGpuMathDispatch::Immediate(response)) => {
-                            capture(&response, &mut out);
+                            capture_immediate(&response, &mut out);
                             case.capacity = response.selection().capacity().map(Into::into);
                         }
                         Ok(BrowserWebGpuMathDispatch::Submitted(current)) => {
@@ -1431,8 +1432,9 @@ mod wasm {
                 yield_to_browser().await;
                 for current in submitted {
                     let readback_start = now_ms();
-                    match adapter.read_submitted(current).await {
-                        Ok(response) => capture(&response, &mut out),
+                    resize_out_for_submitted(&mut out, current.len());
+                    match adapter.read_submitted_values_into(current, &mut out).await {
+                        Ok(_) => {}
                         Err(current) => {
                             error = Some(current);
                             break;
@@ -1449,6 +1451,12 @@ mod wasm {
         case = finish_gpu_case(case, error, samples, adapter.stats(), expected, &out);
         fill_breakdown(&mut case, submit_samples, readback_samples);
         case
+    }
+
+    fn resize_out_for_submitted(out: &mut Vec<f32>, len: usize) {
+        if out.len() != len {
+            out.resize(len, 0.0);
+        }
     }
 
     fn capture_tensor_response(response: &BrowserWebGpuMathResponse, out: &mut Vec<f32>) {

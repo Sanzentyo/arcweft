@@ -2806,6 +2806,20 @@ pub mod browser_webgpu {
         },
     }
 
+    /// Typed metadata returned after reading submitted browser GPU values into
+    /// a caller-owned buffer.
+    pub enum BrowserWebGpuSubmittedOutput {
+        MatrixF32 {
+            rows: usize,
+            cols: usize,
+            selection: BrowserWebGpuMathSelection,
+        },
+        TensorF32 {
+            dims: Vec<usize>,
+            selection: BrowserWebGpuMathSelection,
+        },
+    }
+
     /// Adapter-owned browser WebGPU Auto dispatcher.
     ///
     /// This is the async browser counterpart to the synchronous native math
@@ -2940,6 +2954,14 @@ pub mod browser_webgpu {
         }
     }
 
+    impl BrowserWebGpuSubmittedOutput {
+        pub const fn selection(&self) -> BrowserWebGpuMathSelection {
+            match self {
+                Self::MatrixF32 { selection, .. } | Self::TensorF32 { selection, .. } => *selection,
+            }
+        }
+    }
+
     impl BrowserWebGpuAutoMathAdapter {
         pub async fn new(policy: BrowserWebGpuMathAutoPolicy) -> Result<Self, BrowserWebGpuError> {
             let context = BrowserWebGpuMathContext::new().await?;
@@ -3032,15 +3054,13 @@ pub mod browser_webgpu {
             &mut self,
             submitted: BrowserWebGpuSubmittedMath,
         ) -> Result<BrowserWebGpuMathResponse, BrowserWebGpuError> {
-            match submitted {
-                BrowserWebGpuSubmittedMath::MatrixF32 {
-                    submitted,
+            let mut out = vec![0.0; submitted.len()];
+            match self.read_submitted_values_into(submitted, &mut out).await? {
+                BrowserWebGpuSubmittedOutput::MatrixF32 {
                     rows,
                     cols,
                     selection,
                 } => {
-                    let mut out = vec![0.0; rows * cols];
-                    self.context.read_submitted_f32(submitted, &mut out).await?;
                     let value = DenseMatrixF32::new(rows, cols, out)?;
                     Ok(BrowserWebGpuMathResponse::MatrixF32(
                         BrowserWebGpuAutoMathResult {
@@ -3050,13 +3070,7 @@ pub mod browser_webgpu {
                         },
                     ))
                 }
-                BrowserWebGpuSubmittedMath::TensorF32 {
-                    submitted,
-                    dims,
-                    selection,
-                } => {
-                    let mut out = vec![0.0; submitted.len()];
-                    self.context.read_submitted_f32(submitted, &mut out).await?;
+                BrowserWebGpuSubmittedOutput::TensorF32 { dims, selection } => {
                     let value = DenseTensorF32::new(dims, out)?;
                     Ok(BrowserWebGpuMathResponse::TensorF32(
                         BrowserWebGpuAutoMathResult {
@@ -3065,6 +3079,36 @@ pub mod browser_webgpu {
                             stats: self.context.stats,
                         },
                     ))
+                }
+            }
+        }
+
+        pub async fn read_submitted_values_into(
+            &mut self,
+            submitted: BrowserWebGpuSubmittedMath,
+            out: &mut [f32],
+        ) -> Result<BrowserWebGpuSubmittedOutput, BrowserWebGpuError> {
+            match submitted {
+                BrowserWebGpuSubmittedMath::MatrixF32 {
+                    submitted,
+                    rows,
+                    cols,
+                    selection,
+                } => {
+                    self.context.read_submitted_f32(submitted, out).await?;
+                    Ok(BrowserWebGpuSubmittedOutput::MatrixF32 {
+                        rows,
+                        cols,
+                        selection,
+                    })
+                }
+                BrowserWebGpuSubmittedMath::TensorF32 {
+                    submitted,
+                    dims,
+                    selection,
+                } => {
+                    self.context.read_submitted_f32(submitted, out).await?;
+                    Ok(BrowserWebGpuSubmittedOutput::TensorF32 { dims, selection })
                 }
             }
         }
