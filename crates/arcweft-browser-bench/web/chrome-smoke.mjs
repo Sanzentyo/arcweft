@@ -8,6 +8,10 @@ const preset = readOption("--preset");
 const timeoutMs = readPositiveInteger("--timeout-ms", 60_000);
 const benchUrl = buildBenchUrl(port, preset);
 const cdpPort = port + 1000;
+const DIAGNOSTIC_MODES = new Set([
+  "web_gpu_prepared_resident_submit_only_pipelined",
+  "web_gpu_prepared_capacity_resident_submit_only_pipelined",
+]);
 const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -209,6 +213,7 @@ function summarize(report) {
     (entry) => entry.fallback_reason === null && !entry.correctness.passed,
   );
   const speedups = summarizeSpeedups(report);
+  const diagnosticSpeedups = summarizeSpeedups(report, { diagnostics: true });
   return {
     schema_version: report.schema_version,
     webgpu_available: report.run.webgpu.available,
@@ -220,6 +225,7 @@ function summarize(report) {
     recommendations: report.recommendations?.length ?? 0,
     stability: summarizeStability(report).slice(0, 12),
     best_speedups: speedups.slice(0, 12),
+    diagnostic_speedups: diagnosticSpeedups.slice(0, 8),
     selected_modes: (report.recommendations ?? []).slice(0, 8).map((entry) => ({
       op: entry.op,
       shape: entry.shape,
@@ -262,15 +268,15 @@ function summarizeStability(report) {
     .sort((lhs, rhs) => (rhs.spread_ratio ?? 0) - (lhs.spread_ratio ?? 0));
 }
 
-function summarizeSpeedups(report) {
-  const stabilityRows = summarizeStabilitySpeedups(report);
+function summarizeSpeedups(report, options = {}) {
+  const stabilityRows = summarizeStabilitySpeedups(report, options);
   if (stabilityRows.length > 0) {
     return stabilityRows;
   }
-  return summarizeCaseSpeedups(report);
+  return summarizeCaseSpeedups(report, options);
 }
 
-function summarizeStabilitySpeedups(report) {
+function summarizeStabilitySpeedups(report, options) {
   const groups = new Map();
   for (const entry of report.stability ?? []) {
     if (
@@ -296,7 +302,8 @@ function summarizeStabilitySpeedups(report) {
       if (
         entry.mode === "cpu_wasm" ||
         typeof entry.median_of_medians_ms !== "number" ||
-        entry.median_of_medians_ms === 0
+        entry.median_of_medians_ms === 0 ||
+        diagnosticFilterRejects(entry.mode, options)
       ) {
         continue;
       }
@@ -330,7 +337,7 @@ function summarizeStabilitySpeedups(report) {
   return rows.sort((lhs, rhs) => rhs.speedup - lhs.speedup);
 }
 
-function summarizeCaseSpeedups(report) {
+function summarizeCaseSpeedups(report, options) {
   const groups = new Map();
   for (const entry of report.cases) {
     const key = shapeKey(entry.op, entry.shape);
@@ -349,7 +356,8 @@ function summarizeCaseSpeedups(report) {
       if (
         entry.mode === "cpu_wasm" ||
         typeof entry.median_ms !== "number" ||
-        entry.median_ms === 0
+        entry.median_ms === 0 ||
+        diagnosticFilterRejects(entry.mode, options)
       ) {
         continue;
       }
@@ -370,6 +378,11 @@ function summarizeCaseSpeedups(report) {
     }
   }
   return rows.sort((lhs, rhs) => rhs.speedup - lhs.speedup);
+}
+
+function diagnosticFilterRejects(mode, options) {
+  const isDiagnostic = DIAGNOSTIC_MODES.has(mode);
+  return options.diagnostics ? !isDiagnostic : isDiagnostic;
 }
 
 function representativeCase(report, op, shape, mode) {

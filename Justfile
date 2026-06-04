@@ -210,3 +210,7 @@ browser-webgpu-bench-stability port="8790":
 browser-webgpu-bench-capacity-stability port="8791":
     @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
     @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset capacity-stability --timeout-ms 300000
+
+browser-webgpu-bench-submit-only port="8792":
+    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
+    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset submit-only --timeout-ms 300000

@@ -68,6 +68,8 @@ impl Default for BrowserMathBenchConfig {
                 BrowserBenchMode::WebGpuPreparedResidentAsync,
                 BrowserBenchMode::WebGpuPreparedResidentPipelined,
                 BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined,
+                BrowserBenchMode::WebGpuPreparedResidentSubmitOnlyPipelined,
+                BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined,
             ],
             mode_order: BrowserBenchModeOrder::AsListed,
             async_batch_depth: 4,
@@ -97,6 +99,8 @@ pub enum BrowserBenchMode {
     WebGpuPreparedResidentAsync,
     WebGpuPreparedResidentPipelined,
     WebGpuPreparedCapacityResidentPipelined,
+    WebGpuPreparedResidentSubmitOnlyPipelined,
+    WebGpuPreparedCapacityResidentSubmitOnlyPipelined,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Default, Eq, PartialEq, Serialize)]
@@ -382,6 +386,8 @@ fn recommend_browser_math_case(
                     | BrowserBenchMode::AutoResidentPipelined
                     | BrowserBenchMode::AutoResidentDirectPipelined
                     | BrowserBenchMode::CpuWasm
+                    | BrowserBenchMode::WebGpuPreparedResidentSubmitOnlyPipelined
+                    | BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined
             )
         })
         .min_by(|lhs, rhs| lhs.median_ms.total_cmp(&rhs.median_ms));
@@ -1108,6 +1114,82 @@ mod wasm {
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
                 fill_breakdown(&mut case, submit_samples, readback_samples);
             }
+            BrowserBenchMode::WebGpuPreparedResidentSubmitOnlyPipelined
+            | BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined => {
+                let Some(adapter) = adapter else {
+                    return skipped_case(case, "webgpu_unavailable");
+                };
+                let context = adapter.context_mut();
+                let batch_depth = async_batch_depth(mode, config);
+                context.reset_stats();
+                let capacity_len = elementwise_capacity_len(mode, len);
+                case.capacity = Some(BrowserMathBenchCapacity::Len { len: capacity_len });
+                let prepared = match context.prepare_elementwise_f32(capacity_len) {
+                    Ok(prepared) => prepared,
+                    Err(error) => return skipped_case(case, &fallback_reason(&error)),
+                };
+                if let Err(error) = context.upload_prepared_elementwise_f32(&prepared, &lhs, &rhs) {
+                    return skipped_case(case, &fallback_reason(&error));
+                }
+                let mut out = vec![0.0; len];
+                let mut samples = Vec::with_capacity(config.sample_iters);
+                let mut submit_samples = Vec::with_capacity(config.sample_iters * batch_depth);
+                let mut drain = Vec::with_capacity(config.sample_iters * batch_depth);
+                let mut error = None;
+                for _ in 0..config.warmup_iters {
+                    let mut submitted = Vec::with_capacity(batch_depth);
+                    for _ in 0..batch_depth {
+                        match context.submit_resident_elementwise_f32(&prepared, len) {
+                            Ok(current) => submitted.push(current),
+                            Err(current) => {
+                                error = Some(current);
+                                break;
+                            }
+                        }
+                    }
+                    yield_to_browser().await;
+                    for current in submitted {
+                        if let Err(current) = context.read_submitted_f32(current, &mut out).await {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                    if error.is_some() {
+                        break;
+                    }
+                }
+                if error.is_none() {
+                    for _ in 0..config.sample_iters {
+                        let total_start = now_ms();
+                        for _ in 0..batch_depth {
+                            let submit_start = now_ms();
+                            match context.submit_resident_elementwise_f32(&prepared, len) {
+                                Ok(current) => drain.push(current),
+                                Err(current) => {
+                                    error = Some(current);
+                                    break;
+                                }
+                            }
+                            submit_samples.push(now_ms() - submit_start);
+                        }
+                        if error.is_some() {
+                            break;
+                        }
+                        yield_to_browser().await;
+                        samples.push((now_ms() - total_start) / batch_depth as f64);
+                    }
+                }
+                if error.is_none() {
+                    for current in drain {
+                        if let Err(current) = context.read_submitted_f32(current, &mut out).await {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                }
+                case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
+                fill_breakdown(&mut case, submit_samples, Vec::new());
+            }
         }
         case
     }
@@ -1514,6 +1596,92 @@ mod wasm {
                 }
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
                 fill_breakdown(&mut case, submit_samples, readback_samples);
+            }
+            BrowserBenchMode::WebGpuPreparedResidentSubmitOnlyPipelined
+            | BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined => {
+                let Some(adapter) = adapter else {
+                    return skipped_case(case, "webgpu_unavailable");
+                };
+                let context = adapter.context_mut();
+                let batch_depth = async_batch_depth(mode, config);
+                context.reset_stats();
+                let capacity = matmul_capacity(mode, shape);
+                case.capacity = Some(capacity.into());
+                let prepared = match context.prepare_matmul_f32(capacity) {
+                    Ok(prepared) => prepared,
+                    Err(error) => return skipped_case(case, &fallback_reason(&error)),
+                };
+                if let Err(error) = context.upload_prepared_matmul_f32(
+                    &prepared,
+                    &lhs,
+                    &rhs,
+                    shape.rows,
+                    shape.shared,
+                    shape.cols,
+                ) {
+                    return skipped_case(case, &fallback_reason(&error));
+                }
+                let mut out = vec![0.0; shape.rows * shape.cols];
+                let mut samples = Vec::with_capacity(config.sample_iters);
+                let mut submit_samples = Vec::with_capacity(config.sample_iters * batch_depth);
+                let mut drain = Vec::with_capacity(config.sample_iters * batch_depth);
+                let mut error = None;
+                for _ in 0..config.warmup_iters {
+                    let mut submitted = Vec::with_capacity(batch_depth);
+                    for _ in 0..batch_depth {
+                        match context.submit_resident_matmul_f32(&prepared, shape.rows, shape.cols)
+                        {
+                            Ok(current) => submitted.push(current),
+                            Err(current) => {
+                                error = Some(current);
+                                break;
+                            }
+                        }
+                    }
+                    yield_to_browser().await;
+                    for current in submitted {
+                        if let Err(current) = context.read_submitted_f32(current, &mut out).await {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                    if error.is_some() {
+                        break;
+                    }
+                }
+                if error.is_none() {
+                    for _ in 0..config.sample_iters {
+                        let total_start = now_ms();
+                        for _ in 0..batch_depth {
+                            let submit_start = now_ms();
+                            match context
+                                .submit_resident_matmul_f32(&prepared, shape.rows, shape.cols)
+                            {
+                                Ok(current) => drain.push(current),
+                                Err(current) => {
+                                    error = Some(current);
+                                    break;
+                                }
+                            }
+                            submit_samples.push(now_ms() - submit_start);
+                        }
+                        if error.is_some() {
+                            break;
+                        }
+                        yield_to_browser().await;
+                        samples.push((now_ms() - total_start) / batch_depth as f64);
+                    }
+                }
+                if error.is_none() {
+                    for current in drain {
+                        if let Err(current) = context.read_submitted_f32(current, &mut out).await {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                }
+                case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
+                fill_breakdown(&mut case, submit_samples, Vec::new());
             }
         }
         case
@@ -2086,6 +2254,8 @@ mod wasm {
                 | BrowserBenchMode::AutoResidentDirectPipelined
                 | BrowserBenchMode::WebGpuPreparedResidentPipelined
                 | BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined
+                | BrowserBenchMode::WebGpuPreparedResidentSubmitOnlyPipelined
+                | BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined
         ) {
             config.async_batch_depth.max(1)
         } else {
@@ -2122,6 +2292,7 @@ mod wasm {
             mode,
             BrowserBenchMode::WebGpuPreparedCapacityResident
                 | BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined
+                | BrowserBenchMode::WebGpuPreparedCapacityResidentSubmitOnlyPipelined
         )
     }
 

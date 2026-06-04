@@ -587,6 +587,7 @@ just browser-webgpu-bench-perf
 just browser-webgpu-bench-isolate
 just browser-webgpu-bench-stability
 just browser-webgpu-bench-capacity-stability
+just browser-webgpu-bench-submit-only
 ```
 
 The exported browser function returns JSON with Auto dispatch, CPU Wasm,
@@ -619,6 +620,11 @@ rounds, recommendation selection uses the mode's median-of-medians rather than
 the fastest single case, so low outlier rounds do not drive backend policy
 calibration. Auto cases are reported as policy observations and are not treated
 as independent candidate modes for choosing the fastest backend.
+Submit-only diagnostic modes are also excluded from recommendations and normal
+`best_speedups`; the CLI summary reports them under `diagnostic_speedups`.
+These modes submit batches of resident GPU work and defer correctness readback
+until after measured samples, giving a lower-bound estimate for future
+resident GPU flow chains where intermediate values remain on the GPU.
 When WebGPU limits are available, the same recommendation also records the
 runtime policy mode, policy capacity, policy reason, and whether the policy
 matches the measured winner. This gives browser-side `Auto` threshold tuning a
@@ -679,6 +685,11 @@ cost for every submission.
 This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
+The browser harness also exposes submit-only diagnostic modes for prepared
+resident work. They are not backend recommendations because they intentionally
+exclude per-sample readback completion, but they show how much of the current
+value-returning path is spent at the host boundary rather than in command
+submission.
 
 Latest path-free browser perf run after direct readback, resident prepared Auto
 submission, and the direct Auto-resident isolation mode:
@@ -758,6 +769,23 @@ choose the default backend. Default browser Auto therefore keeps using exact
 prepared resident buffers for dense matmul and leaves capacity-prepared
 pipelining as an explicit tuning mode until repeated measurements show it
 consistently improves a larger shape or a different browser/GPU environment.
+
+The submit-only preset measures the readback-free lower bound for the same
+`512x512x512` matmul shape. A local path-free run recorded 16 measured cases,
+no skips, and no correctness failures:
+
+| Mode | Rounds | Median-of-medians ms | Submit median ms | Readback median ms | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.03250 | 0.03000 | n/a | measured samples submit only; final readback happens after timing; reported under `diagnostic_speedups` |
+| `auto_resident_pipelined` | 4 | 1.87625 | 0.08000 | 1.63500 | natural Auto resident call shape |
+| `web_gpu_prepared_resident_pipelined` | 4 | 2.34375 | 0.10000 | 1.84000 | value-returning benchmark path |
+| `cpu_wasm` | 4 | 57.22000 | n/a | n/a | CPU baseline |
+
+The diagnostic result is not a backend speedup claim. It shows that command
+submission alone is about two orders of magnitude below the value-returning
+path, so the next browser-side optimization target is a resident-value API that
+can chain GPU tensor/matrix operations and only read back at an explicit host
+boundary.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph
