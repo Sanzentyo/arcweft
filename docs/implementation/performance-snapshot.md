@@ -709,9 +709,12 @@ recipes so the capacity path can be timed without recording host paths. Auto
 matmul uses the same
 prepared-buffer path when the configured work threshold selects wgpu; Auto
 elementwise stays on the CPU backend because the current one-shot GPU path is
-copy dominated in local measurements. The prepared cache uses shape for cache
-eligibility and compares full `f32` bit-pattern fingerprints only to decide
-whether an input upload can be skipped for exact repeated values.
+copy dominated in local measurements. Runtime/Auto prepared caches use
+power-of-two capacity buckets for cache eligibility, so a smaller compatible
+shape can reuse an existing prepared allocation. The cache still tracks the
+last exact shape and full `f32` bit-pattern fingerprints: shape changes or
+value changes update shader params/input buffers, while exact repeated values
+skip the upload and only dispatch/read back the result.
 The wgpu readback path also keeps a reusable MAP_READ staging buffer in the
 adapter context; one-shot calls and prepared dispatches grow it on demand and
 remap it instead of allocating a fresh download buffer for every result.

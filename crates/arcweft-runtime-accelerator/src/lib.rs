@@ -536,18 +536,21 @@ struct RuntimeMathPrepareCache {
 
 struct PreparedMatrixMatmulCache {
     signature: MatrixBinaryShapeSignature,
+    capacity_signature: MatrixBinaryShapeSignature,
     value_signature: MatrixBinaryValueSignature,
     prepared: math::RuntimePreparedMatrixMatmulF32,
 }
 
 struct PreparedMatrixAddCache {
     signature: MatrixBinaryShapeSignature,
+    capacity_signature: MatrixBinaryShapeSignature,
     value_signature: MatrixBinaryValueSignature,
     prepared: math::RuntimePreparedMatrixAddF32,
 }
 
 struct PreparedTensorAddCache {
     signature: TensorBinaryShapeSignature,
+    capacity_signature: TensorBinaryShapeSignature,
     value_signature: TensorBinaryValueSignature,
     prepared: math::RuntimePreparedTensorAddF32,
 }
@@ -594,6 +597,24 @@ impl MatrixBinaryShapeSignature {
             rhs: MatrixShapeSignature::new(rhs),
         }
     }
+
+    fn capacity_for_matrix_add(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> Self {
+        Self {
+            lhs: MatrixShapeSignature::capacity_for(lhs),
+            rhs: MatrixShapeSignature::capacity_for(rhs),
+        }
+    }
+
+    fn capacity_for_matmul(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> Self {
+        Self {
+            lhs: MatrixShapeSignature::capacity_for(lhs),
+            rhs: MatrixShapeSignature::capacity_for(rhs),
+        }
+    }
+
+    fn contains(&self, shape: &Self) -> bool {
+        self.lhs.contains(&shape.lhs) && self.rhs.contains(&shape.rhs)
+    }
 }
 
 impl MatrixShapeSignature {
@@ -602,6 +623,17 @@ impl MatrixShapeSignature {
             rows: matrix.rows(),
             cols: matrix.cols(),
         }
+    }
+
+    fn capacity_for(matrix: &DenseMatrixF32) -> Self {
+        Self {
+            rows: power_of_two_capacity(matrix.rows()),
+            cols: power_of_two_capacity(matrix.cols()),
+        }
+    }
+
+    fn contains(&self, shape: &Self) -> bool {
+        self.rows >= shape.rows && self.cols >= shape.cols
     }
 }
 
@@ -621,6 +653,17 @@ impl TensorBinaryShapeSignature {
             rhs: TensorShapeSignature::new(rhs),
         }
     }
+
+    fn capacity_for_add(lhs: &DenseTensorF32, rhs: &DenseTensorF32) -> Self {
+        Self {
+            lhs: TensorShapeSignature::capacity_for(lhs),
+            rhs: TensorShapeSignature::capacity_for(rhs),
+        }
+    }
+
+    fn contains(&self, shape: &Self) -> bool {
+        self.lhs.contains(&shape.lhs) && self.rhs.contains(&shape.rhs)
+    }
 }
 
 impl TensorShapeSignature {
@@ -628,6 +671,23 @@ impl TensorShapeSignature {
         Self {
             dims: tensor.shape().dims().to_vec(),
         }
+    }
+
+    fn capacity_for(tensor: &DenseTensorF32) -> Self {
+        Self {
+            dims: vec![power_of_two_capacity(tensor.values().len())],
+        }
+    }
+
+    fn element_count(&self) -> usize {
+        self.dims
+            .iter()
+            .copied()
+            .fold(1_usize, usize::saturating_mul)
+    }
+
+    fn contains(&self, shape: &Self) -> bool {
+        self.element_count() >= shape.element_count()
     }
 }
 
@@ -642,6 +702,10 @@ impl TensorBinaryValueSignature {
 
 fn f32_value_bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|value| value.to_bits()).collect()
+}
+
+fn power_of_two_capacity(value: usize) -> usize {
+    value.checked_next_power_of_two().unwrap_or(value).max(1)
 }
 
 const AUTO_EAGER_JIT_WORK_UNITS: usize = 64;
@@ -3632,27 +3696,53 @@ impl RuntimePureAccelerator {
         if selection.backend() != math::RuntimeMathBackend::Wgpu {
             return self.math.matmul_f32(lhs, rhs);
         }
+        if lhs.cols() != rhs.rows() {
+            return self.math.matmul_f32(lhs, rhs);
+        }
         self.math.record_backend_selection(selection);
         let signature = MatrixBinaryShapeSignature::new(lhs, rhs);
+        let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.matmul.take()
-            && cache.signature == signature
+            && cache.capacity_signature.contains(&signature)
         {
-            let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
             let mut cache = cache;
-            if cache.value_signature != value_signature {
+            if cache.signature != signature || cache.value_signature != value_signature {
                 self.math
                     .update_prepared_matrix_matmul_f32(&cache.prepared, lhs, rhs)?;
+                cache.signature = signature;
                 cache.value_signature = value_signature;
             }
-            let result = self.math.run_prepared_matrix_matmul_f32(&cache.prepared);
+            let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
+            self.math.run_prepared_matrix_matmul_f32_shape_into(
+                &cache.prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut out,
+            )?;
+            let result = DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into);
             self.math_prepare_cache.matmul = Some(cache);
             return result;
         }
-        let prepared = self.math.prepare_matrix_matmul_f32(lhs, rhs)?;
-        let result = self.math.run_prepared_matrix_matmul_f32(&prepared);
+        let capacity_signature = MatrixBinaryShapeSignature::capacity_for_matmul(lhs, rhs);
+        let prepared = self.math.prepare_matrix_matmul_f32_capacity(
+            capacity_signature.lhs.rows,
+            capacity_signature.lhs.cols,
+            capacity_signature.rhs.cols,
+        )?;
+        self.math
+            .update_prepared_matrix_matmul_f32(&prepared, lhs, rhs)?;
+        let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
+        self.math.run_prepared_matrix_matmul_f32_shape_into(
+            &prepared,
+            lhs.rows(),
+            rhs.cols(),
+            &mut out,
+        )?;
+        let result = DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into);
         self.math_prepare_cache.matmul = Some(PreparedMatrixMatmulCache {
             signature,
-            value_signature: MatrixBinaryValueSignature::new(lhs, rhs),
+            capacity_signature,
+            value_signature,
             prepared,
         });
         result
@@ -3667,27 +3757,52 @@ impl RuntimePureAccelerator {
         if selection.backend() != math::RuntimeMathBackend::Wgpu {
             return self.math.matrix_add_f32(lhs, rhs);
         }
+        if lhs.shape() != rhs.shape() {
+            return self.math.matrix_add_f32(lhs, rhs);
+        }
         self.math.record_backend_selection(selection);
         let signature = MatrixBinaryShapeSignature::new(lhs, rhs);
+        let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.matrix_add.take()
-            && cache.signature == signature
+            && cache.capacity_signature.contains(&signature)
         {
-            let value_signature = MatrixBinaryValueSignature::new(lhs, rhs);
             let mut cache = cache;
-            if cache.value_signature != value_signature {
+            if cache.signature != signature || cache.value_signature != value_signature {
                 self.math
                     .update_prepared_matrix_add_f32(&cache.prepared, lhs, rhs)?;
+                cache.signature = signature;
                 cache.value_signature = value_signature;
             }
-            let result = self.math.run_prepared_matrix_add_f32(&cache.prepared);
+            let mut out = vec![0.0; lhs.values().len()];
+            self.math.run_prepared_matrix_add_f32_shape_into(
+                &cache.prepared,
+                lhs.rows(),
+                lhs.cols(),
+                &mut out,
+            )?;
+            let result = DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into);
             self.math_prepare_cache.matrix_add = Some(cache);
             return result;
         }
-        let prepared = self.math.prepare_matrix_add_f32(lhs, rhs)?;
-        let result = self.math.run_prepared_matrix_add_f32(&prepared);
+        let capacity_signature = MatrixBinaryShapeSignature::capacity_for_matrix_add(lhs, rhs);
+        let prepared = self.math.prepare_matrix_add_f32_capacity(
+            capacity_signature.lhs.rows,
+            capacity_signature.lhs.cols,
+        )?;
+        self.math
+            .update_prepared_matrix_add_f32(&prepared, lhs, rhs)?;
+        let mut out = vec![0.0; lhs.values().len()];
+        self.math.run_prepared_matrix_add_f32_shape_into(
+            &prepared,
+            lhs.rows(),
+            lhs.cols(),
+            &mut out,
+        )?;
+        let result = DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into);
         self.math_prepare_cache.matrix_add = Some(PreparedMatrixAddCache {
             signature,
-            value_signature: MatrixBinaryValueSignature::new(lhs, rhs),
+            capacity_signature,
+            value_signature,
             prepared,
         });
         result
@@ -3702,27 +3817,46 @@ impl RuntimePureAccelerator {
         if selection.backend() != math::RuntimeMathBackend::Wgpu {
             return self.math.tensor_add_f32(lhs, rhs);
         }
+        if lhs.shape() != rhs.shape() {
+            return self.math.tensor_add_f32(lhs, rhs);
+        }
         self.math.record_backend_selection(selection);
         let signature = TensorBinaryShapeSignature::new(lhs, rhs);
+        let value_signature = TensorBinaryValueSignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.tensor_add.take()
-            && cache.signature == signature
+            && cache.capacity_signature.contains(&signature)
         {
-            let value_signature = TensorBinaryValueSignature::new(lhs, rhs);
             let mut cache = cache;
-            if cache.value_signature != value_signature {
+            if cache.signature != signature || cache.value_signature != value_signature {
                 self.math
                     .update_prepared_tensor_add_f32(&cache.prepared, lhs, rhs)?;
+                cache.signature = signature;
                 cache.value_signature = value_signature;
             }
-            let result = self.math.run_prepared_tensor_add_f32(&cache.prepared);
+            let mut out = vec![0.0; lhs.values().len()];
+            self.math.run_prepared_tensor_add_f32_len_into(
+                &cache.prepared,
+                lhs.values().len(),
+                &mut out,
+            )?;
+            let result = DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into);
             self.math_prepare_cache.tensor_add = Some(cache);
             return result;
         }
-        let prepared = self.math.prepare_tensor_add_f32(lhs, rhs)?;
-        let result = self.math.run_prepared_tensor_add_f32(&prepared);
+        let capacity_signature = TensorBinaryShapeSignature::capacity_for_add(lhs, rhs);
+        let prepared = self
+            .math
+            .prepare_tensor_add_f32_capacity(capacity_signature.lhs.element_count())?;
+        self.math
+            .update_prepared_tensor_add_f32(&prepared, lhs, rhs)?;
+        let mut out = vec![0.0; lhs.values().len()];
+        self.math
+            .run_prepared_tensor_add_f32_len_into(&prepared, lhs.values().len(), &mut out)?;
+        let result = DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into);
         self.math_prepare_cache.tensor_add = Some(PreparedTensorAddCache {
             signature,
-            value_signature: TensorBinaryValueSignature::new(lhs, rhs),
+            capacity_signature,
+            value_signature,
             prepared,
         });
         result
@@ -5924,6 +6058,57 @@ mod tests {
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
+    fn runtime_auto_wgpu_matmul_reuses_capacity_cache_for_smaller_shape() {
+        let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).expect("matrix shape is valid");
+        let smaller_lhs = DenseMatrixF32::new(8, 8, vec![3.0; 64]).expect("matrix shape is valid");
+        let smaller_rhs = DenseMatrixF32::new(8, 8, vec![0.5; 64]).expect("matrix shape is valid");
+        let expected = smaller_lhs
+            .matmul_scalar(&smaller_rhs)
+            .expect("scalar matmul succeeds");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        if RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs).is_err() {
+            return;
+        }
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimeMathCallBackend::call_math_matmul_f32(
+            &mut accelerator,
+            &smaller_lhs,
+            &smaller_rhs,
+        )
+        .expect("auto-selected wgpu matmul reuses capacity-prepared runtime cache");
+
+        assert_eq!(second.values(), expected.values());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(
+            accelerator.math_stats().bytes_uploaded,
+            (smaller_lhs.values().len() + smaller_rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(second.values())
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
     fn runtime_wgpu_math_cache_reuses_prepared_tensor_add_buffers() {
         let lhs = DenseTensorF32::new(vec![32], vec![1.0; 32]).expect("tensor shape is valid");
         let rhs = DenseTensorF32::new(vec![32], vec![2.0; 32]).expect("tensor shape is valid");
@@ -5999,6 +6184,54 @@ mod tests {
         assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
         assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
         assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn runtime_auto_wgpu_matrix_add_reuses_capacity_cache_for_smaller_shape() {
+        let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).expect("matrix shape is valid");
+        let smaller_lhs = DenseMatrixF32::new(8, 8, vec![4.0; 64]).expect("matrix shape is valid");
+        let smaller_rhs = DenseMatrixF32::new(8, 8, vec![5.0; 64]).expect("matrix shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        if RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
+            return;
+        }
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimeMathCallBackend::call_math_matrix_add_f32(
+            &mut accelerator,
+            &smaller_lhs,
+            &smaller_rhs,
+        )
+        .expect("auto-selected wgpu matrix add reuses capacity-prepared runtime cache");
+
+        assert_eq!(second.values(), vec![9.0; 64].as_slice());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(
+            accelerator.math_stats().bytes_uploaded,
+            (smaller_lhs.values().len() + smaller_rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(second.values())
+        );
     }
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
@@ -6080,6 +6313,56 @@ mod tests {
         assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
         assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
         assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn runtime_auto_wgpu_tensor_add_reuses_capacity_cache_for_smaller_len() {
+        let lhs = DenseTensorF32::new(vec![128], vec![1.0; 128]).expect("tensor shape is valid");
+        let rhs = DenseTensorF32::new(vec![128], vec![2.0; 128]).expect("tensor shape is valid");
+        let smaller_lhs =
+            DenseTensorF32::new(vec![64], vec![6.0; 64]).expect("tensor shape is valid");
+        let smaller_rhs =
+            DenseTensorF32::new(vec![64], vec![7.0; 64]).expect("tensor shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        if RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
+            return;
+        }
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimeMathCallBackend::call_math_tensor_add_f32(
+            &mut accelerator,
+            &smaller_lhs,
+            &smaller_rhs,
+        )
+        .expect("auto-selected wgpu tensor add reuses capacity-prepared runtime cache");
+
+        assert_eq!(second.values(), vec![13.0; 64].as_slice());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(
+            accelerator.math_stats().bytes_uploaded,
+            (smaller_lhs.values().len() + smaller_rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(second.values())
+        );
     }
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
