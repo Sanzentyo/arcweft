@@ -3,8 +3,9 @@ use super::{
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
     match_runtime_pattern, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_from_literal_values,
+    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i64, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
@@ -374,6 +375,52 @@ impl Engine {
         Ok(result)
     }
 
+    fn call_i8_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[i8],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimeCallBackend,
+        map_outputs: impl FnOnce(&[i8]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_i8_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_i8_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_i8_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_i8_batch_outputs = out;
+        Ok(result)
+    }
+
+    fn call_i16_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[i16],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimeCallBackend,
+        map_outputs: impl FnOnce(&[i16]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_i16_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_i16_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_i16_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_i16_batch_outputs = out;
+        Ok(result)
+    }
+
     fn call_u32_flat_batch_with_outputs<T>(
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
@@ -394,6 +441,52 @@ impl Engine {
         let result = map_outputs(&out);
         out.clear();
         self.pure_u32_batch_outputs = out;
+        Ok(result)
+    }
+
+    fn call_u8_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[u8],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimeCallBackend,
+        map_outputs: impl FnOnce(&[u8]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_u8_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_u8_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_u8_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_u8_batch_outputs = out;
+        Ok(result)
+    }
+
+    fn call_u16_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[u16],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimeCallBackend,
+        map_outputs: impl FnOnce(&[u16]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_u16_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_u16_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_u16_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_u16_batch_outputs = out;
         Ok(result)
     }
 
@@ -979,18 +1072,31 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<i8>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_i8_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<i8>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<i8>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-            &mut out,
-        );
+        ) {
+            Ok(Some(row_count)) => self
+                .call_i8_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_i8(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_i8_batch_inputs = flat_inputs;
-        self.pure_i8_batch_outputs = out;
         result
     }
 
@@ -1001,18 +1107,31 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<i16>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_i16_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<i16>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<i16>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-            &mut out,
-        );
+        ) {
+            Ok(Some(row_count)) => self
+                .call_i16_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_i16(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_i16_batch_inputs = flat_inputs;
-        self.pure_i16_batch_outputs = out;
         result
     }
 
@@ -1067,18 +1186,31 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<u8>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_u8_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<u8>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u8>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-            &mut out,
-        );
+        ) {
+            Ok(Some(row_count)) => self
+                .call_u8_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_u8(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u8_batch_inputs = flat_inputs;
-        self.pure_u8_batch_outputs = out;
         result
     }
 
@@ -1089,18 +1221,31 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<u16>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_u16_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<u16>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u16>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-            &mut out,
-        );
+        ) {
+            Ok(Some(row_count)) => self
+                .call_u16_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_u16(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u16_batch_inputs = flat_inputs;
-        self.pure_u16_batch_outputs = out;
         result
     }
 
@@ -1535,14 +1680,26 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<i8>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<i8>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<i8>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_i8_flat_batch_sum(helper, &flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_i8_batch_inputs = flat_inputs;
         result
     }
@@ -1554,14 +1711,26 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<i16>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<i16>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<i16>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_i16_flat_batch_sum(helper, &flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_i16_batch_inputs = flat_inputs;
         result
     }
@@ -1648,14 +1817,26 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<u8>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<u8>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u8>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_u8_flat_batch_sum(helper, &flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u8_batch_inputs = flat_inputs;
         result
     }
@@ -1667,14 +1848,26 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<u16>(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<u16>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u16>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_u16_flat_batch_sum(helper, &flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u16_batch_inputs = flat_inputs;
         result
     }

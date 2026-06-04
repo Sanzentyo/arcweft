@@ -22,6 +22,10 @@ name or relative fixture label and must not record host absolute paths.
 | `020_dense_u128_map_pure_batch.arcw` | pure helper batch | `u128` input/output | AOT fallback under requested JIT |
 | `022_dense_f32_map_pure_batch.arcw` | pure helper batch | `f32` input/output | native JIT when requested, AOT/VM selectable |
 | `023_dense_f64_map_pure_batch.arcw` | pure helper batch | `f64` input/output | native JIT when requested, AOT/VM selectable |
+| `029_dense_i8_map_pure_batch.arcw` | pure helper batch | `i8` input/output | native JIT when requested, AOT/VM selectable |
+| `030_dense_i16_map_pure_batch.arcw` | pure helper batch | `i16` input/output | native JIT when requested, AOT/VM selectable |
+| `031_dense_u8_map_pure_batch.arcw` | pure helper batch | `u8` input/output | native JIT when requested, AOT/VM selectable |
+| `032_dense_u16_map_pure_batch.arcw` | pure helper batch | `u16` input/output | native JIT when requested, AOT/VM selectable |
 
 ## Current Bench Commands
 
@@ -48,6 +52,10 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/020_dense_u128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
 ```
 
 AOT exact-width pure helper coverage:
@@ -61,22 +69,32 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/020_dense_u128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
 ```
 
 Native JIT exact-width pure helper coverage:
 
 ```bash
 just bench-numeric-jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 ```
 
 Per-fixture convenience targets now also exist for `just bench-016` through
-`just bench-020`, `just bench-022`, and `just bench-023`. Those targets request
-`--pure-backend jit`; `019` and `020` are fallback probes and should report zero
-JIT calls with AOT calls until native JIT ABIs are added for those widths.
+`just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
+through `just bench-032`. Those targets request `--pure-backend jit`; `019` and
+`020` are fallback probes and should report zero JIT calls with AOT calls until
+native JIT ABIs are added for those widths.
 
 ## Verification Inventory
 
@@ -95,6 +113,7 @@ in JSON output:
 | `bench_json_measures_checked_in_dense_f64_map_pure_batch_fixture_with_auto_jit` | exact `f64` auto-JIT batch path and typed result copy accounting |
 | `bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture` | exact `u32` JIT batch path, unsigned ABI, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture` | exact `u64` JIT batch path, unsigned ABI, borrowed bytes, no result copy |
+| `bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures` | exact `i8`, `i16`, `u8`, and `u16` JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture` | requested-JIT fallback to exact-width AOT for `i128` |
 | `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | requested-JIT fallback to exact-width AOT for `u128` |
 
@@ -108,9 +127,9 @@ just scan-absolute-paths
 
 ## Current Gaps
 
-Native Cranelift JIT exact-width pure helper coverage is present for `i32`,
-`u32`, `u64`, `f32`, and `f64` in these checked-in fixtures. Requested JIT for
-`i128` and `u128` is intentionally inventoried as an AOT fallback path today.
-The VM dense fixtures cover exact-width storage, length, and integer reduction,
-while the pure helper fixtures cover batched helper execution and backend
-selection counters.
+Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
+`i16`, `i32`, `u8`, `u16`, `u32`, `u64`, `f32`, and `f64` in these checked-in
+fixtures. Requested JIT for `i128` and `u128` is intentionally inventoried as an
+AOT fallback path today. The VM dense fixtures cover exact-width storage,
+length, and integer reduction, while the pure helper fixtures cover batched
+helper execution and backend selection counters.

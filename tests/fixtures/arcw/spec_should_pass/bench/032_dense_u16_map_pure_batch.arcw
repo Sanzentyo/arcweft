@@ -1,0 +1,16 @@
+#[pure]
+fn score_u16(base: u16, bonus: u16) -> u16 {
+    return base * (bonus + 2u16)
+}
+
+bench @bench.dense_u16_map_pure_batch {
+    measure iterations = 4 { start(@flow.dense_u16_map_pure_batch) }
+}
+
+flow @flow.dense_u16_map_pure_batch dense_u16_map_pure_batch {
+    let values: Vec<u16> = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16, 9u16, 10u16, 11u16, 12u16, 13u16, 14u16, 15u16, 16u16]
+    let scores: Vec<u16> = values.map(|item| score_u16(item, 2u16))
+    let total: i64 = scores.sum()
+    log.info(total)
+    return "done"
+}
