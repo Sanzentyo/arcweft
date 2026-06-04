@@ -218,6 +218,7 @@ function summarize(report) {
     skipped_cases: report.cases.filter((entry) => entry.fallback_reason !== null).length,
     failed_cases: failedCases.length,
     recommendations: report.recommendations?.length ?? 0,
+    stability: summarizeStability(report).slice(0, 12),
     best_speedups: speedups.slice(0, 12),
     selected_modes: (report.recommendations ?? []).slice(0, 8).map((entry) => ({
       op: entry.op,
@@ -242,6 +243,23 @@ function summarize(report) {
         correct: entry.correctness.passed,
       })),
   };
+}
+
+function summarizeStability(report) {
+  return (report.stability ?? [])
+    .filter((entry) => entry.measured_rounds > 1)
+    .map((entry) => ({
+      op: entry.op,
+      shape: entry.shape,
+      mode: entry.mode,
+      rounds: entry.measured_rounds,
+      median_ms: entry.median_of_medians_ms,
+      min_ms: entry.min_median_ms,
+      max_ms: entry.max_median_ms,
+      mad_ms: entry.median_mad_ms,
+      spread_ratio: entry.spread_ratio,
+    }))
+    .sort((lhs, rhs) => (rhs.spread_ratio ?? 0) - (lhs.spread_ratio ?? 0));
 }
 
 function summarizeSpeedups(report) {

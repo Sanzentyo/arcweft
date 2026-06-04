@@ -585,6 +585,7 @@ just browser-webgpu-bench-build
 just browser-webgpu-bench-smoke
 just browser-webgpu-bench-perf
 just browser-webgpu-bench-isolate
+just browser-webgpu-bench-stability
 ```
 
 The exported browser function returns JSON with Auto dispatch, CPU Wasm,
@@ -602,7 +603,13 @@ recording host paths. The same report also includes typed
 derived metrics: `effective_gflops`, `submit_median_share`, and
 `readback_median_share`. These expose whether an observed browser result is
 limited by compute, command submission, or readback rather than only reporting a
-single median runtime. The same report also includes typed
+single median runtime. Each case records `round_index` and `mode_order_index`;
+the `stability` section groups repeated op/shape/mode measurements and reports
+median-of-medians, min/max, median absolute deviation, and max/min spread ratio.
+The `browser-webgpu-bench-stability` preset runs the `256x256x256` matmul
+isolation set for six rounds and rotates mode order each round, so browser
+warm-state and fixed ordering effects are visible before browser-side Auto
+thresholds are changed. The same report also includes typed
 `recommendations` per operation/shape. A recommendation records the selected
 mode, selected capacity, CPU median, selected median, speedup, and reason
 (`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
@@ -700,6 +707,25 @@ measured 1.06375 ms. This shows the large full-perf spread is dominated by
 browser benchmark ordering or warm-state effects rather than the typed adapter
 wrapper. The remaining tuning target is therefore policy calibration and bench
 harness stability, not another compatibility path around the adapter.
+
+The stability preset adds six repeated rounds of the same `256x256x256` matmul
+isolation set and rotates mode order in each round. A local path-free run
+recorded 36 measured cases, no skips, and no correctness failures. Median of
+per-round medians and spread ratios were:
+
+| Mode | Rounds | Median-of-medians ms | Min ms | Max ms | Spread ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `web_gpu_prepared_capacity_resident_pipelined` | 6 | 0.73625 | 0.50875 | 0.90000 | 1.77x |
+| `auto_resident_direct_pipelined` | 6 | 0.72125 | 0.57375 | 0.88625 | 1.54x |
+| `web_gpu_prepared_resident_pipelined` | 6 | 0.86000 | 0.77000 | 1.08250 | 1.41x |
+| `auto_resident_pipelined` | 6 | 0.88125 | 0.62125 | 1.27125 | 2.05x |
+| `auto_pipelined` | 6 | 1.16375 | 0.76125 | 1.37875 | 1.81x |
+| `cpu_wasm` | 6 | 7.19000 | 7.03500 | 7.47500 | 1.06x |
+
+This confirms that browser WebGPU `256x256x256` matmul is consistently faster
+than CPU Wasm, but also that individual browser GPU samples can vary by more
+than 1.5x across rounds. Browser-side Auto policy changes should therefore be
+calibrated against repeated stability summaries, not one fixed-order perf run.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

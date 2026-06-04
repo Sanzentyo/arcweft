@@ -11,10 +11,12 @@ use serde::{Deserialize, Serialize};
 pub struct BrowserMathBenchConfig {
     pub warmup_iters: usize,
     pub sample_iters: usize,
+    pub repeat_rounds: usize,
     pub seed: u32,
     pub add_lengths: Vec<usize>,
     pub matmul_shapes: Vec<MatmulShape>,
     pub modes: Vec<BrowserBenchMode>,
+    pub mode_order: BrowserBenchModeOrder,
     pub async_batch_depth: usize,
 }
 
@@ -23,6 +25,7 @@ impl Default for BrowserMathBenchConfig {
         Self {
             warmup_iters: 3,
             sample_iters: 10,
+            repeat_rounds: 1,
             seed: 0xace5_2026,
             add_lengths: vec![0, 1, 255, 256, 257, 4096, 65_536],
             matmul_shapes: vec![
@@ -66,6 +69,7 @@ impl Default for BrowserMathBenchConfig {
                 BrowserBenchMode::WebGpuPreparedResidentPipelined,
                 BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined,
             ],
+            mode_order: BrowserBenchModeOrder::AsListed,
             async_batch_depth: 4,
         }
     }
@@ -95,11 +99,20 @@ pub enum BrowserBenchMode {
     WebGpuPreparedCapacityResidentPipelined,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserBenchModeOrder {
+    #[default]
+    AsListed,
+    RotateByRound,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BrowserMathBenchReport {
     pub schema_version: &'static str,
     pub run: BrowserMathBenchRun,
     pub cases: Vec<BrowserMathBenchCase>,
+    pub stability: Vec<BrowserMathBenchStability>,
     pub recommendations: Vec<BrowserMathBenchRecommendation>,
     pub skips: Vec<BrowserMathBenchSkip>,
 }
@@ -134,6 +147,8 @@ pub struct BrowserMathBenchCase {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity: Option<BrowserMathBenchCapacity>,
     pub mode: BrowserBenchMode,
+    pub round_index: usize,
+    pub mode_order_index: usize,
     pub warmup_iters: usize,
     pub sample_iters: usize,
     pub median_ms: Option<f64>,
@@ -159,6 +174,19 @@ pub struct BrowserMathBenchCase {
     pub correctness: BrowserMathBenchCorrectness,
     pub fallback_reason: Option<String>,
     pub checksum: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BrowserMathBenchStability {
+    pub op: &'static str,
+    pub shape: BrowserMathBenchShape,
+    pub mode: BrowserBenchMode,
+    pub measured_rounds: usize,
+    pub median_of_medians_ms: Option<f64>,
+    pub min_median_ms: Option<f64>,
+    pub max_median_ms: Option<f64>,
+    pub median_mad_ms: Option<f64>,
+    pub spread_ratio: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -268,6 +296,68 @@ pub fn browser_math_bench_recommendations(
         .into_iter()
         .map(|(op, shape)| recommend_browser_math_case(op, shape, cases, limits))
         .collect()
+}
+
+pub fn browser_math_bench_stability(
+    cases: &[BrowserMathBenchCase],
+) -> Vec<BrowserMathBenchStability> {
+    let mut groups = Vec::<(&'static str, BrowserMathBenchShape, BrowserBenchMode)>::new();
+    for case in cases {
+        if case.median_ms.is_none() || !case.correctness.passed {
+            continue;
+        }
+        let key = (case.op, case.shape, case.mode);
+        if !groups.contains(&key) {
+            groups.push(key);
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(op, shape, mode)| {
+            let samples = cases
+                .iter()
+                .filter(|case| {
+                    case.op == op
+                        && case.shape == shape
+                        && case.mode == mode
+                        && case.correctness.passed
+                })
+                .filter_map(|case| case.median_ms)
+                .collect::<Vec<_>>();
+            let median = median_sample(samples.clone());
+            let min = samples.iter().copied().reduce(f64::min);
+            let max = samples.iter().copied().reduce(f64::max);
+            BrowserMathBenchStability {
+                op,
+                shape,
+                mode,
+                measured_rounds: samples.len(),
+                median_of_medians_ms: median,
+                min_median_ms: min,
+                max_median_ms: max,
+                median_mad_ms: median.and_then(|center| {
+                    median_sample(
+                        samples
+                            .iter()
+                            .map(|sample| (sample - center).abs())
+                            .collect(),
+                    )
+                }),
+                spread_ratio: match (min, max) {
+                    (Some(min), Some(max)) if min > 0.0 => Some(max / min),
+                    _ => None,
+                },
+            }
+        })
+        .collect()
+}
+
+fn median_sample(mut samples: Vec<f64>) -> Option<f64> {
+    if samples.is_empty() {
+        return None;
+    }
+    samples.sort_by(f64::total_cmp);
+    Some(samples[samples.len() / 2])
 }
 
 fn recommend_browser_math_case(
@@ -502,10 +592,11 @@ const fn browser_math_policy_reason(
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::{
-        BrowserBenchMode, BrowserMathBenchCapacity, BrowserMathBenchCase, BrowserMathBenchConfig,
-        BrowserMathBenchCorrectness, BrowserMathBenchLimits, BrowserMathBenchReport,
-        BrowserMathBenchRun, BrowserMathBenchShape, BrowserMathBenchSkip, BrowserMathBenchWebGpu,
-        MatmulShape, browser_math_bench_recommendations,
+        BrowserBenchMode, BrowserBenchModeOrder, BrowserMathBenchCapacity, BrowserMathBenchCase,
+        BrowserMathBenchConfig, BrowserMathBenchCorrectness, BrowserMathBenchLimits,
+        BrowserMathBenchReport, BrowserMathBenchRun, BrowserMathBenchShape, BrowserMathBenchSkip,
+        BrowserMathBenchWebGpu, MatmulShape, browser_math_bench_recommendations,
+        browser_math_bench_stability, median_sample,
     };
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
@@ -554,15 +645,42 @@ mod wasm {
         });
         let mut cases = Vec::new();
         for len in &config.add_lengths {
-            for mode in &config.modes {
-                cases.push(run_add_case(&config, adapter.as_mut(), *mode, *len).await);
+            for round_index in 0..config.repeat_rounds.max(1) {
+                let ordered_modes = ordered_modes(&config, round_index);
+                for (mode_order_index, mode) in ordered_modes.into_iter().enumerate() {
+                    cases.push(
+                        run_add_case(
+                            &config,
+                            adapter.as_mut(),
+                            mode,
+                            *len,
+                            round_index,
+                            mode_order_index,
+                        )
+                        .await,
+                    );
+                }
             }
         }
         for shape in &config.matmul_shapes {
-            for mode in &config.modes {
-                cases.push(run_matmul_case(&config, adapter.as_mut(), *mode, *shape).await);
+            for round_index in 0..config.repeat_rounds.max(1) {
+                let ordered_modes = ordered_modes(&config, round_index);
+                for (mode_order_index, mode) in ordered_modes.into_iter().enumerate() {
+                    cases.push(
+                        run_matmul_case(
+                            &config,
+                            adapter.as_mut(),
+                            mode,
+                            *shape,
+                            round_index,
+                            mode_order_index,
+                        )
+                        .await,
+                    );
+                }
             }
         }
+        let stability = browser_math_bench_stability(&cases);
         let recommendations = browser_math_bench_recommendations(&cases, limits);
         BrowserMathBenchReport {
             schema_version: "arcweft.browser_webgpu_bench.v1",
@@ -576,8 +694,24 @@ mod wasm {
                 },
             },
             cases,
+            stability,
             recommendations,
             skips,
+        }
+    }
+
+    fn ordered_modes(config: &BrowserMathBenchConfig, round_index: usize) -> Vec<BrowserBenchMode> {
+        let mut modes = config.modes.clone();
+        if modes.is_empty() {
+            return modes;
+        }
+        match config.mode_order {
+            BrowserBenchModeOrder::AsListed => modes,
+            BrowserBenchModeOrder::RotateByRound => {
+                let offset = round_index % modes.len();
+                modes.rotate_left(offset);
+                modes
+            }
         }
     }
 
@@ -586,6 +720,8 @@ mod wasm {
         adapter: Option<&mut BrowserWebGpuAutoMathAdapter>,
         mode: BrowserBenchMode,
         len: usize,
+        round_index: usize,
+        mode_order_index: usize,
     ) -> BrowserMathBenchCase {
         let lhs = deterministic_values(len, config.seed ^ len as u32);
         let rhs = deterministic_values(len, config.seed.rotate_left(7) ^ len as u32);
@@ -596,6 +732,8 @@ mod wasm {
             "tensor_add_f32",
             shape,
             mode,
+            round_index,
+            mode_order_index,
             config,
         );
         match mode {
@@ -941,6 +1079,8 @@ mod wasm {
         adapter: Option<&mut BrowserWebGpuAutoMathAdapter>,
         mode: BrowserBenchMode,
         shape: MatmulShape,
+        round_index: usize,
+        mode_order_index: usize,
     ) -> BrowserMathBenchCase {
         let lhs_len = shape.rows * shape.shared;
         let rhs_len = shape.shared * shape.cols;
@@ -959,6 +1099,8 @@ mod wasm {
                 cols: shape.cols,
             },
             mode,
+            round_index,
+            mode_order_index,
             config,
         );
         match mode {
@@ -1352,17 +1494,26 @@ mod wasm {
         op: &'static str,
         shape: BrowserMathBenchShape,
         mode: BrowserBenchMode,
+        round_index: usize,
+        mode_order_index: usize,
         config: &BrowserMathBenchConfig,
     ) -> BrowserMathBenchCase {
         let workgroups = estimated_workgroups(op, &shape);
         let work_items = estimated_work_items(op, &shape);
         let estimated_flops = estimated_flops(op, &shape);
+        let case_id = if config.repeat_rounds.max(1) > 1 {
+            format!("{case_id}_round{round_index}_order{mode_order_index}")
+        } else {
+            case_id
+        };
         BrowserMathBenchCase {
             case_id,
             op,
             shape,
             capacity: None,
             mode,
+            round_index,
+            mode_order_index,
             warmup_iters: config.warmup_iters,
             sample_iters: config.sample_iters,
             median_ms: None,
@@ -1967,14 +2118,6 @@ mod wasm {
         case.readback_median_share = median_share(case.readback_median_ms, case.median_ms);
     }
 
-    fn median_sample(mut samples: Vec<f64>) -> Option<f64> {
-        if samples.is_empty() {
-            return None;
-        }
-        samples.sort_by(f64::total_cmp);
-        Some(samples[samples.len() / 2])
-    }
-
     fn effective_gflops(estimated_flops: u64, median_ms: f64) -> Option<f64> {
         if estimated_flops == 0 || median_ms <= 0.0 {
             return None;
@@ -2129,6 +2272,7 @@ mod tests {
                     limits: None,
                 },
             },
+            stability: browser_math_bench_stability(&cases),
             cases,
             recommendations,
             skips: vec![BrowserMathBenchSkip {
@@ -2146,8 +2290,59 @@ mod tests {
         assert!(json.contains("\"submit_median_share\""));
         assert!(json.contains("\"readback_median_share\""));
         assert!(json.contains("\"recommendations\""));
+        assert!(json.contains("\"stability\""));
+        assert!(json.contains("\"round_index\""));
+        assert!(json.contains("\"mode_order_index\""));
         assert!(!json.contains("\\\\"));
         assert!(!json.contains("D:"));
+    }
+
+    #[test]
+    fn stability_groups_repeated_round_medians() {
+        let shape = BrowserMathBenchShape::Matmul {
+            rows: 256,
+            shared: 256,
+            cols: 256,
+        };
+        let cases = vec![
+            bench_case(
+                "matmul_round0",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::WebGpuPreparedResidentPipelined,
+                Some(1.0),
+                true,
+            ),
+            bench_case(
+                "matmul_round1",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::WebGpuPreparedResidentPipelined,
+                Some(1.5),
+                true,
+            ),
+            bench_case(
+                "matmul_wrong",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::WebGpuPreparedResidentPipelined,
+                Some(0.5),
+                false,
+            ),
+        ];
+
+        let stability = browser_math_bench_stability(&cases);
+
+        assert_eq!(stability.len(), 1);
+        assert_eq!(stability[0].measured_rounds, 2);
+        assert_eq!(stability[0].median_of_medians_ms, Some(1.5));
+        assert_eq!(stability[0].min_median_ms, Some(1.0));
+        assert_eq!(stability[0].max_median_ms, Some(1.5));
+        assert_eq!(stability[0].median_mad_ms, Some(0.5));
+        assert_eq!(stability[0].spread_ratio, Some(1.5));
     }
 
     #[test]
@@ -2404,6 +2599,8 @@ mod tests {
             shape,
             capacity,
             mode,
+            round_index: 0,
+            mode_order_index: 0,
             warmup_iters: 1,
             sample_iters: 1,
             median_ms,

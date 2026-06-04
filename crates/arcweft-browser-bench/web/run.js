@@ -5,6 +5,8 @@ import init, {
 const DEFAULT_CONFIG = {
   warmup_iters: 1,
   sample_iters: 3,
+  repeat_rounds: 1,
+  mode_order: "as_listed",
   seed: 2900693030,
   async_batch_depth: 4,
   add_lengths: [0, 1, 255, 256, 257, 4096],
@@ -33,6 +35,8 @@ const DEFAULT_CONFIG = {
 const PERF_CONFIG = {
   warmup_iters: 2,
   sample_iters: 5,
+  repeat_rounds: 1,
+  mode_order: "as_listed",
   seed: 2900693030,
   async_batch_depth: 4,
   add_lengths: [65536, 262144, 1048576, 4194304],
@@ -59,6 +63,29 @@ const PERF_CONFIG = {
 const ISOLATE_CONFIG = {
   warmup_iters: 3,
   sample_iters: 9,
+  repeat_rounds: 1,
+  mode_order: "as_listed",
+  seed: 2900693030,
+  async_batch_depth: 4,
+  add_lengths: [],
+  matmul_shapes: [
+    { rows: 256, shared: 256, cols: 256 },
+  ],
+  modes: [
+    "cpu_wasm",
+    "web_gpu_prepared_resident_pipelined",
+    "web_gpu_prepared_capacity_resident_pipelined",
+    "auto_pipelined",
+    "auto_resident_pipelined",
+    "auto_resident_direct_pipelined",
+  ],
+};
+
+const STABILITY_CONFIG = {
+  warmup_iters: 2,
+  sample_iters: 7,
+  repeat_rounds: 6,
+  mode_order: "rotate_by_round",
   seed: 2900693030,
   async_batch_depth: 4,
   add_lengths: [],
@@ -102,6 +129,9 @@ function readConfig() {
     }
     if (preset === "isolate") {
       return ISOLATE_CONFIG;
+    }
+    if (preset === "stability") {
+      return STABILITY_CONFIG;
     }
     return DEFAULT_CONFIG;
   }
