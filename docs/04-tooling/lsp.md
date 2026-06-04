@@ -105,6 +105,14 @@ source-aware `LineIndex` that maps Arcweft UTF-8 byte spans to the negotiated LS
 encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
 advertises it through initialize capabilities.
 
+Source-level code actions return `WorkspaceEdit` values when the server can map
+the current document snapshot. Sugar expansion and ID materialization edits are
+computed by `arcweft-tooling`, converted through `LspPositionMapper`, and sent
+as LSP text edits. `workspace/executeCommand` also accepts the older
+`[uri, tooling_edit]` command argument shape and returns a `WorkspaceEdit`, so
+clients that still invoke command-backed actions get the same edit without the
+server writing files directly.
+
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
 consumes an already-resolved adapter manifest containing standard adapter facts,
 project-local adapter manifests, and any profile-selected `arcweft-rust-abi`

@@ -5,6 +5,7 @@ use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::LspProfile;
+use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
     DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
@@ -242,8 +243,7 @@ impl ArcweftLspSession {
             ExecuteCommand::METHOD => {
                 let (id, params) =
                     extract::<ExecuteCommandParams>(request, ExecuteCommand::METHOD)?;
-                let result =
-                    ArcweftCommand::parse(&params.command).map_or(Value::Null, |_| Value::Null);
+                let result = self.execute_command(&params);
                 Ok(Response::new_ok(id, result))
             }
             _ => Ok(Response::new_err(
@@ -268,6 +268,39 @@ impl ArcweftLspSession {
             .collect();
         Some(actions)
     }
+
+    fn execute_command(&self, params: &ExecuteCommandParams) -> Value {
+        let Some(_command) = ArcweftCommand::parse(&params.command) else {
+            return Value::Null;
+        };
+        let Some((uri, edit)) = command_uri_and_edit(params) else {
+            return Value::Null;
+        };
+        let Some(document) = self.document_for_params(&uri) else {
+            return Value::Null;
+        };
+        serde_json::to_value(workspace_edit_from_tooling_edit(
+            &uri,
+            &edit,
+            document.line_index(),
+        ))
+        .unwrap_or(Value::Null)
+    }
+}
+
+fn command_uri_and_edit(
+    params: &ExecuteCommandParams,
+) -> Option<(lsp_types::Uri, arcweft_tooling::TextEdit)> {
+    let uri = params
+        .arguments
+        .first()
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.parse().ok())?;
+    let edit = params
+        .arguments
+        .get(1)
+        .and_then(|value| serde_json::from_value(value.clone()).ok())?;
+    Some((uri, edit))
 }
 
 fn publish_diagnostics_notification(snapshot: &DocumentSnapshot) -> Notification {
@@ -294,8 +327,10 @@ fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, 
 mod tests {
     use super::*;
     use lsp_types::{
-        ClientCapabilities, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-        TextDocumentContentChangeEvent, TextDocumentItem, Uri, VersionedTextDocumentIdentifier,
+        ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
+        DidOpenTextDocumentParams, PartialResultParams, Position, Range,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Uri,
+        VersionedTextDocumentIdentifier, WorkDoneProgressParams,
     };
 
     #[test]
@@ -352,5 +387,69 @@ mod tests {
 
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].method, PublishDiagnostics::METHOD);
+    }
+
+    #[test]
+    fn code_actions_return_workspace_edits() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(LspConfig::default());
+        open_fixture(&mut session, uri.clone());
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri },
+                range: Range::new(Position::new(0, 0), Position::new(10, 0)),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        assert!(actions.iter().any(|action| {
+            matches!(action, CodeActionOrCommand::CodeAction(action) if action.edit.is_some())
+        }));
+    }
+
+    #[test]
+    fn execute_command_can_return_workspace_edit_from_tooling_edit_argument() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(LspConfig::default());
+        open_fixture(&mut session, uri.clone());
+        let edit = arcweft_tooling::TextEdit {
+            start: 0,
+            end: 0,
+            replacement: "// generated\n".to_owned(),
+        };
+
+        let result = session.execute_command(&ExecuteCommandParams {
+            command: ArcweftCommand::ExpandSugar.as_str().to_owned(),
+            arguments: vec![serde_json::json!(uri.to_string()), serde_json::json!(edit)],
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        });
+
+        let workspace_edit: lsp_types::WorkspaceEdit =
+            serde_json::from_value(result).expect("workspace edit result");
+        assert!(
+            workspace_edit
+                .changes
+                .expect("changes fallback")
+                .values()
+                .any(|edits| !edits.is_empty())
+        );
+    }
+
+    fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
+        let open = Notification::new(
+            DidOpenTextDocument::METHOD.to_owned(),
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: "flow @.opening opening {\n    alice: hi[p]\n}\n".to_owned(),
+                },
+            },
+        );
+        session.handle_notification(open).expect("open fixture");
     }
 }

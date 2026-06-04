@@ -11,6 +11,7 @@ arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
+arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-lsp = { path = "../arcweft-verify-lsp" }
 crossbeam-channel.workspace = true

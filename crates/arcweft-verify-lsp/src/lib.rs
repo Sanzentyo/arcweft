@@ -20,8 +20,9 @@ use lsp_types::{
     CodeAction, CodeActionKind, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity,
     Hover, HoverContents, InlayHint, InlayHintKind, MarkedString, NumberOrString,
     ParameterInformation, ParameterLabel, Position, Range, SignatureHelp, SignatureInformation,
-    Uri,
+    TextEdit, Uri, WorkspaceEdit,
 };
+use std::collections::HashMap;
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
@@ -587,6 +588,43 @@ pub fn source_code_actions(uri: &Uri, source: &str) -> Vec<CodeAction> {
         .collect()
 }
 
+/// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
+pub fn source_code_actions_with_mapper(
+    uri: &Uri,
+    source: &str,
+    mapper: &impl LspPositionMapper,
+) -> Vec<CodeAction> {
+    arcweft_tooling::source_code_actions(source)
+        .into_iter()
+        .map(|action| {
+            let edit = action
+                .edit
+                .as_ref()
+                .map(|edit| workspace_edit_from_tooling_edit(uri, edit, mapper));
+            CodeAction {
+                title: action.label,
+                kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                edit,
+                command: None,
+                ..CodeAction::default()
+            }
+        })
+        .collect()
+}
+
+/// Converts one Arcweft tooling edit into an LSP workspace edit.
+pub fn workspace_edit_from_tooling_edit(
+    uri: &Uri,
+    edit: &arcweft_tooling::TextEdit,
+    mapper: &impl LspPositionMapper,
+) -> WorkspaceEdit {
+    let text_edit = TextEdit::new(
+        mapper.range_from_byte_span(edit.start, edit.end),
+        edit.replacement.clone(),
+    );
+    WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
+}
+
 /// Converts inferred Arcweft IDs into LSP inlay hints.
 pub fn inferred_id_inlay_hints_with_mapper(
     source: &str,
@@ -876,6 +914,8 @@ mod tests {
                 .iter()
                 .any(|action| action.title == "Materialize inferred Arcweft ID")
         );
+        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper);
+        assert!(mapped_actions.iter().any(|action| action.edit.is_some()));
         let hints = inferred_id_inlay_hints_with_mapper(source, &TestMapper);
         assert!(hints.iter().any(|hint| {
             matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == "@flow.opening")

@@ -278,6 +278,7 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "arcweft-runtime-host",
+ "arcweft-tooling",
  "arcweft-verify",
  "arcweft-verify-lsp",
  "crossbeam-channel",

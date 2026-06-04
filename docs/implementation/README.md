@@ -66,8 +66,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   while `arcweft-verify-lsp` remains Sans I/O. The transport negotiates LSP
   position encoding, keeps a FULL-sync open-document cache, publishes syntax /
   HIR / verifier diagnostics, and routes completion, hover, signature help,
-  inlay hints, and code actions through the helper crates. `arcweft-cli` remains
-  both a library and a binary for argv-compatible execution through
+  inlay hints, and code actions through the helper crates. Source-level sugar
+  expansion and ID materialization actions now return LSP `WorkspaceEdit`
+  values through the same byte-span mapper used for diagnostics, and
+  `workspace/executeCommand` can translate the older command argument shape into
+  the same edit without writing files server-side. `arcweft-cli` remains both a
+  library and a binary for argv-compatible execution through
   `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
   JSON codec. `arcw bundle` and `arcw build bundle` package source text,
