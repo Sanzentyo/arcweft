@@ -11,6 +11,8 @@ const cdpPort = port + 1000;
 const DIAGNOSTIC_MODES = new Set([
   "web_gpu_prepared_resident_submit_only_pipelined",
   "web_gpu_prepared_capacity_resident_submit_only_pipelined",
+  "web_gpu_prepared_resident_dispatch_only_pipelined",
+  "web_gpu_prepared_capacity_resident_dispatch_only_pipelined",
 ]);
 const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
   stdio: ["ignore", "pipe", "pipe"],

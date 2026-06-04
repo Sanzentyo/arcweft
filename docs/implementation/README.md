@@ -277,7 +277,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   JS-only smoke summary. Browser WebGPU contexts now also expose policy-driven
   async Auto calls for `matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`, so
   browser embeddings can use the calibrated policy at the adapter boundary
-  without copying the threshold logic into player code.
+  without copying the threshold logic into player code. The browser WebGPU
+  context also separates resident compute submission from explicit readback:
+  `submit_resident_*_without_readback` keeps prepared output on the GPU, and
+  `read_resident_*` performs the host-visible copy/map only at the requested
+  boundary.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

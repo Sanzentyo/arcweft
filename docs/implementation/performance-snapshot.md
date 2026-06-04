@@ -770,22 +770,28 @@ prepared resident buffers for dense matmul and leaves capacity-prepared
 pipelining as an explicit tuning mode until repeated measurements show it
 consistently improves a larger shape or a different browser/GPU environment.
 
-The submit-only preset measures the readback-free lower bound for the same
-`512x512x512` matmul shape. A local path-free run recorded 16 measured cases,
-no skips, and no correctness failures:
+The submit-only preset measures the resident browser WebGPU lower bounds for
+the same `512x512x512` matmul shape. The submit-only mode defers `map_async`
+but still copies the output into a staging buffer for every submitted sample.
+The dispatch-only mode submits resident compute work without per-sample
+GPU-to-staging copies and performs one explicit readback after timing for
+correctness. A local path-free run recorded 20 measured cases, no skips, and no
+correctness failures:
 
 | Mode | Rounds | Median-of-medians ms | Submit median ms | Readback median ms | Notes |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.03250 | 0.03000 | n/a | measured samples submit only; final readback happens after timing; reported under `diagnostic_speedups` |
-| `auto_resident_pipelined` | 4 | 1.87625 | 0.08000 | 1.63500 | natural Auto resident call shape |
-| `web_gpu_prepared_resident_pipelined` | 4 | 2.34375 | 0.10000 | 1.84000 | value-returning benchmark path |
-| `cpu_wasm` | 4 | 57.22000 | n/a | n/a | CPU baseline |
+| `web_gpu_prepared_resident_dispatch_only_pipelined` | 4 | 0.01500 | 0.01500 | n/a | resident compute dispatch only; no per-sample readback copy/map; one explicit correctness readback after timing |
+| `web_gpu_prepared_resident_submit_only_pipelined` | 4 | 0.11375 | 0.12500 | n/a | measured samples submit compute plus staging copy; final map happens after timing |
+| `web_gpu_prepared_resident_pipelined` | 4 | 2.35500 | 0.19000 | 2.12500 | value-returning benchmark path |
+| `auto_resident_pipelined` | 4 | 2.50750 | 0.11500 | 1.76500 | natural Auto resident call shape |
+| `cpu_wasm` | 4 | 59.08500 | n/a | n/a | CPU baseline |
 
-The diagnostic result is not a backend speedup claim. It shows that command
-submission alone is about two orders of magnitude below the value-returning
-path, so the next browser-side optimization target is a resident-value API that
-can chain GPU tensor/matrix operations and only read back at an explicit host
-boundary.
+The diagnostic results are not backend speedup claims. They show that command
+submission without a per-sample readback copy is three orders of magnitude
+below the value-returning path on this browser/GPU, while staging-copy submit is
+still much cheaper than mapping the result. Browser-side optimization should
+therefore keep intermediate tensor/matrix values resident and read back only at
+an explicit host boundary.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

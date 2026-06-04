@@ -137,6 +137,7 @@ const SUBMIT_ONLY_CONFIG = {
     "cpu_wasm",
     "web_gpu_prepared_resident_pipelined",
     "web_gpu_prepared_resident_submit_only_pipelined",
+    "web_gpu_prepared_resident_dispatch_only_pipelined",
     "auto_resident_pipelined",
   ],
 };

@@ -2745,6 +2745,16 @@ pub mod browser_webgpu {
         submitted_at_ms: f64,
     }
 
+    /// Submitted browser GPU work that intentionally keeps its output resident.
+    ///
+    /// This ticket records command submission without allocating or copying into
+    /// a readback buffer. Callers must explicitly read from the prepared output
+    /// buffer when they cross back to a host-visible value boundary.
+    pub struct BrowserResidentSubmission {
+        len: usize,
+        submitted_at_ms: f64,
+    }
+
     /// Result of a browser Auto math operation.
     #[derive(Clone, Debug)]
     pub struct BrowserWebGpuAutoMathResult<T> {
@@ -2881,6 +2891,20 @@ pub mod browser_webgpu {
 
         pub const fn is_empty(&self) -> bool {
             self.len == 0
+        }
+    }
+
+    impl BrowserResidentSubmission {
+        pub const fn len(&self) -> usize {
+            self.len
+        }
+
+        pub const fn is_empty(&self) -> bool {
+            self.len == 0
+        }
+
+        pub const fn submitted_at_ms(&self) -> f64 {
+            self.submitted_at_ms
         }
     }
 
@@ -4077,6 +4101,49 @@ pub mod browser_webgpu {
             )
         }
 
+        pub fn submit_resident_elementwise_f32_without_readback(
+            &mut self,
+            prepared: &BrowserPreparedElementwiseF32,
+            len: usize,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            if len > prepared.capacity_len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident elementwise add exceeded prepared capacity",
+                ));
+            }
+            if len == 0 {
+                return Ok(BrowserResidentSubmission {
+                    len,
+                    submitted_at_ms: browser_now_ms(),
+                });
+            }
+            let (groups_x, groups_y) = add_groups(self.limits, len)?;
+            let pipeline = self.add_pipeline.clone();
+            self.submit_prepared_without_readback(
+                &pipeline,
+                &prepared.bind_group,
+                len,
+                groups_x,
+                groups_y,
+            )
+        }
+
+        pub async fn read_resident_elementwise_f32(
+            &mut self,
+            prepared: &BrowserPreparedElementwiseF32,
+            submission: BrowserResidentSubmission,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if out.len() != submission.len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "resident elementwise output length differs from readback target",
+                ));
+            }
+            self.read_resident_f32(&prepared.out, submission, out).await
+        }
+
         pub async fn dispatch_prepared_matmul_f32(
             &mut self,
             prepared: &BrowserPreparedMatmulF32,
@@ -4201,6 +4268,58 @@ pub mod browser_webgpu {
                 checked_workgroups(self.limits, cols.div_ceil(16))?,
                 checked_workgroups(self.limits, rows.div_ceil(16))?,
             )
+        }
+
+        pub fn submit_resident_matmul_f32_without_readback(
+            &mut self,
+            prepared: &BrowserPreparedMatmulF32,
+            rows: usize,
+            cols: usize,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            if rows > prepared.capacity.rows || cols > prepared.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul exceeded prepared capacity",
+                ));
+            }
+            let len = checked_len_mul(rows, cols)?;
+            if len == 0 {
+                return Ok(BrowserResidentSubmission {
+                    len,
+                    submitted_at_ms: browser_now_ms(),
+                });
+            }
+            let pipeline = self.matmul_pipeline.clone();
+            self.submit_prepared_without_readback(
+                &pipeline,
+                &prepared.bind_group,
+                len,
+                checked_workgroups(self.limits, cols.div_ceil(16))?,
+                checked_workgroups(self.limits, rows.div_ceil(16))?,
+            )
+        }
+
+        pub async fn read_resident_matmul_f32(
+            &mut self,
+            prepared: &BrowserPreparedMatmulF32,
+            submission: BrowserResidentSubmission,
+            rows: usize,
+            cols: usize,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if rows > prepared.capacity.rows || cols > prepared.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul exceeded prepared capacity",
+                ));
+            }
+            if out.len() != submission.len || out.len() != checked_len_mul(rows, cols)? {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "resident matmul output length differs from readback target",
+                ));
+            }
+            self.read_resident_f32(&prepared.out, submission, out).await
         }
 
         pub async fn read_submitted_f32(
@@ -4403,6 +4522,69 @@ pub mod browser_webgpu {
             })
         }
 
+        fn submit_prepared_without_readback(
+            &mut self,
+            pipeline: &wgpu::ComputePipeline,
+            bind_group: &wgpu::BindGroup,
+            elements: usize,
+            workgroups_x: u32,
+            workgroups_y: u32,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            self.ensure_healthy()?;
+            validate_f32_storage(self.limits, elements)?;
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-browser-resident-prepared-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-resident-prepared-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.dispatch_workgroups(workgroups_x.max(1), workgroups_y.max(1), 1);
+            }
+            self.queue.submit(Some(encoder.finish()));
+            self.stats.dispatches += 1;
+            self.stats.async_submissions += 1;
+            self.stats.pipeline_cache_hits += 1;
+            Ok(BrowserResidentSubmission {
+                len: elements,
+                submitted_at_ms: browser_now_ms(),
+            })
+        }
+
+        async fn read_resident_f32(
+            &mut self,
+            source: &wgpu::Buffer,
+            submission: BrowserResidentSubmission,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if out.len() != submission.len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::RequiredLimitsUnsupported,
+                    "resident output length differs from readback target",
+                ));
+            }
+            if out.is_empty() {
+                return Ok(());
+            }
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-browser-resident-readback-encoder"),
+                });
+            self.encode_readback(&mut encoder, source, out.len())?;
+            self.queue.submit(Some(encoder.finish()));
+            self.stats.bytes_downloaded += std::mem::size_of_val(out);
+            self.stats.bytes_copied += std::mem::size_of_val(out);
+            self.stats.buffer_reuse_hits += 1;
+            self.read_staging_buffer_from(submission.submitted_at_ms, out)
+                .await
+        }
+
         fn encode_readback(
             &mut self,
             encoder: &mut wgpu::CommandEncoder,
@@ -4471,6 +4653,14 @@ pub mod browser_webgpu {
         }
 
         async fn read_staging_buffer(&mut self, out: &mut [f32]) -> Result<(), BrowserWebGpuError> {
+            self.read_staging_buffer_from(browser_now_ms(), out).await
+        }
+
+        async fn read_staging_buffer_from(
+            &mut self,
+            submitted_at_ms: f64,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
             let byte_len = std::mem::size_of_val(out);
             let buffer = &self
                 .readback
@@ -4478,7 +4668,6 @@ pub mod browser_webgpu {
                 .expect("browser readback buffer was initialized")
                 .buffer;
             let (sender, receiver) = oneshot::channel();
-            let start = browser_now_ms();
             buffer
                 .slice(0..byte_len as u64)
                 .map_async(wgpu::MapMode::Read, move |result| {
@@ -4499,7 +4688,7 @@ pub mod browser_webgpu {
                     )
                 })?;
             self.stats.map_count += 1;
-            self.stats.map_wait_ms += browser_now_ms() - start;
+            self.stats.map_wait_ms += browser_now_ms() - submitted_at_ms;
             {
                 let mapped = buffer.slice(0..byte_len as u64).get_mapped_range();
                 let values: &[f32] = bytemuck::cast_slice(&mapped);
