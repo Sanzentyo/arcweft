@@ -4042,6 +4042,33 @@ pub mod browser_webgpu {
             Ok(())
         }
 
+        pub fn upload_prepared_elementwise_rhs_f32(
+            &mut self,
+            prepared: &BrowserPreparedElementwiseF32,
+            rhs: &[f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            if rhs.len() > prepared.capacity_len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "prepared elementwise add rhs exceeded prepared capacity",
+                ));
+            }
+            let params = AddParams {
+                len: checked_u32(rhs.len())?,
+                x_threads: checked_u32(add_groups(self.limits, rhs.len())?.0 as usize * 256)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            self.queue
+                .write_buffer(&prepared.rhs, 0, bytemuck::cast_slice(rhs));
+            self.queue
+                .write_buffer(&prepared.params, 0, bytemuck::bytes_of(&params));
+            self.stats.bytes_uploaded += std::mem::size_of_val(rhs);
+            self.stats.bytes_copied += std::mem::size_of_val(rhs);
+            self.stats.buffer_reuse_hits += 2;
+            Ok(())
+        }
+
         pub async fn dispatch_resident_elementwise_f32(
             &mut self,
             prepared: &BrowserPreparedElementwiseF32,
@@ -4297,6 +4324,82 @@ pub mod browser_webgpu {
                 checked_workgroups(self.limits, cols.div_ceil(16))?,
                 checked_workgroups(self.limits, rows.div_ceil(16))?,
             )
+        }
+
+        pub fn submit_resident_matmul_then_add_f32_without_readback(
+            &mut self,
+            matmul: &BrowserPreparedMatmulF32,
+            add: &BrowserPreparedElementwiseF32,
+            rows: usize,
+            cols: usize,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            if rows > matmul.capacity.rows || cols > matmul.capacity.cols {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul chain exceeded prepared matmul capacity",
+                ));
+            }
+            let len = checked_len_mul(rows, cols)?;
+            if len > add.capacity_len {
+                return Err(BrowserWebGpuError::fallback(
+                    BrowserWebGpuFallbackReason::StorageBufferTooLarge,
+                    "resident matmul chain exceeded prepared add capacity",
+                ));
+            }
+            if len == 0 {
+                return Ok(BrowserResidentSubmission {
+                    len,
+                    submitted_at_ms: browser_now_ms(),
+                });
+            }
+            self.ensure_healthy()?;
+            validate_f32_storage(self.limits, len)?;
+            let add_layout = self.add_pipeline.get_bind_group_layout(0);
+            let add_entries = bind_group_entries(&matmul.out, &add.rhs, &add.out, &add.params);
+            let add_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-browser-chained-add-bind-group"),
+                layout: &add_layout,
+                entries: &add_entries,
+            });
+            self.stats.bind_group_rebuilds += 1;
+            let matmul_pipeline = self.matmul_pipeline.clone();
+            let add_pipeline = self.add_pipeline.clone();
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-browser-resident-chain-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-resident-chain-matmul-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&matmul_pipeline);
+                pass.set_bind_group(0, &matmul.bind_group, &[]);
+                pass.dispatch_workgroups(
+                    checked_workgroups(self.limits, cols.div_ceil(16))?,
+                    checked_workgroups(self.limits, rows.div_ceil(16))?,
+                    1,
+                );
+            }
+            {
+                let (groups_x, groups_y) = add_groups(self.limits, len)?;
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-resident-chain-add-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&add_pipeline);
+                pass.set_bind_group(0, &add_bind_group, &[]);
+                pass.dispatch_workgroups(groups_x.max(1), groups_y.max(1), 1);
+            }
+            self.queue.submit(Some(encoder.finish()));
+            self.stats.dispatches += 2;
+            self.stats.async_submissions += 1;
+            self.stats.pipeline_cache_hits += 2;
+            Ok(BrowserResidentSubmission {
+                len,
+                submitted_at_ms: browser_now_ms(),
+            })
         }
 
         pub async fn read_resident_matmul_f32(
