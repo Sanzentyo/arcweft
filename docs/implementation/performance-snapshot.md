@@ -642,7 +642,9 @@ arcw bench tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw
 arcw bench tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw --math-backend ndarray --value lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=tensor/f64/2x2:5,6.25,7.5,8.75 --json
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matrix-add-reuse
+just bench-math-matrix-add-reuse-update
 just bench-math-tensor-add-reuse
+just bench-math-tensor-add-reuse-update
 ```
 
 Representative release results on the local machine:
@@ -682,6 +684,7 @@ Representative release results on the local machine:
 | 2048x2048 matrix_add_f32 | wgpu one-shot | measured | 53726400 | 16 buffer creations across warmup + samples |
 | 2048x2048 matrix_add_f32 | wgpu prepared | measured | 21763000 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
 | 2048x2048 tensor_add_f32 | wgpu prepared | measured | 23814100 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
+| 64x64 matrix_add_f32 | wgpu prepared update | measured | 1345000 | `--reuse-update-inputs`, one initial buffer allocation, three upload+dispatch passes, `gpu_buffer_reuse_hits = 21` |
 
 These numbers show the current backend split: glam is the intended path for
 fixed 4x4 matrices, ndarray/scalar win smaller one-shot CPU workloads, and wgpu
@@ -689,13 +692,16 @@ becomes useful for larger matmul workloads once arithmetic work amortizes
 upload/download cost. Auto therefore keeps one-shot elementwise kernels on the
 CPU backend and only considers wgpu for matmul above the configured work
 threshold. Repeated matrix multiplication and explicit-wgpu elementwise
-matrix/tensor kernels can now use prepared GPU buffers, which uploads the fixed
-inputs once, reuses the storage/bind group across warmup and measured samples,
-and downloads only the result for each dispatch. Auto matmul uses the same
+matrix/tensor kernels can now use prepared GPU buffers. Exact repeated inputs
+keep the fixed input buffers resident and download only the result for each
+dispatch. Same-shape changed inputs reuse the same storage buffers and bind
+group, write the new `f32` input values with `queue.write_buffer`, and then
+dispatch without creating new GPU buffers. Auto matmul uses the same
 prepared-buffer path when the configured work threshold selects wgpu; Auto
 elementwise stays on the CPU backend because the current one-shot GPU path is
-copy dominated in local measurements. The prepared cache compares full `f32`
-bit-pattern fingerprints, not a lossy hash, before reusing GPU input buffers.
+copy dominated in local measurements. The prepared cache uses shape for cache
+eligibility and compares full `f32` bit-pattern fingerprints only to decide
+whether an input upload can be skipped for exact repeated values.
 The wgpu readback path also keeps a reusable MAP_READ staging buffer in the
 adapter context; one-shot calls and prepared dispatches grow it on demand and
 remap it instead of allocating a fresh download buffer for every result.

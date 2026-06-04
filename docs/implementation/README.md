@@ -258,7 +258,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `matrix/f64/<rows>x<cols>:<csv>`, and `tensor/f64/<dims>:<csv>` values,
   making source-level `math.*` flows measurable through the normal bench JSON.
   The portable wgpu kernels remain `f32`; `f64` math uses scalar, glam 4x4, or
-  ndarray CPU backends without narrowing.
+  ndarray CPU backends without narrowing. Native prepared wgpu math now caches
+  by shape, keeps exact repeated inputs resident, and updates same-shape changed
+  inputs with `queue.write_buffer` instead of recreating GPU storage or bind
+  groups.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

@@ -176,22 +176,43 @@ fn run_prepared_matrix_matmul(
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
+    let update_cases = options
+        .reuse_update_inputs
+        .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, true));
     let mut output = vec![0.0; lhs.rows() * rhs.cols()];
-    for _ in 0..options.warmup {
+    for index in 0..options.warmup {
+        if let Some(cases) = &update_cases {
+            let (lhs, rhs, _) = &cases[index];
+            if let Err(error) = accelerator.update_prepared_matrix_matmul_f32(&prepared, lhs, rhs) {
+                return BackendReport::skipped_or_failed(backend, error.to_string());
+            }
+        }
         if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
     let mut samples = Vec::with_capacity(options.iterations);
-    for _ in 0..options.iterations {
+    for index in 0..options.iterations {
+        let case = update_cases
+            .as_ref()
+            .map(|cases| &cases[options.warmup + index]);
         let started = Instant::now();
+        if let Some((lhs, rhs, _)) = case
+            && let Err(error) = accelerator.update_prepared_matrix_matmul_f32(&prepared, lhs, rhs)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
         if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
-        if !approx_eq(&output, reference.values(), 1.0e-3) {
+        let expected = case.map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(&output, expected, 1.0e-3) {
             return BackendReport::failed(
                 backend,
                 "prepared matrix matmul result mismatch".to_owned(),
@@ -220,20 +241,41 @@ fn run_prepared_matrix_add(
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
+    let update_cases = options
+        .reuse_update_inputs
+        .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, false));
     let mut output = vec![0.0; lhs.values().len()];
-    for _ in 0..options.warmup {
+    for index in 0..options.warmup {
+        if let Some(cases) = &update_cases {
+            let (lhs, rhs, _) = &cases[index];
+            if let Err(error) = accelerator.update_prepared_matrix_add_f32(&prepared, lhs, rhs) {
+                return BackendReport::skipped_or_failed(backend, error.to_string());
+            }
+        }
         if let Err(error) = accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output) {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
     let mut samples = Vec::with_capacity(options.iterations);
-    for _ in 0..options.iterations {
+    for index in 0..options.iterations {
+        let case = update_cases
+            .as_ref()
+            .map(|cases| &cases[options.warmup + index]);
         let started = Instant::now();
+        if let Some((lhs, rhs, _)) = case
+            && let Err(error) = accelerator.update_prepared_matrix_add_f32(&prepared, lhs, rhs)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
         if let Err(error) = accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output) {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
-        if !approx_eq(&output, reference.values(), 1.0e-6) {
+        let expected = case.map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(&output, expected, 1.0e-6) {
             return BackendReport::failed(
                 backend,
                 "prepared matrix add result mismatch".to_owned(),
@@ -262,20 +304,41 @@ fn run_prepared_tensor_add(
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
+    let update_cases = options
+        .reuse_update_inputs
+        .then(|| tensor_update_cases(lhs.values().len(), options.warmup + options.iterations));
     let mut output = vec![0.0; lhs.values().len()];
-    for _ in 0..options.warmup {
+    for index in 0..options.warmup {
+        if let Some(cases) = &update_cases {
+            let (lhs, rhs, _) = &cases[index];
+            if let Err(error) = accelerator.update_prepared_tensor_add_f32(&prepared, lhs, rhs) {
+                return BackendReport::skipped_or_failed(backend, error.to_string());
+            }
+        }
         if let Err(error) = accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output) {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
     let mut samples = Vec::with_capacity(options.iterations);
-    for _ in 0..options.iterations {
+    for index in 0..options.iterations {
+        let case = update_cases
+            .as_ref()
+            .map(|cases| &cases[options.warmup + index]);
         let started = Instant::now();
+        if let Some((lhs, rhs, _)) = case
+            && let Err(error) = accelerator.update_prepared_tensor_add_f32(&prepared, lhs, rhs)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
         if let Err(error) = accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output) {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
-        if !approx_eq(&output, reference.values(), 1.0e-6) {
+        let expected = case.map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(&output, expected, 1.0e-6) {
             return BackendReport::failed(
                 backend,
                 "prepared tensor add result mismatch".to_owned(),
@@ -308,6 +371,44 @@ fn tensor_fixture(elements: usize, scale: f32) -> DenseTensorF32 {
             .collect(),
     )
     .expect("fixture shape is valid")
+}
+
+fn matrix_update_cases(
+    size: usize,
+    count: usize,
+    matmul: bool,
+) -> Vec<(DenseMatrixF32, DenseMatrixF32, DenseMatrixF32)> {
+    (0..count)
+        .map(|index| {
+            let lhs_scale = 1.0 + small_f32(index % 7) * 0.03125;
+            let rhs_scale = 0.25 + small_f32((index + 3) % 11) * 0.015_625;
+            let lhs = matrix_fixture(size, size, lhs_scale);
+            let rhs = matrix_fixture(size, size, rhs_scale);
+            let reference = if matmul {
+                lhs.matmul_scalar(&rhs)
+            } else {
+                lhs.add_scalar(&rhs)
+            }
+            .expect("updated matrix fixture has compatible shape");
+            (lhs, rhs, reference)
+        })
+        .collect()
+}
+
+fn tensor_update_cases(
+    elements: usize,
+    count: usize,
+) -> Vec<(DenseTensorF32, DenseTensorF32, DenseTensorF32)> {
+    (0..count)
+        .map(|index| {
+            let lhs = tensor_fixture(elements, 1.0 + small_f32(index % 7) * 0.03125);
+            let rhs = tensor_fixture(elements, 0.25 + small_f32((index + 3) % 11) * 0.015_625);
+            let reference = lhs
+                .add_scalar(&rhs)
+                .expect("updated tensor fixture has compatible shape");
+            (lhs, rhs, reference)
+        })
+        .collect()
 }
 
 fn approx_eq(lhs: &[f32], rhs: &[f32], epsilon: f32) -> bool {
@@ -348,6 +449,7 @@ struct BenchOptions {
     warmup: usize,
     wgpu_min_elements: usize,
     reuse: bool,
+    reuse_update_inputs: bool,
 }
 
 impl BenchOptions {
@@ -360,6 +462,7 @@ impl BenchOptions {
             warmup: 2,
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
             reuse: false,
+            reuse_update_inputs: false,
         };
         let mut index = 0;
         while index < args.len() {
@@ -398,6 +501,10 @@ impl BenchOptions {
                 }
                 "--reuse" => {
                     options.reuse = true;
+                }
+                "--reuse-update-inputs" => {
+                    options.reuse = true;
+                    options.reuse_update_inputs = true;
                 }
                 _ => {}
             }
@@ -441,6 +548,7 @@ struct MathBenchReport {
     iterations: usize,
     warmup: usize,
     reuse: bool,
+    reuse_update_inputs: bool,
     results: Vec<BackendReportJson>,
 }
 
@@ -453,6 +561,7 @@ impl MathBenchReport {
             iterations: options.iterations,
             warmup: options.warmup,
             reuse: options.reuse,
+            reuse_update_inputs: options.reuse_update_inputs,
             results: results.into_iter().map(BackendReport::into_json).collect(),
         }
     }
@@ -612,6 +721,7 @@ mod tests {
             warmup: 0,
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
             reuse: false,
+            reuse_update_inputs: false,
         };
         let report = MathBenchReport::new(
             &options,
