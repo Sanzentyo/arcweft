@@ -425,10 +425,12 @@ fixtures cover wide integer storage with
 `pure_flat_batch_bytes_borrowed_median = 4096` and the same checked sum
 conversion. This confirms the hot boundary is not doing
 `.map(i64::from)`. Native JIT covers exact i64 plus width-preserving ABIs for
-`i32`, `u32`, `u64`, `f32`, and `f64`; scalar AOT remains the native tier for
-`i128` and `u128` while the width-preserving VM fast path is the semantic
-execution tier for the remaining integer widths. Target-sized dense storage
-already uses stable `i64`/`u64` backing at the runtime boundary.
+`i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and
+`f64`. The `i128` and `u128` JIT path is batch-only: the native ABI receives
+flat row buffers by pointer and never exposes by-value wide integers at the
+function boundary. Scalar AOT and VM remain the semantic scalar tiers for
+wide-integer calls outside the batch shape. Target-sized dense storage already
+uses stable `i64`/`u64` backing at the runtime boundary.
 
 The i32 JIT ABI emits `extern "C" fn(i32, ...) -> i32` helpers plus row-major
 `*const i32` flat batch and batch-sum entry points. A local path-free bench run

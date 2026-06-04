@@ -8,6 +8,8 @@ type JitI64QuaternaryFn = extern "C" fn(i64, i64, i64, i64) -> i64;
 type JitI64BatchFn = extern "C" fn(i64, i64, i64) -> i64;
 type JitI64RowsBatchFn = extern "C" fn(*const i64, i64, *mut i64);
 type JitI64RowsBatchSumFn = extern "C" fn(*const i64, i64) -> i64;
+type JitI128RowsBatchFn = extern "C" fn(*const i128, i64, *mut i128);
+type JitI128RowsBatchSumFn = extern "C" fn(*const i128, i64) -> i64;
 type JitI8Fn = extern "C" fn() -> i8;
 type JitI8UnaryFn = extern "C" fn(i8) -> i8;
 type JitI8BinaryFn = extern "C" fn(i8, i8) -> i8;
@@ -57,6 +59,8 @@ type JitU64TernaryFn = extern "C" fn(u64, u64, u64) -> u64;
 type JitU64QuaternaryFn = extern "C" fn(u64, u64, u64, u64) -> u64;
 type JitU64RowsBatchFn = extern "C" fn(*const u64, i64, *mut u64);
 type JitU64RowsBatchSumFn = extern "C" fn(*const u64, i64) -> i64;
+type JitU128RowsBatchFn = extern "C" fn(*const u128, i64, *mut u128);
+type JitU128RowsBatchSumFn = extern "C" fn(*const u128, i64) -> i64;
 type JitF32Fn = extern "C" fn() -> f32;
 type JitF32UnaryFn = extern "C" fn(f32) -> f32;
 type JitF32BinaryFn = extern "C" fn(f32, f32) -> f32;
@@ -622,6 +626,46 @@ pub(crate) fn call_i64_rows_batch_sum(
     Some(function(inputs.as_ptr(), rows))
 }
 
+pub(crate) fn call_i128_rows_batch(
+    code: *const u8,
+    inputs: &[i128],
+    arity: usize,
+    out: &mut [i128],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is emitted in this crate with signature
+    // `extern "C" fn(*const i128, i64, *mut i128)`. Only pointers and `i64`
+    // cross the ABI boundary; the generated function loads/stores i128 values
+    // from checked slices while the owning JIT module outlives the call.
+    let function = unsafe { mem::transmute::<*const u8, JitI128RowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_i128_rows_batch_sum(
+    code: *const u8,
+    inputs: &[i128],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is emitted in this crate with signature
+    // `extern "C" fn(*const i128, i64) -> i64`. Slice shape is checked before
+    // passing pointers, and no by-value i128 crosses the ABI boundary.
+    let function = unsafe { mem::transmute::<*const u8, JitI128RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
+}
+
 pub(crate) fn call_i32_rows_batch(
     code: *const u8,
     inputs: &[i32],
@@ -898,6 +942,46 @@ pub(crate) fn call_u64_rows_batch_sum(
     // `extern "C" fn(*const u64, i64) -> i64`. Slice shape is checked before
     // passing pointers, and the owning JIT module outlives the call.
     let function = unsafe { mem::transmute::<*const u8, JitU64RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
+}
+
+pub(crate) fn call_u128_rows_batch(
+    code: *const u8,
+    inputs: &[u128],
+    arity: usize,
+    out: &mut [u128],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is emitted in this crate with signature
+    // `extern "C" fn(*const u128, i64, *mut u128)`. Only pointers and `i64`
+    // cross the ABI boundary; the generated function loads/stores u128 values
+    // from checked slices while the owning JIT module outlives the call.
+    let function = unsafe { mem::transmute::<*const u8, JitU128RowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_u128_rows_batch_sum(
+    code: *const u8,
+    inputs: &[u128],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is emitted in this crate with signature
+    // `extern "C" fn(*const u128, i64) -> i64`. Slice shape is checked before
+    // passing pointers, and no by-value u128 crosses the ABI boundary.
+    let function = unsafe { mem::transmute::<*const u8, JitU128RowsBatchSumFn>(code) };
     Some(function(inputs.as_ptr(), rows))
 }
 

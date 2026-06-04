@@ -26,8 +26,9 @@ use arcweft_core::{
 };
 use native_jit::{
     CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI8Inputs, CompiledPureI16Inputs,
-    CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureU8Inputs, CompiledPureU16Inputs,
-    CompiledPureU32Inputs, CompiledPureU64Inputs, CraneliftPureFunctionBackend,
+    CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureI128BatchInputs,
+    CompiledPureU8Inputs, CompiledPureU16Inputs, CompiledPureU32Inputs, CompiledPureU64Inputs,
+    CompiledPureU128BatchInputs, CraneliftPureFunctionBackend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
 use std::fmt;
@@ -36,8 +37,9 @@ use std::fmt;
 mod native_jit {
     pub use arcweft_lang_jit_cranelift::{
         CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI8Inputs, CompiledPureI16Inputs,
-        CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureU8Inputs, CompiledPureU16Inputs,
-        CompiledPureU32Inputs, CompiledPureU64Inputs, CraneliftPureFunctionBackend,
+        CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureI128BatchInputs,
+        CompiledPureU8Inputs, CompiledPureU16Inputs, CompiledPureU32Inputs, CompiledPureU64Inputs,
+        CompiledPureU128BatchInputs, CraneliftPureFunctionBackend,
     };
 }
 
@@ -63,10 +65,12 @@ mod native_jit {
     pub struct CompiledPureI8Inputs;
     pub struct CompiledPureI16Inputs;
     pub struct CompiledPureI32Inputs;
+    pub struct CompiledPureI128BatchInputs;
     pub struct CompiledPureU32Inputs;
     pub struct CompiledPureU8Inputs;
     pub struct CompiledPureU16Inputs;
     pub struct CompiledPureU64Inputs;
+    pub struct CompiledPureU128BatchInputs;
     pub struct CompiledPureF32Inputs;
     pub struct CompiledPureF64Inputs;
 
@@ -115,6 +119,17 @@ mod native_jit {
             Err(NativeJitUnavailable)
         }
 
+        pub fn compile_i128_batch_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureI128BatchInputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
         pub fn compile_u32_with_inputs<'a, I>(
             &self,
             _request: &PureFunctionRequest,
@@ -153,6 +168,17 @@ mod native_jit {
             _request: &PureFunctionRequest,
             _input_names: I,
         ) -> Result<CompiledPureU64Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn compile_u128_batch_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureU128BatchInputs, NativeJitUnavailable>
         where
             I: IntoIterator<Item = &'a str>,
         {
@@ -267,6 +293,31 @@ mod native_jit {
     impl_small_int_unavailable!(CompiledPureI16Inputs, i16);
     impl_small_int_unavailable!(CompiledPureU8Inputs, u8);
     impl_small_int_unavailable!(CompiledPureU16Inputs, u16);
+
+    macro_rules! impl_wide_int_batch_unavailable {
+        ($compiled:ty, $ty:ty) => {
+            impl $compiled {
+                pub fn call_flat_batch(
+                    &self,
+                    _flat_inputs: &[$ty],
+                    _out: &mut [$ty],
+                ) -> Result<(), NativeJitUnavailable> {
+                    Err(NativeJitUnavailable)
+                }
+
+                pub fn call_flat_batch_sum(
+                    &self,
+                    _flat_inputs: &[$ty],
+                    _rows: usize,
+                ) -> Result<i64, NativeJitUnavailable> {
+                    Err(NativeJitUnavailable)
+                }
+            }
+        };
+    }
+
+    impl_wide_int_batch_unavailable!(CompiledPureI128BatchInputs, i128);
+    impl_wide_int_batch_unavailable!(CompiledPureU128BatchInputs, u128);
 
     impl CompiledPureU32Inputs {
         pub fn call(&self, _args: &[u32]) -> Result<u32, NativeJitUnavailable> {
@@ -411,11 +462,13 @@ enum RuntimePureCacheEntry {
     Jit(Box<CompiledPureI64Inputs>),
     JitI8(Box<CompiledPureI8Inputs>),
     JitI16(Box<CompiledPureI16Inputs>),
+    JitI128Batch(Box<CompiledPureI128BatchInputs>),
     JitI32(Box<CompiledPureI32Inputs>),
     JitU8(Box<CompiledPureU8Inputs>),
     JitU16(Box<CompiledPureU16Inputs>),
     JitU32(Box<CompiledPureU32Inputs>),
     JitU64(Box<CompiledPureU64Inputs>),
+    JitU128Batch(Box<CompiledPureU128BatchInputs>),
     JitF32(Box<CompiledPureF32Inputs>),
     JitF64(Box<CompiledPureF64Inputs>),
     Aot(RuntimePureAotPlan),
@@ -425,6 +478,26 @@ enum RuntimePureCacheEntry {
         jit_failed: bool,
     },
     Vm,
+}
+
+impl RuntimePureCacheEntry {
+    fn is_non_i64_runtime_fallback(&self) -> bool {
+        matches!(
+            self,
+            Self::JitI8(_)
+                | Self::JitI16(_)
+                | Self::JitI128Batch(_)
+                | Self::JitI32(_)
+                | Self::JitU8(_)
+                | Self::JitU16(_)
+                | Self::JitU32(_)
+                | Self::JitU64(_)
+                | Self::JitU128Batch(_)
+                | Self::JitF32(_)
+                | Self::JitF64(_)
+                | Self::Vm
+        )
+    }
 }
 
 enum RuntimePureAotPlan {
@@ -799,18 +872,8 @@ impl RuntimePureAccelerator {
                     }
                 }
             }
-            Some(
-                RuntimePureCacheEntry::JitI8(_)
-                | RuntimePureCacheEntry::JitI16(_)
-                | RuntimePureCacheEntry::JitI32(_)
-                | RuntimePureCacheEntry::JitU8(_)
-                | RuntimePureCacheEntry::JitU16(_)
-                | RuntimePureCacheEntry::JitU32(_)
-                | RuntimePureCacheEntry::JitU64(_)
-                | RuntimePureCacheEntry::JitF32(_)
-                | RuntimePureCacheEntry::JitF64(_)
-                | RuntimePureCacheEntry::Vm,
-            ) => {
+            Some(entry) => {
+                debug_assert!(entry.is_non_i64_runtime_fallback());
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows.len();
                 self.stats.fallbacks += rows.len();
@@ -908,11 +971,13 @@ impl RuntimePureAccelerator {
             Some(
                 RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -1004,11 +1069,13 @@ impl RuntimePureAccelerator {
             Some(
                 RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -1098,11 +1165,13 @@ impl RuntimePureAccelerator {
             Some(
                 RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -1133,11 +1202,13 @@ impl RuntimePureAccelerator {
                 RuntimePureCacheEntry::Jit(_)
                 | RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_),
             ) => RuntimeBatchBackendKind::Jit,
@@ -1177,6 +1248,11 @@ impl RuntimePureAccelerator {
             return;
         }
 
+        if helper_has_only_i128_inputs(helper) {
+            self.promote_auto_i128_jit(helper);
+            return;
+        }
+
         if helper_has_only_i32_inputs(helper) {
             self.promote_auto_i32_jit(helper);
             return;
@@ -1199,6 +1275,11 @@ impl RuntimePureAccelerator {
 
         if helper_has_only_u64_inputs(helper) {
             self.promote_auto_u64_jit(helper);
+            return;
+        }
+
+        if helper_has_only_u128_inputs(helper) {
+            self.promote_auto_u128_jit(helper);
             return;
         }
 
@@ -1259,6 +1340,17 @@ impl RuntimePureAccelerator {
         }
     }
 
+    fn promote_auto_i128_jit(&mut self, helper: &RuntimePureHelper) {
+        let request = compile_request(helper, || RuntimeValue::i128(0));
+        match compile_jit_i128_batch(&request, helper, &mut self.compile_stats) {
+            Some(entry @ RuntimePureCacheEntry::JitI128Batch(_)) => {
+                self.install_promoted_jit_entry(helper.id, entry);
+            }
+            Some(_) => unreachable!("compile_jit_i128_batch only returns i128 batch JIT entries"),
+            None => self.mark_auto_jit_failed(helper.id),
+        }
+    }
+
     fn promote_auto_u32_jit(&mut self, helper: &RuntimePureHelper) {
         let request = compile_request(helper, || RuntimeValue::u32(0));
         match compile_jit_u32(&request, helper, &mut self.compile_stats) {
@@ -1299,6 +1391,17 @@ impl RuntimePureAccelerator {
                 self.install_promoted_jit_entry(helper.id, entry);
             }
             Some(_) => unreachable!("compile_jit_u64 only returns u64 JIT entries"),
+            None => self.mark_auto_jit_failed(helper.id),
+        }
+    }
+
+    fn promote_auto_u128_jit(&mut self, helper: &RuntimePureHelper) {
+        let request = compile_request(helper, || RuntimeValue::u128(0));
+        match compile_jit_u128_batch(&request, helper, &mut self.compile_stats) {
+            Some(entry @ RuntimePureCacheEntry::JitU128Batch(_)) => {
+                self.install_promoted_jit_entry(helper.id, entry);
+            }
+            Some(_) => unreachable!("compile_jit_u128_batch only returns u128 batch JIT entries"),
             None => self.mark_auto_jit_failed(helper.id),
         }
     }
@@ -1637,6 +1740,73 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
         if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper.id) {
+            self.stats.batch_calls += 1;
+            self.stats.batch_items += rows;
+            self.stats.flat_batch_calls += 1;
+            self.stats.flat_batch_items += rows;
+            self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+            self.stats.pure_calls += rows;
+            self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+            self.compile_stats.cache_hits += 1;
+            self.stats.jit_calls += rows;
+            return compiled
+                .call_flat_batch_sum(flat_inputs, rows)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: helper.name.clone(),
+                    reason: error.to_string(),
+                });
+        }
+        self.call_exact_int_flat_batch_sum(helper, flat_inputs, arity, rows)
+    }
+
+    fn call_i128_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i128],
+        arity: usize,
+        out: &mut [i128],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<i128>(helper, flat_inputs.len(), arity, out.len())?;
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, out.len());
+        }
+        if let Some(RuntimePureCacheEntry::JitI128Batch(compiled)) =
+            cache_entry(&self.cache, helper.id)
+        {
+            self.stats.batch_calls += 1;
+            self.stats.batch_items += out.len();
+            self.stats.flat_batch_calls += 1;
+            self.stats.flat_batch_items += out.len();
+            self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+            self.stats.pure_calls += out.len();
+            self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+            self.stats.result_bytes_copied += std::mem::size_of_val(out);
+            self.compile_stats.cache_hits += 1;
+            self.stats.jit_calls += out.len();
+            return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
+                RuntimeEvalError::UnsupportedPure {
+                    name: helper.name.clone(),
+                    reason: error.to_string(),
+                }
+            });
+        }
+        self.call_exact_int_flat_batch(helper, flat_inputs, arity, out)
+    }
+
+    fn call_i128_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i128],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<i128>(helper, flat_inputs.len(), arity, rows)?;
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, rows);
+        }
+        if let Some(RuntimePureCacheEntry::JitI128Batch(compiled)) =
+            cache_entry(&self.cache, helper.id)
+        {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
             self.stats.flat_batch_calls += 1;
@@ -2312,6 +2482,130 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
     }
 
+    fn call_u128_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u128],
+        arity: usize,
+        out: &mut [u128],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<u128>(helper, flat_inputs.len(), arity, out.len())?;
+        self.record_flat_batch_stats(flat_inputs, out.len(), true);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, out.len());
+        }
+        match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::JitU128Batch(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += out.len();
+                compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
+                    RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    }
+                })
+            }
+            Some(
+                RuntimePureCacheEntry::Aot(compiled)
+                | RuntimePureCacheEntry::AutoAot {
+                    aot: compiled,
+                    jit: None,
+                    ..
+                },
+            ) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += out.len();
+                call_aot_exact_int_flat_batch(
+                    compiled,
+                    flat_inputs,
+                    arity,
+                    out,
+                    &mut self.aot_scalar_slots,
+                )
+            }
+            Some(_) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += out.len();
+                self.stats.fallbacks += out.len();
+                call_vm_exact_int_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += out.len();
+                self.stats.fallbacks += out.len();
+                call_vm_exact_int_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
+            }
+        }
+    }
+
+    fn call_u128_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u128],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<u128>(helper, flat_inputs.len(), arity, rows)?;
+        self.record_flat_batch_stats(flat_inputs, rows, false);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, rows);
+        }
+        match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::JitU128Batch(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += rows;
+                compiled
+                    .call_flat_batch_sum(flat_inputs, rows)
+                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    })
+            }
+            Some(
+                RuntimePureCacheEntry::Aot(compiled)
+                | RuntimePureCacheEntry::AutoAot {
+                    aot: compiled,
+                    jit: None,
+                    ..
+                },
+            ) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += rows;
+                call_aot_exact_int_flat_batch_sum(
+                    compiled,
+                    flat_inputs,
+                    arity,
+                    rows,
+                    &mut self.aot_scalar_slots,
+                )
+            }
+            Some(_) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                call_vm_exact_int_flat_batch_sum(
+                    helper,
+                    flat_inputs,
+                    arity,
+                    rows,
+                    &mut self.vm_scratch,
+                )
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                call_vm_exact_int_flat_batch_sum(
+                    helper,
+                    flat_inputs,
+                    arity,
+                    rows,
+                    &mut self.vm_scratch,
+                )
+            }
+        }
+    }
+
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
         helper: &RuntimePureHelper,
@@ -2499,11 +2793,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             Some(
                 RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -2574,11 +2870,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             Some(
                 RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -3554,11 +3852,13 @@ fn compile_helper(
         RuntimePureBackendMode::Jit => {
             if let Some(jit) = compile_jit_i8(&request, helper, stats)
                 .or_else(|| compile_jit_i16(&request, helper, stats))
+                .or_else(|| compile_jit_i128_batch(&request, helper, stats))
                 .or_else(|| compile_jit_i32(&request, helper, stats))
                 .or_else(|| compile_jit_u8(&request, helper, stats))
                 .or_else(|| compile_jit_u16(&request, helper, stats))
                 .or_else(|| compile_jit_u32(&request, helper, stats))
                 .or_else(|| compile_jit_u64(&request, helper, stats))
+                .or_else(|| compile_jit_u128_batch(&request, helper, stats))
                 .or_else(|| compile_jit_f32(&request, helper, stats))
                 .or_else(|| compile_jit_f64(&request, helper, stats))
             {
@@ -3799,6 +4099,15 @@ fn helper_has_only_i16_inputs(helper: &RuntimePureHelper) -> bool {
             .all(|ty| matches!(ty, RuntimePureInputType::I16))
 }
 
+fn helper_has_only_i128_inputs(helper: &RuntimePureHelper) -> bool {
+    helper.output_type == RuntimePureOutputType::I128
+        && helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::I128))
+}
+
 fn helper_has_only_u32_inputs(helper: &RuntimePureHelper) -> bool {
     helper.output_type == RuntimePureOutputType::U32
         && helper.input_names.len() == helper.input_types.len()
@@ -3835,6 +4144,15 @@ fn helper_has_only_u64_inputs(helper: &RuntimePureHelper) -> bool {
             .all(|ty| matches!(ty, RuntimePureInputType::U64))
 }
 
+fn helper_has_only_u128_inputs(helper: &RuntimePureHelper) -> bool {
+    helper.output_type == RuntimePureOutputType::U128
+        && helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::U128))
+}
+
 fn helper_has_only_f32_inputs(helper: &RuntimePureHelper) -> bool {
     helper.output_type == RuntimePureOutputType::F32
         && helper.input_names.len() == helper.input_types.len()
@@ -3856,11 +4174,13 @@ fn helper_has_only_f64_inputs(helper: &RuntimePureHelper) -> bool {
 fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usize {
     if (helper_has_only_i8_inputs(helper)
         || helper_has_only_i16_inputs(helper)
+        || helper_has_only_i128_inputs(helper)
         || helper_has_only_i32_inputs(helper)
         || helper_has_only_u8_inputs(helper)
         || helper_has_only_u16_inputs(helper)
         || helper_has_only_u32_inputs(helper)
         || helper_has_only_u64_inputs(helper)
+        || helper_has_only_u128_inputs(helper)
         || helper_has_only_f32_inputs(helper)
         || helper_has_only_f64_inputs(helper))
         && rows >= 64
@@ -3959,6 +4279,28 @@ fn compile_jit_i16(
     compiled.map(Box::new).map(RuntimePureCacheEntry::JitI16)
 }
 
+fn compile_jit_i128_batch(
+    request: &PureFunctionRequest,
+    helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    if !helper_has_only_i128_inputs(helper) || !native_jit_enabled() {
+        return None;
+    }
+    stats.jit_attempts += 1;
+    let compiled = CraneliftPureFunctionBackend
+        .compile_i128_batch_with_inputs(request, helper.input_names.iter().map(String::as_str))
+        .ok();
+    if compiled.is_some() {
+        stats.jit_successes += 1;
+    } else {
+        stats.jit_failures += 1;
+    }
+    compiled
+        .map(Box::new)
+        .map(RuntimePureCacheEntry::JitI128Batch)
+}
+
 fn compile_jit_u32(
     request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
@@ -4043,6 +4385,28 @@ fn compile_jit_u64(
         stats.jit_failures += 1;
     }
     compiled.map(Box::new).map(RuntimePureCacheEntry::JitU64)
+}
+
+fn compile_jit_u128_batch(
+    request: &PureFunctionRequest,
+    helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    if !helper_has_only_u128_inputs(helper) || !native_jit_enabled() {
+        return None;
+    }
+    stats.jit_attempts += 1;
+    let compiled = CraneliftPureFunctionBackend
+        .compile_u128_batch_with_inputs(request, helper.input_names.iter().map(String::as_str))
+        .ok();
+    if compiled.is_some() {
+        stats.jit_successes += 1;
+    } else {
+        stats.jit_failures += 1;
+    }
+    compiled
+        .map(Box::new)
+        .map(RuntimePureCacheEntry::JitU128Batch)
 }
 
 fn compile_jit_f32(
@@ -5093,11 +5457,13 @@ impl RuntimePureAccelerator {
                 RuntimePureCacheEntry::Jit(_)
                 | RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::AutoAot { jit: Some(_), .. } => jit += 1,

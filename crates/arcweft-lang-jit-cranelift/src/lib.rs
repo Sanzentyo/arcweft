@@ -59,6 +59,19 @@ pub struct CompiledPureI64Inputs {
     stats: PureFunctionStats,
 }
 
+/// Compiled native helper returning an `i128` for flat batch calls.
+///
+/// This type deliberately has no scalar caller: only pointer-based batch
+/// entrypoints cross the native ABI boundary, so no by-value `i128` argument or
+/// return type is exposed to Rust FFI.
+pub struct CompiledPureI128BatchInputs {
+    _module: JITModule,
+    batch_code: *const u8,
+    batch_sum_code: *const u8,
+    param_names: Vec<String>,
+    stats: PureFunctionStats,
+}
+
 /// Compiled native helper returning an `i8` with selected runtime inputs.
 pub struct CompiledPureI8Inputs {
     _module: JITModule,
@@ -137,6 +150,19 @@ pub struct CompiledPureU64Inputs {
     stats: PureFunctionStats,
 }
 
+/// Compiled native helper returning an `u128` for flat batch calls.
+///
+/// This type deliberately has no scalar caller: only pointer-based batch
+/// entrypoints cross the native ABI boundary, so no by-value `u128` argument or
+/// return type is exposed to Rust FFI.
+pub struct CompiledPureU128BatchInputs {
+    _module: JITModule,
+    batch_code: *const u8,
+    batch_sum_code: *const u8,
+    param_names: Vec<String>,
+    stats: PureFunctionStats,
+}
+
 /// Compiled native helper returning an `f32` with selected runtime inputs.
 pub struct CompiledPureF32Inputs {
     _module: JITModule,
@@ -189,8 +215,10 @@ enum LoweredF64Binding {
 enum SmallIntKind {
     I8,
     I16,
+    I128,
     U8,
     U16,
+    U128,
 }
 
 impl SmallIntKind {
@@ -198,8 +226,10 @@ impl SmallIntKind {
         match self {
             Self::I8 => "i8",
             Self::I16 => "i16",
+            Self::I128 => "i128",
             Self::U8 => "u8",
             Self::U16 => "u16",
+            Self::U128 => "u128",
         }
     }
 
@@ -207,6 +237,7 @@ impl SmallIntKind {
         match self {
             Self::I8 | Self::U8 => types::I8,
             Self::I16 | Self::U16 => types::I16,
+            Self::I128 | Self::U128 => types::I128,
         }
     }
 
@@ -214,19 +245,24 @@ impl SmallIntKind {
         match self {
             Self::I8 | Self::U8 => 1,
             Self::I16 | Self::U16 => 2,
+            Self::I128 | Self::U128 => 16,
         }
     }
 
     const fn signed(self) -> bool {
-        matches!(self, Self::I8 | Self::I16)
+        matches!(self, Self::I8 | Self::I16 | Self::I128)
     }
 
     fn literal(self, value: &RuntimeValue) -> Option<i64> {
         match (self, value) {
             (Self::I8, RuntimeValue::Int(RuntimeInt::I8(value))) => Some(i64::from(*value)),
             (Self::I16, RuntimeValue::Int(RuntimeInt::I16(value))) => Some(i64::from(*value)),
+            (Self::I128, RuntimeValue::Int(RuntimeInt::I128(value))) => i64::try_from(*value).ok(),
             (Self::U8, RuntimeValue::UInt(RuntimeUInt::U8(value))) => Some(i64::from(*value)),
             (Self::U16, RuntimeValue::UInt(RuntimeUInt::U16(value))) => Some(i64::from(*value)),
+            (Self::U128, RuntimeValue::UInt(RuntimeUInt::U128(value))) => {
+                i64::try_from(*value).ok()
+            }
             _ => None,
         }
     }
@@ -417,6 +453,27 @@ impl CraneliftPureFunctionBackend {
         Ok(CompiledPureI8Inputs {
             _module: parts.module,
             caller,
+            batch_code: parts.batch_code,
+            batch_sum_code: parts.batch_sum_code,
+            param_names: parts.param_names,
+            stats: parts.stats,
+        })
+    }
+
+    /// Compiles a pure helper request to reusable native `i128` flat-batch
+    /// functions with runtime `i128` inputs.
+    ///
+    /// The generated functions use pointer-based row buffers only. Scalar
+    /// `i128` calls stay on the VM/AOT path because Cranelift's platform ABI
+    /// handling for by-value i128 requires target-specific care.
+    pub fn compile_i128_batch_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<CompiledPureI128BatchInputs, CraneliftJitError> {
+        let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)?;
+        Ok(CompiledPureI128BatchInputs {
+            _module: parts.module,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
             param_names: parts.param_names,
@@ -657,6 +714,27 @@ impl CraneliftPureFunctionBackend {
         Ok(CompiledPureU16Inputs {
             _module: parts.module,
             caller,
+            batch_code: parts.batch_code,
+            batch_sum_code: parts.batch_sum_code,
+            param_names: parts.param_names,
+            stats: parts.stats,
+        })
+    }
+
+    /// Compiles a pure helper request to reusable native `u128` flat-batch
+    /// functions with runtime `u128` inputs.
+    ///
+    /// The generated functions use pointer-based row buffers only. Scalar
+    /// `u128` calls stay on the VM/AOT path because Cranelift's platform ABI
+    /// handling for by-value i128 requires target-specific care.
+    pub fn compile_u128_batch_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<CompiledPureU128BatchInputs, CraneliftJitError> {
+        let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)?;
+        Ok(CompiledPureU128BatchInputs {
+            _module: parts.module,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
             param_names: parts.param_names,
@@ -1044,6 +1122,14 @@ struct SmallIntCompiledParts {
     stats: PureFunctionStats,
 }
 
+struct WideIntBatchCompiledParts {
+    module: JITModule,
+    batch_code: *const u8,
+    batch_sum_code: *const u8,
+    param_names: Vec<String>,
+    stats: PureFunctionStats,
+}
+
 fn small_int_arity_error(kind: SmallIntKind, arity: usize) -> CraneliftJitError {
     CraneliftJitError::UnsupportedExpr(format!(
         "JIT {} helper arity {arity} is outside the native call boundary",
@@ -1136,6 +1222,53 @@ fn compile_small_int_with_inputs(
         batch_sum_code,
         param_names,
         stats,
+    })
+}
+
+fn compile_wide_int_batch_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+    kind: SmallIntKind,
+) -> Result<WideIntBatchCompiledParts, CraneliftJitError> {
+    debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
+    let param_names = param_names
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
+    validate_param_names(&param_names)?;
+    if param_names.len() > 4 {
+        return Err(CraneliftJitError::UnsupportedExpr(format!(
+            "JIT {} helper supports at most 4 runtime inputs, got {}",
+            kind.label(),
+            param_names.len()
+        )));
+    }
+
+    let mut module = jit_module()?;
+    let captured_bindings = small_int_bindings(&request.bindings, kind)?;
+    let batch_code = compile_small_int_rows_batch_function(
+        &mut module,
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+    let batch_sum_code = compile_small_int_rows_batch_sum_function(
+        &mut module,
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+    module.finalize_definitions().map_err(jit_error)?;
+    let batch_code = module.get_finalized_function(batch_code);
+    let batch_sum_code = module.get_finalized_function(batch_sum_code);
+    Ok(WideIntBatchCompiledParts {
+        module,
+        batch_code,
+        batch_sum_code,
+        param_names,
+        stats: PureFunctionStats::default(),
     })
 }
 
@@ -1305,7 +1438,9 @@ fn compile_small_int_rows_batch_sum_function(
             bindings.insert(name.clone(), LoweredI64Binding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
-        let value = if kind.signed() {
+        let value = if kind.cranelift_type().bits() > 64 {
+            builder.ins().ireduce(types::I64, value)
+        } else if kind.signed() {
             builder.ins().sextend(types::I64, value)
         } else {
             builder.ins().uextend(types::I64, value)
@@ -2550,6 +2685,59 @@ impl CompiledPureI64Inputs {
     }
 }
 
+impl CompiledPureI128BatchInputs {
+    /// Calls the compiled helper for flat row-major `i128` inputs.
+    pub fn call_flat_batch(
+        &self,
+        inputs: &[i128],
+        out: &mut [i128],
+    ) -> Result<(), CraneliftJitError> {
+        if !native_call::call_i128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT i128 rows batch expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(out.len()),
+                inputs.len(),
+                out.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Calls the compiled helper for flat row-major `i128` inputs and narrows
+    /// each row result into the `sum()` i64 accumulator.
+    pub fn call_flat_batch_sum(
+        &self,
+        inputs: &[i128],
+        rows: usize,
+    ) -> Result<i64, CraneliftJitError> {
+        native_call::call_i128_rows_batch_sum(
+            self.batch_sum_code,
+            inputs,
+            self.param_names.len(),
+            rows,
+        )
+        .ok_or_else(|| {
+            CraneliftJitError::UnsupportedExpr(format!(
+                "JIT i128 rows batch sum expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(rows),
+                inputs.len(),
+                rows
+            ))
+        })
+    }
+
+    /// Returns the local binding names used as runtime parameters.
+    pub fn param_names(&self) -> &[String] {
+        &self.param_names
+    }
+
+    /// Returns lowering counters captured during compilation.
+    pub const fn stats(&self) -> &PureFunctionStats {
+        &self.stats
+    }
+}
+
 impl CompiledPureI32Inputs {
     /// Calls the compiled helper with runtime `i32` inputs.
     pub fn call(&self, inputs: &[i32]) -> Result<i32, CraneliftJitError> {
@@ -2822,6 +3010,59 @@ impl CompiledPureU64Inputs {
                 inputs.len()
             ))
         })
+    }
+
+    /// Returns lowering counters captured during compilation.
+    pub const fn stats(&self) -> &PureFunctionStats {
+        &self.stats
+    }
+}
+
+impl CompiledPureU128BatchInputs {
+    /// Calls the compiled helper for flat row-major `u128` inputs.
+    pub fn call_flat_batch(
+        &self,
+        inputs: &[u128],
+        out: &mut [u128],
+    ) -> Result<(), CraneliftJitError> {
+        if !native_call::call_u128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT u128 rows batch expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(out.len()),
+                inputs.len(),
+                out.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Calls the compiled helper for flat row-major `u128` inputs and narrows
+    /// each row result into the `sum()` i64 accumulator.
+    pub fn call_flat_batch_sum(
+        &self,
+        inputs: &[u128],
+        rows: usize,
+    ) -> Result<i64, CraneliftJitError> {
+        native_call::call_u128_rows_batch_sum(
+            self.batch_sum_code,
+            inputs,
+            self.param_names.len(),
+            rows,
+        )
+        .ok_or_else(|| {
+            CraneliftJitError::UnsupportedExpr(format!(
+                "JIT u128 rows batch sum expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(rows),
+                inputs.len(),
+                rows
+            ))
+        })
+    }
+
+    /// Returns the local binding names used as runtime parameters.
+    pub fn param_names(&self) -> &[String] {
+        &self.param_names
     }
 
     /// Returns lowering counters captured during compilation.
@@ -3337,11 +3578,10 @@ fn lower_small_int_expr(
     kind: SmallIntKind,
 ) -> Result<Value, CraneliftJitError> {
     stats.evaluated_exprs += 1;
-    let ty = kind.cranelift_type();
     match expr {
         RuntimeExpr::Value(value) => kind
             .literal(value)
-            .map(|value| builder.ins().iconst(ty, value))
+            .map(|value| small_int_const(builder, kind, value))
             .ok_or_else(|| {
                 CraneliftJitError::UnsupportedExpr(format!(
                     "literal {value:?} is not an {} integer",
@@ -3349,7 +3589,7 @@ fn lower_small_int_expr(
                 ))
             }),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(ty, *value)),
+            Some(LoweredI64Binding::Const(value)) => Ok(small_int_const(builder, kind, *value)),
             Some(LoweredI64Binding::Value(value)) => Ok(*value),
             None => Err(CraneliftJitError::UnsupportedExpr(format!(
                 "unknown {} binding `{name}`",
@@ -3415,6 +3655,20 @@ fn lower_small_int_expr(
             "expression `{other}` is outside the {} JIT subset",
             kind.label()
         ))),
+    }
+}
+
+fn small_int_const(builder: &mut FunctionBuilder<'_>, kind: SmallIntKind, value: i64) -> Value {
+    let ty = kind.cranelift_type();
+    if ty.bits() <= 64 {
+        builder.ins().iconst(ty, value)
+    } else {
+        let value = builder.ins().iconst(types::I64, value);
+        if kind.signed() {
+            builder.ins().sextend(ty, value)
+        } else {
+            builder.ins().uextend(ty, value)
+        }
     }
 }
 

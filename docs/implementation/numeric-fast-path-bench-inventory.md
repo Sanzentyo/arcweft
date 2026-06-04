@@ -18,8 +18,8 @@ name or relative fixture label and must not record host absolute paths.
 | `016_dense_i32_map_pure_batch.arcw` | pure helper batch | `i32` input/output | native JIT when requested, AOT/VM selectable |
 | `017_dense_u32_map_pure_batch.arcw` | pure helper batch | `u32` input/output | native JIT when requested, AOT/VM selectable |
 | `018_dense_u64_map_pure_batch.arcw` | pure helper batch | `u64` input/output | native JIT when requested, AOT/VM selectable |
-| `019_dense_i128_map_pure_batch.arcw` | pure helper batch | `i128` input/output | AOT fallback under requested JIT |
-| `020_dense_u128_map_pure_batch.arcw` | pure helper batch | `u128` input/output | AOT fallback under requested JIT |
+| `019_dense_i128_map_pure_batch.arcw` | pure helper batch | `i128` input/output | native batch JIT when requested, AOT/VM selectable |
+| `020_dense_u128_map_pure_batch.arcw` | pure helper batch | `u128` input/output | native batch JIT when requested, AOT/VM selectable |
 | `022_dense_f32_map_pure_batch.arcw` | pure helper batch | `f32` input/output | native JIT when requested, AOT/VM selectable |
 | `023_dense_f64_map_pure_batch.arcw` | pure helper batch | `f64` input/output | native JIT when requested, AOT/VM selectable |
 | `029_dense_i8_map_pure_batch.arcw` | pure helper batch | `i8` input/output | native JIT when requested, AOT/VM selectable |
@@ -92,9 +92,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 
 Per-fixture convenience targets now also exist for `just bench-016` through
 `just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
-through `just bench-032`. Those targets request `--pure-backend jit`; `019` and
-`020` are fallback probes and should report zero JIT calls with AOT calls until
-native JIT ABIs are added for those widths.
+through `just bench-032`. Those targets request `--pure-backend jit`.
 
 ## Verification Inventory
 
@@ -114,8 +112,8 @@ in JSON output:
 | `bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture` | exact `u32` JIT batch path, unsigned ABI, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture` | exact `u64` JIT batch path, unsigned ABI, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures` | exact `i8`, `i16`, `u8`, and `u16` JIT batch paths, borrowed bytes, no result copy |
-| `bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture` | requested-JIT fallback to exact-width AOT for `i128` |
-| `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | requested-JIT fallback to exact-width AOT for `u128` |
+| `bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture` | exact `i128` native batch JIT path, borrowed bytes, no result copy |
+| `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | exact `u128` native batch JIT path, borrowed bytes, no result copy |
 
 Useful check commands:
 
@@ -128,8 +126,10 @@ just scan-absolute-paths
 ## Current Gaps
 
 Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
-`i16`, `i32`, `u8`, `u16`, `u32`, `u64`, `f32`, and `f64` in these checked-in
-fixtures. Requested JIT for `i128` and `u128` is intentionally inventoried as an
-AOT fallback path today. The VM dense fixtures cover exact-width storage,
-length, and integer reduction, while the pure helper fixtures cover batched
-helper execution and backend selection counters.
+`i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and `f64` in
+these checked-in fixtures. The `i128` and `u128` JIT entries are batch-only and
+use pointer-based flat buffers at the native boundary; scalar by-value
+`i128`/`u128` calls remain on VM/AOT paths to avoid target-specific wide-integer
+ABI assumptions. The VM dense fixtures cover exact-width storage, length, and
+integer reduction, while the pure helper fixtures cover batched helper
+execution and backend selection counters.
