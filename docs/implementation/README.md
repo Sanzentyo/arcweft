@@ -287,7 +287,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   add bind group. The `matmul -> bias_add` fragment stores only the last-axis
   bias vector and broadcasts it in the second GPU kernel. Repeated graph-edge
   submissions do not rebuild intermediate bindings and never copy the matmul
-  result out of GPU storage.
+  result out of GPU storage. The forward inference session now recognizes
+  private `matmul -> bias_add` pairs at the adapter boundary and calls a typed
+  `InferenceAdapter::matmul_bias_add` hook instead of forcing all adapters
+  through a materialized intermediate tensor. The fusion is not applied when the
+  matmul output is also an observable graph output or is consumed by another
+  node.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

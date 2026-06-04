@@ -157,6 +157,19 @@ impl InferenceGraph {
     pub fn tensor_name(&self, id: InferenceTensorId) -> Option<&str> {
         self.tensors.get(id.index()).and_then(TensorSpec::name)
     }
+
+    fn tensor_use_counts(&self) -> Vec<usize> {
+        let mut uses = vec![0_usize; self.tensors.len()];
+        for node in &self.nodes {
+            for input in &node.inputs {
+                uses[input.index()] += 1;
+            }
+        }
+        for output in &self.outputs {
+            uses[output.index()] += 1;
+        }
+        uses
+    }
 }
 
 /// Builder for a validated topological inference graph.
@@ -456,6 +469,16 @@ pub trait InferenceAdapter {
         bias: &DenseTensorF32,
     ) -> Result<DenseTensorF32, InferenceError>;
 
+    fn matmul_bias_add(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        let product = self.matmul(lhs, rhs)?;
+        self.bias_add(&product, bias)
+    }
+
     fn conv2d_valid(
         &mut self,
         input: &DenseTensorF32,
@@ -530,6 +553,18 @@ impl InferenceAdapter for AcceleratedInferenceAdapter {
         bias: &DenseTensorF32,
     ) -> Result<DenseTensorF32, InferenceError> {
         bias_add(tensor, bias)
+    }
+
+    fn matmul_bias_add(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        let lhs = tensor_as_matrix(lhs, InferenceOp::Matmul)?;
+        let rhs = tensor_as_matrix(rhs, InferenceOp::Matmul)?;
+        let out = self.accelerator.matmul_f32(&lhs, &rhs)?;
+        bias_add(&DenseTensorF32::from_matrix(out), bias)
     }
 
     fn conv2d_valid(
@@ -622,11 +657,22 @@ where
             validate_tensor_shape(tensor, input.shape())?;
             values[input.id().index()] = Some(InferenceValue::Tensor(tensor.clone()));
         }
+        let tensor_uses = self.graph.tensor_use_counts();
         let nodes = self.graph.nodes.clone();
-        for node in &nodes {
-            let output = node.output;
+        let mut index = 0_usize;
+        while let Some(node) = nodes.get(index) {
+            if let Some(next_node) = nodes.get(index + 1)
+                && Self::can_fuse_matmul_bias_add(node, next_node, &tensor_uses)
+            {
+                let value = self.eval_matmul_bias_add(node, next_node, &values)?;
+                values[next_node.output.index()] = Some(value);
+                index += 2;
+                continue;
+            }
+
             let value = self.eval_node(node, &values)?;
-            values[output.index()] = Some(value);
+            values[node.output.index()] = Some(value);
+            index += 1;
         }
         self.graph
             .outputs
@@ -637,6 +683,31 @@ where
                     .ok_or(InferenceError::UncomputedTensor { id: *id })
             })
             .collect()
+    }
+
+    fn can_fuse_matmul_bias_add(
+        node: &InferenceNode,
+        next_node: &InferenceNode,
+        tensor_uses: &[usize],
+    ) -> bool {
+        matches!(node.op, InferenceOp::Matmul)
+            && matches!(next_node.op, InferenceOp::BiasAdd)
+            && next_node.inputs.first().copied() == Some(node.output)
+            && tensor_uses.get(node.output.index()).copied() == Some(1)
+    }
+
+    fn eval_matmul_bias_add(
+        &mut self,
+        matmul: &InferenceNode,
+        bias_add_node: &InferenceNode,
+        values: &[Option<InferenceValue>],
+    ) -> Result<InferenceValue, InferenceError> {
+        let lhs = tensor_value(values, matmul.inputs[0])?;
+        let rhs = tensor_value(values, matmul.inputs[1])?;
+        let bias = tensor_value(values, bias_add_node.inputs[1])?;
+        Ok(InferenceValue::Tensor(
+            self.adapter.matmul_bias_add(lhs, rhs, bias)?,
+        ))
     }
 
     fn eval_node(
@@ -1208,6 +1279,71 @@ mod tests {
     }
 
     #[test]
+    fn session_fuses_private_matmul_bias_add_at_adapter_boundary() {
+        let mut builder = InferenceGraph::builder();
+        let input = builder.add_input("x", InferenceShape::matrix(1, 3).unwrap());
+        let weights = builder
+            .add_constant(
+                "w",
+                DenseTensorF32::new(vec![3, 2], vec![1.0, -1.0, 2.0, 0.5, -1.0, 3.0]).unwrap(),
+            )
+            .unwrap();
+        let bias = builder
+            .add_constant("b", DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap())
+            .unwrap();
+        let logits = builder.add_matmul(input, weights).unwrap();
+        let logits = builder.add_bias_add(logits, bias).unwrap();
+        builder.set_outputs([logits]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut session = InferenceSession::new(graph, CountingInferenceAdapter::new());
+
+        let out = session
+            .run([(
+                input,
+                DenseTensorF32::new(vec![1, 3], vec![1.0, 2.0, 0.5]).unwrap(),
+            )])
+            .unwrap();
+
+        assert_eq!(out[0].as_tensor().unwrap().values(), &[5.0, 1.25]);
+        assert_eq!(session.adapter().fused_matmul_bias_add_calls, 1);
+        assert_eq!(session.adapter().matmul_calls, 0);
+        assert_eq!(session.adapter().bias_add_calls, 0);
+    }
+
+    #[test]
+    fn session_does_not_fuse_when_matmul_output_is_observable() {
+        let mut builder = InferenceGraph::builder();
+        let input = builder.add_input("x", InferenceShape::matrix(1, 2).unwrap());
+        let weights = builder
+            .add_constant(
+                "w",
+                DenseTensorF32::new(vec![2, 2], vec![1.0, 0.0, 0.0, 1.0]).unwrap(),
+            )
+            .unwrap();
+        let bias = builder
+            .add_constant("b", DenseTensorF32::new(vec![2], vec![1.0, 2.0]).unwrap())
+            .unwrap();
+        let product = builder.add_matmul(input, weights).unwrap();
+        let logits = builder.add_bias_add(product, bias).unwrap();
+        builder.set_outputs([product, logits]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut session = InferenceSession::new(graph, CountingInferenceAdapter::new());
+
+        let out = session
+            .run([(
+                input,
+                DenseTensorF32::new(vec![1, 2], vec![3.0, 4.0]).unwrap(),
+            )])
+            .unwrap();
+
+        assert_eq!(out[0].as_tensor().unwrap().values(), &[3.0, 4.0]);
+        assert_eq!(out[1].as_tensor().unwrap().values(), &[4.0, 6.0]);
+        assert_eq!(session.adapter().fused_matmul_bias_add_calls, 0);
+        assert_eq!(session.adapter().matmul_calls, 1);
+        assert_eq!(session.adapter().bias_add_calls, 1);
+    }
+
+    #[test]
     fn adapter_runs_conv2d_relu_and_max_pool() {
         let mut builder = InferenceGraph::builder();
         let image = builder.add_input("image", InferenceShape::new(vec![1, 1, 4, 4]).unwrap());
@@ -1368,6 +1504,111 @@ mod tests {
         let error = builder.add_bias_add(input, bias).unwrap_err();
 
         assert!(matches!(error, InferenceError::BiasShapeMismatch { .. }));
+    }
+
+    struct CountingInferenceAdapter {
+        inner: AcceleratedInferenceAdapter,
+        matmul_calls: usize,
+        bias_add_calls: usize,
+        fused_matmul_bias_add_calls: usize,
+    }
+
+    impl CountingInferenceAdapter {
+        fn new() -> Self {
+            Self {
+                inner: AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                    RuntimeMathAcceleratorConfig {
+                        backend: RuntimeMathBackend::Scalar,
+                        ..RuntimeMathAcceleratorConfig::default()
+                    },
+                )),
+                matmul_calls: 0,
+                bias_add_calls: 0,
+                fused_matmul_bias_add_calls: 0,
+            }
+        }
+    }
+
+    impl InferenceAdapter for CountingInferenceAdapter {
+        fn matmul(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.matmul_calls += 1;
+            self.inner.matmul(lhs, rhs)
+        }
+
+        fn add(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.inner.add(lhs, rhs)
+        }
+
+        fn bias_add(
+            &mut self,
+            tensor: &DenseTensorF32,
+            bias: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.bias_add_calls += 1;
+            self.inner.bias_add(tensor, bias)
+        }
+
+        fn matmul_bias_add(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+            bias: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.fused_matmul_bias_add_calls += 1;
+            self.inner.matmul_bias_add(lhs, rhs, bias)
+        }
+
+        fn conv2d_valid(
+            &mut self,
+            input: &DenseTensorF32,
+            kernel: &DenseTensorF32,
+            stride_y: usize,
+            stride_x: usize,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.inner.conv2d_valid(input, kernel, stride_y, stride_x)
+        }
+
+        fn relu(&mut self, input: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+            self.inner.relu(input)
+        }
+
+        fn max_pool2d(
+            &mut self,
+            input: &DenseTensorF32,
+            kernel_y: usize,
+            kernel_x: usize,
+            stride_y: usize,
+            stride_x: usize,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.inner
+                .max_pool2d(input, kernel_y, kernel_x, stride_y, stride_x)
+        }
+
+        fn softmax_last_dim(
+            &mut self,
+            input: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.inner.softmax_last_dim(input)
+        }
+
+        fn argmax_last_dim(&mut self, input: &DenseTensorF32) -> Vec<usize> {
+            self.inner.argmax_last_dim(input)
+        }
+
+        fn flatten_outer(
+            &mut self,
+            input: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, InferenceError> {
+            self.inner.flatten_outer(input)
+        }
     }
 
     fn toy_mnist_conv_weight() -> Vec<f32> {

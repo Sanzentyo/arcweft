@@ -813,7 +813,12 @@ graph API. The graph uses typed tensor IDs and validates shapes during graph
 construction. The session executes through an `InferenceAdapter`, keeping the
 typed graph and backend execution policy separated. The default adapter is
 backed by `RuntimeMathAccelerator` for dense tensor matmul and deterministic CPU
-kernels for non-matmul forward ops. The current deterministic `f32` op set is:
+kernels for non-matmul forward ops. `InferenceAdapter` also exposes a typed
+`matmul_bias_add` hook. `InferenceSession` uses it for adjacent private
+`matmul -> bias_add` pairs and leaves the unfused path in place when the matmul
+output is observable or shared by another node. This gives native and browser
+adapters a single boundary for resident `matmul -> bias_add` execution without
+changing the graph's public op set. The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`
