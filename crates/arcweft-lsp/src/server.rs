@@ -5,7 +5,7 @@ use lsp_types::InitializeParams;
 use thiserror::Error;
 
 /// Runs the Arcweft language server over stdio.
-pub fn run_stdio(config: LspConfig) -> Result<(), LspServerError> {
+pub fn run_stdio(config: &LspConfig) -> Result<(), LspServerError> {
     let (connection, io_threads) = Connection::stdio();
     let result = run_connection(&connection, config);
     drop(connection);
@@ -15,7 +15,7 @@ pub fn run_stdio(config: LspConfig) -> Result<(), LspServerError> {
 }
 
 /// Runs the server over an already-created lsp-server connection.
-pub fn run_connection(connection: &Connection, config: LspConfig) -> Result<(), LspServerError> {
+pub fn run_connection(connection: &Connection, config: &LspConfig) -> Result<(), LspServerError> {
     let mut session = ArcweftLspSession::new(config);
     let (initialize_id, initialize_params) = connection.initialize_start()?;
     let initialize_params: InitializeParams = serde_json::from_value(initialize_params)?;

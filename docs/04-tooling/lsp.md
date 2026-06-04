@@ -123,6 +123,18 @@ Cargo by itself. Transport code refreshes metadata when the selected profile,
 metadata JSON, adapter manifest, or Cargo build output changes, and can continue
 showing the last valid metadata while reporting stale or missing metadata.
 
+The stdio transport resolves project metadata from `arcw.toml` near each opened
+document. On `didOpen` and `didSave` it refreshes the selected launch profile,
+loads profile-local adapter manifests, applies profile-selected Rust ABI JSON to
+the selected adapter, and publishes profile diagnostics together with source
+diagnostics. `workspace/didChangeWatchedFiles` and
+`workspace/didChangeConfiguration` refresh the active profile for all open
+documents. File reads and URI-to-path conversion stay in `arcweft-lsp`;
+`arcweft-verify-lsp` continues to receive only typed adapter/runtime facts. A
+project-local manifest is treated as a declared profile surface, not as proof
+that the selected runner implements its host calls; conformance diagnostics
+compare the declared manifest against the runner capability preset.
+
 The helper also exposes adapter requirement diagnostics. The transport or
 profile-aware compiler path supplies typed requirements collected from route
 planning, runtime host tasks, or effect analysis, such as `http.respond` or

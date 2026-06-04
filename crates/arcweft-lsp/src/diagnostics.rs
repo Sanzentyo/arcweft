@@ -1,10 +1,16 @@
 use crate::documents::DocumentSnapshot;
 use crate::positions::{LineIndex, PositionEncoding};
+use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
-use arcweft_verify_lsp::{LspPositionMapper, diagnostics_from_report_with_mapper};
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, PublishDiagnosticsParams};
+use arcweft_verify_lsp::{
+    LspPositionMapper, diagnostics_from_report_with_mapper,
+    profile_manifest_conformance_diagnostics,
+};
+use lsp_types::{
+    Diagnostic, DiagnosticSeverity, NumberOrString, Position, PublishDiagnosticsParams, Range,
+};
 
 /// Analyzed document diagnostics plus source index used by feature handlers.
 #[derive(Clone, Debug)]
@@ -84,12 +90,37 @@ impl DocumentAnalysis {
 }
 
 /// Builds a publishDiagnostics notification payload for one open document.
-pub fn publish_diagnostics(snapshot: &DocumentSnapshot) -> PublishDiagnosticsParams {
+pub fn publish_diagnostics(
+    snapshot: &DocumentSnapshot,
+    profile: &LspProfile,
+) -> PublishDiagnosticsParams {
     let analysis =
         DocumentAnalysis::analyze(snapshot.text(), snapshot.line_index().position_encoding());
-    PublishDiagnosticsParams::new(
-        snapshot.uri().clone(),
-        analysis.diagnostics,
-        snapshot.version(),
-    )
+    let mut diagnostics = analysis.diagnostics;
+    diagnostics.extend(profile_diagnostics(profile));
+    PublishDiagnosticsParams::new(snapshot.uri().clone(), diagnostics, snapshot.version())
+}
+
+fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
+    let mut diagnostics = profile
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| Diagnostic {
+            range: start_range(),
+            severity: Some(DiagnosticSeverity::WARNING),
+            code: Some(NumberOrString::String(diagnostic.kind().code().to_owned())),
+            source: Some("arcweft-lsp-profile".to_owned()),
+            message: diagnostic.message().to_owned(),
+            ..Diagnostic::default()
+        })
+        .collect::<Vec<_>>();
+    diagnostics.extend(profile_manifest_conformance_diagnostics(
+        &profile.context(),
+        profile.declared_manifests(),
+    ));
+    diagnostics
+}
+
+fn start_range() -> Range {
+    Range::new(Position::new(0, 0), Position::new(0, 0))
 }

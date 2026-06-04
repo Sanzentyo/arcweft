@@ -101,6 +101,11 @@ impl DocumentStore {
     pub fn get(&self, uri: &Uri) -> Option<&DocumentSnapshot> {
         self.documents.get(&uri.to_string())
     }
+
+    /// All open document snapshots.
+    pub fn snapshots(&self) -> impl Iterator<Item = &DocumentSnapshot> {
+        self.documents.values()
+    }
 }
 
 #[cfg(test)]
