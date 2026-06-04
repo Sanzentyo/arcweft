@@ -86,6 +86,10 @@ only for non-`wasm32` targets because they use blocking readback. Browser WebGPU
 math is exposed separately as an async `browser_webgpu` adapter for dense
 `f32` matrix/tensor kernels, so browser player code can await GPU work at the
 adapter boundary and then feed deterministic dense values back into the VM.
+The adapter exposes borrowed `BrowserWebGpuMathRequest` values and typed
+`BrowserWebGpuMathResponse` results, letting browser host code dispatch
+`math.matmul_f32`, `math.matrix_add_f32`, and `math.tensor_add_f32` without
+stringly typed operation switches or pre-dispatch dense-buffer copies.
 The browser adapter uses WebGPU-only `wgpu` features (`std`, `webgpu`, `wgsl`)
 and does not inherit native DX12/Vulkan/Metal/GLES backend features.
 LSP/tooling runner diagnostics use `RuntimeHostCapabilities` presets from

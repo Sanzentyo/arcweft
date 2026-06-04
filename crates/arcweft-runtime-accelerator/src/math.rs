@@ -2753,6 +2753,44 @@ pub mod browser_webgpu {
         stats: BrowserWebGpuMathStats,
     }
 
+    /// Borrowed math request accepted by the browser async WebGPU adapter.
+    ///
+    /// Inputs are borrowed so player/host code can dispatch through this
+    /// boundary without copying dense matrix or tensor buffers before the
+    /// selected CPU/WebGPU path decides what transfer work is required.
+    #[derive(Clone, Copy, Debug)]
+    pub enum BrowserWebGpuMathRequest<'a> {
+        MatmulF32 {
+            lhs: &'a DenseMatrixF32,
+            rhs: &'a DenseMatrixF32,
+        },
+        MatrixAddF32 {
+            lhs: &'a DenseMatrixF32,
+            rhs: &'a DenseMatrixF32,
+        },
+        TensorAddF32 {
+            lhs: &'a DenseTensorF32,
+            rhs: &'a DenseTensorF32,
+        },
+    }
+
+    /// Typed response returned by the browser async WebGPU adapter.
+    #[derive(Clone, Debug)]
+    pub enum BrowserWebGpuMathResponse {
+        MatrixF32(BrowserWebGpuAutoMathResult<DenseMatrixF32>),
+        TensorF32(BrowserWebGpuAutoMathResult<DenseTensorF32>),
+    }
+
+    /// Adapter-owned browser WebGPU Auto dispatcher.
+    ///
+    /// This is the async browser counterpart to the synchronous native math
+    /// backend. It stays outside `arcweft-core` and keeps WebGPU device state
+    /// in an adapter object that host/player code can await.
+    pub struct BrowserWebGpuAutoMathAdapter {
+        context: BrowserWebGpuMathContext,
+        policy: BrowserWebGpuMathAutoPolicy,
+    }
+
     impl BrowserPreparedElementwiseF32 {
         pub const fn capacity_len(&self) -> usize {
             self.capacity_len
@@ -2790,6 +2828,112 @@ pub mod browser_webgpu {
 
         pub const fn stats(&self) -> BrowserWebGpuMathStats {
             self.stats
+        }
+    }
+
+    impl BrowserWebGpuMathRequest<'_> {
+        pub const fn op(&self) -> BrowserWebGpuMathOp {
+            match self {
+                Self::MatmulF32 { .. } => BrowserWebGpuMathOp::MatmulF32,
+                Self::MatrixAddF32 { .. } | Self::TensorAddF32 { .. } => {
+                    BrowserWebGpuMathOp::ElementwiseF32
+                }
+            }
+        }
+    }
+
+    impl BrowserWebGpuMathResponse {
+        pub const fn selection(&self) -> BrowserWebGpuMathSelection {
+            match self {
+                Self::MatrixF32(result) => result.selection(),
+                Self::TensorF32(result) => result.selection(),
+            }
+        }
+
+        pub const fn stats(&self) -> BrowserWebGpuMathStats {
+            match self {
+                Self::MatrixF32(result) => result.stats(),
+                Self::TensorF32(result) => result.stats(),
+            }
+        }
+
+        pub const fn matrix_f32(&self) -> Option<&DenseMatrixF32> {
+            match self {
+                Self::MatrixF32(result) => Some(result.value()),
+                Self::TensorF32(_) => None,
+            }
+        }
+
+        pub const fn tensor_f32(&self) -> Option<&DenseTensorF32> {
+            match self {
+                Self::MatrixF32(_) => None,
+                Self::TensorF32(result) => Some(result.value()),
+            }
+        }
+    }
+
+    impl BrowserWebGpuAutoMathAdapter {
+        pub async fn new(policy: BrowserWebGpuMathAutoPolicy) -> Result<Self, BrowserWebGpuError> {
+            let context = BrowserWebGpuMathContext::new().await?;
+            Ok(Self { context, policy })
+        }
+
+        pub const fn from_context(
+            context: BrowserWebGpuMathContext,
+            policy: BrowserWebGpuMathAutoPolicy,
+        ) -> Self {
+            Self { context, policy }
+        }
+
+        pub const fn policy(&self) -> BrowserWebGpuMathAutoPolicy {
+            self.policy
+        }
+
+        pub fn set_policy(&mut self, policy: BrowserWebGpuMathAutoPolicy) {
+            self.policy = policy;
+        }
+
+        pub const fn limits(&self) -> BrowserWebGpuLimits {
+            self.context.limits()
+        }
+
+        pub const fn stats(&self) -> BrowserWebGpuMathStats {
+            self.context.stats()
+        }
+
+        pub fn reset_stats(&mut self) {
+            self.context.reset_stats();
+        }
+
+        pub const fn context(&self) -> &BrowserWebGpuMathContext {
+            &self.context
+        }
+
+        pub fn context_mut(&mut self) -> &mut BrowserWebGpuMathContext {
+            &mut self.context
+        }
+
+        pub async fn dispatch(
+            &mut self,
+            request: BrowserWebGpuMathRequest<'_>,
+        ) -> Result<BrowserWebGpuMathResponse, BrowserWebGpuError> {
+            match request {
+                BrowserWebGpuMathRequest::MatmulF32 { lhs, rhs } => self
+                    .context
+                    .auto_matmul_f32(lhs, rhs, self.policy)
+                    .await
+                    .map(BrowserWebGpuMathResponse::MatrixF32),
+                BrowserWebGpuMathRequest::MatrixAddF32 { lhs, rhs } => self
+                    .context
+                    .auto_matrix_add_f32(lhs, rhs, self.policy)
+                    .await
+                    .map(BrowserWebGpuMathResponse::MatrixF32),
+                BrowserWebGpuMathRequest::TensorAddF32 { lhs, rhs } => self
+                    .context
+                    .auto_tensor_add_f32(lhs, rhs, self.policy)
+                    .await
+                    .map(BrowserWebGpuMathResponse::TensorF32),
+            }
         }
     }
 

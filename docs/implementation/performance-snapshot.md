@@ -618,6 +618,11 @@ call these methods at the adapter boundary: CPU-selected work runs through the
 deterministic scalar baseline, while WebGPU-selected work uses prepared
 resident buffers, submits GPU work asynchronously, awaits readback, and returns
 the dense deterministic value plus the policy selection and transfer counters.
+The same module also exposes `BrowserWebGpuAutoMathAdapter` with borrowed
+`BrowserWebGpuMathRequest` inputs and typed `BrowserWebGpuMathResponse`
+outputs, so browser host code can route natural `math.*` operations through one
+async dispatch boundary without stringly typed operation switches or
+pre-dispatch dense-buffer copies.
 This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
