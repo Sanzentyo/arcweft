@@ -2749,6 +2749,40 @@ pub mod browser_webgpu {
         add_bind_group: wgpu::BindGroup,
     }
 
+    /// Shape for a resident browser `matmul(lhs, rhs) + add_rhs` graph fragment.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct BrowserMatmulAddF32Shape {
+        pub rows: usize,
+        pub shared: usize,
+        pub cols: usize,
+    }
+
+    /// Browser resident `f32` graph fragment preparation request.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum BrowserResidentF32GraphSpec {
+        MatmulAdd { capacity: BrowserMatmulCapacity },
+    }
+
+    /// Borrowed inputs for a resident browser `matmul(lhs, rhs) + add_rhs` graph fragment.
+    #[derive(Clone, Copy, Debug)]
+    pub struct BrowserResidentMatmulAddF32Inputs<'a> {
+        pub lhs: &'a [f32],
+        pub rhs: &'a [f32],
+        pub add_rhs: &'a [f32],
+        pub shape: BrowserMatmulAddF32Shape,
+    }
+
+    /// Borrowed inputs for a prepared resident browser `f32` graph fragment.
+    #[derive(Clone, Copy, Debug)]
+    pub enum BrowserResidentF32GraphInputs<'a> {
+        MatmulAdd(BrowserResidentMatmulAddF32Inputs<'a>),
+    }
+
+    /// Prepared resident browser `f32` graph fragment.
+    pub enum BrowserPreparedResidentF32Graph {
+        MatmulAdd(BrowserPreparedMatmulAddF32),
+    }
+
     /// Submitted browser GPU work whose readback can be awaited later.
     pub struct BrowserSubmittedF32 {
         readback: Option<ReusableReadbackBuffer>,
@@ -2902,6 +2936,54 @@ pub mod browser_webgpu {
 
         pub const fn output_capacity_len(&self) -> usize {
             self.add.capacity_len()
+        }
+    }
+
+    impl BrowserMatmulAddF32Shape {
+        pub const fn new(rows: usize, shared: usize, cols: usize) -> Self {
+            Self { rows, shared, cols }
+        }
+
+        pub fn output_len(self) -> Result<usize, BrowserWebGpuError> {
+            checked_len_mul(self.rows, self.cols)
+        }
+
+        pub const fn capacity(self) -> BrowserMatmulCapacity {
+            BrowserMatmulCapacity {
+                rows: self.rows,
+                shared: self.shared,
+                cols: self.cols,
+            }
+        }
+    }
+
+    impl BrowserResidentF32GraphSpec {
+        pub const fn matmul_add(capacity: BrowserMatmulCapacity) -> Self {
+            Self::MatmulAdd { capacity }
+        }
+    }
+
+    impl<'a> BrowserResidentMatmulAddF32Inputs<'a> {
+        pub const fn new(
+            lhs: &'a [f32],
+            rhs: &'a [f32],
+            add_rhs: &'a [f32],
+            shape: BrowserMatmulAddF32Shape,
+        ) -> Self {
+            Self {
+                lhs,
+                rhs,
+                add_rhs,
+                shape,
+            }
+        }
+    }
+
+    impl BrowserPreparedResidentF32Graph {
+        pub const fn output_capacity_len(&self) -> usize {
+            match self {
+                Self::MatmulAdd(prepared) => prepared.output_capacity_len(),
+            }
         }
     }
 
@@ -4038,6 +4120,17 @@ pub mod browser_webgpu {
             })
         }
 
+        pub fn prepare_resident_f32_graph(
+            &mut self,
+            spec: BrowserResidentF32GraphSpec,
+        ) -> Result<BrowserPreparedResidentF32Graph, BrowserWebGpuError> {
+            match spec {
+                BrowserResidentF32GraphSpec::MatmulAdd { capacity } => self
+                    .prepare_matmul_add_f32(capacity)
+                    .map(BrowserPreparedResidentF32Graph::MatmulAdd),
+            }
+        }
+
         pub async fn dispatch_prepared_elementwise_f32(
             &mut self,
             prepared: &BrowserPreparedElementwiseF32,
@@ -4294,6 +4387,27 @@ pub mod browser_webgpu {
             self.upload_prepared_elementwise_rhs_f32(&prepared.add, add_rhs)
         }
 
+        pub fn upload_prepared_resident_f32_graph(
+            &mut self,
+            prepared: &BrowserPreparedResidentF32Graph,
+            inputs: BrowserResidentF32GraphInputs<'_>,
+        ) -> Result<(), BrowserWebGpuError> {
+            match (prepared, inputs) {
+                (
+                    BrowserPreparedResidentF32Graph::MatmulAdd(prepared),
+                    BrowserResidentF32GraphInputs::MatmulAdd(inputs),
+                ) => self.upload_prepared_matmul_add_f32(
+                    prepared,
+                    inputs.lhs,
+                    inputs.rhs,
+                    inputs.add_rhs,
+                    inputs.shape.rows,
+                    inputs.shape.shared,
+                    inputs.shape.cols,
+                ),
+            }
+        }
+
         pub async fn dispatch_resident_matmul_f32(
             &mut self,
             prepared: &BrowserPreparedMatmulF32,
@@ -4457,6 +4571,19 @@ pub mod browser_webgpu {
             })
         }
 
+        pub fn submit_prepared_resident_f32_graph_without_readback(
+            &mut self,
+            prepared: &BrowserPreparedResidentF32Graph,
+            shape: BrowserMatmulAddF32Shape,
+        ) -> Result<BrowserResidentSubmission, BrowserWebGpuError> {
+            match prepared {
+                BrowserPreparedResidentF32Graph::MatmulAdd(prepared) => self
+                    .submit_resident_matmul_add_f32_without_readback(
+                        prepared, shape.rows, shape.cols,
+                    ),
+            }
+        }
+
         pub async fn read_resident_matmul_add_f32(
             &mut self,
             prepared: &BrowserPreparedMatmulAddF32,
@@ -4479,6 +4606,23 @@ pub mod browser_webgpu {
             }
             self.read_resident_f32(&prepared.add.out, submission, out)
                 .await
+        }
+
+        pub async fn read_prepared_resident_f32_graph(
+            &mut self,
+            prepared: &BrowserPreparedResidentF32Graph,
+            submission: BrowserResidentSubmission,
+            shape: BrowserMatmulAddF32Shape,
+            out: &mut [f32],
+        ) -> Result<(), BrowserWebGpuError> {
+            match prepared {
+                BrowserPreparedResidentF32Graph::MatmulAdd(prepared) => {
+                    self.read_resident_matmul_add_f32(
+                        prepared, submission, shape.rows, shape.cols, out,
+                    )
+                    .await
+                }
+            }
         }
 
         pub async fn read_resident_matmul_f32(

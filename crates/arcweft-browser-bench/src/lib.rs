@@ -653,11 +653,12 @@ mod wasm {
     };
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
-        BrowserMatmulCapacity, BrowserSubmittedF32, BrowserWebGpuAutoMathAdapter,
-        BrowserWebGpuCapacityGrowth, BrowserWebGpuError, BrowserWebGpuMathAutoPolicy,
-        BrowserWebGpuMathContext, BrowserWebGpuMathDispatch, BrowserWebGpuMathRequest,
-        BrowserWebGpuMathResponse, BrowserWebGpuMathStats, BrowserWebGpuPreparedMath,
-        BrowserWebGpuPreparedMathDispatch,
+        BrowserMatmulAddF32Shape, BrowserMatmulCapacity, BrowserResidentF32GraphInputs,
+        BrowserResidentF32GraphSpec, BrowserResidentMatmulAddF32Inputs, BrowserSubmittedF32,
+        BrowserWebGpuAutoMathAdapter, BrowserWebGpuCapacityGrowth, BrowserWebGpuError,
+        BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathContext, BrowserWebGpuMathDispatch,
+        BrowserWebGpuMathRequest, BrowserWebGpuMathResponse, BrowserWebGpuMathStats,
+        BrowserWebGpuPreparedMath, BrowserWebGpuPreparedMathDispatch,
     };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
@@ -1880,21 +1881,20 @@ mod wasm {
                     shared: shape.shared,
                     cols: shape.cols,
                 };
+                let graph_shape =
+                    BrowserMatmulAddF32Shape::new(shape.rows, shape.shared, shape.cols);
                 case.capacity = Some(capacity.into());
-                let prepared = match context.prepare_matmul_add_f32(capacity) {
+                let prepared = match context
+                    .prepare_resident_f32_graph(BrowserResidentF32GraphSpec::matmul_add(capacity))
+                {
                     Ok(prepared) => prepared,
                     Err(error) => return skipped_case(case, &fallback_reason(&error)),
                 };
                 let add_rhs = vec![0.0; shape.rows * shape.cols];
-                if let Err(error) = context.upload_prepared_matmul_add_f32(
-                    &prepared,
-                    &lhs,
-                    &rhs,
-                    &add_rhs,
-                    shape.rows,
-                    shape.shared,
-                    shape.cols,
-                ) {
+                let inputs = BrowserResidentF32GraphInputs::MatmulAdd(
+                    BrowserResidentMatmulAddF32Inputs::new(&lhs, &rhs, &add_rhs, graph_shape),
+                );
+                if let Err(error) = context.upload_prepared_resident_f32_graph(&prepared, inputs) {
                     return skipped_case(case, &fallback_reason(&error));
                 }
                 let mut out = vec![0.0; shape.rows * shape.cols];
@@ -1905,8 +1905,9 @@ mod wasm {
                 for _ in 0..config.warmup_iters {
                     let mut submitted = None;
                     for _ in 0..batch_depth {
-                        match context.submit_resident_matmul_add_f32_without_readback(
-                            &prepared, shape.rows, shape.cols,
+                        match context.submit_prepared_resident_f32_graph_without_readback(
+                            &prepared,
+                            graph_shape,
                         ) {
                             Ok(current) => submitted = Some(current),
                             Err(current) => {
@@ -1918,8 +1919,11 @@ mod wasm {
                     yield_to_browser().await;
                     if let Some(current) = submitted
                         && let Err(current) = context
-                            .read_resident_matmul_add_f32(
-                                &prepared, current, shape.rows, shape.cols, &mut out,
+                            .read_prepared_resident_f32_graph(
+                                &prepared,
+                                current,
+                                graph_shape,
+                                &mut out,
                             )
                             .await
                     {
@@ -1934,8 +1938,9 @@ mod wasm {
                         let total_start = now_ms();
                         for _ in 0..batch_depth {
                             let submit_start = now_ms();
-                            match context.submit_resident_matmul_add_f32_without_readback(
-                                &prepared, shape.rows, shape.cols,
+                            match context.submit_prepared_resident_f32_graph_without_readback(
+                                &prepared,
+                                graph_shape,
                             ) {
                                 Ok(current) => latest = Some(current),
                                 Err(current) => {
@@ -1955,9 +1960,7 @@ mod wasm {
                 if error.is_none()
                     && let Some(current) = latest
                     && let Err(current) = context
-                        .read_resident_matmul_add_f32(
-                            &prepared, current, shape.rows, shape.cols, &mut out,
-                        )
+                        .read_prepared_resident_f32_graph(&prepared, current, graph_shape, &mut out)
                         .await
                 {
                     error = Some(current);
