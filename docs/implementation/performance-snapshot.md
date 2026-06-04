@@ -571,24 +571,27 @@ just browser-webgpu-bench-smoke
 just browser-webgpu-bench-perf
 ```
 
-The exported browser function returns JSON with CPU Wasm, WebGPU one-shot,
-prepared upload, prepared resident, prepared-capacity resident, async resident,
-pipelined resident, and prepared-capacity pipelined resident cases. Prepared
-cases include an optional typed `capacity` field separate from the actual
-`shape`, so the report can distinguish exact resident storage from
-overprovisioned capacity storage without recording host paths. The same report
-also includes typed `recommendations` per operation/shape. A recommendation
-records the selected mode, selected capacity, CPU median, selected median,
-speedup, and reason (`web_gpu_faster`, `cpu_faster_or_equal`,
-`missing_cpu_baseline`, or `no_measured_web_gpu_case`). When WebGPU limits are
-available, the same recommendation also records the runtime policy mode,
-policy capacity, policy reason, and whether the policy matches the measured
-winner. This gives browser-side `Auto` threshold tuning a Rust-produced source
-of truth instead of a JS-only summary. If WebGPU is unavailable, the report
-records a structured skip reason instead of failing the whole run. The smoke
-recipe drives local Chrome/Edge through DevTools when available. If the browser
-executable is not discoverable from the environment, set `CHROME` or
-`CHROME_BIN` before running the recipe.
+The exported browser function returns JSON with Auto dispatch, CPU Wasm,
+WebGPU one-shot, prepared upload, prepared resident, prepared-capacity
+resident, async resident, pipelined resident, and prepared-capacity pipelined
+resident cases. Auto cases go through the typed browser math dispatcher and
+record the policy-selected capacity when WebGPU is selected. Prepared cases
+include an optional typed `capacity` field separate from the actual `shape`, so
+the report can distinguish exact resident storage from overprovisioned capacity
+storage without recording host paths. The same report also includes typed
+`recommendations` per operation/shape. A recommendation records the selected
+mode, selected capacity, CPU median, selected median, speedup, and reason
+(`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
+`no_measured_web_gpu_case`). Auto cases are reported as policy observations and
+are not treated as independent candidate modes for choosing the fastest backend.
+When WebGPU limits are available, the same recommendation also records the
+runtime policy mode, policy capacity, policy reason, and whether the policy
+matches the measured winner. This gives browser-side `Auto` threshold tuning a
+Rust-produced source of truth instead of a JS-only summary. If WebGPU is
+unavailable, the report records a structured skip reason instead of failing the
+whole run. The smoke recipe drives local Chrome/Edge through DevTools when
+available. If the browser executable is not discoverable from the environment,
+set `CHROME` or `CHROME_BIN` before running the recipe.
 
 Local browser WebGPU measurements on the current Windows/Chrome environment:
 

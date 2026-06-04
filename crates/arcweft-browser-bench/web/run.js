@@ -15,6 +15,7 @@ const DEFAULT_CONFIG = {
     { rows: 64, shared: 64, cols: 64 },
   ],
   modes: [
+    "auto",
     "cpu_wasm",
     "web_gpu_one_shot",
     "web_gpu_prepared_upload",
@@ -38,6 +39,7 @@ const PERF_CONFIG = {
     { rows: 256, shared: 256, cols: 256 },
   ],
   modes: [
+    "auto",
     "cpu_wasm",
     "web_gpu_prepared_upload",
     "web_gpu_prepared_resident",

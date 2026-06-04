@@ -53,6 +53,7 @@ impl Default for BrowserMathBenchConfig {
                 },
             ],
             modes: vec![
+                BrowserBenchMode::Auto,
                 BrowserBenchMode::CpuWasm,
                 BrowserBenchMode::WebGpuOneShot,
                 BrowserBenchMode::WebGpuPreparedUpload,
@@ -77,6 +78,7 @@ pub struct MatmulShape {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserBenchMode {
+    Auto,
     CpuWasm,
     WebGpuOneShot,
     WebGpuPreparedUpload,
@@ -276,14 +278,30 @@ fn recommend_browser_math_case(
     let fastest_gpu = matching
         .iter()
         .copied()
-        .filter(|case| case.mode != BrowserBenchMode::CpuWasm && measured_case(case))
+        .filter(|case| {
+            !matches!(
+                case.mode,
+                BrowserBenchMode::Auto | BrowserBenchMode::CpuWasm
+            ) && measured_case(case)
+        })
         .min_by(|lhs, rhs| {
             lhs.median_ms
                 .unwrap_or(f64::INFINITY)
                 .total_cmp(&rhs.median_ms.unwrap_or(f64::INFINITY))
         });
 
-    let mut recommendation = match (cpu, fastest_gpu) {
+    let mut recommendation = build_browser_math_recommendation(op, shape, cpu, fastest_gpu);
+    attach_policy_recommendation(&mut recommendation, limits);
+    recommendation
+}
+
+fn build_browser_math_recommendation(
+    op: &'static str,
+    shape: BrowserMathBenchShape,
+    cpu: Option<&BrowserMathBenchCase>,
+    fastest_gpu: Option<&BrowserMathBenchCase>,
+) -> BrowserMathBenchRecommendation {
+    match (cpu, fastest_gpu) {
         (Some(cpu), Some(gpu)) => {
             let cpu_ms = cpu.median_ms.expect("measured cpu case has median");
             let gpu_ms = gpu.median_ms.expect("measured gpu case has median");
@@ -361,9 +379,7 @@ fn recommend_browser_math_case(
             speedup: None,
             reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
         },
-    };
-    attach_policy_recommendation(&mut recommendation, limits);
-    recommendation
+    }
 }
 
 fn measured_case(case: &BrowserMathBenchCase) -> bool {
@@ -480,8 +496,9 @@ mod wasm {
     };
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
-        BrowserMatmulCapacity, BrowserWebGpuCapacityGrowth, BrowserWebGpuError,
-        BrowserWebGpuMathContext, BrowserWebGpuMathStats,
+        BrowserMatmulCapacity, BrowserWebGpuAutoMathAdapter, BrowserWebGpuCapacityGrowth,
+        BrowserWebGpuError, BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathContext,
+        BrowserWebGpuMathRequest, BrowserWebGpuMathStats,
     };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
@@ -498,8 +515,11 @@ mod wasm {
     async fn run(config: BrowserMathBenchConfig) -> BrowserMathBenchReport {
         let availability = BrowserWebGpuMathContext::availability();
         let mut skips = Vec::new();
-        let mut context = match BrowserWebGpuMathContext::new().await {
-            Ok(context) => Some(context),
+        let mut adapter = match BrowserWebGpuMathContext::new().await {
+            Ok(context) => Some(BrowserWebGpuAutoMathAdapter::from_context(
+                context,
+                BrowserWebGpuMathAutoPolicy::default(),
+            )),
             Err(error) => {
                 skips.push(BrowserMathBenchSkip {
                     scope: "webgpu",
@@ -508,8 +528,8 @@ mod wasm {
                 None
             }
         };
-        let limits = context.as_ref().map(|context| {
-            let limits = context.limits();
+        let limits = adapter.as_ref().map(|adapter| {
+            let limits = adapter.limits();
             BrowserMathBenchLimits {
                 max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
                 max_buffer_size: limits.max_buffer_size,
@@ -520,12 +540,12 @@ mod wasm {
         let mut cases = Vec::new();
         for len in &config.add_lengths {
             for mode in &config.modes {
-                cases.push(run_add_case(&config, context.as_mut(), *mode, *len).await);
+                cases.push(run_add_case(&config, adapter.as_mut(), *mode, *len).await);
             }
         }
         for shape in &config.matmul_shapes {
             for mode in &config.modes {
-                cases.push(run_matmul_case(&config, context.as_mut(), *mode, *shape).await);
+                cases.push(run_matmul_case(&config, adapter.as_mut(), *mode, *shape).await);
             }
         }
         let recommendations = browser_math_bench_recommendations(&cases, limits);
@@ -535,7 +555,7 @@ mod wasm {
                 secure_context: availability.secure_context,
                 cross_origin_isolated: availability.cross_origin_isolated,
                 webgpu: BrowserMathBenchWebGpu {
-                    available: context.is_some(),
+                    available: adapter.is_some(),
                     fallback_reason: skips.first().map(|skip| skip.reason.clone()),
                     limits,
                 },
@@ -548,7 +568,7 @@ mod wasm {
 
     async fn run_add_case(
         config: &BrowserMathBenchConfig,
-        context: Option<&mut BrowserWebGpuMathContext>,
+        adapter: Option<&mut BrowserWebGpuAutoMathAdapter>,
         mode: BrowserBenchMode,
         len: usize,
     ) -> BrowserMathBenchCase {
@@ -564,6 +584,63 @@ mod wasm {
             config,
         );
         match mode {
+            BrowserBenchMode::Auto => {
+                let Some(adapter) = adapter else {
+                    return skipped_case(case, "webgpu_unavailable");
+                };
+                let lhs_tensor =
+                    DenseTensorF32::new(vec![len], lhs.clone()).expect("valid lhs tensor");
+                let rhs_tensor =
+                    DenseTensorF32::new(vec![len], rhs.clone()).expect("valid rhs tensor");
+                adapter.reset_stats();
+                let mut out = Vec::new();
+                let mut samples = Vec::with_capacity(config.sample_iters);
+                let mut error = None;
+                for _ in 0..config.warmup_iters {
+                    match adapter
+                        .dispatch(BrowserWebGpuMathRequest::TensorAddF32 {
+                            lhs: &lhs_tensor,
+                            rhs: &rhs_tensor,
+                        })
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Some(tensor) = response.tensor_f32() {
+                                out = tensor.values().to_vec();
+                            }
+                        }
+                        Err(current) => {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                }
+                if error.is_none() {
+                    for _ in 0..config.sample_iters {
+                        let start = now_ms();
+                        match adapter
+                            .dispatch(BrowserWebGpuMathRequest::TensorAddF32 {
+                                lhs: &lhs_tensor,
+                                rhs: &rhs_tensor,
+                            })
+                            .await
+                        {
+                            Ok(response) => {
+                                if let Some(tensor) = response.tensor_f32() {
+                                    out = tensor.values().to_vec();
+                                    case.capacity = response.selection().capacity().map(Into::into);
+                                }
+                            }
+                            Err(current) => {
+                                error = Some(current);
+                                break;
+                            }
+                        }
+                        samples.push(now_ms() - start);
+                    }
+                }
+                case = finish_gpu_case(case, error, samples, adapter.stats(), &expected, &out);
+            }
             BrowserBenchMode::CpuWasm => {
                 let mut out = Vec::new();
                 case = measure_case(case, config, || {
@@ -573,9 +650,10 @@ mod wasm {
                 case.checksum = checksum(&out);
             }
             BrowserBenchMode::WebGpuOneShot => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 let lhs_tensor =
                     DenseTensorF32::new(vec![len], lhs.clone()).expect("valid lhs tensor");
                 let rhs_tensor =
@@ -609,9 +687,10 @@ mod wasm {
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
             }
             BrowserBenchMode::WebGpuPreparedUpload => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 context.reset_stats();
                 case.capacity = Some(BrowserMathBenchCapacity::Len { len });
                 let prepared = match context.prepare_elementwise_f32(len) {
@@ -647,9 +726,10 @@ mod wasm {
             }
             BrowserBenchMode::WebGpuPreparedResident
             | BrowserBenchMode::WebGpuPreparedCapacityResident => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 context.reset_stats();
                 let capacity_len = elementwise_capacity_len(mode, len);
                 case.capacity = Some(BrowserMathBenchCapacity::Len { len: capacity_len });
@@ -690,9 +770,10 @@ mod wasm {
             BrowserBenchMode::WebGpuPreparedResidentAsync
             | BrowserBenchMode::WebGpuPreparedResidentPipelined
             | BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 let batch_depth = async_batch_depth(mode, config);
                 context.reset_stats();
                 let capacity_len = elementwise_capacity_len(mode, len);
@@ -775,7 +856,7 @@ mod wasm {
 
     async fn run_matmul_case(
         config: &BrowserMathBenchConfig,
-        context: Option<&mut BrowserWebGpuMathContext>,
+        adapter: Option<&mut BrowserWebGpuAutoMathAdapter>,
         mode: BrowserBenchMode,
         shape: MatmulShape,
     ) -> BrowserMathBenchCase {
@@ -799,6 +880,63 @@ mod wasm {
             config,
         );
         match mode {
+            BrowserBenchMode::Auto => {
+                let Some(adapter) = adapter else {
+                    return skipped_case(case, "webgpu_unavailable");
+                };
+                let lhs_matrix = DenseMatrixF32::new(shape.rows, shape.shared, lhs.clone())
+                    .expect("valid lhs matrix");
+                let rhs_matrix = DenseMatrixF32::new(shape.shared, shape.cols, rhs.clone())
+                    .expect("valid rhs matrix");
+                adapter.reset_stats();
+                let mut out = Vec::new();
+                let mut samples = Vec::with_capacity(config.sample_iters);
+                let mut error = None;
+                for _ in 0..config.warmup_iters {
+                    match adapter
+                        .dispatch(BrowserWebGpuMathRequest::MatmulF32 {
+                            lhs: &lhs_matrix,
+                            rhs: &rhs_matrix,
+                        })
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Some(matrix) = response.matrix_f32() {
+                                out = matrix.values().to_vec();
+                            }
+                        }
+                        Err(current) => {
+                            error = Some(current);
+                            break;
+                        }
+                    }
+                }
+                if error.is_none() {
+                    for _ in 0..config.sample_iters {
+                        let start = now_ms();
+                        match adapter
+                            .dispatch(BrowserWebGpuMathRequest::MatmulF32 {
+                                lhs: &lhs_matrix,
+                                rhs: &rhs_matrix,
+                            })
+                            .await
+                        {
+                            Ok(response) => {
+                                if let Some(matrix) = response.matrix_f32() {
+                                    out = matrix.values().to_vec();
+                                    case.capacity = response.selection().capacity().map(Into::into);
+                                }
+                            }
+                            Err(current) => {
+                                error = Some(current);
+                                break;
+                            }
+                        }
+                        samples.push(now_ms() - start);
+                    }
+                }
+                case = finish_gpu_case(case, error, samples, adapter.stats(), &expected, &out);
+            }
             BrowserBenchMode::CpuWasm => {
                 let mut out = Vec::new();
                 case = measure_case(case, config, || {
@@ -808,9 +946,10 @@ mod wasm {
                 case.checksum = checksum(&out);
             }
             BrowserBenchMode::WebGpuOneShot => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 let lhs_matrix = DenseMatrixF32::new(shape.rows, shape.shared, lhs.clone())
                     .expect("valid lhs matrix");
                 let rhs_matrix = DenseMatrixF32::new(shape.shared, shape.cols, rhs.clone())
@@ -844,9 +983,10 @@ mod wasm {
                 case = finish_gpu_case(case, error, samples, context.stats(), &expected, &out);
             }
             BrowserBenchMode::WebGpuPreparedUpload => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 context.reset_stats();
                 let capacity = BrowserMatmulCapacity {
                     rows: shape.rows,
@@ -903,9 +1043,10 @@ mod wasm {
             }
             BrowserBenchMode::WebGpuPreparedResident
             | BrowserBenchMode::WebGpuPreparedCapacityResident => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 context.reset_stats();
                 let capacity = matmul_capacity(mode, shape);
                 case.capacity = Some(capacity.into());
@@ -955,9 +1096,10 @@ mod wasm {
             BrowserBenchMode::WebGpuPreparedResidentAsync
             | BrowserBenchMode::WebGpuPreparedResidentPipelined
             | BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined => {
-                let Some(context) = context else {
+                let Some(adapter) = adapter else {
                     return skipped_case(case, "webgpu_unavailable");
                 };
+                let context = adapter.context_mut();
                 let batch_depth = async_batch_depth(mode, config);
                 context.reset_stats();
                 let capacity = matmul_capacity(mode, shape);
@@ -1486,6 +1628,56 @@ mod tests {
         );
         assert_eq!(recommendation.policy_matches_selected, Some(true));
         assert_eq!(recommendation.speedup, Some(8.0));
+    }
+
+    #[test]
+    fn recommendations_treat_auto_as_policy_observation_not_candidate() {
+        let shape = BrowserMathBenchShape::Matmul {
+            rows: 128,
+            shared: 128,
+            cols: 128,
+        };
+        let cases = vec![
+            bench_case(
+                "matmul_cpu",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::CpuWasm,
+                Some(4.0),
+                true,
+            ),
+            bench_case(
+                "matmul_auto",
+                "matmul_f32",
+                shape,
+                Some(BrowserMathBenchCapacity::Matmul {
+                    rows: 128,
+                    shared: 128,
+                    cols: 128,
+                }),
+                BrowserBenchMode::Auto,
+                Some(0.5),
+                true,
+            ),
+        ];
+
+        let recommendations = browser_math_bench_recommendations(&cases, Some(large_limits()));
+
+        assert_eq!(recommendations.len(), 1);
+        assert_eq!(
+            recommendations[0].reason,
+            BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase
+        );
+        assert_eq!(
+            recommendations[0].selected_mode,
+            Some(BrowserBenchMode::CpuWasm)
+        );
+        assert_eq!(
+            recommendations[0].policy_mode,
+            Some(BrowserBenchMode::WebGpuPreparedResidentPipelined)
+        );
+        assert_eq!(recommendations[0].policy_matches_selected, Some(false));
     }
 
     #[test]
