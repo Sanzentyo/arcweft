@@ -102,6 +102,26 @@ const STABILITY_CONFIG = {
   ],
 };
 
+const CAPACITY_STABILITY_CONFIG = {
+  warmup_iters: 1,
+  sample_iters: 5,
+  repeat_rounds: 4,
+  mode_order: "rotate_by_round",
+  seed: 2900693030,
+  async_batch_depth: 4,
+  add_lengths: [],
+  matmul_shapes: [
+    { rows: 512, shared: 512, cols: 512 },
+  ],
+  modes: [
+    "cpu_wasm",
+    "web_gpu_prepared_resident_pipelined",
+    "web_gpu_prepared_capacity_resident_pipelined",
+    "auto_resident_pipelined",
+    "auto_resident_direct_pipelined",
+  ],
+};
+
 const statusElement = document.querySelector("#status");
 const casesElement = document.querySelector("#cases");
 const jsonElement = document.querySelector("#json");
@@ -132,6 +152,9 @@ function readConfig() {
     }
     if (preset === "stability") {
       return STABILITY_CONFIG;
+    }
+    if (preset === "capacity-stability") {
+      return CAPACITY_STABILITY_CONFIG;
     }
     return DEFAULT_CONFIG;
   }

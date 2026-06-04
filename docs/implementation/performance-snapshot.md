@@ -586,6 +586,7 @@ just browser-webgpu-bench-smoke
 just browser-webgpu-bench-perf
 just browser-webgpu-bench-isolate
 just browser-webgpu-bench-stability
+just browser-webgpu-bench-capacity-stability
 ```
 
 The exported browser function returns JSON with Auto dispatch, CPU Wasm,
@@ -644,11 +645,12 @@ to Wasm each iteration.
 target-independent browser Auto policy used to preserve that measured
 crossover in code. Its default policy keeps elementwise `f32` on CPU Wasm,
 selects exact prepared resident pipelined WebGPU for `128x128x128` matmul and
-larger, and selects capacity-prepared pipelined WebGPU for `512x512x512`
-matmul and larger when storage limits allow it. The browser benchmark harness
-uses the same typed capacity growth policy for overprovisioned prepared cases,
-so measured `capacity` fields and runtime Auto decisions do not drift through
-duplicated arithmetic.
+larger. Capacity-prepared pipelining remains available as an explicit policy and
+bench mode, but default Auto no longer selects it until path-free repeated
+browser evidence shows a shape range where it wins. The browser benchmark
+harness uses the same typed capacity growth policy for overprovisioned prepared
+cases, so measured `capacity` fields and runtime Auto decisions do not drift
+through duplicated arithmetic.
 `BrowserWebGpuMathContext` now exposes policy-driven async Auto calls for
 `matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`. Browser embeddings can
 call these methods at the adapter boundary: CPU-selected work runs through the
@@ -731,10 +733,31 @@ than CPU Wasm. Recommendations now choose the measured backend by
 median-of-medians, which selected exact prepared resident pipelining at 10.41x
 CPU speedup before the policy update and 10.87x CPU speedup after the policy
 update. The browser Auto policy now keeps `256x256x256` matmul on exact
-prepared resident pipelining and reserves capacity-prepared pipelining for
-`512x512x512` and larger shapes. Individual browser GPU samples can still vary by more
-than 1.5x across rounds, so browser-side Auto policy changes should be
+prepared resident pipelining. Individual browser GPU samples can still vary by
+more than 1.5x across rounds, so browser-side Auto policy changes should be
 calibrated against repeated stability summaries, not one fixed-order perf run.
+
+The capacity-stability preset runs the same repeated-order harness at
+`512x512x512` to test whether default Auto should switch to overprovisioned
+capacity storage. A local path-free run recorded 20 measured cases, no skips,
+and no correctness failures:
+
+| Mode | Rounds | Median-of-medians ms | Min ms | Max ms | Speedup vs CPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `auto_resident_direct_pipelined` | 4 | 2.24750 | 1.87750 | 2.47750 | 26.90x |
+| `auto_resident_pipelined` | 4 | 2.26375 | 2.00625 | 2.31875 | 26.71x |
+| `web_gpu_prepared_resident_pipelined` | 4 | 2.41000 | 1.64625 | 2.74000 | 25.09x |
+| `web_gpu_prepared_capacity_resident_pipelined` | 4 | 2.49125 | 1.72375 | 2.53375 | 24.27x |
+| `cpu_wasm` | 4 | 60.46000 | 56.75000 | 64.91500 | 1.00x |
+
+Among backend recommendation candidates, exact prepared resident pipelining
+still beat capacity-prepared pipelining by median-of-medians at this shape. Auto
+resident modes are reported as policy observations rather than backend
+recommendation candidates; they show natural browser-call overhead but do not
+choose the default backend. Default browser Auto therefore keeps using exact
+prepared resident buffers for dense matmul and leaves capacity-prepared
+pipelining as an explicit tuning mode until repeated measurements show it
+consistently improves a larger shape or a different browser/GPU environment.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

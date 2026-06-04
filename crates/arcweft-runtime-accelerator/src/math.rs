@@ -2462,7 +2462,7 @@ pub mod browser_webgpu_policy {
         fn default() -> Self {
             Self {
                 matmul_exact_min_elements: 128 * 128 * 128,
-                matmul_capacity_min_elements: 512 * 512 * 512,
+                matmul_capacity_min_elements: usize::MAX,
                 elementwise_gpu_min_elements: usize::MAX,
                 capacity_growth: BrowserWebGpuCapacityGrowth::Double,
             }
@@ -5396,7 +5396,27 @@ mod tests {
         assert_eq!(exact_256_capacity.shared, 256);
         assert_eq!(exact_256_capacity.cols, 256);
 
-        let grown = policy.select_matmul_f32(512, 512, 512, limits);
+        let exact_512 = policy.select_matmul_f32(512, 512, 512, limits);
+        assert_eq!(
+            exact_512.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+        );
+        assert_eq!(
+            exact_512.reason(),
+            BrowserWebGpuMathAutoReason::MatmulPreparedResidentPipelined
+        );
+        let exact_512_capacity = exact_512
+            .capacity()
+            .expect("512 prepared matmul records exact capacity");
+        assert_eq!(exact_512_capacity.rows, 512);
+        assert_eq!(exact_512_capacity.shared, 512);
+        assert_eq!(exact_512_capacity.cols, 512);
+
+        let capacity_policy = BrowserWebGpuMathAutoPolicy {
+            matmul_capacity_min_elements: 512 * 512 * 512,
+            ..BrowserWebGpuMathAutoPolicy::default()
+        };
+        let grown = capacity_policy.select_matmul_f32(512, 512, 512, limits);
         assert_eq!(
             grown.mode(),
             BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined
