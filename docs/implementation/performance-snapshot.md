@@ -584,16 +584,21 @@ just browser-webgpu-bench-check
 just browser-webgpu-bench-build
 just browser-webgpu-bench-smoke
 just browser-webgpu-bench-perf
+just browser-webgpu-bench-isolate
 ```
 
 The exported browser function returns JSON with Auto dispatch, CPU Wasm,
 WebGPU one-shot, prepared upload, prepared resident, prepared-capacity
 resident, async resident, pipelined resident, and prepared-capacity pipelined
 resident cases. Auto cases go through the typed browser math dispatcher and
-record the policy-selected capacity when WebGPU is selected. Prepared cases
-include an optional typed `capacity` field separate from the actual `shape`, so
-the report can distinguish exact resident storage from overprovisioned capacity
-storage without recording host paths. The same report also includes typed
+record the policy-selected capacity when WebGPU is selected. The
+`auto_resident_direct_pipelined` mode is an isolation probe: it still uses the
+same Auto policy and prepared resident handle, but submits and reads through the
+underlying WebGPU context directly to separate adapter-wrapper overhead from
+browser warm-state and ordering effects. Prepared cases include an optional
+typed `capacity` field separate from the actual `shape`, so the report can
+distinguish exact resident storage from overprovisioned capacity storage without
+recording host paths. The same report also includes typed
 derived metrics: `effective_gflops`, `submit_median_share`, and
 `readback_median_share`. These expose whether an observed browser result is
 limited by compute, command submission, or readback rather than only reporting a
@@ -663,26 +668,38 @@ This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
 
-Latest path-free browser perf run after direct readback and resident prepared
-Auto submission:
+Latest path-free browser perf run after direct readback, resident prepared Auto
+submission, and the direct Auto-resident isolation mode:
 
 | Case | Mode | CPU median ms | Mode median ms | Speedup | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 7.80 | 0.3475 | 22.45x | 96.56 effective GFLOP/s, submit share 0.10, readback share 0.78 |
-| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 7.80 | 0.485 | 16.08x | 69.18 effective GFLOP/s, submit share 0.05, readback share 0.62 |
-| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 7.80 | 1.0675 | 7.31x | policy-selected WebGPU, 31.43 effective GFLOP/s, submit share 0.18, readback share 0.41 |
-| `matmul_f32_m256_k256_n256` | auto resident pipelined | 7.80 | 1.4275 | 5.46x | WebGPU prepared resident handle, 23.51 effective GFLOP/s, submit share 0.03, readback share 0.28 |
-| `matmul_f32_m256_k256_n256` | direct auto dispatch | 7.80 | 4.635 | 1.68x | value-returning path still waits for readback per call |
-| `tensor_add_f32_len65536` | CPU Wasm | 0.065 | 0.065 | 1.00x | elementwise add remains CPU-preferred when readback is required |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 6.58 | 0.41875 | 15.71x | 80.13 effective GFLOP/s, submit share 0.05, readback share 0.56 |
+| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 6.58 | 0.91375 | 7.20x | policy-selected WebGPU, 36.72 effective GFLOP/s, submit share 0.13, readback share 0.39 |
+| `matmul_f32_m256_k256_n256` | auto resident direct pipelined | 6.58 | 1.13625 | 5.79x | Auto policy plus direct context submit/readback, 29.53 effective GFLOP/s, submit share 0.03, readback share 0.30 |
+| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 6.58 | 1.16 | 5.67x | overprovisioned capacity `512x512x512`, 28.93 effective GFLOP/s, submit share 0.03, readback share 0.28 |
+| `matmul_f32_m256_k256_n256` | auto resident pipelined | 6.58 | 1.265 | 5.20x | WebGPU prepared resident handle, 26.53 effective GFLOP/s, submit share 0.02, readback share 0.27 |
+| `matmul_f32_m256_k256_n256` | direct auto dispatch | 6.58 | 3.97 | 1.66x | value-returning path still waits for readback per call |
+| `tensor_add_f32_len65536` | CPU Wasm | 0.055 | 0.055 | 1.00x | elementwise add remains CPU-preferred when readback is required |
 
 The `auto_pipelined` and `auto_resident_pipelined` benchmark modes are policy
 observations, not backend recommendation candidates. Manual prepared modes
 remain the source for backend recommendations, while auto modes show the
 overhead and scheduling behavior that natural browser-side calls see. The latest
 metrics show that `auto_resident_pipelined` is not submit-bound or
-readback-bound by itself; its m256 matmul gap from manual prepared resident
-pipelining points at benchmark harness ordering, browser warm state, or adapter
-wrapper overhead as the next isolation target.
+readback-bound by itself. The new direct Auto-resident isolation mode also did
+not outperform the wrapper path in the full perf run, which makes adapter
+wrapper overhead an unlikely primary cause of the gap.
+
+The dedicated isolate preset runs only the `256x256x256` matmul shape with CPU,
+manual prepared resident, manual prepared capacity resident, Auto pipelined,
+Auto resident, and direct Auto resident modes. In that smaller path-free run,
+`auto_resident_pipelined` measured 0.92625 ms, manual prepared resident
+pipelined measured 0.95125 ms, prepared capacity resident pipelined measured
+1.00125 ms, direct Auto resident measured 1.0175 ms, and Auto pipelined
+measured 1.06375 ms. This shows the large full-perf spread is dominated by
+browser benchmark ordering or warm-state effects rather than the typed adapter
+wrapper. The remaining tuning target is therefore policy calibration and bench
+harness stability, not another compatibility path around the adapter.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

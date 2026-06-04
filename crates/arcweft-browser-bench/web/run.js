@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
     "auto",
     "auto_pipelined",
     "auto_resident_pipelined",
+    "auto_resident_direct_pipelined",
     "cpu_wasm",
     "web_gpu_one_shot",
     "web_gpu_prepared_upload",
@@ -44,6 +45,7 @@ const PERF_CONFIG = {
     "auto",
     "auto_pipelined",
     "auto_resident_pipelined",
+    "auto_resident_direct_pipelined",
     "cpu_wasm",
     "web_gpu_prepared_upload",
     "web_gpu_prepared_resident",
@@ -51,6 +53,25 @@ const PERF_CONFIG = {
     "web_gpu_prepared_resident_async",
     "web_gpu_prepared_resident_pipelined",
     "web_gpu_prepared_capacity_resident_pipelined",
+  ],
+};
+
+const ISOLATE_CONFIG = {
+  warmup_iters: 3,
+  sample_iters: 9,
+  seed: 2900693030,
+  async_batch_depth: 4,
+  add_lengths: [],
+  matmul_shapes: [
+    { rows: 256, shared: 256, cols: 256 },
+  ],
+  modes: [
+    "cpu_wasm",
+    "web_gpu_prepared_resident_pipelined",
+    "web_gpu_prepared_capacity_resident_pipelined",
+    "auto_pipelined",
+    "auto_resident_pipelined",
+    "auto_resident_direct_pipelined",
   ],
 };
 
@@ -75,7 +96,14 @@ function readConfig() {
   const params = new URLSearchParams(globalThis.location.search);
   const encoded = params.get("config");
   if (!encoded) {
-    return params.get("preset") === "perf" ? PERF_CONFIG : DEFAULT_CONFIG;
+    const preset = params.get("preset");
+    if (preset === "perf") {
+      return PERF_CONFIG;
+    }
+    if (preset === "isolate") {
+      return ISOLATE_CONFIG;
+    }
+    return DEFAULT_CONFIG;
   }
   return JSON.parse(encoded);
 }
