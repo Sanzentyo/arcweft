@@ -22,6 +22,13 @@ type JitU32TernaryFn = extern "C" fn(u32, u32, u32) -> u32;
 type JitU32QuaternaryFn = extern "C" fn(u32, u32, u32, u32) -> u32;
 type JitU32RowsBatchFn = extern "C" fn(*const u32, i64, *mut u32);
 type JitU32RowsBatchSumFn = extern "C" fn(*const u32, i64) -> i64;
+type JitU64Fn = extern "C" fn() -> u64;
+type JitU64UnaryFn = extern "C" fn(u64) -> u64;
+type JitU64BinaryFn = extern "C" fn(u64, u64) -> u64;
+type JitU64TernaryFn = extern "C" fn(u64, u64, u64) -> u64;
+type JitU64QuaternaryFn = extern "C" fn(u64, u64, u64, u64) -> u64;
+type JitU64RowsBatchFn = extern "C" fn(*const u64, i64, *mut u64);
+type JitU64RowsBatchSumFn = extern "C" fn(*const u64, i64) -> i64;
 type JitF32Fn = extern "C" fn() -> f32;
 type JitF32UnaryFn = extern "C" fn(f32) -> f32;
 type JitF32BinaryFn = extern "C" fn(f32, f32) -> f32;
@@ -226,6 +233,65 @@ impl U32InputCaller {
     }
 
     pub(crate) fn call(self, inputs: &[u32]) -> Option<u32> {
+        match (self, inputs) {
+            (Self::Nullary(function), []) => Some(function()),
+            (Self::Unary(function), [value]) => Some(function(*value)),
+            (Self::Binary(function), [lhs, rhs]) => Some(function(*lhs, *rhs)),
+            (Self::Ternary(function), [a, b, c]) => Some(function(*a, *b, *c)),
+            (Self::Quaternary(function), [a, b, c, d]) => Some(function(*a, *b, *c, *d)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum U64InputCaller {
+    Nullary(JitU64Fn),
+    Unary(JitU64UnaryFn),
+    Binary(JitU64BinaryFn),
+    Ternary(JitU64TernaryFn),
+    Quaternary(JitU64QuaternaryFn),
+}
+
+impl U64InputCaller {
+    pub(crate) fn from_code(code: *const u8, arity: usize) -> Option<Self> {
+        match arity {
+            0 => {
+                // SAFETY: `code` is emitted in this crate with signature
+                // `extern "C" fn() -> u64`, and the owning JIT module is
+                // stored next to the typed caller.
+                let function = unsafe { mem::transmute::<*const u8, JitU64Fn>(code) };
+                Some(Self::Nullary(function))
+            }
+            1 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(u64) -> u64`.
+                let function = unsafe { mem::transmute::<*const u8, JitU64UnaryFn>(code) };
+                Some(Self::Unary(function))
+            }
+            2 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(u64, u64) -> u64`.
+                let function = unsafe { mem::transmute::<*const u8, JitU64BinaryFn>(code) };
+                Some(Self::Binary(function))
+            }
+            3 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(u64, u64, u64) -> u64`.
+                let function = unsafe { mem::transmute::<*const u8, JitU64TernaryFn>(code) };
+                Some(Self::Ternary(function))
+            }
+            4 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(u64, u64, u64, u64) -> u64`.
+                let function = unsafe { mem::transmute::<*const u8, JitU64QuaternaryFn>(code) };
+                Some(Self::Quaternary(function))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn call(self, inputs: &[u64]) -> Option<u64> {
         match (self, inputs) {
             (Self::Nullary(function), []) => Some(function()),
             (Self::Unary(function), [value]) => Some(function(*value)),
@@ -494,6 +560,47 @@ pub(crate) fn call_u32_rows_batch_sum(
     // `extern "C" fn(*const u32, i64) -> i64`. Slice shape is checked before
     // passing pointers, and the owning JIT module outlives the call.
     let function = unsafe { mem::transmute::<*const u8, JitU32RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
+}
+
+pub(crate) fn call_u64_rows_batch(
+    code: *const u8,
+    inputs: &[u64],
+    arity: usize,
+    out: &mut [u64],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is returned by `JITModule::get_finalized_function` for a
+    // function emitted in this crate with signature
+    // `extern "C" fn(*const u64, i64, *mut u64)`. Slice shape is checked before
+    // passing pointers, and the owning JIT module outlives the call.
+    let function = unsafe { mem::transmute::<*const u8, JitU64RowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_u64_rows_batch_sum(
+    code: *const u8,
+    inputs: &[u64],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is returned by `JITModule::get_finalized_function` for a
+    // function emitted in this crate with signature
+    // `extern "C" fn(*const u64, i64) -> i64`. Slice shape is checked before
+    // passing pointers, and the owning JIT module outlives the call.
+    let function = unsafe { mem::transmute::<*const u8, JitU64RowsBatchSumFn>(code) };
     Some(function(inputs.as_ptr(), rows))
 }
 

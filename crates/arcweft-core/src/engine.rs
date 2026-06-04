@@ -27,7 +27,7 @@ use crate::value::{
     RuntimeFieldValue, RuntimeISizeValue, RuntimePayload, RuntimeSeq, RuntimeUSizeValue,
     RuntimeValue, evaluate_binary, evaluate_unary, runtime_sequence_dense_f32,
     runtime_sequence_dense_f64, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_u32, runtime_sequence_from_literal_values,
+    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };

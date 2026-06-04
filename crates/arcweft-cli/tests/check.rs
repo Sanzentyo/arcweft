@@ -4609,8 +4609,8 @@ fn bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture() {
         measurement["deterministic"]["pure_flat_batch_bytes_borrowed_median"],
         2048
     );
-    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 0);
     assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
