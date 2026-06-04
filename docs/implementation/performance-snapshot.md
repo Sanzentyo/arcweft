@@ -626,9 +626,31 @@ The same module also exposes `BrowserWebGpuAutoMathAdapter` with borrowed
 outputs, so browser host code can route natural `math.*` operations through one
 async dispatch boundary without stringly typed operation switches or
 pre-dispatch dense-buffer copies.
+The adapter now separates policy selection and submission from readback through
+`BrowserWebGpuMathDispatch` and `BrowserWebGpuSubmittedMath`. CPU-selected work
+returns an immediate typed response, while WebGPU-selected work returns a
+submitted handle that can be read later. The value-returning `dispatch` API is
+still built on top of that split path, so host code can either await the final
+value directly or batch GPU submissions and overlap browser scheduling with
+delayed readback.
 This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
+
+Latest path-free browser perf run after the split submission API:
+
+| Case | Mode | CPU median ms | Mode median ms | Speedup | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| `matmul_f32_m256_k256_n256` | auto pipelined | 7.325 | 1.09875 | 6.67x | policy-selected WebGPU, submit median 0.165 ms, readback median 0.43 ms |
+| `matmul_f32_m256_k256_n256` | direct auto dispatch | 7.325 | 4.065 | 1.80x | value-returning path still waits for readback per call |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 7.325 | 0.52875 | 13.85x | current best measured manual backend |
+| `matmul_f32_m128_k128_n128` | auto pipelined | 0.87 | 0.49375 | 1.76x | policy-selected WebGPU with split submission/readback |
+| `tensor_add_f32_len65536` | auto pipelined | 0.08 | 0.10 | 0.80x | policy selected CPU immediate work in the same split API |
+
+The `auto_pipelined` benchmark mode is a policy observation, not a backend
+recommendation candidate. Manual prepared modes remain the source for backend
+recommendations, while auto modes show the overhead and scheduling behavior
+that natural browser-side calls see.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph
