@@ -124,16 +124,26 @@ metadata JSON, adapter manifest, or Cargo build output changes, and can continue
 showing the last valid metadata while reporting stale or missing metadata.
 
 The stdio transport resolves project metadata from `arcw.toml` near each opened
-document. On `didOpen` and `didSave` it refreshes the selected launch profile,
-loads profile-local adapter manifests, applies profile-selected Rust ABI JSON to
-the selected adapter, and publishes profile diagnostics together with source
+document and caches the resolved profile per document URI. On `didOpen` and
+`didSave` it refreshes that document's selected launch profile, loads
+profile-local adapter manifests, applies profile-selected Rust ABI JSON to the
+selected adapter, and publishes profile diagnostics together with source
 diagnostics. `workspace/didChangeWatchedFiles` and
-`workspace/didChangeConfiguration` refresh the active profile for all open
-documents. File reads and URI-to-path conversion stay in `arcweft-lsp`;
-`arcweft-verify-lsp` continues to receive only typed adapter/runtime facts. A
-project-local manifest is treated as a declared profile surface, not as proof
-that the selected runner implements its host calls; conformance diagnostics
-compare the declared manifest against the runner capability preset.
+`workspace/didChangeConfiguration` refresh metadata for all open documents, so
+adapter manifest and Rust ABI changes become visible to completion, hover, and
+signature help without restarting the server. File reads and URI-to-path
+conversion stay in `arcweft-lsp`; `arcweft-verify-lsp` continues to receive only
+typed adapter/runtime facts. Profile diagnostics carry the profile id and a
+profile-relative resource label, never host absolute paths. A project-local
+manifest is treated as a declared profile surface, not as proof that the
+selected runner implements its host calls; conformance diagnostics compare the
+declared manifest against the runner capability preset.
+
+Workspace edits are negotiated in the transport. If the client advertises
+`workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
+`workspace/executeCommand` results are returned as versioned
+`documentChanges`; otherwise they fall back to the plain `changes` map. The
+server still never writes files directly.
 
 The helper also exposes adapter requirement diagnostics. The transport or
 profile-aware compiler path supplies typed requirements collected from route

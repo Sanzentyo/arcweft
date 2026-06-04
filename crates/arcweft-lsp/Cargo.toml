@@ -25,6 +25,9 @@ thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[dev-dependencies]
+toml.workspace = true
+
 [lib]
 path = "src/lib.rs"
 

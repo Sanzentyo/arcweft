@@ -21,22 +21,30 @@ use lsp_types::{
     DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, ExecuteCommandOptions, ExecuteCommandParams, HoverParams,
     HoverProviderCapability, InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
-    ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, WorkDoneProgressOptions,
+    OptionalVersionedTextDocumentIdentifier, ServerCapabilities, SignatureHelpOptions,
+    SignatureHelpParams, TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind,
+    WorkDoneProgressOptions, WorkspaceEdit,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// Stateful Sans I/O session used by the stdio transport.
 #[derive(Debug)]
 pub struct ArcweftLspSession {
     documents: DocumentStore,
-    profile: LspProfile,
+    default_profile: LspProfile,
+    profiles_by_uri: BTreeMap<String, LspProfile>,
     profile_resolver: LspProfileResolver,
+    workspace_edit_policy: WorkspaceEditPolicy,
     position_encoding: PositionEncoding,
     cancelled: BTreeSet<RequestId>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct WorkspaceEditPolicy {
+    document_changes: bool,
 }
 
 /// Error while processing LSP messages.
@@ -58,10 +66,13 @@ impl ArcweftLspSession {
     pub fn new(config: &LspConfig) -> Self {
         let profile_resolver =
             LspProfileResolver::new(config.runner(), config.profile_id().map(str::to_owned));
+        let default_profile = profile_resolver.default_profile();
         Self {
             documents: DocumentStore::default(),
-            profile: LspProfile::default_for_runner(config.runner()),
+            default_profile,
+            profiles_by_uri: BTreeMap::new(),
             profile_resolver,
+            workspace_edit_policy: WorkspaceEditPolicy::default(),
             position_encoding: PositionEncoding::default(),
             cancelled: BTreeSet::new(),
         }
@@ -70,6 +81,7 @@ impl ArcweftLspSession {
     /// Records initialize params and returns the server capabilities to publish.
     pub fn initialize(&mut self, params: &InitializeParams) -> ServerCapabilities {
         self.position_encoding = PositionEncoding::negotiate(&params.capabilities);
+        self.workspace_edit_policy = WorkspaceEditPolicy::from_initialize(params);
         self.server_capabilities()
     }
 
@@ -134,10 +146,7 @@ impl ArcweftLspSession {
                 )?;
                 let snapshot = self.documents.open(params, self.position_encoding);
                 self.refresh_profile_for_uri(snapshot.uri());
-                Ok(vec![publish_diagnostics_notification(
-                    &snapshot,
-                    &self.profile,
-                )])
+                Ok(vec![self.publish_diagnostics_notification(&snapshot)])
             }
             DidChangeTextDocument::METHOD => {
                 let params = decode::<DidChangeTextDocumentParams>(
@@ -145,16 +154,15 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 let snapshot = self.documents.change(params, self.position_encoding)?;
-                Ok(vec![publish_diagnostics_notification(
-                    &snapshot,
-                    &self.profile,
-                )])
+                Ok(vec![self.publish_diagnostics_notification(&snapshot)])
             }
             DidCloseTextDocument::METHOD => {
                 let params = decode::<DidCloseTextDocumentParams>(
                     DidCloseTextDocument::METHOD,
                     notification.params,
                 )?;
+                self.profiles_by_uri
+                    .remove(&params.text_document.uri.to_string());
                 self.documents.close(&params.text_document.uri);
                 Ok(vec![Notification::new(
                     PublishDiagnostics::METHOD.to_owned(),
@@ -175,7 +183,7 @@ impl ArcweftLspSession {
                     .documents
                     .get(&params.text_document.uri)
                     .map_or_else(Vec::new, |snapshot| {
-                        vec![publish_diagnostics_notification(snapshot, &self.profile)]
+                        vec![self.publish_diagnostics_notification(snapshot)]
                     }))
             }
             DidChangeWatchedFiles::METHOD => {
@@ -209,8 +217,10 @@ impl ArcweftLspSession {
     fn try_handle_request(&self, request: Request) -> Result<Response, SessionError> {
         match request.method.as_str() {
             Completion::METHOD => {
-                let (id, _params) = extract::<CompletionParams>(request, Completion::METHOD)?;
-                let items = features::completion::completions(&self.profile);
+                let (id, params) = extract::<CompletionParams>(request, Completion::METHOD)?;
+                let profile =
+                    self.profile_for_uri(&params.text_document_position.text_document.uri);
+                let items = features::completion::completions(profile);
                 Ok(Response::new_ok(id, Some(CompletionResponse::Array(items))))
             }
             HoverRequest::METHOD => {
@@ -218,8 +228,9 @@ impl ArcweftLspSession {
                 let result = self
                     .document_for_params(&params.text_document_position_params.text_document.uri)
                     .and_then(|document| {
+                        let profile = self.profile_for_uri(document.uri());
                         features::hover::hover(
-                            &self.profile,
+                            profile,
                             document,
                             params.text_document_position_params.position,
                         )
@@ -232,8 +243,9 @@ impl ArcweftLspSession {
                 let result = self
                     .document_for_params(&params.text_document_position_params.text_document.uri)
                     .and_then(|document| {
+                        let profile = self.profile_for_uri(document.uri());
                         features::signature::signature_help(
-                            &self.profile,
+                            profile,
                             document,
                             params.text_document_position_params.position,
                         )
@@ -276,7 +288,13 @@ impl ArcweftLspSession {
             DocumentAnalysis::analyze(document.text(), document.line_index().position_encoding());
         let actions = features::actions::actions(&params.text_document.uri, document, &analysis)
             .into_iter()
-            .map(CodeActionOrCommand::CodeAction)
+            .map(|mut action| {
+                action.edit = action.edit.map(|edit| {
+                    self.workspace_edit_policy
+                        .normalize(edit, document.uri(), document.version())
+                });
+                CodeActionOrCommand::CodeAction(action)
+            })
             .collect();
         Some(actions)
     }
@@ -291,27 +309,40 @@ impl ArcweftLspSession {
         let Some(document) = self.document_for_params(&uri) else {
             return Value::Null;
         };
-        serde_json::to_value(workspace_edit_from_tooling_edit(
-            &uri,
-            &edit,
-            document.line_index(),
-        ))
-        .unwrap_or(Value::Null)
+        let edit = workspace_edit_from_tooling_edit(&uri, &edit, document.line_index());
+        let edit = self
+            .workspace_edit_policy
+            .normalize(edit, document.uri(), document.version());
+        serde_json::to_value(edit).unwrap_or(Value::Null)
     }
 
     fn refresh_profile_for_uri(&mut self, uri: &lsp_types::Uri) {
-        self.profile = self.profile_resolver.resolve_for_uri(uri);
+        self.profiles_by_uri
+            .insert(uri.to_string(), self.profile_resolver.resolve_for_uri(uri));
     }
 
     fn refresh_profile_for_open_documents(&mut self) -> Vec<Notification> {
         let snapshots = self.documents.snapshots().cloned().collect::<Vec<_>>();
-        if let Some(snapshot) = snapshots.first() {
+        for snapshot in &snapshots {
             self.refresh_profile_for_uri(snapshot.uri());
         }
         snapshots
             .iter()
-            .map(|snapshot| publish_diagnostics_notification(snapshot, &self.profile))
+            .map(|snapshot| self.publish_diagnostics_notification(snapshot))
             .collect()
+    }
+
+    fn profile_for_uri(&self, uri: &lsp_types::Uri) -> &LspProfile {
+        self.profiles_by_uri
+            .get(&uri.to_string())
+            .unwrap_or(&self.default_profile)
+    }
+
+    fn publish_diagnostics_notification(&self, snapshot: &DocumentSnapshot) -> Notification {
+        Notification::new(
+            PublishDiagnostics::METHOD.to_owned(),
+            publish_diagnostics(snapshot, self.profile_for_uri(snapshot.uri())),
+        )
     }
 }
 
@@ -330,16 +361,6 @@ fn command_uri_and_edit(
     Some((uri, edit))
 }
 
-fn publish_diagnostics_notification(
-    snapshot: &DocumentSnapshot,
-    profile: &LspProfile,
-) -> Notification {
-    Notification::new(
-        PublishDiagnostics::METHOD.to_owned(),
-        publish_diagnostics(snapshot, profile),
-    )
-}
-
 fn extract<P: DeserializeOwned>(
     request: Request,
     method: &'static str,
@@ -347,6 +368,47 @@ fn extract<P: DeserializeOwned>(
     let id = request.id;
     let params = decode(method, request.params)?;
     Ok((id, params))
+}
+
+impl WorkspaceEditPolicy {
+    fn from_initialize(params: &InitializeParams) -> Self {
+        Self {
+            document_changes: params
+                .capabilities
+                .workspace
+                .as_ref()
+                .and_then(|workspace| workspace.workspace_edit.as_ref())
+                .and_then(|workspace_edit| workspace_edit.document_changes)
+                .unwrap_or(false),
+        }
+    }
+
+    fn normalize(
+        self,
+        mut edit: WorkspaceEdit,
+        current_uri: &lsp_types::Uri,
+        current_version: Option<i32>,
+    ) -> WorkspaceEdit {
+        if !self.document_changes || edit.document_changes.is_some() {
+            return edit;
+        }
+        let Some(changes) = edit.changes.take() else {
+            return edit;
+        };
+        edit.document_changes = Some(lsp_types::DocumentChanges::Edits(
+            changes
+                .into_iter()
+                .map(|(uri, edits)| TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier {
+                        version: (uri == *current_uri).then_some(current_version).flatten(),
+                        uri,
+                    },
+                    edits: edits.into_iter().map(lsp_types::OneOf::Left).collect(),
+                })
+                .collect(),
+        ));
+        edit
+    }
 }
 
 fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, SessionError> {
@@ -358,9 +420,10 @@ mod tests {
     use super::*;
     use lsp_types::{
         ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, PartialResultParams, Position, Range,
-        TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        DidChangeWatchedFilesParams, DidOpenTextDocumentParams, PartialResultParams, Position,
+        Range, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
         TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+        WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
     };
     use std::{
         fs::{create_dir_all, write},
@@ -474,6 +537,45 @@ mod tests {
     }
 
     #[test]
+    fn execute_command_uses_document_changes_when_client_supports_them() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        session.initialize(&InitializeParams {
+            capabilities: ClientCapabilities {
+                workspace: Some(WorkspaceClientCapabilities {
+                    workspace_edit: Some(WorkspaceEditClientCapabilities {
+                        document_changes: Some(true),
+                        ..WorkspaceEditClientCapabilities::default()
+                    }),
+                    ..WorkspaceClientCapabilities::default()
+                }),
+                ..ClientCapabilities::default()
+            },
+            ..InitializeParams::default()
+        });
+        open_fixture(&mut session, uri.clone());
+        let edit = arcweft_tooling::TextEdit {
+            start: 0,
+            end: 0,
+            replacement: "// generated\n".to_owned(),
+        };
+
+        let result = session.execute_command(&ExecuteCommandParams {
+            command: ArcweftCommand::ExpandSugar.as_str().to_owned(),
+            arguments: vec![serde_json::json!(uri.to_string()), serde_json::json!(edit)],
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        });
+
+        let workspace_edit: lsp_types::WorkspaceEdit =
+            serde_json::from_value(result).expect("workspace edit result");
+        assert!(workspace_edit.changes.is_none());
+        assert!(matches!(
+            workspace_edit.document_changes,
+            Some(lsp_types::DocumentChanges::Edits(_))
+        ));
+    }
+
+    #[test]
     fn did_open_refreshes_project_profile_for_completion() {
         let project = TestProject::new("lsp-session-profile");
         project.write(
@@ -504,28 +606,118 @@ params = [{ name = "value", ty = "String" }]
         let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
         open_text(&mut session, uri.clone(), "flow @.main main {}\n");
 
-        let response = session.handle_request(Request {
-            id: RequestId::from(1),
-            method: Completion::METHOD.to_owned(),
-            params: serde_json::json!(CompletionParams {
-                text_document_position: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier { uri },
-                    position: Position::new(0, 0),
-                },
-                work_done_progress_params: WorkDoneProgressParams::default(),
-                partial_result_params: PartialResultParams::default(),
-                context: None,
-            }),
-        });
-
-        let response = response.result.expect("completion response");
-        let completions = match serde_json::from_value::<CompletionResponse>(response)
-            .expect("completion response decodes")
-        {
-            CompletionResponse::Array(items) => items,
-            CompletionResponse::List(list) => list.items,
-        };
+        let completions = completion_labels(&mut session, uri);
         assert!(completions.iter().any(|item| item.label == "custom.echo"));
+    }
+
+    #[test]
+    fn completions_use_document_scoped_profiles() {
+        let alpha = TestProject::new("lsp-session-alpha");
+        alpha.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "alpha"
+adapter_manifests = ["adapters/alpha.toml"]
+"#,
+        );
+        alpha.write("src/main.arcw", "flow @.main main {}\n");
+        alpha.write(
+            "adapters/alpha.toml",
+            adapter_manifest("alpha", "alpha.call").as_str(),
+        );
+        let beta = TestProject::new("lsp-session-beta");
+        beta.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "beta"
+adapter_manifests = ["adapters/beta.toml"]
+"#,
+        );
+        beta.write("src/main.arcw", "flow @.main main {}\n");
+        beta.write(
+            "adapters/beta.toml",
+            adapter_manifest("beta", "beta.call").as_str(),
+        );
+        let alpha_uri = file_uri(&alpha.path("src/main.arcw"));
+        let beta_uri = file_uri(&beta.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, alpha_uri.clone(), "flow @.main main {}\n");
+        open_text(&mut session, beta_uri.clone(), "flow @.main main {}\n");
+
+        let alpha_completions = completion_labels(&mut session, alpha_uri);
+        let beta_completions = completion_labels(&mut session, beta_uri);
+
+        assert!(
+            alpha_completions
+                .iter()
+                .any(|item| item.label == "alpha.call")
+        );
+        assert!(
+            !alpha_completions
+                .iter()
+                .any(|item| item.label == "beta.call")
+        );
+        assert!(
+            beta_completions
+                .iter()
+                .any(|item| item.label == "beta.call")
+        );
+        assert!(
+            !beta_completions
+                .iter()
+                .any(|item| item.label == "alpha.call")
+        );
+    }
+
+    #[test]
+    fn watched_file_change_refreshes_profile_metadata() {
+        let project = TestProject::new("lsp-session-watch-refresh");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "custom"
+adapter_manifests = ["adapters/custom.toml"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        project.write(
+            "adapters/custom.toml",
+            adapter_manifest("custom", "custom.before").as_str(),
+        );
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), "flow @.main main {}\n");
+        assert!(
+            completion_labels(&mut session, uri.clone())
+                .iter()
+                .any(|item| item.label == "custom.before")
+        );
+
+        project.write(
+            "adapters/custom.toml",
+            adapter_manifest("custom", "custom.after").as_str(),
+        );
+        let refresh = Notification::new(
+            DidChangeWatchedFiles::METHOD.to_owned(),
+            DidChangeWatchedFilesParams {
+                changes: Vec::new(),
+            },
+        );
+        let notifications = session.handle_notification(refresh).expect("refresh");
+
+        assert_eq!(notifications.len(), 1);
+        let completions = completion_labels(&mut session, uri);
+        assert!(completions.iter().any(|item| item.label == "custom.after"));
+        assert!(!completions.iter().any(|item| item.label == "custom.before"));
     }
 
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
@@ -549,6 +741,67 @@ params = [{ name = "value", ty = "String" }]
             },
         );
         session.handle_notification(open).expect("open fixture");
+    }
+
+    fn completion_labels(
+        session: &mut ArcweftLspSession,
+        uri: Uri,
+    ) -> Vec<lsp_types::CompletionItem> {
+        let response = session.handle_request(Request {
+            id: RequestId::from(1),
+            method: Completion::METHOD.to_owned(),
+            params: serde_json::json!(CompletionParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: Position::new(0, 0),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+                context: None,
+            }),
+        });
+        let response = response.result.expect("completion response");
+        match serde_json::from_value::<CompletionResponse>(response)
+            .expect("completion response decodes")
+        {
+            CompletionResponse::Array(items) => items,
+            CompletionResponse::List(list) => list.items,
+        }
+    }
+
+    fn adapter_manifest(id: &str, function: &str) -> String {
+        let mut param = toml::Table::new();
+        param.insert("name".to_owned(), toml::Value::String("value".to_owned()));
+        param.insert("ty".to_owned(), toml::Value::String("String".to_owned()));
+
+        let mut function_entry = toml::Table::new();
+        function_entry.insert("name".to_owned(), toml::Value::String(function.to_owned()));
+        function_entry.insert(
+            "return_type".to_owned(),
+            toml::Value::String("String".to_owned()),
+        );
+        function_entry.insert(
+            "params".to_owned(),
+            toml::Value::Array(vec![toml::Value::Table(param)]),
+        );
+
+        let mut manifest = toml::Table::new();
+        manifest.insert(
+            "schema_version".to_owned(),
+            toml::Value::Integer(i64::from(
+                arcweft_adapter_context::codec::ADAPTER_MANIFEST_SCHEMA_VERSION,
+            )),
+        );
+        manifest.insert("id".to_owned(), toml::Value::String(id.to_owned()));
+        manifest.insert(
+            "display_name".to_owned(),
+            toml::Value::String(id.to_owned()),
+        );
+        manifest.insert(
+            "functions".to_owned(),
+            toml::Value::Array(vec![toml::Value::Table(function_entry)]),
+        );
+        toml::to_string(&toml::Value::Table(manifest)).expect("adapter manifest TOML")
     }
 
     fn file_uri(path: &Path) -> Uri {

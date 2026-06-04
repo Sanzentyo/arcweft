@@ -70,13 +70,16 @@ Phase 0 / Phase 1 minimal Rust workspace:
   expansion and ID materialization actions now return LSP `WorkspaceEdit`
   values through the same byte-span mapper used for diagnostics, and
   `workspace/executeCommand` can translate the older command argument shape into
-  the same edit without writing files server-side. The transport now resolves
-  `arcw.toml` near opened documents, refreshes profile metadata on open, save,
-  watched-file, and configuration notifications, loads project-local adapter
-  manifests and Rust ABI JSON into the selected adapter, and reports profile
-  metadata diagnostics alongside source diagnostics without recording host
-  absolute paths in checked-in artifacts. Completion, hover, and signature help
-  use the refreshed profile context. `arcweft-cli` remains both a
+  the same edit without writing files server-side. The transport negotiates
+  workspace-edit shape from client capabilities, returning versioned
+  `documentChanges` when supported and `changes` otherwise. It resolves
+  `arcw.toml` near opened documents, caches profile metadata per document URI,
+  refreshes profile metadata on open, save, watched-file, and configuration
+  notifications, loads project-local adapter manifests and Rust ABI JSON into
+  the selected adapter, and reports profile metadata diagnostics with profile
+  ids and profile-relative resource labels without recording host absolute
+  paths in checked-in artifacts. Completion, hover, and signature help use the
+  refreshed document-scoped profile context. `arcweft-cli` remains both a
   library and a binary for argv-compatible execution through
   `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic

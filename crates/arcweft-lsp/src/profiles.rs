@@ -86,6 +86,8 @@ pub struct LspProfileResolver {
 pub struct LspProfileDiagnostic {
     kind: LspProfileDiagnosticKind,
     message: String,
+    profile_id: Option<String>,
+    resource: Option<String>,
 }
 
 /// Stable profile diagnostic categories.
@@ -135,6 +137,11 @@ impl LspProfileResolver {
         }
     }
 
+    /// Minimal built-in profile used when no document-specific metadata is cached.
+    pub fn default_profile(&self) -> LspProfile {
+        LspProfile::default_for_runner(self.runner)
+    }
+
     /// Resolves a profile for one LSP document URI.
     pub fn resolve_for_uri(&self, uri: &lsp_types::Uri) -> LspProfile {
         match file_path_from_uri(uri) {
@@ -181,7 +188,7 @@ impl LspProfileResolver {
                 &standard_registry.adapter_ids(),
             )
             .map_err(LspProfileLoadError::ProfileResolve)?;
-        Ok(self.profile_from_resolved(&profile, standard_registry))
+        Ok(self.profile_from_resolved(&profile, manifest_dir, profile_id, standard_registry))
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -195,11 +202,15 @@ impl LspProfileResolver {
     fn profile_from_resolved(
         &self,
         profile: &ResolvedLaunchProfile,
+        manifest_dir: &Path,
+        profile_id: &str,
         standard_registry: AdapterRegistry,
     ) -> LspProfile {
         let mut diagnostics = Vec::new();
         let registry = read_adapter_manifests(
             profile.adapter_manifests(),
+            manifest_dir,
+            profile_id,
             standard_registry,
             &mut diagnostics,
         );
@@ -207,7 +218,12 @@ impl LspProfileResolver {
             .get(profile.adapter().unwrap_or(SANS_IO_ADAPTER_ID))
             .cloned()
             .unwrap_or_else(standard::sans_io_manifest);
-        for rust_manifest in read_rust_metadata(profile.rust_metadata(), &mut diagnostics) {
+        for rust_manifest in read_rust_metadata(
+            profile.rust_metadata(),
+            manifest_dir,
+            profile_id,
+            &mut diagnostics,
+        ) {
             adapter = adapter.with_rust_manifest(&rust_manifest);
         }
         let declared_manifests = vec![adapter.clone()];
@@ -232,7 +248,23 @@ impl LspProfileDiagnostic {
         Self {
             kind,
             message: message.into(),
+            profile_id: None,
+            resource: None,
         }
+    }
+
+    /// Attaches the selected launch profile id without embedding host paths.
+    #[must_use]
+    pub fn with_profile_id(mut self, profile_id: impl Into<String>) -> Self {
+        self.profile_id = Some(profile_id.into());
+        self
+    }
+
+    /// Attaches a profile-relative resource label.
+    #[must_use]
+    pub fn with_resource(mut self, resource: impl Into<String>) -> Self {
+        self.resource = Some(resource.into());
+        self
     }
 
     /// Diagnostic category.
@@ -243,6 +275,16 @@ impl LspProfileDiagnostic {
     /// Human-readable diagnostic message.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Optional launch profile id associated with this diagnostic.
+    pub fn profile_id(&self) -> Option<&str> {
+        self.profile_id.as_deref()
+    }
+
+    /// Optional profile-relative resource associated with this diagnostic.
+    pub fn resource(&self) -> Option<&str> {
+        self.resource.as_deref()
     }
 }
 
@@ -278,6 +320,8 @@ impl LspProfileLoadError {
 
 fn read_adapter_manifests(
     paths: &[PathBuf],
+    manifest_dir: &Path,
+    profile_id: &str,
     registry: AdapterRegistry,
     diagnostics: &mut Vec<LspProfileDiagnostic>,
 ) -> AdapterRegistry {
@@ -285,7 +329,7 @@ fn read_adapter_manifests(
         match read_adapter_manifest(path) {
             Ok(manifest) => registry.with_manifest(manifest),
             Err(error) => {
-                diagnostics.push(error.into_diagnostic());
+                diagnostics.push(error.into_diagnostic(path_label(path, manifest_dir), profile_id));
                 registry
             }
         }
@@ -304,6 +348,8 @@ fn read_adapter_manifest(path: &Path) -> Result<AdapterManifest, AdapterManifest
 
 fn read_rust_metadata(
     paths: &[PathBuf],
+    manifest_dir: &Path,
+    profile_id: &str,
     diagnostics: &mut Vec<LspProfileDiagnostic>,
 ) -> Vec<ArcweftRustManifest> {
     paths
@@ -311,7 +357,7 @@ fn read_rust_metadata(
         .filter_map(|path| match read_rust_manifest(path) {
             Ok(manifest) => Some(manifest),
             Err(error) => {
-                diagnostics.push(error.into_diagnostic());
+                diagnostics.push(error.into_diagnostic(path_label(path, manifest_dir), profile_id));
                 None
             }
         })
@@ -340,22 +386,45 @@ enum RustMetadataReadError {
 }
 
 impl AdapterManifestReadError {
-    fn into_diagnostic(self) -> LspProfileDiagnostic {
+    fn into_diagnostic(self, resource: String, profile_id: &str) -> LspProfileDiagnostic {
         let kind = match self {
             Self::Read(_) => LspProfileDiagnosticKind::AdapterManifestRead,
             Self::Parse(_) => LspProfileDiagnosticKind::AdapterManifestParse,
         };
-        LspProfileDiagnostic::new(kind, self.to_string())
+        LspProfileDiagnostic::new(kind, format!("{self} `{resource}`"))
+            .with_profile_id(profile_id)
+            .with_resource(resource)
     }
 }
 
 impl RustMetadataReadError {
-    fn into_diagnostic(self) -> LspProfileDiagnostic {
+    fn into_diagnostic(self, resource: String, profile_id: &str) -> LspProfileDiagnostic {
         let kind = match self {
             Self::Read(_) => LspProfileDiagnosticKind::RustMetadataRead,
             Self::Parse(_) => LspProfileDiagnosticKind::RustMetadataParse,
         };
-        LspProfileDiagnostic::new(kind, self.to_string())
+        LspProfileDiagnostic::new(kind, format!("{self} `{resource}`"))
+            .with_profile_id(profile_id)
+            .with_resource(resource)
+    }
+}
+
+fn path_label(path: &Path, manifest_dir: &Path) -> String {
+    let display_path = path.strip_prefix(manifest_dir).unwrap_or(path);
+    let components = display_path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => Some(value.to_string_lossy()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if components.is_empty() {
+        path.file_name().map_or_else(
+            || "metadata".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+    } else {
+        components.join("/")
     }
 }
 
@@ -508,6 +577,35 @@ id = "custom.echo"
         );
         assert!(!profile.diagnostics()[0].message().contains(":/"));
         assert!(!profile.diagnostics()[0].message().contains(":\\"));
+    }
+
+    #[test]
+    fn adapter_manifest_diagnostic_keeps_profile_relative_resource() {
+        let project = TestProject::new("lsp-profile-adapter-diagnostic");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "missing"
+adapter_manifests = ["adapters/missing.toml"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+
+        let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+        let diagnostic = profile
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestRead)
+            .expect("adapter manifest diagnostic");
+
+        assert_eq!(diagnostic.profile_id(), Some("dev"));
+        assert_eq!(diagnostic.resource(), Some("adapters/missing.toml"));
+        assert!(!diagnostic.message().contains(":/"));
+        assert!(!diagnostic.message().contains(":\\"));
     }
 
     struct TestProject {
