@@ -259,9 +259,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   making source-level `math.*` flows measurable through the normal bench JSON.
   The portable wgpu kernels remain `f32`; `f64` math uses scalar, glam 4x4, or
   ndarray CPU backends without narrowing. Native prepared wgpu math now caches
-  by shape, keeps exact repeated inputs resident, and updates same-shape changed
-  inputs with `queue.write_buffer` instead of recreating GPU storage or bind
-  groups.
+  by shape, keeps exact repeated inputs resident, updates changed inputs with
+  `queue.write_buffer`, and exposes capacity-prepared matrix/tensor APIs for
+  dispatching smaller compatible shapes without recreating GPU storage or bind
+  groups. The `math_bench` example exposes the same path with
+  `--reuse-capacity`, and the Justfile has matrix, tensor, and matmul recipes
+  for collecting path-free JSON measurements.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

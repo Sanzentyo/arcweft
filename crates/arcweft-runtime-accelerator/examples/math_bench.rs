@@ -172,13 +172,24 @@ fn run_prepared_matrix_matmul(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match accelerator.prepare_matrix_matmul_f32(lhs, rhs) {
+    let prepared = match if options.reuse_capacity {
+        let capacity = options.matrix_capacity_size();
+        accelerator.prepare_matrix_matmul_f32_capacity(capacity, capacity, capacity)
+    } else {
+        accelerator.prepare_matrix_matmul_f32(lhs, rhs)
+    } {
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
         .reuse_update_inputs
         .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, true));
+    if options.reuse_capacity
+        && update_cases.is_none()
+        && let Err(error) = accelerator.update_prepared_matrix_matmul_f32(&prepared, lhs, rhs)
+    {
+        return BackendReport::skipped_or_failed(backend, error.to_string());
+    }
     let mut output = vec![0.0; lhs.rows() * rhs.cols()];
     for index in 0..options.warmup {
         if let Some(cases) = &update_cases {
@@ -187,8 +198,17 @@ fn run_prepared_matrix_matmul(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
-        {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_matmul_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
@@ -203,8 +223,17 @@ fn run_prepared_matrix_matmul(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
-        {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_matmul_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
@@ -237,13 +266,24 @@ fn run_prepared_matrix_add(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match accelerator.prepare_matrix_add_f32(lhs, rhs) {
+    let prepared = match if options.reuse_capacity {
+        let capacity = options.matrix_capacity_size();
+        accelerator.prepare_matrix_add_f32_capacity(capacity, capacity)
+    } else {
+        accelerator.prepare_matrix_add_f32(lhs, rhs)
+    } {
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
         .reuse_update_inputs
         .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, false));
+    if options.reuse_capacity
+        && update_cases.is_none()
+        && let Err(error) = accelerator.update_prepared_matrix_add_f32(&prepared, lhs, rhs)
+    {
+        return BackendReport::skipped_or_failed(backend, error.to_string());
+    }
     let mut output = vec![0.0; lhs.values().len()];
     for index in 0..options.warmup {
         if let Some(cases) = &update_cases {
@@ -252,7 +292,17 @@ fn run_prepared_matrix_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        if let Err(error) = accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output) {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_add_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                lhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
@@ -267,7 +317,17 @@ fn run_prepared_matrix_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        if let Err(error) = accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output) {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_add_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                lhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
@@ -300,13 +360,23 @@ fn run_prepared_tensor_add(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match accelerator.prepare_tensor_add_f32(lhs, rhs) {
+    let prepared = match if options.reuse_capacity {
+        accelerator.prepare_tensor_add_f32_capacity(options.tensor_capacity_len())
+    } else {
+        accelerator.prepare_tensor_add_f32(lhs, rhs)
+    } {
         Ok(value) => value,
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
         .reuse_update_inputs
         .then(|| tensor_update_cases(lhs.values().len(), options.warmup + options.iterations));
+    if options.reuse_capacity
+        && update_cases.is_none()
+        && let Err(error) = accelerator.update_prepared_tensor_add_f32(&prepared, lhs, rhs)
+    {
+        return BackendReport::skipped_or_failed(backend, error.to_string());
+    }
     let mut output = vec![0.0; lhs.values().len()];
     for index in 0..options.warmup {
         if let Some(cases) = &update_cases {
@@ -315,7 +385,16 @@ fn run_prepared_tensor_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        if let Err(error) = accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output) {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_tensor_add_f32_len_into(
+                &prepared,
+                lhs.values().len(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
     }
@@ -330,7 +409,16 @@ fn run_prepared_tensor_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        if let Err(error) = accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output) {
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_tensor_add_f32_len_into(
+                &prepared,
+                lhs.values().len(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
         let elapsed = started.elapsed().as_nanos();
@@ -450,6 +538,7 @@ struct BenchOptions {
     wgpu_min_elements: usize,
     reuse: bool,
     reuse_update_inputs: bool,
+    reuse_capacity: bool,
 }
 
 impl BenchOptions {
@@ -463,6 +552,7 @@ impl BenchOptions {
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
             reuse: false,
             reuse_update_inputs: false,
+            reuse_capacity: false,
         };
         let mut index = 0;
         while index < args.len() {
@@ -506,11 +596,26 @@ impl BenchOptions {
                     options.reuse = true;
                     options.reuse_update_inputs = true;
                 }
+                "--reuse-capacity" => {
+                    options.reuse = true;
+                    options.reuse_capacity = true;
+                }
                 _ => {}
             }
             index += 1;
         }
         options
+    }
+
+    fn matrix_capacity_size(&self) -> usize {
+        self.size.saturating_mul(2).max(self.size)
+    }
+
+    fn tensor_capacity_len(&self) -> usize {
+        self.size
+            .saturating_mul(self.size)
+            .saturating_mul(2)
+            .max(self.size.saturating_mul(self.size))
     }
 }
 
@@ -549,6 +654,8 @@ struct MathBenchReport {
     warmup: usize,
     reuse: bool,
     reuse_update_inputs: bool,
+    reuse_capacity: bool,
+    capacity_size: Option<usize>,
     results: Vec<BackendReportJson>,
 }
 
@@ -562,6 +669,11 @@ impl MathBenchReport {
             warmup: options.warmup,
             reuse: options.reuse,
             reuse_update_inputs: options.reuse_update_inputs,
+            reuse_capacity: options.reuse_capacity,
+            capacity_size: options.reuse_capacity.then(|| match options.op {
+                BenchOp::TensorAdd => options.tensor_capacity_len(),
+                BenchOp::Matmul | BenchOp::MatrixAdd => options.matrix_capacity_size(),
+            }),
             results: results.into_iter().map(BackendReport::into_json).collect(),
         }
     }
@@ -722,6 +834,7 @@ mod tests {
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
             reuse: false,
             reuse_update_inputs: false,
+            reuse_capacity: false,
         };
         let report = MathBenchReport::new(
             &options,
@@ -772,5 +885,35 @@ mod tests {
         assert!(options.reuse_update_inputs);
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"reuse_update_inputs\":true"));
+    }
+
+    #[test]
+    fn parse_reuse_capacity_marks_reuse_and_report_field() {
+        let args = [
+            "--backend".to_owned(),
+            "wgpu".to_owned(),
+            "--op".to_owned(),
+            "tensor-add".to_owned(),
+            "--size".to_owned(),
+            "8".to_owned(),
+            "--reuse-capacity".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::skipped_or_failed(
+                RuntimeMathBackend::Wgpu,
+                "adapter unavailable".to_owned(),
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(options.reuse);
+        assert!(options.reuse_capacity);
+        assert_eq!(options.tensor_capacity_len(), 128);
+        assert!(json.contains("\"reuse\":true"));
+        assert!(json.contains("\"reuse_capacity\":true"));
+        assert!(json.contains("\"capacity_size\":128"));
     }
 }

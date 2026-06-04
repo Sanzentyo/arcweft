@@ -327,6 +327,27 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn prepare_matrix_add_f32_capacity(
+        &mut self,
+        rows: usize,
+        cols: usize,
+    ) -> Result<RuntimePreparedMatrixAddF32, RuntimeMathAcceleratorError> {
+        let capacity_len = rows.saturating_mul(cols);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_add_capacity(capacity_len))?;
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedMatrixAddF32 { rows, cols, gpu })
+            }
+            _ => {
+                let _ = (rows, cols, capacity_len);
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn run_prepared_matrix_add_f32(
         &mut self,
         prepared: &RuntimePreparedMatrixAddF32,
@@ -364,6 +385,42 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn run_prepared_matrix_add_f32_shape_into(
+        &mut self,
+        prepared: &RuntimePreparedMatrixAddF32,
+        rows: usize,
+        cols: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        if rows > prepared.rows || cols > prepared.cols {
+            return Err(RuntimeMathAcceleratorError::Backend(format!(
+                "prepared matrix add capacity is {}x{}, got {}x{}",
+                prepared.rows, prepared.cols, rows, cols
+            )));
+        }
+        let expected = rows.saturating_mul(cols);
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+                self.record_prepared_gpu_dispatch(out.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn update_prepared_matrix_add_f32(
         &mut self,
         prepared: &RuntimePreparedMatrixAddF32,
@@ -378,9 +435,9 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        if lhs.rows() != prepared.rows || lhs.cols() != prepared.cols {
+        if lhs.rows() > prepared.rows || lhs.cols() > prepared.cols {
             return Err(RuntimeMathAcceleratorError::Backend(format!(
-                "prepared matrix add expected {}x{} inputs, got {}x{}",
+                "prepared matrix add capacity is {}x{}, got {}x{}",
                 prepared.rows,
                 prepared.cols,
                 lhs.rows(),
@@ -445,6 +502,32 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn prepare_matrix_matmul_f32_capacity(
+        &mut self,
+        rows: usize,
+        shared: usize,
+        cols: usize,
+    ) -> Result<RuntimePreparedMatrixMatmulF32, RuntimeMathAcceleratorError> {
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_matmul_capacity(rows, shared, cols))?;
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedMatrixMatmulF32 {
+                    rows,
+                    shared,
+                    cols,
+                    gpu,
+                })
+            }
+            _ => {
+                let _ = (rows, shared, cols);
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn run_prepared_matrix_matmul_f32(
         &mut self,
         prepared: &RuntimePreparedMatrixMatmulF32,
@@ -482,6 +565,42 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn run_prepared_matrix_matmul_f32_shape_into(
+        &mut self,
+        prepared: &RuntimePreparedMatrixMatmulF32,
+        rows: usize,
+        cols: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        if rows > prepared.rows || cols > prepared.cols {
+            return Err(RuntimeMathAcceleratorError::Backend(format!(
+                "prepared matrix matmul capacity is {}x{} output, got {}x{}",
+                prepared.rows, prepared.cols, rows, cols
+            )));
+        }
+        let expected = rows.saturating_mul(cols);
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_matmul_shape(&prepared.gpu, rows, cols, out))?;
+                self.record_prepared_gpu_dispatch(out.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn update_prepared_matrix_matmul_f32(
         &mut self,
         prepared: &RuntimePreparedMatrixMatmulF32,
@@ -496,12 +615,10 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        if lhs.rows() != prepared.rows
-            || lhs.cols() != prepared.shared
-            || rhs.cols() != prepared.cols
+        if lhs.rows() > prepared.rows || lhs.cols() > prepared.shared || rhs.cols() > prepared.cols
         {
             return Err(RuntimeMathAcceleratorError::Backend(format!(
-                "prepared matrix matmul expected {}x{} and {}x{} inputs, got {}x{} and {}x{}",
+                "prepared matrix matmul capacity is {}x{} and {}x{}, got {}x{} and {}x{}",
                 prepared.rows,
                 prepared.shared,
                 prepared.shared,
@@ -520,9 +637,9 @@ impl RuntimeMathAccelerator {
                         &prepared.gpu,
                         lhs.values(),
                         rhs.values(),
-                        prepared.rows,
-                        prepared.shared,
-                        prepared.cols,
+                        lhs.rows(),
+                        lhs.cols(),
+                        rhs.cols(),
                     )
                 })?;
                 self.record_prepared_gpu_upload(lhs.values().len() + rhs.values().len());
@@ -570,6 +687,28 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn prepare_tensor_add_f32_capacity(
+        &mut self,
+        capacity_len: usize,
+    ) -> Result<RuntimePreparedTensorAddF32, RuntimeMathAcceleratorError> {
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_add_capacity(capacity_len))?;
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedTensorAddF32 {
+                    dims: vec![capacity_len],
+                    gpu,
+                })
+            }
+            _ => {
+                let _ = capacity_len;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn run_prepared_tensor_add_f32(
         &mut self,
         prepared: &RuntimePreparedTensorAddF32,
@@ -607,6 +746,41 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    pub fn run_prepared_tensor_add_f32_len_into(
+        &mut self,
+        prepared: &RuntimePreparedTensorAddF32,
+        len: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        if len > prepared.element_count() {
+            return Err(RuntimeMathAcceleratorError::Backend(format!(
+                "prepared tensor add capacity is {}, got {}",
+                prepared.element_count(),
+                len
+            )));
+        }
+        if out.len() != len {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected: len,
+                found: out.len(),
+            }
+            .into());
+        }
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+                self.record_prepared_gpu_dispatch(out.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
     pub fn update_prepared_tensor_add_f32(
         &mut self,
         prepared: &RuntimePreparedTensorAddF32,
@@ -621,11 +795,11 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        if lhs.shape().dims() != prepared.dims.as_slice() {
+        if lhs.values().len() > prepared.element_count() {
             return Err(RuntimeMathAcceleratorError::Backend(format!(
-                "prepared tensor add expected {:?} inputs, got {:?}",
-                prepared.dims,
-                lhs.shape().dims()
+                "prepared tensor add capacity is {}, got {}",
+                prepared.element_count(),
+                lhs.values().len()
             )));
         }
         self.record_tensor_inputs(lhs, rhs);
@@ -1544,23 +1718,60 @@ mod wgpu_backend {
             })
         }
 
+        pub fn prepare_add_capacity(
+            &self,
+            capacity_len: usize,
+        ) -> Result<PreparedAddBuffers, RuntimeMathAcceleratorError> {
+            let _ = checked_u32(capacity_len)?;
+            let byte_len = capacity_len
+                .saturating_mul(std::mem::size_of::<f32>())
+                .max(std::mem::size_of::<f32>());
+            let out = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-math-prepared-out"),
+                size: byte_len as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let lhs = storage_buffer_capacity(&self.device, byte_len, "arcweft-math-prepared-lhs");
+            let rhs = storage_buffer_capacity(&self.device, byte_len, "arcweft-math-prepared-rhs");
+            let params = storage_buffer_capacity(
+                &self.device,
+                std::mem::size_of::<AddParams>(),
+                "arcweft-math-prepared-params",
+            );
+            let layout = self.add_pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-math-prepared-bind-group"),
+                layout: &layout,
+                entries: &bind_group_entries(&lhs, &rhs, &out, &params),
+            });
+            Ok(PreparedAddBuffers {
+                len: capacity_len,
+                lhs,
+                rhs,
+                out,
+                params,
+                bind_group,
+            })
+        }
+
         pub fn update_prepared_add(
             &self,
             prepared: &PreparedAddBuffers,
             lhs: &[f32],
             rhs: &[f32],
         ) -> Result<(), RuntimeMathAcceleratorError> {
-            if lhs.len() != prepared.len || rhs.len() != prepared.len {
+            if lhs.len() != rhs.len() || lhs.len() > prepared.len {
                 return Err(RuntimeMathAcceleratorError::Backend(format!(
-                    "prepared add expected {} value input buffers, got {} and {}",
+                    "prepared add capacity is {} value(s), got {} and {}",
                     prepared.len,
                     lhs.len(),
                     rhs.len()
                 )));
             }
             let params = AddParams {
-                len: checked_u32(prepared.len)?,
-                x_threads: checked_u32(add_groups(prepared.len).0 * 256)?,
+                len: checked_u32(lhs.len())?,
+                x_threads: checked_u32(add_groups(lhs.len()).0 * 256)?,
                 _pad1: 0,
                 _pad2: 0,
             };
@@ -1658,6 +1869,63 @@ mod wgpu_backend {
             })
         }
 
+        pub fn prepare_matmul_capacity(
+            &self,
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<PreparedMatmulBuffers, RuntimeMathAcceleratorError> {
+            let _ = checked_u32(rows)?;
+            let _ = checked_u32(shared)?;
+            let _ = checked_u32(cols)?;
+            let lhs_len = rows.saturating_mul(shared);
+            let rhs_len = shared.saturating_mul(cols);
+            let out_len = rows.saturating_mul(cols);
+            let lhs = storage_buffer_capacity(
+                &self.device,
+                lhs_len
+                    .saturating_mul(std::mem::size_of::<f32>())
+                    .max(std::mem::size_of::<f32>()),
+                "arcweft-math-prepared-matmul-lhs",
+            );
+            let rhs = storage_buffer_capacity(
+                &self.device,
+                rhs_len
+                    .saturating_mul(std::mem::size_of::<f32>())
+                    .max(std::mem::size_of::<f32>()),
+                "arcweft-math-prepared-matmul-rhs",
+            );
+            let out = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-math-prepared-matmul-out"),
+                size: out_len
+                    .saturating_mul(std::mem::size_of::<f32>())
+                    .max(std::mem::size_of::<f32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let params = storage_buffer_capacity(
+                &self.device,
+                std::mem::size_of::<MatmulParams>(),
+                "arcweft-math-prepared-matmul-params",
+            );
+            let layout = self.matmul_pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-math-prepared-matmul-bind-group"),
+                layout: &layout,
+                entries: &bind_group_entries(&lhs, &rhs, &out, &params),
+            });
+            Ok(PreparedMatmulBuffers {
+                rows,
+                shared,
+                cols,
+                lhs,
+                rhs,
+                out,
+                params,
+                bind_group,
+            })
+        }
+
         pub fn update_prepared_matmul(
             &self,
             prepared: &PreparedMatmulBuffers,
@@ -1667,9 +1935,9 @@ mod wgpu_backend {
             shared: usize,
             cols: usize,
         ) -> Result<(), RuntimeMathAcceleratorError> {
-            if rows != prepared.rows || shared != prepared.shared || cols != prepared.cols {
+            if rows > prepared.rows || shared > prepared.shared || cols > prepared.cols {
                 return Err(RuntimeMathAcceleratorError::Backend(format!(
-                    "prepared matmul expected {}x{} and {}x{} inputs, got {}x{} and {}x{}",
+                    "prepared matmul capacity is {}x{} and {}x{}, got {}x{} and {}x{}",
                     prepared.rows,
                     prepared.shared,
                     prepared.shared,
@@ -1711,9 +1979,9 @@ mod wgpu_backend {
             prepared: &PreparedAddBuffers,
             out: &mut [f32],
         ) -> Result<GpuReadbackUsage, RuntimeMathAcceleratorError> {
-            if out.len() != prepared.len {
+            if out.len() > prepared.len {
                 return Err(RuntimeMathAcceleratorError::Backend(format!(
-                    "prepared add output expected {} value(s), got {}",
+                    "prepared add capacity is {} value(s), got {}",
                     prepared.len,
                     out.len()
                 )));
@@ -1721,7 +1989,7 @@ mod wgpu_backend {
             if out.is_empty() {
                 return Ok(GpuReadbackUsage::default());
             }
-            let (groups_x, groups_y) = add_groups(prepared.len);
+            let (groups_x, groups_y) = add_groups(out.len());
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1747,10 +2015,27 @@ mod wgpu_backend {
             prepared: &PreparedMatmulBuffers,
             out: &mut [f32],
         ) -> Result<GpuReadbackUsage, RuntimeMathAcceleratorError> {
-            if out.len() != prepared.len() {
+            self.dispatch_prepared_matmul_shape(prepared, prepared.rows, prepared.cols, out)
+        }
+
+        pub fn dispatch_prepared_matmul_shape(
+            &mut self,
+            prepared: &PreparedMatmulBuffers,
+            rows: usize,
+            cols: usize,
+            out: &mut [f32],
+        ) -> Result<GpuReadbackUsage, RuntimeMathAcceleratorError> {
+            if rows > prepared.rows || cols > prepared.cols {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared matmul capacity is {}x{} output, got {}x{}",
+                    prepared.rows, prepared.cols, rows, cols
+                )));
+            }
+            let expected = rows.saturating_mul(cols);
+            if out.len() != expected {
                 return Err(RuntimeMathAcceleratorError::Backend(format!(
                     "prepared matmul output expected {} value(s), got {}",
-                    prepared.len(),
+                    expected,
                     out.len()
                 )));
             }
@@ -1770,8 +2055,8 @@ mod wgpu_backend {
                 pass.set_pipeline(&self.matmul_pipeline);
                 pass.set_bind_group(0, &prepared.bind_group, &[]);
                 pass.dispatch_workgroups(
-                    checked_u32(prepared.cols.div_ceil(16))?,
-                    checked_u32(prepared.rows.div_ceil(16))?,
+                    checked_u32(cols.div_ceil(16))?,
+                    checked_u32(rows.div_ceil(16))?,
                     1,
                 );
             }
@@ -1978,6 +2263,45 @@ mod wgpu_backend {
             contents,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         })
+    }
+
+    fn storage_buffer_capacity(
+        device: &wgpu::Device,
+        byte_len: usize,
+        label: &'static str,
+    ) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: byte_len.max(std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn bind_group_entries<'a>(
+        lhs: &'a wgpu::Buffer,
+        rhs: &'a wgpu::Buffer,
+        out: &'a wgpu::Buffer,
+        params: &'a wgpu::Buffer,
+    ) -> [wgpu::BindGroupEntry<'a>; 4] {
+        [
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: lhs.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: out.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: params.as_entire_binding(),
+            },
+        ]
     }
 
     fn checked_u32(value: usize) -> Result<u32, RuntimeMathAcceleratorError> {
@@ -3683,6 +4007,43 @@ mod tests {
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
+    fn prepared_matrix_matmul_capacity_reuses_buffers_for_smaller_shapes() {
+        let lhs = DenseMatrixF32::new(8, 8, vec![3.0; 64]).unwrap();
+        let rhs = DenseMatrixF32::new(8, 8, vec![0.5; 64]).unwrap();
+        let expected = lhs.matmul_scalar(&rhs).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_matrix_matmul_f32_capacity(16, 16, 16) else {
+            return;
+        };
+
+        accelerator.reset_stats();
+        accelerator
+            .update_prepared_matrix_matmul_f32(&prepared, &lhs, &rhs)
+            .expect("capacity-prepared matmul accepts smaller compatible input");
+        let mut out = vec![0.0; expected.values().len()];
+        accelerator
+            .run_prepared_matrix_matmul_f32_shape_into(&prepared, 8, 8, &mut out)
+            .expect("capacity-prepared matmul dispatches smaller output");
+
+        assert_eq!(out, expected.values());
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(expected.values())
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
     fn one_shot_wgpu_readback_reuses_staging_buffer_when_adapter_is_available() {
         let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).unwrap();
         let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).unwrap();
@@ -3739,6 +4100,42 @@ mod tests {
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
+    fn prepared_tensor_add_capacity_reuses_buffers_for_smaller_lengths() {
+        let lhs = DenseTensorF32::new(vec![64], vec![6.0; 64]).unwrap();
+        let rhs = DenseTensorF32::new(vec![64], vec![7.0; 64]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_tensor_add_f32_capacity(128) else {
+            return;
+        };
+
+        accelerator.reset_stats();
+        accelerator
+            .update_prepared_tensor_add_f32(&prepared, &lhs, &rhs)
+            .expect("capacity-prepared tensor add accepts smaller compatible input");
+        let mut out = vec![0.0; lhs.values().len()];
+        accelerator
+            .run_prepared_tensor_add_f32_len_into(&prepared, lhs.values().len(), &mut out)
+            .expect("capacity-prepared tensor add dispatches smaller output");
+
+        assert_eq!(out, vec![13.0; 64]);
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(lhs.values())
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
     fn prepared_matrix_add_can_write_into_reused_output_buffer() {
         let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).unwrap();
         let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).unwrap();
@@ -3770,5 +4167,41 @@ mod tests {
             }
             error => panic!("unexpected prepared output error: {error}"),
         }
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn prepared_matrix_add_capacity_reuses_buffers_for_smaller_shapes() {
+        let lhs = DenseMatrixF32::new(8, 8, vec![4.0; 64]).unwrap();
+        let rhs = DenseMatrixF32::new(8, 8, vec![5.0; 64]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_matrix_add_f32_capacity(16, 16) else {
+            return;
+        };
+
+        accelerator.reset_stats();
+        accelerator
+            .update_prepared_matrix_add_f32(&prepared, &lhs, &rhs)
+            .expect("capacity-prepared matrix add accepts smaller compatible input");
+        let mut out = vec![0.0; lhs.values().len()];
+        accelerator
+            .run_prepared_matrix_add_f32_shape_into(&prepared, 8, 8, &mut out)
+            .expect("capacity-prepared matrix add dispatches smaller output");
+
+        assert_eq!(out, vec![9.0; 64]);
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(lhs.values())
+        );
     }
 }

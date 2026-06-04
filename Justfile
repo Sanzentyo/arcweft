@@ -155,6 +155,9 @@ bench-math-wgpu:
 bench-math-matmul-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
 
+bench-math-matmul-reuse-capacity:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-capacity
+
 bench-math-matrix-add:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matrix-add --size 4096 --iterations 5 --warmup 1
 
@@ -167,11 +170,17 @@ bench-math-matrix-add-reuse:
 bench-math-matrix-add-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs
 
+bench-math-matrix-add-reuse-capacity:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 64 --iterations 5 --warmup 1 --reuse-capacity
+
 bench-math-tensor-add-reuse:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 5 --warmup 1 --reuse
 
 bench-math-tensor-add-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs
+
+bench-math-tensor-add-reuse-capacity:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 64 --iterations 5 --warmup 1 --reuse-capacity
 
 browser-webgpu-bench-check:
     @cargo check -p arcweft-browser-bench --target wasm32-unknown-unknown --all-features

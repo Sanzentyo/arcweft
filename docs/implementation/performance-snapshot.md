@@ -668,6 +668,7 @@ Representative release results on the local machine:
 | 128x128 matmul_f32 | wgpu | measured | 217800 | upload/download dominates |
 | 128x128 matmul_f32 | wgpu prepared | measured | 135800 | 4 buffer creations, 16 buffer reuse hits, 3 staging reuse hits |
 | 128x128 matmul_f32 | wgpu prepared update | measured | 283000 | `--reuse-update-inputs`, one initial buffer allocation, four upload+dispatch passes, `gpu_buffer_reuse_hits = 28` |
+| 128x128 matmul_f32 | wgpu prepared capacity | measured | 204500 | `--reuse-capacity`, capacity 256, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
 | 128x128 matmul_f32 | auto | measured | 43700 | selected ndarray |
 | 256x256 matmul_f32 | ndarray | measured | 404400 | CPU backend |
 | 256x256 matmul_f32 | wgpu | measured | 444300 | still not consistently faster |
@@ -687,6 +688,8 @@ Representative release results on the local machine:
 | 2048x2048 matrix_add_f32 | wgpu prepared | measured | 21763000 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
 | 2048x2048 tensor_add_f32 | wgpu prepared | measured | 23814100 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
 | 64x64 matrix_add_f32 | wgpu prepared update | measured | 1345000 | `--reuse-update-inputs`, one initial buffer allocation, three upload+dispatch passes, `gpu_buffer_reuse_hits = 21` |
+| 64x64 matrix_add_f32 | wgpu prepared capacity | measured | 157300 | `--reuse-capacity`, capacity 128, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
+| 64x64 tensor_add_f32 | wgpu prepared capacity | measured | 448200 | `--reuse-capacity`, capacity 8192 values, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
 
 These numbers show the current backend split: glam is the intended path for
 fixed 4x4 matrices, ndarray/scalar win smaller one-shot CPU workloads, and wgpu
@@ -696,9 +699,14 @@ CPU backend and only considers wgpu for matmul above the configured work
 threshold. Repeated matrix multiplication and explicit-wgpu elementwise
 matrix/tensor kernels can now use prepared GPU buffers. Exact repeated inputs
 keep the fixed input buffers resident and download only the result for each
-dispatch. Same-shape changed inputs reuse the same storage buffers and bind
-group, write the new `f32` input values with `queue.write_buffer`, and then
-dispatch without creating new GPU buffers. Auto matmul uses the same
+dispatch. Changed inputs reuse the same storage buffers and bind group, write
+the new `f32` input values with `queue.write_buffer`, and then dispatch without
+creating new GPU buffers. Native prepared APIs also support capacity-prepared
+matrix/tensor buffers, so smaller compatible shapes can run inside one prepared
+allocation. The standalone `math_bench` example exposes this with
+`--reuse-capacity`, and the Justfile provides `bench-math-*-reuse-capacity`
+recipes so the capacity path can be timed without recording host paths. Auto
+matmul uses the same
 prepared-buffer path when the configured work threshold selects wgpu; Auto
 elementwise stays on the CPU backend because the current one-shot GPU path is
 copy dominated in local measurements. The prepared cache uses shape for cache
