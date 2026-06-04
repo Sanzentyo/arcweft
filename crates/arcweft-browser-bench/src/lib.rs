@@ -88,6 +88,7 @@ pub struct BrowserMathBenchReport {
     pub schema_version: &'static str,
     pub run: BrowserMathBenchRun,
     pub cases: Vec<BrowserMathBenchCase>,
+    pub recommendations: Vec<BrowserMathBenchRecommendation>,
     pub skips: Vec<BrowserMathBenchSkip>,
 }
 
@@ -145,7 +146,7 @@ pub struct BrowserMathBenchCase {
     pub checksum: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserMathBenchShape {
     Len {
@@ -158,7 +159,7 @@ pub enum BrowserMathBenchShape {
     },
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserMathBenchCapacity {
     Len {
@@ -169,6 +170,28 @@ pub enum BrowserMathBenchCapacity {
         shared: usize,
         cols: usize,
     },
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BrowserMathBenchRecommendation {
+    pub op: &'static str,
+    pub shape: BrowserMathBenchShape,
+    pub selected_mode: Option<BrowserBenchMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_capacity: Option<BrowserMathBenchCapacity>,
+    pub selected_median_ms: Option<f64>,
+    pub cpu_median_ms: Option<f64>,
+    pub speedup: Option<f64>,
+    pub reason: BrowserMathBenchRecommendationReason,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserMathBenchRecommendationReason {
+    WebGpuFaster,
+    CpuFasterOrEqual,
+    MissingCpuBaseline,
+    NoMeasuredWebGpuCase,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -184,13 +207,121 @@ pub struct BrowserMathBenchSkip {
     pub reason: String,
 }
 
+pub fn browser_math_bench_recommendations(
+    cases: &[BrowserMathBenchCase],
+) -> Vec<BrowserMathBenchRecommendation> {
+    let mut groups = Vec::<(&'static str, BrowserMathBenchShape)>::new();
+    for case in cases {
+        if !groups
+            .iter()
+            .any(|(op, shape)| *op == case.op && *shape == case.shape)
+        {
+            groups.push((case.op, case.shape));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(op, shape)| recommend_browser_math_case(op, shape, cases))
+        .collect()
+}
+
+fn recommend_browser_math_case(
+    op: &'static str,
+    shape: BrowserMathBenchShape,
+    cases: &[BrowserMathBenchCase],
+) -> BrowserMathBenchRecommendation {
+    let matching = cases
+        .iter()
+        .filter(|case| case.op == op && case.shape == shape)
+        .collect::<Vec<_>>();
+    let cpu = matching
+        .iter()
+        .copied()
+        .find(|case| case.mode == BrowserBenchMode::CpuWasm && measured_case(case));
+    let fastest_gpu = matching
+        .iter()
+        .copied()
+        .filter(|case| case.mode != BrowserBenchMode::CpuWasm && measured_case(case))
+        .min_by(|lhs, rhs| {
+            lhs.median_ms
+                .unwrap_or(f64::INFINITY)
+                .total_cmp(&rhs.median_ms.unwrap_or(f64::INFINITY))
+        });
+
+    match (cpu, fastest_gpu) {
+        (Some(cpu), Some(gpu)) => {
+            let cpu_ms = cpu.median_ms.expect("measured cpu case has median");
+            let gpu_ms = gpu.median_ms.expect("measured gpu case has median");
+            if gpu_ms > 0.0 && gpu_ms < cpu_ms {
+                BrowserMathBenchRecommendation {
+                    op,
+                    shape,
+                    selected_mode: Some(gpu.mode),
+                    selected_capacity: gpu.capacity,
+                    selected_median_ms: Some(gpu_ms),
+                    cpu_median_ms: Some(cpu_ms),
+                    speedup: Some(cpu_ms / gpu_ms),
+                    reason: BrowserMathBenchRecommendationReason::WebGpuFaster,
+                }
+            } else {
+                BrowserMathBenchRecommendation {
+                    op,
+                    shape,
+                    selected_mode: Some(BrowserBenchMode::CpuWasm),
+                    selected_capacity: None,
+                    selected_median_ms: Some(cpu_ms),
+                    cpu_median_ms: Some(cpu_ms),
+                    speedup: Some(1.0),
+                    reason: BrowserMathBenchRecommendationReason::CpuFasterOrEqual,
+                }
+            }
+        }
+        (Some(cpu), None) => BrowserMathBenchRecommendation {
+            op,
+            shape,
+            selected_mode: Some(BrowserBenchMode::CpuWasm),
+            selected_capacity: None,
+            selected_median_ms: cpu.median_ms,
+            cpu_median_ms: cpu.median_ms,
+            speedup: Some(1.0),
+            reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
+        },
+        (None, Some(gpu)) => BrowserMathBenchRecommendation {
+            op,
+            shape,
+            selected_mode: Some(gpu.mode),
+            selected_capacity: gpu.capacity,
+            selected_median_ms: gpu.median_ms,
+            cpu_median_ms: None,
+            speedup: None,
+            reason: BrowserMathBenchRecommendationReason::MissingCpuBaseline,
+        },
+        (None, None) => BrowserMathBenchRecommendation {
+            op,
+            shape,
+            selected_mode: None,
+            selected_capacity: None,
+            selected_median_ms: None,
+            cpu_median_ms: None,
+            speedup: None,
+            reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
+        },
+    }
+}
+
+fn measured_case(case: &BrowserMathBenchCase) -> bool {
+    case.fallback_reason.is_none()
+        && case.correctness.passed
+        && case.median_ms.is_some_and(f64::is_finite)
+}
+
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::{
         BrowserBenchMode, BrowserMathBenchCapacity, BrowserMathBenchCase, BrowserMathBenchConfig,
         BrowserMathBenchCorrectness, BrowserMathBenchLimits, BrowserMathBenchReport,
         BrowserMathBenchRun, BrowserMathBenchShape, BrowserMathBenchSkip, BrowserMathBenchWebGpu,
-        MatmulShape,
+        MatmulShape, browser_math_bench_recommendations,
     };
     use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
     use arcweft_runtime_accelerator::math::browser_webgpu::{
@@ -251,6 +382,7 @@ mod wasm {
                 cases.push(run_matmul_case(&config, context.as_mut(), *mode, *shape).await);
             }
         }
+        let recommendations = browser_math_bench_recommendations(&cases);
         BrowserMathBenchReport {
             schema_version: "arcweft.browser_webgpu_bench.v1",
             run: BrowserMathBenchRun {
@@ -263,6 +395,7 @@ mod wasm {
                 },
             },
             cases,
+            recommendations,
             skips,
         }
     }
@@ -1077,6 +1210,16 @@ mod tests {
 
     #[test]
     fn default_report_schema_serializes_without_paths() {
+        let cases = vec![bench_case(
+            "tensor_add_f32_len256_capacity",
+            "tensor_add_f32",
+            BrowserMathBenchShape::Len { len: 256 },
+            Some(BrowserMathBenchCapacity::Len { len: 512 }),
+            BrowserBenchMode::WebGpuPreparedCapacityResident,
+            Some(0.0),
+            true,
+        )];
+        let recommendations = browser_math_bench_recommendations(&cases);
         let report = BrowserMathBenchReport {
             schema_version: "arcweft.browser_webgpu_bench.v1",
             run: BrowserMathBenchRun {
@@ -1088,39 +1231,8 @@ mod tests {
                     limits: None,
                 },
             },
-            cases: vec![BrowserMathBenchCase {
-                case_id: "tensor_add_f32_len256_capacity".to_owned(),
-                op: "tensor_add_f32",
-                shape: BrowserMathBenchShape::Len { len: 256 },
-                capacity: Some(BrowserMathBenchCapacity::Len { len: 512 }),
-                mode: BrowserBenchMode::WebGpuPreparedCapacityResident,
-                warmup_iters: 1,
-                sample_iters: 1,
-                median_ms: Some(0.0),
-                mad_ms: Some(0.0),
-                min_ms: Some(0.0),
-                p95_ms: Some(0.0),
-                submit_median_ms: None,
-                readback_median_ms: None,
-                bytes_uploaded: 0,
-                bytes_readback: 0,
-                dispatches: 0,
-                async_submissions: 0,
-                async_readbacks: 0,
-                max_in_flight: 0,
-                buffer_alloc_count: 0,
-                buffer_reuse_count: 0,
-                workgroups: 1,
-                work_items: 256,
-                estimated_flops: 256,
-                correctness: BrowserMathBenchCorrectness {
-                    passed: true,
-                    max_abs: 0.0,
-                    max_rel: 0.0,
-                },
-                fallback_reason: None,
-                checksum: 0.0,
-            }],
+            cases,
+            recommendations,
             skips: vec![BrowserMathBenchSkip {
                 scope: "webgpu",
                 reason: "navigator_gpu_missing".to_owned(),
@@ -1132,7 +1244,167 @@ mod tests {
         assert!(json.contains("arcweft.browser_webgpu_bench.v1"));
         assert!(json.contains("\"capacity\""));
         assert!(json.contains("\"len\":512"));
+        assert!(json.contains("\"recommendations\""));
         assert!(!json.contains("\\\\"));
         assert!(!json.contains("D:"));
+    }
+
+    #[test]
+    fn recommendations_select_fastest_correct_gpu_case_with_capacity() {
+        let shape = BrowserMathBenchShape::Matmul {
+            rows: 256,
+            shared: 256,
+            cols: 256,
+        };
+        let cases = vec![
+            bench_case(
+                "matmul_cpu",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::CpuWasm,
+                Some(8.0),
+                true,
+            ),
+            bench_case(
+                "matmul_exact",
+                "matmul_f32",
+                shape,
+                Some(BrowserMathBenchCapacity::Matmul {
+                    rows: 256,
+                    shared: 256,
+                    cols: 256,
+                }),
+                BrowserBenchMode::WebGpuPreparedResidentPipelined,
+                Some(1.5),
+                true,
+            ),
+            bench_case(
+                "matmul_capacity",
+                "matmul_f32",
+                shape,
+                Some(BrowserMathBenchCapacity::Matmul {
+                    rows: 512,
+                    shared: 512,
+                    cols: 512,
+                }),
+                BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined,
+                Some(1.0),
+                true,
+            ),
+            bench_case(
+                "matmul_wrong",
+                "matmul_f32",
+                shape,
+                None,
+                BrowserBenchMode::WebGpuOneShot,
+                Some(0.5),
+                false,
+            ),
+        ];
+
+        let recommendations = browser_math_bench_recommendations(&cases);
+
+        assert_eq!(recommendations.len(), 1);
+        let recommendation = &recommendations[0];
+        assert_eq!(
+            recommendation.reason,
+            BrowserMathBenchRecommendationReason::WebGpuFaster
+        );
+        assert_eq!(
+            recommendation.selected_mode,
+            Some(BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined)
+        );
+        assert_eq!(
+            recommendation.selected_capacity,
+            Some(BrowserMathBenchCapacity::Matmul {
+                rows: 512,
+                shared: 512,
+                cols: 512,
+            })
+        );
+        assert_eq!(recommendation.speedup, Some(8.0));
+    }
+
+    #[test]
+    fn recommendations_keep_cpu_when_gpu_is_not_faster() {
+        let shape = BrowserMathBenchShape::Len { len: 65_536 };
+        let cases = vec![
+            bench_case(
+                "add_cpu",
+                "tensor_add_f32",
+                shape,
+                None,
+                BrowserBenchMode::CpuWasm,
+                Some(0.2),
+                true,
+            ),
+            bench_case(
+                "add_gpu",
+                "tensor_add_f32",
+                shape,
+                Some(BrowserMathBenchCapacity::Len { len: 131_072 }),
+                BrowserBenchMode::WebGpuPreparedCapacityResidentPipelined,
+                Some(0.8),
+                true,
+            ),
+        ];
+
+        let recommendations = browser_math_bench_recommendations(&cases);
+
+        assert_eq!(recommendations.len(), 1);
+        assert_eq!(
+            recommendations[0].reason,
+            BrowserMathBenchRecommendationReason::CpuFasterOrEqual
+        );
+        assert_eq!(
+            recommendations[0].selected_mode,
+            Some(BrowserBenchMode::CpuWasm)
+        );
+        assert_eq!(recommendations[0].speedup, Some(1.0));
+    }
+
+    fn bench_case(
+        case_id: &str,
+        op: &'static str,
+        shape: BrowserMathBenchShape,
+        capacity: Option<BrowserMathBenchCapacity>,
+        mode: BrowserBenchMode,
+        median_ms: Option<f64>,
+        passed: bool,
+    ) -> BrowserMathBenchCase {
+        BrowserMathBenchCase {
+            case_id: case_id.to_owned(),
+            op,
+            shape,
+            capacity,
+            mode,
+            warmup_iters: 1,
+            sample_iters: 1,
+            median_ms,
+            mad_ms: median_ms,
+            min_ms: median_ms,
+            p95_ms: median_ms,
+            submit_median_ms: None,
+            readback_median_ms: None,
+            bytes_uploaded: 0,
+            bytes_readback: 0,
+            dispatches: usize::from(median_ms.is_some()),
+            async_submissions: 0,
+            async_readbacks: 0,
+            max_in_flight: 0,
+            buffer_alloc_count: 0,
+            buffer_reuse_count: 0,
+            workgroups: 1,
+            work_items: 256,
+            estimated_flops: 256,
+            correctness: BrowserMathBenchCorrectness {
+                passed,
+                max_abs: 0.0,
+                max_rel: 0.0,
+            },
+            fallback_reason: None,
+            checksum: 0.0,
+        }
     }
 }

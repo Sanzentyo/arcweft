@@ -217,7 +217,16 @@ function summarize(report) {
     measured_cases: report.cases.filter((entry) => entry.median_ms !== null).length,
     skipped_cases: report.cases.filter((entry) => entry.fallback_reason !== null).length,
     failed_cases: failedCases.length,
+    recommendations: report.recommendations?.length ?? 0,
     best_speedups: speedups.slice(0, 12),
+    selected_modes: (report.recommendations ?? []).slice(0, 8).map((entry) => ({
+      op: entry.op,
+      shape: entry.shape,
+      selected_mode: entry.selected_mode,
+      speedup: entry.speedup,
+      reason: entry.reason,
+      capacity: entry.selected_capacity,
+    })),
     representative: report.cases
       .filter((entry) => entry.median_ms !== null)
       .slice(0, 8)
