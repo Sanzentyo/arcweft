@@ -138,8 +138,11 @@ pub struct BrowserMathBenchCase {
     pub mad_ms: Option<f64>,
     pub min_ms: Option<f64>,
     pub p95_ms: Option<f64>,
+    pub effective_gflops: Option<f64>,
     pub submit_median_ms: Option<f64>,
     pub readback_median_ms: Option<f64>,
+    pub submit_median_share: Option<f64>,
+    pub readback_median_share: Option<f64>,
     pub bytes_uploaded: usize,
     pub bytes_readback: usize,
     pub dispatches: usize,
@@ -1320,8 +1323,11 @@ mod wasm {
             mad_ms: None,
             min_ms: None,
             p95_ms: None,
+            effective_gflops: None,
             submit_median_ms: None,
             readback_median_ms: None,
+            submit_median_share: None,
+            readback_median_share: None,
             bytes_uploaded: 0,
             bytes_readback: 0,
             dispatches: 0,
@@ -1398,6 +1404,8 @@ mod wasm {
     ) {
         case.submit_median_ms = median_sample(submit_samples);
         case.readback_median_ms = median_sample(readback_samples);
+        case.submit_median_share = median_share(case.submit_median_ms, case.median_ms);
+        case.readback_median_share = median_share(case.readback_median_ms, case.median_ms);
     }
 
     async fn run_auto_pipelined_case(
@@ -1732,6 +1740,9 @@ mod wasm {
         case.mad_ms = Some(deviations[deviations.len() / 2]);
         case.min_ms = Some(min);
         case.p95_ms = Some(p95);
+        case.effective_gflops = effective_gflops(case.estimated_flops, median);
+        case.submit_median_share = median_share(case.submit_median_ms, case.median_ms);
+        case.readback_median_share = median_share(case.readback_median_ms, case.median_ms);
     }
 
     fn median_sample(mut samples: Vec<f64>) -> Option<f64> {
@@ -1740,6 +1751,22 @@ mod wasm {
         }
         samples.sort_by(f64::total_cmp);
         Some(samples[samples.len() / 2])
+    }
+
+    fn effective_gflops(estimated_flops: u64, median_ms: f64) -> Option<f64> {
+        if estimated_flops == 0 || median_ms <= 0.0 {
+            return None;
+        }
+        Some(estimated_flops as f64 / (median_ms * 1_000_000.0))
+    }
+
+    fn median_share(part: Option<f64>, whole: Option<f64>) -> Option<f64> {
+        let part = part?;
+        let whole = whole?;
+        if whole <= 0.0 {
+            return None;
+        }
+        Some(part / whole)
     }
 
     fn estimated_workgroups(op: &str, shape: &BrowserMathBenchShape) -> usize {
@@ -1865,7 +1892,7 @@ mod tests {
             BrowserMathBenchShape::Len { len: 256 },
             Some(BrowserMathBenchCapacity::Len { len: 512 }),
             BrowserBenchMode::WebGpuPreparedCapacityResident,
-            Some(0.0),
+            Some(0.25),
             true,
         )];
         let recommendations = browser_math_bench_recommendations(&cases, None);
@@ -1893,6 +1920,9 @@ mod tests {
         assert!(json.contains("arcweft.browser_webgpu_bench.v1"));
         assert!(json.contains("\"capacity\""));
         assert!(json.contains("\"len\":512"));
+        assert!(json.contains("\"effective_gflops\""));
+        assert!(json.contains("\"submit_median_share\""));
+        assert!(json.contains("\"readback_median_share\""));
         assert!(json.contains("\"recommendations\""));
         assert!(!json.contains("\\\\"));
         assert!(!json.contains("D:"));
@@ -2119,8 +2149,13 @@ mod tests {
             mad_ms: median_ms,
             min_ms: median_ms,
             p95_ms: median_ms,
+            effective_gflops: median_ms
+                .filter(|median| *median > 0.0)
+                .map(|median| 256.0 / (median * 1_000_000.0)),
             submit_median_ms: None,
             readback_median_ms: None,
+            submit_median_share: None,
+            readback_median_share: None,
             bytes_uploaded: 0,
             bytes_readback: 0,
             dispatches: usize::from(median_ms.is_some()),

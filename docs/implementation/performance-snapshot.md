@@ -585,6 +585,10 @@ record the policy-selected capacity when WebGPU is selected. Prepared cases
 include an optional typed `capacity` field separate from the actual `shape`, so
 the report can distinguish exact resident storage from overprovisioned capacity
 storage without recording host paths. The same report also includes typed
+derived metrics: `effective_gflops`, `submit_median_share`, and
+`readback_median_share`. These expose whether an observed browser result is
+limited by compute, command submission, or readback rather than only reporting a
+single median runtime. The same report also includes typed
 `recommendations` per operation/shape. A recommendation records the selected
 mode, selected capacity, CPU median, selected median, speedup, and reason
 (`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
@@ -655,17 +659,21 @@ Auto submission:
 
 | Case | Mode | CPU median ms | Mode median ms | Speedup | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 7.17 | 0.52875 | 13.56x | current best measured manual backend, submit median 0.02 ms, readback median 0.31 ms |
-| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 7.17 | 0.99125 | 7.23x | policy-selected WebGPU, submit median 0.13 ms, readback median 0.38 ms |
-| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 7.17 | 1.2525 | 5.72x | manual capacity backend, submit median 0.065 ms, readback median 0.35 ms |
-| `matmul_f32_m256_k256_n256` | auto resident pipelined | 7.17 | 1.43 | 5.01x | WebGPU prepared resident handle, submit median 0.055 ms, readback median 0.49 ms |
-| `matmul_f32_m256_k256_n256` | direct auto dispatch | 7.17 | 3.37 | 2.13x | value-returning path still waits for readback per call |
-| `tensor_add_f32_len65536` | auto resident pipelined | 0.065 | 0.045 | 1.44x | policy selected CPU; measured via real per-iteration auto dispatch, not response reuse |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 7.80 | 0.3475 | 22.45x | 96.56 effective GFLOP/s, submit share 0.10, readback share 0.78 |
+| `matmul_f32_m256_k256_n256` | prepared capacity resident pipelined | 7.80 | 0.485 | 16.08x | 69.18 effective GFLOP/s, submit share 0.05, readback share 0.62 |
+| `matmul_f32_m256_k256_n256` | auto pipelined direct readback | 7.80 | 1.0675 | 7.31x | policy-selected WebGPU, 31.43 effective GFLOP/s, submit share 0.18, readback share 0.41 |
+| `matmul_f32_m256_k256_n256` | auto resident pipelined | 7.80 | 1.4275 | 5.46x | WebGPU prepared resident handle, 23.51 effective GFLOP/s, submit share 0.03, readback share 0.28 |
+| `matmul_f32_m256_k256_n256` | direct auto dispatch | 7.80 | 4.635 | 1.68x | value-returning path still waits for readback per call |
+| `tensor_add_f32_len65536` | CPU Wasm | 0.065 | 0.065 | 1.00x | elementwise add remains CPU-preferred when readback is required |
 
 The `auto_pipelined` and `auto_resident_pipelined` benchmark modes are policy
 observations, not backend recommendation candidates. Manual prepared modes
 remain the source for backend recommendations, while auto modes show the
-overhead and scheduling behavior that natural browser-side calls see.
+overhead and scheduling behavior that natural browser-side calls see. The latest
+metrics show that `auto_resident_pipelined` is not submit-bound or
+readback-bound by itself; its m256 matmul gap from manual prepared resident
+pipelining points at benchmark harness ordering, browser warm state, or adapter
+wrapper overhead as the next isolation target.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph

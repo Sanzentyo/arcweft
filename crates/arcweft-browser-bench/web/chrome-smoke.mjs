@@ -234,8 +234,11 @@ function summarize(report) {
         case_id: entry.case_id,
         mode: entry.mode,
         median_ms: entry.median_ms,
+        effective_gflops: entry.effective_gflops,
         submit_ms: entry.submit_median_ms,
         readback_ms: entry.readback_median_ms,
+        submit_share: entry.submit_median_share,
+        readback_share: entry.readback_median_share,
         correct: entry.correctness.passed,
       })),
   };
@@ -270,8 +273,11 @@ function summarizeSpeedups(report) {
         cpu_ms: cpu.median_ms,
         gpu_ms: entry.median_ms,
         speedup: cpu.median_ms / entry.median_ms,
+        effective_gflops: entry.effective_gflops,
         submit_ms: entry.submit_median_ms,
         readback_ms: entry.readback_median_ms,
+        submit_share: entry.submit_median_share,
+        readback_share: entry.readback_median_share,
         workgroups: entry.workgroups,
         estimated_flops: entry.estimated_flops,
       });
