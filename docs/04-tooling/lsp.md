@@ -115,9 +115,8 @@ When the transport knows the selected runner, it should build an
 `RuntimeHostCapabilities`:
 
 ```rust
-let runtime_host = RuntimeHostCapabilities::standard_native();
 let context = ArcweftLspProfileContextBuilder::new(&adapter)
-    .with_runtime_host(&runtime_host)
+    .with_runner_kind(RuntimeHostRunnerKind::Native)
     .build();
 ```
 
@@ -129,6 +128,12 @@ cannot be completed by the selected runner. The runtime-host set is a tooling
 fact; it does not grant effects, add fallback bindings, or make unsupported
 host calls executable.
 
+For profile-level checks, transports can compare adapter manifests against the
+selected runner through `RuntimeHostCapabilities::check_adapter_manifest` or the
+LSP wrapper `profile_manifest_conformance_diagnostics`. The underlying report is
+typed in `arcweft-runtime-host`, so LSP, CLI, and CI checks can share the same
+host-call conformance rule.
+
 Native and browser runners should use different presets. Native CLI/player
 embeddings use `RuntimeHostCapabilities::standard_native()`, which includes
 native virtual-file calls, host system information, and internal scheduler
@@ -138,8 +143,10 @@ filesystem calls. If an embedding registers additional concrete host adapters,
 it should extend the preset with the implemented adapter manifest:
 
 ```rust
-let runtime_host = RuntimeHostCapabilities::browser_web()
-    .with_adapter_manifest(&custom_web_adapter);
+let context = ArcweftLspProfileContextBuilder::new(&adapter)
+    .with_runner_kind(RuntimeHostRunnerKind::BrowserWeb)
+    .with_implemented_adapter_manifest(&custom_web_adapter)
+    .build();
 ```
 
 WebGPU and math acceleration are not treated as host-task capabilities by this

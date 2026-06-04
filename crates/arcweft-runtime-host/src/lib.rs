@@ -13,7 +13,10 @@ pub use bundle_runner::{
     BundleRunnerReport, BundleRunnerStepMode, BundleRunnerStepSummary,
     run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
-pub use capabilities::RuntimeHostCapabilities;
+pub use capabilities::{
+    RuntimeHostCapabilities, RuntimeHostConformanceDiagnostic,
+    RuntimeHostConformanceDiagnosticKind, RuntimeHostConformanceReport, RuntimeHostRunnerKind,
+};
 pub use native_system::{HostSystemInfo, host_system_info, system_info_value};
 pub use native_task::{
     INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,

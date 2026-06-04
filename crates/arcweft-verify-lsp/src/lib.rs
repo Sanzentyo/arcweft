@@ -9,7 +9,10 @@ use arcweft_adapter_context::manifest::{
 };
 use arcweft_lang_sema::env::FunctionSignature;
 use arcweft_lang_sema::types::TypeKind;
-use arcweft_runtime_host::RuntimeHostCapabilities;
+use arcweft_runtime_host::{
+    RuntimeHostCapabilities, RuntimeHostConformanceDiagnosticKind, RuntimeHostConformanceReport,
+    RuntimeHostRunnerKind,
+};
 use arcweft_verify::{
     Severity as VerifySeverity, ToolActionKind, VerificationDiagnostic, VerificationReport,
 };
@@ -23,13 +26,13 @@ use lsp_types::{
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
     adapter: &'a AdapterManifest,
-    runtime_host: Option<&'a RuntimeHostCapabilities>,
+    runtime_host: Option<RuntimeHostCapabilities>,
 }
 
 /// Builder used by transports after resolving a profile and runner.
 pub struct ArcweftLspProfileContextBuilder<'a> {
     adapter: &'a AdapterManifest,
-    runtime_host: Option<&'a RuntimeHostCapabilities>,
+    runtime_host: Option<RuntimeHostCapabilities>,
 }
 
 /// Adapter-supplied fact required by a document, profile, or runtime plan.
@@ -57,14 +60,14 @@ impl<'a> ArcweftLspContext<'a> {
 
     /// Creates a context that also includes the selected runner's capabilities.
     #[must_use]
-    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCapabilities) -> Self {
+    pub fn with_runtime_host(mut self, runtime_host: RuntimeHostCapabilities) -> Self {
         self.runtime_host = Some(runtime_host);
         self
     }
 
     /// Runtime-host call set supplied by the selected runner, when known.
-    pub const fn runtime_host(&self) -> Option<&'a RuntimeHostCapabilities> {
-        self.runtime_host
+    pub fn runtime_host(&self) -> Option<&RuntimeHostCapabilities> {
+        self.runtime_host.as_ref()
     }
 }
 
@@ -79,13 +82,47 @@ impl<'a> ArcweftLspProfileContextBuilder<'a> {
 
     /// Adds the selected runner's capabilities.
     #[must_use]
-    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCapabilities) -> Self {
+    pub fn with_runtime_host(mut self, runtime_host: RuntimeHostCapabilities) -> Self {
         self.runtime_host = Some(runtime_host);
         self
     }
 
+    /// Selects one standard runner capability preset.
+    #[must_use]
+    pub fn with_runner_kind(mut self, runner: RuntimeHostRunnerKind) -> Self {
+        self.runtime_host = Some(runner.capabilities());
+        self
+    }
+
+    /// Adds one concrete adapter manifest implemented by the selected runner.
+    #[must_use]
+    pub fn with_implemented_adapter_manifest(mut self, manifest: &AdapterManifest) -> Self {
+        let capabilities = self
+            .runtime_host
+            .take()
+            .unwrap_or_default()
+            .with_adapter_manifest(manifest);
+        self.runtime_host = Some(capabilities);
+        self
+    }
+
+    /// Adds concrete adapter manifests implemented by the selected runner.
+    #[must_use]
+    pub fn with_implemented_adapter_manifests<'b>(
+        mut self,
+        manifests: impl IntoIterator<Item = &'b AdapterManifest>,
+    ) -> Self {
+        let capabilities = self
+            .runtime_host
+            .take()
+            .unwrap_or_default()
+            .with_adapter_manifests(manifests);
+        self.runtime_host = Some(capabilities);
+        self
+    }
+
     /// Builds the Sans I/O LSP context.
-    pub const fn build(self) -> ArcweftLspContext<'a> {
+    pub fn build(self) -> ArcweftLspContext<'a> {
         ArcweftLspContext {
             adapter: self.adapter,
             runtime_host: self.runtime_host,
@@ -140,6 +177,21 @@ pub fn profile_requirement_diagnostics(
     diagnostics
 }
 
+/// Diagnoses adapter manifests whose declared host calls are not implemented by
+/// the selected runtime host.
+pub fn profile_manifest_conformance_diagnostics(
+    context: &ArcweftLspContext<'_>,
+    manifests: &[AdapterManifest],
+) -> Vec<Diagnostic> {
+    context
+        .runtime_host()
+        .map_or_else(Vec::new, |runtime_host| {
+            runtime_host_conformance_diagnostics(
+                &runtime_host.check_adapter_manifests(manifests.iter()),
+            )
+        })
+}
+
 /// Diagnoses host calls required by source or profile metadata but missing from
 /// the selected runtime host implementation.
 pub fn runtime_host_requirement_diagnostics(
@@ -149,6 +201,26 @@ pub fn runtime_host_requirement_diagnostics(
     requirements
         .iter()
         .filter_map(|requirement| runtime_host_requirement_diagnostic(runtime_host, requirement))
+        .collect()
+}
+
+/// Converts runtime-host conformance reports into LSP diagnostics.
+pub fn runtime_host_conformance_diagnostics(
+    report: &RuntimeHostConformanceReport,
+) -> Vec<Diagnostic> {
+    report
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| {
+            let message = match diagnostic.kind() {
+                RuntimeHostConformanceDiagnosticKind::MissingHostCallImplementation => format!(
+                    "adapter manifest `{}` declares host call `{}` but the selected runtime host does not implement it",
+                    diagnostic.adapter_id(),
+                    diagnostic.host_call().as_str()
+                ),
+            };
+            runtime_host_diagnostic("runtime_host.host_call.missing", message)
+        })
         .collect()
 }
 
@@ -907,9 +979,8 @@ mod tests {
     #[test]
     fn profile_context_builder_accepts_runtime_host_capabilities() {
         let adapter = AdapterManifest::new("sans-io", "Sans I/O");
-        let runtime_host = RuntimeHostCapabilities::browser_web();
         let context = ArcweftLspProfileContextBuilder::new(&adapter)
-            .with_runtime_host(&runtime_host)
+            .with_runner_kind(RuntimeHostRunnerKind::BrowserWeb)
             .build();
 
         assert_eq!(context.adapter().id().as_str(), "sans-io");
@@ -924,9 +995,8 @@ mod tests {
                 "custom.read",
                 [AdapterEffectCapability::new("custom.read")],
             ));
-        let runtime_host = RuntimeHostCapabilities::standard_native();
         let context = ArcweftLspProfileContextBuilder::new(&adapter)
-            .with_runtime_host(&runtime_host)
+            .with_runner_kind(RuntimeHostRunnerKind::Native)
             .build();
 
         let diagnostics = profile_requirement_diagnostics(
@@ -959,5 +1029,46 @@ mod tests {
         assert!(
             matches!(host_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("runtime host call system.core_count"))
         );
+    }
+
+    #[test]
+    fn profile_context_can_extend_runner_with_implemented_manifest() {
+        let adapter = AdapterManifest::new("custom", "Custom")
+            .with_host_call(AdapterHostCall::new("custom.read", []));
+        let context = ArcweftLspProfileContextBuilder::new(&adapter)
+            .with_runner_kind(RuntimeHostRunnerKind::BrowserWeb)
+            .with_implemented_adapter_manifest(&adapter)
+            .build();
+
+        let diagnostics =
+            profile_manifest_conformance_diagnostics(&context, std::slice::from_ref(&adapter));
+
+        assert!(diagnostics.is_empty());
+        assert!(
+            profile_completions(&context)
+                .iter()
+                .any(|item| item.label == "custom.read")
+        );
+    }
+
+    #[test]
+    fn profile_manifest_conformance_uses_runtime_host_report() {
+        let adapter = AdapterManifest::new("custom", "Custom")
+            .with_host_call(AdapterHostCall::new("custom.read", []));
+        let context = ArcweftLspProfileContextBuilder::new(&adapter)
+            .with_runner_kind(RuntimeHostRunnerKind::BrowserWeb)
+            .build();
+
+        let diagnostics =
+            profile_manifest_conformance_diagnostics(&context, std::slice::from_ref(&adapter));
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            Some(NumberOrString::String(
+                "runtime_host.host_call.missing".to_owned()
+            ))
+        );
+        assert!(diagnostics[0].message.contains("custom.read"));
     }
 }

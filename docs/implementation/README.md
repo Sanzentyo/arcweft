@@ -59,9 +59,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   builder and combined profile completions, hover, and diagnostics for cases
   where a profile's adapter manifest declares a host call that the selected
   runner does not implement. `arcweft-runtime-host` owns native and browser-web
-  capability presets so transports can distinguish native virtual-file support
-  from browser-only host capabilities. `arcweft-cli` remains both a library and
-  a binary for argv-compatible execution through `run_with_native_adapters`.
+  capability presets plus a typed conformance report so transports can
+  distinguish native virtual-file support from browser-only host capabilities
+  and share the same manifest-vs-runner host-call check. `arcweft-cli` remains
+  both a library and a binary for argv-compatible execution through
+  `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
   JSON codec. `arcw bundle` and `arcw build bundle` package source text,
   executable structured bytecode, runtime summary counters, required host-call
