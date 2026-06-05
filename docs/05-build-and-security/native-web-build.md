@@ -92,6 +92,14 @@ The adapter exposes borrowed `BrowserWebGpuMathRequest` values and typed
 stringly typed operation switches or pre-dispatch dense-buffer copies.
 The browser adapter uses WebGPU-only `wgpu` features (`std`, `webgpu`, `wgsl`)
 and does not inherit native DX12/Vulkan/Metal/GLES backend features.
+Browser players choose math acceleration through an explicit
+`BrowserWebGpuMathAutoPolicy`. The default policy is conservative; embeddings
+may instead construct `cpu_only()` for replay/diagnostics,
+`explicit_webgpu_resident()` for product profiles that deliberately force
+resident WebGPU when limits allow it, or `harness_capacity_matmul(...)` when a
+benchmark is probing overprovisioned capacity. Environment-specific tuning must
+stay in benchmark/profile evidence and must not silently change the default
+policy.
 LSP/tooling runner diagnostics use `RuntimeHostCapabilities` presets from
 `arcweft-runtime-host`: native embeddings use `standard_native()`, while web
 embeddings use `browser_web()` and add only the concrete adapter manifests they

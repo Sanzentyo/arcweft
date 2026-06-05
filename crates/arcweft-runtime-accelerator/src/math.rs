@@ -3790,6 +3790,17 @@ pub mod browser_webgpu_policy {
 
     impl Default for BrowserWebGpuMathAutoPolicy {
         fn default() -> Self {
+            Self::conservative()
+        }
+    }
+
+    impl BrowserWebGpuMathAutoPolicy {
+        /// Conservative browser policy used by default Auto selection.
+        ///
+        /// This keeps elementwise work on CPU Wasm and selects exact prepared
+        /// resident WebGPU only for matmul work large enough to have benchmark
+        /// evidence independent of one local machine.
+        pub const fn conservative() -> Self {
             Self {
                 matmul_exact_min_elements: 128 * 128 * 128,
                 matmul_capacity_min_elements: usize::MAX,
@@ -3797,9 +3808,66 @@ pub mod browser_webgpu_policy {
                 capacity_growth: BrowserWebGpuCapacityGrowth::Double,
             }
         }
-    }
 
-    impl BrowserWebGpuMathAutoPolicy {
+        /// Explicit CPU policy for replay, diagnostics, and product profiles
+        /// that must avoid browser GPU dispatch.
+        pub const fn cpu_only() -> Self {
+            Self {
+                matmul_exact_min_elements: usize::MAX,
+                matmul_capacity_min_elements: usize::MAX,
+                elementwise_gpu_min_elements: usize::MAX,
+                capacity_growth: BrowserWebGpuCapacityGrowth::Exact,
+            }
+        }
+
+        /// Explicit exact-resident WebGPU policy.
+        ///
+        /// This is intended for profile-controlled runs and harnesses. It does
+        /// not bypass shape/limit validation; oversized work still selects CPU
+        /// with a structured storage-limit reason.
+        pub const fn explicit_webgpu_resident() -> Self {
+            Self {
+                matmul_exact_min_elements: 0,
+                matmul_capacity_min_elements: usize::MAX,
+                elementwise_gpu_min_elements: 0,
+                capacity_growth: BrowserWebGpuCapacityGrowth::Exact,
+            }
+        }
+
+        /// Bench harness policy for probing overprovisioned resident matmul.
+        ///
+        /// This is not the default Auto policy. Use it to collect path-free
+        /// evidence before changing a product or runtime profile.
+        pub const fn harness_capacity_matmul(
+            matmul_min_elements: usize,
+            capacity_growth: BrowserWebGpuCapacityGrowth,
+        ) -> Self {
+            Self {
+                matmul_exact_min_elements: usize::MAX,
+                matmul_capacity_min_elements: matmul_min_elements,
+                elementwise_gpu_min_elements: usize::MAX,
+                capacity_growth,
+            }
+        }
+
+        #[must_use]
+        pub const fn with_matmul_exact_min_elements(mut self, elements: usize) -> Self {
+            self.matmul_exact_min_elements = elements;
+            self
+        }
+
+        #[must_use]
+        pub const fn with_elementwise_gpu_min_elements(mut self, elements: usize) -> Self {
+            self.elementwise_gpu_min_elements = elements;
+            self
+        }
+
+        #[must_use]
+        pub const fn with_capacity_growth(mut self, growth: BrowserWebGpuCapacityGrowth) -> Self {
+            self.capacity_growth = growth;
+            self
+        }
+
         pub fn select_matmul_f32(
             self,
             rows: usize,
@@ -7919,10 +7987,10 @@ mod tests {
         assert_eq!(exact_512_capacity.shared, 512);
         assert_eq!(exact_512_capacity.cols, 512);
 
-        let capacity_policy = BrowserWebGpuMathAutoPolicy {
-            matmul_capacity_min_elements: 512 * 512 * 512,
-            ..BrowserWebGpuMathAutoPolicy::default()
-        };
+        let capacity_policy = BrowserWebGpuMathAutoPolicy::harness_capacity_matmul(
+            512 * 512 * 512,
+            browser_webgpu_policy::BrowserWebGpuCapacityGrowth::Double,
+        );
         let grown = capacity_policy.select_matmul_f32(512, 512, 512, limits);
         assert_eq!(
             grown.mode(),
@@ -7956,10 +8024,8 @@ mod tests {
             BrowserWebGpuMathAutoReason::ElementwiseCpuReadbackDominated
         );
 
-        let gpu_policy = BrowserWebGpuMathAutoPolicy {
-            elementwise_gpu_min_elements: 1024,
-            ..BrowserWebGpuMathAutoPolicy::default()
-        };
+        let gpu_policy =
+            BrowserWebGpuMathAutoPolicy::conservative().with_elementwise_gpu_min_elements(1024);
         let gpu_selection = gpu_policy.select_elementwise_f32(1024, limits);
         assert_eq!(
             gpu_selection.mode(),
@@ -7969,6 +8035,70 @@ mod tests {
             gpu_selection.reason(),
             BrowserWebGpuMathAutoReason::ElementwisePreparedResidentPipelined
         );
+    }
+
+    #[test]
+    fn browser_webgpu_policy_constructors_make_explicit_selection_visible() {
+        use browser_webgpu_policy::{
+            BrowserWebGpuCapacityGrowth, BrowserWebGpuMathAutoPolicy, BrowserWebGpuMathAutoReason,
+            BrowserWebGpuMathMode,
+        };
+
+        let limits = large_browser_webgpu_limits();
+
+        let cpu = BrowserWebGpuMathAutoPolicy::cpu_only();
+        let cpu_matmul = cpu.select_matmul_f32(512, 512, 512, limits);
+        assert_eq!(cpu_matmul.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(
+            cpu_matmul.reason(),
+            BrowserWebGpuMathAutoReason::MatmulCpuDefault
+        );
+        let cpu_elementwise = cpu.select_elementwise_f32(4 * 1024 * 1024, limits);
+        assert_eq!(cpu_elementwise.mode(), BrowserWebGpuMathMode::CpuWasm);
+        assert_eq!(
+            cpu_elementwise.reason(),
+            BrowserWebGpuMathAutoReason::ElementwiseCpuReadbackDominated
+        );
+
+        let explicit = BrowserWebGpuMathAutoPolicy::explicit_webgpu_resident();
+        let explicit_matmul = explicit.select_matmul_f32(1, 2, 3, limits);
+        assert_eq!(
+            explicit_matmul.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+        );
+        assert_eq!(
+            explicit_matmul.reason(),
+            BrowserWebGpuMathAutoReason::MatmulPreparedResidentPipelined
+        );
+        let explicit_elementwise = explicit.select_elementwise_f32(1, limits);
+        assert_eq!(
+            explicit_elementwise.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedResidentPipelined
+        );
+        assert_eq!(
+            explicit_elementwise.reason(),
+            BrowserWebGpuMathAutoReason::ElementwisePreparedResidentPipelined
+        );
+
+        let capacity = BrowserWebGpuMathAutoPolicy::harness_capacity_matmul(
+            64 * 64 * 64,
+            BrowserWebGpuCapacityGrowth::PowerOfTwo,
+        );
+        let capacity_matmul = capacity.select_matmul_f32(65, 66, 67, limits);
+        assert_eq!(
+            capacity_matmul.mode(),
+            BrowserWebGpuMathMode::WebGpuPreparedCapacityResidentPipelined
+        );
+        assert_eq!(
+            capacity_matmul.reason(),
+            BrowserWebGpuMathAutoReason::MatmulPreparedCapacityResidentPipelined
+        );
+        let grown = capacity_matmul
+            .capacity()
+            .expect("capacity policy records grown matmul capacity");
+        assert_eq!(grown.rows, 128);
+        assert_eq!(grown.shared, 128);
+        assert_eq!(grown.cols, 128);
     }
 
     #[test]

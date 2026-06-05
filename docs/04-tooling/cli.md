@@ -245,6 +245,11 @@ accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
 sets the minimum rows per resolved worker before the dedicated pool is used. If `--entry` or
 `--flow` is omitted, the first lowered flow is used as a deterministic fallback
 for headless inspection.
+Use `--math-backend scalar|glam|ndarray|wgpu` when a run must explicitly pin a
+backend for measurement or product policy. Use `--math-backend auto` with
+`--math-wgpu-min-elements N` to express a policy threshold. Host-specific
+threshold tuning should be collected through the checked-in profile/bench
+harnesses rather than hard-coded into source.
 The CLI owns a native task adapter for the first filesystem I/O slice:
 `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and `fs.write_bytes` complete
 as `TaskEvent` input on the next VM step. Paths must be virtual path values such

@@ -335,7 +335,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   context also separates resident compute submission from explicit readback:
   `submit_resident_*_without_readback` keeps prepared output on the GPU, and
   `read_resident_*` performs the host-visible copy/map only at the requested
-  boundary. Browser WebGPU also has a typed resident `f32` graph fragment API.
+  boundary. The public policy constructors cover conservative Auto, explicit
+  CPU, explicit resident WebGPU, and capacity-probing harness policies; local
+  machine tuning is kept in benchmark evidence rather than default policy.
+  Browser WebGPU also has a typed resident `f32` graph fragment API.
   The current fragments cover `matmul -> add` and `matmul -> bias_add`. The
   `matmul -> add` fragment owns the matmul buffers, add buffers, and chained
   add bind group. The `matmul -> bias_add` fragment stores only the last-axis

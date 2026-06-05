@@ -847,6 +847,13 @@ cost for every submission.
 This keeps browser GPU work outside the Sans I/O core while letting natural
 browser-side math calls use the calibrated policy without duplicating threshold
 logic in the player.
+Policy selection is now explicit at the embedding boundary:
+`BrowserWebGpuMathAutoPolicy::conservative()` is the default,
+`cpu_only()` forces deterministic CPU Wasm for replay or diagnostics,
+`explicit_webgpu_resident()` deliberately selects resident WebGPU when limits
+allow it, and `harness_capacity_matmul(...)` is reserved for benchmark probes
+of overprovisioned capacity. Per-machine tuning remains a harness concern; it
+should produce path-free evidence before any product or default policy changes.
 The browser harness also exposes submit-only diagnostic modes for prepared
 resident work. They are not backend recommendations because they intentionally
 exclude per-sample readback completion, but they show how much of the current
