@@ -844,6 +844,7 @@ pub enum RuntimeSeqError {
 
 /// Storage value for `isize`-semantic runtime integers.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(transparent)]
 pub struct RuntimeISizeValue(i64);
 
 impl RuntimeISizeValue {
@@ -869,6 +870,7 @@ impl std::fmt::Display for RuntimeISizeValue {
 
 /// Storage value for `usize`-semantic runtime integers.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(transparent)]
 pub struct RuntimeUSizeValue(u64);
 
 impl RuntimeUSizeValue {
@@ -896,6 +898,7 @@ pub trait RuntimeExactInteger: Copy + 'static {
     fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError>;
     fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError>;
     fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_>;
+    fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_>;
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]>;
     fn dense_sequence(values: Vec<Self>) -> RuntimeValue;
 }
@@ -914,6 +917,22 @@ pub enum RuntimeExactIntegerSlice<'a> {
     U64(&'a [u64]),
     U128(&'a [u128]),
     USize(&'a [RuntimeUSizeValue]),
+}
+
+/// Mutable exact-width integer slice used at runtime fast-path output boundaries.
+#[derive(Debug)]
+pub enum RuntimeExactIntegerSliceMut<'a> {
+    I8(&'a mut [i8]),
+    I16(&'a mut [i16]),
+    I32(&'a mut [i32]),
+    I128(&'a mut [i128]),
+    ISize(&'a mut [RuntimeISizeValue]),
+    U8(&'a mut [u8]),
+    U16(&'a mut [u16]),
+    U32(&'a mut [u32]),
+    U64(&'a mut [u64]),
+    U128(&'a mut [u128]),
+    USize(&'a mut [RuntimeUSizeValue]),
 }
 
 macro_rules! impl_runtime_exact_signed_integer {
@@ -951,6 +970,10 @@ macro_rules! impl_runtime_exact_signed_integer {
 
             fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
                 RuntimeExactIntegerSlice::$variant(values)
+            }
+
+            fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+                RuntimeExactIntegerSliceMut::$variant(values)
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -1007,6 +1030,10 @@ macro_rules! impl_runtime_exact_unsigned_integer {
                 RuntimeExactIntegerSlice::$variant(values)
             }
 
+            fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+                RuntimeExactIntegerSliceMut::$variant(values)
+            }
+
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
                 seq.$slice()
             }
@@ -1060,6 +1087,10 @@ macro_rules! impl_runtime_exact_wide_signed_integer {
                 RuntimeExactIntegerSlice::$variant(values)
             }
 
+            fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+                RuntimeExactIntegerSliceMut::$variant(values)
+            }
+
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
                 seq.$slice()
             }
@@ -1111,6 +1142,10 @@ macro_rules! impl_runtime_exact_wide_unsigned_integer {
 
             fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
                 RuntimeExactIntegerSlice::$variant(values)
+            }
+
+            fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+                RuntimeExactIntegerSliceMut::$variant(values)
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -1534,6 +1569,10 @@ impl RuntimeExactInteger for RuntimeISizeValue {
         RuntimeExactIntegerSlice::ISize(values)
     }
 
+    fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+        RuntimeExactIntegerSliceMut::ISize(values)
+    }
+
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
         match seq {
             RuntimeSeq::Dense(DenseSeq::ISize(values)) => Some(values.as_slice()),
@@ -1581,6 +1620,10 @@ impl RuntimeExactInteger for RuntimeUSizeValue {
 
     fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
         RuntimeExactIntegerSlice::USize(values)
+    }
+
+    fn exact_slice_mut(values: &mut [Self]) -> RuntimeExactIntegerSliceMut<'_> {
+        RuntimeExactIntegerSliceMut::USize(values)
     }
 
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {

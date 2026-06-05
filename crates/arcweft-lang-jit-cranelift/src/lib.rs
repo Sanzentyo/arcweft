@@ -11,8 +11,9 @@ use arcweft_core::pure::{
     PureFunctionStats, RuntimeI64Args,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr, RuntimeInt,
-    RuntimeIntrinsic, RuntimeUInt, RuntimeUnaryOp, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
+    RuntimeISizeValue, RuntimeInt, RuntimeIntrinsic, RuntimeUInt, RuntimeUSizeValue,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::{BlockArg, MemFlags, Type, UserFuncName};
 use cranelift::codegen::isa::OwnedTargetIsa;
@@ -3634,6 +3635,26 @@ impl CompiledPureI64Inputs {
         })
     }
 
+    /// Calls the compiled helper with runtime `isize`-semantic inputs.
+    pub fn call_isize(
+        &self,
+        inputs: &[RuntimeISizeValue],
+    ) -> Result<RuntimeISizeValue, CraneliftCodegenError> {
+        if inputs.len() != self.param_names.len() {
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT isize helper expected {} input(s), got {}",
+                self.param_names.len(),
+                inputs.len()
+            )));
+        }
+        self.caller.call_isize(inputs).ok_or_else(|| {
+            CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT isize helper arity {} is outside the native call boundary",
+                inputs.len()
+            ))
+        })
+    }
+
     /// Calls the compiled helper for flat row-major `i64` inputs.
     pub fn call_flat_batch(
         &self,
@@ -3643,6 +3664,24 @@ impl CompiledPureI64Inputs {
         if !native_call::call_i64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(out.len()),
+                inputs.len(),
+                out.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Calls the compiled helper for flat row-major `isize`-semantic inputs.
+    pub fn call_isize_flat_batch(
+        &self,
+        inputs: &[RuntimeISizeValue],
+        out: &mut [RuntimeISizeValue],
+    ) -> Result<(), CraneliftCodegenError> {
+        if !native_call::call_isize_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        {
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT isize rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
@@ -3667,6 +3706,29 @@ impl CompiledPureI64Inputs {
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch sum expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(rows),
+                inputs.len(),
+                rows
+            ))
+        })
+    }
+
+    /// Calls the compiled helper for flat row-major `isize` inputs and returns
+    /// the sum of all row results without writing an output slice.
+    pub fn call_isize_flat_batch_sum(
+        &self,
+        inputs: &[RuntimeISizeValue],
+        rows: usize,
+    ) -> Result<i64, CraneliftCodegenError> {
+        native_call::call_isize_rows_batch_sum(
+            self.batch_sum_code,
+            inputs,
+            self.param_names.len(),
+            rows,
+        )
+        .ok_or_else(|| {
+            CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT isize rows batch sum expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len(),
                 rows
@@ -3973,6 +4035,26 @@ impl CompiledPureU64Inputs {
         })
     }
 
+    /// Calls the compiled helper with runtime `usize`-semantic inputs.
+    pub fn call_usize(
+        &self,
+        inputs: &[RuntimeUSizeValue],
+    ) -> Result<RuntimeUSizeValue, CraneliftCodegenError> {
+        if inputs.len() != self.param_names.len() {
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT usize helper expected {} input(s), got {}",
+                self.param_names.len(),
+                inputs.len()
+            )));
+        }
+        self.caller.call_usize(inputs).ok_or_else(|| {
+            CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT usize helper arity {} is outside the native call boundary",
+                inputs.len()
+            ))
+        })
+    }
+
     /// Calls the compiled helper for flat row-major `u64` inputs.
     pub fn call_flat_batch(
         &self,
@@ -3982,6 +4064,24 @@ impl CompiledPureU64Inputs {
         if !native_call::call_u64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(out.len()),
+                inputs.len(),
+                out.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Calls the compiled helper for flat row-major `usize`-semantic inputs.
+    pub fn call_usize_flat_batch(
+        &self,
+        inputs: &[RuntimeUSizeValue],
+        out: &mut [RuntimeUSizeValue],
+    ) -> Result<(), CraneliftCodegenError> {
+        if !native_call::call_usize_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        {
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT usize rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
@@ -4006,6 +4106,28 @@ impl CompiledPureU64Inputs {
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
+                self.param_names.len().saturating_mul(rows),
+                inputs.len()
+            ))
+        })
+    }
+
+    /// Calls the compiled helper for flat row-major `usize` inputs and sums the
+    /// outputs into the runtime's `i64` reduction accumulator.
+    pub fn call_usize_flat_batch_sum(
+        &self,
+        inputs: &[RuntimeUSizeValue],
+        rows: usize,
+    ) -> Result<i64, CraneliftCodegenError> {
+        native_call::call_usize_rows_batch_sum(
+            self.batch_sum_code,
+            inputs,
+            self.param_names.len(),
+            rows,
+        )
+        .ok_or_else(|| {
+            CraneliftCodegenError::UnsupportedExpr(format!(
+                "JIT usize rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len()
             ))
@@ -4313,15 +4435,19 @@ fn int_bindings(
         .map(|binding| match binding.value {
             RuntimeValue::Int(value) => value
                 .exact_i64()
+                .or(match value {
+                    RuntimeInt::ISize(value) => Some(value),
+                    _ => None,
+                })
                 .map(|value| (binding.name.clone(), LoweredI64Binding::Const(value)))
                 .ok_or_else(|| {
                     CraneliftCodegenError::UnsupportedExpr(format!(
-                        "binding `{}` is not an i64 integer",
+                        "binding `{}` is not an i64-compatible integer",
                         binding.name
                     ))
                 }),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "binding `{}` is not an i64 integer",
+                "binding `{}` is not an i64-compatible integer",
                 binding.name
             ))),
         })
@@ -4404,8 +4530,12 @@ fn u64_bindings(
                 binding.name.clone(),
                 LoweredI64Binding::Const(u64_iconst_value(value)),
             )),
+            RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value)) => Ok((
+                binding.name.clone(),
+                LoweredI64Binding::Const(u64_iconst_value(value)),
+            )),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "binding `{}` is not an u64 integer",
+                "binding `{}` is not an u64-compatible integer",
                 binding.name
             ))),
         })
@@ -4452,14 +4582,18 @@ fn lower_expr(
     match expr {
         RuntimeExpr::Value(RuntimeValue::Int(value)) => value
             .exact_i64()
+            .or(match *value {
+                RuntimeInt::ISize(value) => Some(value),
+                _ => None,
+            })
             .map(|value| builder.ins().iconst(types::I64, value))
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
-                    "literal `{value}` is not an i64 integer"
+                    "literal `{value}` is not an i64-compatible integer"
                 ))
             }),
         RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "literal {value:?} is not an i64 integer"
+            "literal {value:?} is not an i64-compatible integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
@@ -4835,8 +4969,11 @@ fn lower_u64_expr(
         RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(value))) => {
             Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value)))
         }
+        RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value))) => {
+            Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value)))
+        }
         RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "literal {value:?} is not an u64 integer"
+            "literal {value:?} is not an u64-compatible integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),

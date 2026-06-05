@@ -531,8 +531,17 @@ f64 helpers can promote from auto AOT to native Cranelift JIT for flat batches
 without materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same
 native JIT promotion shape with double-width borrowed argument/output accounting.
 Exact-width integer helpers use the same scalar AOT boundary for non-i64 widths;
-native Cranelift JIT covers i64, width-preserving i32 scalar/batch ABI, and
-f32/f64 scalar/batch ABI. The latest dense literal length/sum benches reported
+native Cranelift JIT covers i64, width-preserving i8/i16/i32/i128/isize and
+u8/u16/u32/u64/u128/usize batch ABI, plus f32/f64 scalar/batch ABI. Target-sized
+`isize` and `usize` use transparent storage newtypes at the native boundary so
+JIT flat batches borrow the existing dense buffers instead of copying into
+fixed-width temporaries. A local path-free `--pure-backend jit` run reported
+median elapsed time 14400 ns for `036_dense_isize_map_pure_batch.arcw` and
+14500 ns for `037_dense_usize_map_pure_batch.arcw`, with
+`pure_jit_calls_median = 128`, `pure_vm_calls_median = 0`,
+`pure_arg_vec_allocations_median = 0`, and
+`pure_flatten_bytes_copied_median = 0` in both fixtures. The latest dense
+literal length/sum benches reported
 8300 ns for `010_dense_i32_sum.arcw`, 8100 ns for
 `011_dense_u64_sum.arcw`, 21700 ns for
 `012_dense_integer_widths_sum.arcw`, and zero materializations, copied bytes,

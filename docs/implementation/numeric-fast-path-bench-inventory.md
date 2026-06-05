@@ -132,6 +132,7 @@ in JSON output:
 | `bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures` | exact `i8`, `i16`, `u8`, and `u16` JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture` | exact `i128` native batch JIT path, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | exact `u128` native batch JIT path, borrowed bytes, no result copy |
+| `bench_json_measures_checked_in_dense_target_size_integer_map_pure_batch_fixtures` | exact `isize` and `usize` native JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture` | mixed `i32`, `u32`, and `f32` `.map`/`for` pure calls use JIT with zero VM fallback and no argument Vec allocation |
 
 Useful check commands:
@@ -145,29 +146,40 @@ just scan-absolute-paths
 ## Current Gaps
 
 Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
-`i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and
-`f64` in these checked-in fixtures. The `i128` and `u128` JIT entries are
+`i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`,
+`usize`, `f32`, and `f64` in these checked-in fixtures. The `i128` and `u128` JIT entries are
 batch-only and use pointer-based flat buffers at the native boundary; scalar
 by-value `i128`/`u128` calls remain on VM/AOT paths to avoid target-specific
 wide-integer ABI assumptions. Within that batch path, Cranelift lowering handles
 full-width wide-integer literals and captured constants by building the `i128`
 value from two 64-bit halves with `iconcat`. Target-sized `isize` and `usize`
-helpers currently have dense storage and typed AOT scalar coverage, but do not
-have a native JIT cache entry because the public native JIT ABI is fixed-width.
+helpers use `repr(transparent)` storage newtypes and route native JIT scalar and
+flat-batch calls through the fixed `i64`/`u64` Cranelift lowering without
+materializing `RuntimeValue` elements or copying into widened temporary buffers.
 The VM dense fixtures cover exact-width storage, length, and integer reduction,
 while the pure helper fixtures cover batched helper execution and backend
 selection counters.
 
 The Auto backend now treats every native JIT entry width as a deferred JIT
 candidate after the initial typed AOT plan. Large flat batches can promote
-`i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`,
-and `f64` helpers to native JIT without routing through the VM fallback.
+`i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`,
+`u128`, `usize`, `f32`, and `f64` helpers to native JIT without routing through
+the VM fallback.
 
 Generic exact-integer scalar calls now use a typed borrowed slice view from
 `RuntimeExactInteger` to recognize width-specific JIT cache entries. This keeps
 `call_exact_int_slice::<T>` aligned with the dedicated `call_u32_slice` /
 `call_u64_slice` entry points without string matching, downcasts, or VM
 fallback when a scalar native JIT entry exists for the width.
+
+A local path-free measurement of the target-sized fixtures with
+`--pure-backend jit` and fifteen measured iterations reported `036_dense_isize`
+at `elapsed_ns.median = 14400` and `037_dense_usize` at
+`elapsed_ns.median = 14500`; the same run shape for `018_dense_u64` reported
+`elapsed_ns.median = 15400`. All three reported `pure_jit_calls_median = 128`,
+`pure_vm_calls_median = 0`, `pure_fallbacks_median = 0`,
+`pure_arg_vec_allocations_median = 0`, `pure_flatten_bytes_copied_median = 0`,
+and `pure_result_bytes_copied_median = 0`.
 
 The mixed `033_mixed_for_iter_pure_jit.arcw` fixture guards the scalar/batch
 boundary: exact-width helper calls inside both `.map` and `for` loops stay on

@@ -21,8 +21,8 @@ use arcweft_core::{
     step::RuntimePureCallStats,
     value::{
         DenseSeq, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
-        RuntimeExactIntegerSlice, RuntimeExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
-        runtime_sequence_dense_usize,
+        RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeExpr, RuntimeIntrinsic,
+        RuntimeSeq, RuntimeValue, runtime_sequence_dense_usize,
     },
 };
 use native_jit::{
@@ -495,11 +495,13 @@ enum RuntimePureCacheEntry {
     JitI16(Box<CompiledPureI16Inputs>),
     JitI128Batch(Box<CompiledPureI128BatchInputs>),
     JitI32(Box<CompiledPureI32Inputs>),
+    JitISize(Box<CompiledPureI64Inputs>),
     JitU8(Box<CompiledPureU8Inputs>),
     JitU16(Box<CompiledPureU16Inputs>),
     JitU32(Box<CompiledPureU32Inputs>),
     JitU64(Box<CompiledPureU64Inputs>),
     JitU128Batch(Box<CompiledPureU128BatchInputs>),
+    JitUSize(Box<CompiledPureU64Inputs>),
     JitF32(Box<CompiledPureF32Inputs>),
     JitF64(Box<CompiledPureF64Inputs>),
     Aot(RuntimePureAotPlan),
@@ -523,11 +525,13 @@ impl RuntimePureCacheEntry {
                 | Self::JitI16(_)
                 | Self::JitI128Batch(_)
                 | Self::JitI32(_)
+                | Self::JitISize(_)
                 | Self::JitU8(_)
                 | Self::JitU16(_)
                 | Self::JitU32(_)
                 | Self::JitU64(_)
                 | Self::JitU128Batch(_)
+                | Self::JitUSize(_)
                 | Self::JitF32(_)
                 | Self::JitF64(_)
                 | Self::Vm
@@ -542,11 +546,13 @@ enum RuntimePureNativeKind {
     I32,
     I64,
     I128,
+    ISize,
     U8,
     U16,
     U32,
     U64,
     U128,
+    USize,
     F32,
     F64,
 }
@@ -559,11 +565,13 @@ impl RuntimePureNativeKind {
             Self::I32 => RuntimePureInputType::I32,
             Self::I64 => RuntimePureInputType::I64,
             Self::I128 => RuntimePureInputType::I128,
+            Self::ISize => RuntimePureInputType::ISize,
             Self::U8 => RuntimePureInputType::U8,
             Self::U16 => RuntimePureInputType::U16,
             Self::U32 => RuntimePureInputType::U32,
             Self::U64 => RuntimePureInputType::U64,
             Self::U128 => RuntimePureInputType::U128,
+            Self::USize => RuntimePureInputType::USize,
             Self::F32 => RuntimePureInputType::F32,
             Self::F64 => RuntimePureInputType::F64,
         }
@@ -576,11 +584,13 @@ impl RuntimePureNativeKind {
             Self::I32 => RuntimeValue::i32(0),
             Self::I64 => RuntimeValue::i64(0),
             Self::I128 => RuntimeValue::i128(0),
+            Self::ISize => RuntimeValue::isize(0),
             Self::U8 => RuntimeValue::u8(0),
             Self::U16 => RuntimeValue::u16(0),
             Self::U32 => RuntimeValue::u32(0),
             Self::U64 => RuntimeValue::u64(0),
             Self::U128 => RuntimeValue::u128(0),
+            Self::USize => RuntimeValue::usize(0),
             Self::F32 => RuntimeValue::F32(0.0),
             Self::F64 => RuntimeValue::F64(0.0),
         }
@@ -591,12 +601,12 @@ impl RuntimePureNativeKind {
             Self::I8 => PureObjectInputKind::I8,
             Self::I16 => PureObjectInputKind::I16,
             Self::I32 => PureObjectInputKind::I32,
-            Self::I64 => PureObjectInputKind::I64,
+            Self::I64 | Self::ISize => PureObjectInputKind::I64,
             Self::I128 => PureObjectInputKind::I128,
             Self::U8 => PureObjectInputKind::U8,
             Self::U16 => PureObjectInputKind::U16,
             Self::U32 => PureObjectInputKind::U32,
-            Self::U64 => PureObjectInputKind::U64,
+            Self::U64 | Self::USize => PureObjectInputKind::U64,
             Self::U128 => PureObjectInputKind::U128,
             Self::F32 => PureObjectInputKind::F32,
             Self::F64 => PureObjectInputKind::F64,
@@ -611,17 +621,16 @@ fn helper_native_kind(helper: &RuntimePureHelper) -> Option<RuntimePureNativeKin
         RuntimePureOutputType::I32 => RuntimePureNativeKind::I32,
         RuntimePureOutputType::I64 => RuntimePureNativeKind::I64,
         RuntimePureOutputType::I128 => RuntimePureNativeKind::I128,
+        RuntimePureOutputType::ISize => RuntimePureNativeKind::ISize,
         RuntimePureOutputType::U8 => RuntimePureNativeKind::U8,
         RuntimePureOutputType::U16 => RuntimePureNativeKind::U16,
         RuntimePureOutputType::U32 => RuntimePureNativeKind::U32,
         RuntimePureOutputType::U64 => RuntimePureNativeKind::U64,
         RuntimePureOutputType::U128 => RuntimePureNativeKind::U128,
+        RuntimePureOutputType::USize => RuntimePureNativeKind::USize,
         RuntimePureOutputType::F32 => RuntimePureNativeKind::F32,
         RuntimePureOutputType::F64 => RuntimePureNativeKind::F64,
-        RuntimePureOutputType::Bool
-        | RuntimePureOutputType::ISize
-        | RuntimePureOutputType::USize
-        | RuntimePureOutputType::Value => return None,
+        RuntimePureOutputType::Bool | RuntimePureOutputType::Value => return None,
     };
     (helper.input_names.len() == helper.input_types.len()
         && helper
@@ -646,6 +655,11 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
         (RuntimeExactIntegerSlice::I32(args), RuntimePureCacheEntry::JitI32(compiled)) => {
             compiled.call(args).map(RuntimeValue::i32)
         }
+        (RuntimeExactIntegerSlice::ISize(args), RuntimePureCacheEntry::JitISize(compiled)) => {
+            compiled
+                .call_isize(args)
+                .map(|value| RuntimeValue::isize(value.get()))
+        }
         (RuntimeExactIntegerSlice::U8(args), RuntimePureCacheEntry::JitU8(compiled)) => {
             compiled.call(args).map(RuntimeValue::u8)
         }
@@ -658,6 +672,11 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
         (RuntimeExactIntegerSlice::U64(args), RuntimePureCacheEntry::JitU64(compiled)) => {
             compiled.call(args).map(RuntimeValue::u64)
         }
+        (RuntimeExactIntegerSlice::USize(args), RuntimePureCacheEntry::JitUSize(compiled)) => {
+            compiled
+                .call_usize(args)
+                .map(|value| RuntimeValue::usize(value.get()))
+        }
         _ => return None,
     };
     Some(
@@ -668,6 +687,52 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
             })
             .and_then(|value| T::try_from_runtime_value(&helper.name, value).map(Some)),
     )
+}
+
+fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
+    entry: &RuntimePureCacheEntry,
+    helper: &RuntimePureHelper,
+    flat_inputs: &[T],
+    out: &mut [T],
+) -> Option<Result<(), RuntimeEvalError>> {
+    let result = match (T::exact_slice(flat_inputs), T::exact_slice_mut(out), entry) {
+        (
+            RuntimeExactIntegerSlice::ISize(inputs),
+            RuntimeExactIntegerSliceMut::ISize(out),
+            RuntimePureCacheEntry::JitISize(compiled),
+        ) => compiled.call_isize_flat_batch(inputs, out),
+        (
+            RuntimeExactIntegerSlice::USize(inputs),
+            RuntimeExactIntegerSliceMut::USize(out),
+            RuntimePureCacheEntry::JitUSize(compiled),
+        ) => compiled.call_usize_flat_batch(inputs, out),
+        _ => return None,
+    };
+    Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
+        name: helper.name.clone(),
+        reason: error.to_string(),
+    }))
+}
+
+fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
+    entry: &RuntimePureCacheEntry,
+    helper: &RuntimePureHelper,
+    flat_inputs: &[T],
+    rows: usize,
+) -> Option<Result<i64, RuntimeEvalError>> {
+    let result = match (T::exact_slice(flat_inputs), entry) {
+        (RuntimeExactIntegerSlice::ISize(inputs), RuntimePureCacheEntry::JitISize(compiled)) => {
+            compiled.call_isize_flat_batch_sum(inputs, rows)
+        }
+        (RuntimeExactIntegerSlice::USize(inputs), RuntimePureCacheEntry::JitUSize(compiled)) => {
+            compiled.call_usize_flat_batch_sum(inputs, rows)
+        }
+        _ => return None,
+    };
+    Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
+        name: helper.name.clone(),
+        reason: error.to_string(),
+    }))
 }
 
 enum RuntimePureAotPlan {
@@ -1335,20 +1400,8 @@ impl RuntimePureAccelerator {
                     }
                 }
             }
-            Some(
-                RuntimePureCacheEntry::JitI8(_)
-                | RuntimePureCacheEntry::JitI16(_)
-                | RuntimePureCacheEntry::JitI128Batch(_)
-                | RuntimePureCacheEntry::JitI32(_)
-                | RuntimePureCacheEntry::JitU8(_)
-                | RuntimePureCacheEntry::JitU16(_)
-                | RuntimePureCacheEntry::JitU32(_)
-                | RuntimePureCacheEntry::JitU64(_)
-                | RuntimePureCacheEntry::JitU128Batch(_)
-                | RuntimePureCacheEntry::JitF32(_)
-                | RuntimePureCacheEntry::JitF64(_)
-                | RuntimePureCacheEntry::Vm,
-            ) => {
+            Some(entry) => {
+                debug_assert!(entry.is_non_i64_runtime_fallback());
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += out.len();
                 self.stats.fallbacks += out.len();
@@ -1438,11 +1491,13 @@ impl RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -1537,11 +1592,13 @@ impl RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -1574,11 +1631,13 @@ impl RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_),
             ) => RuntimeBatchBackendKind::Jit,
@@ -2820,7 +2879,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<i64, RuntimeEvalError> {
         validate_exact_int_flat_batch_shape::<T>(helper, flat_inputs.len(), arity, rows)?;
         self.record_flat_batch_stats(flat_inputs, rows, false);
-        match cache_entry(&self.cache, helper.id) {
+        if rows == 0 {
+            return Ok(0);
+        }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, rows);
+        }
+        let entry = cache_entry(&self.cache, helper.id);
+        if let Some(entry) = entry
+            && let Some(result) =
+                call_jit_exact_int_flat_batch_sum(entry, helper, flat_inputs, rows)
+        {
+            self.compile_stats.cache_hits += 1;
+            self.stats.jit_calls += rows;
+            return result;
+        }
+        match entry {
             Some(
                 RuntimePureCacheEntry::Aot(compiled)
                 | RuntimePureCacheEntry::AutoAot {
@@ -2927,7 +3001,21 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<(), RuntimeEvalError> {
         validate_exact_int_flat_batch_shape::<T>(helper, flat_inputs.len(), arity, out.len())?;
         self.record_flat_batch_stats(flat_inputs, out.len(), true);
-        match cache_entry(&self.cache, helper.id) {
+        if out.is_empty() {
+            return Ok(());
+        }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, out.len());
+        }
+        let entry = cache_entry(&self.cache, helper.id);
+        if let Some(entry) = entry
+            && let Some(result) = call_jit_exact_int_flat_batch(entry, helper, flat_inputs, out)
+        {
+            self.compile_stats.cache_hits += 1;
+            self.stats.jit_calls += out.len();
+            return result;
+        }
+        match entry {
             Some(
                 RuntimePureCacheEntry::Aot(compiled)
                 | RuntimePureCacheEntry::AutoAot {
@@ -3008,11 +3096,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -3085,11 +3175,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Vm,
@@ -4506,91 +4598,133 @@ fn compile_native_jit(
     }
 
     let input_names = || helper.input_names.iter().map(String::as_str);
+    compile_signed_native_jit(kind, request, input_names(), stats)
+        .or_else(|| compile_unsigned_native_jit(kind, request, input_names(), stats))
+        .or_else(|| compile_float_native_jit(kind, request, input_names(), stats))
+}
+
+fn compile_signed_native_jit<'a>(
+    kind: RuntimePureNativeKind,
+    request: &PureFunctionRequest,
+    input_names: impl IntoIterator<Item = &'a str>,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
     match kind {
         RuntimePureNativeKind::I8 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_i8_with_inputs(request, input_names())
+                .compile_i8_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitI8(Box::new(compiled)),
         ),
         RuntimePureNativeKind::I16 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_i16_with_inputs(request, input_names())
+                .compile_i16_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitI16(Box::new(compiled)),
         ),
         RuntimePureNativeKind::I32 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_i32_with_inputs(request, input_names())
+                .compile_i32_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitI32(Box::new(compiled)),
         ),
-        RuntimePureNativeKind::I64 => finish_native_jit_compile(
+        RuntimePureNativeKind::I64 | RuntimePureNativeKind::ISize => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_i64_with_inputs(request, input_names())
+                .compile_i64_with_inputs(request, input_names)
                 .ok(),
             stats,
-            |compiled| RuntimePureCacheEntry::Jit(Box::new(compiled)),
+            |compiled| match kind {
+                RuntimePureNativeKind::I64 => RuntimePureCacheEntry::Jit(Box::new(compiled)),
+                RuntimePureNativeKind::ISize => RuntimePureCacheEntry::JitISize(Box::new(compiled)),
+                _ => unreachable!("i64-compatible native JIT arm received {kind:?}"),
+            },
         ),
         RuntimePureNativeKind::I128 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_i128_batch_with_inputs(request, input_names())
+                .compile_i128_batch_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitI128Batch(Box::new(compiled)),
         ),
+        _ => None,
+    }
+}
+
+fn compile_unsigned_native_jit<'a>(
+    kind: RuntimePureNativeKind,
+    request: &PureFunctionRequest,
+    input_names: impl IntoIterator<Item = &'a str>,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    match kind {
         RuntimePureNativeKind::U8 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_u8_with_inputs(request, input_names())
+                .compile_u8_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitU8(Box::new(compiled)),
         ),
         RuntimePureNativeKind::U16 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_u16_with_inputs(request, input_names())
+                .compile_u16_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitU16(Box::new(compiled)),
         ),
         RuntimePureNativeKind::U32 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_u32_with_inputs(request, input_names())
+                .compile_u32_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitU32(Box::new(compiled)),
         ),
-        RuntimePureNativeKind::U64 => finish_native_jit_compile(
+        RuntimePureNativeKind::U64 | RuntimePureNativeKind::USize => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_u64_with_inputs(request, input_names())
+                .compile_u64_with_inputs(request, input_names)
                 .ok(),
             stats,
-            |compiled| RuntimePureCacheEntry::JitU64(Box::new(compiled)),
+            |compiled| match kind {
+                RuntimePureNativeKind::U64 => RuntimePureCacheEntry::JitU64(Box::new(compiled)),
+                RuntimePureNativeKind::USize => RuntimePureCacheEntry::JitUSize(Box::new(compiled)),
+                _ => unreachable!("u64-compatible native JIT arm received {kind:?}"),
+            },
         ),
         RuntimePureNativeKind::U128 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_u128_batch_with_inputs(request, input_names())
+                .compile_u128_batch_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitU128Batch(Box::new(compiled)),
         ),
+        _ => None,
+    }
+}
+
+fn compile_float_native_jit<'a>(
+    kind: RuntimePureNativeKind,
+    request: &PureFunctionRequest,
+    input_names: impl IntoIterator<Item = &'a str>,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    match kind {
         RuntimePureNativeKind::F32 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_f32_with_inputs(request, input_names())
+                .compile_f32_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitF32(Box::new(compiled)),
         ),
         RuntimePureNativeKind::F64 => finish_native_jit_compile(
             CraneliftPureFunctionBackend
-                .compile_f64_with_inputs(request, input_names())
+                .compile_f64_with_inputs(request, input_names)
                 .ok(),
             stats,
             |compiled| RuntimePureCacheEntry::JitF64(Box::new(compiled)),
         ),
+        _ => None,
     }
 }
 
@@ -5656,11 +5790,13 @@ impl RuntimePureAccelerator {
                 | RuntimePureCacheEntry::JitI16(_)
                 | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
+                | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
                 | RuntimePureCacheEntry::JitU128Batch(_)
+                | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::AutoAot { jit: Some(_), .. } => jit += 1,
@@ -7104,6 +7240,50 @@ mod tests {
         assert_eq!(accelerator.stats().vm_calls, 0);
         assert_eq!(accelerator.stats().fallbacks, 0);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+
+        let helper = exact_int_add_helper(
+            "isize_generic_jit",
+            RuntimePureInputType::ISize,
+            RuntimePureOutputType::ISize,
+            RuntimeValue::isize(1),
+        );
+        let mut accelerator =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+
+        let value = accelerator
+            .call_exact_int_slice::<RuntimeISizeValue>(
+                &helper,
+                &[RuntimeISizeValue::new(37), RuntimeISizeValue::new(41)],
+            )
+            .expect("generic isize exact-int call succeeds");
+
+        assert_eq!(value, Some(RuntimeISizeValue::new(79)));
+        assert_eq!(accelerator.stats().jit_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+
+        let helper = exact_int_add_helper(
+            "usize_generic_jit",
+            RuntimePureInputType::USize,
+            RuntimePureOutputType::USize,
+            RuntimeValue::usize(1),
+        );
+        let mut accelerator =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+
+        let value = accelerator
+            .call_exact_int_slice::<RuntimeUSizeValue>(
+                &helper,
+                &[RuntimeUSizeValue::new(43), RuntimeUSizeValue::new(47)],
+            )
+            .expect("generic usize exact-int call succeeds");
+
+        assert_eq!(value, Some(RuntimeUSizeValue::new(91)));
+        assert_eq!(accelerator.stats().jit_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
@@ -7194,6 +7374,70 @@ mod tests {
         assert_eq!(out[127], 129);
         assert_eq!(accelerator.stats().jit_calls, 128);
         assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_promotes_target_size_integer_flat_batches_to_native_jit() {
+        let helper = exact_int_add_helper(
+            "isize_auto_jit",
+            RuntimePureInputType::ISize,
+            RuntimePureOutputType::ISize,
+            RuntimeValue::isize(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128_i64)
+            .flat_map(|value| [RuntimeISizeValue::new(value), RuntimeISizeValue::new(1)])
+            .collect::<Vec<_>>();
+        let mut out = [RuntimeISizeValue::new(0); 128];
+        accelerator
+            .call_exact_int_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large isize flat batch");
+        let sum = accelerator
+            .call_exact_int_flat_batch_sum(&helper, &flat_inputs, 2, 128)
+            .expect("native isize flat batch sum succeeds");
+        assert_eq!(out[0], RuntimeISizeValue::new(2));
+        assert_eq!(out[127], RuntimeISizeValue::new(129));
+        assert_eq!(sum, 8_384);
+        assert_eq!(accelerator.stats().jit_calls, 256);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+
+        let helper = exact_int_add_helper(
+            "usize_auto_jit",
+            RuntimePureInputType::USize,
+            RuntimePureOutputType::USize,
+            RuntimeValue::usize(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128_u64)
+            .flat_map(|value| [RuntimeUSizeValue::new(value), RuntimeUSizeValue::new(1)])
+            .collect::<Vec<_>>();
+        let mut out = [RuntimeUSizeValue::new(0); 128];
+        accelerator
+            .call_exact_int_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large usize flat batch");
+        let sum = accelerator
+            .call_exact_int_flat_batch_sum(&helper, &flat_inputs, 2, 128)
+            .expect("native usize flat batch sum succeeds");
+        assert_eq!(out[0], RuntimeUSizeValue::new(2));
+        assert_eq!(out[127], RuntimeUSizeValue::new(129));
+        assert_eq!(sum, 8_384);
+        assert_eq!(accelerator.stats().jit_calls, 256);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
         assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
         assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
     }

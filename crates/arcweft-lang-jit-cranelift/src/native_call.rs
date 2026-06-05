@@ -1,3 +1,4 @@
+use arcweft_core::value::{RuntimeISizeValue, RuntimeUSizeValue};
 use std::mem;
 
 type JitI64Fn = extern "C" fn() -> i64;
@@ -8,6 +9,8 @@ type JitI64QuaternaryFn = extern "C" fn(i64, i64, i64, i64) -> i64;
 type JitI64BatchFn = extern "C" fn(i64, i64, i64) -> i64;
 type JitI64RowsBatchFn = extern "C" fn(*const i64, i64, *mut i64);
 type JitI64RowsBatchSumFn = extern "C" fn(*const i64, i64) -> i64;
+type JitISizeRowsBatchFn = extern "C" fn(*const RuntimeISizeValue, i64, *mut RuntimeISizeValue);
+type JitISizeRowsBatchSumFn = extern "C" fn(*const RuntimeISizeValue, i64) -> i64;
 type JitI128RowsBatchFn = extern "C" fn(*const i128, i64, *mut i128);
 type JitI128RowsBatchSumFn = extern "C" fn(*const i128, i64) -> i64;
 type JitI8Fn = extern "C" fn() -> i8;
@@ -59,6 +62,8 @@ type JitU64TernaryFn = extern "C" fn(u64, u64, u64) -> u64;
 type JitU64QuaternaryFn = extern "C" fn(u64, u64, u64, u64) -> u64;
 type JitU64RowsBatchFn = extern "C" fn(*const u64, i64, *mut u64);
 type JitU64RowsBatchSumFn = extern "C" fn(*const u64, i64) -> i64;
+type JitUSizeRowsBatchFn = extern "C" fn(*const RuntimeUSizeValue, i64, *mut RuntimeUSizeValue);
+type JitUSizeRowsBatchSumFn = extern "C" fn(*const RuntimeUSizeValue, i64) -> i64;
 type JitU128RowsBatchFn = extern "C" fn(*const u128, i64, *mut u128);
 type JitU128RowsBatchSumFn = extern "C" fn(*const u128, i64) -> i64;
 type JitF32Fn = extern "C" fn() -> f32;
@@ -269,6 +274,26 @@ impl I64InputCaller {
             _ => None,
         }
     }
+
+    pub(crate) fn call_isize(self, inputs: &[RuntimeISizeValue]) -> Option<RuntimeISizeValue> {
+        match (self, inputs) {
+            (Self::Nullary(function), []) => Some(RuntimeISizeValue::new(function())),
+            (Self::Unary(function), [value]) => Some(RuntimeISizeValue::new(function(value.get()))),
+            (Self::Binary(function), [lhs, rhs]) => {
+                Some(RuntimeISizeValue::new(function(lhs.get(), rhs.get())))
+            }
+            (Self::Ternary(function), [a, b, c]) => {
+                Some(RuntimeISizeValue::new(function(a.get(), b.get(), c.get())))
+            }
+            (Self::Quaternary(function), [a, b, c, d]) => Some(RuntimeISizeValue::new(function(
+                a.get(),
+                b.get(),
+                c.get(),
+                d.get(),
+            ))),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -443,6 +468,26 @@ impl U64InputCaller {
             (Self::Binary(function), [lhs, rhs]) => Some(function(*lhs, *rhs)),
             (Self::Ternary(function), [a, b, c]) => Some(function(*a, *b, *c)),
             (Self::Quaternary(function), [a, b, c, d]) => Some(function(*a, *b, *c, *d)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn call_usize(self, inputs: &[RuntimeUSizeValue]) -> Option<RuntimeUSizeValue> {
+        match (self, inputs) {
+            (Self::Nullary(function), []) => Some(RuntimeUSizeValue::new(function())),
+            (Self::Unary(function), [value]) => Some(RuntimeUSizeValue::new(function(value.get()))),
+            (Self::Binary(function), [lhs, rhs]) => {
+                Some(RuntimeUSizeValue::new(function(lhs.get(), rhs.get())))
+            }
+            (Self::Ternary(function), [a, b, c]) => {
+                Some(RuntimeUSizeValue::new(function(a.get(), b.get(), c.get())))
+            }
+            (Self::Quaternary(function), [a, b, c, d]) => Some(RuntimeUSizeValue::new(function(
+                a.get(),
+                b.get(),
+                c.get(),
+                d.get(),
+            ))),
             _ => None,
         }
     }
@@ -623,6 +668,45 @@ pub(crate) fn call_i64_rows_batch_sum(
     // alive by the caller until after the call, and the input slice is checked
     // to cover the row/arity shape before its pointer is passed.
     let function = unsafe { mem::transmute::<*const u8, JitI64RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
+}
+
+pub(crate) fn call_isize_rows_batch(
+    code: *const u8,
+    inputs: &[RuntimeISizeValue],
+    arity: usize,
+    out: &mut [RuntimeISizeValue],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is emitted with the same pointer ABI as the i64 row
+    // batch entrypoint. `RuntimeISizeValue` is `repr(transparent)` over i64,
+    // and the JIT function only reads/writes checked row-major element slots.
+    let function = unsafe { mem::transmute::<*const u8, JitISizeRowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_isize_rows_batch_sum(
+    code: *const u8,
+    inputs: &[RuntimeISizeValue],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is emitted with the same pointer ABI as the i64 row
+    // batch-sum entrypoint. `RuntimeISizeValue` is `repr(transparent)` over
+    // i64, and slice shape is checked before passing the pointer.
+    let function = unsafe { mem::transmute::<*const u8, JitISizeRowsBatchSumFn>(code) };
     Some(function(inputs.as_ptr(), rows))
 }
 
@@ -942,6 +1026,45 @@ pub(crate) fn call_u64_rows_batch_sum(
     // `extern "C" fn(*const u64, i64) -> i64`. Slice shape is checked before
     // passing pointers, and the owning JIT module outlives the call.
     let function = unsafe { mem::transmute::<*const u8, JitU64RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
+}
+
+pub(crate) fn call_usize_rows_batch(
+    code: *const u8,
+    inputs: &[RuntimeUSizeValue],
+    arity: usize,
+    out: &mut [RuntimeUSizeValue],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is emitted with the same pointer ABI as the u64 row
+    // batch entrypoint. `RuntimeUSizeValue` is `repr(transparent)` over u64,
+    // and the JIT function only reads/writes checked row-major element slots.
+    let function = unsafe { mem::transmute::<*const u8, JitUSizeRowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_usize_rows_batch_sum(
+    code: *const u8,
+    inputs: &[RuntimeUSizeValue],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is emitted with the same pointer ABI as the u64 row
+    // batch-sum entrypoint. `RuntimeUSizeValue` is `repr(transparent)` over
+    // u64, and slice shape is checked before passing the pointer.
+    let function = unsafe { mem::transmute::<*const u8, JitUSizeRowsBatchSumFn>(code) };
     Some(function(inputs.as_ptr(), rows))
 }
 
