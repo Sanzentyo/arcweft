@@ -382,7 +382,9 @@ pub struct CompiledPureI64Batch {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum LoweredI64Binding {
+enum LoweredIntBinding {
+    /// Literal bits for integer codegen. The lowering site selects the
+    /// Cranelift type, so this does not imply an `i64` runtime ABI.
     Const(i64),
     Value(Value),
 }
@@ -1118,7 +1120,7 @@ where
         builder.switch_to_block(block);
         let params = builder.block_params(block);
         for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
         builder.ins().return_(&[value]);
@@ -1238,7 +1240,7 @@ where
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
         for (name, value) in param_names.iter().zip(input_values.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -1756,7 +1758,7 @@ where
         builder.switch_to_block(block);
         let params = builder.block_params(block);
         for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_i32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
         builder.ins().return_(&[value]);
@@ -1840,7 +1842,7 @@ where
         builder.switch_to_block(block);
         let params = builder.block_params(block);
         for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
         builder.ins().return_(&[value]);
@@ -1924,7 +1926,7 @@ where
         builder.switch_to_block(block);
         let params = builder.block_params(block);
         for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u64_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
         builder.ins().return_(&[value]);
@@ -2525,7 +2527,7 @@ fn define_i64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -2589,7 +2591,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_batch_output(&mut builder, out_ptr, row, value);
@@ -2614,7 +2616,7 @@ fn define_i64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -2680,7 +2682,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -2708,7 +2710,7 @@ fn define_i32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -2772,7 +2774,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_i32_batch_output(&mut builder, out_ptr, row, value);
@@ -2797,7 +2799,7 @@ fn define_i32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -2863,7 +2865,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
         let value = builder.ins().sextend(types::I64, value);
@@ -2892,7 +2894,7 @@ fn define_u32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -2956,7 +2958,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_u32_batch_output(&mut builder, out_ptr, row, value);
@@ -2981,7 +2983,7 @@ fn define_u32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -3047,7 +3049,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
         let value = builder.ins().uextend(types::I64, value);
@@ -3076,7 +3078,7 @@ fn define_u64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -3140,7 +3142,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_u64_batch_output(&mut builder, out_ptr, row, value);
@@ -3165,7 +3167,7 @@ fn define_u64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
     param_names: &[String],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -3231,7 +3233,7 @@ where
                 param_names.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
         }
         let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -4537,7 +4539,7 @@ fn sanitize_symbol_component(name: &str) -> String {
 
 fn int_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
+) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -4547,7 +4549,7 @@ fn int_bindings(
                     RuntimeInt::ISize(value) => Some(value),
                     _ => None,
                 })
-                .map(|value| (binding.name.clone(), LoweredI64Binding::Const(value)))
+                .map(|value| (binding.name.clone(), LoweredIntBinding::Const(value)))
                 .ok_or_else(|| {
                     CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an i64-compatible integer",
@@ -4584,7 +4586,7 @@ fn small_int_bindings(
 
 fn i32_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
+) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -4593,7 +4595,7 @@ fn i32_bindings(
                 .map(|value| {
                     (
                         binding.name.clone(),
-                        LoweredI64Binding::Const(i64::from(value)),
+                        LoweredIntBinding::Const(i64::from(value)),
                     )
                 })
                 .ok_or_else(|| {
@@ -4612,13 +4614,13 @@ fn i32_bindings(
 
 fn u32_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
+) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(value)) => Ok((
                 binding.name.clone(),
-                LoweredI64Binding::Const(u32_iconst_value(value)),
+                LoweredIntBinding::Const(u32_iconst_value(value)),
             )),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u32 integer",
@@ -4630,17 +4632,17 @@ fn u32_bindings(
 
 fn u64_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
+) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(value)) => Ok((
                 binding.name.clone(),
-                LoweredI64Binding::Const(u64_iconst_value(value)),
+                LoweredIntBinding::Const(u64_iconst_value(value)),
             )),
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value)) => Ok((
                 binding.name.clone(),
-                LoweredI64Binding::Const(u64_iconst_value(value)),
+                LoweredIntBinding::Const(u64_iconst_value(value)),
             )),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u64-compatible integer",
@@ -4682,7 +4684,7 @@ fn f64_bindings(
 
 fn lower_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut arcweft_core::pure::PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -4704,8 +4706,8 @@ fn lower_expr(
             "literal {value:?} is not an i64-compatible integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
-            Some(LoweredI64Binding::Value(value)) => Ok(*value),
+            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
+            Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown integer binding `{name}`"
             ))),
@@ -4713,7 +4715,7 @@ fn lower_expr(
         RuntimeExpr::Let { name, expr, body } => {
             let value = lower_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
             lower_expr(builder, &scoped_bindings, body, stats)
         }
         RuntimeExpr::Unary {
@@ -4767,7 +4769,7 @@ fn lower_expr(
 
 fn lower_i32_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -4785,8 +4787,8 @@ fn lower_i32_expr(
             "literal {value:?} is not an i32 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
-            Some(LoweredI64Binding::Value(value)) => Ok(*value),
+            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
+            Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown i32 binding `{name}`"
             ))),
@@ -4794,7 +4796,7 @@ fn lower_i32_expr(
         RuntimeExpr::Let { name, expr, body } => {
             let value = lower_i32_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
             lower_i32_expr(builder, &scoped_bindings, body, stats)
         }
         RuntimeExpr::Unary {
@@ -4992,7 +4994,7 @@ fn bitpattern_i64(value: u64) -> i64 {
 
 fn lower_u32_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -5005,8 +5007,8 @@ fn lower_u32_expr(
             "literal {value:?} is not an u32 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
-            Some(LoweredI64Binding::Value(value)) => Ok(*value),
+            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
+            Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u32 binding `{name}`"
             ))),
@@ -5014,7 +5016,7 @@ fn lower_u32_expr(
         RuntimeExpr::Let { name, expr, body } => {
             let value = lower_u32_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
             lower_u32_expr(builder, &scoped_bindings, body, stats)
         }
         RuntimeExpr::Unary {
@@ -5068,7 +5070,7 @@ fn lower_u32_expr(
 
 fn lower_u64_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -5084,8 +5086,8 @@ fn lower_u64_expr(
             "literal {value:?} is not an u64-compatible integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
-            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
-            Some(LoweredI64Binding::Value(value)) => Ok(*value),
+            Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
+            Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u64 binding `{name}`"
             ))),
@@ -5093,7 +5095,7 @@ fn lower_u64_expr(
         RuntimeExpr::Let { name, expr, body } => {
             let value = lower_u64_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
             lower_u64_expr(builder, &scoped_bindings, body, stats)
         }
         RuntimeExpr::Unary {
@@ -5385,7 +5387,7 @@ fn lower_f64_std_float_call(
 
 fn lower_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -5414,7 +5416,7 @@ fn lower_if_expr(
 
 fn lower_i32_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -5473,7 +5475,7 @@ fn lower_small_int_if_expr(
 
 fn lower_u32_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -5502,7 +5504,7 @@ fn lower_u32_if_expr(
 
 fn lower_u64_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -5589,7 +5591,7 @@ fn lower_f64_if_expr(
 
 fn lower_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -5617,7 +5619,7 @@ fn lower_condition(
 
 fn lower_i32_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -5681,7 +5683,7 @@ fn lower_small_int_condition(
 
 fn lower_u32_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
@@ -5709,7 +5711,7 @@ fn lower_u32_condition(
 
 fn lower_u64_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredI64Binding>,
+    bindings: &BTreeMap<String, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
