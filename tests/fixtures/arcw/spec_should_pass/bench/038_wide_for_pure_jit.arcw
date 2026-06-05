@@ -1,0 +1,28 @@
+#[pure]
+fn score_i128(base: i128, bias: i128) -> i128 {
+    return base + bias + 1i128
+}
+
+#[pure]
+fn score_u128(base: u128, bias: u128) -> u128 {
+    return base + bias + 1u128
+}
+
+bench @bench.wide_for_pure_jit {
+    measure iterations = 4 { start(@flow.wide_for_pure_jit) }
+}
+
+flow @flow.wide_for_pure_jit wide_for_pure_jit {
+    let ints: Vec<i128> = [1i128, 2i128, 3i128, 4i128, 5i128, 6i128, 7i128, 8i128]
+    let uints: Vec<u128> = [1u128, 2u128, 3u128, 4u128, 5u128, 6u128, 7u128, 8u128]
+
+    for item in ints {
+        let scored = score_i128(item, 11i128)
+        log.info(scored)
+    }
+    for item in uints {
+        let scored = score_u128(item, 13u128)
+        log.info(scored)
+    }
+    return "done"
+}

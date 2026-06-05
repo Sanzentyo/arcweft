@@ -33,6 +33,7 @@ name or relative fixture label and must not record host absolute paths.
 | `031_dense_u8_map_pure_batch.arcw` | pure helper batch | `u8` input/output | native JIT when requested, AOT/VM selectable |
 | `032_dense_u16_map_pure_batch.arcw` | pure helper batch | `u16` input/output | native JIT when requested, AOT/VM selectable |
 | `033_mixed_for_iter_pure_jit.arcw` | mixed scalar and batch pure helper calls | `i32`, `u32`, and `f32` across `.map` and `for` | exact-width native JIT for scalar and flat batch calls |
+| `038_wide_for_pure_jit.arcw` | scalar pure helper calls | `i128` and `u128` across `for` | native JIT via one-row pointer batches, no by-value wide integer ABI |
 
 ## Current Bench Commands
 
@@ -102,13 +103,15 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/038_wide_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 ```
 
 Per-fixture convenience targets now also exist for the i64 helper fixtures
 (`just bench-002`, `just bench-003`, `just bench-005`, `just bench-007`,
 `just bench-008`, and `just bench-009`), `just bench-016` through
 `just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
-through `just bench-033`. Those targets request `--pure-backend jit` where the
+through `just bench-033`, plus `just bench-038`. Those targets request
+`--pure-backend jit` where the
 fixture directly selects native JIT, while the large i64 Auto fixtures use
 `--pure-backend auto` to exercise deferred JIT promotion.
 
@@ -134,6 +137,7 @@ in JSON output:
 | `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | exact `u128` native batch JIT path, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_target_size_integer_map_pure_batch_fixtures` | exact `isize` and `usize` native JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture` | mixed `i32`, `u32`, and `f32` `.map`/`for` pure calls use JIT with zero VM fallback and no argument Vec allocation |
+| `bench_json_measures_checked_in_wide_for_pure_jit_fixture` | scalar `i128` and `u128` `for` pure calls use native JIT through one-row pointer batches with zero VM fallback and no argument Vec allocation |
 
 Useful check commands:
 
@@ -147,12 +151,12 @@ just scan-absolute-paths
 
 Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
 `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`,
-`usize`, `f32`, and `f64` in these checked-in fixtures. The `i128` and `u128` JIT entries are
-batch-only and use pointer-based flat buffers at the native boundary; scalar
-by-value `i128`/`u128` calls remain on VM/AOT paths to avoid target-specific
-wide-integer ABI assumptions. Within that batch path, Cranelift lowering handles
-full-width wide-integer literals and captured constants by building the `i128`
-value from two 64-bit halves with `iconcat`. Target-sized `isize` and `usize`
+`usize`, `f32`, and `f64` in these checked-in fixtures. The `i128` and `u128`
+JIT entries use pointer-based flat buffers at the native boundary; scalar calls
+are lowered to one-row batches so by-value wide integers never cross the native
+ABI. Cranelift lowering handles full-width wide-integer literals and captured
+constants by building the `i128` value from two 64-bit halves with `iconcat`.
+Target-sized `isize` and `usize`
 helpers use `repr(transparent)` storage newtypes and route native JIT scalar and
 flat-batch calls through the fixed `i64`/`u64` Cranelift lowering without
 materializing `RuntimeValue` elements or copying into widened temporary buffers.
@@ -190,3 +194,12 @@ path-free local run with two measured iterations reported `jit_successes = 3`,
 `pure_fallbacks_median = 0`, `pure_arg_vec_allocations_median = 0`,
 `pure_arg_bytes_borrowed_median = 320`, and
 `pure_result_bytes_copied_median = 96`.
+
+The wide scalar `038_wide_for_pure_jit.arcw` fixture confirms that `for` loop
+calls over `i128` and `u128` now reach native JIT without by-value wide integer
+ABI calls. A path-free local run with eight measured iterations reported
+`jit_successes = 2`, `pure_calls_median = 16`,
+`pure_batch_calls_median = 0`, `pure_jit_calls_median = 16`,
+`pure_vm_calls_median = 0`, `pure_fallbacks_median = 0`,
+`pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 512`,
+`pure_result_bytes_copied_median = 0`, and `elapsed_ns.median = 83800`.

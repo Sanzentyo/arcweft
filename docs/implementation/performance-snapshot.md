@@ -454,20 +454,27 @@ fixtures cover wide integer storage with
 conversion. This confirms the hot boundary is not doing
 `.map(i64::from)`. Native JIT covers exact i64 plus width-preserving ABIs for
 `i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and
-`f64`. The `i128` and `u128` JIT path is batch-only: the native ABI receives
-flat row buffers by pointer and never exposes by-value wide integers at the
-function boundary. Full-width wide-integer literals and captured constants are
-lowered inside Cranelift with two 64-bit halves plus `iconcat`, so the batch
-path no longer depends on an i64-backed immediate subset. Scalar AOT and VM
-remain the semantic scalar tiers for wide-integer calls outside the batch
-shape. Target-sized dense storage already uses stable `i64`/`u64` backing at
-the runtime boundary. A path-free JIT bench run of the checked-in
+`f64`. The `i128` and `u128` JIT native ABI receives flat row buffers by
+pointer and never exposes by-value wide integers at the function boundary;
+scalar calls reuse the same compiled artifact as one-row pointer batches.
+Full-width wide-integer literals and captured constants are lowered inside
+Cranelift with two 64-bit halves plus `iconcat`, so the path no longer depends
+on an i64-backed immediate subset. Target-sized dense storage already uses
+stable `i64`/`u64` backing at the runtime boundary. A path-free JIT bench run
+of the checked-in
 `019_dense_i128_map_pure_batch.arcw` and `020_dense_u128_map_pure_batch.arcw`
 fixtures reported median elapsed times of 16400 ns and 15500 ns respectively,
 with `pure_jit_calls_median = 128`,
 `pure_flat_batch_bytes_borrowed_median = 4096`,
 `pure_flatten_materializations_median = 0`, and
 `pure_arg_vec_allocations_median = 0`.
+A scalar wide-integer loop run of `038_wide_for_pure_jit.arcw` with
+`--pure-backend jit` reported median elapsed time 83800 ns,
+`jit_successes = 2`, `pure_calls_median = 16`,
+`pure_jit_calls_median = 16`, `pure_vm_calls_median = 0`,
+`pure_fallbacks_median = 0`, `pure_arg_vec_allocations_median = 0`,
+`pure_arg_bytes_borrowed_median = 512`, and
+`pure_result_bytes_copied_median = 0`.
 
 The i32 JIT ABI emits `extern "C" fn(i32, ...) -> i32` helpers plus row-major
 `*const i32` flat batch and batch-sum entry points. A local path-free bench run
@@ -532,10 +539,12 @@ without materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same
 native JIT promotion shape with double-width borrowed argument/output accounting.
 Exact-width integer helpers use the same scalar AOT boundary for non-i64 widths;
 native Cranelift JIT covers i64, width-preserving i8/i16/i32/i128/isize and
-u8/u16/u32/u64/u128/usize batch ABI, plus f32/f64 scalar/batch ABI. Target-sized
-`isize` and `usize` use transparent storage newtypes at the native boundary so
-JIT flat batches borrow the existing dense buffers instead of copying into
-fixed-width temporaries. A local path-free `--pure-backend jit` run reported
+u8/u16/u32/u64/u128/usize scalar/batch paths, plus f32/f64 scalar/batch ABI.
+Wide `i128`/`u128` scalar calls are represented as one-row pointer batches
+rather than by-value ABI calls. Target-sized `isize` and `usize` use
+transparent storage newtypes at the native boundary so JIT flat batches borrow
+the existing dense buffers instead of copying into fixed-width temporaries. A
+local path-free `--pure-backend jit` run reported
 median elapsed time 14400 ns for `036_dense_isize_map_pure_batch.arcw` and
 14500 ns for `037_dense_usize_map_pure_batch.arcw`, with
 `pure_jit_calls_median = 128`, `pure_vm_calls_median = 0`,

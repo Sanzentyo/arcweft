@@ -120,6 +120,10 @@ stay out of the native FFI boundary. Object artifacts record deterministic symbo
 names and object bytes only; they do not include source paths or JIT function
 pointers.
 
+Runtime native JIT scalar calls for `i128` and `u128` reuse the pointer-based
+wide batch artifact as a one-row batch. This keeps scalar flow calls on the
+native JIT tier without introducing by-value wide integer ABI calls.
+
 Build-time object emission can also bundle multiple pure helpers into one
 relocatable object. The bundle API records one symbol-table entry per helper,
 including exact scalar kind, entry symbol when scalar calls are supported,

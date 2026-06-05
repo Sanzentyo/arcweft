@@ -182,11 +182,10 @@ pub struct DefinedPureI64BenchmarkBatch {
     pub stats: PureFunctionStats,
 }
 
-/// Compiled native helper returning an `i128` for flat batch calls.
+/// Compiled native helper returning an `i128` through pointer-based calls.
 ///
-/// This type deliberately has no scalar caller: only pointer-based batch
-/// entrypoints cross the native ABI boundary, so no by-value `i128` argument or
-/// return type is exposed to Rust FFI.
+/// Scalar calls are lowered to a single-row batch. No by-value `i128` argument
+/// or return type crosses the Rust FFI boundary.
 pub struct CompiledPureI128BatchInputs {
     _module: JITModule,
     batch_code: *const u8,
@@ -273,11 +272,10 @@ pub struct CompiledPureU64Inputs {
     stats: PureFunctionStats,
 }
 
-/// Compiled native helper returning an `u128` for flat batch calls.
+/// Compiled native helper returning an `u128` through pointer-based calls.
 ///
-/// This type deliberately has no scalar caller: only pointer-based batch
-/// entrypoints cross the native ABI boundary, so no by-value `u128` argument or
-/// return type is exposed to Rust FFI.
+/// Scalar calls are lowered to a single-row batch. No by-value `u128` argument
+/// or return type crosses the Rust FFI boundary.
 pub struct CompiledPureU128BatchInputs {
     _module: JITModule,
     batch_code: *const u8,
@@ -586,11 +584,11 @@ impl CraneliftPureFunctionBackend {
     /// functions with runtime `i128` inputs.
     ///
     /// The generated functions use pointer-based row buffers only. Scalar
-    /// `i128` calls stay on the VM/AOT path because Cranelift's platform ABI
-    /// handling for by-value i128 requires target-specific care. Runtime
-    /// inputs are loaded and stored as full-width `i128` values. Full-width
-    /// literals and captured constants are lowered from two 64-bit halves with
-    /// `iconcat`, avoiding invalid `iconst.i128` construction.
+    /// `i128` calls execute through a one-row batch so by-value `i128`
+    /// arguments stay out of the native ABI. Runtime inputs are loaded and
+    /// stored as full-width `i128` values. Full-width literals and captured
+    /// constants are lowered from two 64-bit halves with `iconcat`, avoiding
+    /// invalid `iconst.i128` construction.
     pub fn compile_i128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -792,11 +790,11 @@ impl CraneliftPureFunctionBackend {
     /// functions with runtime `u128` inputs.
     ///
     /// The generated functions use pointer-based row buffers only. Scalar
-    /// `u128` calls stay on the VM/AOT path because Cranelift's platform ABI
-    /// handling for by-value i128 requires target-specific care. Runtime
-    /// inputs are loaded and stored as full-width `u128` values. Full-width
-    /// literals and captured constants are lowered from two 64-bit halves with
-    /// `iconcat`, avoiding invalid `iconst.i128` construction.
+    /// `u128` calls execute through a one-row batch so by-value `u128`
+    /// arguments stay out of the native ABI. Runtime inputs are loaded and
+    /// stored as full-width `u128` values. Full-width literals and captured
+    /// constants are lowered from two 64-bit halves with `iconcat`, avoiding
+    /// invalid `iconst.i128` construction.
     pub fn compile_u128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
@@ -3748,6 +3746,16 @@ impl CompiledPureI64Inputs {
 }
 
 impl CompiledPureI128BatchInputs {
+    /// Calls the compiled helper for one row of `i128` inputs.
+    ///
+    /// This intentionally uses the pointer-based row batch ABI instead of a
+    /// by-value `i128` native function signature.
+    pub fn call(&self, inputs: &[i128]) -> Result<i128, CraneliftCodegenError> {
+        let mut out = [0_i128];
+        self.call_flat_batch(inputs, &mut out)?;
+        Ok(out[0])
+    }
+
     /// Calls the compiled helper for flat row-major `i128` inputs.
     pub fn call_flat_batch(
         &self,
@@ -4141,6 +4149,16 @@ impl CompiledPureU64Inputs {
 }
 
 impl CompiledPureU128BatchInputs {
+    /// Calls the compiled helper for one row of `u128` inputs.
+    ///
+    /// This intentionally uses the pointer-based row batch ABI instead of a
+    /// by-value `u128` native function signature.
+    pub fn call(&self, inputs: &[u128]) -> Result<u128, CraneliftCodegenError> {
+        let mut out = [0_u128];
+        self.call_flat_batch(inputs, &mut out)?;
+        Ok(out[0])
+    }
+
     /// Calls the compiled helper for flat row-major `u128` inputs.
     pub fn call_flat_batch(
         &self,

@@ -319,6 +319,10 @@ mod native_jit {
     macro_rules! impl_wide_int_batch_unavailable {
         ($compiled:ty, $ty:ty) => {
             impl $compiled {
+                pub fn call(&self, _args: &[$ty]) -> Result<$ty, NativeJitUnavailable> {
+                    Err(NativeJitUnavailable)
+                }
+
                 pub fn call_flat_batch(
                     &self,
                     _flat_inputs: &[$ty],
@@ -655,6 +659,9 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
         (RuntimeExactIntegerSlice::I32(args), RuntimePureCacheEntry::JitI32(compiled)) => {
             compiled.call(args).map(RuntimeValue::i32)
         }
+        (RuntimeExactIntegerSlice::I128(args), RuntimePureCacheEntry::JitI128Batch(compiled)) => {
+            compiled.call(args).map(RuntimeValue::i128)
+        }
         (RuntimeExactIntegerSlice::ISize(args), RuntimePureCacheEntry::JitISize(compiled)) => {
             compiled
                 .call_isize(args)
@@ -671,6 +678,9 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
         }
         (RuntimeExactIntegerSlice::U64(args), RuntimePureCacheEntry::JitU64(compiled)) => {
             compiled.call(args).map(RuntimeValue::u64)
+        }
+        (RuntimeExactIntegerSlice::U128(args), RuntimePureCacheEntry::JitU128Batch(compiled)) => {
+            compiled.call(args).map(RuntimeValue::u128)
         }
         (RuntimeExactIntegerSlice::USize(args), RuntimePureCacheEntry::JitUSize(compiled)) => {
             compiled
@@ -7201,89 +7211,49 @@ mod tests {
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    fn assert_exact_int_scalar_jit<T>(name: &str, args: &[T], one: T, expected: T)
+    where
+        T: RuntimePureScalarInteger + PartialEq + std::fmt::Debug,
+    {
+        let helper = exact_int_add_helper(
+            name,
+            T::INPUT_TYPE,
+            T::OUTPUT_TYPE,
+            one.into_runtime_value(),
+        );
+        let mut accelerator =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+
+        let value = accelerator
+            .call_exact_int_slice::<T>(&helper, args)
+            .expect("generic exact-int call succeeds");
+
+        assert_eq!(value, Some(expected));
+        assert_eq!(accelerator.stats().jit_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn generic_exact_int_scalar_call_recognizes_width_specific_jit_entry() {
-        let helper = exact_int_add_helper(
-            "u16_generic_jit",
-            RuntimePureInputType::U16,
-            RuntimePureOutputType::U16,
-            RuntimeValue::u16(1),
-        );
-        let mut accelerator =
-            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
-
-        let value = accelerator
-            .call_exact_int_slice::<u16>(&helper, &[13, 17])
-            .expect("generic u16 exact-int call succeeds");
-
-        assert_eq!(value, Some(31));
-        assert_eq!(accelerator.stats().jit_calls, 1);
-        assert_eq!(accelerator.stats().vm_calls, 0);
-        assert_eq!(accelerator.stats().fallbacks, 0);
-        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
-
-        let helper = exact_int_add_helper(
-            "u32_generic_jit",
-            RuntimePureInputType::U32,
-            RuntimePureOutputType::U32,
-            RuntimeValue::u32(1),
-        );
-        let mut accelerator =
-            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
-
-        let value = accelerator
-            .call_exact_int_slice::<u32>(&helper, &[29, 31])
-            .expect("generic u32 exact-int call succeeds");
-
-        assert_eq!(value, Some(61));
-        assert_eq!(accelerator.stats().jit_calls, 1);
-        assert_eq!(accelerator.stats().vm_calls, 0);
-        assert_eq!(accelerator.stats().fallbacks, 0);
-        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
-
-        let helper = exact_int_add_helper(
+        assert_exact_int_scalar_jit("u16_generic_jit", &[13_u16, 17_u16], 1_u16, 31_u16);
+        assert_exact_int_scalar_jit("u32_generic_jit", &[29_u32, 31_u32], 1_u32, 61_u32);
+        assert_exact_int_scalar_jit("i128_generic_jit", &[53_i128, 59_i128], 1_i128, 113_i128);
+        assert_exact_int_scalar_jit(
             "isize_generic_jit",
-            RuntimePureInputType::ISize,
-            RuntimePureOutputType::ISize,
-            RuntimeValue::isize(1),
+            &[RuntimeISizeValue::new(37), RuntimeISizeValue::new(41)],
+            RuntimeISizeValue::new(1),
+            RuntimeISizeValue::new(79),
         );
-        let mut accelerator =
-            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
-
-        let value = accelerator
-            .call_exact_int_slice::<RuntimeISizeValue>(
-                &helper,
-                &[RuntimeISizeValue::new(37), RuntimeISizeValue::new(41)],
-            )
-            .expect("generic isize exact-int call succeeds");
-
-        assert_eq!(value, Some(RuntimeISizeValue::new(79)));
-        assert_eq!(accelerator.stats().jit_calls, 1);
-        assert_eq!(accelerator.stats().vm_calls, 0);
-        assert_eq!(accelerator.stats().fallbacks, 0);
-        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
-
-        let helper = exact_int_add_helper(
+        assert_exact_int_scalar_jit(
             "usize_generic_jit",
-            RuntimePureInputType::USize,
-            RuntimePureOutputType::USize,
-            RuntimeValue::usize(1),
+            &[RuntimeUSizeValue::new(43), RuntimeUSizeValue::new(47)],
+            RuntimeUSizeValue::new(1),
+            RuntimeUSizeValue::new(91),
         );
-        let mut accelerator =
-            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
-
-        let value = accelerator
-            .call_exact_int_slice::<RuntimeUSizeValue>(
-                &helper,
-                &[RuntimeUSizeValue::new(43), RuntimeUSizeValue::new(47)],
-            )
-            .expect("generic usize exact-int call succeeds");
-
-        assert_eq!(value, Some(RuntimeUSizeValue::new(91)));
-        assert_eq!(accelerator.stats().jit_calls, 1);
-        assert_eq!(accelerator.stats().vm_calls, 0);
-        assert_eq!(accelerator.stats().fallbacks, 0);
-        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_exact_int_scalar_jit("u128_generic_jit", &[61_u128, 67_u128], 1_u128, 129_u128);
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
