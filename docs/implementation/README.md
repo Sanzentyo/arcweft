@@ -117,7 +117,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   alongside standard symbols, methods, typed effect capabilities, host calls,
   project-local JSON/TOML adapter manifests, and package export tables, and
   `arcweft-verify-lsp` exposes Sans I/O completion, hover, and signature-help
-  helpers from the same manifest. `extern rust mod`
+  helpers from the same manifest. Rust ABI type labels now use the metadata
+  crate's `Display` implementation, so LSP completion and hover show struct
+  fields, enum variants, newtype inners, and nested collection/result/tuple
+  references without parsing Rust source. `extern rust mod`
   declarations parse as structured type/function/activity members and are
   checked against the profile-selected package metadata. The CLI reads
   `rust_metadata` entries from launch profiles; direct-path checks remain

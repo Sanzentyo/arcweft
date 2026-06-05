@@ -5,6 +5,7 @@
 //! metadata is produced and stored.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use thiserror::Error;
 
 /// Current stable metadata schema version.
@@ -301,6 +302,94 @@ impl ArcweftRustManifestBuilder {
     }
 }
 
+impl fmt::Display for ArcweftRustTypeDecl {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ArcweftRustTypeKind::Struct { fields } => {
+                if fields.is_empty() {
+                    write!(formatter, "struct {}", self.name)
+                } else {
+                    write!(formatter, "struct {} {{ ", self.name)?;
+                    write_fields(formatter, fields)?;
+                    formatter.write_str(" }")
+                }
+            }
+            ArcweftRustTypeKind::Enum { variants } => {
+                if variants.is_empty() {
+                    write!(formatter, "enum {}", self.name)
+                } else {
+                    write!(formatter, "enum {} {{ ", self.name)?;
+                    for (index, variant) in variants.iter().enumerate() {
+                        if index > 0 {
+                            formatter.write_str(", ")?;
+                        }
+                        formatter.write_str(&variant.name)?;
+                        if !variant.fields.is_empty() {
+                            formatter.write_str(" { ")?;
+                            write_fields(formatter, &variant.fields)?;
+                            formatter.write_str(" }")?;
+                        }
+                    }
+                    formatter.write_str(" }")
+                }
+            }
+            ArcweftRustTypeKind::Newtype { inner } => {
+                write!(formatter, "newtype {}({inner})", self.name)
+            }
+        }
+    }
+}
+
+impl fmt::Display for ArcweftRustTypeRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unit => formatter.write_str("()"),
+            Self::Bool => formatter.write_str("Bool"),
+            Self::I8 => formatter.write_str("i8"),
+            Self::I16 => formatter.write_str("i16"),
+            Self::I32 => formatter.write_str("i32"),
+            Self::I64 => formatter.write_str("i64"),
+            Self::I128 => formatter.write_str("i128"),
+            Self::ISize => formatter.write_str("isize"),
+            Self::U8 => formatter.write_str("u8"),
+            Self::U16 => formatter.write_str("u16"),
+            Self::U32 => formatter.write_str("u32"),
+            Self::U64 => formatter.write_str("u64"),
+            Self::U128 => formatter.write_str("u128"),
+            Self::USize => formatter.write_str("usize"),
+            Self::F32 => formatter.write_str("f32"),
+            Self::F64 => formatter.write_str("f64"),
+            Self::String => formatter.write_str("String"),
+            Self::Char => formatter.write_str("Char"),
+            Self::Vec { item } => write!(formatter, "Vec<{item}>"),
+            Self::Seq { item } => write!(formatter, "Seq<{item}>"),
+            Self::Option { item } => write!(formatter, "Option<{item}>"),
+            Self::Result { ok, error } => write!(formatter, "Result<{ok}, {error}>"),
+            Self::Tuple { items } => {
+                formatter.write_str("(")?;
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    write!(formatter, "{item}")?;
+                }
+                formatter.write_str(")")
+            }
+            Self::Named { name } => formatter.write_str(name),
+        }
+    }
+}
+
+fn write_fields(formatter: &mut fmt::Formatter<'_>, fields: &[ArcweftRustField]) -> fmt::Result {
+    for (index, field) in fields.iter().enumerate() {
+        if index > 0 {
+            formatter.write_str(", ")?;
+        }
+        write!(formatter, "{}: {}", field.name, field.ty)?;
+    }
+    Ok(())
+}
+
 /// ABI metadata codec errors.
 #[derive(Debug, Error)]
 pub enum ArcweftRustAbiError {
@@ -396,5 +485,72 @@ mod tests {
 
         assert_eq!(manifest.types[0].name, "LocalType");
         assert_eq!(manifest.functions[0].params[0].name, "value");
+    }
+
+    #[test]
+    fn display_labels_struct_enum_newtype_and_nested_refs() {
+        let stats = ArcweftRustTypeDecl {
+            name: "PlayerStats".to_owned(),
+            rust_path: "game::PlayerStats".to_owned(),
+            kind: ArcweftRustTypeKind::Struct {
+                fields: vec![
+                    ArcweftRustField {
+                        name: "score".to_owned(),
+                        ty: ArcweftRustTypeRef::I32,
+                    },
+                    ArcweftRustField {
+                        name: "rank".to_owned(),
+                        ty: ArcweftRustTypeRef::Option {
+                            item: Box::new(ArcweftRustTypeRef::Named {
+                                name: "Rank".to_owned(),
+                            }),
+                        },
+                    },
+                ],
+            },
+        };
+        let rank = ArcweftRustTypeDecl {
+            name: "Rank".to_owned(),
+            rust_path: "game::Rank".to_owned(),
+            kind: ArcweftRustTypeKind::Enum {
+                variants: vec![
+                    ArcweftRustVariant {
+                        name: "Bronze".to_owned(),
+                        fields: Vec::new(),
+                    },
+                    ArcweftRustVariant {
+                        name: "Custom".to_owned(),
+                        fields: vec![ArcweftRustField {
+                            name: "label".to_owned(),
+                            ty: ArcweftRustTypeRef::String,
+                        }],
+                    },
+                ],
+            },
+        };
+        let id = ArcweftRustTypeDecl {
+            name: "SessionId".to_owned(),
+            rust_path: "game::SessionId".to_owned(),
+            kind: ArcweftRustTypeKind::Newtype {
+                inner: ArcweftRustTypeRef::U64,
+            },
+        };
+        let nested = ArcweftRustTypeRef::Result {
+            ok: Box::new(ArcweftRustTypeRef::Tuple {
+                items: vec![ArcweftRustTypeRef::U32, ArcweftRustTypeRef::U32],
+            }),
+            error: Box::new(ArcweftRustTypeRef::String),
+        };
+
+        assert_eq!(
+            stats.to_string(),
+            "struct PlayerStats { score: i32, rank: Option<Rank> }"
+        );
+        assert_eq!(
+            rank.to_string(),
+            "enum Rank { Bronze, Custom { label: String } }"
+        );
+        assert_eq!(id.to_string(), "newtype SessionId(u64)");
+        assert_eq!(nested.to_string(), "Result<(u32, u32), String>");
     }
 }

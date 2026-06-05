@@ -13,6 +13,7 @@ use arcweft_runtime_host::{
     RuntimeHostCapabilities, RuntimeHostConformanceDiagnosticKind, RuntimeHostConformanceReport,
     RuntimeHostRunnerKind,
 };
+use arcweft_rust_abi::{ArcweftRustTypeDecl, ArcweftRustTypeKind};
 use arcweft_verify::{
     Severity as VerifySeverity, ToolActionKind, VerificationDiagnostic, VerificationReport,
 };
@@ -296,8 +297,9 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
             kind: Some(CompletionItemKind::FUNCTION),
             detail: Some(signature_label(function.name(), function.signature())),
             documentation: Some(lsp_types::Documentation::String(format!(
-                "Rust export: {}",
-                function.rust_path()
+                "Rust export: {}\nPackage: {}",
+                function.rust_path(),
+                function.package()
             ))),
             ..CompletionItem::default()
         });
@@ -307,8 +309,13 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
         .iter()
         .map(|ty| CompletionItem {
             label: ty.decl().name.clone(),
-            kind: Some(CompletionItemKind::STRUCT),
-            detail: Some(format!("Rust type {}", ty.decl().rust_path)),
+            kind: Some(rust_type_completion_kind(ty.decl())),
+            detail: Some(ty.decl().to_string()),
+            documentation: Some(lsp_types::Documentation::String(format!(
+                "Rust type: {}\nPackage: {}",
+                ty.decl().rust_path,
+                ty.package()
+            ))),
             ..CompletionItem::default()
         });
     functions.chain(types).collect()
@@ -379,9 +386,10 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
     {
         return Some(Hover {
             contents: HoverContents::Scalar(MarkedString::String(format!(
-                "{}\nRust: {}",
+                "{}\nRust: {}\nPackage: {}",
                 signature_label(function.name(), function.signature()),
-                function.rust_path()
+                function.rust_path(),
+                function.package()
             ))),
             range: None,
         });
@@ -393,9 +401,10 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
         .find(|ty| ty.decl().name == name)
         .map(|ty| Hover {
             contents: HoverContents::Scalar(MarkedString::String(format!(
-                "type {}\nRust: {}",
-                ty.decl().name,
-                ty.decl().rust_path
+                "{}\nRust: {}\nPackage: {}",
+                ty.decl(),
+                ty.decl().rust_path,
+                ty.package()
             ))),
             range: None,
         })
@@ -789,6 +798,15 @@ fn method_label(receiver: &TypeKind, name: &str) -> String {
     format!("{}.{}", type_kind_label(receiver), name)
 }
 
+fn rust_type_completion_kind(decl: &ArcweftRustTypeDecl) -> CompletionItemKind {
+    match &decl.kind {
+        ArcweftRustTypeKind::Enum { .. } => CompletionItemKind::ENUM,
+        ArcweftRustTypeKind::Struct { .. } | ArcweftRustTypeKind::Newtype { .. } => {
+            CompletionItemKind::STRUCT
+        }
+    }
+}
+
 fn string_hover(value: String) -> Hover {
     Hover {
         contents: HoverContents::Scalar(MarkedString::String(value)),
@@ -861,8 +879,9 @@ mod tests {
     use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest, AdapterToolingDoc};
     use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_rust_abi::{
-        ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-        ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
+        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+        ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+        ArcweftRustTypeRef, ArcweftRustVariant,
     };
     use arcweft_verify::{VerificationDiagnostic, VerificationPolicy, VerificationReport};
 
@@ -973,6 +992,152 @@ mod tests {
             signature.signatures[0].label,
             "mini_games.truck.score_to_rank(score: i32) -> Rank"
         );
+    }
+
+    #[test]
+    fn exposes_complex_rust_adapter_type_shapes_from_metadata() {
+        let manifest = complex_rust_manifest();
+        let adapter = AdapterManifest::new("fixture", "Fixture").with_rust_manifest(&manifest);
+        let context = ArcweftLspContext::new(&adapter);
+
+        let completions = rust_adapter_completions(&context);
+        let stats = completions
+            .iter()
+            .find(|item| item.label == "PlayerStats")
+            .expect("PlayerStats completion");
+        assert_eq!(stats.kind, Some(CompletionItemKind::STRUCT));
+        assert!(stats.detail.as_deref().is_some_and(|detail| {
+            detail.contains("score: i32")
+                && detail.contains("tags: Vec<String>")
+                && detail.contains("rank: Option<Rank>")
+        }));
+        let rank = completions
+            .iter()
+            .find(|item| item.label == "Rank")
+            .expect("Rank completion");
+        assert_eq!(rank.kind, Some(CompletionItemKind::ENUM));
+
+        let stats_hover = rust_adapter_hover(&context, "PlayerStats").expect("stats hover");
+        assert!(
+            matches!(stats_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("struct PlayerStats") && text.contains("Package: quest_logic"))
+        );
+        let rank_hover = rust_adapter_hover(&context, "Rank").expect("rank hover");
+        assert!(
+            matches!(rank_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("enum Rank") && text.contains("Custom { label: String }"))
+        );
+        let session_hover = rust_adapter_hover(&context, "SessionId").expect("newtype hover");
+        assert!(
+            matches!(session_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("newtype SessionId(u64)"))
+        );
+
+        let signature =
+            rust_adapter_signature_help(&context, "quest.evaluate").expect("signature help");
+        assert_eq!(
+            signature.signatures[0].label,
+            "quest.evaluate(stats: PlayerStats, seed: Result<(u32, u32), String>) -> Rank"
+        );
+    }
+
+    fn complex_rust_manifest() -> ArcweftRustManifest {
+        ArcweftRustManifest::new(ArcweftRustPackage {
+            name: "quest_logic".to_owned(),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_type(player_stats_type())
+        .with_type(rank_type())
+        .with_type(session_id_type())
+        .with_function(evaluate_function())
+    }
+
+    fn player_stats_type() -> ArcweftRustTypeDecl {
+        ArcweftRustTypeDecl {
+            name: "PlayerStats".to_owned(),
+            rust_path: "quest_logic::PlayerStats".to_owned(),
+            kind: ArcweftRustTypeKind::Struct {
+                fields: vec![
+                    ArcweftRustField {
+                        name: "score".to_owned(),
+                        ty: ArcweftRustTypeRef::I32,
+                    },
+                    ArcweftRustField {
+                        name: "tags".to_owned(),
+                        ty: ArcweftRustTypeRef::Vec {
+                            item: Box::new(ArcweftRustTypeRef::String),
+                        },
+                    },
+                    ArcweftRustField {
+                        name: "rank".to_owned(),
+                        ty: ArcweftRustTypeRef::Option {
+                            item: Box::new(ArcweftRustTypeRef::Named {
+                                name: "Rank".to_owned(),
+                            }),
+                        },
+                    },
+                ],
+            },
+        }
+    }
+
+    fn rank_type() -> ArcweftRustTypeDecl {
+        ArcweftRustTypeDecl {
+            name: "Rank".to_owned(),
+            rust_path: "quest_logic::Rank".to_owned(),
+            kind: ArcweftRustTypeKind::Enum {
+                variants: vec![
+                    ArcweftRustVariant {
+                        name: "Bronze".to_owned(),
+                        fields: Vec::new(),
+                    },
+                    ArcweftRustVariant {
+                        name: "Custom".to_owned(),
+                        fields: vec![ArcweftRustField {
+                            name: "label".to_owned(),
+                            ty: ArcweftRustTypeRef::String,
+                        }],
+                    },
+                ],
+            },
+        }
+    }
+
+    fn session_id_type() -> ArcweftRustTypeDecl {
+        ArcweftRustTypeDecl {
+            name: "SessionId".to_owned(),
+            rust_path: "quest_logic::SessionId".to_owned(),
+            kind: ArcweftRustTypeKind::Newtype {
+                inner: ArcweftRustTypeRef::U64,
+            },
+        }
+    }
+
+    fn evaluate_function() -> ArcweftRustFunction {
+        ArcweftRustFunction {
+            name: "quest.evaluate".to_owned(),
+            rust_path: "quest_logic::evaluate".to_owned(),
+            params: vec![
+                ArcweftRustParam {
+                    name: "stats".to_owned(),
+                    ty: ArcweftRustTypeRef::Named {
+                        name: "PlayerStats".to_owned(),
+                    },
+                },
+                ArcweftRustParam {
+                    name: "seed".to_owned(),
+                    ty: ArcweftRustTypeRef::Result {
+                        ok: Box::new(ArcweftRustTypeRef::Tuple {
+                            items: vec![ArcweftRustTypeRef::U32, ArcweftRustTypeRef::U32],
+                        }),
+                        error: Box::new(ArcweftRustTypeRef::String),
+                    },
+                },
+            ],
+            return_type: ArcweftRustTypeRef::Named {
+                name: "Rank".to_owned(),
+            },
+            purity: ArcweftRustPurity::Pure,
+            effects: Vec::new(),
+        }
     }
 
     #[test]

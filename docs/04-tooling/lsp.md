@@ -118,10 +118,13 @@ consumes an already-resolved adapter manifest containing standard adapter facts,
 project-local adapter manifests, and any profile-selected `arcweft-rust-abi`
 metadata. It exposes manifest symbols, receiver methods, free functions, effect
 capabilities, host calls, tooling docs, Rust exports, and Rust ADT names from the
-same data source. It does not parse Rust source, query rust-analyzer, or run
-Cargo by itself. Transport code refreshes metadata when the selected profile,
-metadata JSON, adapter manifest, or Cargo build output changes, and can continue
-showing the last valid metadata while reporting stale or missing metadata.
+same data source. Rust ADT display uses `arcweft-rust-abi` metadata formatting,
+so struct fields, enum variants, newtype inners, and nested `Vec` / `Option` /
+`Result` / tuple references are visible in completion detail and hover without
+the LSP parsing Rust source, querying rust-analyzer, or running Cargo by itself.
+Transport code refreshes metadata when the selected profile, metadata JSON,
+adapter manifest, or Cargo build output changes, and can continue showing the
+last valid metadata while reporting stale or missing metadata.
 
 The stdio transport resolves project metadata from `arcw.toml` near each opened
 document and caches the resolved profile per document URI. On `didOpen` and

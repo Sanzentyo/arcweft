@@ -9,14 +9,12 @@ repository.workspace = true
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 lsp-types.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 
 [lib]
 path = "src/lib.rs"

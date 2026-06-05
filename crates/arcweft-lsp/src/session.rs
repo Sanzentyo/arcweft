@@ -421,6 +421,11 @@ fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_rust_abi::{
+        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+        ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+        ArcweftRustTypeRef,
+    };
     use lsp_types::{
         ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
         DidChangeWatchedFilesParams, DidOpenTextDocumentParams, PartialResultParams, Position,
@@ -723,6 +728,95 @@ adapter_manifests = ["adapters/custom.toml"]
         assert!(!completions.iter().any(|item| item.label == "custom.before"));
     }
 
+    #[test]
+    fn session_reads_rust_metadata_for_completion_and_hover() {
+        let project = TestProject::new("lsp-session-rust-metadata");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "quest"
+adapter_manifests = ["adapters/quest.toml"]
+rust_metadata = ["target/arcweft/quest.json"]
+"#,
+        );
+        project.write(
+            "adapters/quest.toml",
+            adapter_manifest("quest", "quest.echo").as_str(),
+        );
+        let rust_manifest = ArcweftRustManifest::new(ArcweftRustPackage {
+            name: "quest_logic".to_owned(),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_type(ArcweftRustTypeDecl {
+            name: "PlayerStats".to_owned(),
+            rust_path: "quest_logic::PlayerStats".to_owned(),
+            kind: ArcweftRustTypeKind::Struct {
+                fields: vec![
+                    ArcweftRustField {
+                        name: "score".to_owned(),
+                        ty: ArcweftRustTypeRef::I32,
+                    },
+                    ArcweftRustField {
+                        name: "tags".to_owned(),
+                        ty: ArcweftRustTypeRef::Vec {
+                            item: Box::new(ArcweftRustTypeRef::String),
+                        },
+                    },
+                ],
+            },
+        })
+        .with_function(ArcweftRustFunction {
+            name: "quest.evaluate".to_owned(),
+            rust_path: "quest_logic::evaluate".to_owned(),
+            params: vec![ArcweftRustParam {
+                name: "stats".to_owned(),
+                ty: ArcweftRustTypeRef::Named {
+                    name: "PlayerStats".to_owned(),
+                },
+            }],
+            return_type: ArcweftRustTypeRef::String,
+            purity: ArcweftRustPurity::Pure,
+            effects: Vec::new(),
+        });
+        project.write(
+            "target/arcweft/quest.json",
+            &rust_manifest.to_json_pretty().expect("metadata json"),
+        );
+        let source =
+            "flow @.main main {\n    let result = quest.evaluate\n    let ty = PlayerStats\n}\n";
+        project.write("src/main.arcw", source);
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), source);
+
+        let completions = completion_labels(&mut session, uri.clone());
+        let player_stats = completions
+            .iter()
+            .find(|item| item.label == "PlayerStats")
+            .expect("PlayerStats completion");
+        assert!(player_stats.detail.as_deref().is_some_and(|detail| {
+            detail.contains("struct PlayerStats") && detail.contains("tags: Vec<String>")
+        }));
+        let evaluate = completions
+            .iter()
+            .find(|item| item.label == "quest.evaluate")
+            .expect("quest.evaluate completion");
+        assert!(
+            evaluate
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail == "quest.evaluate(stats: PlayerStats) -> String")
+        );
+
+        let hover = hover_text(&mut session, uri, source, "PlayerStats");
+        assert!(hover.contains("struct PlayerStats"));
+        assert!(hover.contains("Package: quest_logic"));
+    }
+
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
         open_text(
             session,
@@ -770,6 +864,40 @@ adapter_manifests = ["adapters/custom.toml"]
             CompletionResponse::Array(items) => items,
             CompletionResponse::List(list) => list.items,
         }
+    }
+
+    fn hover_text(session: &mut ArcweftLspSession, uri: Uri, source: &str, needle: &str) -> String {
+        let response = session.handle_request(Request {
+            id: RequestId::from(2),
+            method: HoverRequest::METHOD.to_owned(),
+            params: serde_json::json!(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: position_of(source, needle),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            }),
+        });
+        let hover =
+            serde_json::from_value::<lsp_types::Hover>(response.result.expect("hover response"))
+                .expect("hover response decodes");
+        match hover.contents {
+            lsp_types::HoverContents::Scalar(lsp_types::MarkedString::String(text)) => text,
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
+
+    fn position_of(source: &str, needle: &str) -> Position {
+        let offset = source.find(needle).expect("needle in source");
+        let before = &source[..offset];
+        let line = before.bytes().filter(|byte| *byte == b'\n').count();
+        let character = before
+            .rsplit_once('\n')
+            .map_or(before.len(), |(_, tail)| tail.len());
+        Position::new(
+            u32::try_from(line).expect("fixture line fits"),
+            u32::try_from(character).expect("fixture character fits"),
+        )
     }
 
     fn adapter_manifest(id: &str, function: &str) -> String {
