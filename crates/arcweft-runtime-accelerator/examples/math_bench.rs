@@ -1520,6 +1520,8 @@ struct BackendReport {
     status: &'static str,
     median_ns: Option<u128>,
     min_ns: Option<u128>,
+    p95_ns: Option<u128>,
+    mad_ns: Option<u128>,
     max_ns: Option<u128>,
     stats: Option<RuntimeMathStats>,
     diagnostic: Option<String>,
@@ -1610,6 +1612,8 @@ struct BackendReportJson {
     status: &'static str,
     median_ns: Option<u128>,
     min_ns: Option<u128>,
+    p95_ns: Option<u128>,
+    mad_ns: Option<u128>,
     max_ns: Option<u128>,
     stats: Option<RuntimeMathStatsJson>,
     diagnostic: Option<String>,
@@ -1667,11 +1671,14 @@ impl BackendReport {
         stats: RuntimeMathStats,
     ) -> Self {
         samples.sort_unstable();
+        let median = median_sample(&samples);
         Self {
             backend,
             status: "measured",
-            median_ns: samples.get(samples.len() / 2).copied(),
+            median_ns: median,
             min_ns: samples.first().copied(),
+            p95_ns: percentile_sample(&samples, 95),
+            mad_ns: median.and_then(|median| median_absolute_deviation(&samples, median)),
             max_ns: samples.last().copied(),
             stats: Some(stats),
             diagnostic: None,
@@ -1689,6 +1696,8 @@ impl BackendReport {
             status,
             median_ns: None,
             min_ns: None,
+            p95_ns: None,
+            mad_ns: None,
             max_ns: None,
             stats: None,
             diagnostic: Some(diagnostic),
@@ -1701,6 +1710,8 @@ impl BackendReport {
             status: "failed",
             median_ns: None,
             min_ns: None,
+            p95_ns: None,
+            mad_ns: None,
             max_ns: None,
             stats: None,
             diagnostic: Some(diagnostic),
@@ -1713,11 +1724,37 @@ impl BackendReport {
             status: self.status,
             median_ns: self.median_ns,
             min_ns: self.min_ns,
+            p95_ns: self.p95_ns,
+            mad_ns: self.mad_ns,
             max_ns: self.max_ns,
             stats: self.stats.map(Into::into),
             diagnostic: self.diagnostic,
         }
     }
+}
+
+fn median_sample(samples: &[u128]) -> Option<u128> {
+    samples.get(samples.len() / 2).copied()
+}
+
+fn percentile_sample(samples: &[u128], percentile: usize) -> Option<u128> {
+    if samples.is_empty() {
+        return None;
+    }
+    let index = (samples.len() * percentile / 100).min(samples.len() - 1);
+    samples.get(index).copied()
+}
+
+fn median_absolute_deviation(samples: &[u128], median: u128) -> Option<u128> {
+    if samples.is_empty() {
+        return None;
+    }
+    let mut deviations = samples
+        .iter()
+        .map(|sample| sample.abs_diff(median))
+        .collect::<Vec<_>>();
+    deviations.sort_unstable();
+    median_sample(&deviations)
 }
 
 fn add_math_stats(total: &mut RuntimeMathStats, sample: RuntimeMathStats) {
@@ -1815,6 +1852,8 @@ mod tests {
         assert!(json.contains("\"build_mode\":"));
         assert!(json.contains("\"host_system\":"));
         assert!(json.contains("\"available_parallelism\":"));
+        assert!(json.contains("\"p95_ns\":"));
+        assert!(json.contains("\"mad_ns\":"));
         assert!(json.contains("\"last_auto_reason\":\"matmul_4x4_glam\""));
         assert!(json.contains("\"fused_matmul_bias_add_calls\":0"));
         let windows_drive_prefixes = ["C:", "D:"].map(|drive| format!("{drive}\\"));

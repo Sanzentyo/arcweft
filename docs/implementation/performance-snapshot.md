@@ -1011,7 +1011,9 @@ Standalone `math_bench` JSON includes `build_mode` and a path-free
 `host_system` summary so debug-assertion runs and different CPU/thread limits
 are not confused with optimized performance evidence. The representative
 standalone math rows below are from the release just recipes and report
-`build_mode = "optimized"`.
+`build_mode = "optimized"`. Per-backend timing also includes `p95_ns` and
+median absolute deviation as `mad_ns`, so single-run outliers are visible in
+the JSON even when the summary table only records medians.
 
 Representative release results on the local machine:
 
