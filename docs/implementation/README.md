@@ -250,6 +250,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   worker pool. Runtime and bench JSON expose policy checks, weighted work,
   parallel batches, backend skips, small-batch skips, and pool build time so
   threshold decisions can be tuned from path-free measurements.
+- Auto pure scalar execution now uses the same work-unit policy family as flat
+  batches. Cold scalar helpers still start on typed AOT, but repeated scalar
+  calls accumulate per-helper work units and promote supported native kinds to
+  JIT once the hot scalar threshold is crossed. Warmed natural `for` loops over
+  exact-width integers and floats can therefore reach native JIT without an
+  explicit `--pure-backend jit`, while small scalar flows avoid JIT startup
+  cost.
 - AOT pure scratch calls reset caller-owned slot buffers in place when the
   compiled slot count is unchanged, so repeated scalar and batch helper calls do
   not rebuild the slot vector before writing dynamic inputs.

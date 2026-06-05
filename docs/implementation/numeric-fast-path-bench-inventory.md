@@ -34,6 +34,7 @@ name or relative fixture label and must not record host absolute paths.
 | `032_dense_u16_map_pure_batch.arcw` | pure helper batch | `u16` input/output | native JIT when requested, AOT/VM selectable |
 | `033_mixed_for_iter_pure_jit.arcw` | mixed scalar and batch pure helper calls | `i32`, `u32`, and `f32` across `.map` and `for` | exact-width native JIT for scalar and flat batch calls |
 | `038_wide_for_pure_jit.arcw` | scalar pure helper calls | `i128` and `u128` across `for` | native JIT via one-row pointer batches, no by-value wide integer ABI |
+| `039_hot_for_pure_auto_jit.arcw` | hot scalar pure helper calls | `i128` and `f32` across `for` | Auto starts on typed AOT, promotes hot scalar loops to native JIT |
 
 ## Current Bench Commands
 
@@ -104,16 +105,18 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/038_wide_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/039_hot_for_pure_auto_jit.arcw --json --iterations 4 --warmup 1 --samples 3 --steps 512 --max-ops 512 --pure-backend auto
 ```
 
 Per-fixture convenience targets now also exist for the i64 helper fixtures
 (`just bench-002`, `just bench-003`, `just bench-005`, `just bench-007`,
 `just bench-008`, and `just bench-009`), `just bench-016` through
 `just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
-through `just bench-033`, plus `just bench-038`. Those targets request
-`--pure-backend jit` where the
+through `just bench-033`, plus `just bench-038` and `just bench-039`. Those
+targets request `--pure-backend jit` where the
 fixture directly selects native JIT, while the large i64 Auto fixtures use
-`--pure-backend auto` to exercise deferred JIT promotion.
+`--pure-backend auto` to exercise deferred JIT promotion. `bench-039` also uses
+Auto to exercise hot scalar-loop promotion.
 
 ## Verification Inventory
 
@@ -138,6 +141,7 @@ in JSON output:
 | `bench_json_measures_checked_in_dense_target_size_integer_map_pure_batch_fixtures` | exact `isize` and `usize` native JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture` | mixed `i32`, `u32`, and `f32` `.map`/`for` pure calls use JIT with zero VM fallback and no argument Vec allocation |
 | `bench_json_measures_checked_in_wide_for_pure_jit_fixture` | scalar `i128` and `u128` `for` pure calls use native JIT through one-row pointer batches with zero VM fallback and no argument Vec allocation |
+| `bench_json_measures_checked_in_hot_for_pure_auto_jit_fixture` | hot scalar `i128` and `f32` `for` pure calls promote from Auto AOT to native JIT before measured iterations |
 
 Useful check commands:
 
@@ -168,7 +172,10 @@ The Auto backend now treats every native JIT entry width as a deferred JIT
 candidate after the initial typed AOT plan. Large flat batches can promote
 `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`,
 `u128`, `usize`, `f32`, and `f64` helpers to native JIT without routing through
-the VM fallback.
+the VM fallback. Scalar calls also accumulate per-helper work units and promote
+from Auto AOT to native JIT once the hot scalar loop crosses the same work
+threshold family, preserving cold scalar startup while allowing natural `for`
+loops to become native without requiring an explicit `--pure-backend jit`.
 
 Generic exact-integer scalar calls now use a typed borrowed slice view from
 `RuntimeExactInteger` to recognize width-specific JIT cache entries. This keeps
@@ -203,3 +210,14 @@ ABI calls. A path-free local run with eight measured iterations reported
 `pure_vm_calls_median = 0`, `pure_fallbacks_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 512`,
 `pure_result_bytes_copied_median = 0`, and `elapsed_ns.median = 83800`.
+
+The hot scalar Auto `039_hot_for_pure_auto_jit.arcw` fixture confirms that
+ordinary `for` loops over `i128` and `f32` promote from deferred Auto AOT to
+native JIT after warmup. A path-free local run with one warmup and four measured
+iterations reported `auto_jit_deferred = 2`, `auto_jit_promotions = 2`,
+`jit_successes = 2`, `pure_calls_median = 256`,
+`pure_batch_calls_median = 0`, `pure_jit_calls_median = 256`,
+`pure_aot_calls_median = 0`, `pure_vm_calls_median = 0`,
+`pure_fallbacks_median = 0`, `pure_arg_vec_allocations_median = 0`,
+`pure_arg_bytes_borrowed_median = 5120`, and
+`elapsed_ns.median = 1093100`.

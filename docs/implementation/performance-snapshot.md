@@ -137,6 +137,17 @@ elapsed time `8700 ns`, `pure_batch_items_median = 4096`,
 `auto_jit_deferred = 1`, and `auto_jit_promotions = 1`. The same fixture had
 previously stayed on typed AOT in this path, so the change removes a repeated
 batch policy gap rather than adding a compatibility path.
+Hot scalar loops now use the same deferred policy family: each AutoAOT helper
+accumulates scalar work units and promotes to native JIT once the hot scalar
+loop crosses the JIT work threshold. `039_hot_for_pure_auto_jit.arcw` starts
+with typed AOT during warmup, then measures ordinary `for` loops over `i128` and
+`f32` on native JIT. A path-free local run reported median elapsed time
+`1093100 ns`, `auto_jit_deferred = 2`, `auto_jit_promotions = 2`,
+`jit_successes = 2`, `pure_calls_median = 256`,
+`pure_jit_calls_median = 256`, `pure_aot_calls_median = 0`,
+`pure_vm_calls_median = 0`, `pure_fallbacks_median = 0`,
+`pure_arg_vec_allocations_median = 0`, and
+`pure_arg_bytes_borrowed_median = 5120`.
 
 Dense scalar sequence benches:
 

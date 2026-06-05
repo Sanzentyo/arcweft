@@ -483,6 +483,7 @@ pub struct RuntimePureAccelerator {
     compile_stats: RuntimePureCompileStats,
     helper_summary: RuntimePureAccelerationSummary,
     helper_work_units: Vec<usize>,
+    auto_scalar_work_units: Vec<usize>,
     pool: Option<ThreadPool>,
     resolved_workers: usize,
     flat_i64_inputs: Vec<i64>,
@@ -1056,6 +1057,7 @@ pub(crate) fn power_of_two_capacity(value: usize) -> usize {
 
 const AUTO_EAGER_JIT_WORK_UNITS: usize = 64;
 const AUTO_JIT_FLAT_BATCH_WORK_UNITS: usize = 512;
+const AUTO_JIT_SCALAR_WORK_UNITS: usize = AUTO_JIT_FLAT_BATCH_WORK_UNITS;
 
 const fn native_jit_enabled() -> bool {
     cfg_select! {
@@ -1196,6 +1198,7 @@ impl RuntimePureAccelerator {
             compile_stats,
             helper_summary,
             helper_work_units,
+            auto_scalar_work_units: vec![0; helpers.len()],
             pool: None,
             resolved_workers,
             flat_i64_inputs: Vec::new(),
@@ -1684,6 +1687,25 @@ impl RuntimePureAccelerator {
         self.promote_auto_native_jit(helper, kind);
     }
 
+    fn promote_auto_jit_for_scalar_call(&mut self, helper: &RuntimePureHelper) {
+        if !native_jit_enabled() || !self.has_promotable_auto_slot(helper.id) {
+            return;
+        }
+        let work_units = self.helper_work_units(helper);
+        let Some(accumulated) = self.auto_scalar_work_units.get_mut(helper.id.0) else {
+            return;
+        };
+        *accumulated = accumulated.saturating_add(work_units);
+        if *accumulated < AUTO_JIT_SCALAR_WORK_UNITS {
+            return;
+        }
+        let Some(kind) = helper_native_kind(helper) else {
+            self.mark_auto_jit_failed(helper.id);
+            return;
+        };
+        self.promote_auto_native_jit(helper, kind);
+    }
+
     fn has_promotable_auto_slot(&self, id: RuntimePureHelperId) -> bool {
         matches!(
             self.cache.get(id.0).and_then(Option::as_ref),
@@ -1821,6 +1843,9 @@ impl RuntimePureAccelerator {
         self.stats.pure_calls += 1;
         if count_borrowed_args {
             self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
         }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::JitI32(compiled)) => {
@@ -2238,6 +2263,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         validate_exact_int_slice_shape::<u32>(helper, args.len())?;
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::JitU32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -2585,6 +2613,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         validate_exact_int_slice_shape::<u64>(helper, args.len())?;
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::JitU64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -2958,6 +2989,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         validate_exact_int_slice_shape::<T>(helper, args.len())?;
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         let entry = cache_entry(&self.cache, helper.id);
         if let Some(entry) = entry
             && let Some(result) = call_jit_exact_int_slice(entry, helper, args)
@@ -3067,6 +3101,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         self.stats.pure_calls += 1;
         self.stats.arg_stack_packs += 1;
         self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -3145,6 +3182,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -3262,6 +3302,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::JitF32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -3381,6 +3424,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_scalar_call(helper);
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::JitF64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -7190,6 +7236,16 @@ mod tests {
         output_type: RuntimePureOutputType,
         one: RuntimeValue,
     ) -> RuntimePureHelper {
+        scalar_add_helper(name, input_type, output_type, one)
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    fn scalar_add_helper(
+        name: &str,
+        input_type: RuntimePureInputType,
+        output_type: RuntimePureOutputType,
+        one: RuntimeValue,
+    ) -> RuntimePureHelper {
         RuntimePureHelper {
             id: RuntimePureHelperId(0),
             name: name.to_owned(),
@@ -7254,6 +7310,67 @@ mod tests {
             RuntimeUSizeValue::new(91),
         );
         assert_exact_int_scalar_jit("u128_generic_jit", &[61_u128, 67_u128], 1_u128, 129_u128);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_promotes_hot_scalar_exact_int_calls_to_native_jit() {
+        let helper = scalar_add_helper(
+            "i128_hot_scalar_auto_jit",
+            RuntimePureInputType::I128,
+            RuntimePureOutputType::I128,
+            RuntimeValue::i128(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+
+        for value in 0..160 {
+            let actual = accelerator
+                .call_exact_int_slice::<i128>(&helper, &[value, 11])
+                .expect("hot scalar i128 call succeeds");
+            assert_eq!(actual, Some(value + 12));
+        }
+
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+        assert!(accelerator.stats().aot_calls > 0);
+        assert!(accelerator.stats().jit_calls > 0);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_promotes_hot_scalar_float_calls_to_native_jit() {
+        let helper = scalar_add_helper(
+            "f32_hot_scalar_auto_jit",
+            RuntimePureInputType::F32,
+            RuntimePureOutputType::F32,
+            RuntimeValue::f32(1.0),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+
+        for value in 0_u16..160 {
+            let base = f32::from(value);
+            let actual = accelerator
+                .call_f32_slice(&helper, &[base, 11.0])
+                .expect("hot scalar f32 call succeeds");
+            assert_eq!(actual, Some(base + 12.0));
+        }
+
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+        assert!(accelerator.stats().aot_calls > 0);
+        assert!(accelerator.stats().jit_calls > 0);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]

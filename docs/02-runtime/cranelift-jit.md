@@ -72,8 +72,11 @@ The CLI default is `--pure-backend auto`: supported deterministic integer pure
 helpers are compiled once and then called from ordinary flow execution through
 a fixed-size `i64` argument pack. Auto mode keeps cold scalar helpers on typed
 AOT first, defers JIT compilation, and promotes large flat batches to JIT when
-the observed batch work crosses the Auto threshold. Unsupported helpers stay on
-the VM. Pinned `--pure-backend jit|aot|vm` runs only that selected
+the observed batch work crosses the Auto threshold. Hot scalar loops also
+accumulate per-helper work units and promote from typed AOT to native JIT after
+the same threshold family is crossed, so natural `for` loops can become native
+without forcing cold scalar startup to pay JIT compile cost. Unsupported helpers
+stay on the VM. Pinned `--pure-backend jit|aot|vm` runs only that selected
 native/helper tier before falling back to the VM for unsupported helpers.
 `--pure-workers auto|N`
 and `--pure-batch-min-len N` configure the accelerator-owned thread pool used

@@ -1,0 +1,28 @@
+#[pure]
+fn score_i128_auto(base: i128, bias: i128) -> i128 {
+    return base + bias + 1i128
+}
+
+#[pure]
+fn score_f32_auto(base: f32, bias: f32) -> f32 {
+    return base + bias + 1.0f32
+}
+
+bench @bench.hot_for_pure_auto_jit {
+    measure iterations = 4 { start(@flow.hot_for_pure_auto_jit) }
+}
+
+flow @flow.hot_for_pure_auto_jit hot_for_pure_auto_jit {
+    let ints: Array<i128, 128> = [1i128; 128]
+    let floats: Array<f32, 128> = [1.0f32; 128]
+
+    for item in ints {
+        let scored = score_i128_auto(item, 11i128)
+        log.info(scored)
+    }
+    for item in floats {
+        let scored = score_f32_auto(item, 13.0f32)
+        log.info(scored)
+    }
+    return "done"
+}
