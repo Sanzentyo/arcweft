@@ -120,6 +120,12 @@ native JIT, while the large i64 Auto fixtures use `--pure-backend auto` to
 exercise deferred JIT promotion. `bench-039` also uses Auto to exercise hot
 scalar-loop promotion.
 
+The path-free toolchain profile target `just toolchain-profile-width-fast-path-benches`
+runs the mixed-width `bench-033` and `bench-040` fixtures under JIT, AOT, and
+VM. Its compact `arcweft_bench` summaries keep exact-width runtime call counts,
+fallbacks, argument-vector allocations, borrowed bytes, and compile counters in
+the same JSON schema used for workspace timing trends.
+
 ## Verification Inventory
 
 The focused Rust regression surface is in `crates/arcweft-cli/tests/check.rs`.

@@ -32,6 +32,9 @@ toolchain-profile-pure-jit-benches repeat="3" warmup="1":
 toolchain-profile-aot-object-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat {{repeat}} --warmup {{warmup}} --json
 
+toolchain-profile-width-fast-path-benches repeat="3" warmup="1":
+    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat {{repeat}} --warmup {{warmup}} --json
+
 toolchain-profile-math-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat {{repeat}} --warmup {{warmup}} --json
 

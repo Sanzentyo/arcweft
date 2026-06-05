@@ -73,7 +73,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 22);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 28);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -95,6 +95,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_toolchain_profile_bench_commands(&json);
     assert_toolchain_profile_math_commands(&json);
     assert_toolchain_profile_object_commands(&json);
+    assert_toolchain_profile_width_commands(&json);
     assert_eq!(
         json["commands"][6]["arcweft_bench"],
         serde_json::Value::Null
@@ -145,6 +146,12 @@ const TOOLCHAIN_PROFILE_DRY_RUN_COMMANDS: &[&str] = &[
     "math-matrix-add-auto-wgpu-reuse",
     "math-tensor-add-auto-wgpu-reuse",
     "bench-009-aot-object",
+    "bench-033-width-jit",
+    "bench-033-width-aot",
+    "bench-033-width-vm",
+    "bench-040-width-jit",
+    "bench-040-width-aot",
+    "bench-040-width-vm",
 ];
 
 fn assert_toolchain_profile_workspace_commands(json: &serde_json::Value) {
@@ -295,6 +302,75 @@ fn assert_toolchain_profile_object_commands(json: &serde_json::Value) {
     );
 }
 
+fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
+    assert_eq!(
+        json["commands"][22]["label"],
+        "arcw_bench_033_mixed_width_jit"
+    );
+    assert_eq!(
+        json["commands"][22]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "jit"
+        )
+    );
+    assert_eq!(
+        json["commands"][23]["label"],
+        "arcw_bench_033_mixed_width_aot"
+    );
+    assert_eq!(
+        json["commands"][23]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "aot"
+        )
+    );
+    assert_eq!(
+        json["commands"][24]["label"],
+        "arcw_bench_033_mixed_width_vm"
+    );
+    assert_eq!(
+        json["commands"][24]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "vm"
+        )
+    );
+    assert_eq!(
+        json["commands"][25]["label"],
+        "arcw_bench_040_mixed_width_jit"
+    );
+    assert_eq!(
+        json["commands"][25]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "jit"
+        )
+    );
+    assert_eq!(
+        json["commands"][26]["label"],
+        "arcw_bench_040_mixed_width_aot"
+    );
+    assert_eq!(
+        json["commands"][26]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "aot"
+        )
+    );
+    assert_eq!(
+        json["commands"][27]["label"],
+        "arcw_bench_040_mixed_width_vm"
+    );
+    assert_eq!(
+        json["commands"][27]["argv"],
+        toolchain_profile_width_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "vm"
+        )
+    );
+}
+
 fn toolchain_profile_bench_003_argv() -> serde_json::Value {
     serde_json::json!([
         "cargo",
@@ -379,6 +455,32 @@ fn toolchain_profile_bench_009_aot_object_argv() -> serde_json::Value {
         "--pure-batch-min-len",
         "64",
         "--pure-object-artifacts"
+    ])
+}
+
+fn toolchain_profile_width_argv(fixture: &str, backend: &str) -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        fixture,
+        "--json",
+        "--iterations",
+        "2",
+        "--warmup",
+        "1",
+        "--samples",
+        "1",
+        "--steps",
+        "128",
+        "--max-ops",
+        "128",
+        "--pure-backend",
+        backend
     ])
 }
 
