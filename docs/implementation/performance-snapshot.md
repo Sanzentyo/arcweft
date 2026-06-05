@@ -629,6 +629,8 @@ for `f64`; explicit `wgpu` requests return a structured portability error for
 those kernels. `f64` matmul uses the scalar row-major kernel for small general
 matrices up to 64^3 multiply-add work items because local benches show the
 ndarray setup cost can dominate there; larger `f64` matmul calls use ndarray.
+Explicit `glam` f64 tensor add has no glam tensor primitive, so it records a
+scalar fallback instead of silently appearing as a glam acceleration.
 Compile-time selection now also separates native accelerator code from browser
 Wasm builds. `native-jit` is target-specific to non-`wasm32`, and the blocking
 native wgpu math dispatch is selected only for non-`wasm32`;

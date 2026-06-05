@@ -331,9 +331,8 @@ impl RuntimeMathAccelerator {
         let selection = self.select_elementwise_backend_f64();
         self.stats.last_auto_reason = selection.auto_reason;
         match selection.backend {
-            RuntimeMathBackend::Scalar | RuntimeMathBackend::Glam => {
-                self.tensor_add_scalar(lhs, rhs)
-            }
+            RuntimeMathBackend::Scalar => self.tensor_add_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.tensor_add_glam_f64(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.tensor_add_ndarray_f64(lhs, rhs),
             RuntimeMathBackend::Wgpu => Err(RuntimeMathAcceleratorError::Backend(
                 "wgpu backend does not support portable f64 tensor kernels".to_owned(),
@@ -1664,6 +1663,15 @@ impl RuntimeMathAccelerator {
         lhs: &DenseTensorF32,
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        self.stats.fallback_calls += 1;
+        self.tensor_add_scalar(lhs, rhs)
+    }
+
+    fn tensor_add_glam_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeMathAcceleratorError> {
         self.stats.fallback_calls += 1;
         self.tensor_add_scalar(lhs, rhs)
     }
@@ -7087,6 +7095,32 @@ mod tests {
         assert_eq!(
             accelerator.stats().bytes_borrowed,
             16 * std::mem::size_of::<f64>()
+        );
+    }
+
+    #[test]
+    fn explicit_glam_f64_tensor_add_records_scalar_fallback_without_widening() {
+        let lhs = DenseTensorF64::new(vec![2, 2], vec![1.25, 2.5, 3.75, 4.5]).unwrap();
+        let rhs = DenseTensorF64::new(vec![2, 2], vec![5.0, 6.25, 7.5, 8.75]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Glam,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let out = accelerator.tensor_add_f64(&lhs, &rhs).unwrap();
+
+        assert_eq!(out.shape().dims(), &[2, 2]);
+        assert_eq!(out.values(), &[6.25, 8.75, 11.25, 13.25]);
+        assert_eq!(accelerator.stats().glam_calls, 0);
+        assert_eq!(accelerator.stats().scalar_calls, 1);
+        assert_eq!(accelerator.stats().fallback_calls, 1);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Scalar)
+        );
+        assert_eq!(
+            accelerator.stats().bytes_borrowed,
+            8 * std::mem::size_of::<f64>()
         );
     }
 
