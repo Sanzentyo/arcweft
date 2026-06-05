@@ -7328,8 +7328,13 @@ mod tests {
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn generic_exact_int_scalar_call_recognizes_width_specific_jit_entry() {
+        assert_exact_int_scalar_jit("i8_generic_jit", &[3_i8, 5_i8], 1_i8, 9_i8);
+        assert_exact_int_scalar_jit("i16_generic_jit", &[7_i16, 11_i16], 1_i16, 19_i16);
+        assert_exact_int_scalar_jit("i32_generic_jit", &[19_i32, 23_i32], 1_i32, 43_i32);
         assert_exact_int_scalar_jit("u16_generic_jit", &[13_u16, 17_u16], 1_u16, 31_u16);
+        assert_exact_int_scalar_jit("u8_generic_jit", &[5_u8, 7_u8], 1_u8, 13_u8);
         assert_exact_int_scalar_jit("u32_generic_jit", &[29_u32, 31_u32], 1_u32, 61_u32);
+        assert_exact_int_scalar_jit("u64_generic_jit", &[41_u64, 43_u64], 1_u64, 85_u64);
         assert_exact_int_scalar_jit("i128_generic_jit", &[53_i128, 59_i128], 1_i128, 113_i128);
         assert_exact_int_scalar_jit(
             "isize_generic_jit",

@@ -145,6 +145,8 @@ in JSON output:
 | `bench_json_measures_checked_in_mixed_width_for_iter_pure_jit_fixture` | mixed `i16`, `u16`, `isize`, `usize`, and `f64` `.map`/`for` pure calls use exact-width JIT with zero VM fallback and no argument Vec allocation |
 | `bench_json_measures_checked_in_wide_for_pure_jit_fixture` | scalar `i128` and `u128` `for` pure calls use native JIT through one-row pointer batches with zero VM fallback and no argument Vec allocation |
 | `bench_json_measures_checked_in_hot_for_pure_auto_jit_fixture` | hot scalar `i128` and `f32` `for` pure calls promote from Auto AOT to native JIT before measured iterations |
+| `generic_exact_int_scalar_call_recognizes_width_specific_jit_entry` | generic `call_exact_int_slice<T>` recognizes every non-`i64` exact integer width through typed runtime scalar metadata, with native JIT calls and zero VM fallback |
+| `bench_json_measures_profile_inference_matmul_bias_adapter_fixture` | profile-selected `infer.matmul_bias_add_f32` lowers to the external math boundary for both scalar and explicit ndarray backends, with fused-call counters and no absolute paths |
 
 Useful check commands:
 
@@ -181,10 +183,13 @@ threshold family, preserving cold scalar startup while allowing natural `for`
 loops to become native without requiring an explicit `--pure-backend jit`.
 
 Generic exact-integer scalar calls now use a typed borrowed slice view from
-`RuntimeExactInteger` to recognize width-specific JIT cache entries. This keeps
-`call_exact_int_slice::<T>` aligned with the dedicated `call_u32_slice` /
-`call_u64_slice` entry points without string matching, downcasts, or VM
-fallback when a scalar native JIT entry exists for the width.
+`RuntimeExactInteger` to recognize width-specific JIT cache entries for `i8`,
+`i16`, `i32`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`, and `usize`.
+The `i64` case remains on the dedicated i64 fast path rather than the generic
+exact-int trait. This keeps `call_exact_int_slice::<T>` aligned with the
+dedicated `call_u32_slice` / `call_u64_slice` entry points without string
+matching, downcasts, or VM fallback when a scalar native JIT entry exists for
+the width.
 
 A local path-free measurement of the target-sized fixtures with
 `--pure-backend jit` and fifteen measured iterations reported `036_dense_isize`
