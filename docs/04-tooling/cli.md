@@ -477,7 +477,10 @@ parse the benchmark JSON into an `arcweft_bench` summary with source label,
 bench id, executor, runtime median elapsed time, per-op timing, JIT/AOT/VM call
 counts, fallback count, argument-vector allocation count, borrowed argument
 bytes, pure compile elapsed time, and object artifact
-attempts/successes/failures/bytes.
+attempts/successes/failures/bytes. Flow-level `flow-math-*` commands also
+record math call counts, selected backend counters, data movement counters, GPU
+reuse counters, and the last Auto-policy reason in the same `arcweft_bench`
+summary.
 
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,

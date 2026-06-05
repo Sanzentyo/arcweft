@@ -50,6 +50,12 @@ toolchain-profile-math-wgpu-reuse-benches repeat="3" warmup="1":
 toolchain-profile-math-auto-wgpu-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-auto-wgpu --command math-matmul-bias-auto-wgpu-reuse --command math-matrix-add-auto-wgpu-reuse --command math-tensor-add-auto-wgpu-reuse --repeat {{repeat}} --warmup {{warmup}} --json
 
+toolchain-profile-flow-math-benches repeat="3" warmup="1":
+    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-glam --command flow-math-matrix-add-ndarray --command flow-math-tensor-add-ndarray --command flow-math-matmul-f64-ndarray --command flow-math-matrix-add-f64-ndarray --command flow-math-tensor-add-f64-ndarray --repeat {{repeat}} --warmup {{warmup}} --json
+
+toolchain-profile-flow-math-auto-wgpu-benches repeat="3" warmup="1":
+    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-auto-wgpu --repeat {{repeat}} --warmup {{warmup}} --json
+
 bench-009:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit --pure-workers 4 --pure-batch-min-len 64
 

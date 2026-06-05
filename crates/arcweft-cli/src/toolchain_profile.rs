@@ -1,6 +1,7 @@
 use arcweft_runtime_host::{HostSystemInfo, host_system_info};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
@@ -48,6 +49,20 @@ pub(crate) enum ToolchainProfileCommand {
     Bench033WidthAotObject,
     #[value(name = "bench-040-width-aot-object")]
     Bench040WidthAotObject,
+    #[value(name = "flow-math-matmul-glam")]
+    FlowMathMatmulGlam,
+    #[value(name = "flow-math-matrix-add-ndarray")]
+    FlowMathMatrixAddNdarray,
+    #[value(name = "flow-math-tensor-add-ndarray")]
+    FlowMathTensorAddNdarray,
+    #[value(name = "flow-math-matmul-f64-ndarray")]
+    FlowMathMatmulF64Ndarray,
+    #[value(name = "flow-math-matrix-add-f64-ndarray")]
+    FlowMathMatrixAddF64Ndarray,
+    #[value(name = "flow-math-tensor-add-f64-ndarray")]
+    FlowMathTensorAddF64Ndarray,
+    #[value(name = "flow-math-matmul-auto-wgpu")]
+    FlowMathMatmulAutoWgpu,
     #[value(name = "math-matmul-bias")]
     MathMatmulBias,
     #[value(name = "math-matrix-add")]
@@ -156,6 +171,22 @@ struct ToolchainArcweftBenchSample {
     pure_object_successes: u64,
     pure_object_failures: u64,
     pure_object_bytes: u64,
+    math_calls: u64,
+    math_accelerated_calls: u64,
+    math_scalar_calls: u64,
+    math_glam_calls: u64,
+    math_ndarray_calls: u64,
+    math_wgpu_calls: u64,
+    math_fused_matmul_bias_add_calls: u64,
+    math_fallback_calls: u64,
+    math_bytes_borrowed: u64,
+    math_bytes_copied: u64,
+    math_bytes_uploaded: u64,
+    math_bytes_downloaded: u64,
+    math_gpu_buffer_reuse_hits: u64,
+    math_gpu_reused_dispatches: u64,
+    math_last_backend: Option<String>,
+    math_last_auto_reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -182,6 +213,22 @@ struct ToolchainArcweftBenchReport {
     median_pure_object_successes: u64,
     median_pure_object_failures: u64,
     median_pure_object_bytes: u64,
+    median_math_calls: u64,
+    median_math_accelerated_calls: u64,
+    median_math_scalar_calls: u64,
+    median_math_glam_calls: u64,
+    median_math_ndarray_calls: u64,
+    median_math_wgpu_calls: u64,
+    median_math_fused_matmul_bias_add_calls: u64,
+    median_math_fallback_calls: u64,
+    median_math_bytes_borrowed: u64,
+    median_math_bytes_copied: u64,
+    median_math_bytes_uploaded: u64,
+    median_math_bytes_downloaded: u64,
+    median_math_gpu_buffer_reuse_hits: u64,
+    median_math_gpu_reused_dispatches: u64,
+    math_last_backend: Option<String>,
+    math_last_auto_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -601,6 +648,228 @@ const BENCH_040_WIDTH_AOT_OBJECT: ToolchainCommandSpec = ToolchainCommandSpec {
     kind: ToolchainCommandKind::ArcweftBench,
 };
 
+const FLOW_MATH_MATMUL_GLAM: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_matmul_glam",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "glam",
+        "--value",
+        "lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1",
+        "--value",
+        "rhs=matrix/f32/4x4:2,0,0,0,0,2,0,0,0,0,2,0,0,0,0,2",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_MATRIX_ADD_NDARRAY: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_matrix_add_ndarray",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/025_matrix_add_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f32/4x4:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+        "--value",
+        "rhs=matrix/f32/4x4:16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_TENSOR_ADD_NDARRAY: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_tensor_add_ndarray",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/026_tensor_add_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=tensor/f32/2x2x2:1,2,3,4,5,6,7,8",
+        "--value",
+        "rhs=tensor/f32/2x2x2:8,7,6,5,4,3,2,1",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_MATMUL_F64_NDARRAY: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_matmul_f64_ndarray",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f64/2x2:1.5,2,3.25,4.5",
+        "--value",
+        "rhs=matrix/f64/2x2:5,6.5,7,8.25",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_MATRIX_ADD_F64_NDARRAY: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_matrix_add_f64_ndarray",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/035_matrix_add_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f64/2x2:1.5,2.25,3.75,4.5",
+        "--value",
+        "rhs=matrix/f64/2x2:5,6.25,7.5,8.75",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_TENSOR_ADD_F64_NDARRAY: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_tensor_add_f64_ndarray",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5",
+        "--value",
+        "rhs=tensor/f64/2x2:5,6.25,7.5,8.75",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const FLOW_MATH_MATMUL_AUTO_WGPU: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_flow_math_matmul_auto_wgpu",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-cli",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "2",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "auto",
+        "--math-wgpu-min-elements",
+        "1",
+        "--value",
+        "lhs=matrix/f32/8x8:1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1",
+        "--value",
+        "rhs=matrix/f32/8x8:2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
 const MATH_MATMUL_BIAS: ToolchainCommandSpec = ToolchainCommandSpec {
     label: "math_bench_matmul_bias_add",
     args: &[
@@ -1011,6 +1280,17 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::Bench040WidthVm => BENCH_040_WIDTH_VM,
             ToolchainProfileCommand::Bench033WidthAotObject => BENCH_033_WIDTH_AOT_OBJECT,
             ToolchainProfileCommand::Bench040WidthAotObject => BENCH_040_WIDTH_AOT_OBJECT,
+            ToolchainProfileCommand::FlowMathMatmulGlam => FLOW_MATH_MATMUL_GLAM,
+            ToolchainProfileCommand::FlowMathMatrixAddNdarray => FLOW_MATH_MATRIX_ADD_NDARRAY,
+            ToolchainProfileCommand::FlowMathTensorAddNdarray => FLOW_MATH_TENSOR_ADD_NDARRAY,
+            ToolchainProfileCommand::FlowMathMatmulF64Ndarray => FLOW_MATH_MATMUL_F64_NDARRAY,
+            ToolchainProfileCommand::FlowMathMatrixAddF64Ndarray => {
+                FLOW_MATH_MATRIX_ADD_F64_NDARRAY
+            }
+            ToolchainProfileCommand::FlowMathTensorAddF64Ndarray => {
+                FLOW_MATH_TENSOR_ADD_F64_NDARRAY
+            }
+            ToolchainProfileCommand::FlowMathMatmulAutoWgpu => FLOW_MATH_MATMUL_AUTO_WGPU,
             ToolchainProfileCommand::MathMatmulBias => MATH_MATMUL_BIAS,
             ToolchainProfileCommand::MathMatrixAdd => MATH_MATRIX_ADD,
             ToolchainProfileCommand::MathTensorAdd => MATH_TENSOR_ADD,
@@ -1176,7 +1456,9 @@ fn arcweft_bench_sample(bytes: &[u8]) -> Option<ToolchainArcweftBenchSample> {
         .first()?;
     let measurement = section.get("measurement")?;
     let deterministic = measurement.get("deterministic")?;
-    let pure_compile = measurement.get("executor_stats")?.get("pure_compile")?;
+    let executor_stats = measurement.get("executor_stats")?;
+    let pure_compile = executor_stats.get("pure_compile")?;
+    let math = executor_stats.get("math")?;
     Some(ToolchainArcweftBenchSample {
         source: json.get("source")?.as_str()?.to_owned(),
         bench_id: json
@@ -1208,7 +1490,74 @@ fn arcweft_bench_sample(bytes: &[u8]) -> Option<ToolchainArcweftBenchSample> {
         pure_object_successes: pure_compile.get("object_successes")?.as_u64()?,
         pure_object_failures: pure_compile.get("object_failures")?.as_u64()?,
         pure_object_bytes: pure_compile.get("object_bytes")?.as_u64()?,
+        math_calls: deterministic.get("math_calls_median")?.as_u64()?,
+        math_accelerated_calls: deterministic
+            .get("math_accelerated_calls_median")?
+            .as_u64()?,
+        math_scalar_calls: math.get("scalar_calls")?.as_u64()?,
+        math_glam_calls: math.get("glam_calls")?.as_u64()?,
+        math_ndarray_calls: math.get("ndarray_calls")?.as_u64()?,
+        math_wgpu_calls: math.get("wgpu_calls")?.as_u64()?,
+        math_fused_matmul_bias_add_calls: math.get("fused_matmul_bias_add_calls")?.as_u64()?,
+        math_fallback_calls: math.get("fallback_calls")?.as_u64()?,
+        math_bytes_borrowed: math.get("bytes_borrowed")?.as_u64()?,
+        math_bytes_copied: math.get("bytes_copied")?.as_u64()?,
+        math_bytes_uploaded: math.get("bytes_uploaded")?.as_u64()?,
+        math_bytes_downloaded: math.get("bytes_downloaded")?.as_u64()?,
+        math_gpu_buffer_reuse_hits: math.get("gpu_buffer_reuse_hits")?.as_u64()?,
+        math_gpu_reused_dispatches: math.get("gpu_reused_dispatches")?.as_u64()?,
+        math_last_backend: math
+            .get("last_backend")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        math_last_auto_reason: math
+            .get("last_auto_reason")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
     })
+}
+
+struct ArcweftBenchTimingSummary {
+    bench_median: u64,
+    bench_min: u64,
+    bench_max: u64,
+    per_op_median: u64,
+}
+
+struct ArcweftBenchPureSummary {
+    calls: u64,
+    batch_calls: u64,
+    batch_items: u64,
+    jit_calls: u64,
+    aot_calls: u64,
+    vm_calls: u64,
+    fallbacks: u64,
+    arg_vec_allocations: u64,
+    arg_bytes_borrowed: u64,
+    compile_elapsed_ns: u64,
+    object_attempts: u64,
+    object_successes: u64,
+    object_failures: u64,
+    object_bytes: u64,
+}
+
+struct ArcweftBenchMathSummary {
+    calls: u64,
+    accelerated_calls: u64,
+    scalar_calls: u64,
+    glam_calls: u64,
+    ndarray_calls: u64,
+    wgpu_calls: u64,
+    fused_matmul_bias_add_calls: u64,
+    fallback_calls: u64,
+    bytes_borrowed: u64,
+    bytes_copied: u64,
+    bytes_uploaded: u64,
+    bytes_downloaded: u64,
+    gpu_buffer_reuse_hits: u64,
+    gpu_reused_dispatches: u64,
+    last_backend: Option<String>,
+    last_auto_reason: Option<String>,
 }
 
 fn arcweft_bench_report(samples: &[ToolchainCommandSample]) -> Option<ToolchainArcweftBenchReport> {
@@ -1217,66 +1566,125 @@ fn arcweft_bench_report(samples: &[ToolchainCommandSample]) -> Option<ToolchainA
         .filter_map(|sample| sample.arcweft_bench.as_ref())
         .collect::<Vec<_>>();
     let first = bench_samples.first()?;
+    let timing = arcweft_bench_timing_summary(&bench_samples);
+    let pure = arcweft_bench_pure_summary(&bench_samples);
+    let math = arcweft_bench_math_summary(&bench_samples);
+
     Some(ToolchainArcweftBenchReport {
         source: first.source.clone(),
         bench_id: first.bench_id.clone(),
         bench_status: first.bench_status.clone(),
         executor: first.executor.clone(),
-        median_bench_elapsed_ns: median_bench_sample_by(&bench_samples, |sample| {
-            sample.bench_elapsed_ns
-        }),
-        min_bench_elapsed_ns: bench_samples
+        median_bench_elapsed_ns: timing.bench_median,
+        min_bench_elapsed_ns: timing.bench_min,
+        max_bench_elapsed_ns: timing.bench_max,
+        median_per_executed_op_ns: timing.per_op_median,
+        median_pure_calls: pure.calls,
+        median_pure_batch_calls: pure.batch_calls,
+        median_pure_batch_items: pure.batch_items,
+        median_pure_jit_calls: pure.jit_calls,
+        median_pure_aot_calls: pure.aot_calls,
+        median_pure_vm_calls: pure.vm_calls,
+        median_pure_fallbacks: pure.fallbacks,
+        median_pure_arg_vec_allocations: pure.arg_vec_allocations,
+        median_pure_arg_bytes_borrowed: pure.arg_bytes_borrowed,
+        median_pure_compile_elapsed_ns: pure.compile_elapsed_ns,
+        median_pure_object_attempts: pure.object_attempts,
+        median_pure_object_successes: pure.object_successes,
+        median_pure_object_failures: pure.object_failures,
+        median_pure_object_bytes: pure.object_bytes,
+        median_math_calls: math.calls,
+        median_math_accelerated_calls: math.accelerated_calls,
+        median_math_scalar_calls: math.scalar_calls,
+        median_math_glam_calls: math.glam_calls,
+        median_math_ndarray_calls: math.ndarray_calls,
+        median_math_wgpu_calls: math.wgpu_calls,
+        median_math_fused_matmul_bias_add_calls: math.fused_matmul_bias_add_calls,
+        median_math_fallback_calls: math.fallback_calls,
+        median_math_bytes_borrowed: math.bytes_borrowed,
+        median_math_bytes_copied: math.bytes_copied,
+        median_math_bytes_uploaded: math.bytes_uploaded,
+        median_math_bytes_downloaded: math.bytes_downloaded,
+        median_math_gpu_buffer_reuse_hits: math.gpu_buffer_reuse_hits,
+        median_math_gpu_reused_dispatches: math.gpu_reused_dispatches,
+        math_last_backend: math.last_backend,
+        math_last_auto_reason: math.last_auto_reason,
+    })
+}
+
+fn arcweft_bench_timing_summary(
+    samples: &[&ToolchainArcweftBenchSample],
+) -> ArcweftBenchTimingSummary {
+    ArcweftBenchTimingSummary {
+        bench_median: median_bench_sample_by(samples, |sample| sample.bench_elapsed_ns),
+        bench_min: samples
             .iter()
             .map(|sample| sample.bench_elapsed_ns)
             .min()
             .unwrap_or_default(),
-        max_bench_elapsed_ns: bench_samples
+        bench_max: samples
             .iter()
             .map(|sample| sample.bench_elapsed_ns)
             .max()
             .unwrap_or_default(),
-        median_per_executed_op_ns: median_bench_sample_by(&bench_samples, |sample| {
-            sample.per_executed_op_ns
-        }),
-        median_pure_calls: median_bench_sample_by(&bench_samples, |sample| sample.pure_calls),
-        median_pure_batch_calls: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_batch_calls
-        }),
-        median_pure_batch_items: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_batch_items
-        }),
-        median_pure_jit_calls: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_jit_calls
-        }),
-        median_pure_aot_calls: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_aot_calls
-        }),
-        median_pure_vm_calls: median_bench_sample_by(&bench_samples, |sample| sample.pure_vm_calls),
-        median_pure_fallbacks: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_fallbacks
-        }),
-        median_pure_arg_vec_allocations: median_bench_sample_by(&bench_samples, |sample| {
+        per_op_median: median_bench_sample_by(samples, |sample| sample.per_executed_op_ns),
+    }
+}
+
+fn arcweft_bench_pure_summary(samples: &[&ToolchainArcweftBenchSample]) -> ArcweftBenchPureSummary {
+    ArcweftBenchPureSummary {
+        calls: median_bench_sample_by(samples, |sample| sample.pure_calls),
+        batch_calls: median_bench_sample_by(samples, |sample| sample.pure_batch_calls),
+        batch_items: median_bench_sample_by(samples, |sample| sample.pure_batch_items),
+        jit_calls: median_bench_sample_by(samples, |sample| sample.pure_jit_calls),
+        aot_calls: median_bench_sample_by(samples, |sample| sample.pure_aot_calls),
+        vm_calls: median_bench_sample_by(samples, |sample| sample.pure_vm_calls),
+        fallbacks: median_bench_sample_by(samples, |sample| sample.pure_fallbacks),
+        arg_vec_allocations: median_bench_sample_by(samples, |sample| {
             sample.pure_arg_vec_allocations
         }),
-        median_pure_arg_bytes_borrowed: median_bench_sample_by(&bench_samples, |sample| {
+        arg_bytes_borrowed: median_bench_sample_by(samples, |sample| {
             sample.pure_arg_bytes_borrowed
         }),
-        median_pure_compile_elapsed_ns: median_bench_sample_by(&bench_samples, |sample| {
+        compile_elapsed_ns: median_bench_sample_by(samples, |sample| {
             sample.pure_compile_elapsed_ns
         }),
-        median_pure_object_attempts: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_object_attempts
+        object_attempts: median_bench_sample_by(samples, |sample| sample.pure_object_attempts),
+        object_successes: median_bench_sample_by(samples, |sample| sample.pure_object_successes),
+        object_failures: median_bench_sample_by(samples, |sample| sample.pure_object_failures),
+        object_bytes: median_bench_sample_by(samples, |sample| sample.pure_object_bytes),
+    }
+}
+
+fn arcweft_bench_math_summary(samples: &[&ToolchainArcweftBenchSample]) -> ArcweftBenchMathSummary {
+    ArcweftBenchMathSummary {
+        calls: median_bench_sample_by(samples, |sample| sample.math_calls),
+        accelerated_calls: median_bench_sample_by(samples, |sample| sample.math_accelerated_calls),
+        scalar_calls: median_bench_sample_by(samples, |sample| sample.math_scalar_calls),
+        glam_calls: median_bench_sample_by(samples, |sample| sample.math_glam_calls),
+        ndarray_calls: median_bench_sample_by(samples, |sample| sample.math_ndarray_calls),
+        wgpu_calls: median_bench_sample_by(samples, |sample| sample.math_wgpu_calls),
+        fused_matmul_bias_add_calls: median_bench_sample_by(samples, |sample| {
+            sample.math_fused_matmul_bias_add_calls
         }),
-        median_pure_object_successes: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_object_successes
+        fallback_calls: median_bench_sample_by(samples, |sample| sample.math_fallback_calls),
+        bytes_borrowed: median_bench_sample_by(samples, |sample| sample.math_bytes_borrowed),
+        bytes_copied: median_bench_sample_by(samples, |sample| sample.math_bytes_copied),
+        bytes_uploaded: median_bench_sample_by(samples, |sample| sample.math_bytes_uploaded),
+        bytes_downloaded: median_bench_sample_by(samples, |sample| sample.math_bytes_downloaded),
+        gpu_buffer_reuse_hits: median_bench_sample_by(samples, |sample| {
+            sample.math_gpu_buffer_reuse_hits
         }),
-        median_pure_object_failures: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_object_failures
+        gpu_reused_dispatches: median_bench_sample_by(samples, |sample| {
+            sample.math_gpu_reused_dispatches
         }),
-        median_pure_object_bytes: median_bench_sample_by(&bench_samples, |sample| {
-            sample.pure_object_bytes
+        last_backend: modal_bench_sample_text_by(samples, |sample| {
+            sample.math_last_backend.as_deref()
         }),
-    })
+        last_auto_reason: modal_bench_sample_text_by(samples, |sample| {
+            sample.math_last_auto_reason.as_deref()
+        }),
+    }
 }
 
 fn median_bench_sample_by(
@@ -1289,6 +1697,27 @@ fn median_bench_sample_by(
         .collect::<Vec<_>>();
     values.sort_unstable();
     values.get(values.len() / 2).copied().unwrap_or_default()
+}
+
+fn modal_bench_sample_text_by(
+    samples: &[&ToolchainArcweftBenchSample],
+    field: impl Fn(&ToolchainArcweftBenchSample) -> Option<&str>,
+) -> Option<String> {
+    let mut counts = BTreeMap::new();
+    for sample in samples {
+        if let Some(value) = field(sample) {
+            *counts.entry(value).or_insert(0usize) += 1;
+        }
+    }
+
+    let mut best = None;
+    for (value, count) in counts {
+        match best {
+            Some((_, best_count)) if count <= best_count => {}
+            _ => best = Some((value, count)),
+        }
+    }
+    best.map(|(value, _)| value.to_owned())
 }
 
 fn math_bench_sample(bytes: &[u8]) -> Option<ToolchainMathBenchSample> {
@@ -1584,6 +2013,22 @@ mod tests {
             "object_failures": 0,
             "object_bytes": 0,
             "compile_elapsed_ns": 1234
+          },
+          "math": {
+            "scalar_calls": 0,
+            "glam_calls": 0,
+            "ndarray_calls": 0,
+            "wgpu_calls": 0,
+            "fused_matmul_bias_add_calls": 0,
+            "fallback_calls": 0,
+            "bytes_borrowed": 0,
+            "bytes_copied": 0,
+            "bytes_uploaded": 0,
+            "bytes_downloaded": 0,
+            "gpu_buffer_reuse_hits": 0,
+            "gpu_reused_dispatches": 0,
+            "last_backend": null,
+            "last_auto_reason": null
           }
         },
         "per_executed_op_ns": 700,
@@ -1597,7 +2042,9 @@ mod tests {
           "pure_vm_calls_median": 0,
           "pure_fallbacks_median": 0,
           "pure_arg_vec_allocations_median": 0,
-          "pure_arg_bytes_borrowed_median": 256
+          "pure_arg_bytes_borrowed_median": 256,
+          "math_calls_median": 0,
+          "math_accelerated_calls_median": 0
         }
       }
     }]
@@ -1614,6 +2061,8 @@ mod tests {
         assert_eq!(sample.pure_arg_vec_allocations, 0);
         assert_eq!(sample.pure_compile_elapsed_ns, 1234);
         assert_eq!(sample.pure_object_attempts, 0);
+        assert_eq!(sample.math_calls, 0);
+        assert_eq!(sample.math_bytes_borrowed, 0);
     }
 
     #[test]
@@ -1641,19 +2090,37 @@ mod tests {
             pure_object_successes: 1,
             pure_object_failures: 0,
             pure_object_bytes: 467,
+            math_calls: 1,
+            math_accelerated_calls: 1,
+            math_scalar_calls: 0,
+            math_glam_calls: 1,
+            math_ndarray_calls: 0,
+            math_wgpu_calls: 0,
+            math_fused_matmul_bias_add_calls: 0,
+            math_fallback_calls: 0,
+            math_bytes_borrowed: 128,
+            math_bytes_copied: 0,
+            math_bytes_uploaded: 0,
+            math_bytes_downloaded: 0,
+            math_gpu_buffer_reuse_hits: 0,
+            math_gpu_reused_dispatches: 0,
+            math_last_backend: Some("glam".to_owned()),
+            math_last_auto_reason: None,
         });
         let mut second = first.clone();
-        second
-            .arcweft_bench
-            .as_mut()
-            .expect("bench sample")
-            .bench_elapsed_ns = 100;
+        {
+            let sample = second.arcweft_bench.as_mut().expect("bench sample");
+            sample.bench_elapsed_ns = 100;
+            sample.math_last_backend = Some("ndarray".to_owned());
+            sample.math_last_auto_reason = Some("elementwise_ndarray_cpu_default".to_owned());
+        }
         let mut third = first.clone();
-        third
-            .arcweft_bench
-            .as_mut()
-            .expect("bench sample")
-            .bench_elapsed_ns = 200;
+        {
+            let sample = third.arcweft_bench.as_mut().expect("bench sample");
+            sample.bench_elapsed_ns = 200;
+            sample.math_last_backend = Some("ndarray".to_owned());
+            sample.math_last_auto_reason = Some("elementwise_ndarray_cpu_default".to_owned());
+        }
         planned.arcweft_bench = None;
 
         let report = arcweft_bench_report(&[planned, first, second, third])
@@ -1667,6 +2134,14 @@ mod tests {
         assert_eq!(report.median_pure_compile_elapsed_ns, 2000);
         assert_eq!(report.median_pure_object_successes, 1);
         assert_eq!(report.median_pure_object_bytes, 467);
+        assert_eq!(report.median_math_calls, 1);
+        assert_eq!(report.median_math_glam_calls, 1);
+        assert_eq!(report.median_math_bytes_borrowed, 128);
+        assert_eq!(report.math_last_backend.as_deref(), Some("ndarray"));
+        assert_eq!(
+            report.math_last_auto_reason.as_deref(),
+            Some("elementwise_ndarray_cpu_default")
+        );
     }
 
     #[test]

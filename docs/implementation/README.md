@@ -484,6 +484,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `--command math-matmul-bias`, `--command math-matrix-add`,
   `--command math-tensor-add`, the corresponding `*-f64` commands, and resident
   `math-*-wgpu-reuse` commands as release-mode runtime math trend commands.
+  Flow-level `flow-math-*` commands exercise the same matrix/tensor calls
+  through `arcw bench`, so `arcweft_bench` summaries include both runtime
+  elapsed counters and math backend/data-movement counters for Glam, ndarray,
+  f64 CPU, and Auto-selected wgpu runs.
   It also includes Auto-selected wgpu commands for matmul and prepared resident
   reuse, keeping `last_backend`, `last_auto_reason`, and reuse counters visible
   when the policy threshold intentionally crosses into the GPU backend.

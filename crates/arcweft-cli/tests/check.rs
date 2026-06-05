@@ -73,7 +73,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 30);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 37);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -96,6 +96,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_toolchain_profile_math_commands(&json);
     assert_toolchain_profile_object_commands(&json);
     assert_toolchain_profile_width_commands(&json);
+    assert_toolchain_profile_flow_math_commands(&json);
     assert_eq!(
         json["commands"][6]["arcweft_bench"],
         serde_json::Value::Null
@@ -154,6 +155,13 @@ const TOOLCHAIN_PROFILE_DRY_RUN_COMMANDS: &[&str] = &[
     "bench-040-width-vm",
     "bench-033-width-aot-object",
     "bench-040-width-aot-object",
+    "flow-math-matmul-glam",
+    "flow-math-matrix-add-ndarray",
+    "flow-math-tensor-add-ndarray",
+    "flow-math-matmul-f64-ndarray",
+    "flow-math-matrix-add-f64-ndarray",
+    "flow-math-tensor-add-f64-ndarray",
+    "flow-math-matmul-auto-wgpu",
 ];
 
 fn assert_toolchain_profile_workspace_commands(json: &serde_json::Value) {
@@ -393,6 +401,62 @@ fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
     );
 }
 
+fn assert_toolchain_profile_flow_math_commands(json: &serde_json::Value) {
+    assert_eq!(json["commands"][30]["label"], "arcw_flow_math_matmul_glam");
+    assert_eq!(
+        json["commands"][30]["argv"],
+        toolchain_profile_flow_math_matmul_glam_argv()
+    );
+    assert_eq!(
+        json["commands"][31]["label"],
+        "arcw_flow_math_matrix_add_ndarray"
+    );
+    assert_eq!(
+        json["commands"][31]["argv"],
+        toolchain_profile_flow_math_matrix_add_ndarray_argv()
+    );
+    assert_eq!(
+        json["commands"][32]["label"],
+        "arcw_flow_math_tensor_add_ndarray"
+    );
+    assert_eq!(
+        json["commands"][32]["argv"],
+        toolchain_profile_flow_math_tensor_add_ndarray_argv()
+    );
+    assert_eq!(
+        json["commands"][33]["label"],
+        "arcw_flow_math_matmul_f64_ndarray"
+    );
+    assert_eq!(
+        json["commands"][33]["argv"],
+        toolchain_profile_flow_math_matmul_f64_ndarray_argv()
+    );
+    assert_eq!(
+        json["commands"][34]["label"],
+        "arcw_flow_math_matrix_add_f64_ndarray"
+    );
+    assert_eq!(
+        json["commands"][34]["argv"],
+        toolchain_profile_flow_math_matrix_add_f64_ndarray_argv()
+    );
+    assert_eq!(
+        json["commands"][35]["label"],
+        "arcw_flow_math_tensor_add_f64_ndarray"
+    );
+    assert_eq!(
+        json["commands"][35]["argv"],
+        toolchain_profile_flow_math_tensor_add_f64_ndarray_argv()
+    );
+    assert_eq!(
+        json["commands"][36]["label"],
+        "arcw_flow_math_matmul_auto_wgpu"
+    );
+    assert_eq!(
+        json["commands"][36]["argv"],
+        toolchain_profile_flow_math_matmul_auto_wgpu_argv()
+    );
+}
+
 fn toolchain_profile_bench_003_argv() -> serde_json::Value {
     serde_json::json!([
         "cargo",
@@ -530,6 +594,221 @@ fn toolchain_profile_width_object_argv(fixture: &str) -> serde_json::Value {
         "--pure-backend",
         "aot",
         "--pure-object-artifacts"
+    ])
+}
+
+fn toolchain_profile_flow_math_matmul_glam_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "glam",
+        "--value",
+        "lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1",
+        "--value",
+        "rhs=matrix/f32/4x4:2,0,0,0,0,2,0,0,0,0,2,0,0,0,0,2"
+    ])
+}
+
+fn toolchain_profile_flow_math_matrix_add_ndarray_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/025_matrix_add_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f32/4x4:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+        "--value",
+        "rhs=matrix/f32/4x4:16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1"
+    ])
+}
+
+fn toolchain_profile_flow_math_tensor_add_ndarray_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/026_tensor_add_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=tensor/f32/2x2x2:1,2,3,4,5,6,7,8",
+        "--value",
+        "rhs=tensor/f32/2x2x2:8,7,6,5,4,3,2,1"
+    ])
+}
+
+fn toolchain_profile_flow_math_matmul_f64_ndarray_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f64/2x2:1.5,2,3.25,4.5",
+        "--value",
+        "rhs=matrix/f64/2x2:5,6.5,7,8.25"
+    ])
+}
+
+fn toolchain_profile_flow_math_matrix_add_f64_ndarray_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/035_matrix_add_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=matrix/f64/2x2:1.5,2.25,3.75,4.5",
+        "--value",
+        "rhs=matrix/f64/2x2:5,6.25,7.5,8.75"
+    ])
+}
+
+fn toolchain_profile_flow_math_tensor_add_f64_ndarray_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "ndarray",
+        "--value",
+        "lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5",
+        "--value",
+        "rhs=tensor/f64/2x2:5,6.25,7.5,8.75"
+    ])
+}
+
+fn toolchain_profile_flow_math_matmul_auto_wgpu_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-cli",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "2",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--math-backend",
+        "auto",
+        "--math-wgpu-min-elements",
+        "1",
+        "--value",
+        "lhs=matrix/f32/8x8:1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1",
+        "--value",
+        "rhs=matrix/f32/8x8:2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2"
     ])
 }
 

@@ -66,6 +66,14 @@ Scalar for-loop and mixed iterator pure JIT benches:
 | 033_mixed_for_iter_pure_jit.arcw | bytecode_vm | jit | 114200 | 40 | 0 | 0 | 0 | 320 | 40 | 24 |
 | 040_mixed_width_for_iter_pure_jit.arcw | bytecode_vm | jit | 203000 | 80 | 0 | 0 | 0 | 896 | 80 | 40 |
 
+Later path-free spot checks should compare the nested `arcweft_bench` runtime
+median, not the outer `toolchain-profile` command wall time, because the latter
+includes nested Cargo/build/cache effects. A direct local recheck of the two
+mixed-width JIT fixtures reported `101700 ns` median for
+`033_mixed_for_iter_pure_jit.arcw` and `218900 ns` median for
+`040_mixed_width_for_iter_pure_jit.arcw`, with zero argument Vec allocation,
+zero VM fallback, and the expected JIT call counts still intact.
+
 The mixed fixture compiles three exact-width helpers (`i32`, `u32`, and `f32`)
 and exercises both `.map` flat-batch calls and scalar `for` loop calls. The
 same run reported `jit_successes = 3`, `pure_batch_calls_median = 3`,
@@ -291,6 +299,8 @@ cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --comm
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-aot-object --command bench-040-width-aot-object --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-glam --command flow-math-matrix-add-ndarray --command flow-math-tensor-add-ndarray --command flow-math-matmul-f64-ndarray --command flow-math-matrix-add-f64-ndarray --command flow-math-tensor-add-f64-ndarray --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-auto-wgpu --repeat 3 --warmup 1 --json
 ```
 
 The command-level profile records status, stdout/stderr line counts, and
@@ -305,6 +315,9 @@ The mixed-width commands keep `i32`, `u32`, `f32`, `i16`, `u16`, `isize`,
 `usize`, and `f64` `.map`/`for` pure-call behavior visible across VM, AOT, and
 JIT without recording host paths. The mixed-width object commands apply the
 same object artifact counters to multi-helper AOT bundles.
+The flow math commands run checked-in matrix/tensor fixtures through `arcw bench`
+and keep `math_calls`, backend counters, data movement counters,
+`last_backend`, and `last_auto_reason` in the compact `arcweft_bench` summary.
 
 Runtime math trend commands use the same path-free profile wrapper:
 
