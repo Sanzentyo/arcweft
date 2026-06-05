@@ -144,7 +144,7 @@ impl AotExecutor {
             .engine()
             .can_start_aot_linear_step(&self.program, &input)
         {
-            let result = self
+            let (result, fast_path_ops) = self
                 .vm
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
@@ -154,7 +154,7 @@ impl AotExecutor {
                     options,
                     pure_backend,
                 );
-            self.fast_path_ops += result.stats.executed_ops;
+            self.fast_path_ops += fast_path_ops;
             return result;
         }
         self.vm.step_with_root_bindings_and_pure_backend(
@@ -241,7 +241,7 @@ impl RuntimeExecutor for AotExecutor {
             .can_start_aot_linear_step(&self.program, &input)
         {
             let mut pure_backend = crate::pure::VmRuntimePureCallBackend::default();
-            let result = self
+            let (result, fast_path_ops) = self
                 .vm
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
@@ -251,7 +251,7 @@ impl RuntimeExecutor for AotExecutor {
                     options,
                     &mut pure_backend,
                 );
-            self.fast_path_ops += result.stats.executed_ops;
+            self.fast_path_ops += fast_path_ops;
             return result;
         }
         self.vm.step(input, options)

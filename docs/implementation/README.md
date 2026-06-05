@@ -395,10 +395,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   clone heap-owned flow identifiers.
 - Prechecked AOT linear stepping borrows pre-lowered operations from
   `AotProgram`, avoiding per-step `FlowOp` clones for straight-line dispatch.
-- Mixed-flow AOT stepping now runs the pre-lowered linear prefix before handing
-  control back to the VM-compatible branch/loop/await dispatcher. This extends
-  AOT coverage to common setup-then-branch shapes without adding a speculative
-  generated state machine.
+- Mixed-flow AOT stepping now runs the pre-lowered linear prefix and then
+  continues through the VM-compatible branch/loop/await dispatcher in the same
+  runtime step. This extends AOT coverage to common setup-then-branch shapes
+  without adding a speculative generated state machine or a host boundary at the
+  mixed prefix edge.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.

@@ -13,15 +13,25 @@ impl Engine {
         root_bindings: &[crate::value::RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
+    ) -> (RuntimeStepResult, usize) {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
+        let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
         self.fiber.env.bind_all_root_ref(root_bindings);
         self.fiber.env.bind_all_root(input.bindings);
+        let runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
+            if !self.fiber.pending_ops.is_empty() {
+                self.step_runtime_op(&runtime_input, &[], &mut output, pure_backend);
+                executed_ops += 1;
+                if self.should_return_to_host(options.mode, &output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
             let Some(cursor) = self.fiber.cursor.as_ref() else {
                 self.finish(&mut output);
                 executed_ops += 1;
@@ -40,16 +50,19 @@ impl Engine {
             let Some(op) = flow.linear_op(cursor.op_index) else {
                 if cursor.op_index >= flow.ops {
                     self.finish(&mut output);
-                    executed_ops += 1;
-                    if self.should_return_to_host(options.mode, &output, executed_ops) {
-                        break;
-                    }
+                } else {
+                    self.step_runtime_op(&runtime_input, &[], &mut output, pure_backend);
                 }
-                break;
+                executed_ops += 1;
+                if self.should_return_to_host(options.mode, &output, executed_ops) {
+                    break;
+                }
+                continue;
             };
             let next_op_index = cursor.op_index + 1;
             self.step_aot_linear_op(op, next_op_index, &mut output, pure_backend);
             executed_ops += 1;
+            aot_fast_path_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
             }
@@ -69,7 +82,7 @@ impl Engine {
             line_effects: output.effects.line.len(),
             diagnostics: output.diagnostics.len(),
         };
-        self.step_result(output, options, stats)
+        (self.step_result(output, options, stats), aot_fast_path_ops)
     }
 
     fn fail_aot_linear_precondition(&mut self, message: &str, output: &mut RuntimeStepOutput) {

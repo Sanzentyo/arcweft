@@ -223,13 +223,11 @@ fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_fallback() {
     assert_eq!(aot.program().flows()[0].lowered_linear_ops(), 1);
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
-    let prefix_result = aot.step(RuntimeStepInput::default(), options);
-    assert_eq!(prefix_result.stats.executed_ops, 1);
+    let aot_result = aot.step(RuntimeStepInput::default(), options);
+    assert_eq!(aot_result.stats.executed_ops, 4);
     assert_eq!(aot.fast_path_ops(), 1);
 
-    let fallback_result = aot.step(RuntimeStepInput::default(), options);
-
-    assert_eq!(fallback_result.output, vm_result.output);
+    assert_eq!(aot_result.output, vm_result.output);
     assert_eq!(aot.fiber().status, vm.fiber().status);
 }
 
