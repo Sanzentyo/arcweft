@@ -48,6 +48,14 @@ pub(crate) enum ToolchainProfileCommand {
     MathMatrixAddWgpuReuse,
     #[value(name = "math-tensor-add-wgpu-reuse")]
     MathTensorAddWgpuReuse,
+    #[value(name = "math-matmul-auto-wgpu")]
+    MathMatmulAutoWgpu,
+    #[value(name = "math-matmul-bias-auto-wgpu-reuse")]
+    MathMatmulBiasAutoWgpuReuse,
+    #[value(name = "math-matrix-add-auto-wgpu-reuse")]
+    MathMatrixAddAutoWgpuReuse,
+    #[value(name = "math-tensor-add-auto-wgpu-reuse")]
+    MathTensorAddAutoWgpuReuse,
 }
 
 #[derive(Serialize)]
@@ -549,6 +557,123 @@ const MATH_TENSOR_ADD_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
     kind: ToolchainCommandKind::MathBench,
 };
 
+const MATH_MATMUL_AUTO_WGPU: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matmul_auto_wgpu",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "auto",
+        "--op",
+        "matmul",
+        "--size",
+        "512",
+        "--iterations",
+        "3",
+        "--warmup",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_MATMUL_BIAS_AUTO_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matmul_bias_auto_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "auto",
+        "--op",
+        "matmul-bias-add",
+        "--size",
+        "128",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+        "--wgpu-min-elements",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_MATRIX_ADD_AUTO_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matrix_add_auto_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "auto",
+        "--op",
+        "matrix-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+        "--wgpu-min-elements",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_TENSOR_ADD_AUTO_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_tensor_add_auto_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "auto",
+        "--op",
+        "tensor-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+        "--wgpu-min-elements",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
     let reports = selected_commands(options)
         .into_iter()
@@ -608,6 +733,12 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::MathMatmulBiasWgpuReuse => MATH_MATMUL_BIAS_WGPU_REUSE,
             ToolchainProfileCommand::MathMatrixAddWgpuReuse => MATH_MATRIX_ADD_WGPU_REUSE,
             ToolchainProfileCommand::MathTensorAddWgpuReuse => MATH_TENSOR_ADD_WGPU_REUSE,
+            ToolchainProfileCommand::MathMatmulAutoWgpu => MATH_MATMUL_AUTO_WGPU,
+            ToolchainProfileCommand::MathMatmulBiasAutoWgpuReuse => {
+                MATH_MATMUL_BIAS_AUTO_WGPU_REUSE
+            }
+            ToolchainProfileCommand::MathMatrixAddAutoWgpuReuse => MATH_MATRIX_ADD_AUTO_WGPU_REUSE,
+            ToolchainProfileCommand::MathTensorAddAutoWgpuReuse => MATH_TENSOR_ADD_AUTO_WGPU_REUSE,
         }
     }
 }

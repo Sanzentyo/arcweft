@@ -200,6 +200,13 @@ impl RuntimeMathAccelerator {
         self.select_elementwise_backend(elements)
     }
 
+    pub fn tensor_elementwise_backend_selection(
+        &self,
+        elements: usize,
+    ) -> RuntimeMathBackendSelection {
+        self.select_tensor_elementwise_backend(elements)
+    }
+
     pub fn record_backend_selection(&mut self, selection: RuntimeMathBackendSelection) {
         self.stats.last_auto_reason = selection.auto_reason();
     }

@@ -369,7 +369,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   final readback for correctness instead of downloading every sample. The
   Justfile includes `bench-math-matrix-add-submit-only` and
   `bench-math-tensor-add-submit-only` for path-free elementwise lower-bound
-  measurements.
+  measurements. Standalone prepared GPU benchmarks now also accept
+  `--backend auto` when the Auto policy selects wgpu, so toolchain profiling can
+  measure resident-buffer reuse and still report the policy reason that crossed
+  the CPU/GPU boundary.
   The optional inference adapter manifest now exposes
   `infer.matmul_bias_add_f32` as a normal adapter method/host call, and
   runtime-plan lowering converts selected adapter namespaces such as `infer.*`
@@ -474,6 +477,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `--command math-matmul-bias`, `--command math-matrix-add`,
   `--command math-tensor-add`, the corresponding `*-f64` commands, and resident
   `math-*-wgpu-reuse` commands as release-mode runtime math trend commands.
+  It also includes Auto-selected wgpu commands for matmul and prepared resident
+  reuse, keeping `last_backend`, `last_auto_reason`, and reuse counters visible
+  when the policy threshold intentionally crosses into the GPU backend.
   Those parse standalone `math_bench` JSON into compact `math_bench` summaries
   with backend medians, speedups, call counters, data movement counters, reuse
   flags, and `auto` policy labels. The profiler preallocates repeat samples and

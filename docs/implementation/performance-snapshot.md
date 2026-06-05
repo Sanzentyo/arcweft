@@ -305,12 +305,17 @@ Runtime math trend commands use the same path-free profile wrapper:
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-f64 --command math-matrix-add-f64 --command math-tensor-add-f64 --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias-wgpu-reuse --command math-matrix-add-wgpu-reuse --command math-tensor-add-wgpu-reuse --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-auto-wgpu --command math-matmul-bias-auto-wgpu-reuse --command math-matrix-add-auto-wgpu-reuse --command math-tensor-add-auto-wgpu-reuse --repeat 3 --warmup 1 --json
 ```
 
 These commands run standalone `math_bench` in release mode and summarize backend
 medians, speedups, call counters, data movement counters, and `auto` policy
 labels in a compact `math_bench` block. The f64 command group keeps width
-preservation and unsupported portable wgpu f64 paths visible, while the wgpu
+preservation and unsupported portable wgpu f64 paths visible. The Auto wgpu
+group lowers the `wgpu_min_elements` threshold for targeted runs, proving that
+standalone prepared reuse can be measured through the same policy path as flow
+math while still reporting `last_backend`, `last_auto_reason`,
+`gpu_buffer_reuse_hits`, and `gpu_reused_dispatches`. The wgpu
 reuse command group tracks persistent-buffer calls, upload/download bytes, and
 reuse hits without writing host paths. The current one-shot CPU `auto` policy is
 conservative for paths where local measurements show the general CPU backend can
@@ -1056,6 +1061,7 @@ just bench-math-matrix-add
 just bench-math-tensor-add
 just bench-math-matrix-add-submit-only
 just bench-math-tensor-add-submit-only
+just toolchain-profile-math-auto-wgpu-benches
 just bench-024
 just bench-024-wgpu-auto
 just bench-025

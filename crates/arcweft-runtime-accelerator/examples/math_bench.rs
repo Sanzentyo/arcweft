@@ -5,8 +5,8 @@ use arcweft_runtime_accelerator::inference::{
 };
 use arcweft_runtime_accelerator::math::{
     RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAcceleratorError,
-    RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathStats,
-    RuntimePreparedMatrixAddF32, RuntimePreparedMatrixMatmulBiasAddF32,
+    RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathBackendSelection,
+    RuntimeMathStats, RuntimePreparedMatrixAddF32, RuntimePreparedMatrixMatmulBiasAddF32,
     RuntimePreparedMatrixMatmulF32, RuntimePreparedTensorAddF32,
 };
 use serde::Serialize;
@@ -390,11 +390,9 @@ fn run_prepared_matrix_matmul_bias_add(
     bias: &DenseTensorF32,
     reference: &DenseMatrixF32,
 ) -> BackendReport {
-    if backend != RuntimeMathBackend::Wgpu {
-        return BackendReport::skipped_or_failed(
-            backend,
-            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
-        );
+    let selection = accelerator.matmul_backend_selection(lhs, rhs);
+    if let Err(diagnostic) = validate_prepared_backend(accelerator, backend, selection) {
+        return BackendReport::skipped_or_failed(backend, diagnostic);
     }
     let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
@@ -628,11 +626,9 @@ fn run_prepared_matrix_matmul(
     rhs: &DenseMatrixF32,
     reference: &DenseMatrixF32,
 ) -> BackendReport {
-    if backend != RuntimeMathBackend::Wgpu {
-        return BackendReport::skipped_or_failed(
-            backend,
-            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
-        );
+    let selection = accelerator.matmul_backend_selection(lhs, rhs);
+    if let Err(diagnostic) = validate_prepared_backend(accelerator, backend, selection) {
+        return BackendReport::skipped_or_failed(backend, diagnostic);
     }
     let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
@@ -885,11 +881,9 @@ fn run_prepared_matrix_add(
     rhs: &DenseMatrixF32,
     reference: &DenseMatrixF32,
 ) -> BackendReport {
-    if backend != RuntimeMathBackend::Wgpu {
-        return BackendReport::skipped_or_failed(
-            backend,
-            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
-        );
+    let selection = accelerator.elementwise_backend_selection(lhs.values().len());
+    if let Err(diagnostic) = validate_prepared_backend(accelerator, backend, selection) {
+        return BackendReport::skipped_or_failed(backend, diagnostic);
     }
     let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
@@ -1042,11 +1036,9 @@ fn run_prepared_tensor_add(
     rhs: &DenseTensorF32,
     reference: &DenseTensorF32,
 ) -> BackendReport {
-    if backend != RuntimeMathBackend::Wgpu {
-        return BackendReport::skipped_or_failed(
-            backend,
-            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
-        );
+    let selection = accelerator.tensor_elementwise_backend_selection(lhs.values().len());
+    if let Err(diagnostic) = validate_prepared_backend(accelerator, backend, selection) {
+        return BackendReport::skipped_or_failed(backend, diagnostic);
     }
     let prepared = match if options.reuse_mode.uses_capacity() {
         accelerator.prepare_tensor_add_f32_capacity(options.tensor_capacity_len())
@@ -1131,6 +1123,28 @@ fn run_prepared_tensor_add(
         return error.into_report(backend);
     }
     BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn validate_prepared_backend(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    selection: RuntimeMathBackendSelection,
+) -> Result<(), String> {
+    match backend {
+        RuntimeMathBackend::Wgpu => Ok(()),
+        RuntimeMathBackend::Auto if selection.backend() == RuntimeMathBackend::Wgpu => {
+            accelerator.record_backend_selection(selection);
+            Ok(())
+        }
+        RuntimeMathBackend::Auto => Err(format!(
+            "prepared GPU reuse requires auto selection to resolve to wgpu, selected {}",
+            backend_label(selection.backend())
+        )),
+        selected => Err(format!(
+            "prepared GPU reuse is only available for the wgpu backend, got {}",
+            backend_label(selected)
+        )),
+    }
 }
 
 fn matrix_fixture(rows: usize, cols: usize, scale: f32) -> DenseMatrixF32 {
@@ -2017,6 +2031,27 @@ mod tests {
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"reuse_capacity\":true"));
         assert!(json.contains("\"capacity_size\":128"));
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_prepared_backend_records_wgpu_selection_reason() {
+        let lhs = matrix_fixture(8, 8, 1.0);
+        let rhs = matrix_fixture(8, 8, 0.25);
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Auto,
+            wgpu_min_elements: 1,
+        });
+        let selection = accelerator.matmul_backend_selection(&lhs, &rhs);
+
+        validate_prepared_backend(&mut accelerator, RuntimeMathBackend::Auto, selection)
+            .expect("auto selection can enter prepared wgpu benchmark path");
+
+        assert_eq!(selection.backend(), RuntimeMathBackend::Wgpu);
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold)
+        );
     }
 
     #[test]
