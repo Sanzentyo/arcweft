@@ -789,6 +789,13 @@ whole run. The smoke recipe drives local Chrome/Edge through DevTools when
 available. If the browser executable is not discoverable from the environment,
 set `CHROME` or `CHROME_BIN` before running the recipe.
 
+A local smoke sanity run reported `webgpu_available = true`,
+`measured_cases = 120`, `skipped_cases = 0`, `failed_cases = 0`, and
+`webgpu_fallback_reason = null`. That smoke preset is intentionally small and
+does not update default Auto policy by itself; it proves that the checked-in
+browser harness can exercise the async WebGPU adapter and emit path-free
+summary JSON in this environment.
+
 Local browser WebGPU measurements on the current Windows/Chrome environment:
 
 | Case | Best browser WebGPU mode | CPU Wasm median ms | GPU median ms | Speedup | Notes |
