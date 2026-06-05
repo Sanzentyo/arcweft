@@ -99,6 +99,14 @@ inputs.
 String-heavy helpers, effectful calls, flow control, and pattern control remain
 outside the JIT subset.
 
+Cranelift lowering is split into a reusable module-definition layer and a JIT
+execution wrapper. Codegen functions define helper entrypoints into `M:
+cranelift::module::Module` and return Cranelift `FuncId` metadata; the native
+JIT wrapper owns `JITModule`, finalizes definitions, looks up function pointers,
+and calls through the audited `native_call` ABI boundary. This keeps JIT
+function-pointer handling isolated while making the same lowering path usable
+for future `ObjectModule` / build-time AOT object emission.
+
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11
