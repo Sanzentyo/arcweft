@@ -1460,6 +1460,14 @@ impl RuntimeMathAccelerator {
                     auto_reason: Some(RuntimeMathAutoSelectionReason::Matmul4x4Glam),
                 }
             }
+            RuntimeMathBackend::Auto
+                if matmul_work_items(lhs, rhs) <= F64_SCALAR_MATMUL_MAX_WORK_ITEMS =>
+            {
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Scalar,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+                }
+            }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
                 auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
@@ -2202,6 +2210,8 @@ fn matmul_work_items<T>(lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) -> usize {
         .saturating_mul(lhs.cols())
         .saturating_mul(rhs.cols())
 }
+
+const F64_SCALAR_MATMUL_MAX_WORK_ITEMS: usize = 64 * 64 * 64;
 
 const fn wgpu_backend_enabled() -> bool {
     cfg_select! {
@@ -7093,6 +7103,27 @@ mod tests {
 
         assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
         assert_eq!(accelerator.stats().wgpu_calls, 0);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Scalar)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+        );
+    }
+
+    #[cfg(feature = "math-ndarray")]
+    #[test]
+    fn auto_large_f64_matmul_prefers_ndarray_cpu_backend() {
+        let values = 65 * 65;
+        let lhs = DenseMatrixF64::new(65, 65, vec![1.0; values]).unwrap();
+        let rhs = DenseMatrixF64::new(65, 65, vec![2.0; values]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
+
+        let out = accelerator.matmul_f64(&lhs, &rhs).unwrap();
+
+        assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
         assert_eq!(
             accelerator.stats().last_backend,
             Some(RuntimeMathBackend::Ndarray)

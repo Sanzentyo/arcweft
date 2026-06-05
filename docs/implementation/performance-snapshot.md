@@ -569,7 +569,9 @@ Portable wgpu compute shaders in this workspace are `f32` kernels; `f64`
 matrix/tensor calls stay on scalar, glam 4x4, or ndarray CPU backends and
 preserve `f64` storage across the runtime boundary. `Auto` never selects wgpu
 for `f64`; explicit `wgpu` requests return a structured portability error for
-those kernels.
+those kernels. `f64` matmul uses the scalar row-major kernel for small general
+matrices up to 64^3 multiply-add work items because local benches show the
+ndarray setup cost can dominate there; larger `f64` matmul calls use ndarray.
 Compile-time selection now also separates native accelerator code from browser
 Wasm builds. `native-jit` is target-specific to non-`wasm32`, and the blocking
 native wgpu math dispatch is selected only for non-`wasm32`;
@@ -965,15 +967,16 @@ Representative release results on the local machine:
 | flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
 | flow 2x2 matmul_f64 | ndarray | measured | 2100 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | flow 2x2 tensor_add_f64 | ndarray | measured | 2200 | `--value` tensor input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
-| 64x64 matmul_f64 | scalar | measured | 39100 | standalone `math_bench`, row-major f64 baseline |
-| 64x64 matmul_f64 | ndarray | measured | 54400 | standalone `math_bench`, CPU matrix backend without narrowing |
-| 64x64 matmul_f64 | auto | measured | 51200 | selected ndarray with `last_auto_reason = matmul_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
-| 1024x1024 matrix_add_f64 | scalar | measured | 5562600 | standalone `math_bench`, f64 elementwise baseline |
-| 1024x1024 matrix_add_f64 | ndarray | measured | 5414100 | standalone `math_bench`, borrowed f64 inputs and owned f64 output |
-| 1024x1024 matrix_add_f64 | auto | measured | 5107600 | selected ndarray with `last_auto_reason = elementwise_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
-| 1024x1024 tensor_add_f64 | scalar | measured | 5615900 | standalone `math_bench`, f64 tensor baseline |
-| 1024x1024 tensor_add_f64 | ndarray | measured | 5506000 | standalone `math_bench`, dynamic-view f64 add without narrowing |
-| 1024x1024 tensor_add_f64 | auto | measured | 5424500 | selected ndarray with `last_auto_reason = elementwise_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
+| 64x64 matmul_f64 | scalar | measured | 38800 | standalone `math_bench`, row-major f64 baseline |
+| 64x64 matmul_f64 | ndarray | measured | 39900 | standalone `math_bench`, CPU matrix backend without narrowing |
+| 64x64 matmul_f64 | auto | measured | 36100 | selected scalar with `last_auto_reason = matmul_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
+| 128x128 matmul_f64 | auto | measured | 229300 | selected ndarray with `last_auto_reason = matmul_cpu_default`, crossing the small-matrix scalar threshold |
+| 1024x1024 matrix_add_f64 | scalar | measured | 4419400 | standalone `math_bench`, f64 elementwise baseline |
+| 1024x1024 matrix_add_f64 | ndarray | measured | 4640800 | standalone `math_bench`, borrowed f64 inputs and owned f64 output |
+| 1024x1024 matrix_add_f64 | auto | measured | 4443400 | selected ndarray with `last_auto_reason = elementwise_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
+| 1024x1024 tensor_add_f64 | scalar | measured | 5398000 | standalone `math_bench`, f64 tensor baseline |
+| 1024x1024 tensor_add_f64 | ndarray | measured | 5759700 | standalone `math_bench`, dynamic-view f64 add without narrowing |
+| 1024x1024 tensor_add_f64 | auto | measured | 5567600 | selected ndarray with `last_auto_reason = elementwise_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
