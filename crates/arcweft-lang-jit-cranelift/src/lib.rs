@@ -71,6 +71,15 @@ pub struct ObjectPureInputs {
     pub stats: PureFunctionStats,
 }
 
+/// Relocatable object output for a batch-only pure helper.
+pub struct ObjectPureBatchInputs {
+    pub object_bytes: Vec<u8>,
+    pub batch_symbol: String,
+    pub batch_sum_symbol: String,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
 /// Pure scalar helper functions defined into a Cranelift module.
 ///
 /// This is the codegen-side artifact shared by JIT and future object/AOT
@@ -499,6 +508,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `i8` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_i8_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_i8_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to reusable native `i128` flat-batch
     /// functions with runtime `i128` inputs.
     ///
@@ -523,6 +542,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `i128`
+    /// flat-batch entrypoints.
+    pub fn emit_object_i128_batch_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+        emit_object_i128_batch_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to a reusable native `i16` function with
     /// runtime `i16` inputs.
     pub fn compile_i16_with_inputs(
@@ -541,6 +570,16 @@ impl CraneliftPureFunctionBackend {
             param_names: parts.param_names,
             stats: parts.stats,
         })
+    }
+
+    /// Emits a relocatable object containing the parameterized `i16` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_i16_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_i16_with_inputs(request, param_names)
     }
 
     /// Compiles a pure helper request to a reusable native `i32` function with
@@ -645,6 +684,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `u8` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_u8_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_u8_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to a reusable native `u16` function with
     /// runtime `u16` inputs.
     pub fn compile_u16_with_inputs(
@@ -663,6 +712,16 @@ impl CraneliftPureFunctionBackend {
             param_names: parts.param_names,
             stats: parts.stats,
         })
+    }
+
+    /// Emits a relocatable object containing the parameterized `u16` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_u16_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_u16_with_inputs(request, param_names)
     }
 
     /// Compiles a pure helper request to reusable native `u128` flat-batch
@@ -687,6 +746,16 @@ impl CraneliftPureFunctionBackend {
             param_names: parts.param_names,
             stats: parts.stats,
         })
+    }
+
+    /// Emits a relocatable object containing the parameterized `u128`
+    /// flat-batch entrypoints.
+    pub fn emit_object_u128_batch_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+        emit_object_u128_batch_with_inputs(request, param_names)
     }
 
     /// Compiles a pure helper request to a reusable native `u64` function with
@@ -1094,6 +1163,89 @@ pub fn emit_object_f64_with_inputs(
     float_object_result(module, symbol_prefix, defined)
 }
 
+/// Emits a relocatable object containing the parameterized `i8` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_i8_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I8)
+}
+
+/// Emits a relocatable object containing the parameterized `i16` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_i16_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I16)
+}
+
+/// Emits a relocatable object containing the parameterized `u8` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_u8_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U8)
+}
+
+/// Emits a relocatable object containing the parameterized `u16` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_u16_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U16)
+}
+
+/// Emits a relocatable object containing the parameterized `i128` flat-batch
+/// entrypoints.
+pub fn emit_object_i128_batch_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)
+}
+
+/// Emits a relocatable object containing the parameterized `u128` flat-batch
+/// entrypoints.
+pub fn emit_object_u128_batch_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)
+}
+
+fn emit_object_small_int_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+    kind: SmallIntKind,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined =
+        define_small_int_with_inputs(&mut module, &symbol_prefix, request, param_names, kind)?;
+    small_int_object_result(module, symbol_prefix, defined)
+}
+
+fn emit_object_wide_int_batch_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+    kind: SmallIntKind,
+) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_small_int_batch_with_inputs(
+        &mut module,
+        &symbol_prefix,
+        request,
+        param_names,
+        kind,
+    )?;
+    batch_object_result(module, symbol_prefix, defined)
+}
+
 fn scalar_object_result(
     module: ObjectModule,
     symbol_prefix: String,
@@ -1104,6 +1256,35 @@ fn scalar_object_result(
         entry_symbol: format!("{symbol_prefix}_entry"),
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
         batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn small_int_object_result(
+    module: ObjectModule,
+    symbol_prefix: String,
+    defined: DefinedPureSmallIntInputs,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    Ok(ObjectPureInputs {
+        object_bytes: emit_object_bytes(module)?,
+        entry_symbol: format!("{symbol_prefix}_entry"),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn batch_object_result(
+    module: ObjectModule,
+    symbol_prefix: String,
+    defined: DefinedPureSmallIntBatchInputs,
+) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    Ok(ObjectPureBatchInputs {
+        object_bytes: emit_object_bytes(module)?,
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
         param_names: defined.param_names,
         stats: defined.stats,
     })
@@ -5199,6 +5380,26 @@ mod tests {
         }
     }
 
+    fn assert_batch_object_symbols(object: &ObjectPureBatchInputs) {
+        assert!(!object.object_bytes.is_empty());
+        assert!(
+            !object
+                .object_bytes
+                .windows(3)
+                .any(|window| window == b":\\")
+        );
+
+        use cranelift_object::object::{Object, ObjectSymbol};
+        let parsed = cranelift_object::object::File::parse(object.object_bytes.as_slice())
+            .expect("emitted object parses");
+        let symbols = parsed
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok())
+            .collect::<Vec<_>>();
+        assert!(symbols.contains(&object.batch_symbol.as_str()));
+        assert!(symbols.contains(&object.batch_sum_symbol.as_str()));
+    }
+
     #[test]
     fn cranelift_jit_evaluates_integer_helper_and_matches_vm() {
         let request = PureFunctionRequest::new(
@@ -5489,6 +5690,131 @@ mod tests {
         );
         assert!(f64_object.batch_sum_symbol.is_none());
         assert_object_symbols(&f64_object);
+    }
+
+    #[test]
+    fn cranelift_emits_small_and_wide_integer_objects_with_expected_symbols() {
+        let backend = CraneliftPureFunctionBackend;
+
+        let i8_request = PureFunctionRequest::new(
+            "score object i8",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [i8_binding("base", 3), i8_binding("bonus", 4)],
+        );
+        let i8_object = backend
+            .emit_object_i8_with_inputs(&i8_request, ["base", "bonus"])
+            .expect("Cranelift emits an i8 object");
+        assert_eq!(i8_object.entry_symbol, "arcweft_pure_score_object_i8_entry");
+        assert!(i8_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&i8_object);
+
+        let i16_request = PureFunctionRequest::new(
+            "score object i16",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [i16_binding("base", 3), i16_binding("bonus", 4)],
+        );
+        let i16_object = backend
+            .emit_object_i16_with_inputs(&i16_request, ["base", "bonus"])
+            .expect("Cranelift emits an i16 object");
+        assert_eq!(
+            i16_object.entry_symbol,
+            "arcweft_pure_score_object_i16_entry"
+        );
+        assert!(i16_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&i16_object);
+
+        let u8_request = PureFunctionRequest::new(
+            "score object u8",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [u8_binding("base", 3), u8_binding("bonus", 4)],
+        );
+        let u8_object = backend
+            .emit_object_u8_with_inputs(&u8_request, ["base", "bonus"])
+            .expect("Cranelift emits a u8 object");
+        assert_eq!(u8_object.entry_symbol, "arcweft_pure_score_object_u8_entry");
+        assert!(u8_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&u8_object);
+
+        let u16_request = PureFunctionRequest::new(
+            "score object u16",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [u16_binding("base", 3), u16_binding("bonus", 4)],
+        );
+        let u16_object = backend
+            .emit_object_u16_with_inputs(&u16_request, ["base", "bonus"])
+            .expect("Cranelift emits a u16 object");
+        assert_eq!(
+            u16_object.entry_symbol,
+            "arcweft_pure_score_object_u16_entry"
+        );
+        assert!(u16_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&u16_object);
+
+        let i128_request = PureFunctionRequest::new(
+            "score object i128",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [
+                i128_binding("base", i128::MAX - 3),
+                i128_binding("bonus", 2),
+            ],
+        );
+        let i128_object = backend
+            .emit_object_i128_batch_with_inputs(&i128_request, ["base", "bonus"])
+            .expect("Cranelift emits an i128 batch object");
+        assert_eq!(
+            i128_object.batch_symbol,
+            "arcweft_pure_score_object_i128_rows_batch"
+        );
+        assert_eq!(
+            i128_object.batch_sum_symbol,
+            "arcweft_pure_score_object_i128_rows_batch_sum"
+        );
+        assert_batch_object_symbols(&i128_object);
+
+        let u128_request = PureFunctionRequest::new(
+            "score object u128",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [
+                u128_binding("base", u128::MAX - 3),
+                u128_binding("bonus", 2),
+            ],
+        );
+        let u128_object = backend
+            .emit_object_u128_batch_with_inputs(&u128_request, ["base", "bonus"])
+            .expect("Cranelift emits a u128 batch object");
+        assert_eq!(
+            u128_object.batch_symbol,
+            "arcweft_pure_score_object_u128_rows_batch"
+        );
+        assert_eq!(
+            u128_object.batch_sum_symbol,
+            "arcweft_pure_score_object_u128_rows_batch_sum"
+        );
+        assert_batch_object_symbols(&u128_object);
     }
 
     #[test]

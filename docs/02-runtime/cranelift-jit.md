@@ -109,10 +109,12 @@ for `ObjectModule` / build-time AOT object emission. Parameterized integer,
 floating-point, small-integer, and wide-integer batch helper paths use this
 split before native execution wrappers are attached.
 
-Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `f32`, and
-`f64` parameterized helpers. Integer object artifacts contain scalar,
-row-batch, and row-batch-sum entrypoints; floating-point object artifacts contain
-scalar and row-batch entrypoints. Object artifacts record deterministic symbol
+Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `i8`, `i16`,
+`u8`, `u16`, `f32`, and `f64` parameterized helpers. Scalar integer object
+artifacts contain scalar, row-batch, and row-batch-sum entrypoints;
+floating-point object artifacts contain scalar and row-batch entrypoints. `i128`
+and `u128` use batch-only object artifacts because by-value wide integer calls
+stay out of the native FFI boundary. Object artifacts record deterministic symbol
 names and object bytes only; they do not include source paths or JIT function
 pointers.
 

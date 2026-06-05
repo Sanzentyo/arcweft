@@ -168,11 +168,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   into a generic Cranelift `Module`. The corresponding `compile_*` functions
   remain native JIT wrappers that finalize the `JITModule` and install function
   pointers.
-  `emit_object_{i64,i32,u32,u64,f32,f64}_with_inputs` now use the same generic
-  `Module` lowering paths to emit relocatable object bytes. Integer objects
+  `emit_object_{i64,i32,u32,u64,i8,i16,u8,u16,f32,f64}_with_inputs` and
+  `emit_object_{i128,u128}_batch_with_inputs` now use the same generic `Module`
+  lowering paths to emit relocatable object bytes. Scalar integer objects
   include scalar, row-batch, and row-batch-sum symbols; floating-point objects
-  include scalar and row-batch symbols. Runtime AOT policy integration and
-  object emission for small/wide integer paths remain separate follow-up work.
+  include scalar and row-batch symbols; wide integer objects are batch-only to
+  keep by-value `i128`/`u128` out of the native FFI boundary. Runtime AOT policy
+  integration remains separate follow-up work.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,
