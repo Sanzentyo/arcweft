@@ -833,7 +833,7 @@ where
         let mut values = vec![None; self.graph.tensors.len()];
         for (index, spec) in self.graph.tensors.iter().enumerate() {
             if let TensorSpec::Constant { tensor, .. } = spec {
-                values[index] = Some(InferenceValue::Tensor(tensor.clone()));
+                values[index] = Some(InferenceRunValue::BorrowedTensor(tensor));
             }
         }
         for input in self.graph.inputs() {
@@ -843,22 +843,23 @@ where
                     name: input.name().to_owned(),
                 })?;
             validate_tensor_shape(tensor, input.shape())?;
-            values[input.id().index()] = Some(InferenceValue::Tensor(tensor.clone()));
+            values[input.id().index()] = Some(InferenceRunValue::BorrowedTensor(tensor));
         }
         let tensor_uses = self.graph.tensor_use_counts();
         let nodes = self.graph.nodes.clone();
+        let adapter = &mut self.adapter;
         let mut index = 0_usize;
         while let Some(node) = nodes.get(index) {
             if let Some(next_node) = nodes.get(index + 1)
                 && Self::can_fuse_matmul_bias_add(node, next_node, &tensor_uses)
             {
-                let value = self.eval_matmul_bias_add(node, next_node, &values)?;
+                let value = Self::eval_matmul_bias_add(adapter, node, next_node, &values)?;
                 values[next_node.output.index()] = Some(value);
                 index += 2;
                 continue;
             }
 
-            let value = self.eval_node(node, &values)?;
+            let value = Self::eval_node(adapter, node, &values)?;
             values[node.output.index()] = Some(value);
             index += 1;
         }
@@ -867,7 +868,8 @@ where
             .iter()
             .map(|id| {
                 values[id.index()]
-                    .clone()
+                    .as_ref()
+                    .map(InferenceRunValue::to_output)
                     .ok_or(InferenceError::UncomputedTensor { id: *id })
             })
             .collect()
@@ -885,51 +887,58 @@ where
     }
 
     fn eval_matmul_bias_add(
-        &mut self,
+        adapter: &mut A,
         matmul: &InferenceNode,
         bias_add_node: &InferenceNode,
-        values: &[Option<InferenceValue>],
-    ) -> Result<InferenceValue, InferenceError> {
+        values: &[Option<InferenceRunValue<'_>>],
+    ) -> Result<InferenceRunValue<'static>, InferenceError> {
         let lhs = tensor_value(values, matmul.inputs[0])?;
         let rhs = tensor_value(values, matmul.inputs[1])?;
         let bias = tensor_value(values, bias_add_node.inputs[1])?;
-        Ok(InferenceValue::Tensor(
-            self.adapter.matmul_bias_add(lhs, rhs, bias)?,
-        ))
+        Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+            adapter.matmul_bias_add(lhs, rhs, bias)?,
+        )))
     }
 
     fn eval_node(
-        &mut self,
+        adapter: &mut A,
         node: &InferenceNode,
-        values: &[Option<InferenceValue>],
-    ) -> Result<InferenceValue, InferenceError> {
+        values: &[Option<InferenceRunValue<'_>>],
+    ) -> Result<InferenceRunValue<'static>, InferenceError> {
         match node.op {
             InferenceOp::Matmul => {
                 let lhs = tensor_value(values, node.inputs[0])?;
                 let rhs = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(self.adapter.matmul(lhs, rhs)?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.matmul(lhs, rhs)?,
+                )))
             }
             InferenceOp::Add => {
                 let lhs = tensor_value(values, node.inputs[0])?;
                 let rhs = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(self.adapter.add(lhs, rhs)?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.add(lhs, rhs)?,
+                )))
             }
             InferenceOp::BiasAdd => {
                 let tensor = tensor_value(values, node.inputs[0])?;
                 let bias = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(self.adapter.bias_add(tensor, bias)?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.bias_add(tensor, bias)?,
+                )))
             }
             InferenceOp::Conv2dValid { stride_y, stride_x } => {
                 let input = tensor_value(values, node.inputs[0])?;
                 let kernel = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(
-                    self.adapter
-                        .conv2d_valid(input, kernel, stride_y, stride_x)?,
-                ))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.conv2d_valid(input, kernel, stride_y, stride_x)?,
+                )))
             }
             InferenceOp::Relu => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(self.adapter.relu(input)?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.relu(input)?,
+                )))
             }
             InferenceOp::MaxPool2d {
                 kernel_y,
@@ -938,26 +947,50 @@ where
                 stride_x,
             } => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(self.adapter.max_pool2d(
-                    input, kernel_y, kernel_x, stride_y, stride_x,
-                )?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.max_pool2d(input, kernel_y, kernel_x, stride_y, stride_x)?,
+                )))
             }
             InferenceOp::SoftmaxLastDim => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(
-                    self.adapter.softmax_last_dim(input)?,
-                ))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.softmax_last_dim(input)?,
+                )))
             }
             InferenceOp::ArgmaxLastDim => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::ClassIndices(
-                    self.adapter.argmax_last_dim(input),
-                ))
+                Ok(InferenceRunValue::Owned(InferenceValue::ClassIndices(
+                    adapter.argmax_last_dim(input),
+                )))
             }
             InferenceOp::FlattenOuter => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(self.adapter.flatten_outer(input)?))
+                Ok(InferenceRunValue::Owned(InferenceValue::Tensor(
+                    adapter.flatten_outer(input)?,
+                )))
             }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum InferenceRunValue<'a> {
+    BorrowedTensor(&'a DenseTensorF32),
+    Owned(InferenceValue),
+}
+
+impl InferenceRunValue<'_> {
+    fn as_tensor(&self) -> Option<&DenseTensorF32> {
+        match self {
+            Self::BorrowedTensor(tensor) => Some(tensor),
+            Self::Owned(value) => value.as_tensor(),
+        }
+    }
+
+    fn to_output(&self) -> InferenceValue {
+        match self {
+            Self::BorrowedTensor(tensor) => InferenceValue::Tensor((*tensor).clone()),
+            Self::Owned(value) => value.clone(),
         }
     }
 }
@@ -1058,10 +1091,10 @@ pub enum InferenceError {
     Accelerator(#[from] RuntimeMathAcceleratorError),
 }
 
-fn tensor_value(
-    values: &[Option<InferenceValue>],
+fn tensor_value<'a>(
+    values: &'a [Option<InferenceRunValue<'a>>],
     id: InferenceTensorId,
-) -> Result<&DenseTensorF32, InferenceError> {
+) -> Result<&'a DenseTensorF32, InferenceError> {
     values
         .get(id.index())
         .and_then(Option::as_ref)
