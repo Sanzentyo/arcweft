@@ -44,6 +44,10 @@ pub(crate) enum ToolchainProfileCommand {
     Bench040WidthAot,
     #[value(name = "bench-040-width-vm")]
     Bench040WidthVm,
+    #[value(name = "bench-033-width-aot-object")]
+    Bench033WidthAotObject,
+    #[value(name = "bench-040-width-aot-object")]
+    Bench040WidthAotObject,
     #[value(name = "math-matmul-bias")]
     MathMatmulBias,
     #[value(name = "math-matrix-add")]
@@ -541,6 +545,62 @@ const BENCH_040_WIDTH_VM: ToolchainCommandSpec = ToolchainCommandSpec {
     kind: ToolchainCommandKind::ArcweftBench,
 };
 
+const BENCH_033_WIDTH_AOT_OBJECT: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_bench_033_mixed_width_aot_object",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+        "--json",
+        "--iterations",
+        "2",
+        "--warmup",
+        "1",
+        "--samples",
+        "1",
+        "--steps",
+        "128",
+        "--max-ops",
+        "128",
+        "--pure-backend",
+        "aot",
+        "--pure-object-artifacts",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const BENCH_040_WIDTH_AOT_OBJECT: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_bench_040_mixed_width_aot_object",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+        "--json",
+        "--iterations",
+        "2",
+        "--warmup",
+        "1",
+        "--samples",
+        "1",
+        "--steps",
+        "128",
+        "--max-ops",
+        "128",
+        "--pure-backend",
+        "aot",
+        "--pure-object-artifacts",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
 const MATH_MATMUL_BIAS: ToolchainCommandSpec = ToolchainCommandSpec {
     label: "math_bench_matmul_bias_add",
     args: &[
@@ -949,6 +1009,8 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::Bench040WidthJit => BENCH_040_WIDTH_JIT,
             ToolchainProfileCommand::Bench040WidthAot => BENCH_040_WIDTH_AOT,
             ToolchainProfileCommand::Bench040WidthVm => BENCH_040_WIDTH_VM,
+            ToolchainProfileCommand::Bench033WidthAotObject => BENCH_033_WIDTH_AOT_OBJECT,
+            ToolchainProfileCommand::Bench040WidthAotObject => BENCH_040_WIDTH_AOT_OBJECT,
             ToolchainProfileCommand::MathMatmulBias => MATH_MATMUL_BIAS,
             ToolchainProfileCommand::MathMatrixAdd => MATH_MATRIX_ADD,
             ToolchainProfileCommand::MathTensorAdd => MATH_TENSOR_ADD,

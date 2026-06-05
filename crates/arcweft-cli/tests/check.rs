@@ -73,7 +73,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 28);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 30);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -152,6 +152,8 @@ const TOOLCHAIN_PROFILE_DRY_RUN_COMMANDS: &[&str] = &[
     "bench-040-width-jit",
     "bench-040-width-aot",
     "bench-040-width-vm",
+    "bench-033-width-aot-object",
+    "bench-040-width-aot-object",
 ];
 
 fn assert_toolchain_profile_workspace_commands(json: &serde_json::Value) {
@@ -369,6 +371,26 @@ fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
             "vm"
         )
     );
+    assert_eq!(
+        json["commands"][28]["label"],
+        "arcw_bench_033_mixed_width_aot_object"
+    );
+    assert_eq!(
+        json["commands"][28]["argv"],
+        toolchain_profile_width_object_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw"
+        )
+    );
+    assert_eq!(
+        json["commands"][29]["label"],
+        "arcw_bench_040_mixed_width_aot_object"
+    );
+    assert_eq!(
+        json["commands"][29]["argv"],
+        toolchain_profile_width_object_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw"
+        )
+    );
 }
 
 fn toolchain_profile_bench_003_argv() -> serde_json::Value {
@@ -481,6 +503,33 @@ fn toolchain_profile_width_argv(fixture: &str, backend: &str) -> serde_json::Val
         "128",
         "--pure-backend",
         backend
+    ])
+}
+
+fn toolchain_profile_width_object_argv(fixture: &str) -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        fixture,
+        "--json",
+        "--iterations",
+        "2",
+        "--warmup",
+        "1",
+        "--samples",
+        "1",
+        "--steps",
+        "128",
+        "--max-ops",
+        "128",
+        "--pure-backend",
+        "aot",
+        "--pure-object-artifacts"
     ])
 }
 

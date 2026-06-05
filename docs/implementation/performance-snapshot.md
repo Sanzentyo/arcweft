@@ -290,6 +290,7 @@ toolchain-profile schema:
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-aot-object --command bench-040-width-aot-object --repeat 3 --warmup 1 --json
 ```
 
 The command-level profile records status, stdout/stderr line counts, and
@@ -302,7 +303,8 @@ object artifact attempts/successes/failures/bytes. Use the ordinary `arcw bench
 --json` output only when the full compiler/runtime breakdown is needed.
 The mixed-width commands keep `i32`, `u32`, `f32`, `i16`, `u16`, `isize`,
 `usize`, and `f64` `.map`/`for` pure-call behavior visible across VM, AOT, and
-JIT without recording host paths.
+JIT without recording host paths. The mixed-width object commands apply the
+same object artifact counters to multi-helper AOT bundles.
 
 Runtime math trend commands use the same path-free profile wrapper:
 
