@@ -283,6 +283,18 @@ Toolchain profile:
 | --- | ---: | ---: | ---: | ---: |
 | cargo check --workspace | 3 | 320584800 | 359898600 | 453985700 |
 
+Pure JIT trend commands can now be grouped under the same path-free
+toolchain-profile schema:
+
+```bash
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat 3 --warmup 1 --json
+```
+
+The command-level profile records status, stdout/stderr line counts, and
+median/min/max elapsed samples without embedding benchmark stdout or host paths.
+Use the ordinary `arcw bench --json` output for the detailed Arcweft runtime
+counters that explain a timing change.
+
 Checked-in thread scheduling bench:
 
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |

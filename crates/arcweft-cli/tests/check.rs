@@ -64,6 +64,10 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         .arg("test-build")
         .arg("--command")
         .arg("test")
+        .arg("--command")
+        .arg("bench-003")
+        .arg("--command")
+        .arg("bench-009")
         .arg("--repeat")
         .arg("2")
         .arg("--warmup")
@@ -94,7 +98,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 6);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 8);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -136,6 +140,79 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         json["commands"][4]["argv"],
         serde_json::json!(["cargo", "test", "--workspace", "--no-run"])
     );
+    assert_toolchain_profile_bench_commands(&json);
+}
+
+fn assert_toolchain_profile_bench_commands(json: &serde_json::Value) {
+    assert_eq!(json["commands"][6]["label"], "arcw_bench_003_for_pure_jit");
+    assert_eq!(
+        json["commands"][6]["argv"],
+        toolchain_profile_bench_003_argv()
+    );
+    assert_eq!(
+        json["commands"][7]["label"],
+        "arcw_bench_009_nonuniform_map_pure_batch"
+    );
+    assert_eq!(
+        json["commands"][7]["argv"],
+        toolchain_profile_bench_009_argv()
+    );
+}
+
+fn toolchain_profile_bench_003_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw",
+        "--json",
+        "--iterations",
+        "15",
+        "--warmup",
+        "3",
+        "--samples",
+        "9",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "jit"
+    ])
+}
+
+fn toolchain_profile_bench_009_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw",
+        "--json",
+        "--iterations",
+        "15",
+        "--warmup",
+        "3",
+        "--samples",
+        "9",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "jit",
+        "--pure-workers",
+        "4",
+        "--pure-batch-min-len",
+        "64"
+    ])
 }
 
 #[test]

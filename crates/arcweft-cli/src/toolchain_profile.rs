@@ -26,6 +26,10 @@ pub(crate) enum ToolchainProfileCommand {
     TestBuild,
     Clippy,
     Test,
+    #[value(name = "bench-003")]
+    Bench003,
+    #[value(name = "bench-009")]
+    Bench009,
 }
 
 #[derive(Serialize)]
@@ -104,6 +108,62 @@ const TEST_BUILD: ToolchainCommandSpec = ToolchainCommandSpec {
     args: &["test", "--workspace", "--no-run"],
 };
 
+const BENCH_003: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_bench_003_for_pure_jit",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw",
+        "--json",
+        "--iterations",
+        "15",
+        "--warmup",
+        "3",
+        "--samples",
+        "9",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "jit",
+    ],
+};
+
+const BENCH_009: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_bench_009_nonuniform_map_pure_batch",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw",
+        "--json",
+        "--iterations",
+        "15",
+        "--warmup",
+        "3",
+        "--samples",
+        "9",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "jit",
+        "--pure-workers",
+        "4",
+        "--pure-batch-min-len",
+        "64",
+    ],
+};
+
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
     let reports = selected_commands(options)
         .into_iter()
@@ -152,6 +212,8 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::TestBuild => TEST_BUILD,
             ToolchainProfileCommand::Clippy => CLIPPY,
             ToolchainProfileCommand::Test => TEST,
+            ToolchainProfileCommand::Bench003 => BENCH_003,
+            ToolchainProfileCommand::Bench009 => BENCH_009,
         }
     }
 }

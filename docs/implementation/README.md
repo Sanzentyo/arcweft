@@ -465,7 +465,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `--command fmt`, `--command check`, `--command check-full`,
   `--command clippy`, `--command test-build`, and `--command test`, with
   `--repeat N` median/min/max timing summaries, dry-run planning for regression
-  tests, and real elapsed-time reports for local performance tracking. The
+  tests, and real elapsed-time reports for local performance tracking. It also
+  supports `--command bench-003` and `--command bench-009` as path-free local
+  trend commands for the scalar pure JIT and flat-batch pure JIT fixtures. The
   profiler preallocates repeat samples and counts stdout/stderr lines from bytes
   directly, avoiding UTF-8 string allocation in its own reporting path.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.

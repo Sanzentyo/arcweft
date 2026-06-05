@@ -465,7 +465,11 @@ without recording host paths. `--command fmt`, `--command check`,
 `--command check-full`, `--command clippy`, `--command test-build`, and
 `--command test` can be repeated with `--repeat N`; JSON reports per-sample
 timings plus median/min/max summaries for compile, typecheck, borrow-check,
-lint, test build, and test regression tracking.
+lint, test build, and test regression tracking. It also accepts
+`--command bench-003` and `--command bench-009` for local path-free trend
+tracking of the scalar pure JIT for-loop fixture and the nonuniform flat-batch
+pure JIT fixture. Those commands keep benchmark stdout out of the profile JSON
+and record only command status, line counts, and timing samples.
 
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
