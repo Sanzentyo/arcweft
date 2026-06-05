@@ -17,6 +17,23 @@ Arcweft runtime の残 TODO が実装計画上ほぼ残らない水準まで、�
 The goal is intentionally broader than the current implementation. It should
 not be treated as complete.
 
+## Goal Restore Record
+
+Use this block when the paused runtime-acceleration effort should become the
+active working goal again. The `objective` field is the exact goal text to
+restore; keep the surrounding gap analysis as context, not as the goal itself.
+
+```toml
+[goal_restore]
+status = "paused"
+recorded_at = "2026-06-05T00:00:00+09:00"
+source_document = "docs/implementation/runtime-acceleration-goal-gap.md"
+restore_instruction = "Create or resume an active goal with goal_restore.objective, then continue from the Remaining Gap section."
+objective = """
+Arcweft runtime の残 TODO が実装計画上ほぼ残らない水準まで、整数・浮動小数の幅保持 fast path を VM/AOT/JIT/flow batch に拡張し、matrix/tensor accelerator は persistent GPU buffer と wgpu/glam/ndarray backend 選択・計測まで詰め、十分な性能検証・docs 更新・絶対パス混入防止・fmt/clippy/test/bench 検証まで継続する。
+"""
+```
+
 ## Current Repository Point
 
 Recent relevant commits:
@@ -219,4 +236,3 @@ Before doing so, preserve this boundary:
 - Prefer using the existing harnesses before changing default thresholds.
 - If the next direction depends on runtime math behavior, pin the backend or
   policy explicitly rather than relying on Auto.
-
