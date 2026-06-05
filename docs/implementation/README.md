@@ -298,7 +298,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `fused_matmul_bias_add_calls`. The standalone `math_bench` example accepts
   `--op matmul-bias-add`, so scalar/Glam/ndarray/wgpu/Auto selection and fused
   call counts are measurable through the same path-free JSON schema as the
-  existing matmul and elementwise benchmarks.
+  existing matmul and elementwise benchmarks. Native wgpu also has prepared
+  resident storage for `matmul -> bias_add`: one prepared object owns the
+  matmul input/output buffers, a compact last-axis bias buffer, and the final
+  output buffer, then dispatches matmul and bias passes in one command encoder
+  with a single final readback. `math_bench --op matmul-bias-add --reuse` now
+  measures exact prepared reuse, while `--reuse-update-inputs` and
+  `--reuse-capacity` measure repeated uploads into existing resident buffers.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

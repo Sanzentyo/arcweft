@@ -104,6 +104,15 @@ pub struct RuntimePreparedMatrixMatmulF32 {
     gpu: wgpu_backend::PreparedMatmulBuffers,
 }
 
+/// Prepared GPU storage for repeatedly computing `bias_add(matmul(lhs, rhs), bias)`.
+pub struct RuntimePreparedMatrixMatmulBiasAddF32 {
+    rows: usize,
+    shared: usize,
+    cols: usize,
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    gpu: wgpu_backend::PreparedMatmulBiasAddBuffers,
+}
+
 /// Prepared GPU storage for repeatedly adding shape-compatible `f32` tensors.
 pub struct RuntimePreparedTensorAddF32 {
     dims: Vec<usize>,
@@ -122,6 +131,20 @@ impl RuntimePreparedMatrixAddF32 {
 }
 
 impl RuntimePreparedMatrixMatmulF32 {
+    pub const fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub const fn shared(&self) -> usize {
+        self.shared
+    }
+
+    pub const fn cols(&self) -> usize {
+        self.cols
+    }
+}
+
+impl RuntimePreparedMatrixMatmulBiasAddF32 {
     pub const fn rows(&self) -> usize {
         self.rows
     }
@@ -673,6 +696,198 @@ impl RuntimeMathAccelerator {
                     )
                 })?;
                 self.record_prepared_gpu_upload(lhs.values().len() + rhs.values().len());
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
+    pub fn prepare_matrix_matmul_bias_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<RuntimePreparedMatrixMatmulBiasAddF32, RuntimeMathAcceleratorError> {
+        validate_matmul_bias(lhs, rhs, bias)?;
+        self.record_matmul_bias_inputs(lhs, rhs, bias);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self.wgpu_context().and_then(|context| {
+                    context.prepare_matmul_bias_add(
+                        lhs.values(),
+                        rhs.values(),
+                        bias.values(),
+                        lhs.rows(),
+                        lhs.cols(),
+                        rhs.cols(),
+                    )
+                })?;
+                self.stats.bytes_uploaded +=
+                    (lhs.values().len() + rhs.values().len() + bias.values().len())
+                        * std::mem::size_of::<f32>();
+                self.stats.bytes_copied +=
+                    (lhs.values().len() + rhs.values().len() + bias.values().len())
+                        * std::mem::size_of::<f32>();
+                self.stats.gpu_buffer_creations += 7;
+                Ok(RuntimePreparedMatrixMatmulBiasAddF32 {
+                    rows: lhs.rows(),
+                    shared: lhs.cols(),
+                    cols: rhs.cols(),
+                    gpu,
+                })
+            }
+            _ => {
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
+    pub fn prepare_matrix_matmul_bias_add_f32_capacity(
+        &mut self,
+        rows: usize,
+        shared: usize,
+        cols: usize,
+    ) -> Result<RuntimePreparedMatrixMatmulBiasAddF32, RuntimeMathAcceleratorError> {
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_matmul_bias_add_capacity(rows, shared, cols))?;
+                self.stats.gpu_buffer_creations += 7;
+                Ok(RuntimePreparedMatrixMatmulBiasAddF32 {
+                    rows,
+                    shared,
+                    cols,
+                    gpu,
+                })
+            }
+            _ => {
+                let _ = (rows, shared, cols);
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
+    pub fn run_prepared_matrix_matmul_bias_add_f32(
+        &mut self,
+        prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        let mut out = vec![0.0; prepared.rows * prepared.cols];
+        self.run_prepared_matrix_matmul_bias_add_f32_into(prepared, &mut out)?;
+        DenseMatrixF32::new(prepared.rows, prepared.cols, out).map_err(Into::into)
+    }
+
+    pub fn run_prepared_matrix_matmul_bias_add_f32_into(
+        &mut self,
+        prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        let expected = prepared.rows * prepared.cols;
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_matmul_bias_add(&prepared.gpu, out))?;
+                self.stats.fused_matmul_bias_add_calls += 1;
+                self.record_prepared_gpu_dispatch_with_reuse(prepared.gpu.len(), readback, 7);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
+    pub fn run_prepared_matrix_matmul_bias_add_f32_shape_into(
+        &mut self,
+        prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+        rows: usize,
+        cols: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        if rows > prepared.rows || cols > prepared.cols {
+            return Err(RuntimeMathAcceleratorError::Backend(format!(
+                "prepared matrix matmul-bias-add capacity is {}x{} output, got {}x{}",
+                prepared.rows, prepared.cols, rows, cols
+            )));
+        }
+        let expected = rows.saturating_mul(cols);
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_matmul_bias_add_shape(&prepared.gpu, rows, cols, out))?;
+                self.stats.fused_matmul_bias_add_calls += 1;
+                self.record_prepared_gpu_dispatch_with_reuse(out.len(), readback, 7);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
+        }
+    }
+
+    pub fn update_prepared_matrix_matmul_bias_add_f32(
+        &mut self,
+        prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        validate_matmul_bias(lhs, rhs, bias)?;
+        if lhs.rows() > prepared.rows || lhs.cols() > prepared.shared || rhs.cols() > prepared.cols
+        {
+            return Err(RuntimeMathAcceleratorError::Backend(format!(
+                "prepared matrix matmul-bias-add capacity is {}x{} and {}x{}, got {}x{} and {}x{}",
+                prepared.rows,
+                prepared.shared,
+                prepared.shared,
+                prepared.cols,
+                lhs.rows(),
+                lhs.cols(),
+                rhs.rows(),
+                rhs.cols()
+            )));
+        }
+        self.record_matmul_bias_inputs(lhs, rhs, bias);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                self.wgpu_context().and_then(|context| {
+                    context.update_prepared_matmul_bias_add(
+                        &prepared.gpu,
+                        lhs.values(),
+                        rhs.values(),
+                        bias.values(),
+                        wgpu_backend::MatmulShape {
+                            rows: lhs.rows(),
+                            shared: lhs.cols(),
+                            cols: rhs.cols(),
+                        },
+                    )
+                })?;
+                self.record_prepared_gpu_upload_with_reuse(
+                    lhs.values().len() + rhs.values().len() + bias.values().len(),
+                    5,
+                );
                 Ok(())
             }
             _ => {
@@ -1438,22 +1653,41 @@ impl RuntimeMathAccelerator {
         downloaded_elements: usize,
         readback: wgpu_backend::GpuReadbackUsage,
     ) {
+        self.record_prepared_gpu_dispatch_with_reuse(downloaded_elements, readback, 4);
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    fn record_prepared_gpu_dispatch_with_reuse(
+        &mut self,
+        downloaded_elements: usize,
+        readback: wgpu_backend::GpuReadbackUsage,
+        reused_buffers: usize,
+    ) {
         let downloaded = downloaded_elements * std::mem::size_of::<f32>();
         self.stats.wgpu_calls += 1;
         self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
         self.stats.bytes_downloaded += downloaded;
         self.stats.bytes_copied += downloaded;
-        self.stats.gpu_buffer_reuse_hits += 4;
+        self.stats.gpu_buffer_reuse_hits += reused_buffers;
         self.stats.gpu_reused_dispatches += 1;
         self.record_gpu_readback(readback);
     }
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     fn record_prepared_gpu_upload(&mut self, uploaded_elements: usize) {
+        self.record_prepared_gpu_upload_with_reuse(uploaded_elements, 3);
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    fn record_prepared_gpu_upload_with_reuse(
+        &mut self,
+        uploaded_elements: usize,
+        reused_buffers: usize,
+    ) {
         let uploaded = uploaded_elements * std::mem::size_of::<f32>();
         self.stats.bytes_uploaded += uploaded;
         self.stats.bytes_copied += uploaded;
-        self.stats.gpu_buffer_reuse_hits += 3;
+        self.stats.gpu_buffer_reuse_hits += reused_buffers;
     }
 
     #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
@@ -1581,6 +1815,7 @@ mod wgpu_backend {
         queue: wgpu::Queue,
         matmul_pipeline: wgpu::ComputePipeline,
         add_pipeline: wgpu::ComputePipeline,
+        bias_add_pipeline: wgpu::ComputePipeline,
         readback: Option<ReusableReadbackBuffer>,
     }
 
@@ -1627,6 +1862,20 @@ mod wgpu_backend {
         }
     }
 
+    pub struct PreparedMatmulBiasAddBuffers {
+        matmul: PreparedMatmulBuffers,
+        bias: wgpu::Buffer,
+        out: wgpu::Buffer,
+        params: wgpu::Buffer,
+        bind_group: wgpu::BindGroup,
+    }
+
+    impl PreparedMatmulBiasAddBuffers {
+        pub const fn len(&self) -> usize {
+            self.matmul.rows * self.matmul.cols
+        }
+    }
+
     #[repr(C)]
     #[derive(Clone, Copy, Pod, Zeroable)]
     struct MatmulParams {
@@ -1643,6 +1892,22 @@ mod wgpu_backend {
         x_threads: u32,
         _pad1: u32,
         _pad2: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct BiasAddParams {
+        rows: u32,
+        cols: u32,
+        _pad1: u32,
+        _pad2: u32,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(super) struct MatmulShape {
+        pub(super) rows: usize,
+        pub(super) shared: usize,
+        pub(super) cols: usize,
     }
 
     impl WgpuMathContext {
@@ -1674,6 +1939,10 @@ mod wgpu_backend {
                 label: Some("arcweft-add-f32"),
                 source: wgpu::ShaderSource::Wgsl(ADD_SHADER.into()),
             });
+            let bias_add_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-bias-add-f32"),
+                source: wgpu::ShaderSource::Wgsl(BIAS_ADD_SHADER.into()),
+            });
             let matmul_pipeline =
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("arcweft-matmul-f32"),
@@ -1691,11 +1960,21 @@ mod wgpu_backend {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
             });
+            let bias_add_pipeline =
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("arcweft-bias-add-f32"),
+                    layout: None,
+                    module: &bias_add_shader,
+                    entry_point: Some("main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
             Ok(Self {
                 device,
                 queue,
                 matmul_pipeline,
                 add_pipeline,
+                bias_add_pipeline,
                 readback: None,
             })
         }
@@ -2083,6 +2362,124 @@ mod wgpu_backend {
             Ok(())
         }
 
+        pub fn prepare_matmul_bias_add(
+            &self,
+            lhs: &[f32],
+            rhs: &[f32],
+            bias: &[f32],
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<PreparedMatmulBiasAddBuffers, RuntimeMathAcceleratorError> {
+            if bias.len() != cols {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared matmul-bias-add expected bias length {cols}, got {}",
+                    bias.len()
+                )));
+            }
+            let matmul = self.prepare_matmul(lhs, rhs, rows, shared, cols)?;
+            let bias = storage_buffer(
+                &self.device,
+                bytemuck::cast_slice(bias),
+                "arcweft-math-prepared-matmul-bias-add-bias",
+            );
+            self.prepare_matmul_bias_add_output(matmul, bias, rows, cols)
+        }
+
+        pub fn prepare_matmul_bias_add_capacity(
+            &self,
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<PreparedMatmulBiasAddBuffers, RuntimeMathAcceleratorError> {
+            let matmul = self.prepare_matmul_capacity(rows, shared, cols)?;
+            let bias = storage_buffer_capacity(
+                &self.device,
+                cols.saturating_mul(std::mem::size_of::<f32>())
+                    .max(std::mem::size_of::<f32>()),
+                "arcweft-math-prepared-matmul-bias-add-bias",
+            );
+            self.prepare_matmul_bias_add_output(matmul, bias, rows, cols)
+        }
+
+        fn prepare_matmul_bias_add_output(
+            &self,
+            matmul: PreparedMatmulBuffers,
+            bias: wgpu::Buffer,
+            rows: usize,
+            cols: usize,
+        ) -> Result<PreparedMatmulBiasAddBuffers, RuntimeMathAcceleratorError> {
+            let out_len = rows.saturating_mul(cols);
+            let out = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-math-prepared-matmul-bias-add-out"),
+                size: out_len
+                    .saturating_mul(std::mem::size_of::<f32>())
+                    .max(std::mem::size_of::<f32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let params = BiasAddParams {
+                rows: checked_u32(rows)?,
+                cols: checked_u32(cols)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            let params = storage_buffer(
+                &self.device,
+                bytemuck::bytes_of(&params),
+                "arcweft-math-prepared-matmul-bias-add-params",
+            );
+            let layout = self.bias_add_pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-math-prepared-matmul-bias-add-bind-group"),
+                layout: &layout,
+                entries: &bind_group_entries(&matmul.out, &bias, &out, &params),
+            });
+            Ok(PreparedMatmulBiasAddBuffers {
+                matmul,
+                bias,
+                out,
+                params,
+                bind_group,
+            })
+        }
+
+        pub fn update_prepared_matmul_bias_add(
+            &self,
+            prepared: &PreparedMatmulBiasAddBuffers,
+            lhs: &[f32],
+            rhs: &[f32],
+            bias: &[f32],
+            shape: MatmulShape,
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            if bias.len() != shape.cols {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared matmul-bias-add expected bias length {}, got {}",
+                    shape.cols,
+                    bias.len()
+                )));
+            }
+            self.update_prepared_matmul(
+                &prepared.matmul,
+                lhs,
+                rhs,
+                shape.rows,
+                shape.shared,
+                shape.cols,
+            )?;
+            let params = BiasAddParams {
+                rows: checked_u32(shape.rows)?,
+                cols: checked_u32(shape.cols)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            self.queue
+                .write_buffer(&prepared.bias, 0, bytemuck::cast_slice(bias));
+            self.queue
+                .write_buffer(&prepared.params, 0, bytemuck::bytes_of(&params));
+            Ok(())
+        }
+
         pub fn dispatch_prepared_add(
             &mut self,
             prepared: &PreparedAddBuffers,
@@ -2162,6 +2559,80 @@ mod wgpu_backend {
                     timestamp_writes: None,
                 });
                 pass.set_pipeline(&self.matmul_pipeline);
+                pass.set_bind_group(0, &prepared.bind_group, &[]);
+                pass.dispatch_workgroups(
+                    checked_u32(cols.div_ceil(16))?,
+                    checked_u32(rows.div_ceil(16))?,
+                    1,
+                );
+            }
+            let readback = self.encode_readback(&mut encoder, &prepared.out, out.len());
+            self.queue.submit(Some(encoder.finish()));
+            self.read_staging_buffer(out)?;
+            Ok(readback)
+        }
+
+        pub fn dispatch_prepared_matmul_bias_add(
+            &mut self,
+            prepared: &PreparedMatmulBiasAddBuffers,
+            out: &mut [f32],
+        ) -> Result<GpuReadbackUsage, RuntimeMathAcceleratorError> {
+            self.dispatch_prepared_matmul_bias_add_shape(
+                prepared,
+                prepared.matmul.rows,
+                prepared.matmul.cols,
+                out,
+            )
+        }
+
+        pub fn dispatch_prepared_matmul_bias_add_shape(
+            &mut self,
+            prepared: &PreparedMatmulBiasAddBuffers,
+            rows: usize,
+            cols: usize,
+            out: &mut [f32],
+        ) -> Result<GpuReadbackUsage, RuntimeMathAcceleratorError> {
+            if rows > prepared.matmul.rows || cols > prepared.matmul.cols {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared matmul-bias-add capacity is {}x{} output, got {}x{}",
+                    prepared.matmul.rows, prepared.matmul.cols, rows, cols
+                )));
+            }
+            let expected = rows.saturating_mul(cols);
+            if out.len() != expected {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared matmul-bias-add output expected {} value(s), got {}",
+                    expected,
+                    out.len()
+                )));
+            }
+            if out.is_empty() {
+                return Ok(GpuReadbackUsage::default());
+            }
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-math-prepared-matmul-bias-add-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-math-prepared-matmul-bias-add-matmul-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.matmul_pipeline);
+                pass.set_bind_group(0, &prepared.matmul.bind_group, &[]);
+                pass.dispatch_workgroups(
+                    checked_u32(cols.div_ceil(16))?,
+                    checked_u32(rows.div_ceil(16))?,
+                    1,
+                );
+            }
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-math-prepared-matmul-bias-add-bias-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.bias_add_pipeline);
                 pass.set_bind_group(0, &prepared.bind_group, &[]);
                 pass.dispatch_workgroups(
                     checked_u32(cols.div_ceil(16))?,
@@ -2476,6 +2947,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     out[index] = lhs[index] + rhs[index];
+}
+";
+
+    const BIAS_ADD_SHADER: &str = r"
+struct BiasAddParams {
+    rows: u32,
+    cols: u32,
+    pad1: u32,
+    pad2: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> bias: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: BiasAddParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let col = id.x;
+    let row = id.y;
+    if (row >= params.rows || col >= params.cols) {
+        return;
+    }
+    let index = row * params.cols + col;
+    out[index] = lhs[index] + bias[col];
 }
 ";
 }
@@ -6125,6 +6621,88 @@ mod tests {
         assert_eq!(
             accelerator.stats().bytes_uploaded,
             (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(expected.values())
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn prepared_matrix_matmul_bias_add_reuses_gpu_buffers_when_adapter_is_available() {
+        let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+        let bias = DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap();
+        let expected = DenseMatrixF32::new(2, 2, vec![58.5, 63.75, 139.5, 153.75]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_matrix_matmul_bias_add_f32(&lhs, &rhs, &bias) else {
+            return;
+        };
+
+        let mut out = vec![0.0; expected.values().len()];
+        accelerator
+            .run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut out)
+            .expect("prepared GPU matrix matmul-bias-add writes into caller buffer");
+        accelerator
+            .run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut out)
+            .expect("prepared GPU matrix matmul-bias-add reuses staging buffer");
+
+        assert_eq!(out, expected.values());
+        assert_eq!(accelerator.stats().wgpu_calls, 2);
+        assert_eq!(accelerator.stats().fused_matmul_bias_add_calls, 2);
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 7);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 2);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 14);
+        assert_eq!(accelerator.stats().gpu_staging_buffer_creations, 1);
+        assert_eq!(accelerator.stats().gpu_staging_buffer_reuse_hits, 1);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len() + bias.values().len())
+                * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(expected.values()) * 2
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn prepared_matrix_matmul_bias_add_capacity_reuses_buffers_for_smaller_shapes() {
+        let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+        let bias = DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap();
+        let expected = DenseMatrixF32::new(2, 2, vec![58.5, 63.75, 139.5, 153.75]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_matrix_matmul_bias_add_f32_capacity(8, 8, 8) else {
+            return;
+        };
+
+        accelerator.reset_stats();
+        accelerator
+            .update_prepared_matrix_matmul_bias_add_f32(&prepared, &lhs, &rhs, &bias)
+            .expect("capacity-prepared matmul-bias-add accepts smaller compatible input");
+        let mut out = vec![0.0; expected.values().len()];
+        accelerator
+            .run_prepared_matrix_matmul_bias_add_f32_shape_into(&prepared, 2, 2, &mut out)
+            .expect("capacity-prepared matmul-bias-add dispatches smaller output");
+
+        assert_eq!(out, expected.values());
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.stats().fused_matmul_bias_add_calls, 1);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 12);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len() + bias.values().len())
+                * std::mem::size_of::<f32>()
         );
         assert_eq!(
             accelerator.stats().bytes_downloaded,

@@ -826,11 +826,21 @@ bias. `RuntimeMathStats` records `fused_matmul_bias_add_calls` so bench JSON can
 distinguish fused inference execution from separate matmul and bias-add calls.
 `math_bench --op matmul-bias-add` now measures that fused path with the same
 backend selection report used by the existing matmul, matrix add, and tensor add
-probes. A small path-free smoke run
+probes. Native wgpu also supports prepared resident `matmul -> bias_add` through
+`math_bench --op matmul-bias-add --reuse`, `--reuse-update-inputs`, and
+`--reuse-capacity`; that path uploads lhs/rhs/bias into persistent buffers,
+keeps the intermediate matmul output on the GPU, dispatches the bias pass in the
+same command encoder, and performs only one final readback. A small path-free smoke run
 (`--backend all --op matmul-bias-add --size 16 --iterations 3 --warmup 1`)
 reported measured scalar, ndarray, and Auto cases, skipped wgpu when
 `math-wgpu` was disabled, and recorded `fused_matmul_bias_add_calls = 4` for
-each measured backend. The current deterministic `f32` op set is:
+each measured backend. A native wgpu prepared run at size 128 with
+`--iterations 3 --warmup 1` reported measured medians of 191700 ns for exact
+prepared reuse, 208500 ns for `--reuse-update-inputs`, and 257100 ns for
+`--reuse-capacity`; each run recorded `wgpu_calls = 4`,
+`fused_matmul_bias_add_calls = 4`, one staging buffer creation, three staging
+buffer reuse hits, and four reused GPU dispatches. The current deterministic
+`f32` op set is:
 
 - `matmul`
 - exact-shape `add`
@@ -867,6 +877,9 @@ just bench-math-glam
 just bench-math-wgpu
 just bench-math-matmul-bias
 just bench-math-matmul-bias-wgpu
+just bench-math-matmul-bias-reuse
+just bench-math-matmul-bias-reuse-update
+just bench-math-matmul-bias-reuse-capacity
 just bench-math-matrix-add
 just bench-math-tensor-add
 just bench-024

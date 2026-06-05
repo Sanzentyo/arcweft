@@ -87,12 +87,6 @@ fn run_matmul_bias_add(
     backend: RuntimeMathBackend,
     options: &BenchOptions,
 ) -> BackendReport {
-    if options.reuse {
-        return BackendReport::skipped_or_failed(
-            backend,
-            "prepared GPU reuse is not yet available for matmul-bias-add".to_owned(),
-        );
-    }
     let lhs = matrix_fixture(options.size, options.size, 1.0);
     let rhs = matrix_fixture(options.size, options.size, 0.25);
     let bias = bias_fixture(options.size);
@@ -101,6 +95,18 @@ fn run_matmul_bias_add(
         Err(error) => return BackendReport::failed(backend, error.to_string()),
     };
     apply_bias_to_reference(&mut reference, &bias);
+
+    if options.reuse {
+        return run_prepared_matrix_matmul_bias_add(
+            accelerator,
+            backend,
+            options,
+            &lhs,
+            &rhs,
+            &bias,
+            &reference,
+        );
+    }
 
     for _ in 0..options.warmup {
         if let Err(error) = accelerator.matmul_bias_add_f32(&lhs, &rhs, &bias) {
@@ -118,6 +124,105 @@ fn run_matmul_bias_add(
         let elapsed = started.elapsed().as_nanos();
         if !approx_eq(output.values(), reference.values(), 1.0e-3) {
             return BackendReport::failed(backend, "matmul-bias result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_prepared_matrix_matmul_bias_add(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+    lhs: &DenseMatrixF32,
+    rhs: &DenseMatrixF32,
+    bias: &DenseTensorF32,
+    reference: &DenseMatrixF32,
+) -> BackendReport {
+    if backend != RuntimeMathBackend::Wgpu {
+        return BackendReport::skipped_or_failed(
+            backend,
+            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
+        );
+    }
+    let prepared = match if options.reuse_capacity {
+        let capacity = options.matrix_capacity_size();
+        accelerator.prepare_matrix_matmul_bias_add_f32_capacity(capacity, capacity, capacity)
+    } else {
+        accelerator.prepare_matrix_matmul_bias_add_f32(lhs, rhs, bias)
+    } {
+        Ok(value) => value,
+        Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+    };
+    let update_cases = options
+        .reuse_update_inputs
+        .then(|| matmul_bias_update_cases(options.size, options.warmup + options.iterations));
+    if options.reuse_capacity
+        && update_cases.is_none()
+        && let Err(error) =
+            accelerator.update_prepared_matrix_matmul_bias_add_f32(&prepared, lhs, rhs, bias)
+    {
+        return BackendReport::skipped_or_failed(backend, error.to_string());
+    }
+    let mut output = vec![0.0; lhs.rows() * rhs.cols()];
+    for index in 0..options.warmup {
+        if let Some(cases) = &update_cases {
+            let (lhs, rhs, bias, _) = &cases[index];
+            if let Err(error) =
+                accelerator.update_prepared_matrix_matmul_bias_add_f32(&prepared, lhs, rhs, bias)
+            {
+                return BackendReport::skipped_or_failed(backend, error.to_string());
+            }
+        }
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_matmul_bias_add_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+    let mut samples = Vec::with_capacity(options.iterations);
+    for index in 0..options.iterations {
+        let case = update_cases
+            .as_ref()
+            .map(|cases| &cases[options.warmup + index]);
+        let started = Instant::now();
+        if let Some((lhs, rhs, bias, _)) = case
+            && let Err(error) =
+                accelerator.update_prepared_matrix_matmul_bias_add_f32(&prepared, lhs, rhs, bias)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+        let result = if options.reuse_capacity {
+            accelerator.run_prepared_matrix_matmul_bias_add_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut output,
+            )
+        } else {
+            accelerator.run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut output)
+        };
+        if let Err(error) = result {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+        let elapsed = started.elapsed().as_nanos();
+        let expected = case.map_or_else(
+            || reference.values(),
+            |(_, _, _, reference)| reference.values(),
+        );
+        if !approx_eq(&output, expected, 1.0e-3) {
+            return BackendReport::failed(
+                backend,
+                "prepared matrix matmul-bias-add result mismatch".to_owned(),
+            );
         }
         samples.push(elapsed);
     }
@@ -540,6 +645,29 @@ fn matrix_update_cases(
             }
             .expect("updated matrix fixture has compatible shape");
             (lhs, rhs, reference)
+        })
+        .collect()
+}
+
+fn matmul_bias_update_cases(
+    size: usize,
+    count: usize,
+) -> Vec<(
+    DenseMatrixF32,
+    DenseMatrixF32,
+    DenseTensorF32,
+    DenseMatrixF32,
+)> {
+    (0..count)
+        .map(|index| {
+            let lhs = matrix_fixture(size, size, 1.0 + small_f32(index % 7) * 0.03125);
+            let rhs = matrix_fixture(size, size, 0.25 + small_f32((index + 3) % 11) * 0.015_625);
+            let bias = bias_fixture(size);
+            let mut reference = lhs
+                .matmul_scalar(&rhs)
+                .expect("updated matmul-bias fixture has compatible shape");
+            apply_bias_to_reference(&mut reference, &bias);
+            (lhs, rhs, bias, reference)
         })
         .collect()
 }
