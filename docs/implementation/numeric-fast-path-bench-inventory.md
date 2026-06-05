@@ -15,6 +15,12 @@ name or relative fixture label and must not record host absolute paths.
 | `013_dense_scalar_len.arcw` | VM dense length | unit, bool, char, duration, `u8` | `RuntimeSeq::len()` without materialization |
 | `014_dense_textual_scalar_len.arcw` | VM dense length | string, entity refs, typed float scalar storage | `RuntimeSeq::len()` without materialization |
 | `015_dense_wide_numeric_len.arcw` | VM dense length | `i128`, `u128`, `isize`, `usize` | `RuntimeSeq::len()` without materialization |
+| `002_map_pure_jit.arcw` | pure helper batch | `i64` input/output through `.map` | native JIT when requested |
+| `003_for_pure_jit.arcw` | scalar pure helper calls | `i64` input/output through `for` | native JIT when requested, no argument Vec allocation |
+| `005_inferred_pure_jit.arcw` | inferred pure helper batch | inferred `i64` input/output | native JIT when requested |
+| `007_branching_iter_pure_jit.arcw` | mixed scalar and batch pure helper calls | branching `i64` input/output | native JIT when requested |
+| `008_large_map_pure_batch.arcw` | large pure helper batch | `i64` input/output | Auto promotes from typed AOT to native JIT |
+| `009_nonuniform_map_pure_batch.arcw` | nonuniform pure helper batch | `i64` input/output | Auto promotes from typed AOT to native JIT |
 | `016_dense_i32_map_pure_batch.arcw` | pure helper batch | `i32` input/output | native JIT when requested, AOT/VM selectable |
 | `017_dense_u32_map_pure_batch.arcw` | pure helper batch | `u32` input/output | native JIT when requested, AOT/VM selectable |
 | `018_dense_u64_map_pure_batch.arcw` | pure helper batch | `u64` input/output | native JIT when requested, AOT/VM selectable |
@@ -80,6 +86,12 @@ Native JIT exact-width pure helper coverage:
 
 ```bash
 just bench-numeric-jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 128 --max-ops 128 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend auto
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend auto
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
@@ -129,20 +141,23 @@ just scan-absolute-paths
 ## Current Gaps
 
 Native Cranelift JIT exact-width pure helper coverage is present for `i8`,
-`i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and `f64` in
-these checked-in fixtures. The `i128` and `u128` JIT entries are batch-only and
-use pointer-based flat buffers at the native boundary; scalar by-value
-`i128`/`u128` calls remain on VM/AOT paths to avoid target-specific wide-integer
-ABI assumptions. Within that batch path, Cranelift lowering handles full-width
-wide-integer literals and captured constants by building the `i128` value from
-two 64-bit halves with `iconcat`. The VM dense fixtures cover exact-width
-storage, length, and integer reduction, while the pure helper fixtures cover
-batched helper execution and backend selection counters.
+`i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and
+`f64` in these checked-in fixtures. The `i128` and `u128` JIT entries are
+batch-only and use pointer-based flat buffers at the native boundary; scalar
+by-value `i128`/`u128` calls remain on VM/AOT paths to avoid target-specific
+wide-integer ABI assumptions. Within that batch path, Cranelift lowering handles
+full-width wide-integer literals and captured constants by building the `i128`
+value from two 64-bit halves with `iconcat`. Target-sized `isize` and `usize`
+helpers currently have dense storage and typed AOT scalar coverage, but do not
+have a native JIT cache entry because the public native JIT ABI is fixed-width.
+The VM dense fixtures cover exact-width storage, length, and integer reduction,
+while the pure helper fixtures cover batched helper execution and backend
+selection counters.
 
 The Auto backend now treats every native JIT entry width as a deferred JIT
 candidate after the initial typed AOT plan. Large flat batches can promote
-`i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and `f64`
-helpers to native JIT without routing through the VM fallback.
+`i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`,
+and `f64` helpers to native JIT without routing through the VM fallback.
 
 Generic exact-integer scalar calls now use a typed borrowed slice view from
 `RuntimeExactInteger` to recognize width-specific JIT cache entries. This keeps
