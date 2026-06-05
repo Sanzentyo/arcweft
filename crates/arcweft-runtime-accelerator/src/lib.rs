@@ -21,7 +21,8 @@ use arcweft_core::{
     step::RuntimePureCallStats,
     value::{
         DenseSeq, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
-        RuntimeExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue, runtime_sequence_dense_usize,
+        RuntimeExactIntegerSlice, RuntimeExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
+        runtime_sequence_dense_usize,
     },
 };
 use native_jit::{
@@ -498,6 +499,45 @@ impl RuntimePureCacheEntry {
                 | Self::Vm
         )
     }
+}
+
+fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
+    entry: &RuntimePureCacheEntry,
+    helper: &RuntimePureHelper,
+    args: &[T],
+) -> Option<Result<Option<T>, RuntimeEvalError>> {
+    let value = match (T::exact_slice(args), entry) {
+        (RuntimeExactIntegerSlice::I8(args), RuntimePureCacheEntry::JitI8(compiled)) => {
+            compiled.call(args).map(RuntimeValue::i8)
+        }
+        (RuntimeExactIntegerSlice::I16(args), RuntimePureCacheEntry::JitI16(compiled)) => {
+            compiled.call(args).map(RuntimeValue::i16)
+        }
+        (RuntimeExactIntegerSlice::I32(args), RuntimePureCacheEntry::JitI32(compiled)) => {
+            compiled.call(args).map(RuntimeValue::i32)
+        }
+        (RuntimeExactIntegerSlice::U8(args), RuntimePureCacheEntry::JitU8(compiled)) => {
+            compiled.call(args).map(RuntimeValue::u8)
+        }
+        (RuntimeExactIntegerSlice::U16(args), RuntimePureCacheEntry::JitU16(compiled)) => {
+            compiled.call(args).map(RuntimeValue::u16)
+        }
+        (RuntimeExactIntegerSlice::U32(args), RuntimePureCacheEntry::JitU32(compiled)) => {
+            compiled.call(args).map(RuntimeValue::u32)
+        }
+        (RuntimeExactIntegerSlice::U64(args), RuntimePureCacheEntry::JitU64(compiled)) => {
+            compiled.call(args).map(RuntimeValue::u64)
+        }
+        _ => return None,
+    };
+    Some(
+        value
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: error.to_string(),
+            })
+            .and_then(|value| T::try_from_runtime_value(&helper.name, value).map(Some)),
+    )
 }
 
 enum RuntimePureAotPlan {
@@ -2863,7 +2903,15 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         validate_exact_int_slice_shape::<T>(helper, args.len())?;
         self.stats.pure_calls += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        match cache_entry(&self.cache, helper.id) {
+        let entry = cache_entry(&self.cache, helper.id);
+        if let Some(entry) = entry
+            && let Some(result) = call_jit_exact_int_slice(entry, helper, args)
+        {
+            self.compile_stats.cache_hits += 1;
+            self.stats.jit_calls += 1;
+            return result;
+        }
+        match entry {
             Some(
                 RuntimePureCacheEntry::Aot(compiled)
                 | RuntimePureCacheEntry::AutoAot {
@@ -7237,6 +7285,48 @@ mod tests {
             scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
         }
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn generic_exact_int_scalar_call_recognizes_width_specific_jit_entry() {
+        let helper = exact_int_add_helper(
+            "u16_generic_jit",
+            RuntimePureInputType::U16,
+            RuntimePureOutputType::U16,
+            RuntimeValue::u16(1),
+        );
+        let mut accelerator =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+
+        let value = accelerator
+            .call_exact_int_slice::<u16>(&helper, &[13, 17])
+            .expect("generic u16 exact-int call succeeds");
+
+        assert_eq!(value, Some(31));
+        assert_eq!(accelerator.stats().jit_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+
+        let helper = exact_int_add_helper(
+            "u32_generic_jit",
+            RuntimePureInputType::U32,
+            RuntimePureOutputType::U32,
+            RuntimeValue::u32(1),
+        );
+        let mut accelerator =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+
+        let value = accelerator
+            .call_exact_int_slice::<u32>(&helper, &[29, 31])
+            .expect("generic u32 exact-int call succeeds");
+
+        assert_eq!(value, Some(61));
+        assert_eq!(accelerator.stats().jit_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 0);
+        assert_eq!(accelerator.stats().fallbacks, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]

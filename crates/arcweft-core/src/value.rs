@@ -895,8 +895,25 @@ pub trait RuntimeExactInteger: Copy + 'static {
     fn into_runtime_value(self) -> RuntimeValue;
     fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError>;
     fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError>;
+    fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_>;
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]>;
     fn dense_sequence(values: Vec<Self>) -> RuntimeValue;
+}
+
+/// Borrowed exact-width integer slice used at runtime fast-path boundaries.
+#[derive(Clone, Copy, Debug)]
+pub enum RuntimeExactIntegerSlice<'a> {
+    I8(&'a [i8]),
+    I16(&'a [i16]),
+    I32(&'a [i32]),
+    I128(&'a [i128]),
+    ISize(&'a [RuntimeISizeValue]),
+    U8(&'a [u8]),
+    U16(&'a [u16]),
+    U32(&'a [u32]),
+    U64(&'a [u64]),
+    U128(&'a [u128]),
+    USize(&'a [RuntimeUSizeValue]),
 }
 
 macro_rules! impl_runtime_exact_signed_integer {
@@ -930,6 +947,10 @@ macro_rules! impl_runtime_exact_signed_integer {
 
             fn try_sum_as_i64(self, _helper: &str) -> Result<i64, RuntimeEvalError> {
                 Ok(i64::from(self))
+            }
+
+            fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+                RuntimeExactIntegerSlice::$variant(values)
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -982,6 +1003,10 @@ macro_rules! impl_runtime_exact_unsigned_integer {
                 })
             }
 
+            fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+                RuntimeExactIntegerSlice::$variant(values)
+            }
+
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
                 seq.$slice()
             }
@@ -1031,6 +1056,10 @@ macro_rules! impl_runtime_exact_wide_signed_integer {
                 })
             }
 
+            fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+                RuntimeExactIntegerSlice::$variant(values)
+            }
+
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
                 seq.$slice()
             }
@@ -1078,6 +1107,10 @@ macro_rules! impl_runtime_exact_wide_unsigned_integer {
                         stringify!($ty)
                     ),
                 })
+            }
+
+            fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+                RuntimeExactIntegerSlice::$variant(values)
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -1497,6 +1530,10 @@ impl RuntimeExactInteger for RuntimeISizeValue {
         Ok(self.0)
     }
 
+    fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+        RuntimeExactIntegerSlice::ISize(values)
+    }
+
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
         match seq {
             RuntimeSeq::Dense(DenseSeq::ISize(values)) => Some(values.as_slice()),
@@ -1540,6 +1577,10 @@ impl RuntimeExactInteger for RuntimeUSizeValue {
             name: helper.to_owned(),
             reason: format!("pure usize result `{self}` cannot be represented as an i64 sum"),
         })
+    }
+
+    fn exact_slice(values: &[Self]) -> RuntimeExactIntegerSlice<'_> {
+        RuntimeExactIntegerSlice::USize(values)
     }
 
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {

@@ -144,6 +144,12 @@ candidate after the initial typed AOT plan. Large flat batches can promote
 `i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and `f64`
 helpers to native JIT without routing through the VM fallback.
 
+Generic exact-integer scalar calls now use a typed borrowed slice view from
+`RuntimeExactInteger` to recognize width-specific JIT cache entries. This keeps
+`call_exact_int_slice::<T>` aligned with the dedicated `call_u32_slice` /
+`call_u64_slice` entry points without string matching, downcasts, or VM
+fallback when a scalar native JIT entry exists for the width.
+
 The mixed `033_mixed_for_iter_pure_jit.arcw` fixture guards the scalar/batch
 boundary: exact-width helper calls inside both `.map` and `for` loops stay on
 typed borrowed slices and reach native JIT for `i32`, `u32`, and `f32`. A
