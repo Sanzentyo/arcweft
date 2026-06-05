@@ -165,10 +165,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   The parameterized integer, floating-point, small-integer, and wide-integer
   batch paths now separate module codegen from JIT execution. `define_*`
   functions define entry, row-batch, and when supported row-batch-sum functions
-  into a generic Cranelift `Module`. The corresponding `compile_*` functions
-  remain native JIT wrappers that finalize the `JITModule` and install function
-  pointers. Cranelift lowering, JIT compilation, and object emission now return
-  `CraneliftCodegenError` rather than a JIT-only error type.
+  into a generic Cranelift `Module`. The deterministic `arcw jit check`
+  benchmark loop follows the same boundary through `define_i64_benchmark_batch`
+  before the JIT wrapper finalizes the module. The corresponding `compile_*`
+  functions remain native JIT wrappers that finalize the `JITModule` and
+  install function pointers. Cranelift lowering, JIT compilation, and object
+  emission now return `CraneliftCodegenError` rather than a JIT-only error type.
   `emit_object_{i64,i32,u32,u64,i8,i16,u8,u16,f32,f64}_with_inputs` and
   `emit_object_{i128,u128}_batch_with_inputs` now use the same generic `Module`
   lowering paths to emit relocatable object bytes. Scalar integer objects

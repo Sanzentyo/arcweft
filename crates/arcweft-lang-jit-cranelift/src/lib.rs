@@ -174,6 +174,13 @@ pub struct DefinedPureSmallIntBatchInputs {
     pub stats: PureFunctionStats,
 }
 
+/// Deterministic benchmark batch function defined into a Cranelift module.
+pub struct DefinedPureI64BenchmarkBatch {
+    pub entry: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
 /// Compiled native helper returning an `i128` for flat batch calls.
 ///
 /// This type deliberately has no scalar caller: only pointer-based batch
@@ -962,113 +969,21 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<CompiledPureI64Batch, CraneliftCodegenError> {
-        let param_names = param_names
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<String>>();
-        validate_param_names(&param_names)?;
-        if param_names.len() > 4 {
-            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "JIT batch helper supports at most 4 runtime inputs, got {}",
-                param_names.len()
-            )));
-        }
-
         let mut module = jit_module()?;
-        let mut ctx = module.make_context();
-        let mut func_ctx = FunctionBuilderContext::new();
-        let mut signature = module.make_signature();
-        signature.params.extend([
-            AbiParam::new(types::I64),
-            AbiParam::new(types::I64),
-            AbiParam::new(types::I64),
-        ]);
-        signature.returns.push(AbiParam::new(types::I64));
-
-        let func_id = module
-            .declare_function("arcweft_pure_helper_batch", Linkage::Local, &signature)
-            .map_err(codegen_error)?;
-        ctx.func.signature = signature;
-        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
-
-        let captured_bindings = int_bindings(&request.bindings)?;
-        let mut stats = arcweft_core::pure::PureFunctionStats::default();
-        {
-            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            let entry = builder.create_block();
-            builder.append_block_params_for_function_params(entry);
-            builder.switch_to_block(entry);
-            let seed = builder.block_params(entry)[0];
-            let sample = builder.block_params(entry)[1];
-            let iterations = builder.block_params(entry)[2];
-
-            let loop_block = builder.create_block();
-            let body_block = builder.create_block();
-            let done_block = builder.create_block();
-            builder.append_block_param(loop_block, types::I64);
-            builder.append_block_param(loop_block, types::I64);
-            for _ in &param_names {
-                builder.append_block_param(loop_block, types::I64);
-            }
-
-            let zero = builder.ins().iconst(types::I64, 0);
-            let initial_inputs = (0..param_names.len())
-                .map(|param_index| lower_input_value(&mut builder, seed, sample, zero, param_index))
-                .collect::<Vec<_>>();
-            let mut initial_args = vec![BlockArg::from(zero), BlockArg::from(zero)];
-            initial_args.extend(initial_inputs.iter().copied().map(BlockArg::from));
-            builder.ins().jump(loop_block, &initial_args);
-
-            builder.switch_to_block(loop_block);
-            let index = builder.block_params(loop_block)[0];
-            let accumulator = builder.block_params(loop_block)[1];
-            let input_values = builder.block_params(loop_block)[2..].to_vec();
-            let keep_going = builder
-                .ins()
-                .icmp(IntCC::UnsignedLessThan, index, iterations);
-            builder
-                .ins()
-                .brif(keep_going, body_block, &[], done_block, &[]);
-
-            builder.switch_to_block(body_block);
-            let mut bindings = captured_bindings.clone();
-            for (name, value) in param_names.iter().zip(input_values.iter().copied()) {
-                bindings.insert(name.clone(), LoweredI64Binding::Value(value));
-            }
-            let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
-            let next_accumulator = builder.ins().iadd(accumulator, value);
-            let one = builder.ins().iconst(types::I64, 1);
-            let next_index = builder.ins().iadd(index, one);
-            let next_inputs = input_values
-                .iter()
-                .copied()
-                .enumerate()
-                .map(|(param_index, value)| {
-                    lower_next_input_value(&mut builder, value, param_index)
-                })
-                .collect::<Vec<_>>();
-            let mut next_args = vec![BlockArg::from(next_index), BlockArg::from(next_accumulator)];
-            next_args.extend(next_inputs.iter().copied().map(BlockArg::from));
-            builder.ins().jump(loop_block, &next_args);
-
-            builder.switch_to_block(done_block);
-            builder.ins().return_(&[accumulator]);
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        module
-            .define_function(func_id, &mut ctx)
-            .map_err(codegen_error)?;
-        module.clear_context(&mut ctx);
+        let defined = define_i64_benchmark_batch(
+            &mut module,
+            "arcweft_pure_helper_batch",
+            request,
+            param_names,
+        )?;
         module.finalize_definitions().map_err(codegen_error)?;
-        let code = module.get_finalized_function(func_id);
+        let code = module.get_finalized_function(defined.entry);
 
         Ok(CompiledPureI64Batch {
             _module: module,
             code,
-            param_names,
-            stats,
+            param_names: defined.param_names,
+            stats: defined.stats,
         })
     }
 }
@@ -1152,6 +1067,124 @@ where
         entry,
         batch,
         batch_sum,
+        param_names,
+        stats,
+    })
+}
+
+/// Defines the deterministic `arcw jit check` benchmark loop into a module.
+///
+/// This is intentionally separate from JIT finalization so the same Cranelift
+/// IR can be emitted by object/AOT targets if the benchmark runner needs a
+/// relocatable artifact.
+pub fn define_i64_benchmark_batch<M>(
+    module: &mut M,
+    symbol_name: &str,
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<DefinedPureI64BenchmarkBatch, CraneliftCodegenError>
+where
+    M: Module,
+{
+    let param_names = param_names
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
+    validate_param_names(&param_names)?;
+    if param_names.len() > 4 {
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
+            "Cranelift i64 benchmark batch supports at most 4 runtime inputs, got {}",
+            param_names.len()
+        )));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature.params.extend([
+        AbiParam::new(types::I64),
+        AbiParam::new(types::I64),
+        AbiParam::new(types::I64),
+    ]);
+    signature.returns.push(AbiParam::new(types::I64));
+
+    let entry = module
+        .declare_function(symbol_name, Linkage::Local, &signature)
+        .map_err(codegen_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
+
+    let captured_bindings = int_bindings(&request.bindings)?;
+    let mut stats = PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        let seed = builder.block_params(entry_block)[0];
+        let sample = builder.block_params(entry_block)[1];
+        let iterations = builder.block_params(entry_block)[2];
+
+        let loop_block = builder.create_block();
+        let body_block = builder.create_block();
+        let done_block = builder.create_block();
+        builder.append_block_param(loop_block, types::I64);
+        builder.append_block_param(loop_block, types::I64);
+        for _ in &param_names {
+            builder.append_block_param(loop_block, types::I64);
+        }
+
+        let zero = builder.ins().iconst(types::I64, 0);
+        let initial_inputs = (0..param_names.len())
+            .map(|param_index| lower_input_value(&mut builder, seed, sample, zero, param_index))
+            .collect::<Vec<_>>();
+        let mut initial_args = vec![BlockArg::from(zero), BlockArg::from(zero)];
+        initial_args.extend(initial_inputs.iter().copied().map(BlockArg::from));
+        builder.ins().jump(loop_block, &initial_args);
+
+        builder.switch_to_block(loop_block);
+        let index = builder.block_params(loop_block)[0];
+        let accumulator = builder.block_params(loop_block)[1];
+        let input_values = builder.block_params(loop_block)[2..].to_vec();
+        let keep_going = builder
+            .ins()
+            .icmp(IntCC::UnsignedLessThan, index, iterations);
+        builder
+            .ins()
+            .brif(keep_going, body_block, &[], done_block, &[]);
+
+        builder.switch_to_block(body_block);
+        let mut bindings = captured_bindings.clone();
+        for (name, value) in param_names.iter().zip(input_values.iter().copied()) {
+            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+        }
+        let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let next_accumulator = builder.ins().iadd(accumulator, value);
+        let one = builder.ins().iconst(types::I64, 1);
+        let next_index = builder.ins().iadd(index, one);
+        let next_inputs = input_values
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(param_index, value)| lower_next_input_value(&mut builder, value, param_index))
+            .collect::<Vec<_>>();
+        let mut next_args = vec![BlockArg::from(next_index), BlockArg::from(next_accumulator)];
+        next_args.extend(next_inputs.iter().copied().map(BlockArg::from));
+        builder.ins().jump(loop_block, &next_args);
+
+        builder.switch_to_block(done_block);
+        builder.ins().return_(&[accumulator]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
+    module.clear_context(&mut ctx);
+
+    Ok(DefinedPureI64BenchmarkBatch {
+        entry,
         param_names,
         stats,
     })
@@ -2219,7 +2252,7 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(format!(
-            "JIT {} rows batch currently requires a 64-bit host pointer type",
+            "Cranelift {} rows batch codegen currently requires a 64-bit host pointer type",
             kind.label()
         )));
     }
@@ -2310,7 +2343,7 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(format!(
-            "JIT {} rows batch sum currently requires a 64-bit host pointer type",
+            "Cranelift {} rows batch sum codegen currently requires a 64-bit host pointer type",
             kind.label()
         )));
     }
@@ -2412,7 +2445,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift i64 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2500,7 +2534,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT rows batch sum currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift i64 rows batch sum codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2593,7 +2628,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT i32 rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift i32 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2681,7 +2717,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT i32 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift i32 rows batch sum codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2775,7 +2812,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT u32 rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift u32 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2863,7 +2901,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT u32 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift u32 rows batch sum codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -2957,7 +2996,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT u64 rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift u64 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -3045,7 +3085,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT u64 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift u64 rows batch sum codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -3138,7 +3179,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT f32 rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift f32 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -3226,7 +3268,8 @@ where
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftCodegenError::UnsupportedHost(
-            "JIT f64 rows batch currently requires a 64-bit host pointer type".to_owned(),
+            "Cranelift f64 rows batch codegen currently requires a 64-bit host pointer type"
+                .to_owned(),
         ));
     }
 
@@ -5718,6 +5761,41 @@ mod tests {
                 assert!(symbols.contains(&batch_sum_symbol));
             }
         }
+    }
+
+    #[test]
+    fn cranelift_benchmark_batch_define_can_emit_object_symbol() {
+        let request = PureFunctionRequest::new(
+            "bench_score",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [int_binding("base", 0), int_binding("bonus", 0)],
+        );
+        let mut module = object_module().expect("object module is available");
+        let defined = define_i64_benchmark_batch(
+            &mut module,
+            "arcweft_test_i64_benchmark_batch",
+            &request,
+            ["base", "bonus"],
+        )
+        .expect("benchmark batch defines into object module");
+        assert_eq!(defined.param_names, ["base", "bonus"]);
+        assert_eq!(defined.stats.evaluated_binary_ops, 1);
+
+        let object_bytes = emit_object_bytes(module).expect("object bytes emit");
+        assert!(!object_bytes.windows(3).any(|window| window == b":\\"));
+
+        use cranelift_object::object::{Object, ObjectSymbol};
+        let parsed = cranelift_object::object::File::parse(object_bytes.as_slice())
+            .expect("emitted benchmark object parses");
+        let symbols = parsed
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok())
+            .collect::<Vec<_>>();
+        assert!(symbols.contains(&"arcweft_test_i64_benchmark_batch"));
     }
 
     #[test]
