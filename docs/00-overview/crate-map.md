@@ -141,6 +141,7 @@ arcweft-hook-lsp
 arcweft-memo-lsp
 arcweft-hook-debug
 arcweft-memo-debug
+arcweft-agent-protocol
 arcweft-agent-bus
 arcweft-agent-observe
 arcweft-agent-action
@@ -176,6 +177,9 @@ arcweft-launch
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。
 - unsafe は `arcweft-memory`、`arcweft-plugin-*`、`arcweft-render`、`arcweft-audio-*` の境界に閉じ込める。
 - `arcweft-agent-protocol` は CLI / MCP / test / LLM が共通利用する。
+- `arcweft-agent-mcp` は `arcweft-agent-protocol` の observation/resource を
+  MCP `resources/read` / tool result 互換の Sans I/O JSON shape へ変換する。
+  stdio、HTTP、auth、session lifecycle、renderer readback は持たない。
 - `arcweft-lang-syntax` は rowan-compatible な lossless CST と surface parser を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource`、surface AST、expression/type/pattern parsing、syntax lint をここに集約する。HIR lowering、semantic checks、runtime-plan lowering は持たない。
 - `arcweft-lang-hir` は HIR 型と `lower_to_hir` を所有し、semantic passes、verifier、CLI、LSP はこの crate を HIR 入力境界にする。
 - `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。

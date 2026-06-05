@@ -29,6 +29,46 @@ Phase 0 / Phase 1 minimal Rust workspace:
   string literals in favor of `VirtualPath` constructors.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
+- `arcweft-render-text` owns the Sans I/O rich text display sidecar model, and
+  `arcweft-player-native` provides the first headless/native rich text player
+  path. The native player can also render the first resolved frame through
+  `wgpu`/`glyphon` into an offscreen texture, read it back as PNG or raw RGBA,
+  and report image-local `content_bbox`, viewport-space
+  `content_viewport_bbox`, and `content_pixels` metadata. See
+  `docs/implementation/native-rich-text-player.md`.
+- `arcw agent observe` exposes the first Agent Debug Bus-shaped observation
+  slice for rich-text debugging. It keeps the runtime-plan display catalog,
+  resolves emitted dialogue-line events against runtime bindings, and reports
+  textbox objects, viewport bounds, semantic actions, diagnostics, optional
+  overlay SVG, and deterministic PNG/raw RGBA debug captures for color,
+  object-id, and mask passes over the full viewport, a selected layer, or a
+  selected object bbox without adding renderer or MCP dependencies to
+  `arcweft-core`. Observation JSON now exposes first-class layer entries with
+  stable color/object-id/mask PNG and raw RGBA capture refs, matching the
+  object-local refs used by textbox and rich-text child objects. Image resource
+  metadata includes renderer kind plus structured capture scope so MCP clients
+  can identify debug-raster/native viewport/layer/object captures without
+  parsing URIs. `--renderer native` and MCP `renderer: "native"` reuse the
+  native offscreen readback for full-viewport, layer-bbox, and object-bbox color
+  PNG/raw RGBA captures. Color scopes that cannot be redrawn from rich-text
+  elements now use masked framebuffer crops, keeping selected layer/object image
+  resources free of unrelated outside-scope pixels. Text/ruby-backed native
+  object-id/mask captures also render selected glyphs through the offscreen text
+  framebuffer, while non-text debug scopes still fall back to explicit geometry
+  fills.
+- `arcweft-agent-mcp` now converts Agent Debug Bus resources into MCP
+  `resources/read`, `resources/list`, `resources/templates/list`, and image
+  tool-result shapes. The CLI stdio MCP adapter can pass a listed capture URI
+  directly to `arcweft.capture`, so clients do not need to parse layer/object
+  ids, capture kind, or PNG/raw format out of the URI themselves.
+  `arcweft.session.info` also exposes resource templates, observed layers, and
+  observed objects so a debugger can find rich-text child ids and capture refs
+  without rereading `latest.json` or `objects.json`; after a capture, it also
+  returns the latest capture URI and descriptor for direct readback. CLI
+  `--read-uri` also honors `--renderer native` for capture URIs when no cached
+  selected image is available. The MCP crate is Sans I/O and leaves stdio/HTTP
+  transport, authentication, session lifecycle, and real renderer readback to
+  future adapter crates.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.
@@ -509,7 +549,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   flags, and `auto` policy labels. The profiler preallocates repeat samples and
   counts stdout/stderr lines from bytes directly, avoiding UTF-8 string
   allocation in its own reporting path.
-- No renderer, Servo, audio, camera, USB, or MCP implementation.
+- Native rich-text display and Agent observation protocol have first slices.
+  Servo, audio, camera, USB, full session MCP transport, and non-text renderer
+  object-id/mask attachments remain deferred.
 
 ## Files
 

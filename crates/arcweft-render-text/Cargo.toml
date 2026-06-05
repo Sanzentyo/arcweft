@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-render-text"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core = { path = "../arcweft-core" }
+
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

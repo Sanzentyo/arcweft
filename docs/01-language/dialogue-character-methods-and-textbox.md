@@ -472,7 +472,7 @@ Explicit formatting:
 
 ```arcw
 narrator.say()[
-    スコアは#[fmt(score, style="number")]点です。[p]
+    スコアは#[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点です。[p]
 ]
 ```
 
@@ -480,7 +480,7 @@ Formatting with locale:
 
 ```arcw
 narrator.say()[
-    所持金: #[fmt(money, currency="JPY", locale=state.locale)][p]
+    所持金: #[fmt(money, currency="JPY", locale=state.locale, on_error=InlineFailure.fallback("--"))][p]
 ]
 ```
 
@@ -510,8 +510,28 @@ match state.player_nickname {
 `fmt(...)` can also wrap values into `Content` for hooks and custom tags:
 
 ```arcw
-#[fmt(route_title(state.route), color=@color.accent)]
+#[fmt(route_title(state.route, on_error=InlineFailure.fallback("")), color=@color.accent, on_error=InlineFailure.fallback(""))]
 ```
+
+Inline function calls in `#[...]` must declare failure handling for that call, or
+the surrounding line, speaker preset, character state, or dialogue defaults must
+provide an inline failure policy. Canonical values use the `InlineFailure` enum
+namespace; contextual `.fail` and `.discard` shorthands are accepted where
+`InlineFailure` is expected. For ordinary display text, prefer a default
+fallback on the preset or character instead of repeating `on_error` on every
+`fmt(...)` call:
+
+```arcw
+let alice_text = alice(inline_error=InlineFailure.fallback("?"))
+alice_text: #[fmt(score, style="number")]点[p]
+alice: #[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点[p]
+alice: #[fmt(score, style="number", on_error=.fail)]点[p]
+alice: #[fmt(score, style="number", on_error=InlineFailure.fallback(InlineFallback.expr_source))]点[p]
+```
+
+Use `on_error=InlineFailure.discard`, `on_error=.discard`, or
+`inline_error=.discard` only when omitting the text is intentional. `on_error`,
+`fallback`, and `discard_error` are mutually exclusive.
 
 ### Interpolation vs localization placeholders
 

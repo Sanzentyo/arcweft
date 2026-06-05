@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-bundle = { path = "../arcweft-bundle" }
@@ -16,6 +18,8 @@ arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-player-native = { path = "../arcweft-player-native" }
+arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
@@ -26,7 +30,9 @@ arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
+blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -38,6 +44,9 @@ path = "src/main.rs"
 [features]
 default = []
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
+
+[dev-dependencies]
+base64.workspace = true
 
 [lints]
 workspace = true

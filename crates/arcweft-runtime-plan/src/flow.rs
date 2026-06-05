@@ -7,6 +7,7 @@ use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
 use crate::pure::{PureHelperCandidate, lower_pure_helper_candidates};
+use crate::render_text::{DialogueDisplayDefaults, lower_dialogue_display};
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use arcweft_core::effect::LineEffectRequest;
@@ -34,11 +35,13 @@ use arcweft_lang_hir::syntax::ast::{
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
+use arcweft_render_text::LineDisplayCatalog;
 use std::{collections::BTreeMap, sync::Arc};
 
 pub(crate) struct LoweredRuntimeFlows {
     pub(crate) flows: Vec<RuntimeFlow>,
     pub(crate) line_task_groups: Vec<LineTaskGroup>,
+    pub(crate) line_display_catalog: LineDisplayCatalog,
 }
 
 /// Runtime-plan lowering result plus compiler-side optimization counters.
@@ -46,6 +49,7 @@ pub(crate) struct LoweredRuntimeFlows {
 pub struct RuntimePlanLowerReport {
     pub plan: RuntimePlan,
     pub stats: RuntimePlanLowerStats,
+    pub line_display_catalog: LineDisplayCatalog,
 }
 
 /// Compiler-side counters for runtime-plan pure and flow optimization work.
@@ -97,8 +101,13 @@ pub fn lower_runtime_plan_with_stats(
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
     let lowered_flows = lower_runtime_flows(module, &pure_map)?;
+    let LoweredRuntimeFlows {
+        flows,
+        line_task_groups,
+        line_display_catalog,
+    } = lowered_flows;
     let entries = lower_runtime_entries(module);
-    let entry = implicit_entry_flow(&entries, &lowered_flows.flows);
+    let entry = implicit_entry_flow(&entries, &flows);
     let stream_plans = module
         .functions()
         .iter()
@@ -114,7 +123,7 @@ pub fn lower_runtime_plan_with_stats(
         })
         .collect::<Result<Vec<_>, _>>()?;
     stats.pure_helpers = pure_helpers.len();
-    RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
+    RuntimePlan::new(entry, flows, line_task_groups)
         .map(|plan| {
             let plan = finalize_runtime_plan(
                 plan.with_entries(entries)
@@ -122,7 +131,11 @@ pub fn lower_runtime_plan_with_stats(
                     .with_pure_helpers(pure_helpers),
                 &mut stats,
             );
-            RuntimePlanLowerReport { plan, stats }
+            RuntimePlanLowerReport {
+                plan,
+                stats,
+                line_display_catalog,
+            }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
@@ -1146,6 +1159,8 @@ pub(crate) fn lower_runtime_flows(
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
     let mut lowerer = FlowRuntimeLowerer {
         line_task_groups: Vec::new(),
+        line_display_catalog: LineDisplayCatalog::default(),
+        display_defaults: DialogueDisplayDefaults::from_module(module),
         errors: Vec::new(),
         pure_helpers,
     };
@@ -1164,6 +1179,7 @@ pub(crate) fn lower_runtime_flows(
         Ok(LoweredRuntimeFlows {
             flows,
             line_task_groups: lowerer.line_task_groups,
+            line_display_catalog: lowerer.line_display_catalog,
         })
     } else {
         Err(lowerer.errors)
@@ -1172,6 +1188,8 @@ pub(crate) fn lower_runtime_flows(
 
 struct FlowRuntimeLowerer<'a> {
     line_task_groups: Vec<LineTaskGroup>,
+    line_display_catalog: LineDisplayCatalog,
+    display_defaults: DialogueDisplayDefaults,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
 }
@@ -1367,6 +1385,11 @@ impl FlowRuntimeLowerer<'_> {
             || RuntimeLineId(format!("{}.line.{task_group}", flow_id.0)),
             |id| RuntimeLineId(id.body().to_owned()),
         );
+        self.line_display_catalog.push(lower_dialogue_display(
+            line.clone(),
+            dialogue,
+            &self.display_defaults,
+        ));
         let _ = flow_index;
         FlowOp::Dialogue { line, task_group }
     }

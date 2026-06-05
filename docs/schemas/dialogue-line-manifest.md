@@ -11,7 +11,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "textbox": "textbox.0",
   "source_locale": "ja-JP",
   "source_text": "今日は少しだけ、変な夢を見たんだ。",
-  "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color)]を見たんだ。[p]",
+  "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color, fallback=\"変な夢\")]を見たんだ。[p]",
   "source_hash": "b3:...",
   "source_anchor": "game/routes/opening.arcw:9:5-9:48",
   "flow": "flow.opening",

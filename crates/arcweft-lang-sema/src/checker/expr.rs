@@ -298,6 +298,9 @@ impl TypeChecker<'_> {
                 if path == "auto" {
                     return Some(TypeKind::Named("Auto".to_owned()));
                 }
+                if matches!(path, "InlineFailure" | "InlineFallback" | "FallbackStyle") {
+                    return Some(TypeKind::Named(format!("{path}Namespace")));
+                }
                 // Short enum-variant expressions such as `.Instant` rely
                 // on expected type resolution in the full checker. The
                 // Phase 1 checker preserves unknown short variants as
@@ -736,6 +739,9 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         match name {
+            "fallback" | "InlineFailure.fallback" => {
+                Some(TypeKind::Named("InlineFailure".to_owned()))
+            }
             "panic" | "fail" | "bail" => {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -1107,6 +1113,9 @@ impl TypeChecker<'_> {
             if matches!(receiver_path.as_str(), "std.f32" | "std.f64") {
                 return self.check_builtin_call_name(&dotted, args);
             }
+            if receiver_path == "InlineFailure" && method_name == "fallback" {
+                return Some(TypeKind::Named("InlineFailure".to_owned()));
+            }
             if let Some(ty) = self
                 .function_type(&dotted)
                 .cloned()
@@ -1476,6 +1485,9 @@ impl TypeChecker<'_> {
                 return Some(ty);
             }
             if let Some(ty) = std_float_constant_type(&path) {
+                return Some(ty);
+            }
+            if let Some(ty) = inline_failure_builtin_variant_type(&path) {
                 return Some(ty);
             }
         }
@@ -1993,6 +2005,21 @@ fn std_float_constant_type(path: &str) -> Option<TypeKind> {
         | "std.f64.max"
         | "std.f64.pi"
         | "std.f64.tau" => TypeKind::F64,
+        _ => return None,
+    })
+}
+
+fn inline_failure_builtin_variant_type(path: &str) -> Option<TypeKind> {
+    Some(match path {
+        "InlineFailure.fail" | "InlineFailure.line_error" | "InlineFailure.discard" => {
+            TypeKind::Named("InlineFailure".to_owned())
+        }
+        "InlineFallback.expr_source"
+        | "InlineFallback.call_source"
+        | "InlineFallback.value_plain" => TypeKind::Named("InlineFallback".to_owned()),
+        "FallbackStyle.plain" | "FallbackStyle.inherit" => {
+            TypeKind::Named("FallbackStyle".to_owned())
+        }
         _ => return None,
     })
 }

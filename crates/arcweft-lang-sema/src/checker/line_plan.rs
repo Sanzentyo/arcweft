@@ -2,9 +2,9 @@
 
 use super::helpers::let_else_bindings;
 use super::{
-    CancelRuleSyntax, DialogueToken, Expr, LifetimeAccessMode, LifetimeScopeKind, LinePlanItem,
-    Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind, lifetime_key,
-    merge_line_output,
+    CallArg, CancelRuleSyntax, DialogueToken, Expr, LifetimeAccessMode, LifetimeScopeKind,
+    LinePlanItem, Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind,
+    lifetime_key, merge_line_output,
 };
 use arcweft_lang_syntax::ast::{
     flow::{FlowItem, WaitTarget},
@@ -200,12 +200,21 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_dialogue_content(&mut self, tokens: &[DialogueToken]) -> HashSet<String> {
+    pub(super) fn check_dialogue_content(
+        &mut self,
+        tokens: &[DialogueToken],
+        has_default_inline_failure_policy: bool,
+    ) -> HashSet<String> {
         let mut marks = HashSet::new();
         for token in tokens {
             match token {
                 DialogueToken::Expr(expr) => {
                     self.check_expr(expr);
+                    reject_inline_calls_without_failure_policy(
+                        expr,
+                        has_default_inline_failure_policy,
+                        &mut self.errors,
+                    );
                 }
                 DialogueToken::Mark(mark) => {
                     if !marks.insert(mark.name().to_owned()) {
@@ -271,6 +280,295 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
             }
         }
+    }
+}
+
+fn reject_inline_calls_without_failure_policy(
+    expr: &Expr,
+    has_default_inline_failure_policy: bool,
+    errors: &mut Vec<TypeCheckError>,
+) {
+    match expr {
+        Expr::Call { callee, args } => validate_inline_call_failure_policy(
+            inline_callable_label(callee),
+            args,
+            has_default_inline_failure_policy,
+            errors,
+        ),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => validate_inline_call_failure_policy(
+            format!("{}.{method}", inline_callable_label(receiver)),
+            args,
+            has_default_inline_failure_policy,
+            errors,
+        ),
+        _ => {}
+    }
+
+    for child in inline_expr_children(expr) {
+        reject_inline_calls_without_failure_policy(
+            child,
+            has_default_inline_failure_policy,
+            errors,
+        );
+    }
+}
+
+fn inline_expr_children(expr: &Expr) -> Vec<&Expr> {
+    match expr {
+        Expr::Call { callee, args } => {
+            let mut children = Vec::with_capacity(args.len() + 1);
+            children.push(callee.as_ref());
+            children.extend(args.iter().filter_map(call_arg_inline_child));
+            children
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            let mut children = Vec::with_capacity(args.len() + 1);
+            children.push(receiver.as_ref());
+            children.extend(args.iter().filter_map(call_arg_inline_child));
+            children
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await {
+            expr: target,
+            applies_try: _,
+        }
+        | Expr::Unary {
+            op: _,
+            expr: target,
+        }
+        | Expr::Closure { body: target, .. }
+        | Expr::DialogueCall { callee: target, .. } => vec![target.as_ref()],
+        Expr::Index { target, index } => vec![target.as_ref(), index.as_ref()],
+        Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, op: _, rhs } => {
+            vec![lhs.as_ref(), rhs.as_ref()]
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().collect(),
+        Expr::ArrayRepeat { value, len } => vec![value.as_ref(), len.as_ref()],
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            fields.iter().map(|(_, value)| value).collect()
+        }
+        Expr::Block { value, .. }
+        | Expr::ComputationBlock { value, .. }
+        | Expr::MemoBlock { value, .. }
+        | Expr::NamedBlock { value, .. } => value.iter().map(Box::as_ref).collect(),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => optional_tail(
+            vec![condition.as_ref(), then_branch.as_ref()],
+            else_branch.as_deref(),
+        ),
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => optional_tail(
+            optional_tail(vec![expr.as_ref()], guard.as_deref())
+                .into_iter()
+                .chain([then_branch.as_ref()])
+                .collect(),
+            else_branch.as_deref(),
+        ),
+        Expr::Match { scrutinee, arms } => {
+            let mut children = Vec::with_capacity(arms.len() + 1);
+            children.push(scrutinee.as_ref());
+            children.extend(
+                arms.iter()
+                    .map(arcweft_lang_syntax::expr::MatchExprArm::value),
+            );
+            children
+        }
+        Expr::Range { start, end, .. } => [start.as_deref(), end.as_deref()]
+            .into_iter()
+            .flatten()
+            .collect(),
+        Expr::Literal(_)
+        | Expr::EntityRef(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Thread { .. }
+        | Expr::Raw(_) => Vec::new(),
+    }
+}
+
+fn optional_tail<'a>(mut values: Vec<&'a Expr>, tail: Option<&'a Expr>) -> Vec<&'a Expr> {
+    if let Some(tail) = tail {
+        values.push(tail);
+    }
+    values
+}
+
+fn call_arg_expr(arg: &CallArg) -> &Expr {
+    match arg {
+        CallArg::Positional(value) => value,
+        CallArg::Named { value, .. } | CallArg::Spread { value } => value,
+    }
+}
+
+fn call_arg_inline_child(arg: &CallArg) -> Option<&Expr> {
+    match arg {
+        CallArg::Named { name, .. }
+            if matches!(name.as_str(), "on_error" | "fallback" | "discard_error") =>
+        {
+            None
+        }
+        _ => Some(call_arg_expr(arg)),
+    }
+}
+
+fn validate_inline_call_failure_policy(
+    function: String,
+    args: &[CallArg],
+    has_default_inline_failure_policy: bool,
+    errors: &mut Vec<TypeCheckError>,
+) {
+    let policy_args = args
+        .iter()
+        .filter_map(inline_failure_policy_arg)
+        .collect::<Vec<_>>();
+    if policy_args.is_empty() {
+        if !has_default_inline_failure_policy {
+            errors.push(TypeCheckError::inline_call_error_policy_missing(function));
+        }
+        return;
+    }
+    if policy_args.len() > 1 {
+        errors.push(TypeCheckError::inline_failure_policy_conflict(
+            function.clone(),
+        ));
+    }
+    for policy_arg in policy_args {
+        if let Some(policy) = unknown_inline_failure_policy(policy_arg) {
+            errors.push(TypeCheckError::unknown_inline_failure_policy(
+                function.clone(),
+                policy,
+            ));
+        }
+    }
+}
+
+fn inline_failure_policy_arg(arg: &CallArg) -> Option<&Expr> {
+    match arg {
+        CallArg::Named { name, value }
+            if matches!(name.as_str(), "on_error" | "fallback" | "discard_error") =>
+        {
+            Some(value)
+        }
+        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    }
+}
+
+fn unknown_inline_failure_policy(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => unknown_inline_failure_atom(path),
+        Expr::Field { target, field } => match target.as_ref() {
+            Expr::Path(namespace) => unknown_inline_failure_field(namespace, field),
+            _ => None,
+        },
+        Expr::Call { callee, args } => unknown_inline_failure_constructor(callee, args),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => unknown_inline_failure_method_constructor(receiver, method, args),
+        _ => None,
+    }
+}
+
+fn unknown_inline_failure_constructor(callee: &Expr, args: &[CallArg]) -> Option<String> {
+    let constructor = inline_failure_constructor_name(callee)?;
+    if constructor != "fallback" {
+        return Some(inline_callable_label(callee));
+    }
+    args.iter().find_map(|arg| match arg {
+        CallArg::Positional(value) => unknown_inline_fallback_value(value),
+        CallArg::Named { name, value } if name == "value" || name == "text" => {
+            unknown_inline_fallback_value(value)
+        }
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })
+}
+
+fn unknown_inline_failure_method_constructor(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<String> {
+    if !matches!(receiver, Expr::Path(namespace) if namespace == "InlineFailure") {
+        return None;
+    }
+    if method != "fallback" {
+        return Some(format!("InlineFailure.{method}"));
+    }
+    args.iter().find_map(|arg| match arg {
+        CallArg::Positional(value) => unknown_inline_fallback_value(value),
+        CallArg::Named { name, value } if name == "value" || name == "text" => {
+            unknown_inline_fallback_value(value)
+        }
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })
+}
+
+fn inline_failure_constructor_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Path(path) if path == "fallback" => Some("fallback"),
+        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure") => {
+            Some(field)
+        }
+        _ => None,
+    }
+}
+
+fn unknown_inline_fallback_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => unknown_inline_fallback_atom(path),
+        Expr::Field { target, field } => match target.as_ref() {
+            Expr::Path(namespace) => unknown_inline_fallback_field(namespace, field),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn unknown_inline_failure_atom(path: &str) -> Option<String> {
+    let variant = path.strip_prefix('.')?;
+    (!matches!(variant, "fail" | "discard" | "line_error")).then(|| path.to_owned())
+}
+
+fn unknown_inline_failure_field(namespace: &str, field: &str) -> Option<String> {
+    (namespace == "InlineFailure" && !matches!(field, "fail" | "discard" | "line_error"))
+        .then(|| format!("{namespace}.{field}"))
+}
+
+fn unknown_inline_fallback_atom(path: &str) -> Option<String> {
+    let variant = path.strip_prefix('.')?;
+    (!matches!(variant, "expr_source" | "call_source" | "value_plain")).then(|| path.to_owned())
+}
+
+fn unknown_inline_fallback_field(namespace: &str, field: &str) -> Option<String> {
+    (namespace == "InlineFallback"
+        && !matches!(field, "expr_source" | "call_source" | "value_plain"))
+    .then(|| format!("{namespace}.{field}"))
+}
+
+fn inline_callable_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Path(path) => path.clone(),
+        Expr::Field { target, field } => format!("{}.{field}", inline_callable_label(target)),
+        Expr::MethodCall {
+            receiver, method, ..
+        } => format!("{}.{method}", inline_callable_label(receiver)),
+        _ => format!("{expr:?}"),
     }
 }
 

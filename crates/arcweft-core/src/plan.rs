@@ -295,6 +295,7 @@ pub struct ChoiceRuntimeOption {
 pub enum FlowEvent {
     DialogueLine {
         line: RuntimeLineId,
+        bindings: Vec<RuntimeBinding>,
     },
     LineCancelled {
         trigger: String,
