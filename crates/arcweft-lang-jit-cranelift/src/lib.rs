@@ -65,11 +65,20 @@ pub struct CompiledPureI64Inputs {
 /// targets. It contains only Cranelift function identifiers and metadata; JIT
 /// finalization and native function-pointer lookup happen in the JIT wrapper.
 pub struct DefinedPureI64Inputs {
-    entry: FuncId,
-    batch: FuncId,
-    batch_sum: FuncId,
-    param_names: Vec<String>,
-    stats: PureFunctionStats,
+    pub entry: FuncId,
+    pub batch: FuncId,
+    pub batch_sum: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
+/// Pure `i32` helper functions defined into a Cranelift module.
+pub struct DefinedPureI32Inputs {
+    pub entry: FuncId,
+    pub batch: FuncId,
+    pub batch_sum: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
 }
 
 /// Compiled native helper returning an `i128` for flat batch calls.
@@ -493,76 +502,22 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<CompiledPureI32Inputs, CraneliftJitError> {
-        let param_names = param_names
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<String>>();
-        validate_param_names(&param_names)?;
-        if param_names.len() > 4 {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
-                "JIT i32 helper supports at most 4 runtime inputs, got {}",
-                param_names.len()
-            )));
-        }
-
         let mut module = jit_module()?;
-        let mut ctx = module.make_context();
-        let mut func_ctx = FunctionBuilderContext::new();
-        let mut signature = module.make_signature();
-        signature
-            .params
-            .extend(param_names.iter().map(|_| AbiParam::new(types::I32)));
-        signature.returns.push(AbiParam::new(types::I32));
-
-        let func_id = module
-            .declare_function("arcweft_pure_i32_helper_inputs", Linkage::Local, &signature)
-            .map_err(jit_error)?;
-        ctx.func.signature = signature;
-        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
-
-        let captured_bindings = i32_bindings(&request.bindings)?;
-        let mut bindings = captured_bindings.clone();
-        let mut stats = arcweft_core::pure::PureFunctionStats::default();
-        {
-            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            let block = builder.create_block();
-            builder.append_block_params_for_function_params(block);
-            builder.switch_to_block(block);
-            let params = builder.block_params(block);
-            for (name, value) in param_names.iter().zip(params.iter().copied()) {
-                bindings.insert(name.clone(), LoweredI64Binding::Value(value));
-            }
-            let value = lower_i32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
-            builder.ins().return_(&[value]);
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        module
-            .define_function(func_id, &mut ctx)
-            .map_err(jit_error)?;
-        module.clear_context(&mut ctx);
-        let batch_code = compile_i32_rows_batch_function(
+        let defined = define_i32_with_inputs(
             &mut module,
-            &request.expr,
-            &captured_bindings,
-            &param_names,
-        )?;
-        let batch_sum_code = compile_i32_rows_batch_sum_function(
-            &mut module,
-            &request.expr,
-            &captured_bindings,
-            &param_names,
+            "arcweft_pure_i32_helper_inputs",
+            request,
+            param_names,
         )?;
         module.finalize_definitions().map_err(jit_error)?;
-        let code = module.get_finalized_function(func_id);
-        let batch_code = module.get_finalized_function(batch_code);
-        let batch_sum_code = module.get_finalized_function(batch_sum_code);
-        let caller =
-            native_call::I32InputCaller::from_code(code, param_names.len()).ok_or_else(|| {
+        let code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let batch_sum_code = module.get_finalized_function(defined.batch_sum);
+        let caller = native_call::I32InputCaller::from_code(code, defined.param_names.len())
+            .ok_or_else(|| {
                 CraneliftJitError::UnsupportedExpr(format!(
                     "JIT i32 helper arity {} is outside the native call boundary",
-                    param_names.len()
+                    defined.param_names.len()
                 ))
             })?;
 
@@ -571,8 +526,8 @@ impl CraneliftPureFunctionBackend {
             caller,
             batch_code,
             batch_sum_code,
-            param_names,
-            stats,
+            param_names: defined.param_names,
+            stats: defined.stats,
         })
     }
 
@@ -1183,6 +1138,88 @@ where
     })
 }
 
+/// Defines an `i32` pure helper entrypoint and row-batch entrypoints into a
+/// Cranelift module without finalizing or looking up native function pointers.
+pub fn define_i32_with_inputs<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<DefinedPureI32Inputs, CraneliftJitError>
+where
+    M: Module,
+{
+    let param_names = param_names
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
+    validate_param_names(&param_names)?;
+    if param_names.len() > 4 {
+        return Err(CraneliftJitError::UnsupportedExpr(format!(
+            "Cranelift i32 helper supports at most 4 runtime inputs, got {}",
+            param_names.len()
+        )));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature
+        .params
+        .extend(param_names.iter().map(|_| AbiParam::new(types::I32)));
+    signature.returns.push(AbiParam::new(types::I32));
+
+    let entry_name = format!("{symbol_prefix}_entry");
+    let entry = module
+        .declare_function(&entry_name, Linkage::Local, &signature)
+        .map_err(jit_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
+
+    let captured_bindings = i32_bindings(&request.bindings)?;
+    let mut bindings = captured_bindings.clone();
+    let mut stats = PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+        let params = builder.block_params(block);
+        for (name, value) in param_names.iter().zip(params.iter().copied()) {
+            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+        }
+        let value = lower_i32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        builder.ins().return_(&[value]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module.clear_context(&mut ctx);
+    let batch = define_i32_rows_batch_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+    )?;
+    let batch_sum = define_i32_rows_batch_sum_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch_sum"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+    )?;
+
+    Ok(DefinedPureI32Inputs {
+        entry,
+        batch,
+        batch_sum,
+        param_names,
+        stats,
+    })
+}
+
 struct SmallIntCompiledParts {
     module: JITModule,
     code: *const u8,
@@ -1717,12 +1754,16 @@ where
     Ok(func_id)
 }
 
-fn compile_i32_rows_batch_function(
-    module: &mut JITModule,
+fn define_i32_rows_batch_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(
@@ -1740,7 +1781,7 @@ fn compile_i32_rows_batch_function(
     ]);
 
     let func_id = module
-        .declare_function("arcweft_pure_i32_rows_batch", Linkage::Local, &signature)
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -1801,12 +1842,16 @@ fn compile_i32_rows_batch_function(
     Ok(func_id)
 }
 
-fn compile_i32_rows_batch_sum_function(
-    module: &mut JITModule,
+fn define_i32_rows_batch_sum_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(
@@ -1823,11 +1868,7 @@ fn compile_i32_rows_batch_sum_function(
     signature.returns.push(AbiParam::new(types::I64));
 
     let func_id = module
-        .declare_function(
-            "arcweft_pure_i32_rows_batch_sum",
-            Linkage::Local,
-            &signature,
-        )
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -4878,6 +4919,57 @@ mod tests {
         assert_eq!(out, [18, 202, 21]);
         assert_eq!(
             native_call::call_i64_rows_batch_sum(batch_sum_code, &[3, 4, 2, 99, 7, 1], 2, 3),
+            Some(241)
+        );
+    }
+
+    #[test]
+    fn cranelift_define_i32_with_inputs_defines_module_functions_without_jit_wrapper() {
+        let request = PureFunctionRequest::new(
+            "score_define_i32_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i32(2))),
+                }),
+            },
+            [i32_binding("base", 3), i32_binding("bonus", 4)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined = define_i32_with_inputs(
+            &mut module,
+            "arcweft_test_defined_i32",
+            &request,
+            ["base", "bonus"],
+        )
+        .expect("i32 helper is defined into the module");
+
+        assert_eq!(defined.param_names, ["base", "bonus"]);
+        assert_eq!(defined.stats.evaluated_binary_ops, 2);
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let entry_code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let batch_sum_code = module.get_finalized_function(defined.batch_sum);
+        let caller = native_call::I32InputCaller::from_code(entry_code, defined.param_names.len())
+            .expect("defined entry has a supported native signature");
+
+        assert_eq!(caller.call(&[3, 4]), Some(18));
+        let mut out = [0; 3];
+        assert!(native_call::call_i32_rows_batch(
+            batch_code,
+            &[3, 4, 2, 99, 7, 1],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [18, 202, 21]);
+        assert_eq!(
+            native_call::call_i32_rows_batch_sum(batch_sum_code, &[3, 4, 2, 99, 7, 1], 2, 3),
             Some(241)
         );
     }

@@ -162,11 +162,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   loop parameters and advances them with bounded wraparound, avoiding per-input
   modulo work inside the hot loop. Julia baseline reports include scalar
   JIT/Julia and JIT-batch/Julia speed ratios.
-  The parameterized `i64` path now separates module codegen from JIT execution:
-  `define_i64_with_inputs` defines entry, row-batch, and row-batch-sum
-  functions into a generic Cranelift `Module`, while `compile_i64_with_inputs`
-  remains the native JIT wrapper that finalizes the `JITModule` and installs
-  function pointers.
+  The parameterized `i64` and `i32` paths now separate module codegen from JIT
+  execution: `define_i64_with_inputs` and `define_i32_with_inputs` define entry,
+  row-batch, and row-batch-sum functions into a generic Cranelift `Module`,
+  while the corresponding `compile_*_with_inputs` functions remain native JIT
+  wrappers that finalize the `JITModule` and install function pointers.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,
