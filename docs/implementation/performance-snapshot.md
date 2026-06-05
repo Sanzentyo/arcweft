@@ -854,12 +854,16 @@ buffer reuse hits, and four reused GPU dispatches. The current deterministic
 
 Arcweft flow execution can call the same op family through adapter-contributed
 external calls such as `conv2d.valid_f32`, `infer.relu_f32`,
-`infer.max_pool2d_f32`, `infer.flatten_outer_f32`, `infer.matmul_f32`, and
-`infer.argmax_last_dim_f32`. These names are not Core intrinsics and are not in
-the default prelude. `arcweft-adapter-context` contributes the optional
-type-checking namespace, while `RuntimePureAccelerator` resolves the named
-runtime calls through `RuntimeExternalCallBackend` and uses the configured math
-backend for rank-2 tensor matmul.
+`infer.max_pool2d_f32`, `infer.flatten_outer_f32`, `infer.matmul_f32`,
+`infer.matmul_bias_add_f32`, and `infer.argmax_last_dim_f32`. These names are
+not Core intrinsics and are not in the default prelude.
+`arcweft-adapter-context` contributes the optional type-checking namespace,
+while `RuntimePureAccelerator` resolves the named runtime calls through
+`RuntimeExternalCallBackend` and uses the configured math backend for rank-2
+tensor matmul. The fused external `infer.matmul_bias_add_f32` call uses the
+native prepared wgpu matmul-bias cache when backend selection chooses wgpu, so
+flow-side adapter calls can reuse resident buffers without requiring parser or
+Core intrinsics.
 
 The checked tests include a small MNIST-shaped MLP forward graph with input
 shape `1x28x28`, flattening to `1x784`, two dense layers, ReLU, and `argmax`;

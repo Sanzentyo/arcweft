@@ -530,6 +530,7 @@ struct FlatBatchSumPolicy<'a> {
 #[derive(Default)]
 struct RuntimeMathPrepareCache {
     matmul: Option<PreparedMatrixMatmulCache>,
+    matmul_bias_add: Option<PreparedMatrixMatmulBiasAddCache>,
     matrix_add: Option<PreparedMatrixAddCache>,
     tensor_add: Option<PreparedTensorAddCache>,
 }
@@ -539,6 +540,13 @@ struct PreparedMatrixMatmulCache {
     capacity_signature: MatrixBinaryShapeSignature,
     value_signature: MatrixBinaryValueSignature,
     prepared: math::RuntimePreparedMatrixMatmulF32,
+}
+
+struct PreparedMatrixMatmulBiasAddCache {
+    signature: MatrixMatmulBiasShapeSignature,
+    capacity_signature: MatrixMatmulBiasShapeSignature,
+    value_signature: MatrixMatmulBiasValueSignature,
+    prepared: math::RuntimePreparedMatrixMatmulBiasAddF32,
 }
 
 struct PreparedMatrixAddCache {
@@ -571,6 +579,20 @@ struct MatrixShapeSignature {
 struct MatrixBinaryValueSignature {
     lhs: Vec<u32>,
     rhs: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MatrixMatmulBiasShapeSignature {
+    lhs: MatrixShapeSignature,
+    rhs: MatrixShapeSignature,
+    bias: TensorShapeSignature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MatrixMatmulBiasValueSignature {
+    lhs: Vec<u32>,
+    rhs: Vec<u32>,
+    bias: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -653,6 +675,52 @@ impl MatrixBinaryValueSignature {
     fn update(&mut self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) {
         update_f32_value_bits(&mut self.lhs, lhs.values());
         update_f32_value_bits(&mut self.rhs, rhs.values());
+    }
+}
+
+impl MatrixMatmulBiasShapeSignature {
+    fn new(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32, bias: &DenseTensorF32) -> Self {
+        Self {
+            lhs: MatrixShapeSignature::new(lhs),
+            rhs: MatrixShapeSignature::new(rhs),
+            bias: TensorShapeSignature::new(bias),
+        }
+    }
+
+    fn capacity_for(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32, bias: &DenseTensorF32) -> Self {
+        Self {
+            lhs: MatrixShapeSignature::capacity_for(lhs),
+            rhs: MatrixShapeSignature::capacity_for(rhs),
+            bias: TensorShapeSignature::capacity_for(bias),
+        }
+    }
+
+    fn contains(&self, shape: &Self) -> bool {
+        self.lhs.contains(&shape.lhs)
+            && self.rhs.contains(&shape.rhs)
+            && self.bias.contains(&shape.bias)
+    }
+}
+
+impl MatrixMatmulBiasValueSignature {
+    fn new(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32, bias: &DenseTensorF32) -> Self {
+        Self {
+            lhs: f32_value_bits(lhs.values()),
+            rhs: f32_value_bits(rhs.values()),
+            bias: f32_value_bits(bias.values()),
+        }
+    }
+
+    fn matches(&self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32, bias: &DenseTensorF32) -> bool {
+        f32_value_bits_match(&self.lhs, lhs.values())
+            && f32_value_bits_match(&self.rhs, rhs.values())
+            && f32_value_bits_match(&self.bias, bias.values())
+    }
+
+    fn update(&mut self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32, bias: &DenseTensorF32) {
+        update_f32_value_bits(&mut self.lhs, lhs.values());
+        update_f32_value_bits(&mut self.rhs, rhs.values());
+        update_f32_value_bits(&mut self.bias, bias.values());
     }
 }
 
@@ -3468,6 +3536,31 @@ impl RuntimePureAccelerator {
         Ok(result)
     }
 
+    fn call_infer_matmul_bias_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(
+            lhs.values().len().saturating_add(rhs.values().len()),
+            bias.values().len(),
+        );
+        let lhs = lhs.as_matrix().ok_or_else(|| {
+            infer_runtime_error("infer.matmul_bias_add_f32", "expected rank-2 lhs tensor")
+        })?;
+        let rhs = rhs.as_matrix().ok_or_else(|| {
+            infer_runtime_error("infer.matmul_bias_add_f32", "expected rank-2 rhs tensor")
+        })?;
+        let result = self
+            .call_runtime_math_matmul_bias_add_f32(&lhs, &rhs, bias)
+            .map(DenseTensorF32::from_matrix)
+            .map_err(|error| infer_runtime_error("infer.matmul_bias_add_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
     fn call_conv2d_valid_f32(
         &mut self,
         input: &DenseTensorF32,
@@ -3547,6 +3640,7 @@ enum RuntimeAcceleratorExternalCall {
     InferMatmulF32,
     InferAddF32,
     InferBiasAddF32,
+    InferMatmulBiasAddF32,
     Conv2dValidF32,
     InferReluF32,
     InferMaxPool2dF32,
@@ -3561,6 +3655,7 @@ impl RuntimeAcceleratorExternalCall {
             "infer.matmul_f32" => Some(Self::InferMatmulF32),
             "infer.add_f32" => Some(Self::InferAddF32),
             "infer.bias_add_f32" => Some(Self::InferBiasAddF32),
+            "infer.matmul_bias_add_f32" => Some(Self::InferMatmulBiasAddF32),
             "conv2d.valid_f32" => Some(Self::Conv2dValidF32),
             "infer.relu_f32" => Some(Self::InferReluF32),
             "infer.max_pool2d_f32" => Some(Self::InferMaxPool2dF32),
@@ -3576,6 +3671,7 @@ impl RuntimeAcceleratorExternalCall {
             Self::InferMatmulF32 => "infer.matmul_f32",
             Self::InferAddF32 => "infer.add_f32",
             Self::InferBiasAddF32 => "infer.bias_add_f32",
+            Self::InferMatmulBiasAddF32 => "infer.matmul_bias_add_f32",
             Self::Conv2dValidF32 => "conv2d.valid_f32",
             Self::InferReluF32 => "infer.relu_f32",
             Self::InferMaxPool2dF32 => "infer.max_pool2d_f32",
@@ -3614,6 +3710,16 @@ impl RuntimeExternalCallBackend for RuntimePureAccelerator {
                 ],
             ) => self
                 .call_infer_bias_add_f32(tensor, bias)
+                .map(RuntimeValue::tensor_f32),
+            (
+                RuntimeAcceleratorExternalCall::InferMatmulBiasAddF32,
+                [
+                    RuntimeValue::TensorF32(lhs),
+                    RuntimeValue::TensorF32(rhs),
+                    RuntimeValue::TensorF32(bias),
+                ],
+            ) => self
+                .call_infer_matmul_bias_add_f32(lhs, rhs, bias)
                 .map(RuntimeValue::tensor_f32),
             (
                 RuntimeAcceleratorExternalCall::Conv2dValidF32,
@@ -3775,6 +3881,73 @@ impl RuntimePureAccelerator {
             signature,
             capacity_signature,
             value_signature: MatrixBinaryValueSignature::new(lhs, rhs),
+            prepared,
+        });
+        result
+    }
+
+    fn call_runtime_math_matmul_bias_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseMatrixF32, math::RuntimeMathAcceleratorError> {
+        let selection = self.math.matmul_backend_selection(lhs, rhs);
+        if selection.backend() != math::RuntimeMathBackend::Wgpu {
+            return self.math.matmul_bias_add_f32(lhs, rhs, bias);
+        }
+        if lhs.cols() != rhs.rows() || bias.shape().dims() != [rhs.cols()] {
+            return self.math.matmul_bias_add_f32(lhs, rhs, bias);
+        }
+        self.math.record_backend_selection(selection);
+        let signature = MatrixMatmulBiasShapeSignature::new(lhs, rhs, bias);
+        if let Some(cache) = self.math_prepare_cache.matmul_bias_add.take()
+            && cache.capacity_signature.contains(&signature)
+        {
+            let mut cache = cache;
+            if cache.signature != signature || !cache.value_signature.matches(lhs, rhs, bias) {
+                self.math.update_prepared_matrix_matmul_bias_add_f32(
+                    &cache.prepared,
+                    lhs,
+                    rhs,
+                    bias,
+                )?;
+                cache.signature = signature;
+                cache.value_signature.update(lhs, rhs, bias);
+            }
+            let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
+            self.math
+                .run_prepared_matrix_matmul_bias_add_f32_shape_into(
+                    &cache.prepared,
+                    lhs.rows(),
+                    rhs.cols(),
+                    &mut out,
+                )?;
+            let result = DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into);
+            self.math_prepare_cache.matmul_bias_add = Some(cache);
+            return result;
+        }
+        let capacity_signature = MatrixMatmulBiasShapeSignature::capacity_for(lhs, rhs, bias);
+        let prepared = self.math.prepare_matrix_matmul_bias_add_f32_capacity(
+            capacity_signature.lhs.rows,
+            capacity_signature.lhs.cols,
+            capacity_signature.rhs.cols,
+        )?;
+        self.math
+            .update_prepared_matrix_matmul_bias_add_f32(&prepared, lhs, rhs, bias)?;
+        let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
+        self.math
+            .run_prepared_matrix_matmul_bias_add_f32_shape_into(
+                &prepared,
+                lhs.rows(),
+                rhs.cols(),
+                &mut out,
+            )?;
+        let result = DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into);
+        self.math_prepare_cache.matmul_bias_add = Some(PreparedMatrixMatmulBiasAddCache {
+            signature,
+            capacity_signature,
+            value_signature: MatrixMatmulBiasValueSignature::new(lhs, rhs, bias),
             prepared,
         });
         result
@@ -5757,6 +5930,8 @@ mod tests {
             .expect("kernel tensor shape is valid");
         let dense = DenseTensorF32::new(vec![4, 2], vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0])
             .expect("dense tensor shape is valid");
+        let bias =
+            DenseTensorF32::new(vec![2], vec![0.0, 0.0]).expect("bias tensor shape is valid");
         let conv_target = RuntimeCallTarget::from_label("conv2d.valid_f32");
         assert!(matches!(conv_target, RuntimeCallTarget::Named(_)));
         let plan = RuntimePlan::new(
@@ -5792,7 +5967,7 @@ mod tests {
                         body: Box::new(RuntimeExpr::Let {
                             name: "logits".to_owned(),
                             expr: Box::new(RuntimeExpr::Call {
-                                callee: RuntimeCallTarget::from_label("infer.matmul_f32"),
+                                callee: RuntimeCallTarget::from_label("infer.matmul_bias_add_f32"),
                                 args: vec![
                                     RuntimeExpr::Call {
                                         callee: RuntimeCallTarget::from_label(
@@ -5801,6 +5976,7 @@ mod tests {
                                         args: vec![RuntimeExpr::Local("pooled".to_owned())],
                                     },
                                     RuntimeExpr::Value(RuntimeValue::tensor_f32(dense)),
+                                    RuntimeExpr::Value(RuntimeValue::tensor_f32(bias)),
                                 ],
                             }),
                             body: Box::new(RuntimeExpr::Call {
@@ -6043,6 +6219,77 @@ mod tests {
         assert_eq!(
             accelerator.math_stats().bytes_uploaded,
             (changed_lhs.values().len() + changed_rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
+        let lhs = DenseTensorF32::new(vec![16, 16], vec![1.0; 256]).expect("tensor shape is valid");
+        let rhs = DenseTensorF32::new(vec![16, 16], vec![2.0; 256]).expect("tensor shape is valid");
+        let bias = DenseTensorF32::new(vec![16], vec![0.25; 16]).expect("bias shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Wgpu,
+                    ..math::RuntimeMathAcceleratorConfig::default()
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+        let target = RuntimeCallTarget::from_label("infer.matmul_bias_add_f32");
+
+        let Some(Ok(first)) = RuntimeExternalCallBackend::call_external(
+            &mut accelerator,
+            &target,
+            &[
+                RuntimeValue::tensor_f32(lhs.clone()),
+                RuntimeValue::tensor_f32(rhs.clone()),
+                RuntimeValue::tensor_f32(bias.clone()),
+            ],
+        ) else {
+            return;
+        };
+        let RuntimeValue::TensorF32(first) = first else {
+            panic!("matmul-bias external call returns a tensor");
+        };
+        assert_eq!(first.shape().dims(), &[16, 16]);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 7);
+
+        accelerator.reset_runtime_counters();
+        let expected_arg_bytes = (lhs.values().len() + rhs.values().len() + bias.values().len())
+            * std::mem::size_of::<f32>();
+        let Some(Ok(second)) = RuntimeExternalCallBackend::call_external(
+            &mut accelerator,
+            &target,
+            &[
+                RuntimeValue::tensor_f32(lhs),
+                RuntimeValue::tensor_f32(rhs),
+                RuntimeValue::tensor_f32(bias),
+            ],
+        ) else {
+            panic!("prepared matmul-bias external call cache is reusable");
+        };
+        let RuntimeValue::TensorF32(second) = second else {
+            panic!("matmul-bias external call returns a tensor");
+        };
+
+        assert_eq!(second.values(), first.values());
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().fused_matmul_bias_add_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 7);
+        assert_eq!(accelerator.math_stats().gpu_reused_dispatches, 1);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(second.values())
+        );
+        assert_eq!(accelerator.stats().arg_bytes_borrowed, expected_arg_bytes);
+        assert_eq!(
+            accelerator.stats().result_bytes_copied,
+            std::mem::size_of_val(second.values())
         );
     }
 

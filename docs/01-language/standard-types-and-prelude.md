@@ -99,13 +99,14 @@ let features = conv2d.valid_f32(image, kernel, 1usize, 1usize)
 let hidden = infer.relu_f32(features)
 let pooled = infer.max_pool2d_f32(hidden, 2usize, 2usize, 2usize, 2usize)
 let flat = infer.flatten_outer_f32(pooled)
-let logits = infer.matmul_f32(flat, dense_weight)
+let logits = infer.matmul_bias_add_f32(flat, dense_weight, dense_bias)
 let class = infer.argmax_last_dim_f32(logits)
 ```
 
 The current optional native inference adapter contributes valid NCHW/OIHW
 `conv2d.valid_f32`, `infer.matmul_f32`, `infer.add_f32`,
-last-dimension `infer.bias_add_f32`, `infer.relu_f32`,
+last-dimension `infer.bias_add_f32`, fused
+`infer.matmul_bias_add_f32`, `infer.relu_f32`,
 `infer.max_pool2d_f32`, `infer.softmax_last_dim_f32`,
 `infer.argmax_last_dim_f32`, and outer-preserving
 `infer.flatten_outer_f32`. Shape validation is performed by the adapter tensor

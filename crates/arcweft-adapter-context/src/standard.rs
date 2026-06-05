@@ -77,6 +77,11 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
         )
         .with_method(
             TypeKind::Named("InferApi".to_owned()),
+            "matmul_bias_add_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
             "relu_f32",
             tensor.clone(),
         )
@@ -100,8 +105,16 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
             "flatten_outer_f32",
             tensor,
         )
+        .with_host_call(AdapterHostCall::new("conv2d.valid_f32", []))
         .with_host_call(AdapterHostCall::new("infer.matmul_f32", []))
-        .with_host_call(AdapterHostCall::new("conv.valid_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.add_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.bias_add_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.matmul_bias_add_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.relu_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.max_pool2d_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.softmax_last_dim_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.argmax_last_dim_f32", []))
+        .with_host_call(AdapterHostCall::new("infer.flatten_outer_f32", []))
 }
 
 /// Host system information manifest.
@@ -170,6 +183,25 @@ mod tests {
                 && method.name() == "argmax_last_dim_f32"
                 && method.signature().return_type() == &TypeKind::Seq(Box::new(TypeKind::USize))
         }));
+        for call in [
+            "conv2d.valid_f32",
+            "infer.matmul_f32",
+            "infer.add_f32",
+            "infer.bias_add_f32",
+            "infer.matmul_bias_add_f32",
+            "infer.relu_f32",
+            "infer.max_pool2d_f32",
+            "infer.softmax_last_dim_f32",
+            "infer.argmax_last_dim_f32",
+            "infer.flatten_outer_f32",
+        ] {
+            assert!(
+                manifest
+                    .host_calls()
+                    .iter()
+                    .any(|host_call| host_call.id() == call)
+            );
+        }
         assert_eq!(
             env,
             manifest
