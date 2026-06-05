@@ -1550,6 +1550,12 @@ struct MathBenchReport {
 
 impl MathBenchReport {
     fn new(options: &BenchOptions, results: Vec<BackendReport>) -> Self {
+        let scalar_baseline_ns = results
+            .iter()
+            .find(|report| {
+                report.backend == RuntimeMathBackend::Scalar && report.status == "measured"
+            })
+            .and_then(|report| report.median_ns);
         Self {
             bench: "runtime_math",
             build_mode: build_mode_label(),
@@ -1583,7 +1589,10 @@ impl MathBenchReport {
             } else {
                 None
             },
-            results: results.into_iter().map(BackendReport::into_json).collect(),
+            results: results
+                .into_iter()
+                .map(|report| report.into_json(scalar_baseline_ns))
+                .collect(),
         }
     }
 }
@@ -1611,6 +1620,7 @@ struct BackendReportJson {
     backend: &'static str,
     status: &'static str,
     median_ns: Option<u128>,
+    speedup_vs_scalar: Option<f64>,
     min_ns: Option<u128>,
     p95_ns: Option<u128>,
     mad_ns: Option<u128>,
@@ -1718,11 +1728,12 @@ impl BackendReport {
         }
     }
 
-    fn into_json(self) -> BackendReportJson {
+    fn into_json(self, scalar_baseline_ns: Option<u128>) -> BackendReportJson {
         BackendReportJson {
             backend: backend_label(self.backend),
             status: self.status,
             median_ns: self.median_ns,
+            speedup_vs_scalar: speedup_vs_scalar(scalar_baseline_ns, self.median_ns),
             min_ns: self.min_ns,
             p95_ns: self.p95_ns,
             mad_ns: self.mad_ns,
@@ -1731,6 +1742,19 @@ impl BackendReport {
             diagnostic: self.diagnostic,
         }
     }
+}
+
+fn speedup_vs_scalar(scalar_baseline_ns: Option<u128>, median_ns: Option<u128>) -> Option<f64> {
+    match (scalar_baseline_ns, median_ns) {
+        (Some(scalar), Some(median)) if median > 0 => {
+            Some(u128_to_f64(scalar)? / u128_to_f64(median)?)
+        }
+        _ => None,
+    }
+}
+
+fn u128_to_f64(value: u128) -> Option<f64> {
+    value.to_string().parse::<f64>().ok()
 }
 
 fn median_sample(samples: &[u128]) -> Option<u128> {
@@ -1862,6 +1886,45 @@ mod tests {
         }
         assert!(!json.contains(&["/", "home", "/"].concat()));
         assert!(!json.contains("/tmp/"));
+    }
+
+    #[test]
+    fn report_serializes_speedup_against_measured_scalar_baseline() {
+        let options = BenchOptions {
+            backend: BenchBackend::All,
+            op: BenchOp::Matmul,
+            size: 4,
+            iterations: 1,
+            warmup: 0,
+            wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
+            reuse_mode: PreparedReuseMode::None,
+        };
+        let report = MathBenchReport::new(
+            &options,
+            vec![
+                BackendReport::measured(
+                    RuntimeMathBackend::Scalar,
+                    vec![200],
+                    RuntimeMathStats::default(),
+                ),
+                BackendReport::measured(
+                    RuntimeMathBackend::Ndarray,
+                    vec![100],
+                    RuntimeMathStats {
+                        ndarray_calls: 1,
+                        last_backend: Some(RuntimeMathBackend::Ndarray),
+                        ..RuntimeMathStats::default()
+                    },
+                ),
+            ],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(json.contains("\"backend\":\"scalar\""));
+        assert!(json.contains("\"speedup_vs_scalar\":1.0"));
+        assert!(json.contains("\"backend\":\"ndarray\""));
+        assert!(json.contains("\"speedup_vs_scalar\":2.0"));
     }
 
     #[test]

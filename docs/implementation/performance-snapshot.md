@@ -1038,7 +1038,9 @@ are not confused with optimized performance evidence. The representative
 standalone math rows below are from the release just recipes and report
 `build_mode = "optimized"`. Per-backend timing also includes `p95_ns` and
 median absolute deviation as `mad_ns`, so single-run outliers are visible in
-the JSON even when the summary table only records medians.
+the JSON even when the summary table only records medians. When the report
+contains a measured scalar backend, each measured backend also includes
+`speedup_vs_scalar`; skipped or failed backends keep that field `null`.
 
 Representative release results on the local machine:
 

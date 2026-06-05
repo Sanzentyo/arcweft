@@ -319,13 +319,18 @@ Phase 0 / Phase 1 minimal Rust workspace:
   measurements can both show whether work used exact or overprovisioned
   resident buffers. Browser bench reports now also include typed per-shape
   recommendations with measured selected mode, selected capacity, speedup, and
-  reason plus the runtime policy mode, policy capacity, policy reason, and
-  policy/measurement match flag; this moves browser-side `Auto` threshold
-  evidence into the Rust-produced JSON schema instead of leaving it as a
-  JS-only smoke summary. Browser WebGPU contexts now also expose policy-driven
-  async Auto calls for `matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`, so
-  browser embeddings can use the calibrated policy at the adapter boundary
-  without copying the threshold logic into player code. The browser WebGPU
+  reason, with selected/CPU MAD and P95 fields for outlier inspection, plus the
+  runtime policy mode, policy capacity, policy reason, and policy/measurement
+  match flag; this moves browser-side `Auto` threshold evidence into the
+  Rust-produced JSON schema instead of leaving it as a JS-only smoke summary.
+  Native standalone `math_bench` reports now also include
+  `speedup_vs_scalar` for each measured backend when a scalar baseline is
+  present, so scalar/glam/ndarray/wgpu/Auto comparisons are visible in the
+  path-free JSON artifact instead of requiring manual table calculation.
+  Browser WebGPU contexts now also expose policy-driven async Auto calls for
+  `matmul_f32`, `matrix_add_f32`, and `tensor_add_f32`, so browser embeddings
+  can use the calibrated policy at the adapter boundary without copying the
+  threshold logic into player code. The browser WebGPU
   context also separates resident compute submission from explicit readback:
   `submit_resident_*_without_readback` keeps prepared output on the GPU, and
   `read_resident_*` performs the host-visible copy/map only at the requested
