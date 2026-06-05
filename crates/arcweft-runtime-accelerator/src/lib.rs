@@ -418,6 +418,11 @@ pub struct RuntimePureAcceleratorConfig {
     pub workers: RuntimePureWorkerCount,
     /// Minimum rows per resolved worker before an AOT/VM batch uses the pool.
     pub batch_min_len: usize,
+    /// Emit Cranelift object artifacts while compiling supported AOT helpers.
+    ///
+    /// This is off by default so ordinary runtime startup does not pay
+    /// build-time AOT artifact generation cost.
+    pub emit_object_artifacts: bool,
     pub math: math::RuntimeMathAcceleratorConfig,
 }
 
@@ -438,6 +443,10 @@ pub struct RuntimePureCompileStats {
     pub auto_jit_skipped_small: usize,
     pub cache_hits: usize,
     pub cache_misses: usize,
+    pub object_attempts: usize,
+    pub object_successes: usize,
+    pub object_failures: usize,
+    pub object_bytes: usize,
     pub compile_elapsed_ns: u128,
 }
 
@@ -975,6 +984,7 @@ impl RuntimePureAccelerator {
                 .unwrap_or_else(|| runtime_expr_work_units(&helper.expr));
             cache[helper.id.0] = Some(compile_helper(
                 config.backend,
+                config.emit_object_artifacts,
                 helper,
                 work_units,
                 &mut compile_stats,
@@ -4252,6 +4262,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
 
 fn compile_helper(
     mode: RuntimePureBackendMode,
+    emit_object_artifacts: bool,
     helper: &RuntimePureHelper,
     work_units: usize,
     stats: &mut RuntimePureCompileStats,
@@ -4264,12 +4275,15 @@ fn compile_helper(
         return match mode {
             RuntimePureBackendMode::Vm => RuntimePureCacheEntry::Vm,
             RuntimePureBackendMode::Aot => {
-                compile_aot_i64(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
+                compile_aot_i64(&request, helper, emit_object_artifacts, stats)
+                    .unwrap_or(RuntimePureCacheEntry::Vm)
             }
             RuntimePureBackendMode::Jit => {
                 compile_jit(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
             }
-            RuntimePureBackendMode::Auto => compile_auto(&request, helper, work_units, stats),
+            RuntimePureBackendMode::Auto => {
+                compile_auto(&request, helper, work_units, emit_object_artifacts, stats)
+            }
         };
     }
     let Some(input_type) = helper_scalar_aot_input_type(helper) else {
@@ -4283,10 +4297,15 @@ fn compile_helper(
     let request = compile_request(helper, zero);
     match mode {
         RuntimePureBackendMode::Vm => RuntimePureCacheEntry::Vm,
-        RuntimePureBackendMode::Aot => {
-            compile_aot_scalar(&request, helper, input_type, output_type, stats)
-                .unwrap_or(RuntimePureCacheEntry::Vm)
-        }
+        RuntimePureBackendMode::Aot => compile_aot_scalar(
+            &request,
+            helper,
+            input_type,
+            output_type,
+            emit_object_artifacts,
+            stats,
+        )
+        .unwrap_or(RuntimePureCacheEntry::Vm),
         RuntimePureBackendMode::Jit => {
             if let Some(jit) = compile_jit_i8(&request, helper, stats)
                 .or_else(|| compile_jit_i16(&request, helper, stats))
@@ -4304,13 +4323,25 @@ fn compile_helper(
             } else {
                 stats.jit_attempts += 1;
                 stats.jit_failures += 1;
-                compile_aot_scalar(&request, helper, input_type, output_type, stats)
-                    .unwrap_or(RuntimePureCacheEntry::Vm)
+                compile_aot_scalar(
+                    &request,
+                    helper,
+                    input_type,
+                    output_type,
+                    emit_object_artifacts,
+                    stats,
+                )
+                .unwrap_or(RuntimePureCacheEntry::Vm)
             }
         }
-        RuntimePureBackendMode::Auto => {
-            compile_auto_scalar(&request, helper, input_type, output_type, stats)
-        }
+        RuntimePureBackendMode::Auto => compile_auto_scalar(
+            &request,
+            helper,
+            input_type,
+            output_type,
+            emit_object_artifacts,
+            stats,
+        ),
     }
 }
 
@@ -4472,18 +4503,19 @@ fn compile_auto(
     request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
     work_units: usize,
+    emit_object_artifacts: bool,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
     if native_jit_enabled() && work_units >= AUTO_EAGER_JIT_WORK_UNITS {
         stats.auto_jit_selected += 1;
         return compile_jit(request, helper, stats)
-            .or_else(|| compile_aot_i64(request, helper, stats))
+            .or_else(|| compile_aot_i64(request, helper, emit_object_artifacts, stats))
             .unwrap_or_else(|| {
                 stats.auto_vm_selected += 1;
                 RuntimePureCacheEntry::Vm
             });
     }
-    match compile_aot_i64(request, helper, stats) {
+    match compile_aot_i64(request, helper, emit_object_artifacts, stats) {
         Some(RuntimePureCacheEntry::Aot(aot)) => {
             stats.auto_aot_selected += 1;
             stats.auto_jit_deferred += 1;
@@ -4901,9 +4933,17 @@ fn compile_auto_scalar(
     helper: &RuntimePureHelper,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
+    emit_object_artifacts: bool,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
-    match compile_aot_scalar(request, helper, input_type, output_type, stats) {
+    match compile_aot_scalar(
+        request,
+        helper,
+        input_type,
+        output_type,
+        emit_object_artifacts,
+        stats,
+    ) {
         Some(RuntimePureCacheEntry::Aot(aot)) => {
             stats.auto_aot_selected += 1;
             let native_jit_candidate = native_jit_enabled() && helper_has_native_jit_entry(helper);
@@ -4927,6 +4967,7 @@ fn compile_auto_scalar(
 fn compile_aot_i64(
     request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
+    emit_object_artifacts: bool,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.aot_attempts += 1;
@@ -4940,6 +4981,9 @@ fn compile_aot_i64(
         .flatten();
     if compiled.is_some() {
         stats.aot_successes += 1;
+        if emit_object_artifacts {
+            record_aot_object_artifact(request, helper, stats);
+        }
     } else {
         stats.aot_failures += 1;
     }
@@ -4951,6 +4995,7 @@ fn compile_aot_scalar(
     helper: &RuntimePureHelper,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
+    emit_object_artifacts: bool,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.aot_attempts += 1;
@@ -4965,10 +5010,147 @@ fn compile_aot_scalar(
         .ok();
     if compiled.is_some() {
         stats.aot_successes += 1;
+        if emit_object_artifacts {
+            record_aot_object_artifact(request, helper, stats);
+        }
     } else {
         stats.aot_failures += 1;
     }
     compiled.map(RuntimePureCacheEntry::Aot)
+}
+
+fn record_aot_object_artifact(
+    request: &PureFunctionRequest,
+    helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
+) {
+    let Some(bytes) = emit_aot_object_artifact_bytes(request, helper) else {
+        return;
+    };
+    stats.object_attempts += 1;
+    match bytes {
+        Ok(bytes) => {
+            stats.object_successes += 1;
+            stats.object_bytes = stats.object_bytes.saturating_add(bytes);
+        }
+        Err(()) => {
+            stats.object_failures += 1;
+        }
+    }
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+fn emit_aot_object_artifact_bytes(
+    request: &PureFunctionRequest,
+    helper: &RuntimePureHelper,
+) -> Option<Result<usize, ()>> {
+    let backend = CraneliftPureFunctionBackend;
+    let input_names = || helper.input_names.iter().map(String::as_str);
+    if helper_has_only_i64_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_i64_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_i32_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_i32_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_u32_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_u32_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_u64_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_u64_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_i8_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_i8_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_i16_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_i16_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_u8_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_u8_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_u16_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_u16_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_f32_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_f32_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_f64_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_f64_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_i128_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_i128_batch_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    if helper_has_only_u128_inputs(helper) {
+        return Some(
+            backend
+                .emit_object_u128_batch_with_inputs(request, input_names())
+                .map(|object| object.object_bytes.len())
+                .map_err(|_| ()),
+        );
+    }
+    None
+}
+
+#[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
+fn emit_aot_object_artifact_bytes(
+    _request: &PureFunctionRequest,
+    _helper: &RuntimePureHelper,
+) -> Option<Result<usize, ()>> {
+    None
 }
 
 fn helper_scalar_aot_input_type(helper: &RuntimePureHelper) -> Option<RuntimePureInputType> {
@@ -5940,6 +6122,7 @@ impl Default for RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
             workers: RuntimePureWorkerCount::Auto,
             batch_min_len: 1024,
+            emit_object_artifacts: false,
             math: math::RuntimeMathAcceleratorConfig::default(),
         }
     }
@@ -6774,6 +6957,8 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 0);
         assert_eq!(accelerator.compile_stats().auto_aot_selected, 1);
         assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().object_attempts, 0);
+        assert_eq!(accelerator.compile_stats().object_bytes, 0);
     }
 
     #[test]
@@ -6811,6 +6996,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                emit_object_artifacts: true,
                 ..RuntimePureAcceleratorConfig::default()
             },
             &[i32_helper.clone(), f32_helper.clone()],
@@ -6838,6 +7024,18 @@ mod tests {
         assert_eq!(accelerator.stats().vm_calls, 0);
         assert_eq!(accelerator.stats().fallbacks, 0);
         assert_eq!(accelerator.summary().aot, 2);
+        #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+        {
+            let compile = accelerator.compile_stats();
+            assert_eq!(compile.object_attempts, 2);
+            assert_eq!(compile.object_successes, 2);
+            assert_eq!(compile.object_failures, 0);
+            assert!(compile.object_bytes > 0);
+        }
+        #[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
+        {
+            assert_eq!(accelerator.compile_stats().object_attempts, 0);
+        }
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]

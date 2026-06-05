@@ -120,6 +120,16 @@ stay out of the native FFI boundary. Object artifacts record deterministic symbo
 names and object bytes only; they do not include source paths or JIT function
 pointers.
 
+The runtime AOT policy can record Cranelift object emission as artifact metadata
+when native codegen is available and object artifacts are explicitly enabled in
+the runtime pure accelerator config. `RuntimePureCompileStats` exposes object
+attempt, success, failure, and byte counters next to JIT/AOT compile counters.
+Object emission is off by default so ordinary Auto/AOT startup avoids build-time
+AOT generation cost. These counters prove that supported typed helpers can be
+lowered to relocatable objects without changing execution semantics. Runtime
+execution still uses the typed AOT plan or native JIT function pointers; loading
+and calling object files is a later backend boundary.
+
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11

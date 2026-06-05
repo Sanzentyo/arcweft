@@ -20,6 +20,7 @@ pub struct RuntimeExecutorPureConfigSummary {
     pub resolved_workers: usize,
     pub worker_pool_active: bool,
     pub batch_min_len: usize,
+    pub emit_object_artifacts: bool,
     pub math_backend: &'static str,
     pub math_wgpu_min_elements: usize,
 }
@@ -57,6 +58,10 @@ pub struct RuntimeExecutorPureCompileStatsSummary {
     pub auto_jit_skipped_small: usize,
     pub cache_hits: usize,
     pub cache_misses: usize,
+    pub object_attempts: usize,
+    pub object_successes: usize,
+    pub object_failures: usize,
+    pub object_bytes: usize,
     pub compile_elapsed_ns: u128,
 }
 
@@ -99,6 +104,7 @@ pub fn runtime_executor_stats(
             resolved_workers: pure.resolved_worker_count(),
             worker_pool_active: pure.has_worker_pool(),
             batch_min_len: config.batch_min_len,
+            emit_object_artifacts: config.emit_object_artifacts,
             math_backend: runtime_math_backend_label(config.math.backend),
             math_wgpu_min_elements: config.math.wgpu_min_elements,
         },
@@ -162,6 +168,10 @@ impl From<RuntimePureCompileStats> for RuntimeExecutorPureCompileStatsSummary {
             auto_jit_skipped_small: stats.auto_jit_skipped_small,
             cache_hits: stats.cache_hits,
             cache_misses: stats.cache_misses,
+            object_attempts: stats.object_attempts,
+            object_successes: stats.object_successes,
+            object_failures: stats.object_failures,
+            object_bytes: stats.object_bytes,
             compile_elapsed_ns: stats.compile_elapsed_ns,
         }
     }
