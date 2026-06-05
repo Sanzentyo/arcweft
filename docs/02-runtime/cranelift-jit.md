@@ -109,10 +109,11 @@ JIT wrapper owns `JITModule`, finalizes definitions, looks up function pointers,
 and calls through the audited `native_call` ABI boundary. This keeps JIT
 function-pointer handling isolated while making the same lowering path usable
 for `ObjectModule` / build-time AOT object emission. Parameterized integer,
-floating-point, small-integer, and wide-integer batch helper paths use this
-split before native execution wrappers are attached. Cranelift lowering and
-artifact emission report `CraneliftCodegenError`; the error boundary is not named
-after JIT because the same codegen path serves JIT and object emission.
+floating-point, small-integer, wide-integer batch, and no-input `i64` helper
+paths use this split before native execution wrappers are attached. Cranelift
+lowering and artifact emission report `CraneliftCodegenError`; the error
+boundary is not named after JIT because the same codegen path serves JIT and
+object emission.
 
 Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `i8`, `i16`,
 `u8`, `u16`, `f32`, and `f64` parameterized helpers. Scalar integer object

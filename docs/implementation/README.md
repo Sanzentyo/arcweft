@@ -164,10 +164,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   loop parameters and advances them with bounded wraparound, avoiding per-input
   modulo work inside the hot loop. Julia baseline reports include scalar
   JIT/Julia and JIT-batch/Julia speed ratios.
-  The parameterized integer, floating-point, small-integer, and wide-integer
-  batch paths now separate module codegen from JIT execution. `define_*`
-  functions define entry, row-batch, and when supported row-batch-sum functions
-  into a generic Cranelift `Module`. The deterministic `arcw jit check`
+  The no-input `i64` helper entry, parameterized integer, floating-point,
+  small-integer, and wide-integer batch paths now separate module codegen from
+  JIT execution. `define_*` functions define entry, row-batch, and when
+  supported row-batch-sum functions into a generic Cranelift `Module`. The
+  deterministic `arcw jit check`
   benchmark loop follows the same boundary through `define_i64_benchmark_batch`
   before the JIT wrapper finalizes the module. The corresponding `compile_*`
   functions remain native JIT wrappers that finalize the `JITModule` and

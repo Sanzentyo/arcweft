@@ -137,6 +137,12 @@ pub struct ObjectPureBundleHelper {
     pub stats: PureFunctionStats,
 }
 
+/// Pure no-input `i64` helper function defined into a Cranelift module.
+pub struct DefinedPureI64Entry {
+    pub entry: FuncId,
+    pub stats: PureFunctionStats,
+}
+
 /// Pure scalar helper functions defined into a Cranelift module.
 ///
 /// This is the codegen-side artifact shared by JIT and future object/AOT
@@ -454,40 +460,14 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
     ) -> Result<CompiledPureI64, CraneliftCodegenError> {
         let mut module = jit_module()?;
-        let mut ctx = module.make_context();
-        let mut func_ctx = FunctionBuilderContext::new();
-        let mut signature = module.make_signature();
-        signature.returns.push(AbiParam::new(types::I64));
-
-        let func_id = module
-            .declare_function("arcweft_pure_helper", Linkage::Local, &signature)
-            .map_err(codegen_error)?;
-        ctx.func.signature = signature;
-        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
-
-        let bindings = int_bindings(&request.bindings)?;
-        let mut stats = arcweft_core::pure::PureFunctionStats::default();
-        {
-            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            let block = builder.create_block();
-            builder.switch_to_block(block);
-            let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
-            builder.ins().return_(&[value]);
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        module
-            .define_function(func_id, &mut ctx)
-            .map_err(codegen_error)?;
-        module.clear_context(&mut ctx);
+        let defined = define_i64_entry(&mut module, "arcweft_pure_helper", request)?;
         module.finalize_definitions().map_err(codegen_error)?;
-        let code = module.get_finalized_function(func_id);
+        let code = module.get_finalized_function(defined.entry);
 
         Ok(CompiledPureI64 {
             _module: module,
             code,
-            stats,
+            stats: defined.stats,
         })
     }
 
@@ -985,6 +965,48 @@ impl CraneliftPureFunctionBackend {
             stats: defined.stats,
         })
     }
+}
+
+/// Defines an `i64` pure helper entrypoint and row-batch entrypoints into a
+/// Defines a no-input `i64` pure helper entrypoint into a Cranelift module
+/// without finalizing or looking up native function pointers.
+pub fn define_i64_entry<M>(
+    module: &mut M,
+    symbol_name: &str,
+    request: &PureFunctionRequest,
+) -> Result<DefinedPureI64Entry, CraneliftCodegenError>
+where
+    M: Module,
+{
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature.returns.push(AbiParam::new(types::I64));
+
+    let entry = module
+        .declare_function(symbol_name, Linkage::Local, &signature)
+        .map_err(codegen_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
+
+    let bindings = int_bindings(&request.bindings)?;
+    let mut stats = PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        builder.ins().return_(&[value]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
+    module.clear_context(&mut ctx);
+
+    Ok(DefinedPureI64Entry { entry, stats })
 }
 
 /// Defines an `i64` pure helper entrypoint and row-batch entrypoints into a
@@ -6004,6 +6026,36 @@ mod tests {
         assert_eq!(compiled.call(), 42);
         assert_eq!(compiled.call(), 42);
         assert_eq!(compiled.stats().evaluated_binary_ops, 1);
+    }
+
+    #[test]
+    fn cranelift_define_i64_entry_defines_module_function_without_jit_wrapper() {
+        let request = PureFunctionRequest::new(
+            "score_entry_define",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
+                }),
+            },
+            [int_binding("base", 3), int_binding("bonus", 4)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined = define_i64_entry(&mut module, "arcweft_test_defined_i64_entry", &request)
+            .expect("i64 entry is defined into the module");
+
+        assert_eq!(defined.stats.evaluated_binary_ops, 2);
+        module
+            .finalize_definitions()
+            .expect("defined entry finalizes");
+        let entry_code = module.get_finalized_function(defined.entry);
+        let caller = native_call::I64InputCaller::from_code(entry_code, 0)
+            .expect("defined entry has a supported native signature");
+        assert_eq!(caller.call(&[]).expect("defined entry call succeeds"), 18);
     }
 
     #[test]
