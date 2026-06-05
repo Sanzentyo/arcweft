@@ -4705,6 +4705,68 @@ fn bench_json_measures_checked_in_tensor_f64_math_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_matrix_add_f64_math_fixture() {
+    let path =
+        workspace_root().join("tests/fixtures/arcw/spec_should_pass/bench/035_matrix_add_f64.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("3")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("3")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--math-backend")
+        .arg("ndarray")
+        .arg("--value")
+        .arg("lhs=matrix/f64/2x2:1.5,2.25,3.75,4.5")
+        .arg("--value")
+        .arg("rhs=matrix/f64/2x2:5,6.25,7.5,8.75")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in f64 matrix-add fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in f64 matrix-add bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "f64 matrix-add bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["math_calls_median"], 1);
+    assert_eq!(
+        measurement["deterministic"]["math_accelerated_calls_median"],
+        1
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        32
+    );
+    assert_eq!(measurement["executor_stats"]["math"]["ndarray_calls"], 1);
+    assert_eq!(measurement["executor_stats"]["math"]["bytes_borrowed"], 64);
+    assert_eq!(measurement["executor_stats"]["math"]["bytes_copied"], 0);
+    assert_eq!(
+        measurement["executor_stats"]["math"]["last_backend"],
+        "ndarray"
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture() {
     let path = workspace_root()
         .join("tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw");

@@ -958,8 +958,12 @@ just bench-024
 just bench-024-wgpu-auto
 just bench-025
 just bench-026
+just bench-027
+just bench-028
+just bench-035
 arcw bench tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2,3.25,4.5 --value rhs=matrix/f64/2x2:5,6.5,7,8.25 --json
 arcw bench tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw --math-backend ndarray --value lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=tensor/f64/2x2:5,6.25,7.5,8.75 --json
+arcw bench tests/fixtures/arcw/spec_should_pass/bench/035_matrix_add_f64.arcw --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=matrix/f64/2x2:5,6.25,7.5,8.75 --json
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matmul-reuse-update
 just bench-math-matrix-add-reuse
@@ -981,6 +985,7 @@ Representative release results on the local machine:
 | flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
 | flow 2x2 matmul_f64 | ndarray | measured | 2100 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | flow 2x2 tensor_add_f64 | ndarray | measured | 2200 | `--value` tensor input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
+| flow 2x2 matrix_add_f64 | ndarray | measured | 1900 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | 64x64 matmul_f64 | scalar | measured | 38800 | standalone `math_bench`, row-major f64 baseline |
 | 64x64 matmul_f64 | ndarray | measured | 39900 | standalone `math_bench`, CPU matrix backend without narrowing |
 | 64x64 matmul_f64 | auto | measured | 36100 | selected scalar with `last_auto_reason = matmul_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
