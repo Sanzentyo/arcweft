@@ -72,6 +72,14 @@ pub struct DefinedPureScalarInputs {
     pub stats: PureFunctionStats,
 }
 
+/// Pure floating-point helper functions defined into a Cranelift module.
+pub struct DefinedPureFloatInputs {
+    pub entry: FuncId,
+    pub batch: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
 /// Compiled native helper returning an `i128` for flat batch calls.
 ///
 /// This type deliberately has no scalar caller: only pointer-based batch
@@ -665,69 +673,21 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<CompiledPureF32Inputs, CraneliftJitError> {
-        let param_names = param_names
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<String>>();
-        validate_param_names(&param_names)?;
-        if param_names.len() > 4 {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
-                "JIT f32 helper supports at most 4 runtime inputs, got {}",
-                param_names.len()
-            )));
-        }
-
         let mut module = jit_module()?;
-        let mut ctx = module.make_context();
-        let mut func_ctx = FunctionBuilderContext::new();
-        let mut signature = module.make_signature();
-        signature
-            .params
-            .extend(param_names.iter().map(|_| AbiParam::new(types::F32)));
-        signature.returns.push(AbiParam::new(types::F32));
-
-        let func_id = module
-            .declare_function("arcweft_pure_f32_helper_inputs", Linkage::Local, &signature)
-            .map_err(jit_error)?;
-        ctx.func.signature = signature;
-        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
-
-        let captured_bindings = f32_bindings(&request.bindings)?;
-        let mut bindings = captured_bindings.clone();
-        let mut stats = arcweft_core::pure::PureFunctionStats::default();
-        {
-            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            let block = builder.create_block();
-            builder.append_block_params_for_function_params(block);
-            builder.switch_to_block(block);
-            let params = builder.block_params(block);
-            for (name, value) in param_names.iter().zip(params.iter().copied()) {
-                bindings.insert(name.clone(), LoweredF32Binding::Value(value));
-            }
-            let value = lower_f32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
-            builder.ins().return_(&[value]);
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        module
-            .define_function(func_id, &mut ctx)
-            .map_err(jit_error)?;
-        module.clear_context(&mut ctx);
-        let batch_code = compile_f32_rows_batch_function(
+        let defined = define_f32_with_inputs(
             &mut module,
-            &request.expr,
-            &captured_bindings,
-            &param_names,
+            "arcweft_pure_f32_helper_inputs",
+            request,
+            param_names,
         )?;
         module.finalize_definitions().map_err(jit_error)?;
-        let code = module.get_finalized_function(func_id);
-        let batch_code = module.get_finalized_function(batch_code);
-        let caller =
-            native_call::F32InputCaller::from_code(code, param_names.len()).ok_or_else(|| {
+        let code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let caller = native_call::F32InputCaller::from_code(code, defined.param_names.len())
+            .ok_or_else(|| {
                 CraneliftJitError::UnsupportedExpr(format!(
                     "JIT f32 helper arity {} is outside the native call boundary",
-                    param_names.len()
+                    defined.param_names.len()
                 ))
             })?;
 
@@ -735,8 +695,8 @@ impl CraneliftPureFunctionBackend {
             _module: module,
             caller,
             batch_code,
-            param_names,
-            stats,
+            param_names: defined.param_names,
+            stats: defined.stats,
         })
     }
 
@@ -747,69 +707,21 @@ impl CraneliftPureFunctionBackend {
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<CompiledPureF64Inputs, CraneliftJitError> {
-        let param_names = param_names
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<String>>();
-        validate_param_names(&param_names)?;
-        if param_names.len() > 4 {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
-                "JIT f64 helper supports at most 4 runtime inputs, got {}",
-                param_names.len()
-            )));
-        }
-
         let mut module = jit_module()?;
-        let mut ctx = module.make_context();
-        let mut func_ctx = FunctionBuilderContext::new();
-        let mut signature = module.make_signature();
-        signature
-            .params
-            .extend(param_names.iter().map(|_| AbiParam::new(types::F64)));
-        signature.returns.push(AbiParam::new(types::F64));
-
-        let func_id = module
-            .declare_function("arcweft_pure_f64_helper_inputs", Linkage::Local, &signature)
-            .map_err(jit_error)?;
-        ctx.func.signature = signature;
-        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
-
-        let captured_bindings = f64_bindings(&request.bindings)?;
-        let mut bindings = captured_bindings.clone();
-        let mut stats = arcweft_core::pure::PureFunctionStats::default();
-        {
-            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            let block = builder.create_block();
-            builder.append_block_params_for_function_params(block);
-            builder.switch_to_block(block);
-            let params = builder.block_params(block);
-            for (name, value) in param_names.iter().zip(params.iter().copied()) {
-                bindings.insert(name.clone(), LoweredF64Binding::Value(value));
-            }
-            let value = lower_f64_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
-            builder.ins().return_(&[value]);
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        module
-            .define_function(func_id, &mut ctx)
-            .map_err(jit_error)?;
-        module.clear_context(&mut ctx);
-        let batch_code = compile_f64_rows_batch_function(
+        let defined = define_f64_with_inputs(
             &mut module,
-            &request.expr,
-            &captured_bindings,
-            &param_names,
+            "arcweft_pure_f64_helper_inputs",
+            request,
+            param_names,
         )?;
         module.finalize_definitions().map_err(jit_error)?;
-        let code = module.get_finalized_function(func_id);
-        let batch_code = module.get_finalized_function(batch_code);
-        let caller =
-            native_call::F64InputCaller::from_code(code, param_names.len()).ok_or_else(|| {
+        let code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let caller = native_call::F64InputCaller::from_code(code, defined.param_names.len())
+            .ok_or_else(|| {
                 CraneliftJitError::UnsupportedExpr(format!(
                     "JIT f64 helper arity {} is outside the native call boundary",
-                    param_names.len()
+                    defined.param_names.len()
                 ))
             })?;
 
@@ -817,8 +729,8 @@ impl CraneliftPureFunctionBackend {
             _module: module,
             caller,
             batch_code,
-            param_names,
-            stats,
+            param_names: defined.param_names,
+            stats: defined.stats,
         })
     }
 
@@ -1262,6 +1174,154 @@ where
         entry,
         batch,
         batch_sum,
+        param_names,
+        stats,
+    })
+}
+
+/// Defines an `f32` pure helper entrypoint and row-batch entrypoint into a
+/// Cranelift module without finalizing or looking up native function pointers.
+pub fn define_f32_with_inputs<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<DefinedPureFloatInputs, CraneliftJitError>
+where
+    M: Module,
+{
+    let param_names = param_names
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
+    validate_param_names(&param_names)?;
+    if param_names.len() > 4 {
+        return Err(CraneliftJitError::UnsupportedExpr(format!(
+            "Cranelift f32 helper supports at most 4 runtime inputs, got {}",
+            param_names.len()
+        )));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature
+        .params
+        .extend(param_names.iter().map(|_| AbiParam::new(types::F32)));
+    signature.returns.push(AbiParam::new(types::F32));
+
+    let entry_name = format!("{symbol_prefix}_entry");
+    let entry = module
+        .declare_function(&entry_name, Linkage::Local, &signature)
+        .map_err(jit_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
+
+    let captured_bindings = f32_bindings(&request.bindings)?;
+    let mut bindings = captured_bindings.clone();
+    let mut stats = PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+        let params = builder.block_params(block);
+        for (name, value) in param_names.iter().zip(params.iter().copied()) {
+            bindings.insert(name.clone(), LoweredF32Binding::Value(value));
+        }
+        let value = lower_f32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        builder.ins().return_(&[value]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module.clear_context(&mut ctx);
+    let batch = define_f32_rows_batch_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+    )?;
+
+    Ok(DefinedPureFloatInputs {
+        entry,
+        batch,
+        param_names,
+        stats,
+    })
+}
+
+/// Defines an `f64` pure helper entrypoint and row-batch entrypoint into a
+/// Cranelift module without finalizing or looking up native function pointers.
+pub fn define_f64_with_inputs<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<DefinedPureFloatInputs, CraneliftJitError>
+where
+    M: Module,
+{
+    let param_names = param_names
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
+    validate_param_names(&param_names)?;
+    if param_names.len() > 4 {
+        return Err(CraneliftJitError::UnsupportedExpr(format!(
+            "Cranelift f64 helper supports at most 4 runtime inputs, got {}",
+            param_names.len()
+        )));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature
+        .params
+        .extend(param_names.iter().map(|_| AbiParam::new(types::F64)));
+    signature.returns.push(AbiParam::new(types::F64));
+
+    let entry_name = format!("{symbol_prefix}_entry");
+    let entry = module
+        .declare_function(&entry_name, Linkage::Local, &signature)
+        .map_err(jit_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
+
+    let captured_bindings = f64_bindings(&request.bindings)?;
+    let mut bindings = captured_bindings.clone();
+    let mut stats = PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+        let params = builder.block_params(block);
+        for (name, value) in param_names.iter().zip(params.iter().copied()) {
+            bindings.insert(name.clone(), LoweredF64Binding::Value(value));
+        }
+        let value = lower_f64_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        builder.ins().return_(&[value]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module.clear_context(&mut ctx);
+    let batch = define_f64_rows_batch_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+    )?;
+
+    Ok(DefinedPureFloatInputs {
+        entry,
+        batch,
         param_names,
         stats,
     })
@@ -2346,12 +2406,16 @@ where
     Ok(func_id)
 }
 
-fn compile_f32_rows_batch_function(
-    module: &mut JITModule,
+fn define_f32_rows_batch_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredF32Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(
@@ -2369,7 +2433,7 @@ fn compile_f32_rows_batch_function(
     ]);
 
     let func_id = module
-        .declare_function("arcweft_pure_f32_rows_batch", Linkage::Local, &signature)
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -2430,12 +2494,16 @@ fn compile_f32_rows_batch_function(
     Ok(func_id)
 }
 
-fn compile_f64_rows_batch_function(
-    module: &mut JITModule,
+fn define_f64_rows_batch_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredF64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(
@@ -2453,7 +2521,7 @@ fn compile_f64_rows_batch_function(
     ]);
 
     let func_id = module
-        .declare_function("arcweft_pure_f64_rows_batch", Linkage::Local, &signature)
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -5129,6 +5197,98 @@ mod tests {
             native_call::call_u64_rows_batch_sum(batch_sum_code, &[3, 4, 2, 99, 7, 1], 2, 3),
             Some(241)
         );
+    }
+
+    #[test]
+    fn cranelift_define_f32_with_inputs_defines_module_functions_without_jit_wrapper() {
+        let request = PureFunctionRequest::new(
+            "score_define_f32_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::f32(0.5))),
+                }),
+            },
+            [f32_binding("base", 1.0), f32_binding("scale", 1.0)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined = define_f32_with_inputs(
+            &mut module,
+            "arcweft_test_defined_f32",
+            &request,
+            ["base", "scale"],
+        )
+        .expect("f32 helper is defined into the module");
+
+        assert_eq!(defined.param_names, ["base", "scale"]);
+        assert_eq!(defined.stats.evaluated_binary_ops, 2);
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let entry_code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let caller = native_call::F32InputCaller::from_code(entry_code, defined.param_names.len())
+            .expect("defined entry has a supported native signature");
+
+        assert_eq!(caller.call(&[2.0, 3.0]), Some(7.0));
+        let mut out = [0.0; 3];
+        assert!(native_call::call_f32_rows_batch(
+            batch_code,
+            &[2.0, 3.0, 4.0, 1.5, -2.0, 0.25],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [7.0, 8.0, -1.5]);
+    }
+
+    #[test]
+    fn cranelift_define_f64_with_inputs_defines_module_functions_without_jit_wrapper() {
+        let request = PureFunctionRequest::new(
+            "score_define_f64_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::f64(0.5))),
+                }),
+            },
+            [f64_binding("base", 1.0), f64_binding("scale", 1.0)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined = define_f64_with_inputs(
+            &mut module,
+            "arcweft_test_defined_f64",
+            &request,
+            ["base", "scale"],
+        )
+        .expect("f64 helper is defined into the module");
+
+        assert_eq!(defined.param_names, ["base", "scale"]);
+        assert_eq!(defined.stats.evaluated_binary_ops, 2);
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let entry_code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let caller = native_call::F64InputCaller::from_code(entry_code, defined.param_names.len())
+            .expect("defined entry has a supported native signature");
+
+        assert_eq!(caller.call(&[2.0, 3.0]), Some(7.0));
+        let mut out = [0.0; 3];
+        assert!(native_call::call_f64_rows_batch(
+            batch_code,
+            &[2.0, 3.0, 4.0, 1.5, -2.0, 0.25],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [7.0, 8.0, -1.5]);
     }
 
     #[test]
