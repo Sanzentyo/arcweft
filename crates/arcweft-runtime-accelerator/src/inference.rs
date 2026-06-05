@@ -802,6 +802,7 @@ where
     A: InferenceAdapter,
 {
     graph: InferenceGraph,
+    tensor_uses: Vec<usize>,
     adapter: A,
 }
 
@@ -810,7 +811,12 @@ where
     A: InferenceAdapter,
 {
     pub fn new(graph: InferenceGraph, adapter: A) -> Self {
-        Self { graph, adapter }
+        let tensor_uses = graph.tensor_use_counts();
+        Self {
+            graph,
+            tensor_uses,
+            adapter,
+        }
     }
 
     pub fn graph(&self) -> &InferenceGraph {
@@ -845,14 +851,19 @@ where
     where
         I: IntoIterator<Item = (InferenceTensorId, &'a DenseTensorF32)>,
     {
+        let Self {
+            graph,
+            tensor_uses,
+            adapter,
+        } = self;
         let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
-        let mut values = vec![None; self.graph.tensors.len()];
-        for (index, spec) in self.graph.tensors.iter().enumerate() {
+        let mut values = vec![None; graph.tensors.len()];
+        for (index, spec) in graph.tensors.iter().enumerate() {
             if let TensorSpec::Constant { tensor, .. } = spec {
                 values[index] = Some(InferenceRunValue::BorrowedTensor(tensor));
             }
         }
-        for input in self.graph.inputs() {
+        for input in graph.inputs() {
             let tensor = supplied
                 .get(&input.id())
                 .ok_or_else(|| InferenceError::MissingInput {
@@ -861,13 +872,11 @@ where
             validate_tensor_shape(tensor, input.shape())?;
             values[input.id().index()] = Some(InferenceRunValue::BorrowedTensor(tensor));
         }
-        let tensor_uses = self.graph.tensor_use_counts();
-        let nodes = self.graph.nodes.clone();
-        let adapter = &mut self.adapter;
+        let nodes = &graph.nodes;
         let mut index = 0_usize;
         while let Some(node) = nodes.get(index) {
             if let Some(next_node) = nodes.get(index + 1)
-                && Self::can_fuse_matmul_bias_add(node, next_node, &tensor_uses)
+                && Self::can_fuse_matmul_bias_add(node, next_node, tensor_uses)
             {
                 let value = Self::eval_matmul_bias_add(adapter, node, next_node, &values)?;
                 values[next_node.output.index()] = Some(value);
@@ -879,7 +888,7 @@ where
             values[node.output.index()] = Some(value);
             index += 1;
         }
-        self.graph
+        graph
             .outputs
             .iter()
             .map(|id| {
