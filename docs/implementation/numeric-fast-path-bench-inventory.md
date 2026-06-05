@@ -94,7 +94,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 
 Per-fixture convenience targets now also exist for `just bench-016` through
 `just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
-through `just bench-032`. Those targets request `--pure-backend jit`.
+through `just bench-033`. Those targets request `--pure-backend jit`.
 
 ## Verification Inventory
 
@@ -138,6 +138,11 @@ wide-integer literals and captured constants by building the `i128` value from
 two 64-bit halves with `iconcat`. The VM dense fixtures cover exact-width
 storage, length, and integer reduction, while the pure helper fixtures cover
 batched helper execution and backend selection counters.
+
+The Auto backend now treats every native JIT entry width as a deferred JIT
+candidate after the initial typed AOT plan. Large flat batches can promote
+`i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, and `f64`
+helpers to native JIT without routing through the VM fallback.
 
 The mixed `033_mixed_for_iter_pure_jit.arcw` fixture guards the scalar/batch
 boundary: exact-width helper calls inside both `.map` and `for` loops stay on

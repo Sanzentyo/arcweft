@@ -4561,20 +4561,23 @@ fn helper_has_only_f64_inputs(helper: &RuntimePureHelper) -> bool {
             .all(|ty| matches!(ty, RuntimePureInputType::F64))
 }
 
-fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usize {
-    if (helper_has_only_i8_inputs(helper)
+fn helper_has_native_jit_entry(helper: &RuntimePureHelper) -> bool {
+    helper_has_only_i8_inputs(helper)
         || helper_has_only_i16_inputs(helper)
         || helper_has_only_i128_inputs(helper)
         || helper_has_only_i32_inputs(helper)
+        || helper_has_only_i64_inputs(helper)
         || helper_has_only_u8_inputs(helper)
         || helper_has_only_u16_inputs(helper)
         || helper_has_only_u32_inputs(helper)
         || helper_has_only_u64_inputs(helper)
         || helper_has_only_u128_inputs(helper)
         || helper_has_only_f32_inputs(helper)
-        || helper_has_only_f64_inputs(helper))
-        && rows >= 64
-    {
+        || helper_has_only_f64_inputs(helper)
+}
+
+fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usize {
+    if helper_has_native_jit_entry(helper) && rows >= 64 {
         0
     } else {
         AUTO_JIT_FLAT_BATCH_WORK_UNITS.max(1)
@@ -4855,12 +4858,7 @@ fn compile_auto_scalar(
     match compile_aot_scalar(request, helper, input_type, output_type, stats) {
         Some(RuntimePureCacheEntry::Aot(aot)) => {
             stats.auto_aot_selected += 1;
-            let native_jit_candidate = native_jit_enabled()
-                && (helper_has_only_i32_inputs(helper)
-                    || helper_has_only_u32_inputs(helper)
-                    || helper_has_only_u64_inputs(helper)
-                    || helper_has_only_f32_inputs(helper)
-                    || helper_has_only_f64_inputs(helper));
+            let native_jit_candidate = native_jit_enabled() && helper_has_native_jit_entry(helper);
             if native_jit_candidate {
                 stats.auto_jit_deferred += 1;
             }
@@ -7212,6 +7210,177 @@ mod tests {
         assert_eq!(accelerator.stats().aot_calls, 0);
         assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
         assert_eq!(accelerator.summary().jit, 1);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    fn exact_int_add_helper(
+        name: &str,
+        input_type: RuntimePureInputType,
+        output_type: RuntimePureOutputType,
+        one: RuntimeValue,
+    ) -> RuntimePureHelper {
+        RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: name.to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![input_type, input_type],
+            output_type,
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(one)),
+                }),
+            },
+            scalar_eval_supported: true,
+            origin: RuntimePureHelperOrigin::Annotated,
+        }
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_promotes_small_integer_flat_batches_to_native_jit() {
+        let helper = exact_int_add_helper(
+            "i8_auto_jit",
+            RuntimePureInputType::I8,
+            RuntimePureOutputType::I8,
+            RuntimeValue::i8(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..64).flat_map(|value| [value, 1]).collect::<Vec<i8>>();
+        let mut out = [0; 64];
+        accelerator
+            .call_i8_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large i8 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[63], 65);
+        assert_eq!(accelerator.stats().jit_calls, 64);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+
+        let helper = exact_int_add_helper(
+            "i16_auto_jit",
+            RuntimePureInputType::I16,
+            RuntimePureOutputType::I16,
+            RuntimeValue::i16(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<i16>>();
+        let mut out = [0; 128];
+        accelerator
+            .call_i16_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large i16 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[127], 129);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+
+        let helper = exact_int_add_helper(
+            "u8_auto_jit",
+            RuntimePureInputType::U8,
+            RuntimePureOutputType::U8,
+            RuntimeValue::u8(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u8>>();
+        let mut out = [0; 128];
+        accelerator
+            .call_u8_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large u8 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[127], 129);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+
+        let helper = exact_int_add_helper(
+            "u16_auto_jit",
+            RuntimePureInputType::U16,
+            RuntimePureOutputType::U16,
+            RuntimeValue::u16(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u16>>();
+        let mut out = [0; 128];
+        accelerator
+            .call_u16_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large u16 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[127], 129);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+    }
+
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    #[test]
+    fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
+        let helper = exact_int_add_helper(
+            "i128_auto_jit",
+            RuntimePureInputType::I128,
+            RuntimePureOutputType::I128,
+            RuntimeValue::i128(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128)
+            .flat_map(|value| [i128::from(value), 1])
+            .collect::<Vec<i128>>();
+        let mut out = [0; 128];
+        accelerator
+            .call_i128_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large i128 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[127], 129);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+
+        let helper = exact_int_add_helper(
+            "u128_auto_jit",
+            RuntimePureInputType::U128,
+            RuntimePureOutputType::U128,
+            RuntimeValue::u128(1),
+        );
+        let mut accelerator = RuntimePureAccelerator::new(
+            RuntimePureBackendMode::Auto,
+            std::slice::from_ref(&helper),
+        );
+        let flat_inputs = (0..128)
+            .flat_map(|value: u16| [u128::from(value), 1])
+            .collect::<Vec<u128>>();
+        let mut out = [0; 128];
+        accelerator
+            .call_u128_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("auto promotes large u128 flat batch");
+        assert_eq!(out[0], 2);
+        assert_eq!(out[127], 129);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
     }
 
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
