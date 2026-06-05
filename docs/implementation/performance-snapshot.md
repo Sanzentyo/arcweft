@@ -866,7 +866,11 @@ flow-side adapter calls can reuse resident buffers without requiring parser or
 Core intrinsics. The default Rust-side `AcceleratedInferenceAdapter` also owns
 that prepared cache, so `InferenceSession` graph fusion for private
 `matmul -> bias_add` pairs can reuse the same resident buffers across repeated
-session runs.
+session runs. The standalone `math_bench` example now also accepts
+`--op inference-matmul-bias-add`; without `--reuse` it measures cold
+`InferenceSession` construction plus execution for each sample, while
+`--reuse` measures repeated execution through one session and the adapter-owned
+prepared GPU cache.
 
 The checked tests include a small MNIST-shaped MLP forward graph with input
 shape `1x28x28`, flattening to `1x784`, two dense layers, ReLU, and `argmax`;
@@ -887,6 +891,8 @@ just bench-math-matmul-bias-wgpu
 just bench-math-matmul-bias-reuse
 just bench-math-matmul-bias-reuse-update
 just bench-math-matmul-bias-reuse-capacity
+just bench-math-inference-matmul-bias-reuse
+just bench-math-inference-matmul-bias-reuse-update
 just bench-math-matrix-add
 just bench-math-tensor-add
 just bench-024
@@ -924,6 +930,9 @@ Representative release results on the local machine:
 | 128x128 matmul_f32 | wgpu prepared | measured | 135800 | 4 buffer creations, 16 buffer reuse hits, 3 staging reuse hits |
 | 128x128 matmul_f32 | wgpu prepared update | measured | 283000 | `--reuse-update-inputs`, one initial buffer allocation, four upload+dispatch passes, `gpu_buffer_reuse_hits = 28` |
 | 128x128 matmul_f32 | wgpu prepared capacity | measured | 204500 | `--reuse-capacity`, capacity 256, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
+| 128x128 inference matmul_bias_add_f32 | wgpu cold session | measured | 512426000 | `--op inference-matmul-bias-add`, no `--reuse`, each sample creates a session/adapter and prepares GPU buffers |
+| 128x128 inference matmul_bias_add_f32 | wgpu reused session | measured | 221200 | `--reuse`, one session and prepared adapter cache, `gpu_buffer_creations = 7`, `gpu_buffer_reuse_hits = 47`, `gpu_reused_dispatches = 6` |
+| 128x128 inference matmul_bias_add_f32 | wgpu reused session input update | measured | 446200 | `--reuse-update-inputs`, same prepared buffers with repeated uploads, `gpu_buffer_creations = 7`, `gpu_buffer_reuse_hits = 72`, `gpu_reused_dispatches = 6` |
 | 128x128 matmul_f32 | auto | measured | 43700 | selected ndarray |
 | 256x256 matmul_f32 | ndarray | measured | 404400 | CPU backend |
 | 256x256 matmul_f32 | wgpu | measured | 444300 | still not consistently faster |

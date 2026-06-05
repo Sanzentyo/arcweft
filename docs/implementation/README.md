@@ -315,6 +315,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `AcceleratedInferenceAdapter` used by Rust-side `InferenceSession` now owns
   the same typed prepared matmul-bias cache, so private `matmul -> bias_add`
   graph fusion also reuses resident wgpu buffers across repeated session runs.
+  `math_bench --op inference-matmul-bias-add` measures this adapter-boundary
+  path directly: without `--reuse` it builds cold sessions for each sample,
+  while `--reuse` keeps the same `InferenceSession` and prepared GPU cache.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

@@ -1,4 +1,8 @@
 use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
+use arcweft_runtime_accelerator::inference::{
+    AcceleratedInferenceAdapter, InferenceGraph, InferenceSession, InferenceShape,
+    InferenceTensorId,
+};
 use arcweft_runtime_accelerator::math::{
     RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAutoSelectionReason,
     RuntimeMathBackend, RuntimeMathStats,
@@ -32,6 +36,9 @@ fn main() {
 }
 
 fn run_backend(backend: RuntimeMathBackend, options: &BenchOptions) -> BackendReport {
+    if matches!(options.op, BenchOp::InferenceMatmulBiasAdd) {
+        return run_inference_matmul_bias_add(backend, options);
+    }
     let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
         backend,
         wgpu_min_elements: options.wgpu_min_elements,
@@ -39,6 +46,7 @@ fn run_backend(backend: RuntimeMathBackend, options: &BenchOptions) -> BackendRe
     match options.op {
         BenchOp::Matmul => run_matmul(&mut accelerator, backend, options),
         BenchOp::MatmulBiasAdd => run_matmul_bias_add(&mut accelerator, backend, options),
+        BenchOp::InferenceMatmulBiasAdd => unreachable!("inference op is handled before math"),
         BenchOp::MatrixAdd => run_matrix_add(&mut accelerator, backend, options),
         BenchOp::TensorAdd => run_tensor_add(&mut accelerator, backend, options),
     }
@@ -128,6 +136,123 @@ fn run_matmul_bias_add(
         samples.push(elapsed);
     }
     BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_inference_matmul_bias_add(
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+) -> BackendReport {
+    if options.reuse_capacity {
+        return BackendReport::skipped_or_failed(
+            backend,
+            "inference graph shape is fixed; capacity reuse belongs to prepared math ops"
+                .to_owned(),
+        );
+    }
+    let rhs = matrix_fixture(options.size, options.size, 0.25);
+    let bias = bias_fixture(options.size);
+    let (graph, input_id) = match inference_matmul_bias_graph(options.size, &rhs, &bias) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::failed(backend, error),
+    };
+    let cases = inference_matmul_bias_cases(
+        options.size,
+        &rhs,
+        &bias,
+        options.warmup + options.iterations,
+        options.reuse_update_inputs,
+    );
+    if options.reuse {
+        return run_reused_inference_session(backend, options, graph, input_id, &cases);
+    }
+    run_cold_inference_sessions(backend, options, &graph, input_id, &cases)
+}
+
+fn run_reused_inference_session(
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+    graph: InferenceGraph,
+    input_id: InferenceTensorId,
+    cases: &[InferenceMatmulBiasCase],
+) -> BackendReport {
+    let mut session = inference_session(backend, options, graph);
+    for case in cases.iter().take(options.warmup) {
+        if let Err(error) = run_inference_case(&mut session, input_id, case) {
+            return BackendReport::skipped_or_failed(backend, error);
+        }
+    }
+    let mut samples = Vec::with_capacity(options.iterations);
+    for case in cases.iter().skip(options.warmup).take(options.iterations) {
+        let started = Instant::now();
+        if let Err(error) = run_inference_case(&mut session, input_id, case) {
+            return BackendReport::skipped_or_failed(backend, error);
+        }
+        samples.push(started.elapsed().as_nanos());
+    }
+    BackendReport::measured(backend, samples, session.adapter().accelerator().stats())
+}
+
+fn run_cold_inference_sessions(
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+    graph: &InferenceGraph,
+    input_id: InferenceTensorId,
+    cases: &[InferenceMatmulBiasCase],
+) -> BackendReport {
+    let mut stats = RuntimeMathStats::default();
+    for case in cases.iter().take(options.warmup) {
+        let mut session = inference_session(backend, options, graph.clone());
+        if let Err(error) = run_inference_case(&mut session, input_id, case) {
+            return BackendReport::skipped_or_failed(backend, error);
+        }
+        add_math_stats(&mut stats, session.adapter().accelerator().stats());
+    }
+    let mut samples = Vec::with_capacity(options.iterations);
+    for case in cases.iter().skip(options.warmup).take(options.iterations) {
+        let mut session = inference_session(backend, options, graph.clone());
+        let started = Instant::now();
+        if let Err(error) = run_inference_case(&mut session, input_id, case) {
+            return BackendReport::skipped_or_failed(backend, error);
+        }
+        samples.push(started.elapsed().as_nanos());
+        add_math_stats(&mut stats, session.adapter().accelerator().stats());
+    }
+    BackendReport::measured(backend, samples, stats)
+}
+
+fn inference_session(
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+    graph: InferenceGraph,
+) -> InferenceSession<AcceleratedInferenceAdapter> {
+    InferenceSession::new(
+        graph,
+        AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+            RuntimeMathAcceleratorConfig {
+                backend,
+                wgpu_min_elements: options.wgpu_min_elements,
+            },
+        )),
+    )
+}
+
+fn run_inference_case(
+    session: &mut InferenceSession<AcceleratedInferenceAdapter>,
+    input_id: InferenceTensorId,
+    case: &InferenceMatmulBiasCase,
+) -> Result<(), String> {
+    let output = session
+        .run([(input_id, case.input.clone())])
+        .map_err(|error| error.to_string())?;
+    let tensor = output
+        .first()
+        .and_then(arcweft_runtime_accelerator::inference::InferenceValue::as_tensor)
+        .ok_or_else(|| "inference output is not a tensor".to_owned())?;
+    if approx_eq(tensor.values(), case.reference.values(), 1.0e-3) {
+        Ok(())
+    } else {
+        Err("inference matmul-bias result mismatch".to_owned())
+    }
 }
 
 fn run_prepared_matrix_matmul_bias_add(
@@ -672,6 +797,69 @@ fn matmul_bias_update_cases(
         .collect()
 }
 
+struct InferenceMatmulBiasCase {
+    input: DenseTensorF32,
+    reference: DenseMatrixF32,
+}
+
+fn inference_matmul_bias_graph(
+    size: usize,
+    rhs: &DenseMatrixF32,
+    bias: &DenseTensorF32,
+) -> Result<(InferenceGraph, InferenceTensorId), String> {
+    let mut builder = InferenceGraph::builder();
+    let input_id = builder.add_input(
+        "x",
+        InferenceShape::matrix(size, size).map_err(|error| error.to_string())?,
+    );
+    let weights = builder
+        .add_constant("w", DenseTensorF32::from_matrix(rhs.clone()))
+        .map_err(|error| error.to_string())?;
+    let bias = builder
+        .add_constant("b", bias.clone())
+        .map_err(|error| error.to_string())?;
+    let logits = builder
+        .add_matmul(input_id, weights)
+        .map_err(|error| error.to_string())?;
+    let logits = builder
+        .add_bias_add(logits, bias)
+        .map_err(|error| error.to_string())?;
+    builder
+        .set_outputs([logits])
+        .map_err(|error| error.to_string())?;
+    builder
+        .build()
+        .map(|graph| (graph, input_id))
+        .map_err(|error| error.to_string())
+}
+
+fn inference_matmul_bias_cases(
+    size: usize,
+    rhs: &DenseMatrixF32,
+    bias: &DenseTensorF32,
+    count: usize,
+    update_inputs: bool,
+) -> Vec<InferenceMatmulBiasCase> {
+    (0..count)
+        .map(|index| {
+            let scale = if update_inputs {
+                1.0 + small_f32(index % 7) * 0.03125
+            } else {
+                1.0
+            };
+            let input = matrix_fixture(size, size, scale);
+            let mut reference = input
+                .matmul_scalar(rhs)
+                .expect("inference matmul-bias fixture has compatible shape");
+            apply_bias_to_reference(&mut reference, bias);
+            InferenceMatmulBiasCase {
+                input: DenseTensorF32::from_matrix(input),
+                reference,
+            }
+        })
+        .collect()
+}
+
 fn tensor_update_cases(
     elements: usize,
     count: usize,
@@ -700,6 +888,7 @@ fn approx_eq(lhs: &[f32], rhs: &[f32], epsilon: f32) -> bool {
 enum BenchOp {
     Matmul,
     MatmulBiasAdd,
+    InferenceMatmulBiasAdd,
     MatrixAdd,
     TensorAdd,
 }
@@ -709,6 +898,7 @@ impl BenchOp {
         match self {
             Self::Matmul => "matmul_f32",
             Self::MatmulBiasAdd => "matmul_bias_add_f32",
+            Self::InferenceMatmulBiasAdd => "inference_matmul_bias_add_f32",
             Self::MatrixAdd => "matrix_add_f32",
             Self::TensorAdd => "tensor_add_f32",
         }
@@ -765,6 +955,9 @@ impl BenchOptions {
                             | "matmul_bias_add"
                             | "matmul_bias_add_f32",
                         ) => BenchOp::MatmulBiasAdd,
+                        Some("inference-matmul-bias-add" | "inference_matmul_bias_add_f32") => {
+                            BenchOp::InferenceMatmulBiasAdd
+                        }
                         Some("matrix-add" | "matrix_add" | "matrix_add_f32") => BenchOp::MatrixAdd,
                         Some("tensor-add" | "tensor_add" | "tensor_add_f32") => BenchOp::TensorAdd,
                         _ => BenchOp::Matmul,
@@ -839,7 +1032,7 @@ struct BackendReport {
     median_ns: Option<u128>,
     min_ns: Option<u128>,
     max_ns: Option<u128>,
-    stats: Option<arcweft_runtime_accelerator::math::RuntimeMathStats>,
+    stats: Option<RuntimeMathStats>,
     diagnostic: Option<String>,
 }
 
@@ -868,12 +1061,19 @@ impl MathBenchReport {
             reuse: options.reuse,
             reuse_update_inputs: options.reuse_update_inputs,
             reuse_capacity: options.reuse_capacity,
-            capacity_size: options.reuse_capacity.then(|| match options.op {
-                BenchOp::TensorAdd => options.tensor_capacity_len(),
-                BenchOp::Matmul | BenchOp::MatmulBiasAdd | BenchOp::MatrixAdd => {
-                    options.matrix_capacity_size()
-                }
-            }),
+            capacity_size: if options.reuse_capacity
+                && !matches!(options.op, BenchOp::InferenceMatmulBiasAdd)
+            {
+                Some(match options.op {
+                    BenchOp::TensorAdd => options.tensor_capacity_len(),
+                    BenchOp::Matmul | BenchOp::MatmulBiasAdd | BenchOp::MatrixAdd => {
+                        options.matrix_capacity_size()
+                    }
+                    BenchOp::InferenceMatmulBiasAdd => unreachable!("filtered above"),
+                })
+            } else {
+                None
+            },
             results: results.into_iter().map(BackendReport::into_json).collect(),
         }
     }
@@ -939,7 +1139,7 @@ impl BackendReport {
     fn measured(
         backend: RuntimeMathBackend,
         mut samples: Vec<u128>,
-        stats: arcweft_runtime_accelerator::math::RuntimeMathStats,
+        stats: RuntimeMathStats,
     ) -> Self {
         samples.sort_unstable();
         Self {
@@ -993,6 +1193,26 @@ impl BackendReport {
             diagnostic: self.diagnostic,
         }
     }
+}
+
+fn add_math_stats(total: &mut RuntimeMathStats, sample: RuntimeMathStats) {
+    total.scalar_calls += sample.scalar_calls;
+    total.glam_calls += sample.glam_calls;
+    total.ndarray_calls += sample.ndarray_calls;
+    total.wgpu_calls += sample.wgpu_calls;
+    total.fused_matmul_bias_add_calls += sample.fused_matmul_bias_add_calls;
+    total.fallback_calls += sample.fallback_calls;
+    total.bytes_borrowed += sample.bytes_borrowed;
+    total.bytes_copied += sample.bytes_copied;
+    total.bytes_uploaded += sample.bytes_uploaded;
+    total.bytes_downloaded += sample.bytes_downloaded;
+    total.gpu_buffer_creations += sample.gpu_buffer_creations;
+    total.gpu_buffer_reuse_hits += sample.gpu_buffer_reuse_hits;
+    total.gpu_staging_buffer_creations += sample.gpu_staging_buffer_creations;
+    total.gpu_staging_buffer_reuse_hits += sample.gpu_staging_buffer_reuse_hits;
+    total.gpu_reused_dispatches += sample.gpu_reused_dispatches;
+    total.last_backend = sample.last_backend.or(total.last_backend);
+    total.last_auto_reason = sample.last_auto_reason.or(total.last_auto_reason);
 }
 
 const fn backend_label(value: RuntimeMathBackend) -> &'static str {
@@ -1148,5 +1368,41 @@ mod tests {
         assert!(matches!(options.op, BenchOp::MatmulBiasAdd));
         assert!(json.contains("\"op\":\"matmul_bias_add_f32\""));
         assert!(json.contains("\"fused_matmul_bias_add_calls\":1"));
+    }
+
+    #[test]
+    fn parse_inference_matmul_bias_add_op_reports_reused_session() {
+        let args = [
+            "--backend".to_owned(),
+            "wgpu".to_owned(),
+            "--op".to_owned(),
+            "inference-matmul-bias-add".to_owned(),
+            "--reuse".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::measured(
+                RuntimeMathBackend::Wgpu,
+                vec![100],
+                RuntimeMathStats {
+                    wgpu_calls: 1,
+                    fused_matmul_bias_add_calls: 1,
+                    gpu_buffer_reuse_hits: 7,
+                    gpu_reused_dispatches: 1,
+                    last_backend: Some(RuntimeMathBackend::Wgpu),
+                    ..RuntimeMathStats::default()
+                },
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(matches!(options.op, BenchOp::InferenceMatmulBiasAdd));
+        assert!(options.reuse);
+        assert!(json.contains("\"op\":\"inference_matmul_bias_add_f32\""));
+        assert!(json.contains("\"reuse\":true"));
+        assert!(json.contains("\"gpu_reused_dispatches\":1"));
+        assert!(!json.contains("\"capacity_size\":0"));
     }
 }
