@@ -318,10 +318,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `math_bench --op inference-matmul-bias-add` measures this adapter-boundary
   path directly: without `--reuse` it builds cold sessions for each sample,
   while `--reuse` keeps the same `InferenceSession` and prepared GPU cache.
-  `InferenceSession::run` now keeps graph constants and supplied input tensors
-  borrowed in the per-run value table until an op produces an owned output, so
-  adapter execution no longer requires an extra input/constant tensor clone
-  inside the session.
+  `InferenceSession::run_borrowed` is the implementation path for graph
+  execution: graph constants and supplied input tensors stay borrowed in the
+  per-run value table until an op produces an owned output, so adapter execution
+  no longer requires an extra input/constant tensor clone inside the session.
+  The owned `run` API delegates to the borrowed path after collecting its input
+  tensors, while callers that keep tensors resident can call `run_borrowed`
+  directly.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

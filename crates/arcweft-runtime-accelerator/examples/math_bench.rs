@@ -242,7 +242,7 @@ fn run_inference_case(
     case: &InferenceMatmulBiasCase,
 ) -> Result<(), String> {
     let output = session
-        .run([(input_id, case.input.clone())])
+        .run_borrowed([(input_id, &case.input)])
         .map_err(|error| error.to_string())?;
     let tensor = output
         .first()

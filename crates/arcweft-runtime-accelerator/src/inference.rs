@@ -830,6 +830,22 @@ where
         I: IntoIterator<Item = (InferenceTensorId, DenseTensorF32)>,
     {
         let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
+        self.run_borrowed(supplied.iter().map(|(id, tensor)| (*id, tensor)))
+    }
+
+    /// Runs the graph with borrowed input tensors.
+    ///
+    /// Constants and supplied inputs stay borrowed in the per-run value table
+    /// until an operation produces an owned tensor, avoiding an extra
+    /// input/constant clone at the session boundary.
+    pub fn run_borrowed<'a, I>(
+        &'a mut self,
+        inputs: I,
+    ) -> Result<Vec<InferenceValue>, InferenceError>
+    where
+        I: IntoIterator<Item = (InferenceTensorId, &'a DenseTensorF32)>,
+    {
+        let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
         let mut values = vec![None; self.graph.tensors.len()];
         for (index, spec) in self.graph.tensors.iter().enumerate() {
             if let TensorSpec::Constant { tensor, .. } = spec {
@@ -1497,6 +1513,33 @@ mod tests {
         assert_eq!(probabilities.shape().dims(), &[1, 2]);
         assert_eq!(class, &[0]);
         assert!((probabilities.values().iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn session_accepts_borrowed_inputs_without_consuming_tensors() {
+        let mut builder = InferenceGraph::builder();
+        let input = builder.add_input("x", InferenceShape::matrix(1, 2).unwrap());
+        let bias = builder
+            .add_constant("b", DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap())
+            .unwrap();
+        let output = builder.add_bias_add(input, bias).unwrap();
+        builder.set_outputs([output]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut session = InferenceSession::new(
+            graph,
+            AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                RuntimeMathAcceleratorConfig {
+                    backend: RuntimeMathBackend::Scalar,
+                    ..RuntimeMathAcceleratorConfig::default()
+                },
+            )),
+        );
+        let input_tensor = DenseTensorF32::new(vec![1, 2], vec![1.0, 2.0]).unwrap();
+
+        let out = session.run_borrowed([(input, &input_tensor)]).unwrap();
+
+        assert_eq!(out[0].as_tensor().unwrap().values(), &[1.5, 1.75]);
+        assert_eq!(input_tensor.values(), &[1.0, 2.0]);
     }
 
     #[test]
