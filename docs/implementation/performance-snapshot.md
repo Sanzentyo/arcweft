@@ -1007,9 +1007,10 @@ just bench-math-tensor-add-reuse
 just bench-math-tensor-add-reuse-update
 ```
 
-Standalone `math_bench` JSON includes `build_mode` so debug-assertion runs are
-not confused with optimized performance evidence. The representative standalone
-math rows below are from the release just recipes and report
+Standalone `math_bench` JSON includes `build_mode` and a path-free
+`host_system` summary so debug-assertion runs and different CPU/thread limits
+are not confused with optimized performance evidence. The representative
+standalone math rows below are from the release just recipes and report
 `build_mode = "optimized"`.
 
 Representative release results on the local machine:

@@ -1533,6 +1533,7 @@ struct JsonBool(bool);
 struct MathBenchReport {
     bench: &'static str,
     build_mode: &'static str,
+    host_system: HostSystemReport,
     op: &'static str,
     size: usize,
     iterations: usize,
@@ -1550,6 +1551,7 @@ impl MathBenchReport {
         Self {
             bench: "runtime_math",
             build_mode: build_mode_label(),
+            host_system: HostSystemReport::current(),
             op: options.op.label(),
             size: options.size,
             iterations: options.iterations,
@@ -1580,6 +1582,24 @@ impl MathBenchReport {
                 None
             },
             results: results.into_iter().map(BackendReport::into_json).collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HostSystemReport {
+    physical_cores: usize,
+    logical_threads: usize,
+    available_parallelism: usize,
+}
+
+impl HostSystemReport {
+    fn current() -> Self {
+        Self {
+            physical_cores: num_cpus::get_physical().max(1),
+            logical_threads: num_cpus::get().max(1),
+            available_parallelism: std::thread::available_parallelism()
+                .map_or(1, std::num::NonZero::get),
         }
     }
 }
@@ -1793,6 +1813,8 @@ mod tests {
         let json = serde_json::to_string(&report).expect("report serializes");
 
         assert!(json.contains("\"build_mode\":"));
+        assert!(json.contains("\"host_system\":"));
+        assert!(json.contains("\"available_parallelism\":"));
         assert!(json.contains("\"last_auto_reason\":\"matmul_4x4_glam\""));
         assert!(json.contains("\"fused_matmul_bias_add_calls\":0"));
         let windows_drive_prefixes = ["C:", "D:"].map(|drive| format!("{drive}\\"));

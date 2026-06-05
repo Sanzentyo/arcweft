@@ -332,6 +332,7 @@ dependencies = [
  "glam",
  "js-sys",
  "ndarray",
+ "num_cpus",
  "pollster",
  "rayon",
  "serde",

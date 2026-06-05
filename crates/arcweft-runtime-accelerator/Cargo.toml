@@ -16,6 +16,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+num_cpus.workspace = true
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift", optional = true }
 pollster = { workspace = true, optional = true }
