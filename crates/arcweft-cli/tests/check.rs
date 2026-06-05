@@ -4057,6 +4057,96 @@ fn bench_json_measures_checked_in_branching_iter_pure_jit_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard() {
+    let path =
+        workspace_root().join("tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("3")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("3")
+        .arg("--steps")
+        .arg("64")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in scalar for-loop pure JIT fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in scalar for pure JIT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "scalar for pure JIT bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    assert!(
+        json["source"].as_str().is_some_and(|source| {
+            source.ends_with("003_for_pure_jit.arcw") && !source.contains(':')
+        }),
+        "bench source should stay path-free and identify the fixture: {json}"
+    );
+    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(json["compiler"]["runtime_plan"]["pure_call_exprs"], 1);
+
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_observational_bench_timings(measurement);
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 16);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 16);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        256
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        0
+    );
+
+    let compile = &measurement["executor_stats"]["pure_compile"];
+    assert_eq!(compile["jit_attempts"], 1);
+    assert_eq!(compile["jit_successes"], 1);
+    assert_eq!(compile["jit_failures"], 0);
+    assert_eq!(compile["cache_misses"], 0);
+    assert!(
+        compile["cache_hits"]
+            .as_u64()
+            .is_some_and(|hits| hits >= 16),
+        "scalar JIT calls should stay cached after compile: {compile}"
+    );
+    assert!(
+        compile["compile_elapsed_ns"].as_u64().is_some(),
+        "JIT compile timing should remain observable but threshold-free: {compile}"
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture() {
     let path = workspace_root()
         .join("tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw");
@@ -7840,6 +7930,20 @@ fn assert_phase_timings_include(phases: &serde_json::Value, expected_names: &[&s
             "missing compiler phase `{expected}` in {phases:?}"
         );
     }
+}
+
+fn assert_observational_bench_timings(measurement: &serde_json::Value) {
+    assert!(
+        measurement["per_executed_op_ns"].as_u64().is_some(),
+        "bench JSON should expose observational per-op timing: {measurement}"
+    );
+    let elapsed = &measurement["elapsed_ns"];
+    assert!(
+        elapsed["min"].as_u64().is_some()
+            && elapsed["median"].as_u64().is_some()
+            && elapsed["max"].as_u64().is_some(),
+        "bench JSON should expose observational elapsed timing: {measurement}"
+    );
 }
 
 fn julia_is_available() -> bool {
