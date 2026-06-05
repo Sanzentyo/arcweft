@@ -292,8 +292,12 @@ cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --comm
 
 The command-level profile records status, stdout/stderr line counts, and
 median/min/max elapsed samples without embedding benchmark stdout or host paths.
-Use the ordinary `arcw bench --json` output for the detailed Arcweft runtime
-counters that explain a timing change.
+For these bench commands it also parses the nested benchmark JSON into an
+`arcweft_bench` summary, so command wall time can be compared with runtime
+median elapsed time, pure JIT/AOT/VM call counts, fallback counts, argument Vec
+allocation counts, and borrowed argument bytes. Use the ordinary
+`arcw bench --json` output only when the full compiler/runtime breakdown is
+needed.
 
 Checked-in thread scheduling bench:
 

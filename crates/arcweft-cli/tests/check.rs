@@ -105,6 +105,10 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_eq!(json["commands"][0]["elapsed_ns"], 0);
     assert_eq!(json["commands"][0]["timing"]["median"], 0);
     assert_eq!(
+        json["commands"][0]["arcweft_bench"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
         json["commands"][0]["warmup_samples"]
             .as_array()
             .unwrap()
@@ -112,6 +116,19 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         1
     );
     assert_eq!(json["commands"][0]["samples"].as_array().unwrap().len(), 2);
+    assert_toolchain_profile_workspace_commands(&json);
+    assert_toolchain_profile_bench_commands(&json);
+    assert_eq!(
+        json["commands"][6]["arcweft_bench"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        json["commands"][6]["samples"][0]["arcweft_bench"],
+        serde_json::Value::Null
+    );
+}
+
+fn assert_toolchain_profile_workspace_commands(json: &serde_json::Value) {
     assert_eq!(
         json["commands"][0]["argv"],
         serde_json::json!(["cargo", "fmt", "--all", "--check"])
@@ -140,7 +157,6 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         json["commands"][4]["argv"],
         serde_json::json!(["cargo", "test", "--workspace", "--no-run"])
     );
-    assert_toolchain_profile_bench_commands(&json);
 }
 
 fn assert_toolchain_profile_bench_commands(json: &serde_json::Value) {

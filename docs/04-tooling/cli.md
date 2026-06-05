@@ -469,7 +469,10 @@ lint, test build, and test regression tracking. It also accepts
 `--command bench-003` and `--command bench-009` for local path-free trend
 tracking of the scalar pure JIT for-loop fixture and the nonuniform flat-batch
 pure JIT fixture. Those commands keep benchmark stdout out of the profile JSON
-and record only command status, line counts, and timing samples.
+but parse the benchmark JSON into an `arcweft_bench` summary with source label,
+bench id, executor, runtime median elapsed time, per-op timing, JIT/AOT/VM call
+counts, fallback count, argument-vector allocation count, and borrowed argument
+bytes.
 
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
