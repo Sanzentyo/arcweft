@@ -4994,7 +4994,49 @@ fn bench_json_measures_checked_in_matrix_add_f64_math_fixture() {
 
 #[test]
 fn bench_json_measures_profile_inference_matmul_bias_adapter_fixture() {
-    let dir = temp_dir("bench-profile-inference-matmul-bias");
+    let scalar = profile_inference_matmul_bias_adapter_measurement("scalar");
+    assert_eq!(scalar["deterministic"]["math_calls_median"], 1);
+    assert_eq!(scalar["deterministic"]["math_accelerated_calls_median"], 0);
+    assert_eq!(
+        scalar["deterministic"]["pure_arg_bytes_borrowed_median"],
+        40
+    );
+    assert_eq!(
+        scalar["deterministic"]["pure_result_bytes_copied_median"],
+        16
+    );
+    assert_eq!(
+        scalar["executor_stats"]["math"]["fused_matmul_bias_add_calls"],
+        1
+    );
+    assert_eq!(scalar["executor_stats"]["math"]["scalar_calls"], 1);
+    assert_eq!(scalar["executor_stats"]["math"]["last_backend"], "scalar");
+
+    let ndarray = profile_inference_matmul_bias_adapter_measurement("ndarray");
+    assert_eq!(ndarray["deterministic"]["math_calls_median"], 1);
+    assert_eq!(ndarray["deterministic"]["math_accelerated_calls_median"], 1);
+    assert_eq!(
+        ndarray["deterministic"]["pure_arg_bytes_borrowed_median"],
+        40
+    );
+    assert_eq!(
+        ndarray["deterministic"]["pure_result_bytes_copied_median"],
+        16
+    );
+    assert_eq!(
+        ndarray["executor_stats"]["math"]["fused_matmul_bias_add_calls"],
+        1
+    );
+    assert_eq!(ndarray["executor_stats"]["math"]["ndarray_calls"], 1);
+    assert_eq!(ndarray["executor_stats"]["math"]["bytes_borrowed"], 40);
+    assert_eq!(ndarray["executor_stats"]["math"]["bytes_copied"], 0);
+    assert_eq!(ndarray["executor_stats"]["math"]["last_backend"], "ndarray");
+}
+
+fn profile_inference_matmul_bias_adapter_measurement(math_backend: &str) -> serde_json::Value {
+    let dir = temp_dir(&format!(
+        "bench-profile-inference-matmul-bias-{math_backend}"
+    ));
     let source = dir.join("infer_bench.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
@@ -5039,7 +5081,7 @@ adapter = "inference-tensor"
         .arg("--max-ops")
         .arg("8")
         .arg("--math-backend")
-        .arg("scalar")
+        .arg(math_backend)
         .arg("--value")
         .arg("lhs=tensor/f32/2x2:1,2,3,4")
         .arg("--value")
@@ -5067,29 +5109,7 @@ adapter = "inference-tensor"
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    let measurement = &json["benches"][0]["sections"][0]["measurement"];
-    assert_eq!(measurement["deterministic"]["math_calls_median"], 1);
-    assert_eq!(
-        measurement["deterministic"]["math_accelerated_calls_median"],
-        0
-    );
-    assert_eq!(
-        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        40
-    );
-    assert_eq!(
-        measurement["deterministic"]["pure_result_bytes_copied_median"],
-        16
-    );
-    assert_eq!(
-        measurement["executor_stats"]["math"]["fused_matmul_bias_add_calls"],
-        1
-    );
-    assert_eq!(measurement["executor_stats"]["math"]["scalar_calls"], 1);
-    assert_eq!(
-        measurement["executor_stats"]["math"]["last_backend"],
-        "scalar"
-    );
+    json["benches"][0]["sections"][0]["measurement"].clone()
 }
 
 #[test]

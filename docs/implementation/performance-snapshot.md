@@ -967,7 +967,13 @@ fused external `infer.matmul_bias_add_f32` call uses the native prepared wgpu
 matmul-bias cache when backend selection chooses wgpu, so flow-side adapter
 calls can reuse resident buffers without requiring parser or Core intrinsics.
 Bench JSON projects `fused_matmul_bias_add_calls` from runtime math stats,
-which makes this fused boundary observable in normal `arcw bench` output. The
+which makes this fused boundary observable in normal `arcw bench` output.
+Checked CLI regression coverage now runs the same profile-selected
+`infer.matmul_bias_add_f32` flow with both `--math-backend scalar` and
+`--math-backend ndarray`: scalar records one fused math call and zero
+accelerated calls, while explicit ndarray records one fused math call, one
+accelerated math call, borrowed tensor input bytes, and no workspace or
+temporary absolute paths in the JSON. The
 default Rust-side `AcceleratedInferenceAdapter` also owns that prepared cache,
 so `InferenceSession` graph fusion for private `matmul -> bias_add` pairs can
 reuse the same resident buffers across repeated session runs. The standalone

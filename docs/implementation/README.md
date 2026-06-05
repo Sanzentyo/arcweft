@@ -380,7 +380,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   graph fusion also reuses resident wgpu buffers across repeated session runs.
   Runtime executor JSON now includes `fused_matmul_bias_add_calls`, so CLI bench
   output can distinguish a fused adapter/math boundary from separate matmul and
-  bias-add execution.
+  bias-add execution. Profile-selected Arcweft flow benches now cover both the
+  scalar and explicit `ndarray` versions of `infer.matmul_bias_add_f32`,
+  confirming that adapter-contributed methods lower to the same math backend
+  selection boundary and report accelerated-call counters without embedding
+  workspace or temporary absolute paths.
   `math_bench --op inference-matmul-bias-add` measures this adapter-boundary
   path directly: without `--reuse` it builds cold sessions for each sample,
   while `--reuse` keeps the same `InferenceSession` and prepared GPU cache.
