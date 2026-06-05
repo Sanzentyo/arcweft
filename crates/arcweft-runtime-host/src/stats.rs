@@ -149,6 +149,9 @@ fn runtime_math_auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'st
         RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
             "elementwise_wgpu_work_threshold"
         }
+        RuntimeMathAutoSelectionReason::ElementwiseScalarCpuDefault => {
+            "elementwise_scalar_cpu_default"
+        }
         RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault => {
             "elementwise_ndarray_cpu_default"
         }

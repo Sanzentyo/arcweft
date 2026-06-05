@@ -68,6 +68,12 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         .arg("bench-003")
         .arg("--command")
         .arg("bench-009")
+        .arg("--command")
+        .arg("math-matmul-bias")
+        .arg("--command")
+        .arg("math-matrix-add")
+        .arg("--command")
+        .arg("math-tensor-add")
         .arg("--repeat")
         .arg("2")
         .arg("--warmup")
@@ -98,7 +104,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 8);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 11);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -118,12 +124,18 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_eq!(json["commands"][0]["samples"].as_array().unwrap().len(), 2);
     assert_toolchain_profile_workspace_commands(&json);
     assert_toolchain_profile_bench_commands(&json);
+    assert_toolchain_profile_math_commands(&json);
     assert_eq!(
         json["commands"][6]["arcweft_bench"],
         serde_json::Value::Null
     );
     assert_eq!(
         json["commands"][6]["samples"][0]["arcweft_bench"],
+        serde_json::Value::Null
+    );
+    assert_eq!(json["commands"][8]["math_bench"], serde_json::Value::Null);
+    assert_eq!(
+        json["commands"][8]["samples"][0]["math_bench"],
         serde_json::Value::Null
     );
 }
@@ -172,6 +184,24 @@ fn assert_toolchain_profile_bench_commands(json: &serde_json::Value) {
     assert_eq!(
         json["commands"][7]["argv"],
         toolchain_profile_bench_009_argv()
+    );
+}
+
+fn assert_toolchain_profile_math_commands(json: &serde_json::Value) {
+    assert_eq!(json["commands"][8]["label"], "math_bench_matmul_bias_add");
+    assert_eq!(
+        json["commands"][8]["argv"],
+        toolchain_profile_math_matmul_bias_argv()
+    );
+    assert_eq!(json["commands"][9]["label"], "math_bench_matrix_add");
+    assert_eq!(
+        json["commands"][9]["argv"],
+        toolchain_profile_math_matrix_add_argv()
+    );
+    assert_eq!(json["commands"][10]["label"], "math_bench_tensor_add");
+    assert_eq!(
+        json["commands"][10]["argv"],
+        toolchain_profile_math_tensor_add_argv()
     );
 }
 
@@ -228,6 +258,78 @@ fn toolchain_profile_bench_009_argv() -> serde_json::Value {
         "4",
         "--pure-batch-min-len",
         "64"
+    ])
+}
+
+fn toolchain_profile_math_matmul_bias_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matmul-bias-add",
+        "--size",
+        "64",
+        "--iterations",
+        "10",
+        "--warmup",
+        "2"
+    ])
+}
+
+fn toolchain_profile_math_matrix_add_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matrix-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1"
+    ])
+}
+
+fn toolchain_profile_math_tensor_add_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "tensor-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1"
     ])
 }
 

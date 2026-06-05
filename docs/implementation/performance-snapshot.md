@@ -299,6 +299,20 @@ allocation counts, and borrowed argument bytes. Use the ordinary
 `arcw bench --json` output only when the full compiler/runtime breakdown is
 needed.
 
+Runtime math trend commands use the same path-free profile wrapper:
+
+```bash
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat 3 --warmup 1 --json
+```
+
+These commands run standalone `math_bench` in release mode and summarize backend
+medians, speedups, call counters, data movement counters, and `auto` policy
+labels in a compact `math_bench` block. The current one-shot CPU `auto` policy is
+conservative for paths where local measurements show the general CPU backend can
+lose to a tight scalar loop: small `f32` matmul and matrix add fall back to
+scalar unless wgpu crosses the configured work threshold. Tensor add keeps the
+ndarray dynamic-view path because it remains competitive in local measurements.
+
 Checked-in thread scheduling bench:
 
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |

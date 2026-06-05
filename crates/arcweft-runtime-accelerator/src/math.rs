@@ -24,6 +24,7 @@ pub enum RuntimeMathAutoSelectionReason {
     MatmulScalarSmallWork,
     MatmulNdarrayCpuDefault,
     ElementwiseWgpuWorkThreshold,
+    ElementwiseScalarCpuDefault,
     ElementwiseNdarrayCpuDefault,
 }
 
@@ -273,7 +274,7 @@ impl RuntimeMathAccelerator {
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
         self.record_tensor_inputs(lhs, rhs);
-        let selection = self.select_elementwise_backend(lhs.values().len());
+        let selection = self.select_tensor_elementwise_backend(lhs.values().len());
         self.stats.last_auto_reason = selection.auto_reason;
         match selection.backend {
             RuntimeMathBackend::Scalar => self.tensor_add_scalar(lhs, rhs),
@@ -1437,6 +1438,14 @@ impl RuntimeMathAccelerator {
                     auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold),
                 }
             }
+            RuntimeMathBackend::Auto
+                if matmul_work_items(lhs, rhs) <= F32_SCALAR_MATMUL_MAX_WORK_ITEMS =>
+            {
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Scalar,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulScalarSmallWork),
+                }
+            }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
                 auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault),
@@ -1490,8 +1499,8 @@ impl RuntimeMathAccelerator {
                 }
             }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
-                backend: RuntimeMathBackend::Ndarray,
-                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault),
+                backend: RuntimeMathBackend::Scalar,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseScalarCpuDefault),
             },
             backend => RuntimeMathBackendSelection {
                 backend,
@@ -1502,6 +1511,27 @@ impl RuntimeMathAccelerator {
 
     fn select_elementwise_backend_f64(&self) -> RuntimeMathBackendSelection {
         match self.config.backend {
+            RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
+                backend: RuntimeMathBackend::Ndarray,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault),
+            },
+            backend => RuntimeMathBackendSelection {
+                backend,
+                auto_reason: None,
+            },
+        }
+    }
+
+    fn select_tensor_elementwise_backend(&self, elements: usize) -> RuntimeMathBackendSelection {
+        match self.config.backend {
+            RuntimeMathBackend::Auto
+                if wgpu_backend_enabled() && elements >= self.config.wgpu_min_elements =>
+            {
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Wgpu,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold),
+                }
+            }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
                 auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault),
@@ -2220,6 +2250,7 @@ fn matmul_work_items<T>(lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) -> usize {
         .saturating_mul(rhs.cols())
 }
 
+const F32_SCALAR_MATMUL_MAX_WORK_ITEMS: usize = 64 * 64 * 64;
 const F64_SCALAR_MATMUL_MAX_WORK_ITEMS: usize = 64 * 64 * 64;
 
 const fn wgpu_backend_enabled() -> bool {
@@ -7188,7 +7219,7 @@ mod tests {
 
     #[cfg(feature = "math-ndarray")]
     #[test]
-    fn auto_small_general_matmul_prefers_cpu_backend() {
+    fn auto_small_general_matmul_prefers_scalar_cpu_backend() {
         let lhs = DenseMatrixF32::new(8, 8, (0_u8..64).map(f32::from).collect()).unwrap();
         let rhs = DenseMatrixF32::new(
             8,
@@ -7203,11 +7234,11 @@ mod tests {
         assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
         assert_eq!(
             accelerator.stats().last_backend,
-            Some(RuntimeMathBackend::Ndarray)
+            Some(RuntimeMathBackend::Scalar)
         );
         assert_eq!(
             accelerator.stats().last_auto_reason,
-            Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault)
+            Some(RuntimeMathAutoSelectionReason::MatmulScalarSmallWork)
         );
         assert_eq!(accelerator.stats().wgpu_calls, 0);
     }
@@ -7239,7 +7270,7 @@ mod tests {
 
     #[cfg(feature = "math-ndarray")]
     #[test]
-    fn auto_elementwise_records_cpu_policy_reason() {
+    fn auto_elementwise_records_scalar_cpu_policy_reason() {
         let lhs = DenseMatrixF32::new(2, 2, vec![1.0; 4]).unwrap();
         let rhs = DenseMatrixF32::new(2, 2, vec![2.0; 4]).unwrap();
         let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
@@ -7247,6 +7278,26 @@ mod tests {
         let out = accelerator.matrix_add_f32(&lhs, &rhs).unwrap();
 
         assert_eq!(out.values(), &[3.0; 4]);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Scalar)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::ElementwiseScalarCpuDefault)
+        );
+    }
+
+    #[cfg(feature = "math-ndarray")]
+    #[test]
+    fn auto_tensor_elementwise_records_ndarray_cpu_policy_reason() {
+        let lhs = DenseTensorF32::new(vec![2, 2, 2], vec![1.0; 8]).unwrap();
+        let rhs = DenseTensorF32::new(vec![2, 2, 2], vec![2.0; 8]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
+
+        let out = accelerator.tensor_add_f32(&lhs, &rhs).unwrap();
+
+        assert_eq!(out.values(), &[3.0; 8]);
         assert_eq!(
             accelerator.stats().last_backend,
             Some(RuntimeMathBackend::Ndarray)
