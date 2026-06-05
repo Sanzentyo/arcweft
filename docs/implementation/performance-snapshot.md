@@ -828,10 +828,12 @@ output is observable or shared by another node. This gives native and browser
 adapters a single boundary for resident `matmul -> bias_add` execution without
 changing the graph's public op set. The default accelerated adapter now routes
 that hook through `RuntimeMathAccelerator::matmul_bias_add_f32`; scalar
-execution fuses the matmul and bias application loop, while Glam, ndarray, and
-wgpu keep the existing matmul backend selection and then apply the last-axis
-bias. `RuntimeMathStats` records `fused_matmul_bias_add_calls` so bench JSON can
-distinguish fused inference execution from separate matmul and bias-add calls.
+execution fuses the matmul and bias application loop, Glam and ndarray reuse
+their existing matmul backend and then apply the last-axis bias on CPU, and
+native wgpu now dispatches matmul plus bias-add in one command encoder without
+reading the intermediate matmul result back to the host. `RuntimeMathStats`
+records `fused_matmul_bias_add_calls` so bench JSON can distinguish fused
+inference execution from separate matmul and bias-add calls.
 `math_bench --op matmul-bias-add` now measures that fused path with the same
 backend selection report used by the existing matmul, matrix add, and tensor add
 probes. Native wgpu also supports prepared resident `matmul -> bias_add` through
@@ -842,7 +844,13 @@ same command encoder, and performs only one final readback. A small path-free sm
 (`--backend all --op matmul-bias-add --size 16 --iterations 3 --warmup 1`)
 reported measured scalar, ndarray, and Auto cases, skipped wgpu when
 `math-wgpu` was disabled, and recorded `fused_matmul_bias_add_calls = 4` for
-each measured backend. A native wgpu prepared run at size 128 with
+each measured backend. After native one-shot wgpu was switched to the same
+fused matmul plus bias-add command sequence, a 512x512 run with
+`--backend all --op matmul-bias-add --size 512 --iterations 3 --warmup 1`
+measured wgpu at 2385500 ns median and Auto at 3201200 ns median, both with
+`wgpu_calls = 4`, `fused_matmul_bias_add_calls = 4`, 28 GPU buffer creations,
+one staging buffer creation, and three staging buffer reuse hits; ndarray
+measured 4570600 ns median on the same run. A native wgpu prepared run at size 128 with
 `--iterations 3 --warmup 1` reported measured medians of 191700 ns for exact
 prepared reuse, 208500 ns for `--reuse-update-inputs`, and 257100 ns for
 `--reuse-capacity`; each run recorded `wgpu_calls = 4`,

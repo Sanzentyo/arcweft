@@ -321,8 +321,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   matmul output is also an observable graph output or is consumed by another
   node. `AcceleratedInferenceAdapter` routes that hook into
   `RuntimeMathAccelerator::matmul_bias_add_f32`; the scalar backend fuses
-  matmul and bias application in one loop, and runtime math stats record
-  `fused_matmul_bias_add_calls`. The standalone `math_bench` example accepts
+  matmul and bias application in one loop, and native wgpu uses the same fused
+  matmul plus bias-add compute passes for the one-shot value-returning path
+  without reading the intermediate matmul output back to the host. Runtime math
+  stats record `fused_matmul_bias_add_calls`. The standalone `math_bench` example accepts
   `--op matmul-bias-add`, so scalar/Glam/ndarray/wgpu/Auto selection and fused
   call counts are measurable through the same path-free JSON schema as the
   existing matmul and elementwise benchmarks. Native wgpu also has prepared

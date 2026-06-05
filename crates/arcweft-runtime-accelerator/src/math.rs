@@ -244,10 +244,7 @@ impl RuntimeMathAccelerator {
                 let out = self.matmul_ndarray(lhs, rhs)?;
                 add_bias_to_matrix(out, bias)
             }
-            RuntimeMathBackend::Wgpu => {
-                let out = self.matmul_wgpu(lhs, rhs)?;
-                add_bias_to_matrix(out, bias)
-            }
+            RuntimeMathBackend::Wgpu => self.matmul_bias_add_wgpu(lhs, rhs, bias),
             RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
         }
     }
@@ -1610,6 +1607,48 @@ impl RuntimeMathAccelerator {
         self.tensor_add_ndarray(lhs, rhs)
     }
 
+    fn matmul_bias_add_wgpu(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let result = self
+                    .wgpu_context()
+                    .and_then(|context| context.matmul_bias_add_f32(lhs, rhs, bias));
+                match result {
+                    Ok((value, readback)) => {
+                        self.stats.wgpu_calls += 1;
+                        self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                        self.record_gpu_transfer_with_creations(
+                            lhs.values().len() + rhs.values().len() + bias.values().len(),
+                            lhs.rows() * rhs.cols(),
+                            readback,
+                            7,
+                        );
+                        return Ok(value);
+                    }
+                    Err(error) => {
+                        self.stats.fallback_calls += 1;
+                        if self.config.backend == RuntimeMathBackend::Wgpu {
+                            return Err(error);
+                        }
+                    }
+                }
+            }
+            _ => {
+                if self.config.backend == RuntimeMathBackend::Wgpu {
+                    return Err(wgpu_unavailable_error());
+                }
+                self.stats.fallback_calls += 1;
+            }
+        }
+        let out = self.matmul_ndarray(lhs, rhs)?;
+        add_bias_to_matrix(out, bias)
+    }
+
     fn record_matrix_inputs<T>(&mut self, lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) {
         self.stats.bytes_borrowed +=
             (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
@@ -1638,12 +1677,28 @@ impl RuntimeMathAccelerator {
         downloaded_elements: usize,
         readback: wgpu_backend::GpuReadbackUsage,
     ) {
+        self.record_gpu_transfer_with_creations(
+            uploaded_elements,
+            downloaded_elements,
+            readback,
+            4,
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    fn record_gpu_transfer_with_creations(
+        &mut self,
+        uploaded_elements: usize,
+        downloaded_elements: usize,
+        readback: wgpu_backend::GpuReadbackUsage,
+        buffer_creations: usize,
+    ) {
         let uploaded = uploaded_elements * std::mem::size_of::<f32>();
         let downloaded = downloaded_elements * std::mem::size_of::<f32>();
         self.stats.bytes_uploaded += uploaded;
         self.stats.bytes_downloaded += downloaded;
         self.stats.bytes_copied += uploaded + downloaded;
-        self.stats.gpu_buffer_creations += 4;
+        self.stats.gpu_buffer_creations += buffer_creations;
         self.record_gpu_readback(readback);
     }
 
@@ -1805,7 +1860,7 @@ pub enum RuntimeMathAcceleratorError {
 
 #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
 mod wgpu_backend {
-    use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathAcceleratorError};
+    use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathAcceleratorError, RuntimeMathError};
     use bytemuck::{Pod, Zeroable};
     use std::sync::mpsc;
     use wgpu::util::DeviceExt;
@@ -2030,6 +2085,40 @@ mod wgpu_backend {
                 DenseTensorF32::new(lhs.shape().dims().to_vec(), out)?,
                 readback,
             ))
+        }
+
+        pub fn matmul_bias_add_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+            bias: &DenseTensorF32,
+        ) -> Result<(DenseMatrixF32, GpuReadbackUsage), RuntimeMathAcceleratorError> {
+            if lhs.cols() != rhs.rows() {
+                return Err(RuntimeMathError::MatrixShapeMismatch {
+                    lhs: lhs.shape(),
+                    rhs: rhs.shape(),
+                    op: "matmul_bias_add",
+                }
+                .into());
+            }
+            if bias.shape().dims() != [rhs.cols()] {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "matmul_bias_add expected bias shape [{}], found {:?}",
+                    rhs.cols(),
+                    bias.shape().dims()
+                )));
+            }
+            let prepared = self.prepare_matmul_bias_add(
+                lhs.values(),
+                rhs.values(),
+                bias.values(),
+                lhs.rows(),
+                lhs.cols(),
+                rhs.cols(),
+            )?;
+            let mut out = vec![0.0; lhs.rows().saturating_mul(rhs.cols())];
+            let readback = self.dispatch_prepared_matmul_bias_add(&prepared, &mut out)?;
+            Ok((DenseMatrixF32::new(lhs.rows(), rhs.cols(), out)?, readback))
         }
 
         pub fn prepare_add(
@@ -6295,6 +6384,41 @@ mod tests {
         assert_eq!(
             accelerator.stats().last_backend,
             Some(RuntimeMathBackend::Scalar)
+        );
+    }
+
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
+    #[test]
+    fn matmul_bias_add_uses_fused_wgpu_one_shot_kernel_when_available() {
+        let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+        let bias = DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap();
+        let expected = DenseMatrixF32::new(2, 2, vec![58.5, 63.75, 139.5, 153.75]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let Ok(out) = accelerator.matmul_bias_add_f32(&lhs, &rhs, &bias) else {
+            return;
+        };
+
+        assert_eq!(out, expected);
+        assert_eq!(accelerator.stats().wgpu_calls, 1);
+        assert_eq!(accelerator.stats().fused_matmul_bias_add_calls, 1);
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 7);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            (lhs.values().len() + rhs.values().len() + bias.values().len())
+                * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            std::mem::size_of_val(expected.values())
+        );
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Wgpu)
         );
     }
 
