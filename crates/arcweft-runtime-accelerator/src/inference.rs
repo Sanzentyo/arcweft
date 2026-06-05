@@ -5,7 +5,6 @@ use crate::math::{
 };
 use crate::{f32_value_bits, f32_value_bits_match, power_of_two_capacity, update_f32_value_bits};
 use arcweft_core::math::{DenseMatrixF32, DenseTensorF32, RuntimeMathError};
-use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Stable tensor handle inside an inference graph.
@@ -835,7 +834,7 @@ where
     where
         I: IntoIterator<Item = (InferenceTensorId, DenseTensorF32)>,
     {
-        let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
+        let supplied = inputs.into_iter().collect::<Vec<_>>();
         self.run_borrowed(supplied.iter().map(|(id, tensor)| (*id, tensor)))
     }
 
@@ -856,21 +855,30 @@ where
             tensor_uses,
             adapter,
         } = self;
-        let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
         let mut values = vec![None; graph.tensors.len()];
         for (index, spec) in graph.tensors.iter().enumerate() {
             if let TensorSpec::Constant { tensor, .. } = spec {
                 values[index] = Some(InferenceRunValue::BorrowedTensor(tensor));
             }
         }
-        for input in graph.inputs() {
-            let tensor = supplied
-                .get(&input.id())
-                .ok_or_else(|| InferenceError::MissingInput {
-                    name: input.name().to_owned(),
-                })?;
+        let mut supplied_inputs = vec![false; graph.tensors.len()];
+        for (id, tensor) in inputs {
+            let input = match graph.tensors.get(id.index()) {
+                Some(TensorSpec::Input(input)) => input,
+                Some(TensorSpec::Constant { .. } | TensorSpec::NodeOutput { .. }) | None => {
+                    return Err(InferenceError::UnknownTensor { id });
+                }
+            };
             validate_tensor_shape(tensor, input.shape())?;
-            values[input.id().index()] = Some(InferenceRunValue::BorrowedTensor(tensor));
+            values[id.index()] = Some(InferenceRunValue::BorrowedTensor(tensor));
+            supplied_inputs[id.index()] = true;
+        }
+        for input in graph.inputs() {
+            if !supplied_inputs[input.id().index()] {
+                return Err(InferenceError::MissingInput {
+                    name: input.name().to_owned(),
+                });
+            }
         }
         let nodes = &graph.nodes;
         let mut index = 0_usize;

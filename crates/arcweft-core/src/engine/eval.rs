@@ -13,7 +13,7 @@ use super::{
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
     RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
-    RuntimeI64Args, RuntimePureScalarInteger, VmRuntimePureCallBackend,
+    RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeExactInteger;
@@ -851,6 +851,54 @@ impl Engine {
         args: &[RuntimeExpr],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<i8, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_i8_slice,
+        )? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<i16, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_i16_slice,
+        )? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<i32, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_i32_slice,
+        )? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<u8, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_u8_slice,
+        )? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<u16, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_u16_slice,
+        )? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.evaluate_dedicated_exact_int_pure_call::<u64, _, _>(
+            helper_id,
+            args,
+            pure_backend,
+            RuntimePureCallBackend::call_u64_slice,
+        )? {
+            return Ok(Some(value));
+        }
         if let Some(value) =
             self.evaluate_exact_int_pure_call::<i8>(helper_id, args, pure_backend)?
         {
@@ -902,6 +950,40 @@ impl Engine {
             return Ok(Some(value));
         }
         self.evaluate_exact_int_pure_call::<RuntimeUSizeValue>(helper_id, args, pure_backend)
+    }
+
+    fn evaluate_dedicated_exact_int_pure_call<T, B, F>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        args: &[RuntimeExpr],
+        pure_backend: &mut B,
+        call: F,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError>
+    where
+        T: RuntimePureScalarInteger + Default,
+        B: RuntimeCallBackend,
+        F: FnOnce(
+            &mut B,
+            &crate::plan::RuntimePureHelper,
+            &[T],
+        ) -> Result<Option<T>, RuntimeEvalError>,
+    {
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        if args.len() > RuntimeFixedArgs::<T>::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !pure_helper_has_exact_int_call_shape::<T>(helper)
+        {
+            return Ok(None);
+        }
+        let mut values = [T::default(); RuntimeI64Args::MAX];
+        for (index, arg) in args.iter().enumerate() {
+            values[index] = self.evaluate_exact_int_arg_with_backend::<T>(arg, pure_backend)?;
+        }
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        call(pure_backend, helper, &values[..args.len()])
+            .map(|value| value.map(RuntimeExactInteger::into_runtime_value))
     }
 
     fn evaluate_exact_int_pure_call<T>(

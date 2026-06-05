@@ -3996,6 +3996,87 @@ fn bench_json_measures_checked_in_branching_iter_pure_jit_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("1")
+        .arg("--steps")
+        .arg("128")
+        .arg("--max-ops")
+        .arg("128")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in mixed for/iter pure fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in mixed for/iter pure bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "mixed for/iter pure bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        3
+    );
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 40);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 3);
+    assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 24);
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_calls_median"],
+        3
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_items_median"],
+        24
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_bytes_borrowed_median"],
+        192
+    );
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 40);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        320
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        96
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
     let path = workspace_root()
         .join("tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw");

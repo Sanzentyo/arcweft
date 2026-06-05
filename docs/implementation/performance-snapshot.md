@@ -22,6 +22,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw --json --iterations 1 --warmup 0 --samples 3 --steps 24 --max-ops 24 --mode drain
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw --json --iterations 25 --warmup 5 --samples 11 --steps 128 --max-ops 128 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit --pure-workers 4 --pure-batch-min-len 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
 ```
 
 Checked-in thread scheduling bench:
@@ -61,6 +62,13 @@ Scalar for-loop and mixed iterator pure JIT benches:
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 003_for_pure_jit.arcw | bytecode_vm | jit | 47900 | 16 | 0 | 0 | 0 | 256 | 16 | 0 |
 | 007_branching_iter_pure_jit.arcw | bytecode_vm | jit | 106200 | 32 | 0 | 0 | 0 | 512 | 32 | 16 |
+| 033_mixed_for_iter_pure_jit.arcw | bytecode_vm | jit | 114200 | 40 | 0 | 0 | 0 | 320 | 40 | 24 |
+
+The mixed fixture compiles three exact-width helpers (`i32`, `u32`, and `f32`)
+and exercises both `.map` flat-batch calls and scalar `for` loop calls. The
+same run reported `jit_successes = 3`, `pure_batch_calls_median = 3`,
+`pure_flat_batch_bytes_borrowed_median = 192`, `pure_vm_calls_median = 0`,
+`pure_fallbacks_median = 0`, and `pure_result_bytes_copied_median = 96`.
 
 Nonuniform map pure batch after review30 observation counters and numeric
 sequence AST summary:

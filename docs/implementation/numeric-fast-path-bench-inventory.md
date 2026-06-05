@@ -26,6 +26,7 @@ name or relative fixture label and must not record host absolute paths.
 | `030_dense_i16_map_pure_batch.arcw` | pure helper batch | `i16` input/output | native JIT when requested, AOT/VM selectable |
 | `031_dense_u8_map_pure_batch.arcw` | pure helper batch | `u8` input/output | native JIT when requested, AOT/VM selectable |
 | `032_dense_u16_map_pure_batch.arcw` | pure helper batch | `u16` input/output | native JIT when requested, AOT/VM selectable |
+| `033_mixed_for_iter_pure_jit.arcw` | mixed scalar and batch pure helper calls | `i32`, `u32`, and `f32` across `.map` and `for` | exact-width native JIT for scalar and flat batch calls |
 
 ## Current Bench Commands
 
@@ -88,6 +89,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
 ```
 
 Per-fixture convenience targets now also exist for `just bench-016` through
@@ -114,6 +116,7 @@ in JSON output:
 | `bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures` | exact `i8`, `i16`, `u8`, and `u16` JIT batch paths, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture` | exact `i128` native batch JIT path, borrowed bytes, no result copy |
 | `bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture` | exact `u128` native batch JIT path, borrowed bytes, no result copy |
+| `bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture` | mixed `i32`, `u32`, and `f32` `.map`/`for` pure calls use JIT with zero VM fallback and no argument Vec allocation |
 
 Useful check commands:
 
@@ -135,3 +138,13 @@ wide-integer literals and captured constants by building the `i128` value from
 two 64-bit halves with `iconcat`. The VM dense fixtures cover exact-width
 storage, length, and integer reduction, while the pure helper fixtures cover
 batched helper execution and backend selection counters.
+
+The mixed `033_mixed_for_iter_pure_jit.arcw` fixture guards the scalar/batch
+boundary: exact-width helper calls inside both `.map` and `for` loops stay on
+typed borrowed slices and reach native JIT for `i32`, `u32`, and `f32`. A
+path-free local run with two measured iterations reported `jit_successes = 3`,
+`pure_calls_median = 40`, `pure_batch_calls_median = 3`,
+`pure_jit_calls_median = 40`, `pure_vm_calls_median = 0`,
+`pure_fallbacks_median = 0`, `pure_arg_vec_allocations_median = 0`,
+`pure_arg_bytes_borrowed_median = 320`, and
+`pure_result_bytes_copied_median = 96`.
