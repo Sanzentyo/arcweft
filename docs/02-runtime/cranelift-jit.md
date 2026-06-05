@@ -120,9 +120,10 @@ Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `i8`, `i16`,
 artifacts contain scalar, row-batch, and row-batch-sum entrypoints;
 floating-point object artifacts contain scalar and row-batch entrypoints. `i128`
 and `u128` use batch-only object artifacts because by-value wide integer calls
-stay out of the native FFI boundary. Object artifacts record deterministic symbol
-names and object bytes only; they do not include source paths or JIT function
-pointers.
+stay out of the native FFI boundary. Bundle metadata records those shapes as a
+typed entrypoint enum instead of inferring helper shape from loose symbol
+fields. Object artifacts record deterministic symbol names and object bytes
+only; they do not include source paths or JIT function pointers.
 
 Runtime native JIT scalar calls for `i128` and `u128` reuse the pointer-based
 wide batch artifact as a one-row batch. This keeps scalar flow calls on the

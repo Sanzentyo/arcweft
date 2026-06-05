@@ -130,11 +130,72 @@ pub struct ObjectPureBundle {
 pub struct ObjectPureBundleHelper {
     pub name: String,
     pub kind: PureObjectInputKind,
-    pub entry_symbol: Option<String>,
-    pub batch_symbol: String,
-    pub batch_sum_symbol: Option<String>,
+    pub entrypoints: ObjectPureEntrypoints,
     pub param_names: Vec<String>,
     pub stats: PureFunctionStats,
+}
+
+/// Entrypoint shape exported for one pure helper object artifact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObjectPureEntrypoints {
+    Entry {
+        entry_symbol: String,
+    },
+    Scalar {
+        entry_symbol: String,
+        batch_symbol: String,
+        batch_sum_symbol: Option<String>,
+    },
+    Batch {
+        batch_symbol: String,
+        batch_sum_symbol: String,
+    },
+}
+
+impl ObjectPureEntrypoints {
+    /// Returns the scalar entry symbol when this artifact exports one.
+    pub fn entry_symbol(&self) -> Option<&str> {
+        match self {
+            Self::Entry { entry_symbol } | Self::Scalar { entry_symbol, .. } => Some(entry_symbol),
+            Self::Batch { .. } => None,
+        }
+    }
+
+    /// Returns the row-batch symbol when this artifact exports one.
+    pub fn batch_symbol(&self) -> Option<&str> {
+        match self {
+            Self::Entry { .. } => None,
+            Self::Scalar { batch_symbol, .. } | Self::Batch { batch_symbol, .. } => {
+                Some(batch_symbol)
+            }
+        }
+    }
+
+    /// Returns the row-batch-sum symbol when this artifact exports one.
+    pub fn batch_sum_symbol(&self) -> Option<&str> {
+        match self {
+            Self::Entry { .. } => None,
+            Self::Scalar {
+                batch_sum_symbol, ..
+            } => batch_sum_symbol.as_deref(),
+            Self::Batch {
+                batch_sum_symbol, ..
+            } => Some(batch_sum_symbol),
+        }
+    }
+
+    /// Visits every exported symbol for this entrypoint shape.
+    pub fn for_each_symbol(&self, mut visit: impl FnMut(&str)) {
+        if let Some(symbol) = self.entry_symbol() {
+            visit(symbol);
+        }
+        if let Some(symbol) = self.batch_symbol() {
+            visit(symbol);
+        }
+        if let Some(symbol) = self.batch_sum_symbol() {
+            visit(symbol);
+        }
+    }
 }
 
 /// Pure no-input `i64` helper function defined into a Cranelift module.
@@ -1346,9 +1407,11 @@ fn scalar_bundle_helper(
     ObjectPureBundleHelper {
         name,
         kind,
-        entry_symbol: Some(format!("{symbol_prefix}_entry")),
-        batch_symbol: format!("{symbol_prefix}_rows_batch"),
-        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        entrypoints: ObjectPureEntrypoints::Scalar {
+            entry_symbol: format!("{symbol_prefix}_entry"),
+            batch_symbol: format!("{symbol_prefix}_rows_batch"),
+            batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        },
         param_names: defined.param_names,
         stats: defined.stats,
     }
@@ -1363,9 +1426,11 @@ fn float_bundle_helper(
     ObjectPureBundleHelper {
         name,
         kind,
-        entry_symbol: Some(format!("{symbol_prefix}_entry")),
-        batch_symbol: format!("{symbol_prefix}_rows_batch"),
-        batch_sum_symbol: None,
+        entrypoints: ObjectPureEntrypoints::Scalar {
+            entry_symbol: format!("{symbol_prefix}_entry"),
+            batch_symbol: format!("{symbol_prefix}_rows_batch"),
+            batch_sum_symbol: None,
+        },
         param_names: defined.param_names,
         stats: defined.stats,
     }
@@ -1388,9 +1453,11 @@ where
     Ok(ObjectPureBundleHelper {
         name,
         kind,
-        entry_symbol: Some(format!("{symbol_prefix}_entry")),
-        batch_symbol: format!("{symbol_prefix}_rows_batch"),
-        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        entrypoints: ObjectPureEntrypoints::Scalar {
+            entry_symbol: format!("{symbol_prefix}_entry"),
+            batch_symbol: format!("{symbol_prefix}_rows_batch"),
+            batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        },
         param_names: defined.param_names,
         stats: defined.stats,
     })
@@ -1418,9 +1485,10 @@ where
     Ok(ObjectPureBundleHelper {
         name,
         kind,
-        entry_symbol: None,
-        batch_symbol: format!("{symbol_prefix}_rows_batch"),
-        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        entrypoints: ObjectPureEntrypoints::Batch {
+            batch_symbol: format!("{symbol_prefix}_rows_batch"),
+            batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
+        },
         param_names: defined.param_names,
         stats: defined.stats,
     })
@@ -5930,13 +5998,9 @@ mod tests {
             .filter_map(|symbol| symbol.name().ok())
             .collect::<Vec<_>>();
         for helper in &object.helpers {
-            if let Some(entry_symbol) = helper.entry_symbol.as_deref() {
-                assert!(symbols.contains(&entry_symbol));
-            }
-            assert!(symbols.contains(&helper.batch_symbol.as_str()));
-            if let Some(batch_sum_symbol) = helper.batch_sum_symbol.as_deref() {
-                assert!(symbols.contains(&batch_sum_symbol));
-            }
+            helper
+                .entrypoints
+                .for_each_symbol(|symbol| assert!(symbols.contains(&symbol)));
         }
     }
 
@@ -6480,27 +6544,27 @@ mod tests {
         assert_eq!(bundle.helpers[0].name, "score bundle i32");
         assert_eq!(bundle.helpers[0].kind, PureObjectInputKind::I32);
         assert_eq!(
-            bundle.helpers[0].entry_symbol.as_deref(),
+            bundle.helpers[0].entrypoints.entry_symbol(),
             Some("arcweft_pure_bundle_0_score_bundle_i32_entry")
         );
         assert_eq!(
-            bundle.helpers[0].batch_sum_symbol.as_deref(),
+            bundle.helpers[0].entrypoints.batch_sum_symbol(),
             Some("arcweft_pure_bundle_0_score_bundle_i32_rows_batch_sum")
         );
         assert_eq!(bundle.helpers[1].kind, PureObjectInputKind::F32);
         assert_eq!(
-            bundle.helpers[1].entry_symbol.as_deref(),
+            bundle.helpers[1].entrypoints.entry_symbol(),
             Some("arcweft_pure_bundle_1_score_bundle_f32_entry")
         );
-        assert!(bundle.helpers[1].batch_sum_symbol.is_none());
+        assert!(bundle.helpers[1].entrypoints.batch_sum_symbol().is_none());
         assert_eq!(bundle.helpers[2].kind, PureObjectInputKind::U128);
-        assert!(bundle.helpers[2].entry_symbol.is_none());
+        assert!(bundle.helpers[2].entrypoints.entry_symbol().is_none());
         assert_eq!(
-            bundle.helpers[2].batch_symbol,
-            "arcweft_pure_bundle_2_score_bundle_u128_rows_batch"
+            bundle.helpers[2].entrypoints.batch_symbol(),
+            Some("arcweft_pure_bundle_2_score_bundle_u128_rows_batch")
         );
         assert_eq!(
-            bundle.helpers[2].batch_sum_symbol.as_deref(),
+            bundle.helpers[2].entrypoints.batch_sum_symbol(),
             Some("arcweft_pure_bundle_2_score_bundle_u128_rows_batch_sum")
         );
         assert_bundle_object_symbols(&bundle);

@@ -183,8 +183,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   JIT scalar calls for `i128` and `u128` use those pointer-based artifacts as
   one-row batches, so the executable path also avoids by-value wide integer
   ABI calls. Cranelift can also emit a multi-helper object bundle with
-  exact-kind, entry, batch, optional batch-sum, parameter-name, and
-  lowering-stats metadata per helper. Runtime AOT
+  exact-kind, typed entrypoint-shape, parameter-name, and lowering-stats
+  metadata per helper. Runtime AOT
   policy records a single native object bundle for helpers whose cache entries
   selected AOT or AutoAOT when `native-jit` is available and the runtime config
   explicitly enables object artifacts. Object attempts and successes count
