@@ -159,6 +159,11 @@ bench-math-wgpu:
 bench-math-matmul-bias:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul-bias-add --size 64 --iterations 10 --warmup 2
 
+bench-math-f64:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul-f64 --size 64 --iterations 10 --warmup 2
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matrix-add-f64 --size 1024 --iterations 5 --warmup 1
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op tensor-add-f64 --size 1024 --iterations 5 --warmup 1
+
 bench-math-matmul-bias-wgpu:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul-bias-add --size 512 --iterations 3 --warmup 1
 

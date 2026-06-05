@@ -1,4 +1,4 @@
-use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
+use arcweft_core::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_runtime_accelerator::inference::{
     AcceleratedInferenceAdapter, InferenceGraph, InferenceSession, InferenceShape,
     InferenceTensorId,
@@ -51,6 +51,9 @@ fn run_backend(backend: RuntimeMathBackend, options: &BenchOptions) -> BackendRe
         BenchOp::InferenceMatmulBiasAdd => unreachable!("inference op is handled before math"),
         BenchOp::MatrixAdd => run_matrix_add(&mut accelerator, backend, options),
         BenchOp::TensorAdd => run_tensor_add(&mut accelerator, backend, options),
+        BenchOp::MatmulF64 => run_matmul_f64(&mut accelerator, backend, options),
+        BenchOp::MatrixAddF64 => run_matrix_add_f64(&mut accelerator, backend, options),
+        BenchOp::TensorAddF64 => run_tensor_add_f64(&mut accelerator, backend, options),
     }
 }
 
@@ -134,6 +137,127 @@ fn run_matmul_bias_add(
         let elapsed = started.elapsed().as_nanos();
         if !approx_eq(output.values(), reference.values(), 1.0e-3) {
             return BackendReport::failed(backend, "matmul-bias result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_matmul_f64(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+) -> BackendReport {
+    if options.reuse_mode.is_enabled() {
+        return BackendReport::failed(
+            backend,
+            "prepared reuse is only available for f32 benchmark ops".to_owned(),
+        );
+    }
+    let lhs = matrix_fixture_f64(options.size, options.size, 1.0);
+    let rhs = matrix_fixture_f64(options.size, options.size, 0.25);
+    let reference = match lhs.matmul_scalar(&rhs) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::failed(backend, error.to_string()),
+    };
+
+    for _ in 0..options.warmup {
+        if let Err(error) = accelerator.matmul_f64(&lhs, &rhs) {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+
+    let mut samples = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let output = match accelerator.matmul_f64(&lhs, &rhs) {
+            Ok(value) => value,
+            Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+        };
+        let elapsed = started.elapsed().as_nanos();
+        if !approx_eq_f64(output.values(), reference.values(), 1.0e-9) {
+            return BackendReport::failed(backend, "matmul_f64 result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_matrix_add_f64(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+) -> BackendReport {
+    if options.reuse_mode.is_enabled() {
+        return BackendReport::failed(
+            backend,
+            "prepared reuse is only available for f32 benchmark ops".to_owned(),
+        );
+    }
+    let lhs = matrix_fixture_f64(options.size, options.size, 1.0);
+    let rhs = matrix_fixture_f64(options.size, options.size, 0.25);
+    let reference = match lhs.add_scalar(&rhs) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::failed(backend, error.to_string()),
+    };
+
+    for _ in 0..options.warmup {
+        if let Err(error) = accelerator.matrix_add_f64(&lhs, &rhs) {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+
+    let mut samples = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let output = match accelerator.matrix_add_f64(&lhs, &rhs) {
+            Ok(value) => value,
+            Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+        };
+        let elapsed = started.elapsed().as_nanos();
+        if !approx_eq_f64(output.values(), reference.values(), 1.0e-12) {
+            return BackendReport::failed(backend, "matrix_add_f64 result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_tensor_add_f64(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+) -> BackendReport {
+    if options.reuse_mode.is_enabled() {
+        return BackendReport::failed(
+            backend,
+            "prepared reuse is only available for f32 benchmark ops".to_owned(),
+        );
+    }
+    let elements = options.size * options.size;
+    let lhs = tensor_fixture_f64(elements, 1.0);
+    let rhs = tensor_fixture_f64(elements, 0.25);
+    let reference = match lhs.add_scalar(&rhs) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::failed(backend, error.to_string()),
+    };
+
+    for _ in 0..options.warmup {
+        if let Err(error) = accelerator.tensor_add_f64(&lhs, &rhs) {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+
+    let mut samples = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let output = match accelerator.tensor_add_f64(&lhs, &rhs) {
+            Ok(value) => value,
+            Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+        };
+        let elapsed = started.elapsed().as_nanos();
+        if !approx_eq_f64(output.values(), reference.values(), 1.0e-12) {
+            return BackendReport::failed(backend, "tensor_add_f64 result mismatch".to_owned());
         }
         samples.push(elapsed);
     }
@@ -1023,6 +1147,20 @@ fn matrix_fixture(rows: usize, cols: usize, scale: f32) -> DenseMatrixF32 {
     .expect("fixture shape is valid")
 }
 
+fn matrix_fixture_f64(rows: usize, cols: usize, scale: f64) -> DenseMatrixF64 {
+    DenseMatrixF64::new(
+        rows,
+        cols,
+        (0..rows * cols)
+            .map(|index| {
+                let value = small_f64(index % 31) - 15.0;
+                value * scale
+            })
+            .collect(),
+    )
+    .expect("f64 fixture shape is valid")
+}
+
 fn tensor_fixture(elements: usize, scale: f32) -> DenseTensorF32 {
     DenseTensorF32::new(
         vec![elements],
@@ -1031,6 +1169,16 @@ fn tensor_fixture(elements: usize, scale: f32) -> DenseTensorF32 {
             .collect(),
     )
     .expect("fixture shape is valid")
+}
+
+fn tensor_fixture_f64(elements: usize, scale: f64) -> DenseTensorF64 {
+    DenseTensorF64::new(
+        vec![elements],
+        (0..elements)
+            .map(|index| (small_f64(index % 127) - 63.0) * scale)
+            .collect(),
+    )
+    .expect("f64 fixture shape is valid")
 }
 
 fn bias_fixture(cols: usize) -> DenseTensorF32 {
@@ -1183,6 +1331,14 @@ fn approx_eq(lhs: &[f32], rhs: &[f32], epsilon: f32) -> bool {
             .all(|(lhs, rhs)| (lhs - rhs).abs() <= epsilon)
 }
 
+fn approx_eq_f64(lhs: &[f64], rhs: &[f64], epsilon: f64) -> bool {
+    lhs.len() == rhs.len()
+        && lhs
+            .iter()
+            .zip(rhs.iter())
+            .all(|(lhs, rhs)| (lhs - rhs).abs() <= epsilon)
+}
+
 #[derive(Clone, Copy)]
 enum BenchOp {
     Matmul,
@@ -1190,6 +1346,9 @@ enum BenchOp {
     InferenceMatmulBiasAdd,
     MatrixAdd,
     TensorAdd,
+    MatmulF64,
+    MatrixAddF64,
+    TensorAddF64,
 }
 
 impl BenchOp {
@@ -1200,6 +1359,9 @@ impl BenchOp {
             Self::InferenceMatmulBiasAdd => "inference_matmul_bias_add_f32",
             Self::MatrixAdd => "matrix_add_f32",
             Self::TensorAdd => "tensor_add_f32",
+            Self::MatmulF64 => "matmul_f64",
+            Self::MatrixAddF64 => "matrix_add_f64",
+            Self::TensorAddF64 => "tensor_add_f64",
         }
     }
 }
@@ -1283,6 +1445,9 @@ impl BenchOptions {
                         }
                         Some("matrix-add" | "matrix_add" | "matrix_add_f32") => BenchOp::MatrixAdd,
                         Some("tensor-add" | "tensor_add" | "tensor_add_f32") => BenchOp::TensorAdd,
+                        Some("matmul-f64" | "matmul_f64") => BenchOp::MatmulF64,
+                        Some("matrix-add-f64" | "matrix_add_f64") => BenchOp::MatrixAddF64,
+                        Some("tensor-add-f64" | "tensor_add_f64") => BenchOp::TensorAddF64,
                         _ => BenchOp::Matmul,
                     };
                 }
@@ -1392,14 +1557,22 @@ impl MathBenchReport {
             reuse_capacity: JsonBool(options.reuse_mode.uses_capacity()),
             submit_only: JsonBool(options.reuse_mode.submit_only()),
             capacity_size: if options.reuse_mode.uses_capacity()
-                && !matches!(options.op, BenchOp::InferenceMatmulBiasAdd)
-            {
+                && matches!(
+                    options.op,
+                    BenchOp::Matmul
+                        | BenchOp::MatmulBiasAdd
+                        | BenchOp::MatrixAdd
+                        | BenchOp::TensorAdd
+                ) {
                 Some(match options.op {
                     BenchOp::TensorAdd => options.tensor_capacity_len(),
                     BenchOp::Matmul | BenchOp::MatmulBiasAdd | BenchOp::MatrixAdd => {
                         options.matrix_capacity_size()
                     }
-                    BenchOp::InferenceMatmulBiasAdd => unreachable!("filtered above"),
+                    BenchOp::InferenceMatmulBiasAdd
+                    | BenchOp::MatmulF64
+                    | BenchOp::MatrixAddF64
+                    | BenchOp::TensorAddF64 => unreachable!("filtered above"),
                 })
             } else {
                 None
@@ -1571,6 +1744,10 @@ fn small_f32(value: usize) -> f32 {
     f32::from(u16::try_from(value).expect("fixture residue fits u16"))
 }
 
+fn small_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).expect("fixture residue fits u32"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1729,6 +1906,37 @@ mod tests {
         assert!(matches!(options.op, BenchOp::MatmulBiasAdd));
         assert!(json.contains("\"op\":\"matmul_bias_add_f32\""));
         assert!(json.contains("\"fused_matmul_bias_add_calls\":1"));
+    }
+
+    #[test]
+    fn parse_f64_math_ops_and_report_auto_cpu_reason() {
+        let args = [
+            "--backend".to_owned(),
+            "auto".to_owned(),
+            "--op".to_owned(),
+            "matrix-add-f64".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::measured(
+                RuntimeMathBackend::Auto,
+                vec![100],
+                RuntimeMathStats {
+                    ndarray_calls: 1,
+                    last_backend: Some(RuntimeMathBackend::Ndarray),
+                    last_auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+                    ..RuntimeMathStats::default()
+                },
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(matches!(options.op, BenchOp::MatrixAddF64));
+        assert!(json.contains("\"op\":\"matrix_add_f64\""));
+        assert!(json.contains("\"last_auto_reason\":\"elementwise_cpu_default\""));
+        assert!(json.contains("\"capacity_size\":null"));
     }
 
     #[test]
