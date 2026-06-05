@@ -74,6 +74,18 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         .arg("math-matrix-add")
         .arg("--command")
         .arg("math-tensor-add")
+        .arg("--command")
+        .arg("math-matmul-f64")
+        .arg("--command")
+        .arg("math-matrix-add-f64")
+        .arg("--command")
+        .arg("math-tensor-add-f64")
+        .arg("--command")
+        .arg("math-matmul-bias-wgpu-reuse")
+        .arg("--command")
+        .arg("math-matrix-add-wgpu-reuse")
+        .arg("--command")
+        .arg("math-tensor-add-wgpu-reuse")
         .arg("--repeat")
         .arg("2")
         .arg("--warmup")
@@ -104,7 +116,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 11);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 17);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -202,6 +214,45 @@ fn assert_toolchain_profile_math_commands(json: &serde_json::Value) {
     assert_eq!(
         json["commands"][10]["argv"],
         toolchain_profile_math_tensor_add_argv()
+    );
+    assert_eq!(json["commands"][11]["label"], "math_bench_matmul_f64");
+    assert_eq!(
+        json["commands"][11]["argv"],
+        toolchain_profile_math_matmul_f64_argv()
+    );
+    assert_eq!(json["commands"][12]["label"], "math_bench_matrix_add_f64");
+    assert_eq!(
+        json["commands"][12]["argv"],
+        toolchain_profile_math_matrix_add_f64_argv()
+    );
+    assert_eq!(json["commands"][13]["label"], "math_bench_tensor_add_f64");
+    assert_eq!(
+        json["commands"][13]["argv"],
+        toolchain_profile_math_tensor_add_f64_argv()
+    );
+    assert_eq!(
+        json["commands"][14]["label"],
+        "math_bench_matmul_bias_wgpu_reuse"
+    );
+    assert_eq!(
+        json["commands"][14]["argv"],
+        toolchain_profile_math_matmul_bias_wgpu_reuse_argv()
+    );
+    assert_eq!(
+        json["commands"][15]["label"],
+        "math_bench_matrix_add_wgpu_reuse"
+    );
+    assert_eq!(
+        json["commands"][15]["argv"],
+        toolchain_profile_math_matrix_add_wgpu_reuse_argv()
+    );
+    assert_eq!(
+        json["commands"][16]["label"],
+        "math_bench_tensor_add_wgpu_reuse"
+    );
+    assert_eq!(
+        json["commands"][16]["argv"],
+        toolchain_profile_math_tensor_add_wgpu_reuse_argv()
     );
 }
 
@@ -330,6 +381,159 @@ fn toolchain_profile_math_tensor_add_argv() -> serde_json::Value {
         "5",
         "--warmup",
         "1"
+    ])
+}
+
+fn toolchain_profile_math_matmul_f64_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matmul-f64",
+        "--size",
+        "64",
+        "--iterations",
+        "10",
+        "--warmup",
+        "2"
+    ])
+}
+
+fn toolchain_profile_math_matrix_add_f64_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matrix-add-f64",
+        "--size",
+        "1024",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1"
+    ])
+}
+
+fn toolchain_profile_math_tensor_add_f64_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "tensor-add-f64",
+        "--size",
+        "1024",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1"
+    ])
+}
+
+fn toolchain_profile_math_matmul_bias_wgpu_reuse_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "matmul-bias-add",
+        "--size",
+        "128",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse"
+    ])
+}
+
+fn toolchain_profile_math_matrix_add_wgpu_reuse_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "matrix-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse"
+    ])
+}
+
+fn toolchain_profile_math_tensor_add_wgpu_reuse_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "tensor-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse"
     ])
 }
 

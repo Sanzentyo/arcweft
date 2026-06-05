@@ -303,11 +303,16 @@ Runtime math trend commands use the same path-free profile wrapper:
 
 ```bash
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-f64 --command math-matrix-add-f64 --command math-tensor-add-f64 --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias-wgpu-reuse --command math-matrix-add-wgpu-reuse --command math-tensor-add-wgpu-reuse --repeat 3 --warmup 1 --json
 ```
 
 These commands run standalone `math_bench` in release mode and summarize backend
 medians, speedups, call counters, data movement counters, and `auto` policy
-labels in a compact `math_bench` block. The current one-shot CPU `auto` policy is
+labels in a compact `math_bench` block. The f64 command group keeps width
+preservation and unsupported portable wgpu f64 paths visible, while the wgpu
+reuse command group tracks persistent-buffer calls, upload/download bytes, and
+reuse hits without writing host paths. The current one-shot CPU `auto` policy is
 conservative for paths where local measurements show the general CPU backend can
 lose to a tight scalar loop: small `f32` matmul and matrix add fall back to
 scalar unless wgpu crosses the configured work threshold. Tensor add keeps the

@@ -471,13 +471,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bench commands parse the nested `arcw bench --json` stdout into compact
   `arcweft_bench` summaries with runtime median/counter data while keeping the
   original benchmark stdout out of the profile report. It also supports
-  `--command math-matmul-bias`, `--command math-matrix-add`, and
-  `--command math-tensor-add` as release-mode runtime math trend commands. Those
-  parse standalone `math_bench` JSON into compact `math_bench` summaries with
-  backend medians, speedups, call counters, data movement counters, and
-  `auto` policy labels. The profiler preallocates repeat samples and counts
-  stdout/stderr lines from bytes directly, avoiding UTF-8 string allocation in
-  its own reporting path.
+  `--command math-matmul-bias`, `--command math-matrix-add`,
+  `--command math-tensor-add`, the corresponding `*-f64` commands, and resident
+  `math-*-wgpu-reuse` commands as release-mode runtime math trend commands.
+  Those parse standalone `math_bench` JSON into compact `math_bench` summaries
+  with backend medians, speedups, call counters, data movement counters, reuse
+  flags, and `auto` policy labels. The profiler preallocates repeat samples and
+  counts stdout/stderr lines from bytes directly, avoiding UTF-8 string
+  allocation in its own reporting path.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

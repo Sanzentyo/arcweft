@@ -36,6 +36,18 @@ pub(crate) enum ToolchainProfileCommand {
     MathMatrixAdd,
     #[value(name = "math-tensor-add")]
     MathTensorAdd,
+    #[value(name = "math-matmul-f64")]
+    MathMatmulF64,
+    #[value(name = "math-matrix-add-f64")]
+    MathMatrixAddF64,
+    #[value(name = "math-tensor-add-f64")]
+    MathTensorAddF64,
+    #[value(name = "math-matmul-bias-wgpu-reuse")]
+    MathMatmulBiasWgpuReuse,
+    #[value(name = "math-matrix-add-wgpu-reuse")]
+    MathMatrixAddWgpuReuse,
+    #[value(name = "math-tensor-add-wgpu-reuse")]
+    MathTensorAddWgpuReuse,
 }
 
 #[derive(Serialize)]
@@ -378,6 +390,165 @@ const MATH_TENSOR_ADD: ToolchainCommandSpec = ToolchainCommandSpec {
     kind: ToolchainCommandKind::MathBench,
 };
 
+const MATH_MATMUL_F64: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matmul_f64",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matmul-f64",
+        "--size",
+        "64",
+        "--iterations",
+        "10",
+        "--warmup",
+        "2",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_MATRIX_ADD_F64: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matrix_add_f64",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "matrix-add-f64",
+        "--size",
+        "1024",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_TENSOR_ADD_F64: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_tensor_add_f64",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--quiet",
+        "--",
+        "--backend",
+        "all",
+        "--op",
+        "tensor-add-f64",
+        "--size",
+        "1024",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_MATMUL_BIAS_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matmul_bias_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "matmul-bias-add",
+        "--size",
+        "128",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_MATRIX_ADD_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_matrix_add_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "matrix-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
+const MATH_TENSOR_ADD_WGPU_REUSE: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "math_bench_tensor_add_wgpu_reuse",
+    args: &[
+        "run",
+        "--release",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "--example",
+        "math_bench",
+        "--features",
+        "math-wgpu",
+        "--quiet",
+        "--",
+        "--backend",
+        "wgpu",
+        "--op",
+        "tensor-add",
+        "--size",
+        "4096",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--reuse",
+    ],
+    kind: ToolchainCommandKind::MathBench,
+};
+
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
     let reports = selected_commands(options)
         .into_iter()
@@ -431,6 +602,12 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::MathMatmulBias => MATH_MATMUL_BIAS,
             ToolchainProfileCommand::MathMatrixAdd => MATH_MATRIX_ADD,
             ToolchainProfileCommand::MathTensorAdd => MATH_TENSOR_ADD,
+            ToolchainProfileCommand::MathMatmulF64 => MATH_MATMUL_F64,
+            ToolchainProfileCommand::MathMatrixAddF64 => MATH_MATRIX_ADD_F64,
+            ToolchainProfileCommand::MathTensorAddF64 => MATH_TENSOR_ADD_F64,
+            ToolchainProfileCommand::MathMatmulBiasWgpuReuse => MATH_MATMUL_BIAS_WGPU_REUSE,
+            ToolchainProfileCommand::MathMatrixAddWgpuReuse => MATH_MATRIX_ADD_WGPU_REUSE,
+            ToolchainProfileCommand::MathTensorAddWgpuReuse => MATH_TENSOR_ADD_WGPU_REUSE,
         }
     }
 }
