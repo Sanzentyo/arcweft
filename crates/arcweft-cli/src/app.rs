@@ -1498,6 +1498,7 @@ fn runtime_run_command(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -1608,6 +1609,7 @@ fn runtime_run_bench_selection(
         pure_backend: options.pure_backend,
         pure_workers: options.pure_workers,
         pure_batch_min_len: options.pure_batch_min_len,
+        pure_object_artifacts: options.pure_object_artifacts,
         math_backend: options.math_backend,
         math_wgpu_min_elements: options.math_wgpu_min_elements,
         values: options.values.clone(),
@@ -1627,6 +1629,7 @@ fn runtime_profile_command(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -2294,6 +2297,7 @@ fn runtime_cli_command(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -2372,6 +2376,7 @@ fn runtime_serve_command(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -2626,6 +2631,7 @@ fn script_test_command(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -3555,6 +3561,7 @@ fn script_bench_selection(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -4926,6 +4933,7 @@ fn verify_types_runtime_self_check(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
@@ -5022,6 +5030,7 @@ fn runtime_pure_config_for_selection(
     backend: Option<CliRuntimePureBackend>,
     workers: Option<CliRuntimePureWorkers>,
     batch_min_len: Option<usize>,
+    object_artifacts: bool,
     math_backend: Option<CliRuntimeMathBackend>,
     math_wgpu_min_elements: Option<usize>,
 ) -> Result<RuntimePureAcceleratorConfig, ExitCode> {
@@ -5047,6 +5056,9 @@ fn runtime_pure_config_for_selection(
         if let Some(batch_min_len) = profile.batch_min_len() {
             config.batch_min_len = batch_min_len;
         }
+        if let Some(object_artifacts) = profile.object_artifacts() {
+            config.emit_object_artifacts = object_artifacts;
+        }
     }
     if let Some(backend) = backend {
         config.backend = backend.into();
@@ -5056,6 +5068,9 @@ fn runtime_pure_config_for_selection(
     }
     if let Some(batch_min_len) = batch_min_len {
         config.batch_min_len = batch_min_len;
+    }
+    if object_artifacts {
+        config.emit_object_artifacts = true;
     }
     if let Some(backend) = math_backend {
         config.math.backend = backend.into();
@@ -5400,6 +5415,8 @@ struct VerifyTypesOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5456,6 +5473,8 @@ struct RuntimeRunOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5491,6 +5510,8 @@ struct RuntimeProfileOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5522,6 +5543,8 @@ struct CliRunOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5559,6 +5582,8 @@ struct ServeOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5582,6 +5607,8 @@ struct ScriptTestOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
@@ -5611,6 +5638,8 @@ struct ScriptBenchOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
     #[arg(long, value_enum)]
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]

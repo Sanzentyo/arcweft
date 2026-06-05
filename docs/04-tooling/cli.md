@@ -68,6 +68,7 @@ math_backend = "auto"
 math_wgpu_min_elements = 67108864
 workers = "auto"
 batch_min_len = 1024
+object_artifacts = false
 ```
 
 Direct path and `--profile` are mutually exclusive. This keeps core source mode
@@ -211,7 +212,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -232,7 +233,10 @@ integer arguments, copied argument/result bytes, thread-pool jobs, Vec argument
 allocations, and fallback counts. Executor JSON also reports the selected pure backend, worker policy,
 resolved worker count, per-worker batch threshold, helper acceleration summary,
 compile attempts, Auto tier decisions/promotions, cache hits and misses, and
-compile elapsed time. Built-in dense `math.*` calls use the selected
+compile elapsed time. `--pure-object-artifacts` enables build-time AOT object
+artifact emission for supported pure helpers and reports object attempt,
+success, failure, and byte counters in JSON. It is off by default so ordinary
+runtime startup avoids object generation cost. Built-in dense `math.*` calls use the selected
 `--math-backend`; executor JSON records both that backend and the Auto GPU work
 threshold. The same JSON includes `executor_stats.math` counters for selected
 backend calls, borrowed/copy/upload/download bytes, GPU buffer creation/reuse,
@@ -485,8 +489,8 @@ event counters.
 Profile and bench JSON must not persist absolute local source paths. Runtime
 pure configuration from `[profiles.NAME.pure]` is applied to `run`, `cli`,
 `serve`, `test`, `bench`, and `verify-types --run`; explicit CLI flags override
-the profile's `backend`, `workers`, `batch_min_len`, `math_backend`, and
-`math_wgpu_min_elements` values. `math_backend` controls built-in dense
+the profile's `backend`, `workers`, `batch_min_len`, `object_artifacts`,
+`math_backend`, and `math_wgpu_min_elements` values. `math_backend` controls built-in dense
 matrix/tensor calls through the same runtime adapter boundary as pure helpers;
 valid values are `auto`, `scalar`, `glam`, `ndarray`, and `wgpu`.
 Native file task execution, line-plan child task markers, and source-level flow

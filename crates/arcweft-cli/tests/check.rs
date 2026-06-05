@@ -412,6 +412,10 @@ flow @flow.main main {
     );
     assert_eq!(json["executor_stats"]["pure_config"]["batch_min_len"], 2);
     assert_eq!(
+        json["executor_stats"]["pure_config"]["emit_object_artifacts"],
+        false
+    );
+    assert_eq!(
         json["executor_stats"]["pure_config"]["math_backend"],
         "auto"
     );
@@ -420,6 +424,63 @@ flow @flow.main main {
         67_108_864
     );
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
+}
+
+#[test]
+fn run_json_can_record_aot_object_artifact_stats_when_requested() {
+    let path = temp_arcw(
+        "runtime-aot-object-artifacts",
+        r"
+#[pure]
+fn score(base: i32, bonus: i32) -> i32 {
+    return base * (bonus + 2i32)
+}
+
+flow @flow.main main {
+    return score(3i32, 4i32)
+}
+",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("5")
+        .arg("--pure-backend")
+        .arg("aot")
+        .arg("--pure-object-artifacts")
+        .output()
+        .expect("arcw run executes runtime pure AOT source");
+    fs::remove_file(&path).expect("remove temp runtime pure helper");
+
+    assert!(
+        output.status.success(),
+        "runtime pure AOT object artifact run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(json["final_status"], "done Return(\"18\")");
+    assert_eq!(json["executor_stats"]["pure_config"]["backend"], "aot");
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["emit_object_artifacts"],
+        true
+    );
+    assert_eq!(json["executor_stats"]["pure_compile"]["aot_successes"], 1);
+    assert_eq!(json["executor_stats"]["pure_compile"]["object_attempts"], 1);
+    assert_eq!(
+        json["executor_stats"]["pure_compile"]["object_successes"],
+        1
+    );
+    assert_eq!(json["executor_stats"]["pure_compile"]["object_failures"], 0);
+    assert!(
+        json["executor_stats"]["pure_compile"]["object_bytes"]
+            .as_u64()
+            .is_some_and(|bytes| bytes > 0)
+    );
 }
 
 #[test]

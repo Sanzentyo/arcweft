@@ -86,6 +86,8 @@ pub struct LaunchPureProfileSpec {
     workers: Option<String>,
     #[serde(default)]
     batch_min_len: Option<usize>,
+    #[serde(default)]
+    object_artifacts: Option<bool>,
 }
 
 /// Fully resolved launch profile ready for CLI/runtime use.
@@ -284,6 +286,11 @@ impl LaunchPureProfileSpec {
     pub const fn batch_min_len(&self) -> Option<usize> {
         self.batch_min_len
     }
+
+    /// Optional build-time AOT object artifact emission policy.
+    pub const fn object_artifacts(&self) -> Option<bool> {
+        self.object_artifacts
+    }
 }
 
 #[cfg(test)]
@@ -309,6 +316,7 @@ math_backend = "ndarray"
 math_wgpu_min_elements = 1024
 workers = "auto"
 batch_min_len = 2048
+object_artifacts = true
 "#,
         )
         .expect("manifest parses");
@@ -336,6 +344,7 @@ batch_min_len = 2048
         assert_eq!(pure.math_wgpu_min_elements(), Some(1024));
         assert_eq!(pure.workers(), Some("auto"));
         assert_eq!(pure.batch_min_len(), Some(2048));
+        assert_eq!(pure.object_artifacts(), Some(true));
     }
 
     #[test]
