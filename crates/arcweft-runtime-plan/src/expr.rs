@@ -99,6 +99,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         } => lower_runtime_math_method_call(receiver, method, args)
             .or_else(|| lower_runtime_std_float_method_call(receiver, method, args))
             .or_else(|| lower_runtime_path_method_call(receiver, method, args))
+            .or_else(|| lower_runtime_external_namespace_method_call(receiver, method, args))
             .unwrap_or_else(|| RuntimeExpr::MethodCall {
                 receiver: Box::new(lower_runtime_expr(receiver)),
                 method: runtime_method_name(method).to_owned(),
@@ -212,7 +213,9 @@ fn lower_runtime_expr_strict_with_helpers(
         } => match lower_strict_math_method_call(receiver, method, args, helpers)
             .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
             .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
-        {
+            .or_else(|| {
+                lower_strict_external_namespace_method_call(receiver, method, args, helpers)
+            }) {
             Some(lowered) => lowered,
             None => lower_strict_method_call_expr(receiver, method, args, helpers),
         },
@@ -383,6 +386,47 @@ fn runtime_method_name(method: &str) -> &str {
     method.split_once('<').map_or(method, |(name, _)| name)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeExternalNamespace {
+    Conv2d,
+    Infer,
+}
+
+impl RuntimeExternalNamespace {
+    fn from_receiver(receiver: &str) -> Option<Self> {
+        match receiver {
+            "conv2d" => Some(Self::Conv2d),
+            "infer" => Some(Self::Infer),
+            _ => None,
+        }
+    }
+
+    const fn as_label_prefix(self) -> &'static str {
+        match self {
+            Self::Conv2d => "conv2d",
+            Self::Infer => "infer",
+        }
+    }
+
+    fn call_label(self, method: &str) -> String {
+        format!("{}.{}", self.as_label_prefix(), runtime_method_name(method))
+    }
+}
+
+fn lower_runtime_external_namespace_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<RuntimeExpr> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    RuntimeExternalNamespace::from_receiver(receiver).map(|namespace| RuntimeExpr::Call {
+        callee: RuntimeCallTarget::from_label(namespace.call_label(method)),
+        args: args.iter().map(lower_runtime_call_arg).collect(),
+    })
+}
+
 fn lower_runtime_path_method_call(
     receiver: &Expr,
     method: &str,
@@ -540,6 +584,26 @@ fn lower_strict_std_float_method_call(
                 args,
             }),
     )
+}
+
+fn lower_strict_external_namespace_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    RuntimeExternalNamespace::from_receiver(receiver).map(|namespace| {
+        args.iter()
+            .map(|arg| lower_strict_call_arg(arg, helpers))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|args| RuntimeExpr::Call {
+                callee: RuntimeCallTarget::from_label(namespace.call_label(method)),
+                args,
+            })
+    })
 }
 
 fn lower_strict_call_expr(
@@ -1199,6 +1263,27 @@ mod tests {
             RuntimeExpr::Call { callee, args }
                 if callee.as_intrinsic() == Some(RuntimeIntrinsic::MathMatmulF64)
                     && args.len() == 2
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_lowers_adapter_namespace_methods_to_external_calls() {
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Path("infer".to_owned())),
+            method: "matmul_bias_add_f32".to_owned(),
+            args: vec![
+                CallArg::Positional(Expr::Path("lhs".to_owned())),
+                CallArg::Positional(Expr::Path("rhs".to_owned())),
+                CallArg::Positional(Expr::Path("bias".to_owned())),
+            ],
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("adapter method lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Call { callee, args }
+                if callee.as_label() == "infer.matmul_bias_add_f32" && args.len() == 3
         ));
     }
 

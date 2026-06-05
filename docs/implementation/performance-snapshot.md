@@ -960,13 +960,18 @@ not Core intrinsics and are not in the default prelude.
 `arcweft-adapter-context` contributes the optional type-checking namespace,
 while `RuntimePureAccelerator` resolves the named runtime calls through
 `RuntimeExternalCallBackend` and uses the configured math backend for rank-2
-tensor matmul. The fused external `infer.matmul_bias_add_f32` call uses the
-native prepared wgpu matmul-bias cache when backend selection chooses wgpu, so
-flow-side adapter calls can reuse resident buffers without requiring parser or
-Core intrinsics. The default Rust-side `AcceleratedInferenceAdapter` also owns
-that prepared cache, so `InferenceSession` graph fusion for private
-`matmul -> bias_add` pairs can reuse the same resident buffers across repeated
-session runs. The standalone `math_bench` example now also accepts
+tensor matmul. Runtime-plan lowering now turns profile-typechecked
+`infer.*`/`conv2d.*` namespace methods into named external-call targets, rather
+than leaving them as opaque runtime `MethodCall` fallback expressions. The
+fused external `infer.matmul_bias_add_f32` call uses the native prepared wgpu
+matmul-bias cache when backend selection chooses wgpu, so flow-side adapter
+calls can reuse resident buffers without requiring parser or Core intrinsics.
+Bench JSON projects `fused_matmul_bias_add_calls` from runtime math stats,
+which makes this fused boundary observable in normal `arcw bench` output. The
+default Rust-side `AcceleratedInferenceAdapter` also owns that prepared cache,
+so `InferenceSession` graph fusion for private `matmul -> bias_add` pairs can
+reuse the same resident buffers across repeated session runs. The standalone
+`math_bench` example now also accepts
 `--op inference-matmul-bias-add`; without `--reuse` it measures cold
 `InferenceSession` construction plus execution for each sample, while
 `--reuse` measures repeated execution through one session and the adapter-owned

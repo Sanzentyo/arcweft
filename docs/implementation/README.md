@@ -367,14 +367,20 @@ Phase 0 / Phase 1 minimal Rust workspace:
   measurements.
   The optional inference adapter manifest now exposes
   `infer.matmul_bias_add_f32` as a normal adapter method/host call, and
-  `RuntimePureAccelerator` routes that external call through the same prepared
-  wgpu cache used by runtime math calls when the backend policy selects wgpu.
+  runtime-plan lowering converts selected adapter namespaces such as `infer.*`
+  and `conv2d.*` into named external-call targets only when the profile-selected
+  adapter has made those namespaces type-checkable. `RuntimePureAccelerator`
+  routes that external call through the same prepared wgpu cache used by runtime
+  math calls when the backend policy selects wgpu.
   Repeated flow/external calls with unchanged inputs reuse the resident
   matmul-bias buffers without host upload; changed compatible inputs update the
   existing buffers instead of rebuilding them. The default
   `AcceleratedInferenceAdapter` used by Rust-side `InferenceSession` now owns
   the same typed prepared matmul-bias cache, so private `matmul -> bias_add`
   graph fusion also reuses resident wgpu buffers across repeated session runs.
+  Runtime executor JSON now includes `fused_matmul_bias_add_calls`, so CLI bench
+  output can distinguish a fused adapter/math boundary from separate matmul and
+  bias-add execution.
   `math_bench --op inference-matmul-bias-add` measures this adapter-boundary
   path directly: without `--reuse` it builds cold sessions for each sample,
   while `--reuse` keeps the same `InferenceSession` and prepared GPU cache.

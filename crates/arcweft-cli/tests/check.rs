@@ -4993,6 +4993,106 @@ fn bench_json_measures_checked_in_matrix_add_f64_math_fixture() {
 }
 
 #[test]
+fn bench_json_measures_profile_inference_matmul_bias_adapter_fixture() {
+    let dir = temp_dir("bench-profile-inference-matmul-bias");
+    let source = dir.join("infer_bench.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r"
+bench @bench.infer_matmul_bias_add_f32 {
+    measure iterations = 3 { start(@flow.infer_matmul_bias_add_f32) }
+}
+
+flow @flow.infer_matmul_bias_add_f32 infer_matmul_bias_add_f32(lhs: TensorF32, rhs: TensorF32, bias: TensorF32) -> TensorF32 {
+    let out = infer.matmul_bias_add_f32(lhs, rhs, bias)
+    return out
+}
+",
+    )
+    .expect("write inference adapter bench source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."bench.infer"]
+kind = "bench"
+source = "infer_bench.arcw"
+adapter = "inference-tensor"
+"#,
+    )
+    .expect("write inference adapter launch profile");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("bench.infer")
+        .arg("--iterations")
+        .arg("3")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("3")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--math-backend")
+        .arg("scalar")
+        .arg("--value")
+        .arg("lhs=tensor/f32/2x2:1,2,3,4")
+        .arg("--value")
+        .arg("rhs=tensor/f32/2x2:5,6,7,8")
+        .arg("--value")
+        .arg("bias=tensor/f32/2:0.5,1.5")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures profile-selected inference adapter call");
+    fs::remove_dir_all(&dir).expect("remove temp inference bench project");
+
+    assert!(
+        output.status.success(),
+        "profile inference matmul-bias bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "inference adapter bench JSON must not record the workspace path: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "inference adapter bench JSON must not record temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["math_calls_median"], 1);
+    assert_eq!(
+        measurement["deterministic"]["math_accelerated_calls_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        40
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        16
+    );
+    assert_eq!(
+        measurement["executor_stats"]["math"]["fused_matmul_bias_add_calls"],
+        1
+    );
+    assert_eq!(measurement["executor_stats"]["math"]["scalar_calls"], 1);
+    assert_eq!(
+        measurement["executor_stats"]["math"]["last_backend"],
+        "scalar"
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture() {
     let path = workspace_root()
         .join("tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw");

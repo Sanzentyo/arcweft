@@ -4628,6 +4628,9 @@ fn median_executor_math_stats(samples: &[RuntimeExecutorStats]) -> RuntimeExecut
         glam_calls: median_executor_math_field(samples, |math| math.glam_calls),
         ndarray_calls: median_executor_math_field(samples, |math| math.ndarray_calls),
         wgpu_calls: median_executor_math_field(samples, |math| math.wgpu_calls),
+        fused_matmul_bias_add_calls: median_executor_math_field(samples, |math| {
+            math.fused_matmul_bias_add_calls
+        }),
         fallback_calls: median_executor_math_field(samples, |math| math.fallback_calls),
         bytes_borrowed: median_executor_math_field(samples, |math| math.bytes_borrowed),
         bytes_copied: median_executor_math_field(samples, |math| math.bytes_copied),
