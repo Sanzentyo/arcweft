@@ -25,12 +25,13 @@ use arcweft_core::{
         RuntimeSeq, RuntimeValue, runtime_sequence_dense_usize,
     },
 };
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+use native_jit::PureObjectInputKind;
 use native_jit::{
     CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI8Inputs, CompiledPureI16Inputs,
     CompiledPureI32Inputs, CompiledPureI64Inputs, CompiledPureI128BatchInputs,
     CompiledPureU8Inputs, CompiledPureU16Inputs, CompiledPureU32Inputs, CompiledPureU64Inputs,
-    CompiledPureU128BatchInputs, CraneliftPureFunctionBackend, PureObjectBundleRequest,
-    PureObjectInputKind,
+    CompiledPureU128BatchInputs, CraneliftPureFunctionBackend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
 use std::fmt;
@@ -48,7 +49,10 @@ mod native_jit {
 
 #[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
 mod native_jit {
-    use arcweft_core::pure::{PureFunctionRequest, RuntimeFixedArgs};
+    use arcweft_core::{
+        pure::{PureFunctionRequest, RuntimeFixedArgs},
+        value::{RuntimeISizeValue, RuntimeUSizeValue},
+    };
     use std::fmt;
 
     #[derive(Debug)]
@@ -76,26 +80,6 @@ mod native_jit {
     pub struct CompiledPureU128BatchInputs;
     pub struct CompiledPureF32Inputs;
     pub struct CompiledPureF64Inputs;
-    pub struct PureObjectBundleRequest<'a> {
-        _marker: std::marker::PhantomData<&'a ()>,
-    }
-
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub enum PureObjectInputKind {
-        I8,
-        I16,
-        I32,
-        I64,
-        I128,
-        U8,
-        U16,
-        U32,
-        U64,
-        U128,
-        F32,
-        F64,
-    }
-
     impl CraneliftPureFunctionBackend {
         pub fn compile_i64_with_inputs<'a, I>(
             &self,
@@ -261,6 +245,29 @@ mod native_jit {
         ) -> Result<i64, NativeJitUnavailable> {
             Err(NativeJitUnavailable)
         }
+
+        pub fn call_isize(
+            &self,
+            _args: &[RuntimeISizeValue],
+        ) -> Result<RuntimeISizeValue, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_isize_flat_batch(
+            &self,
+            _flat_inputs: &[RuntimeISizeValue],
+            _out: &mut [RuntimeISizeValue],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_isize_flat_batch_sum(
+            &self,
+            _flat_inputs: &[RuntimeISizeValue],
+            _rows: usize,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
     }
 
     impl CompiledPureI32Inputs {
@@ -383,6 +390,29 @@ mod native_jit {
         pub fn call_flat_batch_sum(
             &self,
             _flat_inputs: &[u64],
+            _rows: usize,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_usize(
+            &self,
+            _args: &[RuntimeUSizeValue],
+        ) -> Result<RuntimeUSizeValue, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_usize_flat_batch(
+            &self,
+            _flat_inputs: &[RuntimeUSizeValue],
+            _out: &mut [RuntimeUSizeValue],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_usize_flat_batch_sum(
+            &self,
+            _flat_inputs: &[RuntimeUSizeValue],
             _rows: usize,
         ) -> Result<i64, NativeJitUnavailable> {
             Err(NativeJitUnavailable)
@@ -519,6 +549,7 @@ enum RuntimePureCacheEntry {
 }
 
 impl RuntimePureCacheEntry {
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     fn uses_aot_plan(&self) -> bool {
         matches!(self, Self::Aot(_) | Self::AutoAot { .. })
     }
@@ -601,6 +632,7 @@ impl RuntimePureNativeKind {
         }
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     const fn object_input_kind(self) -> PureObjectInputKind {
         match self {
             Self::I8 => PureObjectInputKind::I8,
@@ -4873,6 +4905,8 @@ fn record_aot_object_artifact_bundle(
     cache: &[Option<RuntimePureCacheEntry>],
     stats: &mut RuntimePureCompileStats,
 ) {
+    use native_jit::PureObjectBundleRequest;
+
     let prepared = helpers
         .iter()
         .filter(|helper| {

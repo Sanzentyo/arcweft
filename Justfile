@@ -277,6 +277,7 @@ bench-math-tensor-add-reuse-capacity:
 
 browser-webgpu-bench-check:
     @cargo check -p arcweft-browser-bench --target wasm32-unknown-unknown --all-features
+    @node --test crates/arcweft-browser-bench/web/chrome-smoke-summary.test.mjs
 
 browser-webgpu-bench-build:
     @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build

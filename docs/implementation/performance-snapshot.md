@@ -691,6 +691,9 @@ calibration. Auto cases are reported as policy observations and are not treated
 as independent candidate modes for choosing the fastest backend.
 Submit-only diagnostic modes are also excluded from recommendations and normal
 `best_speedups`; the CLI summary reports them under `diagnostic_speedups`.
+The smoke summary carries case-level `mad_ms` and `p95_ms`, plus stability
+min/max/MAD, so browser WebGPU reports expose outliers without requiring the
+full Rust-originated JSON payload.
 These modes submit batches of resident GPU work and defer correctness readback
 until after measured samples, giving a lower-bound estimate for future
 resident GPU flow chains where intermediate values remain on the GPU.

@@ -2,12 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { get } from "node:http";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const port = readPort();
-const preset = readOption("--preset");
-const timeoutMs = readPositiveInteger("--timeout-ms", 60_000);
-const benchUrl = buildBenchUrl(port, preset);
-const cdpPort = port + 1000;
 const DIAGNOSTIC_MODES = new Set([
   "web_gpu_prepared_resident_submit_only_pipelined",
   "web_gpu_prepared_capacity_resident_submit_only_pipelined",
@@ -16,27 +12,44 @@ const DIAGNOSTIC_MODES = new Set([
   "web_gpu_prepared_resident_chained_dispatch_only_pipelined",
   "web_gpu_prepared_resident_matmul_bias_dispatch_only_pipelined",
 ]);
-const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
-  stdio: ["ignore", "pipe", "pipe"],
-});
-const chrome = spawn(chromePath(), chromeArgs(cdpPort), {
-  stdio: ["ignore", "pipe", "pipe"],
-});
+let timeoutMs = 60_000;
 
-try {
-  await waitForHttp(benchUrl, 20_000);
-  await waitForHttp(`http://127.0.0.1:${cdpPort}/json/version`, 20_000);
-  const target = await requestJson(
-    `http://127.0.0.1:${cdpPort}/json/new?${encodeURIComponent("about:blank")}`,
-    "PUT",
-  );
-  const report = await readBenchReport(target.webSocketDebuggerUrl, benchUrl);
-  const summary = summarize(report);
-  console.log(JSON.stringify(summary, null, 2));
-  process.exitCode = summary.failed_cases === 0 ? 0 : 1;
-} finally {
-  chrome.kill();
-  server.kill();
+if (isMainModule()) {
+  await main();
+}
+
+async function main() {
+  const port = readPort();
+  const preset = readOption("--preset");
+  timeoutMs = readPositiveInteger("--timeout-ms", 60_000);
+  const benchUrl = buildBenchUrl(port, preset);
+  const cdpPort = port + 1000;
+  const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const chrome = spawn(chromePath(), chromeArgs(cdpPort), {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  try {
+    await waitForHttp(benchUrl, 20_000);
+    await waitForHttp(`http://127.0.0.1:${cdpPort}/json/version`, 20_000);
+    const target = await requestJson(
+      `http://127.0.0.1:${cdpPort}/json/new?${encodeURIComponent("about:blank")}`,
+      "PUT",
+    );
+    const report = await readBenchReport(target.webSocketDebuggerUrl, benchUrl);
+    const summary = summarize(report);
+    console.log(JSON.stringify(summary, null, 2));
+    process.exitCode = summary.failed_cases === 0 ? 0 : 1;
+  } finally {
+    chrome.kill();
+    server.kill();
+  }
+}
+
+function isMainModule() {
+  return process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 }
 
 function readPort() {
@@ -245,6 +258,9 @@ function summarize(report) {
         case_id: entry.case_id,
         mode: entry.mode,
         median_ms: entry.median_ms,
+        mad_ms: entry.mad_ms,
+        min_ms: entry.min_ms,
+        p95_ms: entry.p95_ms,
         effective_gflops: entry.effective_gflops,
         submit_ms: entry.submit_median_ms,
         readback_ms: entry.readback_median_ms,
@@ -322,6 +338,9 @@ function summarizeStabilitySpeedups(report, options) {
         mode: entry.mode,
         cpu_ms: cpu.median_of_medians_ms,
         gpu_ms: entry.median_of_medians_ms,
+        gpu_min_ms: entry.min_median_ms,
+        gpu_max_ms: entry.max_median_ms,
+        gpu_mad_ms: entry.median_mad_ms,
         speedup: cpu.median_of_medians_ms / entry.median_of_medians_ms,
         effective_gflops:
           representative?.estimated_flops && entry.median_of_medians_ms > 0
@@ -369,7 +388,11 @@ function summarizeCaseSpeedups(report, options) {
         case: key,
         mode: entry.mode,
         cpu_ms: cpu.median_ms,
+        cpu_mad_ms: cpu.mad_ms,
+        cpu_p95_ms: cpu.p95_ms,
         gpu_ms: entry.median_ms,
+        gpu_mad_ms: entry.mad_ms,
+        gpu_p95_ms: entry.p95_ms,
         speedup: cpu.median_ms / entry.median_ms,
         effective_gflops: entry.effective_gflops,
         submit_ms: entry.submit_median_ms,
@@ -445,3 +468,5 @@ function request(url, method = "GET") {
     request.on("error", reject);
   });
 }
+
+export { summarize, summarizeSpeedups, summarizeStability };
