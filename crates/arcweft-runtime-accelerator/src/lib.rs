@@ -535,6 +535,102 @@ impl RuntimePureCacheEntry {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimePureNativeKind {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    F32,
+    F64,
+}
+
+impl RuntimePureNativeKind {
+    const fn input_type(self) -> RuntimePureInputType {
+        match self {
+            Self::I8 => RuntimePureInputType::I8,
+            Self::I16 => RuntimePureInputType::I16,
+            Self::I32 => RuntimePureInputType::I32,
+            Self::I64 => RuntimePureInputType::I64,
+            Self::I128 => RuntimePureInputType::I128,
+            Self::U8 => RuntimePureInputType::U8,
+            Self::U16 => RuntimePureInputType::U16,
+            Self::U32 => RuntimePureInputType::U32,
+            Self::U64 => RuntimePureInputType::U64,
+            Self::U128 => RuntimePureInputType::U128,
+            Self::F32 => RuntimePureInputType::F32,
+            Self::F64 => RuntimePureInputType::F64,
+        }
+    }
+
+    const fn zero_value(self) -> RuntimeValue {
+        match self {
+            Self::I8 => RuntimeValue::i8(0),
+            Self::I16 => RuntimeValue::i16(0),
+            Self::I32 => RuntimeValue::i32(0),
+            Self::I64 => RuntimeValue::i64(0),
+            Self::I128 => RuntimeValue::i128(0),
+            Self::U8 => RuntimeValue::u8(0),
+            Self::U16 => RuntimeValue::u16(0),
+            Self::U32 => RuntimeValue::u32(0),
+            Self::U64 => RuntimeValue::u64(0),
+            Self::U128 => RuntimeValue::u128(0),
+            Self::F32 => RuntimeValue::F32(0.0),
+            Self::F64 => RuntimeValue::F64(0.0),
+        }
+    }
+
+    const fn object_input_kind(self) -> PureObjectInputKind {
+        match self {
+            Self::I8 => PureObjectInputKind::I8,
+            Self::I16 => PureObjectInputKind::I16,
+            Self::I32 => PureObjectInputKind::I32,
+            Self::I64 => PureObjectInputKind::I64,
+            Self::I128 => PureObjectInputKind::I128,
+            Self::U8 => PureObjectInputKind::U8,
+            Self::U16 => PureObjectInputKind::U16,
+            Self::U32 => PureObjectInputKind::U32,
+            Self::U64 => PureObjectInputKind::U64,
+            Self::U128 => PureObjectInputKind::U128,
+            Self::F32 => PureObjectInputKind::F32,
+            Self::F64 => PureObjectInputKind::F64,
+        }
+    }
+}
+
+fn helper_native_kind(helper: &RuntimePureHelper) -> Option<RuntimePureNativeKind> {
+    let kind = match helper.output_type {
+        RuntimePureOutputType::I8 => RuntimePureNativeKind::I8,
+        RuntimePureOutputType::I16 => RuntimePureNativeKind::I16,
+        RuntimePureOutputType::I32 => RuntimePureNativeKind::I32,
+        RuntimePureOutputType::I64 => RuntimePureNativeKind::I64,
+        RuntimePureOutputType::I128 => RuntimePureNativeKind::I128,
+        RuntimePureOutputType::U8 => RuntimePureNativeKind::U8,
+        RuntimePureOutputType::U16 => RuntimePureNativeKind::U16,
+        RuntimePureOutputType::U32 => RuntimePureNativeKind::U32,
+        RuntimePureOutputType::U64 => RuntimePureNativeKind::U64,
+        RuntimePureOutputType::U128 => RuntimePureNativeKind::U128,
+        RuntimePureOutputType::F32 => RuntimePureNativeKind::F32,
+        RuntimePureOutputType::F64 => RuntimePureNativeKind::F64,
+        RuntimePureOutputType::Bool
+        | RuntimePureOutputType::ISize
+        | RuntimePureOutputType::USize
+        | RuntimePureOutputType::Value => return None,
+    };
+    (helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|input_type| *input_type == kind.input_type()))
+    .then_some(kind)
+}
+
 fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
     helper: &RuntimePureHelper,
@@ -1509,62 +1605,11 @@ impl RuntimePureAccelerator {
             return;
         }
 
-        if helper_has_only_i8_inputs(helper) {
-            self.promote_auto_i8_jit(helper);
+        let Some(kind) = helper_native_kind(helper) else {
+            self.mark_auto_jit_failed(helper.id);
             return;
-        }
-
-        if helper_has_only_i16_inputs(helper) {
-            self.promote_auto_i16_jit(helper);
-            return;
-        }
-
-        if helper_has_only_i128_inputs(helper) {
-            self.promote_auto_i128_jit(helper);
-            return;
-        }
-
-        if helper_has_only_i32_inputs(helper) {
-            self.promote_auto_i32_jit(helper);
-            return;
-        }
-
-        if helper_has_only_u8_inputs(helper) {
-            self.promote_auto_u8_jit(helper);
-            return;
-        }
-
-        if helper_has_only_u16_inputs(helper) {
-            self.promote_auto_u16_jit(helper);
-            return;
-        }
-
-        if helper_has_only_u32_inputs(helper) {
-            self.promote_auto_u32_jit(helper);
-            return;
-        }
-
-        if helper_has_only_u64_inputs(helper) {
-            self.promote_auto_u64_jit(helper);
-            return;
-        }
-
-        if helper_has_only_u128_inputs(helper) {
-            self.promote_auto_u128_jit(helper);
-            return;
-        }
-
-        if helper_has_only_f32_inputs(helper) {
-            self.promote_auto_f32_jit(helper);
-            return;
-        }
-
-        if helper_has_only_f64_inputs(helper) {
-            self.promote_auto_f64_jit(helper);
-            return;
-        }
-
-        self.promote_auto_i64_jit(helper);
+        };
+        self.promote_auto_native_jit(helper, kind);
     }
 
     fn has_promotable_auto_slot(&self, id: RuntimePureHelperId) -> bool {
@@ -1578,147 +1623,33 @@ impl RuntimePureAccelerator {
         )
     }
 
-    fn promote_auto_i32_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::i32(0));
-        match compile_jit_i32(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitI32(_)) => {
+    fn promote_auto_native_jit(&mut self, helper: &RuntimePureHelper, kind: RuntimePureNativeKind) {
+        let request = compile_request(helper, || kind.zero_value());
+        match compile_native_jit(kind, &request, helper, &mut self.compile_stats) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.install_promoted_i64_jit(helper.id, compiled);
+            }
+            Some(entry) => {
                 self.install_promoted_jit_entry(helper.id, entry);
             }
-            Some(_) => unreachable!("compile_jit_i32 only returns i32 JIT entries"),
             None => self.mark_auto_jit_failed(helper.id),
         }
     }
 
-    fn promote_auto_i8_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::i8(0));
-        match compile_jit_i8(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitI8(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_i8 only returns i8 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_i16_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::i16(0));
-        match compile_jit_i16(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitI16(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_i16 only returns i16 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_i128_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::i128(0));
-        match compile_jit_i128_batch(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitI128Batch(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_i128_batch only returns i128 batch JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_u32_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::u32(0));
-        match compile_jit_u32(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitU32(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_u32 only returns u32 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_u8_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::u8(0));
-        match compile_jit_u8(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitU8(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_u8 only returns u8 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_u16_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::u16(0));
-        match compile_jit_u16(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitU16(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_u16 only returns u16 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_u64_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::u64(0));
-        match compile_jit_u64(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitU64(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_u64 only returns u64 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_u128_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::u128(0));
-        match compile_jit_u128_batch(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitU128Batch(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_u128_batch only returns u128 batch JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_f32_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::F32(0.0));
-        match compile_jit_f32(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitF32(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_f32 only returns f32 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_f64_jit(&mut self, helper: &RuntimePureHelper) {
-        let request = compile_request(helper, || RuntimeValue::F64(0.0));
-        match compile_jit_f64(&request, helper, &mut self.compile_stats) {
-            Some(entry @ RuntimePureCacheEntry::JitF64(_)) => {
-                self.install_promoted_jit_entry(helper.id, entry);
-            }
-            Some(_) => unreachable!("compile_jit_f64 only returns f64 JIT entries"),
-            None => self.mark_auto_jit_failed(helper.id),
-        }
-    }
-
-    fn promote_auto_i64_jit(&mut self, helper: &RuntimePureHelper) {
+    fn install_promoted_i64_jit(
+        &mut self,
+        id: RuntimePureHelperId,
+        compiled: Box<CompiledPureI64Inputs>,
+    ) {
         let Some(RuntimePureCacheEntry::AutoAot {
             jit, jit_failed, ..
-        }) = self.cache.get_mut(helper.id.0).and_then(Option::as_mut)
+        }) = self.cache.get_mut(id.0).and_then(Option::as_mut)
         else {
             return;
         };
-        if !helper_has_only_i64_inputs(helper) {
-            *jit_failed = true;
-            return;
-        }
-        let request = compile_request(helper, || RuntimeValue::i64(0));
-        match compile_jit(&request, helper, &mut self.compile_stats) {
-            Some(RuntimePureCacheEntry::Jit(compiled)) => {
-                *jit = Some(compiled);
-                self.compile_stats.auto_jit_promotions += 1;
-            }
-            Some(_) => unreachable!("compile_jit only returns JIT entries"),
-            None => *jit_failed = true,
-        }
+        *jit = Some(compiled);
+        *jit_failed = false;
+        self.compile_stats.auto_jit_promotions += 1;
     }
 
     fn install_promoted_jit_entry(
@@ -4296,7 +4227,7 @@ fn compile_helper(
     if mode == RuntimePureBackendMode::Vm {
         return RuntimePureCacheEntry::Vm;
     }
-    if helper_has_only_i64_inputs(helper) {
+    if helper_native_kind(helper) == Some(RuntimePureNativeKind::I64) {
         let request = compile_request(helper, || RuntimeValue::i64(0));
         return match mode {
             RuntimePureBackendMode::Vm => RuntimePureCacheEntry::Vm,
@@ -4325,22 +4256,14 @@ fn compile_helper(
                 .unwrap_or(RuntimePureCacheEntry::Vm)
         }
         RuntimePureBackendMode::Jit => {
-            if let Some(jit) = compile_jit_i8(&request, helper, stats)
-                .or_else(|| compile_jit_i16(&request, helper, stats))
-                .or_else(|| compile_jit_i128_batch(&request, helper, stats))
-                .or_else(|| compile_jit_i32(&request, helper, stats))
-                .or_else(|| compile_jit_u8(&request, helper, stats))
-                .or_else(|| compile_jit_u16(&request, helper, stats))
-                .or_else(|| compile_jit_u32(&request, helper, stats))
-                .or_else(|| compile_jit_u64(&request, helper, stats))
-                .or_else(|| compile_jit_u128_batch(&request, helper, stats))
-                .or_else(|| compile_jit_f32(&request, helper, stats))
-                .or_else(|| compile_jit_f64(&request, helper, stats))
-            {
-                jit
+            if let Some(kind) = helper_native_kind(helper) {
+                compile_native_jit(kind, &request, helper, stats).unwrap_or_else(|| {
+                    compile_aot_scalar(&request, helper, input_type, output_type, stats)
+                        .unwrap_or(RuntimePureCacheEntry::Vm)
+                })
             } else {
-                stats.jit_attempts += 1;
-                stats.jit_failures += 1;
+                stats.jit_attempts = stats.jit_attempts.saturating_add(1);
+                stats.jit_failures = stats.jit_failures.saturating_add(1);
                 compile_aot_scalar(&request, helper, input_type, output_type, stats)
                     .unwrap_or(RuntimePureCacheEntry::Vm)
             }
@@ -4538,127 +4461,8 @@ fn compile_auto(
     }
 }
 
-fn helper_has_only_i64_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::I64
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I64))
-}
-
-fn helper_has_only_i32_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::I32
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I32))
-}
-
-fn helper_has_only_i8_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::I8
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I8))
-}
-
-fn helper_has_only_i16_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::I16
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I16))
-}
-
-fn helper_has_only_i128_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::I128
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I128))
-}
-
-fn helper_has_only_u32_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::U32
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::U32))
-}
-
-fn helper_has_only_u8_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::U8
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::U8))
-}
-
-fn helper_has_only_u16_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::U16
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::U16))
-}
-
-fn helper_has_only_u64_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::U64
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::U64))
-}
-
-fn helper_has_only_u128_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::U128
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::U128))
-}
-
-fn helper_has_only_f32_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::F32
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::F32))
-}
-
-fn helper_has_only_f64_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.output_type == RuntimePureOutputType::F64
-        && helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::F64))
-}
-
 fn helper_has_native_jit_entry(helper: &RuntimePureHelper) -> bool {
-    helper_has_only_i8_inputs(helper)
-        || helper_has_only_i16_inputs(helper)
-        || helper_has_only_i128_inputs(helper)
-        || helper_has_only_i32_inputs(helper)
-        || helper_has_only_i64_inputs(helper)
-        || helper_has_only_u8_inputs(helper)
-        || helper_has_only_u16_inputs(helper)
-        || helper_has_only_u32_inputs(helper)
-        || helper_has_only_u64_inputs(helper)
-        || helper_has_only_u128_inputs(helper)
-        || helper_has_only_f32_inputs(helper)
-        || helper_has_only_f64_inputs(helper)
+    helper_native_kind(helper).is_some()
 }
 
 fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usize {
@@ -4669,12 +4473,27 @@ fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usi
     }
 }
 
-fn compile_jit(
+fn finish_native_jit_compile<T>(
+    compiled: Option<T>,
+    stats: &mut RuntimePureCompileStats,
+    make_entry: impl FnOnce(T) -> RuntimePureCacheEntry,
+) -> Option<RuntimePureCacheEntry> {
+    stats.jit_attempts += 1;
+    if compiled.is_some() {
+        stats.jit_successes += 1;
+    } else {
+        stats.jit_failures += 1;
+    }
+    compiled.map(make_entry)
+}
+
+fn compile_native_jit(
+    kind: RuntimePureNativeKind,
     request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_i64_inputs(helper) {
+    if helper_native_kind(helper) != Some(kind) {
         return None;
     }
     if !native_jit_enabled() {
@@ -4682,255 +4501,102 @@ fn compile_jit(
         stats.jit_failures += 1;
         return None;
     }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
+
+    let input_names = || helper.input_names.iter().map(String::as_str);
+    match kind {
+        RuntimePureNativeKind::I8 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_i8_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitI8(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::I16 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_i16_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitI16(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::I32 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_i32_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitI32(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::I64 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_i64_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::Jit(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::I128 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_i128_batch_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitI128Batch(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::U8 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_u8_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitU8(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::U16 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_u16_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitU16(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::U32 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_u32_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitU32(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::U64 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_u64_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitU64(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::U128 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_u128_batch_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitU128Batch(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::F32 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_f32_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitF32(Box::new(compiled)),
+        ),
+        RuntimePureNativeKind::F64 => finish_native_jit_compile(
+            CraneliftPureFunctionBackend
+                .compile_f64_with_inputs(request, input_names())
+                .ok(),
+            stats,
+            |compiled| RuntimePureCacheEntry::JitF64(Box::new(compiled)),
+        ),
     }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::Jit)
 }
 
-fn compile_jit_i32(
+fn compile_jit(
     request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_i32_inputs(helper) {
-        return None;
-    }
-    if !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_i32_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitI32)
-}
-
-fn compile_jit_i8(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_i8_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_i8_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitI8)
-}
-
-fn compile_jit_i16(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_i16_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_i16_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitI16)
-}
-
-fn compile_jit_i128_batch(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_i128_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_i128_batch_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled
-        .map(Box::new)
-        .map(RuntimePureCacheEntry::JitI128Batch)
-}
-
-fn compile_jit_u32(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_u32_inputs(helper) {
-        return None;
-    }
-    if !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_u32_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitU32)
-}
-
-fn compile_jit_u8(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_u8_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_u8_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitU8)
-}
-
-fn compile_jit_u16(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_u16_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_u16_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitU16)
-}
-
-fn compile_jit_u64(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_u64_inputs(helper) {
-        return None;
-    }
-    if !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_u64_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitU64)
-}
-
-fn compile_jit_u128_batch(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_u128_inputs(helper) || !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_u128_batch_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled
-        .map(Box::new)
-        .map(RuntimePureCacheEntry::JitU128Batch)
-}
-
-fn compile_jit_f32(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_f32_inputs(helper) {
-        return None;
-    }
-    if !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_f32_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitF32)
-}
-
-fn compile_jit_f64(
-    request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
-    stats: &mut RuntimePureCompileStats,
-) -> Option<RuntimePureCacheEntry> {
-    if !helper_has_only_f64_inputs(helper) {
-        return None;
-    }
-    if !native_jit_enabled() {
-        return None;
-    }
-    stats.jit_attempts += 1;
-    let compiled = CraneliftPureFunctionBackend
-        .compile_f64_with_inputs(request, helper.input_names.iter().map(String::as_str))
-        .ok();
-    if compiled.is_some() {
-        stats.jit_successes += 1;
-    } else {
-        stats.jit_failures += 1;
-    }
-    compiled.map(Box::new).map(RuntimePureCacheEntry::JitF64)
+    compile_native_jit(RuntimePureNativeKind::I64, request, helper, stats)
 }
 
 fn compile_auto_scalar(
@@ -4967,7 +4633,7 @@ fn compile_aot_i64(
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.aot_attempts += 1;
-    let compiled = helper_has_only_i64_inputs(helper)
+    let compiled = (helper_native_kind(helper) == Some(RuntimePureNativeKind::I64))
         .then(|| {
             AotPureFunctionBackend::new()
                 .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
@@ -5023,9 +4689,9 @@ fn record_aot_object_artifact_bundle(
                 .is_some_and(RuntimePureCacheEntry::uses_aot_plan)
         })
         .filter_map(|helper| {
-            let input_kind = helper_object_input_kind(helper)?;
-            let request = compile_request(helper, || object_zero_for_input(input_kind));
-            Some((input_kind, helper, request))
+            let kind = helper_native_kind(helper)?;
+            let request = compile_request(helper, || kind.zero_value());
+            Some((kind, helper, request))
         })
         .collect::<Vec<_>>();
 
@@ -5034,10 +4700,10 @@ fn record_aot_object_artifact_bundle(
     }
 
     stats.object_attempts = stats.object_attempts.saturating_add(prepared.len());
-    let requests = prepared.iter().map(|(input_kind, helper, request)| {
+    let requests = prepared.iter().map(|(kind, helper, request)| {
         PureObjectBundleRequest::new(
             request,
-            *input_kind,
+            kind.object_input_kind(),
             helper.input_names.iter().map(String::as_str),
         )
     });
@@ -5061,55 +4727,6 @@ fn record_aot_object_artifact_bundle(
     _cache: &[Option<RuntimePureCacheEntry>],
     _stats: &mut RuntimePureCompileStats,
 ) {
-}
-
-#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
-fn helper_object_input_kind(helper: &RuntimePureHelper) -> Option<PureObjectInputKind> {
-    if helper_has_only_i8_inputs(helper) {
-        Some(PureObjectInputKind::I8)
-    } else if helper_has_only_i16_inputs(helper) {
-        Some(PureObjectInputKind::I16)
-    } else if helper_has_only_i32_inputs(helper) {
-        Some(PureObjectInputKind::I32)
-    } else if helper_has_only_i64_inputs(helper) {
-        Some(PureObjectInputKind::I64)
-    } else if helper_has_only_i128_inputs(helper) {
-        Some(PureObjectInputKind::I128)
-    } else if helper_has_only_u8_inputs(helper) {
-        Some(PureObjectInputKind::U8)
-    } else if helper_has_only_u16_inputs(helper) {
-        Some(PureObjectInputKind::U16)
-    } else if helper_has_only_u32_inputs(helper) {
-        Some(PureObjectInputKind::U32)
-    } else if helper_has_only_u64_inputs(helper) {
-        Some(PureObjectInputKind::U64)
-    } else if helper_has_only_u128_inputs(helper) {
-        Some(PureObjectInputKind::U128)
-    } else if helper_has_only_f32_inputs(helper) {
-        Some(PureObjectInputKind::F32)
-    } else if helper_has_only_f64_inputs(helper) {
-        Some(PureObjectInputKind::F64)
-    } else {
-        None
-    }
-}
-
-#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
-const fn object_zero_for_input(input_kind: PureObjectInputKind) -> RuntimeValue {
-    match input_kind {
-        PureObjectInputKind::I8 => RuntimeValue::i8(0),
-        PureObjectInputKind::I16 => RuntimeValue::i16(0),
-        PureObjectInputKind::I32 => RuntimeValue::i32(0),
-        PureObjectInputKind::I64 => RuntimeValue::i64(0),
-        PureObjectInputKind::I128 => RuntimeValue::i128(0),
-        PureObjectInputKind::U8 => RuntimeValue::u8(0),
-        PureObjectInputKind::U16 => RuntimeValue::u16(0),
-        PureObjectInputKind::U32 => RuntimeValue::u32(0),
-        PureObjectInputKind::U64 => RuntimeValue::u64(0),
-        PureObjectInputKind::U128 => RuntimeValue::u128(0),
-        PureObjectInputKind::F32 => RuntimeValue::F32(0.0),
-        PureObjectInputKind::F64 => RuntimeValue::F64(0.0),
-    }
 }
 
 fn helper_scalar_aot_input_type(helper: &RuntimePureHelper) -> Option<RuntimePureInputType> {

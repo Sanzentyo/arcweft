@@ -182,6 +182,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   explicitly enables object artifacts. Object attempts and successes count
   helpers, while emitted bytes count the bundled object. This is off by default
   so ordinary Auto/AOT startup does not pay build-time AOT emission cost.
+  `arcweft-runtime-accelerator` now classifies exact-width native helper
+  support through one private typed kind, so JIT promotion, native JIT compile
+  dispatch, and object-bundle input-kind selection share the same width-preserving
+  source of truth instead of parallel per-width predicates.
   The object bytes are not executed by the runtime cache yet; typed AOT and
   native JIT remain the executable paths, while object artifacts are measured
   build-time AOT evidence for a future loader/linker boundary.
