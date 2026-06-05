@@ -130,7 +130,13 @@ fixture started on AOT but promoted the same helper to JIT once the flat-batch
 work crossed the Auto threshold: `009_nonuniform_map_pure_batch.arcw` reported
 median elapsed time `14200 ns`, `pure_batch_items_median = 128`,
 `pure_jit_calls_median = 128`, `auto_jit_promotions = 1`, `jit_attempts = 1`,
-and `aot_attempts = 1`.
+and `aot_attempts = 1`. The repeated-row map+sum specialization now uses the
+same Auto promotion policy: `008_large_map_pure_batch.arcw` reported median
+elapsed time `8700 ns`, `pure_batch_items_median = 4096`,
+`pure_jit_calls_median = 4096`, `pure_aot_calls_median = 0`,
+`auto_jit_deferred = 1`, and `auto_jit_promotions = 1`. The same fixture had
+previously stayed on typed AOT in this path, so the change removes a repeated
+batch policy gap rather than adding a compatibility path.
 
 Dense scalar sequence benches:
 

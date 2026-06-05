@@ -19,7 +19,7 @@ name or relative fixture label and must not record host absolute paths.
 | `003_for_pure_jit.arcw` | scalar pure helper calls | `i64` input/output through `for` | native JIT when requested, no argument Vec allocation |
 | `005_inferred_pure_jit.arcw` | inferred pure helper batch | inferred `i64` input/output | native JIT when requested |
 | `007_branching_iter_pure_jit.arcw` | mixed scalar and batch pure helper calls | branching `i64` input/output | native JIT when requested |
-| `008_large_map_pure_batch.arcw` | large pure helper batch | `i64` input/output | Auto promotes from typed AOT to native JIT |
+| `008_large_map_pure_batch.arcw` | large repeated-row pure helper batch | `i64` input/output | Auto promotes repeated-row map+sum from typed AOT to native JIT |
 | `009_nonuniform_map_pure_batch.arcw` | nonuniform pure helper batch | `i64` input/output | Auto promotes from typed AOT to native JIT |
 | `016_dense_i32_map_pure_batch.arcw` | pure helper batch | `i32` input/output | native JIT when requested, AOT/VM selectable |
 | `017_dense_u32_map_pure_batch.arcw` | pure helper batch | `u32` input/output | native JIT when requested, AOT/VM selectable |
@@ -104,9 +104,13 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
 ```
 
-Per-fixture convenience targets now also exist for `just bench-016` through
+Per-fixture convenience targets now also exist for the i64 helper fixtures
+(`just bench-002`, `just bench-003`, `just bench-005`, `just bench-007`,
+`just bench-008`, and `just bench-009`), `just bench-016` through
 `just bench-020`, `just bench-022`, `just bench-023`, and `just bench-029`
-through `just bench-033`. Those targets request `--pure-backend jit`.
+through `just bench-033`. Those targets request `--pure-backend jit` where the
+fixture directly selects native JIT, while the large i64 Auto fixtures use
+`--pure-backend auto` to exercise deferred JIT promotion.
 
 ## Verification Inventory
 

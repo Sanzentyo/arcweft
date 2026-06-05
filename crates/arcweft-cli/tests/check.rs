@@ -4155,7 +4155,7 @@ fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
         .arg("--max-ops")
         .arg("64")
         .arg("--pure-backend")
-        .arg("aot")
+        .arg("auto")
         .arg("--pure-workers")
         .arg("4")
         .arg("--pure-batch-min-len")
@@ -4186,7 +4186,18 @@ fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
         measurement["deterministic"]["pure_batch_items_median"],
         4096
     );
-    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 4096);
+    assert_eq!(
+        measurement["deterministic"]["pure_jit_calls_median"], 4096,
+        "{stdout}"
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_aot_calls_median"], 0,
+        "{stdout}"
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["auto_jit_promotions"],
+        1
+    );
     assert_eq!(
         measurement["deterministic"]["pure_thread_pool_jobs_median"],
         0

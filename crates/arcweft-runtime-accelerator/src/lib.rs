@@ -1490,6 +1490,9 @@ impl RuntimePureAccelerator {
         if rows == 0 {
             return Ok(0);
         }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, rows);
+        }
         let rows_i64 = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: "pure repeated batch row count must fit i64".to_owned(),
