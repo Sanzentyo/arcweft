@@ -143,11 +143,14 @@ fn runtime_math_auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'st
     match value {
         RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
         RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
-        RuntimeMathAutoSelectionReason::MatmulCpuDefault => "matmul_cpu_default",
+        RuntimeMathAutoSelectionReason::MatmulScalarSmallWork => "matmul_scalar_small_work",
+        RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault => "matmul_ndarray_cpu_default",
         RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
             "elementwise_wgpu_work_threshold"
         }
-        RuntimeMathAutoSelectionReason::ElementwiseCpuDefault => "elementwise_cpu_default",
+        RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault => {
+            "elementwise_ndarray_cpu_default"
+        }
     }
 }
 

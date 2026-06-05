@@ -1732,11 +1732,14 @@ const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static st
     match value {
         RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
         RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
-        RuntimeMathAutoSelectionReason::MatmulCpuDefault => "matmul_cpu_default",
+        RuntimeMathAutoSelectionReason::MatmulScalarSmallWork => "matmul_scalar_small_work",
+        RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault => "matmul_ndarray_cpu_default",
         RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
             "elementwise_wgpu_work_threshold"
         }
-        RuntimeMathAutoSelectionReason::ElementwiseCpuDefault => "elementwise_cpu_default",
+        RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault => {
+            "elementwise_ndarray_cpu_default"
+        }
     }
 }
 
@@ -1925,7 +1928,9 @@ mod tests {
                 RuntimeMathStats {
                     ndarray_calls: 1,
                     last_backend: Some(RuntimeMathBackend::Ndarray),
-                    last_auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+                    last_auto_reason: Some(
+                        RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault,
+                    ),
                     ..RuntimeMathStats::default()
                 },
             )],
@@ -1935,7 +1940,7 @@ mod tests {
 
         assert!(matches!(options.op, BenchOp::MatrixAddF64));
         assert!(json.contains("\"op\":\"matrix_add_f64\""));
-        assert!(json.contains("\"last_auto_reason\":\"elementwise_cpu_default\""));
+        assert!(json.contains("\"last_auto_reason\":\"elementwise_ndarray_cpu_default\""));
         assert!(json.contains("\"capacity_size\":null"));
     }
 

@@ -21,9 +21,10 @@ pub enum RuntimeMathBackend {
 pub enum RuntimeMathAutoSelectionReason {
     Matmul4x4Glam,
     MatmulWgpuWorkThreshold,
-    MatmulCpuDefault,
+    MatmulScalarSmallWork,
+    MatmulNdarrayCpuDefault,
     ElementwiseWgpuWorkThreshold,
-    ElementwiseCpuDefault,
+    ElementwiseNdarrayCpuDefault,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1439,7 +1440,7 @@ impl RuntimeMathAccelerator {
             }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
-                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault),
             },
             backend => RuntimeMathBackendSelection {
                 backend,
@@ -1465,12 +1466,12 @@ impl RuntimeMathAccelerator {
             {
                 RuntimeMathBackendSelection {
                     backend: RuntimeMathBackend::Scalar,
-                    auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulScalarSmallWork),
                 }
             }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
-                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault),
             },
             backend => RuntimeMathBackendSelection {
                 backend,
@@ -1491,7 +1492,7 @@ impl RuntimeMathAccelerator {
             }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
-                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault),
             },
             backend => RuntimeMathBackendSelection {
                 backend,
@@ -1504,7 +1505,7 @@ impl RuntimeMathAccelerator {
         match self.config.backend {
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
-                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault),
             },
             backend => RuntimeMathBackendSelection {
                 backend,
@@ -7109,7 +7110,7 @@ mod tests {
         );
         assert_eq!(
             accelerator.stats().last_auto_reason,
-            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+            Some(RuntimeMathAutoSelectionReason::MatmulScalarSmallWork)
         );
     }
 
@@ -7130,7 +7131,7 @@ mod tests {
         );
         assert_eq!(
             accelerator.stats().last_auto_reason,
-            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+            Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault)
         );
     }
 
@@ -7172,7 +7173,7 @@ mod tests {
         );
         assert_eq!(
             accelerator.stats().last_auto_reason,
-            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+            Some(RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault)
         );
         assert_eq!(accelerator.stats().wgpu_calls, 0);
     }
@@ -7218,7 +7219,7 @@ mod tests {
         );
         assert_eq!(
             accelerator.stats().last_auto_reason,
-            Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault)
+            Some(RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault)
         );
     }
 
