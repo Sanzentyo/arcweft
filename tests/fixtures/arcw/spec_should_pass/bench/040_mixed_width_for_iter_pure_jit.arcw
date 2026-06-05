@@ -1,0 +1,70 @@
+#[pure]
+fn score_i16(base: i16, bias: i16) -> i16 {
+    return if base >= 4i16 { base * bias } else { base + bias }
+}
+
+#[pure]
+fn score_u16(base: u16, bias: u16) -> u16 {
+    return base * (bias + 1u16)
+}
+
+#[pure]
+fn score_isize(base: isize, bias: isize) -> isize {
+    return base + bias + 3isize
+}
+
+#[pure]
+fn score_usize(base: usize, bias: usize) -> usize {
+    return base * (bias + 2usize)
+}
+
+#[pure]
+fn score_f64(base: f64, scale: f64) -> f64 {
+    return base * (scale + 2.0f64)
+}
+
+bench @bench.mixed_width_for_iter_pure_jit {
+    measure iterations = 4 { start(@flow.mixed_width_for_iter_pure_jit) }
+}
+
+flow @flow.mixed_width_for_iter_pure_jit mixed_width_for_iter_pure_jit {
+    let signed: Vec<i16> = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16]
+    let unsigned: Vec<u16> = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16]
+    let sized: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]
+    let usize_values: Vec<usize> = [1usize, 2usize, 3usize, 4usize, 5usize, 6usize, 7usize, 8usize]
+    let floats: Array<f64, 8> = [2.0f64; 8]
+
+    let signed_scores: Vec<i16> = signed.map(|item| score_i16(item, 3i16))
+    let unsigned_scores: Vec<u16> = unsigned.map(|item| score_u16(item, 2u16))
+    let sized_scores: Vec<isize> = sized.map(|item| score_isize(item, 5isize))
+    let usize_scores: Vec<usize> = usize_values.map(|item| score_usize(item, 2usize))
+    let float_scores: Vec<f64> = floats.map(|item| score_f64(item, 1.5f64))
+
+    for item in signed {
+        let scored = score_i16(item, 2i16)
+        log.info(scored)
+    }
+    for item in unsigned {
+        let scored = score_u16(item, 3u16)
+        log.info(scored)
+    }
+    for item in sized {
+        let scored = score_isize(item, 7isize)
+        log.info(scored)
+    }
+    for item in usize_values {
+        let scored = score_usize(item, 1usize)
+        log.info(scored)
+    }
+    for item in floats {
+        let adjusted = score_f64(item, 0.5f64)
+        log.info(adjusted)
+    }
+
+    log.info(signed_scores.len())
+    log.info(unsigned_scores.len())
+    log.info(sized_scores.len())
+    log.info(usize_scores.len())
+    log.info(float_scores.len())
+    return "done"
+}
