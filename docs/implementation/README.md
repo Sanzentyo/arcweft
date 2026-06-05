@@ -287,11 +287,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `matrix/f64/<rows>x<cols>:<csv>`, and `tensor/f64/<dims>:<csv>` values,
   making source-level `math.*` flows measurable through the normal bench JSON.
   The portable wgpu kernels remain `f32`; `f64` math uses scalar, glam 4x4, or
-  ndarray CPU backends without narrowing. The standalone `math_bench` example
-  now also accepts `matmul-f64`, `matrix-add-f64`, and `tensor-add-f64`, so
-  f64 backend selection can be measured through the same typed path-free JSON
-  report as f32 math; explicit wgpu f64 requests report the portable-kernel
-  unsupported reason instead of narrowing to f32. Native prepared wgpu math now
+  ndarray CPU backends without narrowing. `Auto` keeps `f64` off wgpu, uses the
+  scalar row-major matmul kernel for small general matrices up to 64^3 work
+  items, and switches larger `f64` matmul calls to ndarray after the measured
+  scalar/ndarray crossover. The standalone `math_bench` example now also
+  accepts `matmul-f64`, `matrix-add-f64`, and `tensor-add-f64`, so f64 backend
+  selection can be measured through the same typed path-free JSON report as f32
+  math; explicit wgpu f64 requests report the portable-kernel unsupported reason
+  instead of narrowing to f32. Native prepared wgpu math now
   caches by power-of-two capacity buckets in the runtime/Auto path, keeps exact
   repeated inputs resident, updates changed inputs with `queue.write_buffer`,
   and exposes capacity-prepared matrix/tensor APIs for dispatching smaller
