@@ -80,6 +80,62 @@ pub struct ObjectPureBatchInputs {
     pub stats: PureFunctionStats,
 }
 
+/// Exact scalar storage kind used when emitting pure helper object artifacts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PureObjectInputKind {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    F32,
+    F64,
+}
+
+/// One pure helper requested for build-time object artifact emission.
+pub struct PureObjectBundleRequest<'a> {
+    pub request: &'a PureFunctionRequest,
+    pub kind: PureObjectInputKind,
+    pub param_names: Vec<String>,
+}
+
+impl<'a> PureObjectBundleRequest<'a> {
+    /// Creates one object-bundle request with Arcweft runtime input names.
+    pub fn new(
+        request: &'a PureFunctionRequest,
+        kind: PureObjectInputKind,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        Self {
+            request,
+            kind,
+            param_names: param_names.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Relocatable object output containing multiple pure helpers.
+pub struct ObjectPureBundle {
+    pub object_bytes: Vec<u8>,
+    pub helpers: Vec<ObjectPureBundleHelper>,
+}
+
+/// Symbol metadata for one helper inside an object bundle.
+pub struct ObjectPureBundleHelper {
+    pub name: String,
+    pub kind: PureObjectInputKind,
+    pub entry_symbol: Option<String>,
+    pub batch_symbol: String,
+    pub batch_sum_symbol: Option<String>,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
 /// Pure scalar helper functions defined into a Cranelift module.
 ///
 /// This is the codegen-side artifact shared by JIT and future object/AOT
@@ -892,6 +948,14 @@ impl CraneliftPureFunctionBackend {
         emit_object_f64_with_inputs(request, param_names)
     }
 
+    /// Emits one relocatable object containing multiple pure helper artifacts.
+    pub fn emit_object_bundle<'a>(
+        &self,
+        helpers: impl IntoIterator<Item = PureObjectBundleRequest<'a>>,
+    ) -> Result<ObjectPureBundle, CraneliftCodegenError> {
+        emit_object_bundle(helpers)
+    }
+
     /// Compiles a batch benchmark runner for a pure helper request.
     pub fn compile_i64_batch(
         &self,
@@ -1090,6 +1154,221 @@ where
         batch_sum,
         param_names,
         stats,
+    })
+}
+
+/// Emits one relocatable object containing multiple parameterized pure helpers.
+pub fn emit_object_bundle<'a>(
+    helpers: impl IntoIterator<Item = PureObjectBundleRequest<'a>>,
+) -> Result<ObjectPureBundle, CraneliftCodegenError> {
+    let mut module = object_module()?;
+    let mut metadata = Vec::new();
+    for (index, helper) in helpers.into_iter().enumerate() {
+        let symbol_prefix = format!(
+            "arcweft_pure_bundle_{index}_{}",
+            sanitize_symbol_component(&helper.request.name)
+        );
+        metadata.push(define_object_bundle_helper(
+            &mut module,
+            &symbol_prefix,
+            helper,
+        )?);
+    }
+    if metadata.is_empty() {
+        return Err(CraneliftCodegenError::UnsupportedExpr(
+            "object bundle must contain at least one pure helper".to_owned(),
+        ));
+    }
+    Ok(ObjectPureBundle {
+        object_bytes: emit_object_bytes(module)?,
+        helpers: metadata,
+    })
+}
+
+fn define_object_bundle_helper<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    helper: PureObjectBundleRequest<'_>,
+) -> Result<ObjectPureBundleHelper, CraneliftCodegenError>
+where
+    M: Module,
+{
+    let name = helper.request.name.clone();
+    let kind = helper.kind;
+    match kind {
+        PureObjectInputKind::I64 => {
+            let defined =
+                define_i64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::I32 => {
+            let defined =
+                define_i32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::U32 => {
+            let defined =
+                define_u32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::U64 => {
+            let defined =
+                define_u64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::F32 => {
+            let defined =
+                define_f32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(float_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::F64 => {
+            let defined =
+                define_f64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+            Ok(float_bundle_helper(symbol_prefix, name, kind, defined))
+        }
+        PureObjectInputKind::I8 => small_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::I8,
+        ),
+        PureObjectInputKind::I16 => small_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::I16,
+        ),
+        PureObjectInputKind::U8 => small_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::U8,
+        ),
+        PureObjectInputKind::U16 => small_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::U16,
+        ),
+        PureObjectInputKind::I128 => wide_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::I128,
+        ),
+        PureObjectInputKind::U128 => wide_int_bundle_helper(
+            module,
+            symbol_prefix,
+            helper.request,
+            helper.param_names,
+            name,
+            kind,
+            SmallIntKind::U128,
+        ),
+    }
+}
+
+fn scalar_bundle_helper(
+    symbol_prefix: &str,
+    name: String,
+    kind: PureObjectInputKind,
+    defined: DefinedPureScalarInputs,
+) -> ObjectPureBundleHelper {
+    ObjectPureBundleHelper {
+        name,
+        kind,
+        entry_symbol: Some(format!("{symbol_prefix}_entry")),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
+    }
+}
+
+fn float_bundle_helper(
+    symbol_prefix: &str,
+    name: String,
+    kind: PureObjectInputKind,
+    defined: DefinedPureFloatInputs,
+) -> ObjectPureBundleHelper {
+    ObjectPureBundleHelper {
+        name,
+        kind,
+        entry_symbol: Some(format!("{symbol_prefix}_entry")),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: None,
+        param_names: defined.param_names,
+        stats: defined.stats,
+    }
+}
+
+fn small_int_bundle_helper<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: Vec<String>,
+    name: String,
+    kind: PureObjectInputKind,
+    small_kind: SmallIntKind,
+) -> Result<ObjectPureBundleHelper, CraneliftCodegenError>
+where
+    M: Module,
+{
+    let defined =
+        define_small_int_with_inputs(module, symbol_prefix, request, param_names, small_kind)?;
+    Ok(ObjectPureBundleHelper {
+        name,
+        kind,
+        entry_symbol: Some(format!("{symbol_prefix}_entry")),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn wide_int_bundle_helper<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: Vec<String>,
+    name: String,
+    kind: PureObjectInputKind,
+    small_kind: SmallIntKind,
+) -> Result<ObjectPureBundleHelper, CraneliftCodegenError>
+where
+    M: Module,
+{
+    let defined = define_small_int_batch_with_inputs(
+        module,
+        symbol_prefix,
+        request,
+        param_names,
+        small_kind,
+    )?;
+    Ok(ObjectPureBundleHelper {
+        name,
+        kind,
+        entry_symbol: None,
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
     })
 }
 
@@ -5414,6 +5693,33 @@ mod tests {
         assert!(symbols.contains(&object.batch_sum_symbol.as_str()));
     }
 
+    fn assert_bundle_object_symbols(object: &ObjectPureBundle) {
+        assert!(!object.object_bytes.is_empty());
+        assert!(
+            !object
+                .object_bytes
+                .windows(3)
+                .any(|window| window == b":\\")
+        );
+
+        use cranelift_object::object::{Object, ObjectSymbol};
+        let parsed = cranelift_object::object::File::parse(object.object_bytes.as_slice())
+            .expect("emitted object bundle parses");
+        let symbols = parsed
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok())
+            .collect::<Vec<_>>();
+        for helper in &object.helpers {
+            if let Some(entry_symbol) = helper.entry_symbol.as_deref() {
+                assert!(symbols.contains(&entry_symbol));
+            }
+            assert!(symbols.contains(&helper.batch_symbol.as_str()));
+            if let Some(batch_sum_symbol) = helper.batch_sum_symbol.as_deref() {
+                assert!(symbols.contains(&batch_sum_symbol));
+            }
+        }
+    }
+
     #[test]
     fn cranelift_jit_evaluates_integer_helper_and_matches_vm() {
         let request = PureFunctionRequest::new(
@@ -5829,6 +6135,100 @@ mod tests {
             "arcweft_pure_score_object_u128_rows_batch_sum"
         );
         assert_batch_object_symbols(&u128_object);
+    }
+
+    #[test]
+    fn cranelift_emits_multi_helper_object_bundle_with_symbol_table() {
+        let backend = CraneliftPureFunctionBackend;
+        let i32_request = PureFunctionRequest::new(
+            "score bundle i32",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [i32_binding("base", 3), i32_binding("bonus", 4)],
+        );
+        let f32_request = PureFunctionRequest::new(
+            "score bundle f32",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+            },
+            [f32_binding("base", 3.0), f32_binding("scale", 4.0)],
+        );
+        let u128_request = PureFunctionRequest::new(
+            "score bundle u128",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [
+                u128_binding("base", u128::MAX - 3),
+                u128_binding("bonus", 2),
+            ],
+        );
+
+        let bundle = backend
+            .emit_object_bundle([
+                PureObjectBundleRequest::new(
+                    &i32_request,
+                    PureObjectInputKind::I32,
+                    ["base", "bonus"],
+                ),
+                PureObjectBundleRequest::new(
+                    &f32_request,
+                    PureObjectInputKind::F32,
+                    ["base", "scale"],
+                ),
+                PureObjectBundleRequest::new(
+                    &u128_request,
+                    PureObjectInputKind::U128,
+                    ["base", "bonus"],
+                ),
+            ])
+            .expect("Cranelift emits a multi-helper object bundle");
+
+        assert_eq!(bundle.helpers.len(), 3);
+        assert_eq!(bundle.helpers[0].name, "score bundle i32");
+        assert_eq!(bundle.helpers[0].kind, PureObjectInputKind::I32);
+        assert_eq!(
+            bundle.helpers[0].entry_symbol.as_deref(),
+            Some("arcweft_pure_bundle_0_score_bundle_i32_entry")
+        );
+        assert_eq!(
+            bundle.helpers[0].batch_sum_symbol.as_deref(),
+            Some("arcweft_pure_bundle_0_score_bundle_i32_rows_batch_sum")
+        );
+        assert_eq!(bundle.helpers[1].kind, PureObjectInputKind::F32);
+        assert_eq!(
+            bundle.helpers[1].entry_symbol.as_deref(),
+            Some("arcweft_pure_bundle_1_score_bundle_f32_entry")
+        );
+        assert!(bundle.helpers[1].batch_sum_symbol.is_none());
+        assert_eq!(bundle.helpers[2].kind, PureObjectInputKind::U128);
+        assert!(bundle.helpers[2].entry_symbol.is_none());
+        assert_eq!(
+            bundle.helpers[2].batch_symbol,
+            "arcweft_pure_bundle_2_score_bundle_u128_rows_batch"
+        );
+        assert_eq!(
+            bundle.helpers[2].batch_sum_symbol.as_deref(),
+            Some("arcweft_pure_bundle_2_score_bundle_u128_rows_batch_sum")
+        );
+        assert_bundle_object_symbols(&bundle);
+    }
+
+    #[test]
+    fn cranelift_rejects_empty_object_bundle() {
+        let error = match CraneliftPureFunctionBackend.emit_object_bundle([]) {
+            Ok(_) => panic!("empty object bundles are invalid"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(error, CraneliftCodegenError::UnsupportedExpr(_)));
     }
 
     #[test]

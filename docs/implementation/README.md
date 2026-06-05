@@ -174,14 +174,16 @@ Phase 0 / Phase 1 minimal Rust workspace:
   lowering paths to emit relocatable object bytes. Scalar integer objects
   include scalar, row-batch, and row-batch-sum symbols; floating-point objects
   include scalar and row-batch symbols; wide integer objects are batch-only to
-  keep by-value `i128`/`u128` out of the native FFI boundary. Runtime AOT policy
-  can record native object emission attempts, successes, failures, and emitted
-  byte counts for supported pure helpers when `native-jit` is available and the
-  runtime config explicitly enables object artifacts. This is off by default so
-  ordinary Auto/AOT startup does not pay build-time AOT emission cost. The object
-  bytes are not executed by the runtime cache yet; typed AOT and native JIT
-  remain the executable paths, while object artifacts are measured build-time AOT
-  evidence for a future loader/linker boundary.
+  keep by-value `i128`/`u128` out of the native FFI boundary. Cranelift can also
+  emit a multi-helper object bundle with exact-kind, entry, batch, optional
+  batch-sum, parameter-name, and lowering-stats metadata per helper. Runtime AOT
+  policy can record native object emission attempts, successes, failures, and
+  emitted byte counts for supported pure helpers when `native-jit` is available
+  and the runtime config explicitly enables object artifacts. This is off by
+  default so ordinary Auto/AOT startup does not pay build-time AOT emission cost.
+  The object bytes are not executed by the runtime cache yet; typed AOT and
+  native JIT remain the executable paths, while object artifacts are measured
+  build-time AOT evidence for a future loader/linker boundary.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,

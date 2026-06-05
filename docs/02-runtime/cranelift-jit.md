@@ -120,6 +120,14 @@ stay out of the native FFI boundary. Object artifacts record deterministic symbo
 names and object bytes only; they do not include source paths or JIT function
 pointers.
 
+Build-time object emission can also bundle multiple pure helpers into one
+relocatable object. The bundle API records one symbol-table entry per helper,
+including exact scalar kind, entry symbol when scalar calls are supported,
+row-batch symbol, optional row-batch-sum symbol, parameter names, and lowering
+stats. Bundle symbol prefixes include a stable helper index as well as the
+sanitized helper name, so duplicate helper names do not collide inside one
+object.
+
 The runtime AOT policy can record Cranelift object emission as artifact metadata
 when native codegen is available and object artifacts are explicitly enabled in
 the runtime pure accelerator config. `RuntimePureCompileStats` exposes object
