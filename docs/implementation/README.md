@@ -120,7 +120,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   helpers from the same manifest. Rust ABI type labels now use the metadata
   crate's `Display` implementation, so LSP completion and hover show struct
   fields, enum variants, newtype inners, and nested collection/result/tuple
-  references without parsing Rust source. `extern rust mod`
+  references without parsing Rust source. Borrowed Rust references remain
+  outside the metadata contract: the Rust ABI macros reject borrowed function
+  parameters, borrowed return values, and borrowed ADT fields, while LSP profile
+  diagnostics report missing or invalid `rust_metadata` JSON with
+  profile-relative resource labels and refresh that metadata through
+  watched-file/configuration notifications. `extern rust mod`
   declarations parse as structured type/function/activity members and are
   checked against the profile-selected package metadata. The CLI reads
   `rust_metadata` entries from launch profiles; direct-path checks remain

@@ -122,6 +122,9 @@ same data source. Rust ADT display uses `arcweft-rust-abi` metadata formatting,
 so struct fields, enum variants, newtype inners, and nested `Vec` / `Option` /
 `Result` / tuple references are visible in completion detail and hover without
 the LSP parsing Rust source, querying rust-analyzer, or running Cargo by itself.
+Borrowed Rust references are not exported through this metadata surface: the
+Rust ABI macros reject borrowed function parameters, borrowed return values, and
+borrowed ADT fields before metadata is generated.
 Transport code refreshes metadata when the selected profile, metadata JSON,
 adapter manifest, or Cargo build output changes, and can continue showing the
 last valid metadata while reporting stale or missing metadata.
@@ -137,10 +140,13 @@ adapter manifest and Rust ABI changes become visible to completion, hover, and
 signature help without restarting the server. File reads and URI-to-path
 conversion stay in `arcweft-lsp`; `arcweft-verify-lsp` continues to receive only
 typed adapter/runtime facts. Profile diagnostics carry the profile id and a
-profile-relative resource label, never host absolute paths. A project-local
-manifest is treated as a declared profile surface, not as proof that the
-selected runner implements its host calls; conformance diagnostics compare the
-declared manifest against the runner capability preset.
+profile-relative resource label, never host absolute paths. Missing and invalid
+Rust ABI metadata are reported as `profile.rust_metadata.read` and
+`profile.rust_metadata.parse`, and watched-file/configuration notifications
+refresh Rust metadata for every open document. A project-local manifest is
+treated as a declared profile surface, not as proof that the selected runner
+implements its host calls; conformance diagnostics compare the declared manifest
+against the runner capability preset.
 
 Source diagnostics use the same profile-aware semantic pipeline as CLI checks:
 syntax parse, HIR lowering, HIR reference resolution, typecheck readiness,

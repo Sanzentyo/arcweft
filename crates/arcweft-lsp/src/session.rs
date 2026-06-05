@@ -729,6 +729,52 @@ adapter_manifests = ["adapters/custom.toml"]
     }
 
     #[test]
+    fn watched_file_change_refreshes_rust_metadata() {
+        let project = TestProject::new("lsp-session-rust-watch-refresh");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "sans-io"
+rust_metadata = ["target/arcweft/quest.json"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        project.write("target/arcweft/quest.json", "{ not json");
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), "flow @.main main {}\n");
+        assert!(
+            !completion_labels(&mut session, uri.clone())
+                .iter()
+                .any(|item| item.label == "quest.evaluate")
+        );
+
+        project.write(
+            "target/arcweft/quest.json",
+            &quest_rust_manifest()
+                .to_json_pretty()
+                .expect("metadata json"),
+        );
+        let refresh = Notification::new(
+            DidChangeWatchedFiles::METHOD.to_owned(),
+            DidChangeWatchedFilesParams {
+                changes: Vec::new(),
+            },
+        );
+        let notifications = session.handle_notification(refresh).expect("refresh");
+
+        assert_eq!(notifications.len(), 1);
+        assert!(
+            completion_labels(&mut session, uri)
+                .iter()
+                .any(|item| item.label == "quest.evaluate")
+        );
+    }
+
+    #[test]
     fn session_reads_rust_metadata_for_completion_and_hover() {
         let project = TestProject::new("lsp-session-rust-metadata");
         project.write(
@@ -746,45 +792,11 @@ rust_metadata = ["target/arcweft/quest.json"]
             "adapters/quest.toml",
             adapter_manifest("quest", "quest.echo").as_str(),
         );
-        let rust_manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-            name: "quest_logic".to_owned(),
-            version: "0.1.0".to_owned(),
-            metadata_hash: None,
-        })
-        .with_type(ArcweftRustTypeDecl {
-            name: "PlayerStats".to_owned(),
-            rust_path: "quest_logic::PlayerStats".to_owned(),
-            kind: ArcweftRustTypeKind::Struct {
-                fields: vec![
-                    ArcweftRustField {
-                        name: "score".to_owned(),
-                        ty: ArcweftRustTypeRef::I32,
-                    },
-                    ArcweftRustField {
-                        name: "tags".to_owned(),
-                        ty: ArcweftRustTypeRef::Vec {
-                            item: Box::new(ArcweftRustTypeRef::String),
-                        },
-                    },
-                ],
-            },
-        })
-        .with_function(ArcweftRustFunction {
-            name: "quest.evaluate".to_owned(),
-            rust_path: "quest_logic::evaluate".to_owned(),
-            params: vec![ArcweftRustParam {
-                name: "stats".to_owned(),
-                ty: ArcweftRustTypeRef::Named {
-                    name: "PlayerStats".to_owned(),
-                },
-            }],
-            return_type: ArcweftRustTypeRef::String,
-            purity: ArcweftRustPurity::Pure,
-            effects: Vec::new(),
-        });
         project.write(
             "target/arcweft/quest.json",
-            &rust_manifest.to_json_pretty().expect("metadata json"),
+            &quest_rust_manifest()
+                .to_json_pretty()
+                .expect("metadata json"),
         );
         let source =
             "flow @.main main {\n    let result = quest.evaluate\n    let ty = PlayerStats\n}\n";
@@ -864,6 +876,45 @@ rust_metadata = ["target/arcweft/quest.json"]
             CompletionResponse::Array(items) => items,
             CompletionResponse::List(list) => list.items,
         }
+    }
+
+    fn quest_rust_manifest() -> ArcweftRustManifest {
+        ArcweftRustManifest::new(ArcweftRustPackage {
+            name: "quest_logic".to_owned(),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_type(ArcweftRustTypeDecl {
+            name: "PlayerStats".to_owned(),
+            rust_path: "quest_logic::PlayerStats".to_owned(),
+            kind: ArcweftRustTypeKind::Struct {
+                fields: vec![
+                    ArcweftRustField {
+                        name: "score".to_owned(),
+                        ty: ArcweftRustTypeRef::I32,
+                    },
+                    ArcweftRustField {
+                        name: "tags".to_owned(),
+                        ty: ArcweftRustTypeRef::Vec {
+                            item: Box::new(ArcweftRustTypeRef::String),
+                        },
+                    },
+                ],
+            },
+        })
+        .with_function(ArcweftRustFunction {
+            name: "quest.evaluate".to_owned(),
+            rust_path: "quest_logic::evaluate".to_owned(),
+            params: vec![ArcweftRustParam {
+                name: "stats".to_owned(),
+                ty: ArcweftRustTypeRef::Named {
+                    name: "PlayerStats".to_owned(),
+                },
+            }],
+            return_type: ArcweftRustTypeRef::String,
+            purity: ArcweftRustPurity::Pure,
+            effects: Vec::new(),
+        })
     }
 
     fn hover_text(session: &mut ArcweftLspSession, uri: Uri, source: &str, needle: &str) -> String {

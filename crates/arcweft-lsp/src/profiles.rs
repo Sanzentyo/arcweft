@@ -614,6 +614,65 @@ adapter_manifests = ["adapters/missing.toml"]
         assert!(!diagnostic.message().contains(":\\"));
     }
 
+    #[test]
+    fn missing_rust_metadata_diagnostic_keeps_profile_relative_resource() {
+        let project = TestProject::new("lsp-profile-rust-missing");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "sans-io"
+rust_metadata = ["target/arcweft/missing.json"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+
+        let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+        let diagnostic = profile
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::RustMetadataRead)
+            .expect("rust metadata read diagnostic");
+
+        assert_eq!(diagnostic.profile_id(), Some("dev"));
+        assert_eq!(diagnostic.resource(), Some("target/arcweft/missing.json"));
+        assert!(!diagnostic.message().contains(":/"));
+        assert!(!diagnostic.message().contains(":\\"));
+    }
+
+    #[test]
+    fn invalid_rust_metadata_diagnostic_keeps_profile_relative_resource() {
+        let project = TestProject::new("lsp-profile-rust-invalid");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "sans-io"
+rust_metadata = ["target/arcweft/bad.json"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        project.write("target/arcweft/bad.json", "{ not json");
+        let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+
+        let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+        let diagnostic = profile
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::RustMetadataParse)
+            .expect("rust metadata parse diagnostic");
+
+        assert_eq!(diagnostic.profile_id(), Some("dev"));
+        assert_eq!(diagnostic.resource(), Some("target/arcweft/bad.json"));
+        assert!(!diagnostic.message().contains(":/"));
+        assert!(!diagnostic.message().contains(":\\"));
+    }
+
     struct TestProject {
         root: PathBuf,
     }
