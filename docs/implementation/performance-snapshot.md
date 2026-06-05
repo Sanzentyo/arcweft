@@ -1007,6 +1007,11 @@ just bench-math-tensor-add-reuse
 just bench-math-tensor-add-reuse-update
 ```
 
+Standalone `math_bench` JSON includes `build_mode` so debug-assertion runs are
+not confused with optimized performance evidence. The representative standalone
+math rows below are from the release just recipes and report
+`build_mode = "optimized"`.
+
 Representative release results on the local machine:
 
 | fixture | backend | status | median ns | note |
@@ -1021,16 +1026,16 @@ Representative release results on the local machine:
 | flow 2x2 matmul_f64 | ndarray | measured | 2100 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | flow 2x2 tensor_add_f64 | ndarray | measured | 2200 | `--value` tensor input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | flow 2x2 matrix_add_f64 | ndarray | measured | 1900 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
-| 64x64 matmul_f64 | scalar | measured | 33800 | standalone `math_bench`, row-major f64 baseline |
-| 64x64 matmul_f64 | ndarray | measured | 45500 | standalone `math_bench`, CPU matrix backend without narrowing |
-| 64x64 matmul_f64 | auto | measured | 33900 | selected scalar with `last_auto_reason = matmul_scalar_small_work`; explicit wgpu was skipped as portable f64 unsupported |
+| 64x64 matmul_f64 | scalar | measured | 39200 | standalone `math_bench`, row-major f64 baseline |
+| 64x64 matmul_f64 | ndarray | measured | 52200 | standalone `math_bench`, CPU matrix backend without narrowing |
+| 64x64 matmul_f64 | auto | measured | 46000 | selected scalar with `last_auto_reason = matmul_scalar_small_work`; explicit wgpu was skipped as portable f64 unsupported |
 | 128x128 matmul_f64 | auto | measured | 4844400 | selected ndarray with `last_auto_reason = matmul_ndarray_cpu_default`, crossing the small-matrix scalar threshold |
-| 1024x1024 matrix_add_f64 | scalar | measured | 5268600 | standalone `math_bench`, f64 elementwise baseline |
-| 1024x1024 matrix_add_f64 | ndarray | measured | 5743800 | standalone `math_bench`, borrowed f64 inputs and owned f64 output |
-| 1024x1024 matrix_add_f64 | auto | measured | 6044900 | selected ndarray with `last_auto_reason = elementwise_ndarray_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
-| 1024x1024 tensor_add_f64 | scalar | measured | 6281900 | standalone `math_bench`, f64 tensor baseline |
-| 1024x1024 tensor_add_f64 | ndarray | measured | 5857000 | standalone `math_bench`, dynamic-view f64 add without narrowing |
-| 1024x1024 tensor_add_f64 | auto | measured | 6064800 | selected ndarray with `last_auto_reason = elementwise_ndarray_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
+| 1024x1024 matrix_add_f64 | scalar | measured | 7077100 | standalone `math_bench`, f64 elementwise baseline |
+| 1024x1024 matrix_add_f64 | ndarray | measured | 7591700 | standalone `math_bench`, borrowed f64 inputs and owned f64 output |
+| 1024x1024 matrix_add_f64 | auto | measured | 6188600 | selected ndarray with `last_auto_reason = elementwise_ndarray_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
+| 1024x1024 tensor_add_f64 | scalar | measured | 6146700 | standalone `math_bench`, f64 tensor baseline |
+| 1024x1024 tensor_add_f64 | ndarray | measured | 6096600 | standalone `math_bench`, dynamic-view f64 add without narrowing |
+| 1024x1024 tensor_add_f64 | auto | measured | 6101100 | selected ndarray with `last_auto_reason = elementwise_ndarray_cpu_default`; explicit wgpu was skipped as portable f64 unsupported |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |

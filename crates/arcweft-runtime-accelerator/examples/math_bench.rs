@@ -1532,6 +1532,7 @@ struct JsonBool(bool);
 #[derive(Serialize)]
 struct MathBenchReport {
     bench: &'static str,
+    build_mode: &'static str,
     op: &'static str,
     size: usize,
     iterations: usize,
@@ -1548,6 +1549,7 @@ impl MathBenchReport {
     fn new(options: &BenchOptions, results: Vec<BackendReport>) -> Self {
         Self {
             bench: "runtime_math",
+            build_mode: build_mode_label(),
             op: options.op.label(),
             size: options.size,
             iterations: options.iterations,
@@ -1728,6 +1730,14 @@ const fn backend_label(value: RuntimeMathBackend) -> &'static str {
     }
 }
 
+const fn build_mode_label() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug_assertions"
+    } else {
+        "optimized"
+    }
+}
+
 const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static str {
     match value {
         RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
@@ -1782,6 +1792,7 @@ mod tests {
 
         let json = serde_json::to_string(&report).expect("report serializes");
 
+        assert!(json.contains("\"build_mode\":"));
         assert!(json.contains("\"last_auto_reason\":\"matmul_4x4_glam\""));
         assert!(json.contains("\"fused_matmul_bias_add_calls\":0"));
         let windows_drive_prefixes = ["C:", "D:"].map(|drive| format!("{drive}\\"));
