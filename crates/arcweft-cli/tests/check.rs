@@ -73,7 +73,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 21);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 22);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -94,6 +94,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_toolchain_profile_workspace_commands(&json);
     assert_toolchain_profile_bench_commands(&json);
     assert_toolchain_profile_math_commands(&json);
+    assert_toolchain_profile_object_commands(&json);
     assert_eq!(
         json["commands"][6]["arcweft_bench"],
         serde_json::Value::Null
@@ -143,6 +144,7 @@ const TOOLCHAIN_PROFILE_DRY_RUN_COMMANDS: &[&str] = &[
     "math-matmul-bias-auto-wgpu-reuse",
     "math-matrix-add-auto-wgpu-reuse",
     "math-tensor-add-auto-wgpu-reuse",
+    "bench-009-aot-object",
 ];
 
 fn assert_toolchain_profile_workspace_commands(json: &serde_json::Value) {
@@ -278,6 +280,21 @@ fn assert_toolchain_profile_math_commands(json: &serde_json::Value) {
     );
 }
 
+fn assert_toolchain_profile_object_commands(json: &serde_json::Value) {
+    assert_eq!(
+        json["commands"][21]["label"],
+        "arcw_bench_009_aot_object_artifacts"
+    );
+    assert_eq!(
+        json["commands"][21]["argv"],
+        toolchain_profile_bench_009_aot_object_argv()
+    );
+    assert_eq!(
+        json["commands"][21]["arcweft_bench"],
+        serde_json::Value::Null
+    );
+}
+
 fn toolchain_profile_bench_003_argv() -> serde_json::Value {
     serde_json::json!([
         "cargo",
@@ -331,6 +348,37 @@ fn toolchain_profile_bench_009_argv() -> serde_json::Value {
         "4",
         "--pure-batch-min-len",
         "64"
+    ])
+}
+
+fn toolchain_profile_bench_009_aot_object_argv() -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "aot",
+        "--pure-workers",
+        "4",
+        "--pure-batch-min-len",
+        "64",
+        "--pure-object-artifacts"
     ])
 }
 

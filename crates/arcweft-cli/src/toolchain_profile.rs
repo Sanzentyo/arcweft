@@ -30,6 +30,8 @@ pub(crate) enum ToolchainProfileCommand {
     Bench003,
     #[value(name = "bench-009")]
     Bench009,
+    #[value(name = "bench-009-aot-object")]
+    Bench009AotObject,
     #[value(name = "math-matmul-bias")]
     MathMatmulBias,
     #[value(name = "math-matrix-add")]
@@ -133,6 +135,11 @@ struct ToolchainArcweftBenchSample {
     pure_fallbacks: u64,
     pure_arg_vec_allocations: u64,
     pure_arg_bytes_borrowed: u64,
+    pure_compile_elapsed_ns: u64,
+    pure_object_attempts: u64,
+    pure_object_successes: u64,
+    pure_object_failures: u64,
+    pure_object_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -154,6 +161,11 @@ struct ToolchainArcweftBenchReport {
     median_pure_fallbacks: u64,
     median_pure_arg_vec_allocations: u64,
     median_pure_arg_bytes_borrowed: u64,
+    median_pure_compile_elapsed_ns: u64,
+    median_pure_object_attempts: u64,
+    median_pure_object_successes: u64,
+    median_pure_object_failures: u64,
+    median_pure_object_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -319,6 +331,38 @@ const BENCH_009: ToolchainCommandSpec = ToolchainCommandSpec {
         "4",
         "--pure-batch-min-len",
         "64",
+    ],
+    kind: ToolchainCommandKind::ArcweftBench,
+};
+
+const BENCH_009_AOT_OBJECT: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "arcw_bench_009_aot_object_artifacts",
+    args: &[
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        "tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw",
+        "--json",
+        "--iterations",
+        "5",
+        "--warmup",
+        "1",
+        "--samples",
+        "5",
+        "--steps",
+        "64",
+        "--max-ops",
+        "64",
+        "--pure-backend",
+        "aot",
+        "--pure-workers",
+        "4",
+        "--pure-batch-min-len",
+        "64",
+        "--pure-object-artifacts",
     ],
     kind: ToolchainCommandKind::ArcweftBench,
 };
@@ -724,6 +768,7 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
             ToolchainProfileCommand::Test => TEST,
             ToolchainProfileCommand::Bench003 => BENCH_003,
             ToolchainProfileCommand::Bench009 => BENCH_009,
+            ToolchainProfileCommand::Bench009AotObject => BENCH_009_AOT_OBJECT,
             ToolchainProfileCommand::MathMatmulBias => MATH_MATMUL_BIAS,
             ToolchainProfileCommand::MathMatrixAdd => MATH_MATRIX_ADD,
             ToolchainProfileCommand::MathTensorAdd => MATH_TENSOR_ADD,
@@ -889,6 +934,7 @@ fn arcweft_bench_sample(bytes: &[u8]) -> Option<ToolchainArcweftBenchSample> {
         .first()?;
     let measurement = section.get("measurement")?;
     let deterministic = measurement.get("deterministic")?;
+    let pure_compile = measurement.get("executor_stats")?.get("pure_compile")?;
     Some(ToolchainArcweftBenchSample {
         source: json.get("source")?.as_str()?.to_owned(),
         bench_id: json
@@ -915,6 +961,11 @@ fn arcweft_bench_sample(bytes: &[u8]) -> Option<ToolchainArcweftBenchSample> {
         pure_arg_bytes_borrowed: deterministic
             .get("pure_arg_bytes_borrowed_median")?
             .as_u64()?,
+        pure_compile_elapsed_ns: pure_compile.get("compile_elapsed_ns")?.as_u64()?,
+        pure_object_attempts: pure_compile.get("object_attempts")?.as_u64()?,
+        pure_object_successes: pure_compile.get("object_successes")?.as_u64()?,
+        pure_object_failures: pure_compile.get("object_failures")?.as_u64()?,
+        pure_object_bytes: pure_compile.get("object_bytes")?.as_u64()?,
     })
 }
 
@@ -967,6 +1018,21 @@ fn arcweft_bench_report(samples: &[ToolchainCommandSample]) -> Option<ToolchainA
         }),
         median_pure_arg_bytes_borrowed: median_bench_sample_by(&bench_samples, |sample| {
             sample.pure_arg_bytes_borrowed
+        }),
+        median_pure_compile_elapsed_ns: median_bench_sample_by(&bench_samples, |sample| {
+            sample.pure_compile_elapsed_ns
+        }),
+        median_pure_object_attempts: median_bench_sample_by(&bench_samples, |sample| {
+            sample.pure_object_attempts
+        }),
+        median_pure_object_successes: median_bench_sample_by(&bench_samples, |sample| {
+            sample.pure_object_successes
+        }),
+        median_pure_object_failures: median_bench_sample_by(&bench_samples, |sample| {
+            sample.pure_object_failures
+        }),
+        median_pure_object_bytes: median_bench_sample_by(&bench_samples, |sample| {
+            sample.pure_object_bytes
         }),
     })
 }
@@ -1269,6 +1335,15 @@ mod tests {
       "status": "measured",
       "measurement": {
         "executor": "bytecode_vm",
+        "executor_stats": {
+          "pure_compile": {
+            "object_attempts": 0,
+            "object_successes": 0,
+            "object_failures": 0,
+            "object_bytes": 0,
+            "compile_elapsed_ns": 1234
+          }
+        },
         "per_executed_op_ns": 700,
         "elapsed_ns": { "min": 10000, "median": 20000, "max": 30000 },
         "deterministic": {
@@ -1295,6 +1370,8 @@ mod tests {
         assert_eq!(sample.bench_elapsed_ns, 20000);
         assert_eq!(sample.pure_jit_calls, 16);
         assert_eq!(sample.pure_arg_vec_allocations, 0);
+        assert_eq!(sample.pure_compile_elapsed_ns, 1234);
+        assert_eq!(sample.pure_object_attempts, 0);
     }
 
     #[test]
@@ -1317,6 +1394,11 @@ mod tests {
             pure_fallbacks: 0,
             pure_arg_vec_allocations: 0,
             pure_arg_bytes_borrowed: 256,
+            pure_compile_elapsed_ns: 2000,
+            pure_object_attempts: 1,
+            pure_object_successes: 1,
+            pure_object_failures: 0,
+            pure_object_bytes: 467,
         });
         let mut second = first.clone();
         second
@@ -1340,6 +1422,9 @@ mod tests {
         assert_eq!(report.min_bench_elapsed_ns, 100);
         assert_eq!(report.max_bench_elapsed_ns, 300);
         assert_eq!(report.median_pure_jit_calls, 16);
+        assert_eq!(report.median_pure_compile_elapsed_ns, 2000);
+        assert_eq!(report.median_pure_object_successes, 1);
+        assert_eq!(report.median_pure_object_bytes, 467);
     }
 
     #[test]

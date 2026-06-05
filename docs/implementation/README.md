@@ -470,10 +470,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `--command clippy`, `--command test-build`, and `--command test`, with
   `--repeat N` median/min/max timing summaries, dry-run planning for regression
   tests, and real elapsed-time reports for local performance tracking. It also
-  supports `--command bench-003` and `--command bench-009` as path-free local
-  trend commands for the scalar pure JIT and flat-batch pure JIT fixtures. Those
+  supports `--command bench-003`, `--command bench-009`, and
+  `--command bench-009-aot-object` as path-free local trend commands for the
+  scalar pure JIT, flat-batch pure JIT, and AOT object-artifact fixtures. Those
   bench commands parse the nested `arcw bench --json` stdout into compact
-  `arcweft_bench` summaries with runtime median/counter data while keeping the
+  `arcweft_bench` summaries with runtime median/counter data plus pure compile
+  elapsed time and object artifact attempts/successes/bytes while keeping the
   original benchmark stdout out of the profile report. It also supports
   `--command math-matmul-bias`, `--command math-matrix-add`,
   `--command math-tensor-add`, the corresponding `*-f64` commands, and resident

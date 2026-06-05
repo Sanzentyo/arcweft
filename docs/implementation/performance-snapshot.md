@@ -288,6 +288,7 @@ toolchain-profile schema:
 
 ```bash
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat 3 --warmup 1 --json
 ```
 
 The command-level profile records status, stdout/stderr line counts, and
@@ -295,9 +296,9 @@ median/min/max elapsed samples without embedding benchmark stdout or host paths.
 For these bench commands it also parses the nested benchmark JSON into an
 `arcweft_bench` summary, so command wall time can be compared with runtime
 median elapsed time, pure JIT/AOT/VM call counts, fallback counts, argument Vec
-allocation counts, and borrowed argument bytes. Use the ordinary
-`arcw bench --json` output only when the full compiler/runtime breakdown is
-needed.
+allocation counts, borrowed argument bytes, pure compile elapsed time, and AOT
+object artifact attempts/successes/failures/bytes. Use the ordinary `arcw bench
+--json` output only when the full compiler/runtime breakdown is needed.
 
 Runtime math trend commands use the same path-free profile wrapper:
 

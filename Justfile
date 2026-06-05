@@ -29,6 +29,9 @@ verify: fmt-check clippy test scan-absolute-paths scan-removed-dsl
 toolchain-profile-pure-jit-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat {{repeat}} --warmup {{warmup}} --json
 
+toolchain-profile-aot-object-benches repeat="3" warmup="1":
+    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat {{repeat}} --warmup {{warmup}} --json
+
 toolchain-profile-math-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat {{repeat}} --warmup {{warmup}} --json
 
