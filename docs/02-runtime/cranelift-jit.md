@@ -128,15 +128,18 @@ stats. Bundle symbol prefixes include a stable helper index as well as the
 sanitized helper name, so duplicate helper names do not collide inside one
 object.
 
-The runtime AOT policy can record Cranelift object emission as artifact metadata
-when native codegen is available and object artifacts are explicitly enabled in
-the runtime pure accelerator config. `RuntimePureCompileStats` exposes object
-attempt, success, failure, and byte counters next to JIT/AOT compile counters.
-Object emission is off by default so ordinary Auto/AOT startup avoids build-time
-AOT generation cost. These counters prove that supported typed helpers can be
-lowered to relocatable objects without changing execution semantics. Runtime
-execution still uses the typed AOT plan or native JIT function pointers; loading
-and calling object files is a later backend boundary.
+The runtime AOT policy can record one bundled Cranelift object artifact as
+artifact metadata when native codegen is available and object artifacts are
+explicitly enabled in the runtime pure accelerator config. The bundle contains
+the helpers whose cache entries selected AOT or AutoAOT, while unsupported or VM
+helpers are skipped. `RuntimePureCompileStats` exposes object attempt, success,
+failure, and byte counters next to JIT/AOT compile counters; attempts and
+successes count helpers, and bytes count the bundled object. Object emission is
+off by default so ordinary Auto/AOT startup avoids build-time AOT generation
+cost. These counters prove that supported typed helpers can be lowered to a
+relocatable bundle without changing execution semantics. Runtime execution still
+uses the typed AOT plan or native JIT function pointers; loading and calling
+object files is a later backend boundary.
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0

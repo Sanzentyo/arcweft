@@ -177,10 +177,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   keep by-value `i128`/`u128` out of the native FFI boundary. Cranelift can also
   emit a multi-helper object bundle with exact-kind, entry, batch, optional
   batch-sum, parameter-name, and lowering-stats metadata per helper. Runtime AOT
-  policy can record native object emission attempts, successes, failures, and
-  emitted byte counts for supported pure helpers when `native-jit` is available
-  and the runtime config explicitly enables object artifacts. This is off by
-  default so ordinary Auto/AOT startup does not pay build-time AOT emission cost.
+  policy records a single native object bundle for helpers whose cache entries
+  selected AOT or AutoAOT when `native-jit` is available and the runtime config
+  explicitly enables object artifacts. Object attempts and successes count
+  helpers, while emitted bytes count the bundled object. This is off by default
+  so ordinary Auto/AOT startup does not pay build-time AOT emission cost.
   The object bytes are not executed by the runtime cache yet; typed AOT and
   native JIT remain the executable paths, while object artifacts are measured
   build-time AOT evidence for a future loader/linker boundary.
