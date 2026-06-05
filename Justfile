@@ -195,6 +195,9 @@ bench-math-tensor-add:
 bench-math-matrix-add-reuse:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 4096 --iterations 5 --warmup 1 --reuse
 
+bench-math-matrix-add-submit-only:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 4096 --iterations 3 --warmup 1 --submit-only
+
 bench-math-matrix-add-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs
 
@@ -203,6 +206,9 @@ bench-math-matrix-add-reuse-capacity:
 
 bench-math-tensor-add-reuse:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 5 --warmup 1 --reuse
+
+bench-math-tensor-add-submit-only:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 3 --warmup 1 --submit-only
 
 bench-math-tensor-add-reuse-update:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs

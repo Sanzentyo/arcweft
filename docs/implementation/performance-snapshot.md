@@ -867,7 +867,16 @@ with `--reuse`. The submit-only run recorded `wgpu_calls = 4`,
 `fused_matmul_bias_add_calls = 4`, `gpu_reused_dispatches = 4`, one final
 staging buffer creation, zero staging buffer reuse hits, and only one
 1048576-byte result download for correctness instead of downloading every
-sample. The current deterministic `f32` op set is:
+sample. Native prepared elementwise add has the same submit/readback split. Local
+path-free runs with `just bench-math-matrix-add-submit-only` and
+`just bench-math-tensor-add-submit-only` measured 4096x4096 resident GPU submit
+lower bounds at 286200 ns and 320800 ns median respectively. Each run recorded
+`wgpu_calls = 4`, `gpu_reused_dispatches = 4`, `gpu_buffer_reuse_hits = 16`,
+one final staging buffer creation, zero staging-buffer reuse hits, and one
+67108864-byte result download for correctness after timing; per-sample
+readback was not included in the measured submit-only loop.
+
+The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`
@@ -926,6 +935,8 @@ just bench-math-inference-matmul-bias-reuse
 just bench-math-inference-matmul-bias-reuse-update
 just bench-math-matrix-add
 just bench-math-tensor-add
+just bench-math-matrix-add-submit-only
+just bench-math-tensor-add-submit-only
 just bench-024
 just bench-024-wgpu-auto
 just bench-025
@@ -982,6 +993,8 @@ Representative release results on the local machine:
 | 2048x2048 matrix_add_f32 | wgpu one-shot | measured | 53726400 | 16 buffer creations across warmup + samples |
 | 2048x2048 matrix_add_f32 | wgpu prepared | measured | 21763000 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
 | 2048x2048 tensor_add_f32 | wgpu prepared | measured | 23814100 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
+| 4096x4096 matrix_add_f32 | wgpu prepared submit-only | measured | 286200 | `--submit-only`, resident compute submit lower bound; one final 64 MiB correctness download after timing |
+| 4096x4096 tensor_add_f32 | wgpu prepared submit-only | measured | 320800 | `--submit-only`, resident compute submit lower bound; one final 64 MiB correctness download after timing |
 | 64x64 matrix_add_f32 | wgpu prepared update | measured | 1345000 | `--reuse-update-inputs`, one initial buffer allocation, three upload+dispatch passes, `gpu_buffer_reuse_hits = 21` |
 | 64x64 matrix_add_f32 | wgpu prepared capacity | measured | 157300 | `--reuse-capacity`, capacity 128, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
 | 64x64 tensor_add_f32 | wgpu prepared capacity | measured | 448200 | `--reuse-capacity`, capacity 8192 values, one initial upload, five measured dispatches, `gpu_buffer_reuse_hits = 27` |
@@ -998,9 +1011,13 @@ dispatch. Changed inputs reuse the same storage buffers and bind group, write
 the new `f32` input values with `queue.write_buffer`, and then dispatch without
 creating new GPU buffers. Native prepared APIs also support capacity-prepared
 matrix/tensor buffers, so smaller compatible shapes can run inside one prepared
-allocation. The standalone `math_bench` example exposes this with
-`--reuse-capacity`, and the Justfile provides `bench-math-*-reuse-capacity`
-recipes so the capacity path can be timed without recording host paths. Auto
+allocation. Native prepared matrix/tensor add can also submit without immediate
+readback and read the resident output explicitly later, matching the matmul
+submit/readback boundary and keeping readback cost out of submit lower-bound
+measurements. The standalone `math_bench` example exposes this with
+`--reuse-capacity` and `--submit-only`, and the Justfile provides
+`bench-math-*-reuse-capacity` and `bench-math-*-submit-only` recipes so these
+paths can be timed without recording host paths. Auto
 matmul uses the same
 prepared-buffer path when the configured work threshold selects wgpu; Auto
 elementwise stays on the CPU backend because the current one-shot GPU path is

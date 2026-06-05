@@ -6,7 +6,8 @@ use arcweft_runtime_accelerator::inference::{
 use arcweft_runtime_accelerator::math::{
     RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAcceleratorError,
     RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathStats,
-    RuntimePreparedMatrixMatmulBiasAddF32, RuntimePreparedMatrixMatmulF32,
+    RuntimePreparedMatrixAddF32, RuntimePreparedMatrixMatmulBiasAddF32,
+    RuntimePreparedMatrixMatmulF32, RuntimePreparedTensorAddF32,
 };
 use serde::Serialize;
 use std::time::Instant;
@@ -364,6 +365,7 @@ fn run_prepared_matrix_matmul_bias_add(
 }
 
 type MatmulUpdateCase = (DenseMatrixF32, DenseMatrixF32, DenseMatrixF32);
+type TensorAddUpdateCase = (DenseTensorF32, DenseTensorF32, DenseTensorF32);
 type MatmulBiasUpdateCase = (
     DenseMatrixF32,
     DenseMatrixF32,
@@ -692,6 +694,65 @@ fn read_prepared_matmul_output(
     }
 }
 
+fn validate_matrix_add_submit_only_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixAddF32,
+    shape: (usize, usize),
+    output: &mut [f32],
+    update_cases: Option<&[MatmulUpdateCase]>,
+    reference: &DenseMatrixF32,
+) -> Result<(), SubmitOnlyValidationError> {
+    if reuse_mode.submit_only() {
+        read_prepared_matrix_add_output(accelerator, reuse_mode, prepared, shape, output)
+            .map_err(|error| SubmitOnlyValidationError::Backend(error.to_string()))?;
+        let expected = update_cases.and_then(|cases| cases.last()).map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(output, expected, 1.0e-6) {
+            return Err(SubmitOnlyValidationError::Mismatch(
+                "prepared matrix add submit-only result mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dispatch_prepared_matrix_add_sample(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixAddF32,
+    shape: (usize, usize),
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.submit_only() && reuse_mode.uses_capacity() {
+        accelerator
+            .submit_prepared_matrix_add_f32_shape_without_readback(prepared, shape.0, shape.1)
+    } else if reuse_mode.submit_only() {
+        accelerator.submit_prepared_matrix_add_f32_without_readback(prepared)
+    } else if reuse_mode.uses_capacity() {
+        accelerator.run_prepared_matrix_add_f32_shape_into(prepared, shape.0, shape.1, output)
+    } else {
+        accelerator.run_prepared_matrix_add_f32_into(prepared, output)
+    }
+}
+
+fn read_prepared_matrix_add_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixAddF32,
+    shape: (usize, usize),
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.uses_capacity() {
+        accelerator
+            .read_prepared_matrix_add_f32_shape_output_into(prepared, shape.0, shape.1, output)
+    } else {
+        accelerator.read_prepared_matrix_add_f32_output_into(prepared, output)
+    }
+}
+
 fn run_prepared_matrix_add(
     accelerator: &mut RuntimeMathAccelerator,
     backend: RuntimeMathBackend,
@@ -733,16 +794,13 @@ fn run_prepared_matrix_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_mode.uses_capacity() {
-            accelerator.run_prepared_matrix_add_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                lhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matrix_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            (lhs.rows(), lhs.cols()),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -758,16 +816,13 @@ fn run_prepared_matrix_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_mode.uses_capacity() {
-            accelerator.run_prepared_matrix_add_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                lhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matrix_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            (lhs.rows(), lhs.cols()),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -776,7 +831,7 @@ fn run_prepared_matrix_add(
             || reference.values(),
             |(_, _, reference)| reference.values(),
         );
-        if !approx_eq(&output, expected, 1.0e-6) {
+        if !options.reuse_mode.submit_only() && !approx_eq(&output, expected, 1.0e-6) {
             return BackendReport::failed(
                 backend,
                 "prepared matrix add result mismatch".to_owned(),
@@ -784,7 +839,75 @@ fn run_prepared_matrix_add(
         }
         samples.push(elapsed);
     }
+    if let Err(error) = validate_matrix_add_submit_only_output(
+        accelerator,
+        options.reuse_mode,
+        &prepared,
+        (lhs.rows(), lhs.cols()),
+        &mut output,
+        update_cases.as_deref(),
+        reference,
+    ) {
+        return error.into_report(backend);
+    }
     BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn validate_tensor_add_submit_only_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedTensorAddF32,
+    len: usize,
+    output: &mut [f32],
+    update_cases: Option<&[TensorAddUpdateCase]>,
+    reference: &DenseTensorF32,
+) -> Result<(), SubmitOnlyValidationError> {
+    if reuse_mode.submit_only() {
+        read_prepared_tensor_add_output(accelerator, reuse_mode, prepared, len, output)
+            .map_err(|error| SubmitOnlyValidationError::Backend(error.to_string()))?;
+        let expected = update_cases.and_then(|cases| cases.last()).map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(output, expected, 1.0e-6) {
+            return Err(SubmitOnlyValidationError::Mismatch(
+                "prepared tensor add submit-only result mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dispatch_prepared_tensor_add_sample(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedTensorAddF32,
+    len: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.submit_only() && reuse_mode.uses_capacity() {
+        accelerator.submit_prepared_tensor_add_f32_len_without_readback(prepared, len)
+    } else if reuse_mode.submit_only() {
+        accelerator.submit_prepared_tensor_add_f32_without_readback(prepared)
+    } else if reuse_mode.uses_capacity() {
+        accelerator.run_prepared_tensor_add_f32_len_into(prepared, len, output)
+    } else {
+        accelerator.run_prepared_tensor_add_f32_into(prepared, output)
+    }
+}
+
+fn read_prepared_tensor_add_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedTensorAddF32,
+    len: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.uses_capacity() {
+        accelerator.read_prepared_tensor_add_f32_len_output_into(prepared, len, output)
+    } else {
+        accelerator.read_prepared_tensor_add_f32_output_into(prepared, output)
+    }
 }
 
 fn run_prepared_tensor_add(
@@ -827,15 +950,13 @@ fn run_prepared_tensor_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_mode.uses_capacity() {
-            accelerator.run_prepared_tensor_add_f32_len_into(
-                &prepared,
-                lhs.values().len(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_tensor_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.values().len(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -851,15 +972,13 @@ fn run_prepared_tensor_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_mode.uses_capacity() {
-            accelerator.run_prepared_tensor_add_f32_len_into(
-                &prepared,
-                lhs.values().len(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_tensor_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_tensor_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.values().len(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -868,13 +987,24 @@ fn run_prepared_tensor_add(
             || reference.values(),
             |(_, _, reference)| reference.values(),
         );
-        if !approx_eq(&output, expected, 1.0e-6) {
+        if !options.reuse_mode.submit_only() && !approx_eq(&output, expected, 1.0e-6) {
             return BackendReport::failed(
                 backend,
                 "prepared tensor add result mismatch".to_owned(),
             );
         }
         samples.push(elapsed);
+    }
+    if let Err(error) = validate_tensor_add_submit_only_output(
+        accelerator,
+        options.reuse_mode,
+        &prepared,
+        lhs.values().len(),
+        &mut output,
+        update_cases.as_deref(),
+        reference,
+    ) {
+        return error.into_report(backend);
     }
     BackendReport::measured(backend, samples, accelerator.stats())
 }
