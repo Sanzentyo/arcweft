@@ -682,18 +682,19 @@ isolation set for six rounds and rotates mode order each round, so browser
 warm-state and fixed ordering effects are visible before browser-side Auto
 thresholds are changed. The same report also includes typed
 `recommendations` per operation/shape. A recommendation records the selected
-mode, selected capacity, CPU median, selected median, speedup, and reason
-(`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
+mode, selected capacity, CPU median/MAD/P95, selected median/MAD/P95, speedup,
+and reason (`web_gpu_faster`, `cpu_faster_or_equal`, `missing_cpu_baseline`, or
 `no_measured_web_gpu_case`). When the same op/shape/mode appears in repeated
-rounds, recommendation selection uses the mode's median-of-medians rather than
-the fastest single case, so low outlier rounds do not drive backend policy
-calibration. Auto cases are reported as policy observations and are not treated
-as independent candidate modes for choosing the fastest backend.
+rounds, recommendation selection and recommendation dispersion fields use
+median aggregation across the matching cases rather than the fastest single
+case, so low outlier rounds do not drive backend policy calibration. Auto cases
+are reported as policy observations and are not treated as independent
+candidate modes for choosing the fastest backend.
 Submit-only diagnostic modes are also excluded from recommendations and normal
 `best_speedups`; the CLI summary reports them under `diagnostic_speedups`.
-The smoke summary carries case-level `mad_ms` and `p95_ms`, plus stability
-min/max/MAD, so browser WebGPU reports expose outliers without requiring the
-full Rust-originated JSON payload.
+The smoke summary carries case-level `mad_ms` and `p95_ms`, recommendation
+selected/CPU MAD/P95, plus stability min/max/MAD, so browser WebGPU reports
+expose outliers without requiring the full Rust-originated JSON payload.
 These modes submit batches of resident GPU work and defer correctness readback
 until after measured samples, giving a lower-bound estimate for future
 resident GPU flow chains where intermediate values remain on the GPU.

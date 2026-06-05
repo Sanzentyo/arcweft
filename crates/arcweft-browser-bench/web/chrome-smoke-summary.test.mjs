@@ -20,7 +20,28 @@ test("smoke summary preserves dispersion fields for measured cases and speedups"
       stabilityCase("cpu_wasm", 2, 4.0, 3.8, 4.2, 0.2),
       stabilityCase("web_gpu_prepared_resident_pipelined", 2, 1.0, 0.9, 1.1, 0.05),
     ],
-    recommendations: [],
+    recommendations: [
+      {
+        op: "matrix_matmul",
+        shape: {
+          matmul: {
+            rows: 16,
+            shared: 16,
+            cols: 16,
+          },
+        },
+        selected_mode: "web_gpu_prepared_resident_pipelined",
+        selected_median_ms: 1.0,
+        selected_mad_ms: 0.1,
+        selected_p95_ms: 1.2,
+        cpu_median_ms: 4.0,
+        cpu_mad_ms: 0.4,
+        cpu_p95_ms: 4.9,
+        speedup: 4.0,
+        reason: "web_gpu_faster",
+        selected_capacity: null,
+      },
+    ],
   };
 
   const summary = summarize(report);
@@ -58,6 +79,26 @@ test("smoke summary preserves dispersion fields for measured cases and speedups"
     estimated_flops: 4096,
     rounds: 2,
     spread_ratio: 1.1 / 0.9,
+  });
+  assert.deepEqual(summary.selected_modes[0], {
+    op: "matrix_matmul",
+    shape: {
+      matmul: {
+        rows: 16,
+        shared: 16,
+        cols: 16,
+      },
+    },
+    selected_mode: "web_gpu_prepared_resident_pipelined",
+    selected_median_ms: 1.0,
+    selected_mad_ms: 0.1,
+    selected_p95_ms: 1.2,
+    cpu_median_ms: 4.0,
+    cpu_mad_ms: 0.4,
+    cpu_p95_ms: 4.9,
+    speedup: 4.0,
+    reason: "web_gpu_faster",
+    capacity: null,
   });
 });
 

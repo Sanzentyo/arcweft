@@ -253,7 +253,11 @@ pub struct BrowserMathBenchRecommendation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_matches_selected: Option<bool>,
     pub selected_median_ms: Option<f64>,
+    pub selected_mad_ms: Option<f64>,
+    pub selected_p95_ms: Option<f64>,
     pub cpu_median_ms: Option<f64>,
+    pub cpu_mad_ms: Option<f64>,
+    pub cpu_p95_ms: Option<f64>,
     pub speedup: Option<f64>,
     pub reason: BrowserMathBenchRecommendationReason,
 }
@@ -414,6 +418,8 @@ struct BrowserMathBenchModeMeasurement {
     mode: BrowserBenchMode,
     capacity: Option<BrowserMathBenchCapacity>,
     median_ms: f64,
+    mad_ms: Option<f64>,
+    p95_ms: Option<f64>,
 }
 
 fn browser_math_bench_mode_measurements(
@@ -434,7 +440,7 @@ fn browser_math_bench_mode_measurements(
     groups
         .into_iter()
         .filter_map(|(mode, capacity)| {
-            let medians = cases
+            let matching_cases = cases
                 .iter()
                 .filter(|case| {
                     case.op == op
@@ -443,12 +449,29 @@ fn browser_math_bench_mode_measurements(
                         && case.capacity == capacity
                         && measured_case(case)
                 })
+                .collect::<Vec<_>>();
+            let medians = matching_cases
+                .iter()
                 .filter_map(|case| case.median_ms)
                 .collect::<Vec<_>>();
+            let mad_ms = median_sample(
+                matching_cases
+                    .iter()
+                    .filter_map(|case| case.mad_ms)
+                    .collect(),
+            );
+            let p95_ms = median_sample(
+                matching_cases
+                    .iter()
+                    .filter_map(|case| case.p95_ms)
+                    .collect(),
+            );
             median_sample(medians).map(|median_ms| BrowserMathBenchModeMeasurement {
                 mode,
                 capacity,
                 median_ms,
+                mad_ms,
+                p95_ms,
             })
         })
         .collect()
@@ -475,7 +498,11 @@ fn build_browser_math_recommendation(
                     policy_reason: None,
                     policy_matches_selected: None,
                     selected_median_ms: Some(gpu_ms),
+                    selected_mad_ms: gpu.mad_ms,
+                    selected_p95_ms: gpu.p95_ms,
                     cpu_median_ms: Some(cpu_ms),
+                    cpu_mad_ms: cpu.mad_ms,
+                    cpu_p95_ms: cpu.p95_ms,
                     speedup: Some(cpu_ms / gpu_ms),
                     reason: BrowserMathBenchRecommendationReason::WebGpuFaster,
                 }
@@ -490,7 +517,11 @@ fn build_browser_math_recommendation(
                     policy_reason: None,
                     policy_matches_selected: None,
                     selected_median_ms: Some(cpu_ms),
+                    selected_mad_ms: cpu.mad_ms,
+                    selected_p95_ms: cpu.p95_ms,
                     cpu_median_ms: Some(cpu_ms),
+                    cpu_mad_ms: cpu.mad_ms,
+                    cpu_p95_ms: cpu.p95_ms,
                     speedup: Some(1.0),
                     reason: BrowserMathBenchRecommendationReason::CpuFasterOrEqual,
                 }
@@ -506,7 +537,11 @@ fn build_browser_math_recommendation(
             policy_reason: None,
             policy_matches_selected: None,
             selected_median_ms: Some(cpu.median_ms),
+            selected_mad_ms: cpu.mad_ms,
+            selected_p95_ms: cpu.p95_ms,
             cpu_median_ms: Some(cpu.median_ms),
+            cpu_mad_ms: cpu.mad_ms,
+            cpu_p95_ms: cpu.p95_ms,
             speedup: Some(1.0),
             reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
         },
@@ -520,7 +555,11 @@ fn build_browser_math_recommendation(
             policy_reason: None,
             policy_matches_selected: None,
             selected_median_ms: Some(gpu.median_ms),
+            selected_mad_ms: gpu.mad_ms,
+            selected_p95_ms: gpu.p95_ms,
             cpu_median_ms: None,
+            cpu_mad_ms: None,
+            cpu_p95_ms: None,
             speedup: None,
             reason: BrowserMathBenchRecommendationReason::MissingCpuBaseline,
         },
@@ -534,7 +573,11 @@ fn build_browser_math_recommendation(
             policy_reason: None,
             policy_matches_selected: None,
             selected_median_ms: None,
+            selected_mad_ms: None,
+            selected_p95_ms: None,
             cpu_median_ms: None,
+            cpu_mad_ms: None,
+            cpu_p95_ms: None,
             speedup: None,
             reason: BrowserMathBenchRecommendationReason::NoMeasuredWebGpuCase,
         },
@@ -3126,7 +3169,11 @@ mod tests {
         );
         assert_eq!(recommendation.selected_capacity, capacity);
         assert_eq!(recommendation.selected_median_ms, Some(1.6));
+        assert_eq!(recommendation.selected_mad_ms, Some(1.6));
+        assert_eq!(recommendation.selected_p95_ms, Some(1.6));
         assert_eq!(recommendation.cpu_median_ms, Some(8.2));
+        assert_eq!(recommendation.cpu_mad_ms, Some(8.2));
+        assert_eq!(recommendation.cpu_p95_ms, Some(8.2));
         assert_eq!(recommendation.speedup, Some(8.2 / 1.6));
     }
 
