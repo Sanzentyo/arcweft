@@ -61,12 +61,12 @@ pub struct CompiledPureI64Inputs {
     stats: PureFunctionStats,
 }
 
-/// Relocatable object output for a parameterized `i64` pure helper.
-pub struct ObjectPureI64Inputs {
+/// Relocatable object output for a parameterized pure helper.
+pub struct ObjectPureInputs {
     pub object_bytes: Vec<u8>,
     pub entry_symbol: String,
     pub batch_symbol: String,
-    pub batch_sum_symbol: String,
+    pub batch_sum_symbol: Option<String>,
     pub param_names: Vec<String>,
     pub stats: PureFunctionStats,
 }
@@ -465,8 +465,18 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureI64Inputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
         emit_object_i64_with_inputs(request, param_names)
+    }
+
+    /// Emits a relocatable object containing the parameterized `i32` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_i32_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_i32_with_inputs(request, param_names)
     }
 
     /// Compiles a pure helper request to a reusable native `i8` function with
@@ -605,6 +615,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `u32` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_u32_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_u32_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to a reusable native `u8` function with
     /// runtime `u8` inputs.
     pub fn compile_u8_with_inputs(
@@ -705,6 +725,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `u64` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_u64_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_u64_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to a reusable native `f32` function with
     /// runtime `f32` inputs.
     pub fn compile_f32_with_inputs(
@@ -739,6 +769,16 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
+    /// Emits a relocatable object containing the parameterized `f32` helper
+    /// entrypoint and flat-batch entrypoint.
+    pub fn emit_object_f32_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_f32_with_inputs(request, param_names)
+    }
+
     /// Compiles a pure helper request to a reusable native `f64` function with
     /// runtime `f64` inputs.
     pub fn compile_f64_with_inputs(
@@ -771,6 +811,16 @@ impl CraneliftPureFunctionBackend {
             param_names: defined.param_names,
             stats: defined.stats,
         })
+    }
+
+    /// Emits a relocatable object containing the parameterized `f64` helper
+    /// entrypoint and flat-batch entrypoint.
+    pub fn emit_object_f64_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+        emit_object_f64_with_inputs(request, param_names)
     }
 
     /// Compiles a batch benchmark runner for a pure helper request.
@@ -977,23 +1027,98 @@ where
 pub fn emit_object_i64_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureI64Inputs, CraneliftJitError> {
-    let isa = native_isa(true)?;
-    let builder = ObjectBuilder::new(isa, "arcweft_pure_object", default_libcall_names())
-        .map_err(jit_error)?;
-    let mut module = ObjectModule::new(builder);
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
-    let object_bytes = module
-        .finish()
-        .emit()
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+    scalar_object_result(module, symbol_prefix, defined)
+}
 
-    Ok(ObjectPureI64Inputs {
-        object_bytes,
+/// Emits a relocatable object containing the parameterized `i32` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_i32_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_i32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    scalar_object_result(module, symbol_prefix, defined)
+}
+
+/// Emits a relocatable object containing the parameterized `u32` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_u32_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_u32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    scalar_object_result(module, symbol_prefix, defined)
+}
+
+/// Emits a relocatable object containing the parameterized `u64` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_u64_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_u64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    scalar_object_result(module, symbol_prefix, defined)
+}
+
+/// Emits a relocatable object containing the parameterized `f32` helper
+/// entrypoint and flat-batch entrypoint.
+pub fn emit_object_f32_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_f32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    float_object_result(module, symbol_prefix, defined)
+}
+
+/// Emits a relocatable object containing the parameterized `f64` helper
+/// entrypoint and flat-batch entrypoint.
+pub fn emit_object_f64_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    let mut module = object_module()?;
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_f64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    float_object_result(module, symbol_prefix, defined)
+}
+
+fn scalar_object_result(
+    module: ObjectModule,
+    symbol_prefix: String,
+    defined: DefinedPureScalarInputs,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    Ok(ObjectPureInputs {
+        object_bytes: emit_object_bytes(module)?,
         entry_symbol: format!("{symbol_prefix}_entry"),
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
-        batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
+        batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn float_object_result(
+    module: ObjectModule,
+    symbol_prefix: String,
+    defined: DefinedPureFloatInputs,
+) -> Result<ObjectPureInputs, CraneliftJitError> {
+    Ok(ObjectPureInputs {
+        object_bytes: emit_object_bytes(module)?,
+        entry_symbol: format!("{symbol_prefix}_entry"),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: None,
         param_names: defined.param_names,
         stats: defined.stats,
     })
@@ -3626,6 +3751,20 @@ fn jit_module() -> Result<JITModule, CraneliftJitError> {
     )))
 }
 
+fn object_module() -> Result<ObjectModule, CraneliftJitError> {
+    let isa = native_isa(true)?;
+    let builder = ObjectBuilder::new(isa, "arcweft_pure_object", default_libcall_names())
+        .map_err(jit_error)?;
+    Ok(ObjectModule::new(builder))
+}
+
+fn emit_object_bytes(module: ObjectModule) -> Result<Vec<u8>, CraneliftJitError> {
+    module
+        .finish()
+        .emit()
+        .map_err(|error| CraneliftJitError::Backend(error.to_string()))
+}
+
 fn sanitize_symbol_component(name: &str) -> String {
     let mut sanitized = String::with_capacity(name.len().max(1));
     let mut previous_underscore = false;
@@ -5037,6 +5176,29 @@ mod tests {
         }
     }
 
+    fn assert_object_symbols(object: &ObjectPureInputs) {
+        assert!(!object.object_bytes.is_empty());
+        assert!(
+            !object
+                .object_bytes
+                .windows(3)
+                .any(|window| window == b":\\")
+        );
+
+        use cranelift_object::object::{Object, ObjectSymbol};
+        let parsed = cranelift_object::object::File::parse(object.object_bytes.as_slice())
+            .expect("emitted object parses");
+        let symbols = parsed
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok())
+            .collect::<Vec<_>>();
+        assert!(symbols.contains(&object.entry_symbol.as_str()));
+        assert!(symbols.contains(&object.batch_symbol.as_str()));
+        if let Some(batch_sum_symbol) = object.batch_sum_symbol.as_deref() {
+            assert!(symbols.contains(&batch_sum_symbol));
+        }
+    }
+
     #[test]
     fn cranelift_jit_evaluates_integer_helper_and_matches_vm() {
         let request = PureFunctionRequest::new(
@@ -5222,27 +5384,111 @@ mod tests {
         );
         assert_eq!(
             object.batch_sum_symbol,
-            "arcweft_pure_score_object_i64_rows_batch_sum"
+            Some("arcweft_pure_score_object_i64_rows_batch_sum".to_owned())
         );
         assert_eq!(object.param_names, ["base", "bonus"]);
         assert_eq!(object.stats.evaluated_binary_ops, 2);
-        assert!(
-            !object
-                .object_bytes
-                .windows(3)
-                .any(|window| window == b":\\")
-        );
+        assert_object_symbols(&object);
+    }
 
-        use cranelift_object::object::{Object, ObjectSymbol};
-        let parsed = cranelift_object::object::File::parse(object.object_bytes.as_slice())
-            .expect("emitted object parses");
-        let symbols = parsed
-            .symbols()
-            .filter_map(|symbol| symbol.name().ok())
-            .collect::<Vec<_>>();
-        assert!(symbols.contains(&object.entry_symbol.as_str()));
-        assert!(symbols.contains(&object.batch_symbol.as_str()));
-        assert!(symbols.contains(&object.batch_sum_symbol.as_str()));
+    #[test]
+    fn cranelift_emits_width_specific_objects_with_expected_symbols() {
+        let backend = CraneliftPureFunctionBackend;
+
+        let i32_request = PureFunctionRequest::new(
+            "score object i32",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [i32_binding("base", 3), i32_binding("bonus", 4)],
+        );
+        let i32_object = backend
+            .emit_object_i32_with_inputs(&i32_request, ["base", "bonus"])
+            .expect("Cranelift emits an i32 object");
+        assert_eq!(
+            i32_object.entry_symbol,
+            "arcweft_pure_score_object_i32_entry"
+        );
+        assert!(i32_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&i32_object);
+
+        let u32_request = PureFunctionRequest::new(
+            "score object u32",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [u32_binding("base", 3), u32_binding("bonus", 4)],
+        );
+        let u32_object = backend
+            .emit_object_u32_with_inputs(&u32_request, ["base", "bonus"])
+            .expect("Cranelift emits a u32 object");
+        assert_eq!(
+            u32_object.entry_symbol,
+            "arcweft_pure_score_object_u32_entry"
+        );
+        assert!(u32_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&u32_object);
+
+        let u64_request = PureFunctionRequest::new(
+            "score object u64",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            },
+            [u64_binding("base", 3), u64_binding("bonus", 4)],
+        );
+        let u64_object = backend
+            .emit_object_u64_with_inputs(&u64_request, ["base", "bonus"])
+            .expect("Cranelift emits a u64 object");
+        assert_eq!(
+            u64_object.entry_symbol,
+            "arcweft_pure_score_object_u64_entry"
+        );
+        assert!(u64_object.batch_sum_symbol.is_some());
+        assert_object_symbols(&u64_object);
+
+        let f32_request = PureFunctionRequest::new(
+            "score object f32",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+            },
+            [f32_binding("base", 3.0), f32_binding("scale", 4.0)],
+        );
+        let f32_object = backend
+            .emit_object_f32_with_inputs(&f32_request, ["base", "scale"])
+            .expect("Cranelift emits an f32 object");
+        assert_eq!(
+            f32_object.entry_symbol,
+            "arcweft_pure_score_object_f32_entry"
+        );
+        assert!(f32_object.batch_sum_symbol.is_none());
+        assert_object_symbols(&f32_object);
+
+        let f64_request = PureFunctionRequest::new(
+            "score object f64",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+            },
+            [f64_binding("base", 3.0), f64_binding("scale", 4.0)],
+        );
+        let f64_object = backend
+            .emit_object_f64_with_inputs(&f64_request, ["base", "scale"])
+            .expect("Cranelift emits an f64 object");
+        assert_eq!(
+            f64_object.entry_symbol,
+            "arcweft_pure_score_object_f64_entry"
+        );
+        assert!(f64_object.batch_sum_symbol.is_none());
+        assert_object_symbols(&f64_object);
     }
 
     #[test]

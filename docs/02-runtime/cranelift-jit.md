@@ -105,14 +105,15 @@ cranelift::module::Module` and return Cranelift `FuncId` metadata; the native
 JIT wrapper owns `JITModule`, finalizes definitions, looks up function pointers,
 and calls through the audited `native_call` ABI boundary. This keeps JIT
 function-pointer handling isolated while making the same lowering path usable
-for future `ObjectModule` / build-time AOT object emission. Parameterized
-integer, floating-point, small-integer, and wide-integer batch helper paths use
-this split before any object emission is introduced.
+for `ObjectModule` / build-time AOT object emission. Parameterized integer,
+floating-point, small-integer, and wide-integer batch helper paths use this
+split before native execution wrappers are attached.
 
-The first object-emission entrypoint is `emit_object_i64_with_inputs`. It emits
-a relocatable object containing the `i64` scalar entrypoint, row-batch entrypoint,
-and row-batch-sum entrypoint. The object artifact records only deterministic
-symbol names and object bytes; it does not include source paths or JIT function
+Object-emission entrypoints exist for `i64`, `i32`, `u32`, `u64`, `f32`, and
+`f64` parameterized helpers. Integer object artifacts contain scalar,
+row-batch, and row-batch-sum entrypoints; floating-point object artifacts contain
+scalar and row-batch entrypoints. Object artifacts record deterministic symbol
+names and object bytes only; they do not include source paths or JIT function
 pointers.
 
 ```bash
