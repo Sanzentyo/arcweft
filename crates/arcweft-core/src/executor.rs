@@ -148,6 +148,7 @@ impl AotExecutor {
                 .vm
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
+                    &self.program,
                     input,
                     root_bindings,
                     options,
@@ -244,6 +245,7 @@ impl RuntimeExecutor for AotExecutor {
                 .vm
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
+                    &self.program,
                     input,
                     &[],
                     options,

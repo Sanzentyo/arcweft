@@ -84,6 +84,7 @@ fn aot_program_records_nested_dispatch_shape() {
     assert_eq!(program.flows().len(), 1);
     assert_eq!(program.flows()[0].dispatch, AotDispatchShape::Mixed);
     assert_eq!(program.flows()[0].linear_prefix_ops, 1);
+    assert_eq!(program.flows()[0].lowered_linear_ops(), 1);
     assert_eq!(program.stats().flows, 1);
     assert_eq!(program.stats().ops, 4);
     assert_eq!(program.stats().linear_ops, 2);
@@ -117,6 +118,7 @@ fn aot_executor_uses_fast_path_for_supported_linear_flow() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    assert_eq!(aot.program().flows()[0].lowered_linear_ops(), 3);
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
     let aot_result = aot.step(RuntimeStepInput::default(), options);

@@ -123,9 +123,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `rust_metadata` entries from launch profiles; direct-path checks remain
   strict and do not infer Rust APIs.
 - `arcweft-core::aot` provides a pure `AotProgram` artifact with typed flow
-  dispatch-shape analysis and deterministic operation-class counters. Generated
-  flow dispatch remains future work, but `AotExecutor` owns this artifact
-  separately from the VM runtime plan instead of retaining the plan twice. `arcw
+  dispatch-shape analysis, deterministic operation-class counters, and
+  pre-lowered linear operation blocks. Full generated flow state machines remain
+  future work, but `AotExecutor` now executes fully linear flows through this
+  artifact without cloning `FlowOp` values on each fast-path step. Mixed
+  control-flow shapes still fall back to the VM-compatible state machine. `arcw
   run`, `arcw cli`, `arcw test`, `arcw profile`, and runtime `arcw bench`
   sections can select the AOT boundary with `--executor aot` and report that
   tier in JSON without introducing different semantics. Pure helper AOT is
@@ -391,15 +393,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   pending-op suspensions do not rely on a default cursor sentinel.
 - Flow cursors are `Copy` index pairs, so suspend/resume bookkeeping does not
   clone heap-owned flow identifiers.
-- Prechecked AOT linear stepping converts borrowed plan ops into a small
-  executor-local step enum, avoiding full `FlowOp` clones for unsupported and
-  payload-free ops.
+- Prechecked AOT linear stepping borrows pre-lowered operations from
+  `AotProgram`, avoiding per-step `FlowOp` clones for straight-line dispatch.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
-- AOT programs store dispatch-shape metadata only; executor construction keeps
-  the runtime plan in the VM engine instead of retaining a second copy inside
-  the AOT artifact.
+- AOT programs store dispatch-shape metadata plus the lowered linear prefix;
+  executor construction keeps the semantic runtime plan in the VM engine while
+  the AOT artifact owns the fast-path dispatch payload.
 - Runtime bench executor templates keep bytecode/AOT artifacts beside the
   selected runtime plan so per-iteration setup does not need to decode bytecode
   back into a plan before creating a fresh executor.

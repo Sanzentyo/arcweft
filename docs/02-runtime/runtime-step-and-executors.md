@@ -117,8 +117,11 @@ Full script AOT
 
 AOT never directly touches filesystem, network, renderer, audio, or wall-clock.
 It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
-Generated AOT dispatch remains future work; until then, `AotExecutor` is a
-VM-equivalent conformance boundary.
+Full generated state-machine AOT remains future work. The current
+`AotExecutor` already owns a typed `AotProgram` with pre-lowered linear
+operation blocks, executes fully linear flows through that artifact without
+cloning `FlowOp` values during each step, and falls back to the VM-compatible
+state machine for mixed control-flow shapes.
 Pure helper AOT is narrower and already executable: `AotPureFunctionBackend`
 rejects unsupported helpers instead of falling back, then compares its typed
 integer plan against `VmPureFunctionBackend` in tests. Batch AOT calls reuse

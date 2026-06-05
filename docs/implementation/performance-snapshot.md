@@ -279,7 +279,13 @@ Checked-in linear AOT executor bench:
 
 | fixture | executor | iterations | median elapsed ns | executed ops | AOT fast-path ops | line effects | pure calls |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 006_linear_aot.arcw | aot | 4 | 7600 | 3 | 3 | 1 | 0 |
+| 006_linear_aot.arcw | aot | 12 | 1700 | 3 | 3 | 1 | 0 |
+| 006_linear_aot.arcw | bytecode_vm | 12 | 2500 | 3 | 0 | 1 | 0 |
+
+The AOT executor now runs this fully linear flow from pre-lowered
+`AotProgram` operations instead of cloning `FlowOp` values from the semantic
+runtime plan for each fast-path step. The bytecode VM row is a same-fixture
+comparison from the same local run.
 
 The map pure JIT bench reports helper compile time separately from measured
 elapsed time. In this run the helper compile counter was 4621600 ns, while the
