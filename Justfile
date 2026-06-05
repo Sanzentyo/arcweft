@@ -35,6 +35,9 @@ toolchain-profile-aot-object-benches repeat="3" warmup="1":
 toolchain-profile-width-fast-path-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat {{repeat}} --warmup {{warmup}} --json
 
+toolchain-profile-width-release-benches repeat="3" warmup="1":
+    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit-release --command bench-033-width-aot-release --command bench-033-width-vm-release --command bench-040-width-jit-release --command bench-040-width-aot-release --command bench-040-width-vm-release --repeat {{repeat}} --warmup {{warmup}} --json
+
 toolchain-profile-width-object-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-aot-object --command bench-040-width-aot-object --repeat {{repeat}} --warmup {{warmup}} --json
 

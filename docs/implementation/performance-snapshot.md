@@ -74,6 +74,18 @@ mixed-width JIT fixtures reported `101700 ns` median for
 `040_mixed_width_for_iter_pure_jit.arcw`, with zero argument Vec allocation,
 zero VM fallback, and the expected JIT call counts still intact.
 
+The optimized mixed-width toolchain profile keeps the same VM/AOT/JIT
+comparison under `cargo run --release`. A local path-free repeat-3 run reported:
+
+| fixture | backend | median elapsed ns | per op ns | compile ns | JIT calls | AOT calls | VM calls | fallbacks | arg vec allocs | borrowed arg bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `033_mixed_for_iter_pure_jit.arcw` | jit | 30600 | 402 | 1827900 | 40 | 0 | 0 | 0 | 0 | 320 |
+| `033_mixed_for_iter_pure_jit.arcw` | aot | 46300 | 609 | 76500 | 0 | 40 | 0 | 0 | 0 | 320 |
+| `033_mixed_for_iter_pure_jit.arcw` | vm | 42500 | 559 | 14900 | 0 | 0 | 40 | 40 | 0 | 320 |
+| `040_mixed_width_for_iter_pure_jit.arcw` | jit | 69400 | 383 | 2075800 | 80 | 0 | 0 | 0 | 0 | 896 |
+| `040_mixed_width_for_iter_pure_jit.arcw` | aot | 72300 | 399 | 53600 | 0 | 80 | 0 | 0 | 0 | 896 |
+| `040_mixed_width_for_iter_pure_jit.arcw` | vm | 80800 | 446 | 19400 | 0 | 0 | 80 | 80 | 0 | 896 |
+
 The mixed fixture compiles three exact-width helpers (`i32`, `u32`, and `f32`)
 and exercises both `.map` flat-batch calls and scalar `for` loop calls. The
 same run reported `jit_successes = 3`, `pure_batch_calls_median = 3`,
@@ -298,6 +310,7 @@ toolchain-profile schema:
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat 3 --warmup 1 --json
+cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit-release --command bench-033-width-aot-release --command bench-033-width-vm-release --command bench-040-width-jit-release --command bench-040-width-aot-release --command bench-040-width-vm-release --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-aot-object --command bench-040-width-aot-object --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-glam --command flow-math-matrix-add-ndarray --command flow-math-tensor-add-ndarray --command flow-math-matmul-f64-ndarray --command flow-math-matrix-add-f64-ndarray --command flow-math-tensor-add-f64-ndarray --repeat 3 --warmup 1 --json
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-auto-wgpu --repeat 3 --warmup 1 --json
@@ -313,8 +326,10 @@ object artifact attempts/successes/failures/bytes. Use the ordinary `arcw bench
 --json` output only when the full compiler/runtime breakdown is needed.
 The mixed-width commands keep `i32`, `u32`, `f32`, `i16`, `u16`, `isize`,
 `usize`, and `f64` `.map`/`for` pure-call behavior visible across VM, AOT, and
-JIT without recording host paths. The mixed-width object commands apply the
-same object artifact counters to multi-helper AOT bundles.
+JIT without recording host paths. The `*-release` variants run the same checked
+fixtures through an optimized `arcw` binary, so optimized VM/AOT/JIT trends can
+be compared without relying on debug build timings. The mixed-width object
+commands apply the same object artifact counters to multi-helper AOT bundles.
 The flow math commands run checked-in matrix/tensor fixtures through `arcw bench`
 and keep `math_calls`, backend counters, data movement counters,
 `last_backend`, and `last_auto_reason` in the compact `arcweft_bench` summary.

@@ -120,9 +120,11 @@ native JIT, while the large i64 Auto fixtures use `--pure-backend auto` to
 exercise deferred JIT promotion. `bench-039` also uses Auto to exercise hot
 scalar-loop promotion.
 
-The path-free toolchain profile targets `just toolchain-profile-width-fast-path-benches`
-and `just toolchain-profile-width-object-benches` run the mixed-width `bench-033`
-and `bench-040` fixtures under JIT, AOT, VM, and AOT object artifact emission.
+The path-free toolchain profile targets `just toolchain-profile-width-fast-path-benches`,
+`just toolchain-profile-width-release-benches`, and
+`just toolchain-profile-width-object-benches` run the mixed-width `bench-033`
+and `bench-040` fixtures under debug JIT/AOT/VM, optimized JIT/AOT/VM, and AOT
+object artifact emission.
 Their compact `arcweft_bench` summaries keep exact-width runtime call counts,
 fallbacks, argument-vector allocations, borrowed bytes, compile counters, and
 object bytes in the same JSON schema used for workspace timing trends.

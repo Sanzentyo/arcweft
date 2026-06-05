@@ -468,7 +468,9 @@ timings plus median/min/max summaries for compile, typecheck, borrow-check,
 lint, test build, and test regression tracking. It also accepts
 `--command bench-003`, `--command bench-009`,
 `--command bench-009-aot-object`, and mixed-width
-`bench-033-width-{jit,aot,vm}` / `bench-040-width-{jit,aot,vm}` plus
+`bench-033-width-{jit,aot,vm}` / `bench-040-width-{jit,aot,vm}`, optimized
+`bench-033-width-{jit,aot,vm}-release` /
+`bench-040-width-{jit,aot,vm}-release`, plus
 `bench-033-width-aot-object` / `bench-040-width-aot-object` commands for local
 path-free trend tracking of scalar pure JIT, nonuniform flat-batch pure JIT,
 AOT object-artifact overhead, and exact-width integer/floating VM/AOT/JIT

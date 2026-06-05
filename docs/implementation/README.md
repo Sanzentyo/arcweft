@@ -473,6 +473,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   supports `--command bench-003`, `--command bench-009`,
   `--command bench-009-aot-object`, mixed-width
   `bench-033-width-{jit,aot,vm}` / `bench-040-width-{jit,aot,vm}` commands, and
+  optimized mixed-width `bench-033-width-{jit,aot,vm}-release` /
+  `bench-040-width-{jit,aot,vm}-release` commands, and
   mixed-width `bench-033-width-aot-object` /
   `bench-040-width-aot-object` commands as path-free local trend commands for
   scalar pure JIT, flat-batch pure JIT, AOT object-artifact overhead, and

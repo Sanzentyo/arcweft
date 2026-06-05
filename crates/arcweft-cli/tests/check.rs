@@ -73,7 +73,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
             .unwrap_or(0)
             > 0
     );
-    assert_eq!(json["commands"].as_array().unwrap().len(), 37);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 43);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["warmup"], 1);
@@ -153,6 +153,12 @@ const TOOLCHAIN_PROFILE_DRY_RUN_COMMANDS: &[&str] = &[
     "bench-040-width-jit",
     "bench-040-width-aot",
     "bench-040-width-vm",
+    "bench-033-width-jit-release",
+    "bench-033-width-aot-release",
+    "bench-033-width-vm-release",
+    "bench-040-width-jit-release",
+    "bench-040-width-aot-release",
+    "bench-040-width-vm-release",
     "bench-033-width-aot-object",
     "bench-040-width-aot-object",
     "flow-math-matmul-glam",
@@ -313,6 +319,12 @@ fn assert_toolchain_profile_object_commands(json: &serde_json::Value) {
 }
 
 fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
+    assert_toolchain_profile_width_debug_commands(json);
+    assert_toolchain_profile_width_release_commands(json);
+    assert_toolchain_profile_width_object_commands(json);
+}
+
+fn assert_toolchain_profile_width_debug_commands(json: &serde_json::Value) {
     assert_eq!(
         json["commands"][22]["label"],
         "arcw_bench_033_mixed_width_jit"
@@ -379,22 +391,94 @@ fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
             "vm"
         )
     );
+}
+
+fn assert_toolchain_profile_width_release_commands(json: &serde_json::Value) {
     assert_eq!(
         json["commands"][28]["label"],
-        "arcw_bench_033_mixed_width_aot_object"
+        "arcw_bench_033_mixed_width_jit_release"
     );
     assert_eq!(
         json["commands"][28]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "jit"
+        )
+    );
+    assert_eq!(
+        json["commands"][29]["label"],
+        "arcw_bench_033_mixed_width_aot_release"
+    );
+    assert_eq!(
+        json["commands"][29]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "aot"
+        )
+    );
+    assert_eq!(
+        json["commands"][30]["label"],
+        "arcw_bench_033_mixed_width_vm_release"
+    );
+    assert_eq!(
+        json["commands"][30]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+            "vm"
+        )
+    );
+    assert_eq!(
+        json["commands"][31]["label"],
+        "arcw_bench_040_mixed_width_jit_release"
+    );
+    assert_eq!(
+        json["commands"][31]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "jit"
+        )
+    );
+    assert_eq!(
+        json["commands"][32]["label"],
+        "arcw_bench_040_mixed_width_aot_release"
+    );
+    assert_eq!(
+        json["commands"][32]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "aot"
+        )
+    );
+    assert_eq!(
+        json["commands"][33]["label"],
+        "arcw_bench_040_mixed_width_vm_release"
+    );
+    assert_eq!(
+        json["commands"][33]["argv"],
+        toolchain_profile_width_release_argv(
+            "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw",
+            "vm"
+        )
+    );
+}
+
+fn assert_toolchain_profile_width_object_commands(json: &serde_json::Value) {
+    assert_eq!(
+        json["commands"][34]["label"],
+        "arcw_bench_033_mixed_width_aot_object"
+    );
+    assert_eq!(
+        json["commands"][34]["argv"],
         toolchain_profile_width_object_argv(
             "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw"
         )
     );
     assert_eq!(
-        json["commands"][29]["label"],
+        json["commands"][35]["label"],
         "arcw_bench_040_mixed_width_aot_object"
     );
     assert_eq!(
-        json["commands"][29]["argv"],
+        json["commands"][35]["argv"],
         toolchain_profile_width_object_argv(
             "tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw"
         )
@@ -402,57 +486,57 @@ fn assert_toolchain_profile_width_commands(json: &serde_json::Value) {
 }
 
 fn assert_toolchain_profile_flow_math_commands(json: &serde_json::Value) {
-    assert_eq!(json["commands"][30]["label"], "arcw_flow_math_matmul_glam");
+    assert_eq!(json["commands"][36]["label"], "arcw_flow_math_matmul_glam");
     assert_eq!(
-        json["commands"][30]["argv"],
+        json["commands"][36]["argv"],
         toolchain_profile_flow_math_matmul_glam_argv()
     );
     assert_eq!(
-        json["commands"][31]["label"],
+        json["commands"][37]["label"],
         "arcw_flow_math_matrix_add_ndarray"
     );
     assert_eq!(
-        json["commands"][31]["argv"],
+        json["commands"][37]["argv"],
         toolchain_profile_flow_math_matrix_add_ndarray_argv()
     );
     assert_eq!(
-        json["commands"][32]["label"],
+        json["commands"][38]["label"],
         "arcw_flow_math_tensor_add_ndarray"
     );
     assert_eq!(
-        json["commands"][32]["argv"],
+        json["commands"][38]["argv"],
         toolchain_profile_flow_math_tensor_add_ndarray_argv()
     );
     assert_eq!(
-        json["commands"][33]["label"],
+        json["commands"][39]["label"],
         "arcw_flow_math_matmul_f64_ndarray"
     );
     assert_eq!(
-        json["commands"][33]["argv"],
+        json["commands"][39]["argv"],
         toolchain_profile_flow_math_matmul_f64_ndarray_argv()
     );
     assert_eq!(
-        json["commands"][34]["label"],
+        json["commands"][40]["label"],
         "arcw_flow_math_matrix_add_f64_ndarray"
     );
     assert_eq!(
-        json["commands"][34]["argv"],
+        json["commands"][40]["argv"],
         toolchain_profile_flow_math_matrix_add_f64_ndarray_argv()
     );
     assert_eq!(
-        json["commands"][35]["label"],
+        json["commands"][41]["label"],
         "arcw_flow_math_tensor_add_f64_ndarray"
     );
     assert_eq!(
-        json["commands"][35]["argv"],
+        json["commands"][41]["argv"],
         toolchain_profile_flow_math_tensor_add_f64_ndarray_argv()
     );
     assert_eq!(
-        json["commands"][36]["label"],
+        json["commands"][42]["label"],
         "arcw_flow_math_matmul_auto_wgpu"
     );
     assert_eq!(
-        json["commands"][36]["argv"],
+        json["commands"][42]["argv"],
         toolchain_profile_flow_math_matmul_auto_wgpu_argv()
     );
 }
@@ -548,6 +632,33 @@ fn toolchain_profile_width_argv(fixture: &str, backend: &str) -> serde_json::Val
     serde_json::json!([
         "cargo",
         "run",
+        "-p",
+        "arcweft-cli",
+        "--quiet",
+        "--",
+        "bench",
+        fixture,
+        "--json",
+        "--iterations",
+        "2",
+        "--warmup",
+        "1",
+        "--samples",
+        "1",
+        "--steps",
+        "128",
+        "--max-ops",
+        "128",
+        "--pure-backend",
+        backend
+    ])
+}
+
+fn toolchain_profile_width_release_argv(fixture: &str, backend: &str) -> serde_json::Value {
+    serde_json::json!([
+        "cargo",
+        "run",
+        "--release",
         "-p",
         "arcweft-cli",
         "--quiet",
