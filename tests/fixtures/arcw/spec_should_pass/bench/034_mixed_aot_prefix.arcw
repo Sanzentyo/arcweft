@@ -1,0 +1,13 @@
+bench @bench.mixed_aot_prefix {
+    measure iterations = 6 { start(@flow.mixed_aot_prefix) }
+}
+
+flow @flow.mixed_aot_prefix mixed_aot_prefix {
+    let value: i64 = 40i64 + 2i64
+    log.info(value)
+    if value >= 42i64 {
+        return "then"
+    } else {
+        return "else"
+    }
+}

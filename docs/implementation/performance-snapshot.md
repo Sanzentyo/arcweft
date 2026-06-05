@@ -281,11 +281,16 @@ Checked-in linear AOT executor bench:
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 006_linear_aot.arcw | aot | 12 | 1700 | 3 | 3 | 1 | 0 |
 | 006_linear_aot.arcw | bytecode_vm | 12 | 2500 | 3 | 0 | 1 | 0 |
+| 034_mixed_aot_prefix.arcw | aot | 12 | 3200 | 5 | 2 | 1 | 0 |
+| 034_mixed_aot_prefix.arcw | bytecode_vm | 12 | 3000 | 5 | 0 | 1 | 0 |
 
 The AOT executor now runs this fully linear flow from pre-lowered
 `AotProgram` operations instead of cloning `FlowOp` values from the semantic
 runtime plan for each fast-path step. The bytecode VM row is a same-fixture
-comparison from the same local run.
+comparison from the same local run. The mixed-prefix fixture confirms that AOT
+can consume a pre-lowered setup prefix before returning to the VM-compatible
+branch dispatcher. It is a coverage/conformance case; the tiny local workload is
+close enough that the extra step boundary can offset the prefix fast path.
 
 The map pure JIT bench reports helper compile time separately from measured
 elapsed time. In this run the helper compile counter was 4621600 ns, while the

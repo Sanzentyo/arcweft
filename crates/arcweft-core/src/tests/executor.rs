@@ -193,6 +193,47 @@ fn aot_executor_falls_back_for_branching_flow() {
 }
 
 #[test]
+fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_fallback() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Noop,
+                FlowOp::If {
+                    condition: crate::value::RuntimeExpr::Value(crate::value::RuntimeValue::Bool(
+                        true,
+                    )),
+                    then_ops: vec![FlowOp::Return("then".to_owned())],
+                    else_ops: vec![FlowOp::Return("else".to_owned())],
+                },
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 8 },
+    };
+    let mut vm = VmExecutor::new(plan.clone());
+    let mut aot = AotExecutor::new(plan);
+
+    assert_eq!(aot.program().flows()[0].dispatch, AotDispatchShape::Mixed);
+    assert_eq!(aot.program().flows()[0].lowered_linear_ops(), 1);
+
+    let vm_result = vm.step(RuntimeStepInput::default(), options);
+    let prefix_result = aot.step(RuntimeStepInput::default(), options);
+    assert_eq!(prefix_result.stats.executed_ops, 1);
+    assert_eq!(aot.fast_path_ops(), 1);
+
+    let fallback_result = aot.step(RuntimeStepInput::default(), options);
+
+    assert_eq!(fallback_result.output, vm_result.output);
+    assert_eq!(aot.fiber().status, vm.fiber().status);
+}
+
+#[test]
 fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),

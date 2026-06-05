@@ -2,7 +2,7 @@ use super::{
     Engine, FlowFiberStatus, RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput,
     RuntimeStepResult, RuntimeStepStats,
 };
-use crate::aot::{AotDispatchShape, AotLinearOp, AotProgram};
+use crate::aot::{AotLinearOp, AotProgram};
 use crate::pure::RuntimeCallBackend;
 
 impl Engine {
@@ -38,12 +38,14 @@ impl Engine {
                 break;
             };
             let Some(op) = flow.linear_op(cursor.op_index) else {
-                self.finish(&mut output);
-                executed_ops += 1;
-                if self.should_return_to_host(options.mode, &output, executed_ops) {
-                    break;
+                if cursor.op_index >= flow.ops {
+                    self.finish(&mut output);
+                    executed_ops += 1;
+                    if self.should_return_to_host(options.mode, &output, executed_ops) {
+                        break;
+                    }
                 }
-                continue;
+                break;
             };
             let next_op_index = cursor.op_index + 1;
             self.step_aot_linear_op(op, next_op_index, &mut output, pure_backend);
@@ -89,12 +91,12 @@ impl Engine {
             && self.fiber.pending_ops.is_empty()
             && self.fiber.control_stack.is_empty()
             && matches!(self.fiber.status, FlowFiberStatus::Running)
-            && self
-                .fiber
-                .cursor
-                .as_ref()
-                .and_then(|cursor| program.flow_block(cursor.flow_index))
-                .is_some_and(|flow| flow.dispatch == AotDispatchShape::Linear)
+            && self.fiber.cursor.as_ref().is_some_and(|cursor| {
+                program
+                    .flow_block(cursor.flow_index)
+                    .and_then(|flow| flow.linear_op(cursor.op_index))
+                    .is_some()
+            })
     }
 
     fn step_aot_linear_op(

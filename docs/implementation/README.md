@@ -125,10 +125,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `arcweft-core::aot` provides a pure `AotProgram` artifact with typed flow
   dispatch-shape analysis, deterministic operation-class counters, and
   pre-lowered linear operation blocks. Full generated flow state machines remain
-  future work, but `AotExecutor` now executes fully linear flows through this
-  artifact without cloning `FlowOp` values on each fast-path step. Mixed
-  control-flow shapes still fall back to the VM-compatible state machine. `arcw
-  run`, `arcw cli`, `arcw test`, `arcw profile`, and runtime `arcw bench`
+  future work, but `AotExecutor` now executes fully linear flows and mixed-flow
+  linear prefixes through this artifact without cloning `FlowOp` values on each
+  fast-path step. Mixed control-flow boundaries still fall back to the
+  VM-compatible state machine. `arcw run`, `arcw cli`, `arcw test`, `arcw profile`, and runtime `arcw bench`
   sections can select the AOT boundary with `--executor aot` and report that
   tier in JSON without introducing different semantics. Pure helper AOT is
   implemented separately: `AotPureFunctionBackend` compiles the deterministic
@@ -395,6 +395,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   clone heap-owned flow identifiers.
 - Prechecked AOT linear stepping borrows pre-lowered operations from
   `AotProgram`, avoiding per-step `FlowOp` clones for straight-line dispatch.
+- Mixed-flow AOT stepping now runs the pre-lowered linear prefix before handing
+  control back to the VM-compatible branch/loop/await dispatcher. This extends
+  AOT coverage to common setup-then-branch shapes without adding a speculative
+  generated state machine.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
