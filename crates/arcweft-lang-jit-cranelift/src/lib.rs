@@ -32,7 +32,7 @@ pub struct CraneliftPureFunctionBackend;
 
 /// Error produced while selecting, lowering, compiling, or invoking a helper.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum CraneliftJitError {
+pub enum CraneliftCodegenError {
     #[error("host is not supported by Cranelift: {0}")]
     UnsupportedHost(String),
     #[error("pure helper expression is not supported by Cranelift: {0}")]
@@ -376,7 +376,7 @@ impl CraneliftPureFunctionBackend {
     pub fn evaluate_jit(
         &self,
         request: &PureFunctionRequest,
-    ) -> Result<PureFunctionResult, CraneliftJitError> {
+    ) -> Result<PureFunctionResult, CraneliftCodegenError> {
         let compiled = self.compile_i64(request)?;
         let value = compiled.call();
         Ok(PureFunctionResult {
@@ -390,7 +390,7 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i64(
         &self,
         request: &PureFunctionRequest,
-    ) -> Result<CompiledPureI64, CraneliftJitError> {
+    ) -> Result<CompiledPureI64, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let mut ctx = module.make_context();
         let mut func_ctx = FunctionBuilderContext::new();
@@ -399,7 +399,7 @@ impl CraneliftPureFunctionBackend {
 
         let func_id = module
             .declare_function("arcweft_pure_helper", Linkage::Local, &signature)
-            .map_err(jit_error)?;
+            .map_err(codegen_error)?;
         ctx.func.signature = signature;
         ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -417,9 +417,9 @@ impl CraneliftPureFunctionBackend {
 
         module
             .define_function(func_id, &mut ctx)
-            .map_err(jit_error)?;
+            .map_err(codegen_error)?;
         module.clear_context(&mut ctx);
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(func_id);
 
         Ok(CompiledPureI64 {
@@ -438,7 +438,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI64Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureI64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_i64_with_inputs(
             &mut module,
@@ -446,13 +446,13 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
         let caller = native_call::I64InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -474,7 +474,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_i64_with_inputs(request, param_names)
     }
 
@@ -484,7 +484,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_i32_with_inputs(request, param_names)
     }
 
@@ -494,7 +494,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI8Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureI8Inputs, CraneliftCodegenError> {
         let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::I8)?;
         let caller = native_call::I8InputCaller::from_code(parts.code, parts.param_names.len())
             .ok_or_else(|| small_int_arity_error(SmallIntKind::I8, parts.param_names.len()))?;
@@ -514,7 +514,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_i8_with_inputs(request, param_names)
     }
 
@@ -531,7 +531,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI128BatchInputs, CraneliftJitError> {
+    ) -> Result<CompiledPureI128BatchInputs, CraneliftCodegenError> {
         let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)?;
         Ok(CompiledPureI128BatchInputs {
             _module: parts.module,
@@ -548,7 +548,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
         emit_object_i128_batch_with_inputs(request, param_names)
     }
 
@@ -558,7 +558,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI16Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureI16Inputs, CraneliftCodegenError> {
         let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::I16)?;
         let caller = native_call::I16InputCaller::from_code(parts.code, parts.param_names.len())
             .ok_or_else(|| small_int_arity_error(SmallIntKind::I16, parts.param_names.len()))?;
@@ -578,7 +578,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_i16_with_inputs(request, param_names)
     }
 
@@ -588,7 +588,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI32Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureI32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_i32_with_inputs(
             &mut module,
@@ -596,13 +596,13 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
         let caller = native_call::I32InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT i32 helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -624,7 +624,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureU32Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureU32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_u32_with_inputs(
             &mut module,
@@ -632,13 +632,13 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
         let caller = native_call::U32InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT u32 helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -660,7 +660,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_u32_with_inputs(request, param_names)
     }
 
@@ -670,7 +670,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureU8Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureU8Inputs, CraneliftCodegenError> {
         let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::U8)?;
         let caller = native_call::U8InputCaller::from_code(parts.code, parts.param_names.len())
             .ok_or_else(|| small_int_arity_error(SmallIntKind::U8, parts.param_names.len()))?;
@@ -690,7 +690,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_u8_with_inputs(request, param_names)
     }
 
@@ -700,7 +700,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureU16Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureU16Inputs, CraneliftCodegenError> {
         let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::U16)?;
         let caller = native_call::U16InputCaller::from_code(parts.code, parts.param_names.len())
             .ok_or_else(|| small_int_arity_error(SmallIntKind::U16, parts.param_names.len()))?;
@@ -720,7 +720,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_u16_with_inputs(request, param_names)
     }
 
@@ -737,7 +737,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureU128BatchInputs, CraneliftJitError> {
+    ) -> Result<CompiledPureU128BatchInputs, CraneliftCodegenError> {
         let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)?;
         Ok(CompiledPureU128BatchInputs {
             _module: parts.module,
@@ -754,7 +754,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
         emit_object_u128_batch_with_inputs(request, param_names)
     }
 
@@ -764,7 +764,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureU64Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureU64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_u64_with_inputs(
             &mut module,
@@ -772,13 +772,13 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
         let caller = native_call::U64InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT u64 helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -800,7 +800,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_u64_with_inputs(request, param_names)
     }
 
@@ -810,7 +810,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureF32Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureF32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_f32_with_inputs(
             &mut module,
@@ -818,12 +818,12 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let caller = native_call::F32InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT f32 helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -844,7 +844,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_f32_with_inputs(request, param_names)
     }
 
@@ -854,7 +854,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureF64Inputs, CraneliftJitError> {
+    ) -> Result<CompiledPureF64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_f64_with_inputs(
             &mut module,
@@ -862,12 +862,12 @@ impl CraneliftPureFunctionBackend {
             request,
             param_names,
         )?;
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let caller = native_call::F64InputCaller::from_code(code, defined.param_names.len())
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT f64 helper arity {} is outside the native call boundary",
                     defined.param_names.len()
                 ))
@@ -888,7 +888,7 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<ObjectPureInputs, CraneliftJitError> {
+    ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
         emit_object_f64_with_inputs(request, param_names)
     }
 
@@ -897,14 +897,14 @@ impl CraneliftPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
         param_names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<CompiledPureI64Batch, CraneliftJitError> {
+    ) -> Result<CompiledPureI64Batch, CraneliftCodegenError> {
         let param_names = param_names
             .into_iter()
             .map(Into::into)
             .collect::<Vec<String>>();
         validate_param_names(&param_names)?;
         if param_names.len() > 4 {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT batch helper supports at most 4 runtime inputs, got {}",
                 param_names.len()
             )));
@@ -923,7 +923,7 @@ impl CraneliftPureFunctionBackend {
 
         let func_id = module
             .declare_function("arcweft_pure_helper_batch", Linkage::Local, &signature)
-            .map_err(jit_error)?;
+            .map_err(codegen_error)?;
         ctx.func.signature = signature;
         ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -995,9 +995,9 @@ impl CraneliftPureFunctionBackend {
 
         module
             .define_function(func_id, &mut ctx)
-            .map_err(jit_error)?;
+            .map_err(codegen_error)?;
         module.clear_context(&mut ctx);
-        module.finalize_definitions().map_err(jit_error)?;
+        module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(func_id);
 
         Ok(CompiledPureI64Batch {
@@ -1016,7 +1016,7 @@ pub fn define_i64_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureScalarInputs, CraneliftJitError>
+) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1026,7 +1026,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift i64 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1043,7 +1043,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1065,7 +1065,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_i64_rows_batch_function(
         module,
@@ -1096,7 +1098,7 @@ where
 pub fn emit_object_i64_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1108,7 +1110,7 @@ pub fn emit_object_i64_with_inputs(
 pub fn emit_object_i32_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_i32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1120,7 +1122,7 @@ pub fn emit_object_i32_with_inputs(
 pub fn emit_object_u32_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_u32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1132,7 +1134,7 @@ pub fn emit_object_u32_with_inputs(
 pub fn emit_object_u64_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_u64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1144,7 +1146,7 @@ pub fn emit_object_u64_with_inputs(
 pub fn emit_object_f32_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_f32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1156,7 +1158,7 @@ pub fn emit_object_f32_with_inputs(
 pub fn emit_object_f64_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_f64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
@@ -1168,7 +1170,7 @@ pub fn emit_object_f64_with_inputs(
 pub fn emit_object_i8_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I8)
 }
 
@@ -1177,7 +1179,7 @@ pub fn emit_object_i8_with_inputs(
 pub fn emit_object_i16_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I16)
 }
 
@@ -1186,7 +1188,7 @@ pub fn emit_object_i16_with_inputs(
 pub fn emit_object_u8_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U8)
 }
 
@@ -1195,7 +1197,7 @@ pub fn emit_object_u8_with_inputs(
 pub fn emit_object_u16_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U16)
 }
 
@@ -1204,7 +1206,7 @@ pub fn emit_object_u16_with_inputs(
 pub fn emit_object_i128_batch_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
     emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)
 }
 
@@ -1213,7 +1215,7 @@ pub fn emit_object_i128_batch_with_inputs(
 pub fn emit_object_u128_batch_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
     emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)
 }
 
@@ -1221,7 +1223,7 @@ fn emit_object_small_int_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined =
@@ -1233,7 +1235,7 @@ fn emit_object_wide_int_batch_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
     let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
     let defined = define_small_int_batch_with_inputs(
@@ -1250,7 +1252,7 @@ fn scalar_object_result(
     module: ObjectModule,
     symbol_prefix: String,
     defined: DefinedPureScalarInputs,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     Ok(ObjectPureInputs {
         object_bytes: emit_object_bytes(module)?,
         entry_symbol: format!("{symbol_prefix}_entry"),
@@ -1265,7 +1267,7 @@ fn small_int_object_result(
     module: ObjectModule,
     symbol_prefix: String,
     defined: DefinedPureSmallIntInputs,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     Ok(ObjectPureInputs {
         object_bytes: emit_object_bytes(module)?,
         entry_symbol: format!("{symbol_prefix}_entry"),
@@ -1280,7 +1282,7 @@ fn batch_object_result(
     module: ObjectModule,
     symbol_prefix: String,
     defined: DefinedPureSmallIntBatchInputs,
-) -> Result<ObjectPureBatchInputs, CraneliftJitError> {
+) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
     Ok(ObjectPureBatchInputs {
         object_bytes: emit_object_bytes(module)?,
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
@@ -1294,7 +1296,7 @@ fn float_object_result(
     module: ObjectModule,
     symbol_prefix: String,
     defined: DefinedPureFloatInputs,
-) -> Result<ObjectPureInputs, CraneliftJitError> {
+) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     Ok(ObjectPureInputs {
         object_bytes: emit_object_bytes(module)?,
         entry_symbol: format!("{symbol_prefix}_entry"),
@@ -1312,7 +1314,7 @@ pub fn define_i32_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureScalarInputs, CraneliftJitError>
+) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1322,7 +1324,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift i32 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1339,7 +1341,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1361,7 +1363,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_i32_rows_batch_function(
         module,
@@ -1394,7 +1398,7 @@ pub fn define_u32_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureScalarInputs, CraneliftJitError>
+) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1404,7 +1408,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift u32 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1421,7 +1425,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1443,7 +1447,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_u32_rows_batch_function(
         module,
@@ -1476,7 +1482,7 @@ pub fn define_u64_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureScalarInputs, CraneliftJitError>
+) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1486,7 +1492,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift u64 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1503,7 +1509,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1525,7 +1531,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_u64_rows_batch_function(
         module,
@@ -1558,7 +1566,7 @@ pub fn define_f32_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureFloatInputs, CraneliftJitError>
+) -> Result<DefinedPureFloatInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1568,7 +1576,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift f32 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1585,7 +1593,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1607,7 +1615,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_f32_rows_batch_function(
         module,
@@ -1632,7 +1642,7 @@ pub fn define_f64_with_inputs<M>(
     symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
-) -> Result<DefinedPureFloatInputs, CraneliftJitError>
+) -> Result<DefinedPureFloatInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1642,7 +1652,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift f64 helper supports at most 4 runtime inputs, got {}",
             param_names.len()
         )));
@@ -1659,7 +1669,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1681,7 +1691,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_f64_rows_batch_function(
         module,
@@ -1716,8 +1728,8 @@ struct WideIntBatchCompiledParts {
     stats: PureFunctionStats,
 }
 
-fn small_int_arity_error(kind: SmallIntKind, arity: usize) -> CraneliftJitError {
-    CraneliftJitError::UnsupportedExpr(format!(
+fn small_int_arity_error(kind: SmallIntKind, arity: usize) -> CraneliftCodegenError {
+    CraneliftCodegenError::UnsupportedExpr(format!(
         "JIT {} helper arity {arity} is outside the native call boundary",
         kind.label()
     ))
@@ -1727,7 +1739,7 @@ fn compile_small_int_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<SmallIntCompiledParts, CraneliftJitError> {
+) -> Result<SmallIntCompiledParts, CraneliftCodegenError> {
     let mut module = jit_module()?;
     let defined = define_small_int_with_inputs(
         &mut module,
@@ -1736,7 +1748,7 @@ fn compile_small_int_with_inputs(
         param_names,
         kind,
     )?;
-    module.finalize_definitions().map_err(jit_error)?;
+    module.finalize_definitions().map_err(codegen_error)?;
     let code = module.get_finalized_function(defined.entry);
     let batch_code = module.get_finalized_function(defined.batch);
     let batch_sum_code = module.get_finalized_function(defined.batch_sum);
@@ -1754,7 +1766,7 @@ fn compile_wide_int_batch_with_inputs(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<WideIntBatchCompiledParts, CraneliftJitError> {
+) -> Result<WideIntBatchCompiledParts, CraneliftCodegenError> {
     debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
     let mut module = jit_module()?;
     let defined = define_small_int_batch_with_inputs(
@@ -1764,7 +1776,7 @@ fn compile_wide_int_batch_with_inputs(
         param_names,
         kind,
     )?;
-    module.finalize_definitions().map_err(jit_error)?;
+    module.finalize_definitions().map_err(codegen_error)?;
     let batch_code = module.get_finalized_function(defined.batch);
     let batch_sum_code = module.get_finalized_function(defined.batch_sum);
     Ok(WideIntBatchCompiledParts {
@@ -1782,7 +1794,7 @@ fn define_small_int_with_inputs<M>(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<DefinedPureSmallIntInputs, CraneliftJitError>
+) -> Result<DefinedPureSmallIntInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1793,7 +1805,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
             param_names.len()
@@ -1812,7 +1824,7 @@ where
     let entry_name = format!("{symbol_prefix}_entry");
     let entry = module
         .declare_function(&entry_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
@@ -1834,7 +1846,9 @@ where
         builder.finalize();
     }
 
-    module.define_function(entry, &mut ctx).map_err(jit_error)?;
+    module
+        .define_function(entry, &mut ctx)
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     let batch = define_small_int_rows_batch_function(
         module,
@@ -1868,7 +1882,7 @@ fn define_small_int_batch_with_inputs<M>(
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<DefinedPureSmallIntBatchInputs, CraneliftJitError>
+) -> Result<DefinedPureSmallIntBatchInputs, CraneliftCodegenError>
 where
     M: Module,
 {
@@ -1879,7 +1893,7 @@ where
         .collect::<Vec<String>>();
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
-        return Err(CraneliftJitError::UnsupportedExpr(format!(
+        return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
             param_names.len()
@@ -1919,13 +1933,13 @@ fn define_small_int_rows_batch_function<M>(
     captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(format!(
+        return Err(CraneliftCodegenError::UnsupportedHost(format!(
             "JIT {} rows batch currently requires a 64-bit host pointer type",
             kind.label()
         )));
@@ -1942,7 +1956,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -1998,7 +2012,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2010,13 +2024,13 @@ fn define_small_int_rows_batch_sum_function<M>(
     captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(format!(
+        return Err(CraneliftCodegenError::UnsupportedHost(format!(
             "JIT {} rows batch sum currently requires a 64-bit host pointer type",
             kind.label()
         )));
@@ -2032,7 +2046,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2101,7 +2115,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2112,13 +2126,13 @@ fn define_i64_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2134,7 +2148,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2189,7 +2203,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2200,13 +2214,13 @@ fn define_i64_rows_batch_sum_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT rows batch sum currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2221,7 +2235,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2282,7 +2296,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2293,13 +2307,13 @@ fn define_i32_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT i32 rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2315,7 +2329,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2370,7 +2384,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2381,13 +2395,13 @@ fn define_i32_rows_batch_sum_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT i32 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2402,7 +2416,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2464,7 +2478,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2475,13 +2489,13 @@ fn define_u32_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT u32 rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2497,7 +2511,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2552,7 +2566,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2563,13 +2577,13 @@ fn define_u32_rows_batch_sum_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT u32 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2584,7 +2598,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2646,7 +2660,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2657,13 +2671,13 @@ fn define_u64_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT u64 rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2679,7 +2693,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2734,7 +2748,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2745,13 +2759,13 @@ fn define_u64_rows_batch_sum_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredI64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT u64 rows batch sum currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2766,7 +2780,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2827,7 +2841,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2838,13 +2852,13 @@ fn define_f32_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredF32Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT f32 rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2860,7 +2874,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -2915,7 +2929,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -2926,13 +2940,13 @@ fn define_f64_rows_batch_function<M>(
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredF64Binding>,
     param_names: &[String],
-) -> Result<FuncId, CraneliftJitError>
+) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
 {
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
-        return Err(CraneliftJitError::UnsupportedHost(
+        return Err(CraneliftCodegenError::UnsupportedHost(
             "JIT f64 rows batch currently requires a 64-bit host pointer type".to_owned(),
         ));
     }
@@ -2948,7 +2962,7 @@ where
 
     let func_id = module
         .declare_function(symbol_name, Linkage::Local, &signature)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
@@ -3003,7 +3017,7 @@ where
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     module.clear_context(&mut ctx);
     Ok(func_id)
 }
@@ -3265,16 +3279,16 @@ fn store_u64_batch_output(
 
 impl CompiledPureI64Inputs {
     /// Calls the compiled helper with runtime integer inputs.
-    pub fn call(&self, inputs: &[i64]) -> Result<i64, CraneliftJitError> {
+    pub fn call(&self, inputs: &[i64]) -> Result<i64, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3282,9 +3296,9 @@ impl CompiledPureI64Inputs {
     }
 
     /// Calls the compiled helper with the runtime fixed-size integer pack.
-    pub fn call_i64_args(&self, args: RuntimeI64Args) -> Result<i64, CraneliftJitError> {
+    pub fn call_i64_args(&self, args: RuntimeI64Args) -> Result<i64, CraneliftCodegenError> {
         if args.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper expected {} input(s), got {}",
                 self.param_names.len(),
                 args.len()
@@ -3292,7 +3306,7 @@ impl CompiledPureI64Inputs {
         }
         let (values, len) = args.into_parts();
         self.caller.call_packed(values, len).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper arity {len} is outside the native call boundary"
             ))
         })
@@ -3303,9 +3317,9 @@ impl CompiledPureI64Inputs {
         &self,
         inputs: &[i64],
         out: &mut [i64],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_i64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3321,7 +3335,7 @@ impl CompiledPureI64Inputs {
         &self,
         inputs: &[i64],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_i64_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3329,7 +3343,7 @@ impl CompiledPureI64Inputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch sum expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len(),
@@ -3355,10 +3369,10 @@ impl CompiledPureI128BatchInputs {
         &self,
         inputs: &[i128],
         out: &mut [i128],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_i128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
         {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i128 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3374,7 +3388,7 @@ impl CompiledPureI128BatchInputs {
         &self,
         inputs: &[i128],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_i128_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3382,7 +3396,7 @@ impl CompiledPureI128BatchInputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i128 rows batch sum expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len(),
@@ -3404,16 +3418,16 @@ impl CompiledPureI128BatchInputs {
 
 impl CompiledPureI32Inputs {
     /// Calls the compiled helper with runtime `i32` inputs.
-    pub fn call(&self, inputs: &[i32]) -> Result<i32, CraneliftJitError> {
+    pub fn call(&self, inputs: &[i32]) -> Result<i32, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3425,9 +3439,9 @@ impl CompiledPureI32Inputs {
         &self,
         inputs: &[i32],
         out: &mut [i32],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_i32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3443,7 +3457,7 @@ impl CompiledPureI32Inputs {
         &self,
         inputs: &[i32],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_i32_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3451,7 +3465,7 @@ impl CompiledPureI32Inputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len()
@@ -3468,9 +3482,9 @@ impl CompiledPureI32Inputs {
 macro_rules! impl_compiled_small_int_inputs {
     ($compiled:ty, $ty:ty, $call_batch:path, $call_sum:path, $label:literal) => {
         impl $compiled {
-            pub fn call(&self, inputs: &[$ty]) -> Result<$ty, CraneliftJitError> {
+            pub fn call(&self, inputs: &[$ty]) -> Result<$ty, CraneliftCodegenError> {
                 if inputs.len() != self.param_names.len() {
-                    return Err(CraneliftJitError::UnsupportedExpr(format!(
+                    return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                         "JIT {} helper expected {} input(s), got {}",
                         $label,
                         self.param_names.len(),
@@ -3478,7 +3492,7 @@ macro_rules! impl_compiled_small_int_inputs {
                     )));
                 }
                 self.caller.call(inputs).ok_or_else(|| {
-                    CraneliftJitError::UnsupportedExpr(format!(
+                    CraneliftCodegenError::UnsupportedExpr(format!(
                         "JIT {} helper arity {} is outside the native call boundary",
                         $label,
                         inputs.len()
@@ -3490,9 +3504,9 @@ macro_rules! impl_compiled_small_int_inputs {
                 &self,
                 inputs: &[$ty],
                 out: &mut [$ty],
-            ) -> Result<(), CraneliftJitError> {
+            ) -> Result<(), CraneliftCodegenError> {
                 if !$call_batch(self.batch_code, inputs, self.param_names.len(), out) {
-                    return Err(CraneliftJitError::UnsupportedExpr(format!(
+                    return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                         "JIT {} rows batch expected {} input value(s), got {} for {} row(s)",
                         $label,
                         self.param_names.len().saturating_mul(out.len()),
@@ -3507,10 +3521,10 @@ macro_rules! impl_compiled_small_int_inputs {
                 &self,
                 inputs: &[$ty],
                 rows: usize,
-            ) -> Result<i64, CraneliftJitError> {
+            ) -> Result<i64, CraneliftCodegenError> {
                 $call_sum(self.batch_sum_code, inputs, self.param_names.len(), rows).ok_or_else(
                     || {
-                        CraneliftJitError::UnsupportedExpr(format!(
+                        CraneliftCodegenError::UnsupportedExpr(format!(
                             "JIT {} rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                             $label,
                             self.param_names.len().saturating_mul(rows),
@@ -3558,16 +3572,16 @@ impl_compiled_small_int_inputs!(
 
 impl CompiledPureU32Inputs {
     /// Calls the compiled helper with runtime `u32` inputs.
-    pub fn call(&self, inputs: &[u32]) -> Result<u32, CraneliftJitError> {
+    pub fn call(&self, inputs: &[u32]) -> Result<u32, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3579,9 +3593,9 @@ impl CompiledPureU32Inputs {
         &self,
         inputs: &[u32],
         out: &mut [u32],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_u32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3597,7 +3611,7 @@ impl CompiledPureU32Inputs {
         &self,
         inputs: &[u32],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_u32_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3605,7 +3619,7 @@ impl CompiledPureU32Inputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len()
@@ -3621,16 +3635,16 @@ impl CompiledPureU32Inputs {
 
 impl CompiledPureU64Inputs {
     /// Calls the compiled helper with runtime `u64` inputs.
-    pub fn call(&self, inputs: &[u64]) -> Result<u64, CraneliftJitError> {
+    pub fn call(&self, inputs: &[u64]) -> Result<u64, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3642,9 +3656,9 @@ impl CompiledPureU64Inputs {
         &self,
         inputs: &[u64],
         out: &mut [u64],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_u64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3660,7 +3674,7 @@ impl CompiledPureU64Inputs {
         &self,
         inputs: &[u64],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_u64_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3668,7 +3682,7 @@ impl CompiledPureU64Inputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len()
@@ -3688,10 +3702,10 @@ impl CompiledPureU128BatchInputs {
         &self,
         inputs: &[u128],
         out: &mut [u128],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_u128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
         {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u128 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3707,7 +3721,7 @@ impl CompiledPureU128BatchInputs {
         &self,
         inputs: &[u128],
         rows: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         native_call::call_u128_rows_batch_sum(
             self.batch_sum_code,
             inputs,
@@ -3715,7 +3729,7 @@ impl CompiledPureU128BatchInputs {
             rows,
         )
         .ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u128 rows batch sum expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(rows),
                 inputs.len(),
@@ -3737,16 +3751,16 @@ impl CompiledPureU128BatchInputs {
 
 impl CompiledPureF32Inputs {
     /// Calls the compiled helper with runtime `f32` inputs.
-    pub fn call(&self, inputs: &[f32]) -> Result<f32, CraneliftJitError> {
+    pub fn call(&self, inputs: &[f32]) -> Result<f32, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f32 helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f32 helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3758,9 +3772,9 @@ impl CompiledPureF32Inputs {
         &self,
         inputs: &[f32],
         out: &mut [f32],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_f32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f32 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3778,16 +3792,16 @@ impl CompiledPureF32Inputs {
 
 impl CompiledPureF64Inputs {
     /// Calls the compiled helper with runtime `f64` inputs.
-    pub fn call(&self, inputs: &[f64]) -> Result<f64, CraneliftJitError> {
+    pub fn call(&self, inputs: &[f64]) -> Result<f64, CraneliftCodegenError> {
         if inputs.len() != self.param_names.len() {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f64 helper expected {} input(s), got {}",
                 self.param_names.len(),
                 inputs.len()
             )));
         }
         self.caller.call(inputs).ok_or_else(|| {
-            CraneliftJitError::UnsupportedExpr(format!(
+            CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f64 helper arity {} is outside the native call boundary",
                 inputs.len()
             ))
@@ -3799,9 +3813,9 @@ impl CompiledPureF64Inputs {
         &self,
         inputs: &[f64],
         out: &mut [f64],
-    ) -> Result<(), CraneliftJitError> {
+    ) -> Result<(), CraneliftCodegenError> {
         if !native_call::call_f64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f64 rows batch expected {} input value(s), got {} for {} row(s)",
                 self.param_names.len().saturating_mul(out.len()),
                 inputs.len(),
@@ -3824,15 +3838,15 @@ impl CompiledPureI64Batch {
         seed: u64,
         sample: usize,
         iterations: usize,
-    ) -> Result<i64, CraneliftJitError> {
+    ) -> Result<i64, CraneliftCodegenError> {
         let seed = i64::try_from(seed).map_err(|_| {
-            CraneliftJitError::UnsupportedExpr("JIT batch seed must fit i64".to_owned())
+            CraneliftCodegenError::UnsupportedExpr("JIT batch seed must fit i64".to_owned())
         })?;
         let sample = i64::try_from(sample).map_err(|_| {
-            CraneliftJitError::UnsupportedExpr("JIT batch sample index must fit i64".to_owned())
+            CraneliftCodegenError::UnsupportedExpr("JIT batch sample index must fit i64".to_owned())
         })?;
         let iterations = i64::try_from(iterations).map_err(|_| {
-            CraneliftJitError::UnsupportedExpr("JIT batch iterations must fit i64".to_owned())
+            CraneliftCodegenError::UnsupportedExpr("JIT batch iterations must fit i64".to_owned())
         })?;
         Ok(native_call::call_i64_batch(
             self.code, seed, sample, iterations,
@@ -3889,15 +3903,15 @@ fn lower_next_input_value(
     builder.ins().select(wrapped, one, incremented)
 }
 
-fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError> {
+fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftCodegenError> {
     for (index, name) in param_names.iter().enumerate() {
         if name.is_empty() {
-            return Err(CraneliftJitError::UnsupportedExpr(
+            return Err(CraneliftCodegenError::UnsupportedExpr(
                 "JIT runtime input names must be non-empty".to_owned(),
             ));
         }
         if param_names[..index].contains(name) {
-            return Err(CraneliftJitError::UnsupportedExpr(format!(
+            return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT runtime input `{name}` is duplicated"
             )));
         }
@@ -3905,26 +3919,26 @@ fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError>
     Ok(())
 }
 
-fn native_isa(is_pic: bool) -> Result<OwnedTargetIsa, CraneliftJitError> {
+fn native_isa(is_pic: bool) -> Result<OwnedTargetIsa, CraneliftCodegenError> {
     let mut flag_builder = settings::builder();
     flag_builder
         .set("use_colocated_libcalls", "false")
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+        .map_err(|error| CraneliftCodegenError::Backend(error.to_string()))?;
     flag_builder
         .set("is_pic", if is_pic { "true" } else { "false" })
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+        .map_err(|error| CraneliftCodegenError::Backend(error.to_string()))?;
     flag_builder
         .set("opt_level", "speed")
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+        .map_err(|error| CraneliftCodegenError::Backend(error.to_string()))?;
     let isa_builder = cranelift::native::builder()
-        .map_err(|message| CraneliftJitError::UnsupportedHost(message.to_owned()))?;
+        .map_err(|message| CraneliftCodegenError::UnsupportedHost(message.to_owned()))?;
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+        .map_err(|error| CraneliftCodegenError::Backend(error.to_string()))?;
     Ok(isa)
 }
 
-fn jit_module() -> Result<JITModule, CraneliftJitError> {
+fn jit_module() -> Result<JITModule, CraneliftCodegenError> {
     let isa = native_isa(false)?;
     Ok(JITModule::new(JITBuilder::with_isa(
         isa,
@@ -3932,18 +3946,18 @@ fn jit_module() -> Result<JITModule, CraneliftJitError> {
     )))
 }
 
-fn object_module() -> Result<ObjectModule, CraneliftJitError> {
+fn object_module() -> Result<ObjectModule, CraneliftCodegenError> {
     let isa = native_isa(true)?;
     let builder = ObjectBuilder::new(isa, "arcweft_pure_object", default_libcall_names())
-        .map_err(jit_error)?;
+        .map_err(codegen_error)?;
     Ok(ObjectModule::new(builder))
 }
 
-fn emit_object_bytes(module: ObjectModule) -> Result<Vec<u8>, CraneliftJitError> {
+fn emit_object_bytes(module: ObjectModule) -> Result<Vec<u8>, CraneliftCodegenError> {
     module
         .finish()
         .emit()
-        .map_err(|error| CraneliftJitError::Backend(error.to_string()))
+        .map_err(|error| CraneliftCodegenError::Backend(error.to_string()))
 }
 
 fn sanitize_symbol_component(name: &str) -> String {
@@ -3971,7 +3985,7 @@ fn sanitize_symbol_component(name: &str) -> String {
 
 fn int_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -3979,12 +3993,12 @@ fn int_bindings(
                 .exact_i64()
                 .map(|value| (binding.name.clone(), LoweredI64Binding::Const(value)))
                 .ok_or_else(|| {
-                    CraneliftJitError::UnsupportedExpr(format!(
+                    CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an i64 integer",
                         binding.name
                     ))
                 }),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an i64 integer",
                 binding.name
             ))),
@@ -3995,14 +4009,14 @@ fn int_bindings(
 fn small_int_bindings(
     bindings: &[RuntimeBinding],
     kind: SmallIntKind,
-) -> Result<BTreeMap<String, LoweredSmallIntBinding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredSmallIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| {
             kind.literal(&binding.value)
                 .map(|value| (binding.name.clone(), LoweredSmallIntBinding::Const(value)))
                 .ok_or_else(|| {
-                    CraneliftJitError::UnsupportedExpr(format!(
+                    CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an {} integer",
                         binding.name,
                         kind.label()
@@ -4014,7 +4028,7 @@ fn small_int_bindings(
 
 fn i32_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -4027,12 +4041,12 @@ fn i32_bindings(
                     )
                 })
                 .ok_or_else(|| {
-                    CraneliftJitError::UnsupportedExpr(format!(
+                    CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an i32 integer",
                         binding.name
                     ))
                 }),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an i32 integer",
                 binding.name
             ))),
@@ -4042,7 +4056,7 @@ fn i32_bindings(
 
 fn u32_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -4050,7 +4064,7 @@ fn u32_bindings(
                 binding.name.clone(),
                 LoweredI64Binding::Const(u32_iconst_value(value)),
             )),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u32 integer",
                 binding.name
             ))),
@@ -4060,7 +4074,7 @@ fn u32_bindings(
 
 fn u64_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -4068,7 +4082,7 @@ fn u64_bindings(
                 binding.name.clone(),
                 LoweredI64Binding::Const(u64_iconst_value(value)),
             )),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u64 integer",
                 binding.name
             ))),
@@ -4078,12 +4092,12 @@ fn u64_bindings(
 
 fn f32_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredF32Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredF32Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::F32(value) => Ok((binding.name.clone(), LoweredF32Binding::Const(value))),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an f32 value",
                 binding.name
             ))),
@@ -4093,12 +4107,12 @@ fn f32_bindings(
 
 fn f64_bindings(
     bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredF64Binding>, CraneliftJitError> {
+) -> Result<BTreeMap<String, LoweredF64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::F64(value) => Ok((binding.name.clone(), LoweredF64Binding::Const(value))),
-            _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+            _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an f64 value",
                 binding.name
             ))),
@@ -4111,24 +4125,24 @@ fn lower_expr(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut arcweft_core::pure::PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Int(value)) => value
             .exact_i64()
             .map(|value| builder.ins().iconst(types::I64, value))
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "literal `{value}` is not an i64 integer"
                 ))
             }),
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i64 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
             Some(LoweredI64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown integer binding `{name}`"
             ))),
         },
@@ -4148,7 +4162,7 @@ fn lower_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an i64 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4160,7 +4174,7 @@ fn lower_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the JIT subset"
                 ))),
             }
@@ -4178,10 +4192,10 @@ fn lower_expr(
             then_expr,
             else_expr,
         } => lower_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "call `{callee}` is outside the JIT subset"
         ))),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the JIT subset"
         ))),
     }
@@ -4192,24 +4206,24 @@ fn lower_i32_expr(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Int(value)) => value
             .exact_i32()
             .map(|value| builder.ins().iconst(types::I32, i64::from(value)))
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "literal `{value}` is not an i32 integer"
                 ))
             }),
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i32 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
             Some(LoweredI64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown i32 binding `{name}`"
             ))),
         },
@@ -4229,7 +4243,7 @@ fn lower_i32_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an i32 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4241,7 +4255,7 @@ fn lower_i32_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the i32 JIT subset"
                 ))),
             }
@@ -4259,10 +4273,10 @@ fn lower_i32_expr(
             then_expr,
             else_expr,
         } => lower_i32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "call `{callee}` is outside the i32 JIT subset"
         ))),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the i32 JIT subset"
         ))),
     }
@@ -4282,14 +4296,14 @@ fn lower_small_int_expr(
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(value) => kind
             .literal(value)
             .map(|value| small_int_const(builder, kind, value))
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "literal {value:?} is not an {} integer",
                     kind.label()
                 ))
@@ -4299,7 +4313,7 @@ fn lower_small_int_expr(
                 Ok(small_int_const(builder, kind, *value))
             }
             Some(LoweredSmallIntBinding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown {} binding `{name}`",
                 kind.label()
             ))),
@@ -4320,7 +4334,7 @@ fn lower_small_int_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "boolean negation is not an {} result",
             kind.label()
         ))),
@@ -4334,7 +4348,7 @@ fn lower_small_int_expr(
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div if kind.signed() => Ok(builder.ins().sdiv(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the {} JIT subset",
                     kind.label()
                 ))),
@@ -4355,11 +4369,11 @@ fn lower_small_int_expr(
         } => lower_small_int_if_expr(
             builder, bindings, condition, then_expr, else_expr, stats, kind,
         ),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "call `{callee}` is outside the {} JIT subset",
             kind.label()
         ))),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the {} JIT subset",
             kind.label()
         ))),
@@ -4417,19 +4431,19 @@ fn lower_u32_expr(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(value))) => {
             Ok(builder.ins().iconst(types::I32, u32_iconst_value(*value)))
         }
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u32 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
             Some(LoweredI64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u32 binding `{name}`"
             ))),
         },
@@ -4449,7 +4463,7 @@ fn lower_u32_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an u32 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4461,7 +4475,7 @@ fn lower_u32_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the u32 JIT subset"
                 ))),
             }
@@ -4479,10 +4493,10 @@ fn lower_u32_expr(
             then_expr,
             else_expr,
         } => lower_u32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "call `{callee}` is outside the u32 JIT subset"
         ))),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the u32 JIT subset"
         ))),
     }
@@ -4493,19 +4507,19 @@ fn lower_u64_expr(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(value))) => {
             Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value)))
         }
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u64 integer"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
             Some(LoweredI64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u64 binding `{name}`"
             ))),
         },
@@ -4525,7 +4539,7 @@ fn lower_u64_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an u64 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4537,7 +4551,7 @@ fn lower_u64_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().udiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the u64 JIT subset"
                 ))),
             }
@@ -4555,10 +4569,10 @@ fn lower_u64_expr(
             then_expr,
             else_expr,
         } => lower_u64_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "call `{callee}` is outside the u64 JIT subset"
         ))),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the u64 JIT subset"
         ))),
     }
@@ -4569,17 +4583,17 @@ fn lower_f32_expr(
     bindings: &BTreeMap<String, LoweredF32Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(builder.ins().f32const(*value)),
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f32 value"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
             Some(LoweredF32Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown f32 binding `{name}`"
             ))),
         },
@@ -4599,7 +4613,7 @@ fn lower_f32_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an f32 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4611,7 +4625,7 @@ fn lower_f32_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().fsub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().fmul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().fdiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the f32 JIT subset"
                 ))),
             }
@@ -4626,7 +4640,7 @@ fn lower_f32_expr(
         }
         RuntimeExpr::Call { callee, args } => {
             lower_f32_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "call `{callee}` is outside the f32 JIT subset"
                 ))
             })?
@@ -4636,7 +4650,7 @@ fn lower_f32_expr(
             then_expr,
             else_expr,
         } => lower_f32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the f32 JIT subset"
         ))),
     }
@@ -4647,17 +4661,17 @@ fn lower_f64_expr(
     bindings: &BTreeMap<String, LoweredF64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(builder.ins().f64const(*value)),
-        RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
+        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f64 value"
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
             Some(LoweredF64Binding::Value(value)) => Ok(*value),
-            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+            None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown f64 binding `{name}`"
             ))),
         },
@@ -4677,7 +4691,7 @@ fn lower_f64_expr(
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Not,
             ..
-        } => Err(CraneliftJitError::UnsupportedExpr(
+        } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an f64 result".to_owned(),
         )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
@@ -4689,7 +4703,7 @@ fn lower_f64_expr(
                 RuntimeBinaryOp::Sub => Ok(builder.ins().fsub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().fmul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().fdiv(lhs, rhs)),
-                _ => Err(CraneliftJitError::UnsupportedExpr(format!(
+                _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the f64 JIT subset"
                 ))),
             }
@@ -4704,7 +4718,7 @@ fn lower_f64_expr(
         }
         RuntimeExpr::Call { callee, args } => {
             lower_f64_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "call `{callee}` is outside the f64 JIT subset"
                 ))
             })?
@@ -4714,7 +4728,7 @@ fn lower_f64_expr(
             then_expr,
             else_expr,
         } => lower_f64_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "expression `{other}` is outside the f64 JIT subset"
         ))),
     }
@@ -4726,7 +4740,7 @@ fn lower_f32_std_float_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeExpr],
     stats: &mut PureFunctionStats,
-) -> Option<Result<Value, CraneliftJitError>> {
+) -> Option<Result<Value, CraneliftCodegenError>> {
     let intrinsic = callee.as_intrinsic()?;
     let result = match (intrinsic, args) {
         (RuntimeIntrinsic::StdF32Abs, [value]) => {
@@ -4767,7 +4781,7 @@ fn lower_f64_std_float_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeExpr],
     stats: &mut PureFunctionStats,
-) -> Option<Result<Value, CraneliftJitError>> {
+) -> Option<Result<Value, CraneliftCodegenError>> {
     let intrinsic = callee.as_intrinsic()?;
     let result = match (intrinsic, args) {
         (RuntimeIntrinsic::StdF64Abs, [value]) => {
@@ -4809,7 +4823,7 @@ fn lower_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4838,7 +4852,7 @@ fn lower_i32_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_i32_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4868,7 +4882,7 @@ fn lower_small_int_if_expr(
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_small_int_condition(builder, bindings, condition, stats, kind)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4897,7 +4911,7 @@ fn lower_u32_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_u32_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4926,7 +4940,7 @@ fn lower_u64_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_u64_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4955,7 +4969,7 @@ fn lower_f32_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_f32_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -4984,7 +4998,7 @@ fn lower_f64_if_expr(
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     let condition = lower_f64_condition(builder, bindings, condition, stats)?;
     let then_block = builder.create_block();
     let else_block = builder.create_block();
@@ -5011,7 +5025,7 @@ fn lower_condition(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5020,7 +5034,7 @@ fn lower_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = int_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the JIT subset"
                 )));
             };
@@ -5028,7 +5042,7 @@ fn lower_condition(
             let rhs = lower_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the JIT subset"
         ))),
     }
@@ -5039,7 +5053,7 @@ fn lower_i32_condition(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5048,7 +5062,7 @@ fn lower_i32_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = int_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the i32 JIT subset"
                 )));
             };
@@ -5056,7 +5070,7 @@ fn lower_i32_condition(
             let rhs = lower_i32_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the i32 JIT subset"
         ))),
     }
@@ -5068,7 +5082,7 @@ fn lower_small_int_condition(
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5082,7 +5096,7 @@ fn lower_small_int_condition(
                 unsigned_int_condition(*op)
             }
             .ok_or_else(|| {
-                CraneliftJitError::UnsupportedExpr(format!(
+                CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the {} JIT subset",
                     kind.label()
                 ))
@@ -5091,7 +5105,7 @@ fn lower_small_int_condition(
             let rhs = lower_small_int_expr(builder, bindings, rhs, stats, kind)?;
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the {} JIT subset",
             kind.label()
         ))),
@@ -5103,7 +5117,7 @@ fn lower_u32_condition(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5112,7 +5126,7 @@ fn lower_u32_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = unsigned_int_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the u32 JIT subset"
                 )));
             };
@@ -5120,7 +5134,7 @@ fn lower_u32_condition(
             let rhs = lower_u32_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the u32 JIT subset"
         ))),
     }
@@ -5131,7 +5145,7 @@ fn lower_u64_condition(
     bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5140,7 +5154,7 @@ fn lower_u64_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = unsigned_int_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the u64 JIT subset"
                 )));
             };
@@ -5148,7 +5162,7 @@ fn lower_u64_condition(
             let rhs = lower_u64_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the u64 JIT subset"
         ))),
     }
@@ -5159,7 +5173,7 @@ fn lower_f32_condition(
     bindings: &BTreeMap<String, LoweredF32Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5168,7 +5182,7 @@ fn lower_f32_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = float_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the f32 JIT subset"
                 )));
             };
@@ -5176,7 +5190,7 @@ fn lower_f32_condition(
             let rhs = lower_f32_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().fcmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the f32 JIT subset"
         ))),
     }
@@ -5187,7 +5201,7 @@ fn lower_f64_condition(
     bindings: &BTreeMap<String, LoweredF64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
-) -> Result<Value, CraneliftJitError> {
+) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
     match expr {
         RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
@@ -5196,7 +5210,7 @@ fn lower_f64_condition(
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = float_condition(*op) else {
-                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "condition operator `{op}` is outside the f64 JIT subset"
                 )));
             };
@@ -5204,7 +5218,7 @@ fn lower_f64_condition(
             let rhs = lower_f64_expr(builder, bindings, rhs, stats)?;
             Ok(builder.ins().fcmp(condition, lhs, rhs))
         }
-        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+        other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "condition `{other}` is outside the f64 JIT subset"
         ))),
     }
@@ -5261,8 +5275,8 @@ fn float_condition(op: RuntimeBinaryOp) -> Option<FloatCC> {
     }
 }
 
-fn jit_error(error: ModuleError) -> CraneliftJitError {
-    CraneliftJitError::Backend(error.to_string())
+fn codegen_error(error: ModuleError) -> CraneliftCodegenError {
+    CraneliftCodegenError::Backend(error.to_string())
 }
 
 #[cfg(test)]
@@ -6804,7 +6818,7 @@ mod tests {
             .evaluate_jit(&request)
             .expect_err("string-heavy helpers are outside the JIT subset");
 
-        assert!(matches!(error, CraneliftJitError::UnsupportedExpr(_)));
+        assert!(matches!(error, CraneliftCodegenError::UnsupportedExpr(_)));
     }
 
     #[test]
