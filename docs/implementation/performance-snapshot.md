@@ -863,7 +863,10 @@ while `RuntimePureAccelerator` resolves the named runtime calls through
 tensor matmul. The fused external `infer.matmul_bias_add_f32` call uses the
 native prepared wgpu matmul-bias cache when backend selection chooses wgpu, so
 flow-side adapter calls can reuse resident buffers without requiring parser or
-Core intrinsics.
+Core intrinsics. The default Rust-side `AcceleratedInferenceAdapter` also owns
+that prepared cache, so `InferenceSession` graph fusion for private
+`matmul -> bias_add` pairs can reuse the same resident buffers across repeated
+session runs.
 
 The checked tests include a small MNIST-shaped MLP forward graph with input
 shape `1x28x28`, flattening to `1x784`, two dense layers, ReLU, and `argmax`;

@@ -788,11 +788,11 @@ impl TensorBinaryValueSignature {
     }
 }
 
-fn f32_value_bits(values: &[f32]) -> Vec<u32> {
+pub(crate) fn f32_value_bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|value| value.to_bits()).collect()
 }
 
-fn f32_value_bits_match(bits: &[u32], values: &[f32]) -> bool {
+pub(crate) fn f32_value_bits_match(bits: &[u32], values: &[f32]) -> bool {
     bits.len() == values.len()
         && bits
             .iter()
@@ -800,12 +800,12 @@ fn f32_value_bits_match(bits: &[u32], values: &[f32]) -> bool {
             .all(|(stored, value)| *stored == value.to_bits())
 }
 
-fn update_f32_value_bits(bits: &mut Vec<u32>, values: &[f32]) {
+pub(crate) fn update_f32_value_bits(bits: &mut Vec<u32>, values: &[f32]) {
     bits.clear();
     bits.extend(values.iter().map(|value| value.to_bits()));
 }
 
-fn power_of_two_capacity(value: usize) -> usize {
+pub(crate) fn power_of_two_capacity(value: usize) -> usize {
     value.checked_next_power_of_two().unwrap_or(value).max(1)
 }
 

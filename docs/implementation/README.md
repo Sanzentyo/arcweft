@@ -311,7 +311,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   wgpu cache used by runtime math calls when the backend policy selects wgpu.
   Repeated flow/external calls with unchanged inputs reuse the resident
   matmul-bias buffers without host upload; changed compatible inputs update the
-  existing buffers instead of rebuilding them.
+  existing buffers instead of rebuilding them. The default
+  `AcceleratedInferenceAdapter` used by Rust-side `InferenceSession` now owns
+  the same typed prepared matmul-bias cache, so private `matmul -> bias_add`
+  graph fusion also reuses resident wgpu buffers across repeated session runs.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
