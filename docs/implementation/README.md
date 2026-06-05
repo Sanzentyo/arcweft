@@ -508,6 +508,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `phase-0-1-workspace.md`: current crate layout, public types, verification status, and deferred work.
 - `refactor-checklist.md`: direction-package checklist for the runtime boundary,
   entry/capability grammar, RuntimeStep, executor, and fixture-driven gates.
+- `runtime-acceleration-goal-gap.md`: paused runtime-acceleration goal,
+  current usable policy-controlled state, and the remaining gap before the broad
+  VM/AOT/JIT/matrix/tensor acceleration objective can be considered complete.
 
 ## Verification Snapshot
 
