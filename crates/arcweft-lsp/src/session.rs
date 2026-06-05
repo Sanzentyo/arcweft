@@ -428,10 +428,11 @@ mod tests {
     };
     use lsp_types::{
         ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
-        DidChangeWatchedFilesParams, DidOpenTextDocumentParams, PartialResultParams, Position,
-        Range, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-        TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
-        WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
+        DidChangeWatchedFilesParams, DidOpenTextDocumentParams, InlayHint, InlayHintLabel,
+        PartialResultParams, Position, Range, SignatureHelp, TextDocumentContentChangeEvent,
+        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
+        VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceClientCapabilities,
+        WorkspaceEditClientCapabilities,
     };
     use std::{
         fs::{create_dir_all, write},
@@ -829,6 +830,59 @@ rust_metadata = ["target/arcweft/quest.json"]
         assert!(hover.contains("Package: quest_logic"));
     }
 
+    #[test]
+    fn signature_help_uses_document_scoped_rust_metadata() {
+        let project = TestProject::new("lsp-session-signature-rust-metadata");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "quest"
+adapter_manifests = ["adapters/quest.toml"]
+rust_metadata = ["target/arcweft/quest.json"]
+"#,
+        );
+        project.write(
+            "adapters/quest.toml",
+            adapter_manifest("quest", "quest.echo").as_str(),
+        );
+        project.write(
+            "target/arcweft/quest.json",
+            &quest_rust_manifest()
+                .to_json_pretty()
+                .expect("metadata json"),
+        );
+        let source = "flow @.main main {\n    let result = quest.evaluate\n}\n";
+        project.write("src/main.arcw", source);
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), source);
+
+        let signature = signature_help(&mut session, uri, source, "quest.evaluate");
+
+        let first = signature.signatures.first().expect("signature item");
+        assert_eq!(first.label, "quest.evaluate(stats: PlayerStats) -> String");
+        assert_eq!(first.parameters.as_ref().expect("parameters").len(), 1);
+    }
+
+    #[test]
+    fn inlay_hint_request_uses_document_line_index() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_fixture(&mut session, uri.clone());
+
+        let labels = inlay_hint_labels(&mut session, uri);
+
+        assert!(labels.iter().any(|label| label == "@flow.opening"));
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.contains("id=@say.opening.alice.001"))
+        );
+    }
+
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
         open_text(
             session,
@@ -936,6 +990,48 @@ rust_metadata = ["target/arcweft/quest.json"]
             lsp_types::HoverContents::Scalar(lsp_types::MarkedString::String(text)) => text,
             other => panic!("unexpected hover contents: {other:?}"),
         }
+    }
+
+    fn signature_help(
+        session: &mut ArcweftLspSession,
+        uri: Uri,
+        source: &str,
+        needle: &str,
+    ) -> SignatureHelp {
+        let response = session.handle_request(Request {
+            id: RequestId::from(3),
+            method: SignatureHelpRequest::METHOD.to_owned(),
+            params: serde_json::json!(SignatureHelpParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: position_of(source, needle),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                context: None,
+            }),
+        });
+        serde_json::from_value(response.result.expect("signature help response"))
+            .expect("signature help response decodes")
+    }
+
+    fn inlay_hint_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<String> {
+        let response = session.handle_request(Request {
+            id: RequestId::from(4),
+            method: InlayHintRequest::METHOD.to_owned(),
+            params: serde_json::json!(InlayHintParams {
+                text_document: TextDocumentIdentifier { uri },
+                range: Range::new(Position::new(0, 0), Position::new(10, 0)),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            }),
+        });
+        serde_json::from_value::<Vec<InlayHint>>(response.result.expect("inlay hint response"))
+            .expect("inlay hint response decodes")
+            .into_iter()
+            .filter_map(|hint| match hint.label {
+                InlayHintLabel::String(label) => Some(label),
+                InlayHintLabel::LabelParts(_) => None,
+            })
+            .collect()
     }
 
     fn position_of(source: &str, needle: &str) -> Position {

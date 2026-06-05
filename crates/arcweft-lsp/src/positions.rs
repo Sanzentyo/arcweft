@@ -159,6 +159,14 @@ mod tests {
     }
 
     #[test]
+    fn maps_utf16_surrogate_pairs_as_two_code_units() {
+        let index = LineIndex::new("a\n😀b\n", PositionEncoding::Utf16);
+
+        assert_eq!(index.position_from_byte_offset(6), Position::new(1, 2));
+        assert_eq!(index.byte_offset_from_position(Position::new(1, 2)), 6);
+    }
+
+    #[test]
     fn maps_utf8_positions_when_negotiated() {
         let index = LineIndex::new("a\n猫b\n", PositionEncoding::Utf8);
 
