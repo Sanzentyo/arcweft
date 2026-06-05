@@ -840,7 +840,11 @@ probes. Native wgpu also supports prepared resident `matmul -> bias_add` through
 `math_bench --op matmul-bias-add --reuse`, `--reuse-update-inputs`, and
 `--reuse-capacity`; that path uploads lhs/rhs/bias into persistent buffers,
 keeps the intermediate matmul output on the GPU, dispatches the bias pass in the
-same command encoder, and performs only one final readback. A small path-free smoke run
+same command encoder, and performs only one final readback. Native prepared
+`matmul` and `matmul -> bias_add` can now split resident GPU submission from
+explicit output readback. `math_bench --submit-only` measures submit timing and
+then performs one final correctness readback, so per-sample readback cost is no
+longer mixed into the compute-submit lower bound. A small path-free smoke run
 (`--backend all --op matmul-bias-add --size 16 --iterations 3 --warmup 1`)
 reported measured scalar, ndarray, and Auto cases, skipped wgpu when
 `math-wgpu` was disabled, and recorded `fused_matmul_bias_add_calls = 4` for
@@ -855,8 +859,15 @@ measured 4570600 ns median on the same run. A native wgpu prepared run at size 1
 prepared reuse, 208500 ns for `--reuse-update-inputs`, and 257100 ns for
 `--reuse-capacity`; each run recorded `wgpu_calls = 4`,
 `fused_matmul_bias_add_calls = 4`, one staging buffer creation, three staging
-buffer reuse hits, and four reused GPU dispatches. The current deterministic
-`f32` op set is:
+buffer reuse hits, and four reused GPU dispatches. A 512x512 native wgpu
+prepared submit-only run with
+`--backend wgpu --op matmul-bias-add --size 512 --iterations 3 --warmup 1 --submit-only`
+reported 275000 ns median, compared with 2577600 ns median for the same run
+with `--reuse`. The submit-only run recorded `wgpu_calls = 4`,
+`fused_matmul_bias_add_calls = 4`, `gpu_reused_dispatches = 4`, one final
+staging buffer creation, zero staging buffer reuse hits, and only one
+1048576-byte result download for correctness instead of downloading every
+sample. The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`

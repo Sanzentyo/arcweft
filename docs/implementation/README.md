@@ -336,6 +336,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   with a single final readback. `math_bench --op matmul-bias-add --reuse` now
   measures exact prepared reuse, while `--reuse-update-inputs` and
   `--reuse-capacity` measure repeated uploads into existing resident buffers.
+  Native prepared `matmul` and `matmul -> bias_add` also expose explicit
+  submit/readback split APIs: `submit_prepared_*_without_readback` submits GPU
+  work while leaving the prepared output resident, and `read_prepared_*_output`
+  copies/maps the result only at the requested boundary. `math_bench
+  --submit-only` uses that split to measure the native resident compute-submit
+  lower bound, then performs one final readback for correctness instead of
+  downloading every sample.
   The optional inference adapter manifest now exposes
   `infer.matmul_bias_add_f32` as a normal adapter method/host call, and
   `RuntimePureAccelerator` routes that external call through the same prepared

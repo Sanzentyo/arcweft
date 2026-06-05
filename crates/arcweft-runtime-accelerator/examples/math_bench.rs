@@ -4,8 +4,9 @@ use arcweft_runtime_accelerator::inference::{
     InferenceTensorId,
 };
 use arcweft_runtime_accelerator::math::{
-    RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAutoSelectionReason,
-    RuntimeMathBackend, RuntimeMathStats,
+    RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAcceleratorError,
+    RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathStats,
+    RuntimePreparedMatrixMatmulBiasAddF32, RuntimePreparedMatrixMatmulF32,
 };
 use serde::Serialize;
 use std::time::Instant;
@@ -64,7 +65,7 @@ fn run_matmul(
         Err(error) => return BackendReport::failed(backend, error.to_string()),
     };
 
-    if options.reuse {
+    if options.reuse_mode.is_enabled() {
         return run_prepared_matrix_matmul(accelerator, backend, options, &lhs, &rhs, &reference);
     }
 
@@ -104,7 +105,7 @@ fn run_matmul_bias_add(
     };
     apply_bias_to_reference(&mut reference, &bias);
 
-    if options.reuse {
+    if options.reuse_mode.is_enabled() {
         return run_prepared_matrix_matmul_bias_add(
             accelerator,
             backend,
@@ -142,7 +143,7 @@ fn run_inference_matmul_bias_add(
     backend: RuntimeMathBackend,
     options: &BenchOptions,
 ) -> BackendReport {
-    if options.reuse_capacity {
+    if options.reuse_mode.uses_capacity() {
         return BackendReport::skipped_or_failed(
             backend,
             "inference graph shape is fixed; capacity reuse belongs to prepared math ops"
@@ -160,9 +161,9 @@ fn run_inference_matmul_bias_add(
         &rhs,
         &bias,
         options.warmup + options.iterations,
-        options.reuse_update_inputs,
+        options.reuse_mode.updates_inputs(),
     );
-    if options.reuse {
+    if options.reuse_mode.is_enabled() {
         return run_reused_inference_session(backend, options, graph, input_id, &cases);
     }
     run_cold_inference_sessions(backend, options, &graph, input_id, &cases)
@@ -270,7 +271,7 @@ fn run_prepared_matrix_matmul_bias_add(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match if options.reuse_capacity {
+    let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
         accelerator.prepare_matrix_matmul_bias_add_f32_capacity(capacity, capacity, capacity)
     } else {
@@ -280,9 +281,10 @@ fn run_prepared_matrix_matmul_bias_add(
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
-        .reuse_update_inputs
+        .reuse_mode
+        .updates_inputs()
         .then(|| matmul_bias_update_cases(options.size, options.warmup + options.iterations));
-    if options.reuse_capacity
+    if options.reuse_mode.uses_capacity()
         && update_cases.is_none()
         && let Err(error) =
             accelerator.update_prepared_matrix_matmul_bias_add_f32(&prepared, lhs, rhs, bias)
@@ -299,16 +301,14 @@ fn run_prepared_matrix_matmul_bias_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_capacity {
-            accelerator.run_prepared_matrix_matmul_bias_add_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                rhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matmul_bias_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.rows(),
+            rhs.cols(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -325,16 +325,14 @@ fn run_prepared_matrix_matmul_bias_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_capacity {
-            accelerator.run_prepared_matrix_matmul_bias_add_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                rhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_matmul_bias_add_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matmul_bias_add_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.rows(),
+            rhs.cols(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -343,7 +341,7 @@ fn run_prepared_matrix_matmul_bias_add(
             || reference.values(),
             |(_, _, _, reference)| reference.values(),
         );
-        if !approx_eq(&output, expected, 1.0e-3) {
+        if !options.reuse_mode.submit_only() && !approx_eq(&output, expected, 1.0e-3) {
             return BackendReport::failed(
                 backend,
                 "prepared matrix matmul-bias-add result mismatch".to_owned(),
@@ -351,7 +349,72 @@ fn run_prepared_matrix_matmul_bias_add(
         }
         samples.push(elapsed);
     }
+    if let Err(error) = validate_matmul_bias_submit_only_output(
+        accelerator,
+        options.reuse_mode,
+        &prepared,
+        (lhs.rows(), rhs.cols()),
+        &mut output,
+        update_cases.as_deref(),
+        reference,
+    ) {
+        return error.into_report(backend);
+    }
     BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+type MatmulUpdateCase = (DenseMatrixF32, DenseMatrixF32, DenseMatrixF32);
+type MatmulBiasUpdateCase = (
+    DenseMatrixF32,
+    DenseMatrixF32,
+    DenseTensorF32,
+    DenseMatrixF32,
+);
+
+enum SubmitOnlyValidationError {
+    Backend(String),
+    Mismatch(&'static str),
+}
+
+impl SubmitOnlyValidationError {
+    fn into_report(self, backend: RuntimeMathBackend) -> BackendReport {
+        match self {
+            Self::Backend(diagnostic) => BackendReport::skipped_or_failed(backend, diagnostic),
+            Self::Mismatch(diagnostic) => BackendReport::failed(backend, diagnostic.to_owned()),
+        }
+    }
+}
+
+fn validate_matmul_bias_submit_only_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+    shape: (usize, usize),
+    output: &mut [f32],
+    update_cases: Option<&[MatmulBiasUpdateCase]>,
+    reference: &DenseMatrixF32,
+) -> Result<(), SubmitOnlyValidationError> {
+    if reuse_mode.submit_only() {
+        read_prepared_matmul_bias_add_output(
+            accelerator,
+            reuse_mode,
+            prepared,
+            shape.0,
+            shape.1,
+            output,
+        )
+        .map_err(|error| SubmitOnlyValidationError::Backend(error.to_string()))?;
+        let expected = update_cases.and_then(|cases| cases.last()).map_or_else(
+            || reference.values(),
+            |(_, _, _, reference)| reference.values(),
+        );
+        if !approx_eq(output, expected, 1.0e-3) {
+            return Err(SubmitOnlyValidationError::Mismatch(
+                "prepared matrix matmul-bias-add submit-only result mismatch",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn run_matrix_add(
@@ -366,7 +429,7 @@ fn run_matrix_add(
         Err(error) => return BackendReport::failed(backend, error.to_string()),
     };
 
-    if options.reuse {
+    if options.reuse_mode.is_enabled() {
         return run_prepared_matrix_add(accelerator, backend, options, &lhs, &rhs, &reference);
     }
 
@@ -405,7 +468,7 @@ fn run_tensor_add(
         Err(error) => return BackendReport::failed(backend, error.to_string()),
     };
 
-    if options.reuse {
+    if options.reuse_mode.is_enabled() {
         return run_prepared_tensor_add(accelerator, backend, options, &lhs, &rhs, &reference);
     }
 
@@ -445,7 +508,7 @@ fn run_prepared_matrix_matmul(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match if options.reuse_capacity {
+    let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
         accelerator.prepare_matrix_matmul_f32_capacity(capacity, capacity, capacity)
     } else {
@@ -455,9 +518,10 @@ fn run_prepared_matrix_matmul(
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
-        .reuse_update_inputs
+        .reuse_mode
+        .updates_inputs()
         .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, true));
-    if options.reuse_capacity
+    if options.reuse_mode.uses_capacity()
         && update_cases.is_none()
         && let Err(error) = accelerator.update_prepared_matrix_matmul_f32(&prepared, lhs, rhs)
     {
@@ -471,16 +535,14 @@ fn run_prepared_matrix_matmul(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_capacity {
-            accelerator.run_prepared_matrix_matmul_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                rhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matmul_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.rows(),
+            rhs.cols(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -496,16 +558,14 @@ fn run_prepared_matrix_matmul(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_capacity {
-            accelerator.run_prepared_matrix_matmul_f32_shape_into(
-                &prepared,
-                lhs.rows(),
-                rhs.cols(),
-                &mut output,
-            )
-        } else {
-            accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
-        };
+        let result = dispatch_prepared_matmul_sample(
+            accelerator,
+            options.reuse_mode,
+            &prepared,
+            lhs.rows(),
+            rhs.cols(),
+            &mut output,
+        );
         if let Err(error) = result {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
@@ -514,7 +574,7 @@ fn run_prepared_matrix_matmul(
             || reference.values(),
             |(_, _, reference)| reference.values(),
         );
-        if !approx_eq(&output, expected, 1.0e-3) {
+        if !options.reuse_mode.submit_only() && !approx_eq(&output, expected, 1.0e-3) {
             return BackendReport::failed(
                 backend,
                 "prepared matrix matmul result mismatch".to_owned(),
@@ -522,7 +582,114 @@ fn run_prepared_matrix_matmul(
         }
         samples.push(elapsed);
     }
+    if let Err(error) = validate_matmul_submit_only_output(
+        accelerator,
+        options.reuse_mode,
+        &prepared,
+        (lhs.rows(), rhs.cols()),
+        &mut output,
+        update_cases.as_deref(),
+        reference,
+    ) {
+        return error.into_report(backend);
+    }
     BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn validate_matmul_submit_only_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulF32,
+    shape: (usize, usize),
+    output: &mut [f32],
+    update_cases: Option<&[MatmulUpdateCase]>,
+    reference: &DenseMatrixF32,
+) -> Result<(), SubmitOnlyValidationError> {
+    if reuse_mode.submit_only() {
+        read_prepared_matmul_output(accelerator, reuse_mode, prepared, shape.0, shape.1, output)
+            .map_err(|error| SubmitOnlyValidationError::Backend(error.to_string()))?;
+        let expected = update_cases.and_then(|cases| cases.last()).map_or_else(
+            || reference.values(),
+            |(_, _, reference)| reference.values(),
+        );
+        if !approx_eq(output, expected, 1.0e-3) {
+            return Err(SubmitOnlyValidationError::Mismatch(
+                "prepared matrix matmul submit-only result mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dispatch_prepared_matmul_bias_add_sample(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+    rows: usize,
+    cols: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.submit_only() && reuse_mode.uses_capacity() {
+        accelerator
+            .submit_prepared_matrix_matmul_bias_add_f32_shape_without_readback(prepared, rows, cols)
+    } else if reuse_mode.submit_only() {
+        accelerator.submit_prepared_matrix_matmul_bias_add_f32_without_readback(prepared)
+    } else if reuse_mode.uses_capacity() {
+        accelerator.run_prepared_matrix_matmul_bias_add_f32_shape_into(prepared, rows, cols, output)
+    } else {
+        accelerator.run_prepared_matrix_matmul_bias_add_f32_into(prepared, output)
+    }
+}
+
+fn read_prepared_matmul_bias_add_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulBiasAddF32,
+    rows: usize,
+    cols: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.uses_capacity() {
+        accelerator.read_prepared_matrix_matmul_bias_add_f32_shape_output_into(
+            prepared, rows, cols, output,
+        )
+    } else {
+        accelerator.read_prepared_matrix_matmul_bias_add_f32_output_into(prepared, output)
+    }
+}
+
+fn dispatch_prepared_matmul_sample(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulF32,
+    rows: usize,
+    cols: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.submit_only() && reuse_mode.uses_capacity() {
+        accelerator.submit_prepared_matrix_matmul_f32_shape_without_readback(prepared, rows, cols)
+    } else if reuse_mode.submit_only() {
+        accelerator.submit_prepared_matrix_matmul_f32_without_readback(prepared)
+    } else if reuse_mode.uses_capacity() {
+        accelerator.run_prepared_matrix_matmul_f32_shape_into(prepared, rows, cols, output)
+    } else {
+        accelerator.run_prepared_matrix_matmul_f32_into(prepared, output)
+    }
+}
+
+fn read_prepared_matmul_output(
+    accelerator: &mut RuntimeMathAccelerator,
+    reuse_mode: PreparedReuseMode,
+    prepared: &RuntimePreparedMatrixMatmulF32,
+    rows: usize,
+    cols: usize,
+    output: &mut [f32],
+) -> Result<(), RuntimeMathAcceleratorError> {
+    if reuse_mode.uses_capacity() {
+        accelerator.read_prepared_matrix_matmul_f32_shape_output_into(prepared, rows, cols, output)
+    } else {
+        accelerator.read_prepared_matrix_matmul_f32_output_into(prepared, output)
+    }
 }
 
 fn run_prepared_matrix_add(
@@ -539,7 +706,7 @@ fn run_prepared_matrix_add(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match if options.reuse_capacity {
+    let prepared = match if options.reuse_mode.uses_capacity() {
         let capacity = options.matrix_capacity_size();
         accelerator.prepare_matrix_add_f32_capacity(capacity, capacity)
     } else {
@@ -549,9 +716,10 @@ fn run_prepared_matrix_add(
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
-        .reuse_update_inputs
+        .reuse_mode
+        .updates_inputs()
         .then(|| matrix_update_cases(options.size, options.warmup + options.iterations, false));
-    if options.reuse_capacity
+    if options.reuse_mode.uses_capacity()
         && update_cases.is_none()
         && let Err(error) = accelerator.update_prepared_matrix_add_f32(&prepared, lhs, rhs)
     {
@@ -565,7 +733,7 @@ fn run_prepared_matrix_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_capacity {
+        let result = if options.reuse_mode.uses_capacity() {
             accelerator.run_prepared_matrix_add_f32_shape_into(
                 &prepared,
                 lhs.rows(),
@@ -590,7 +758,7 @@ fn run_prepared_matrix_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_capacity {
+        let result = if options.reuse_mode.uses_capacity() {
             accelerator.run_prepared_matrix_add_f32_shape_into(
                 &prepared,
                 lhs.rows(),
@@ -633,7 +801,7 @@ fn run_prepared_tensor_add(
             "prepared GPU reuse is only available for the wgpu backend".to_owned(),
         );
     }
-    let prepared = match if options.reuse_capacity {
+    let prepared = match if options.reuse_mode.uses_capacity() {
         accelerator.prepare_tensor_add_f32_capacity(options.tensor_capacity_len())
     } else {
         accelerator.prepare_tensor_add_f32(lhs, rhs)
@@ -642,9 +810,10 @@ fn run_prepared_tensor_add(
         Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
     };
     let update_cases = options
-        .reuse_update_inputs
+        .reuse_mode
+        .updates_inputs()
         .then(|| tensor_update_cases(lhs.values().len(), options.warmup + options.iterations));
-    if options.reuse_capacity
+    if options.reuse_mode.uses_capacity()
         && update_cases.is_none()
         && let Err(error) = accelerator.update_prepared_tensor_add_f32(&prepared, lhs, rhs)
     {
@@ -658,7 +827,7 @@ fn run_prepared_tensor_add(
                 return BackendReport::skipped_or_failed(backend, error.to_string());
             }
         }
-        let result = if options.reuse_capacity {
+        let result = if options.reuse_mode.uses_capacity() {
             accelerator.run_prepared_tensor_add_f32_len_into(
                 &prepared,
                 lhs.values().len(),
@@ -682,7 +851,7 @@ fn run_prepared_tensor_add(
         {
             return BackendReport::skipped_or_failed(backend, error.to_string());
         }
-        let result = if options.reuse_capacity {
+        let result = if options.reuse_mode.uses_capacity() {
             accelerator.run_prepared_tensor_add_f32_len_into(
                 &prepared,
                 lhs.values().len(),
@@ -910,6 +1079,34 @@ enum BenchBackend {
     One(RuntimeMathBackend),
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum PreparedReuseMode {
+    #[default]
+    None,
+    Exact,
+    UpdateInputs,
+    Capacity,
+    SubmitOnly,
+}
+
+impl PreparedReuseMode {
+    const fn is_enabled(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    const fn updates_inputs(self) -> bool {
+        matches!(self, Self::UpdateInputs)
+    }
+
+    const fn uses_capacity(self) -> bool {
+        matches!(self, Self::Capacity)
+    }
+
+    const fn submit_only(self) -> bool {
+        matches!(self, Self::SubmitOnly)
+    }
+}
+
 struct BenchOptions {
     backend: BenchBackend,
     op: BenchOp,
@@ -917,9 +1114,7 @@ struct BenchOptions {
     iterations: usize,
     warmup: usize,
     wgpu_min_elements: usize,
-    reuse: bool,
-    reuse_update_inputs: bool,
-    reuse_capacity: bool,
+    reuse_mode: PreparedReuseMode,
 }
 
 impl BenchOptions {
@@ -931,9 +1126,7 @@ impl BenchOptions {
             iterations: 10,
             warmup: 2,
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
-            reuse: false,
-            reuse_update_inputs: false,
-            reuse_capacity: false,
+            reuse_mode: PreparedReuseMode::None,
         };
         let mut index = 0;
         while index < args.len() {
@@ -981,15 +1174,16 @@ impl BenchOptions {
                         parse_usize(args.get(index), options.wgpu_min_elements);
                 }
                 "--reuse" => {
-                    options.reuse = true;
+                    options.reuse_mode = PreparedReuseMode::Exact;
                 }
                 "--reuse-update-inputs" => {
-                    options.reuse = true;
-                    options.reuse_update_inputs = true;
+                    options.reuse_mode = PreparedReuseMode::UpdateInputs;
                 }
                 "--reuse-capacity" => {
-                    options.reuse = true;
-                    options.reuse_capacity = true;
+                    options.reuse_mode = PreparedReuseMode::Capacity;
+                }
+                "--submit-only" => {
+                    options.reuse_mode = PreparedReuseMode::SubmitOnly;
                 }
                 _ => {}
             }
@@ -1036,6 +1230,10 @@ struct BackendReport {
     diagnostic: Option<String>,
 }
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(transparent)]
+struct JsonBool(bool);
+
 #[derive(Serialize)]
 struct MathBenchReport {
     bench: &'static str,
@@ -1043,9 +1241,10 @@ struct MathBenchReport {
     size: usize,
     iterations: usize,
     warmup: usize,
-    reuse: bool,
-    reuse_update_inputs: bool,
-    reuse_capacity: bool,
+    reuse: JsonBool,
+    reuse_update_inputs: JsonBool,
+    reuse_capacity: JsonBool,
+    submit_only: JsonBool,
     capacity_size: Option<usize>,
     results: Vec<BackendReportJson>,
 }
@@ -1058,10 +1257,11 @@ impl MathBenchReport {
             size: options.size,
             iterations: options.iterations,
             warmup: options.warmup,
-            reuse: options.reuse,
-            reuse_update_inputs: options.reuse_update_inputs,
-            reuse_capacity: options.reuse_capacity,
-            capacity_size: if options.reuse_capacity
+            reuse: JsonBool(options.reuse_mode.is_enabled()),
+            reuse_update_inputs: JsonBool(options.reuse_mode.updates_inputs()),
+            reuse_capacity: JsonBool(options.reuse_mode.uses_capacity()),
+            submit_only: JsonBool(options.reuse_mode.submit_only()),
+            capacity_size: if options.reuse_mode.uses_capacity()
                 && !matches!(options.op, BenchOp::InferenceMatmulBiasAdd)
             {
                 Some(match options.op {
@@ -1254,9 +1454,7 @@ mod tests {
             iterations: 1,
             warmup: 0,
             wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
-            reuse: false,
-            reuse_update_inputs: false,
-            reuse_capacity: false,
+            reuse_mode: PreparedReuseMode::None,
         };
         let report = MathBenchReport::new(
             &options,
@@ -1304,10 +1502,43 @@ mod tests {
 
         let json = serde_json::to_string(&report).expect("report serializes");
 
-        assert!(options.reuse);
-        assert!(options.reuse_update_inputs);
+        assert!(options.reuse_mode.is_enabled());
+        assert!(options.reuse_mode.updates_inputs());
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"reuse_update_inputs\":true"));
+    }
+
+    #[test]
+    fn parse_submit_only_marks_reuse_and_report_field() {
+        let args = [
+            "--backend".to_owned(),
+            "wgpu".to_owned(),
+            "--op".to_owned(),
+            "matmul-bias-add".to_owned(),
+            "--submit-only".to_owned(),
+        ];
+        let options = BenchOptions::parse(&args);
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::measured(
+                RuntimeMathBackend::Wgpu,
+                vec![100],
+                RuntimeMathStats {
+                    wgpu_calls: 1,
+                    gpu_reused_dispatches: 1,
+                    last_backend: Some(RuntimeMathBackend::Wgpu),
+                    ..RuntimeMathStats::default()
+                },
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(options.reuse_mode.is_enabled());
+        assert!(options.reuse_mode.submit_only());
+        assert!(json.contains("\"reuse\":true"));
+        assert!(json.contains("\"submit_only\":true"));
+        assert!(json.contains("\"gpu_reused_dispatches\":1"));
     }
 
     #[test]
@@ -1332,8 +1563,8 @@ mod tests {
 
         let json = serde_json::to_string(&report).expect("report serializes");
 
-        assert!(options.reuse);
-        assert!(options.reuse_capacity);
+        assert!(options.reuse_mode.is_enabled());
+        assert!(options.reuse_mode.uses_capacity());
         assert_eq!(options.tensor_capacity_len(), 128);
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"reuse_capacity\":true"));
@@ -1399,7 +1630,7 @@ mod tests {
         let json = serde_json::to_string(&report).expect("report serializes");
 
         assert!(matches!(options.op, BenchOp::InferenceMatmulBiasAdd));
-        assert!(options.reuse);
+        assert!(options.reuse_mode.is_enabled());
         assert!(json.contains("\"op\":\"inference_matmul_bias_add_f32\""));
         assert!(json.contains("\"reuse\":true"));
         assert!(json.contains("\"gpu_reused_dispatches\":1"));
