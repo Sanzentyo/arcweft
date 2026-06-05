@@ -108,7 +108,8 @@ AOT compiled player
 Pure AOT/JIT helper
   - pure deterministic functions only
   - VM fallback and VM equivalence checks required
-  - current AOT helper compiles deterministic i64 expressions to a typed plan
+  - current AOT helper compiles deterministic exact-width integer and
+    floating-point expressions to typed plans
 
 Full script AOT
   - late release backend
@@ -121,13 +122,13 @@ Full generated state-machine AOT remains future work. The current
 `AotExecutor` already owns a typed `AotProgram` with pre-lowered linear
 operation blocks, executes fully linear flows and mixed-flow linear prefixes
 through that artifact without cloning `FlowOp` values during each step, and
-falls back to the VM-compatible state machine when a mixed control-flow boundary
-is reached.
+continues through the VM-compatible state machine in the same runtime step when
+a mixed control-flow boundary is reached.
 Pure helper AOT is narrower and already executable: `AotPureFunctionBackend`
 rejects unsupported helpers instead of falling back, then compares its typed
-integer plan against `VmPureFunctionBackend` in tests. Batch AOT calls reuse
-caller-owned slot storage, so repeated runtime helper evaluation does not clone
-the compiled plan's local slot vector for every item.
+integer and floating-point plans against `VmPureFunctionBackend` in tests.
+Batch AOT calls reuse caller-owned slot storage, so repeated runtime helper
+evaluation does not clone the compiled plan's local slot vector for every item.
 
 ## Step options
 

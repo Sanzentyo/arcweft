@@ -193,7 +193,7 @@ fn aot_executor_falls_back_for_branching_flow() {
 }
 
 #[test]
-fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_fallback() {
+fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
         vec![RuntimeFlow {
