@@ -80,6 +80,23 @@ pub struct DefinedPureFloatInputs {
     pub stats: PureFunctionStats,
 }
 
+/// Pure small-integer helper functions defined into a Cranelift module.
+pub struct DefinedPureSmallIntInputs {
+    pub entry: FuncId,
+    pub batch: FuncId,
+    pub batch_sum: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
+/// Pure wide-integer batch helper functions defined into a Cranelift module.
+pub struct DefinedPureSmallIntBatchInputs {
+    pub batch: FuncId,
+    pub batch_sum: FuncId,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
+}
+
 /// Compiled native helper returning an `i128` for flat batch calls.
 ///
 /// This type deliberately has no scalar caller: only pointer-based batch
@@ -1356,6 +1373,65 @@ fn compile_small_int_with_inputs(
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
 ) -> Result<SmallIntCompiledParts, CraneliftJitError> {
+    let mut module = jit_module()?;
+    let defined = define_small_int_with_inputs(
+        &mut module,
+        &format!("arcweft_pure_{}_helper_inputs", kind.label()),
+        request,
+        param_names,
+        kind,
+    )?;
+    module.finalize_definitions().map_err(jit_error)?;
+    let code = module.get_finalized_function(defined.entry);
+    let batch_code = module.get_finalized_function(defined.batch);
+    let batch_sum_code = module.get_finalized_function(defined.batch_sum);
+    Ok(SmallIntCompiledParts {
+        module,
+        code,
+        batch_code,
+        batch_sum_code,
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn compile_wide_int_batch_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+    kind: SmallIntKind,
+) -> Result<WideIntBatchCompiledParts, CraneliftJitError> {
+    debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
+    let mut module = jit_module()?;
+    let defined = define_small_int_batch_with_inputs(
+        &mut module,
+        &format!("arcweft_pure_{}_helper_inputs", kind.label()),
+        request,
+        param_names,
+        kind,
+    )?;
+    module.finalize_definitions().map_err(jit_error)?;
+    let batch_code = module.get_finalized_function(defined.batch);
+    let batch_sum_code = module.get_finalized_function(defined.batch_sum);
+    Ok(WideIntBatchCompiledParts {
+        module,
+        batch_code,
+        batch_sum_code,
+        param_names: defined.param_names,
+        stats: defined.stats,
+    })
+}
+
+fn define_small_int_with_inputs<M>(
+    module: &mut M,
+    symbol_prefix: &str,
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+    kind: SmallIntKind,
+) -> Result<DefinedPureSmallIntInputs, CraneliftJitError>
+where
+    M: Module,
+{
+    debug_assert!(!matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
     let param_names = param_names
         .into_iter()
         .map(Into::into)
@@ -1363,14 +1439,13 @@ fn compile_small_int_with_inputs(
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
         return Err(CraneliftJitError::UnsupportedExpr(format!(
-            "JIT {} helper supports at most 4 runtime inputs, got {}",
+            "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
             param_names.len()
         )));
     }
 
     let ty = kind.cranelift_type();
-    let mut module = jit_module()?;
     let mut ctx = module.make_context();
     let mut func_ctx = FunctionBuilderContext::new();
     let mut signature = module.make_signature();
@@ -1379,15 +1454,12 @@ fn compile_small_int_with_inputs(
         .extend(param_names.iter().map(|_| AbiParam::new(ty)));
     signature.returns.push(AbiParam::new(ty));
 
-    let func_id = module
-        .declare_function(
-            &format!("arcweft_pure_{}_helper_inputs", kind.label()),
-            Linkage::Local,
-            &signature,
-        )
+    let entry_name = format!("{symbol_prefix}_entry");
+    let entry = module
+        .declare_function(&entry_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
-    ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+    ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
     let captured_bindings = small_int_bindings(&request.bindings, kind)?;
     let mut bindings = captured_bindings.clone();
@@ -1407,43 +1479,44 @@ fn compile_small_int_with_inputs(
         builder.finalize();
     }
 
-    module
-        .define_function(func_id, &mut ctx)
-        .map_err(jit_error)?;
+    module.define_function(entry, &mut ctx).map_err(jit_error)?;
     module.clear_context(&mut ctx);
-    let batch_code = compile_small_int_rows_batch_function(
-        &mut module,
-        &request.expr,
-        &captured_bindings,
-        &param_names,
-        kind,
-    )?;
-    let batch_sum_code = compile_small_int_rows_batch_sum_function(
-        &mut module,
-        &request.expr,
-        &captured_bindings,
-        &param_names,
-        kind,
-    )?;
-    module.finalize_definitions().map_err(jit_error)?;
-    let code = module.get_finalized_function(func_id);
-    let batch_code = module.get_finalized_function(batch_code);
-    let batch_sum_code = module.get_finalized_function(batch_sum_code);
-    Ok(SmallIntCompiledParts {
+    let batch = define_small_int_rows_batch_function(
         module,
-        code,
-        batch_code,
-        batch_sum_code,
+        &format!("{symbol_prefix}_rows_batch"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+    let batch_sum = define_small_int_rows_batch_sum_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch_sum"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+
+    Ok(DefinedPureSmallIntInputs {
+        entry,
+        batch,
+        batch_sum,
         param_names,
         stats,
     })
 }
 
-fn compile_wide_int_batch_with_inputs(
+fn define_small_int_batch_with_inputs<M>(
+    module: &mut M,
+    symbol_prefix: &str,
     request: &PureFunctionRequest,
     param_names: impl IntoIterator<Item = impl Into<String>>,
     kind: SmallIntKind,
-) -> Result<WideIntBatchCompiledParts, CraneliftJitError> {
+) -> Result<DefinedPureSmallIntBatchInputs, CraneliftJitError>
+where
+    M: Module,
+{
     debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
     let param_names = param_names
         .into_iter()
@@ -1452,47 +1525,49 @@ fn compile_wide_int_batch_with_inputs(
     validate_param_names(&param_names)?;
     if param_names.len() > 4 {
         return Err(CraneliftJitError::UnsupportedExpr(format!(
-            "JIT {} helper supports at most 4 runtime inputs, got {}",
+            "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
             param_names.len()
         )));
     }
 
-    let mut module = jit_module()?;
     let captured_bindings = small_int_bindings(&request.bindings, kind)?;
-    let batch_code = compile_small_int_rows_batch_function(
-        &mut module,
-        &request.expr,
-        &captured_bindings,
-        &param_names,
-        kind,
-    )?;
-    let batch_sum_code = compile_small_int_rows_batch_sum_function(
-        &mut module,
-        &request.expr,
-        &captured_bindings,
-        &param_names,
-        kind,
-    )?;
-    module.finalize_definitions().map_err(jit_error)?;
-    let batch_code = module.get_finalized_function(batch_code);
-    let batch_sum_code = module.get_finalized_function(batch_sum_code);
-    Ok(WideIntBatchCompiledParts {
+    let batch = define_small_int_rows_batch_function(
         module,
-        batch_code,
-        batch_sum_code,
+        &format!("{symbol_prefix}_rows_batch"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+    let batch_sum = define_small_int_rows_batch_sum_function(
+        module,
+        &format!("{symbol_prefix}_rows_batch_sum"),
+        &request.expr,
+        &captured_bindings,
+        &param_names,
+        kind,
+    )?;
+
+    Ok(DefinedPureSmallIntBatchInputs {
+        batch,
+        batch_sum,
         param_names,
         stats: PureFunctionStats::default(),
     })
 }
 
-fn compile_small_int_rows_batch_function(
-    module: &mut JITModule,
+fn define_small_int_rows_batch_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(format!(
@@ -1511,11 +1586,7 @@ fn compile_small_int_rows_batch_function(
     ]);
 
     let func_id = module
-        .declare_function(
-            &format!("arcweft_pure_{}_rows_batch", kind.label()),
-            Linkage::Local,
-            &signature,
-        )
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -1577,13 +1648,17 @@ fn compile_small_int_rows_batch_function(
     Ok(func_id)
 }
 
-fn compile_small_int_rows_batch_sum_function(
-    module: &mut JITModule,
+fn define_small_int_rows_batch_sum_function<M>(
+    module: &mut M,
+    symbol_name: &str,
     expr: &RuntimeExpr,
     captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
     param_names: &[String],
     kind: SmallIntKind,
-) -> Result<FuncId, CraneliftJitError> {
+) -> Result<FuncId, CraneliftJitError>
+where
+    M: Module,
+{
     let pointer_type = module.target_config().pointer_type();
     if pointer_type != types::I64 {
         return Err(CraneliftJitError::UnsupportedHost(format!(
@@ -1601,11 +1676,7 @@ fn compile_small_int_rows_batch_sum_function(
     signature.returns.push(AbiParam::new(types::I64));
 
     let func_id = module
-        .declare_function(
-            &format!("arcweft_pure_{}_rows_batch_sum", kind.label()),
-            Linkage::Local,
-            &signature,
-        )
+        .declare_function(symbol_name, Linkage::Local, &signature)
         .map_err(jit_error)?;
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -5289,6 +5360,144 @@ mod tests {
             &mut out
         ));
         assert_eq!(out, [7.0, 8.0, -1.5]);
+    }
+
+    #[test]
+    fn cranelift_define_small_int_with_inputs_defines_module_functions_without_jit_wrapper() {
+        let request = PureFunctionRequest::new(
+            "score_define_i8_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i8(2))),
+                }),
+            },
+            [i8_binding("base", 3), i8_binding("bonus", 4)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined = define_small_int_with_inputs(
+            &mut module,
+            "arcweft_test_defined_i8",
+            &request,
+            ["base", "bonus"],
+            SmallIntKind::I8,
+        )
+        .expect("i8 helper is defined into the module");
+
+        assert_eq!(defined.param_names, ["base", "bonus"]);
+        assert_eq!(defined.stats.evaluated_binary_ops, 2);
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let entry_code = module.get_finalized_function(defined.entry);
+        let batch_code = module.get_finalized_function(defined.batch);
+        let batch_sum_code = module.get_finalized_function(defined.batch_sum);
+        let caller = native_call::I8InputCaller::from_code(entry_code, defined.param_names.len())
+            .expect("defined entry has a supported native signature");
+
+        assert_eq!(caller.call(&[3, 4]), Some(18));
+        let mut out = [0; 3];
+        assert!(native_call::call_i8_rows_batch(
+            batch_code,
+            &[3, 4, -2, 1, 7, 1],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [18, -6, 21]);
+        assert_eq!(
+            native_call::call_i8_rows_batch_sum(batch_sum_code, &[3, 4, -2, 1, 7, 1], 2, 3),
+            Some(33)
+        );
+    }
+
+    #[test]
+    fn cranelift_define_wide_int_batch_defines_module_functions_without_jit_wrapper() {
+        let request_i128 = PureFunctionRequest::new(
+            "score_define_i128_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("delta".to_owned())),
+            },
+            [i128_binding("value", 0), i128_binding("delta", 0)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+
+        let defined_i128 = define_small_int_batch_with_inputs(
+            &mut module,
+            "arcweft_test_defined_i128",
+            &request_i128,
+            ["value", "delta"],
+            SmallIntKind::I128,
+        )
+        .expect("i128 batch helper is defined into the module");
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let batch_code = module.get_finalized_function(defined_i128.batch);
+        let batch_sum_code = module.get_finalized_function(defined_i128.batch_sum);
+        let mut out = [0; 3];
+        assert!(native_call::call_i128_rows_batch(
+            batch_code,
+            &[i128::MAX, -1, i128::MIN, 1, 7, -2],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [i128::MAX - 1, i128::MIN + 1, 5]);
+        assert_eq!(
+            native_call::call_i128_rows_batch_sum(
+                batch_sum_code,
+                &[i128::MAX, -1, i128::MIN, 1, 7, -2],
+                2,
+                3
+            ),
+            Some(4)
+        );
+
+        let request_u128 = PureFunctionRequest::new(
+            "score_define_u128_inputs",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("delta".to_owned())),
+            },
+            [u128_binding("value", 0), u128_binding("delta", 0)],
+        );
+        let mut module = jit_module().expect("JIT module is available");
+        let defined_u128 = define_small_int_batch_with_inputs(
+            &mut module,
+            "arcweft_test_defined_u128",
+            &request_u128,
+            ["value", "delta"],
+            SmallIntKind::U128,
+        )
+        .expect("u128 batch helper is defined into the module");
+        module
+            .finalize_definitions()
+            .expect("defined functions finalize");
+        let batch_code = module.get_finalized_function(defined_u128.batch);
+        let batch_sum_code = module.get_finalized_function(defined_u128.batch_sum);
+        let mut out = [0; 3];
+        assert!(native_call::call_u128_rows_batch(
+            batch_code,
+            &[u128::MAX, 1, 10, 5, 7, 2],
+            2,
+            &mut out
+        ));
+        assert_eq!(out, [0, 15, 9]);
+        assert_eq!(
+            native_call::call_u128_rows_batch_sum(
+                batch_sum_code,
+                &[u128::MAX, 1, 10, 5, 7, 2],
+                2,
+                3
+            ),
+            Some(24)
+        );
     }
 
     #[test]
