@@ -109,6 +109,12 @@ for future `ObjectModule` / build-time AOT object emission. Parameterized
 integer, floating-point, small-integer, and wide-integer batch helper paths use
 this split before any object emission is introduced.
 
+The first object-emission entrypoint is `emit_object_i64_with_inputs`. It emits
+a relocatable object containing the `i64` scalar entrypoint, row-batch entrypoint,
+and row-batch-sum entrypoint. The object artifact records only deterministic
+symbol names and object bytes; it does not include source paths or JIT function
+pointers.
+
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11

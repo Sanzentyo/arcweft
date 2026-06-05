@@ -15,12 +15,14 @@ use arcweft_core::value::{
     RuntimeIntrinsic, RuntimeUInt, RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::{BlockArg, MemFlags, Type, UserFuncName};
+use cranelift::codegen::isa::OwnedTargetIsa;
 use cranelift::jit::{JITBuilder, JITModule};
 use cranelift::module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
 use cranelift::prelude::{
     AbiParam, Configurable, FloatCC, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC,
     Value, settings, types,
 };
+use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -57,6 +59,16 @@ pub struct CompiledPureI64Inputs {
     batch_sum_code: *const u8,
     param_names: Vec<String>,
     stats: PureFunctionStats,
+}
+
+/// Relocatable object output for a parameterized `i64` pure helper.
+pub struct ObjectPureI64Inputs {
+    pub object_bytes: Vec<u8>,
+    pub entry_symbol: String,
+    pub batch_symbol: String,
+    pub batch_sum_symbol: String,
+    pub param_names: Vec<String>,
+    pub stats: PureFunctionStats,
 }
 
 /// Pure scalar helper functions defined into a Cranelift module.
@@ -445,6 +457,16 @@ impl CraneliftPureFunctionBackend {
             param_names: defined.param_names,
             stats: defined.stats,
         })
+    }
+
+    /// Emits a relocatable object containing the parameterized `i64` helper
+    /// entrypoint and flat-batch entrypoints.
+    pub fn emit_object_i64_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<ObjectPureI64Inputs, CraneliftJitError> {
+        emit_object_i64_with_inputs(request, param_names)
     }
 
     /// Compiles a pure helper request to a reusable native `i8` function with
@@ -947,6 +969,33 @@ where
         batch_sum,
         param_names,
         stats,
+    })
+}
+
+/// Emits a relocatable object containing the parameterized `i64` helper
+/// entrypoint and flat-batch entrypoints.
+pub fn emit_object_i64_with_inputs(
+    request: &PureFunctionRequest,
+    param_names: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<ObjectPureI64Inputs, CraneliftJitError> {
+    let isa = native_isa(true)?;
+    let builder = ObjectBuilder::new(isa, "arcweft_pure_object", default_libcall_names())
+        .map_err(jit_error)?;
+    let mut module = ObjectModule::new(builder);
+    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let object_bytes = module
+        .finish()
+        .emit()
+        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+
+    Ok(ObjectPureI64Inputs {
+        object_bytes,
+        entry_symbol: format!("{symbol_prefix}_entry"),
+        batch_symbol: format!("{symbol_prefix}_rows_batch"),
+        batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
+        param_names: defined.param_names,
+        stats: defined.stats,
     })
 }
 
@@ -3550,13 +3599,13 @@ fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError>
     Ok(())
 }
 
-fn jit_module() -> Result<JITModule, CraneliftJitError> {
+fn native_isa(is_pic: bool) -> Result<OwnedTargetIsa, CraneliftJitError> {
     let mut flag_builder = settings::builder();
     flag_builder
         .set("use_colocated_libcalls", "false")
         .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
     flag_builder
-        .set("is_pic", "false")
+        .set("is_pic", if is_pic { "true" } else { "false" })
         .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
     flag_builder
         .set("opt_level", "speed")
@@ -3566,10 +3615,38 @@ fn jit_module() -> Result<JITModule, CraneliftJitError> {
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
         .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+    Ok(isa)
+}
+
+fn jit_module() -> Result<JITModule, CraneliftJitError> {
+    let isa = native_isa(false)?;
     Ok(JITModule::new(JITBuilder::with_isa(
         isa,
         default_libcall_names(),
     )))
+}
+
+fn sanitize_symbol_component(name: &str) -> String {
+    let mut sanitized = String::with_capacity(name.len().max(1));
+    let mut previous_underscore = false;
+    for ch in name.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() { ch } else { '_' };
+        if mapped == '_' {
+            if !previous_underscore {
+                sanitized.push(mapped);
+            }
+            previous_underscore = true;
+        } else {
+            sanitized.push(mapped);
+            previous_underscore = false;
+        }
+    }
+    let sanitized = sanitized.trim_matches('_');
+    if sanitized.is_empty() {
+        "helper".to_owned()
+    } else {
+        sanitized.to_owned()
+    }
 }
 
 fn int_bindings(
@@ -5115,6 +5192,57 @@ mod tests {
             native_call::call_i64_rows_batch_sum(batch_sum_code, &[3, 4, 2, 99, 7, 1], 2, 3),
             Some(241)
         );
+    }
+
+    #[test]
+    fn cranelift_emits_i64_object_with_entry_and_batch_symbols() {
+        let request = PureFunctionRequest::new(
+            "score-object i64",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
+                }),
+            },
+            [int_binding("base", 3), int_binding("bonus", 4)],
+        );
+
+        let object = CraneliftPureFunctionBackend
+            .emit_object_i64_with_inputs(&request, ["base", "bonus"])
+            .expect("Cranelift emits an i64 object");
+
+        assert!(!object.object_bytes.is_empty());
+        assert_eq!(object.entry_symbol, "arcweft_pure_score_object_i64_entry");
+        assert_eq!(
+            object.batch_symbol,
+            "arcweft_pure_score_object_i64_rows_batch"
+        );
+        assert_eq!(
+            object.batch_sum_symbol,
+            "arcweft_pure_score_object_i64_rows_batch_sum"
+        );
+        assert_eq!(object.param_names, ["base", "bonus"]);
+        assert_eq!(object.stats.evaluated_binary_ops, 2);
+        assert!(
+            !object
+                .object_bytes
+                .windows(3)
+                .any(|window| window == b":\\")
+        );
+
+        use cranelift_object::object::{Object, ObjectSymbol};
+        let parsed = cranelift_object::object::File::parse(object.object_bytes.as_slice())
+            .expect("emitted object parses");
+        let symbols = parsed
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok())
+            .collect::<Vec<_>>();
+        assert!(symbols.contains(&object.entry_symbol.as_str()));
+        assert!(symbols.contains(&object.batch_symbol.as_str()));
+        assert!(symbols.contains(&object.batch_sum_symbol.as_str()));
     }
 
     #[test]

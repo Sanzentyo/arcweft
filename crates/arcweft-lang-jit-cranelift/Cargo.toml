@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 cranelift.workspace = true
+cranelift-object.workspace = true
 thiserror.workspace = true
 
 [lib]
