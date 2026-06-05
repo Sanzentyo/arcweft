@@ -106,8 +106,8 @@ JIT wrapper owns `JITModule`, finalizes definitions, looks up function pointers,
 and calls through the audited `native_call` ABI boundary. This keeps JIT
 function-pointer handling isolated while making the same lowering path usable
 for future `ObjectModule` / build-time AOT object emission. The parameterized
-`i64`, `i32`, and `u32` helper paths already use this split; other scalar widths
-should be moved to the same shape before adding object emission.
+`i64`, `i32`, `u32`, and `u64` helper paths already use this split; other scalar
+widths should be moved to the same shape before adding object emission.
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
