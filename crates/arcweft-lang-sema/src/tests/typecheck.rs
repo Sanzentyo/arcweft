@@ -552,7 +552,7 @@ flow @flow.opening opening {
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
     try await load_opening_assets() with { pending p => progress.set(p.ratio) }
     alice[
-        #[fmt("夢", color=blue)]を見た。[p]
+        #[fmt("夢", color=blue, on_error=.discard)]を見た。[p]
     ]
     with:
         at(0.42s): alice.stage.face(worried)
@@ -604,6 +604,144 @@ flow @flow.opening opening {
         );
 
     typecheck_hir(&hir, &env).expect("edge fixture typechecks");
+}
+
+#[test]
+fn typecheck_requires_inline_function_failure_policy() {
+    let tree = parse_ok(
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice: #[fmt(score, style="number")]点[p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let errors = typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64)
+            .with_function("fmt", TypeKind::DisplayText),
+    )
+    .expect_err("inline function call without policy is rejected");
+
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            crate::diagnostics::TypeCheckErrorKind::InlineCallErrorPolicyMissing { function }
+                if function == "fmt"
+        )
+    }));
+}
+
+#[test]
+fn typecheck_accepts_inline_function_failure_policy() {
+    let tree = parse_ok(
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice: #[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点[p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64)
+            .with_function("fmt", TypeKind::DisplayText),
+    )
+    .expect("inline function call with policy typechecks");
+}
+
+#[test]
+fn typecheck_accepts_line_default_inline_failure_policy() {
+    let tree = parse_ok(
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice(inline_error=.fail): #[fmt(score, style="number")]点[p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("inline default policy fixture lowers");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64)
+            .with_function("fmt", TypeKind::DisplayText),
+    )
+    .expect("line default inline failure policy typechecks");
+}
+
+#[test]
+fn typecheck_rejects_conflicting_inline_failure_policies() {
+    let tree = parse_ok(
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice: #[fmt(score, on_error=.fail, fallback="?")]点[p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let errors = typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64)
+            .with_function("fmt", TypeKind::DisplayText),
+    )
+    .expect_err("conflicting inline policies are rejected");
+
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            crate::diagnostics::TypeCheckErrorKind::InlineFailurePolicyConflict { function }
+                if function == "fmt"
+        )
+    }));
+}
+
+#[test]
+fn typecheck_rejects_unknown_inline_failure_policy() {
+    let tree = parse_ok(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice: #[fmt(score, on_error=.explode)]点[p]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let errors = typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64)
+            .with_function("fmt", TypeKind::DisplayText),
+    )
+    .expect_err("unknown inline policy is rejected");
+
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            crate::diagnostics::TypeCheckErrorKind::UnknownInlineFailurePolicy {
+                function,
+                policy,
+            } if function == "fmt" && policy == ".explode"
+        )
+    }));
 }
 
 #[test]

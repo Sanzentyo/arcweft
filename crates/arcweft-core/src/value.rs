@@ -2722,6 +2722,13 @@ impl RuntimeEnv {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
+    pub fn bindings_snapshot(&self) -> Vec<RuntimeBinding> {
+        self.scopes
+            .iter()
+            .flat_map(|scope| scope.bindings.iter().cloned())
+            .collect()
+    }
+
     pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
         for binding in bindings {
             self.set(binding.name, binding.value);

@@ -1,0 +1,2743 @@
+//! Minimal native window renderer for rich-text player frames.
+
+use arcweft_render_text::{
+    LineDisplayFrame, RichTextColor, RichTextControl, RichTextDisplayMap, RichTextFontFamily,
+    RichTextNode, RichTextRange, RichTextStyle,
+};
+use glyphon::{
+    Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
+    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
+};
+use std::ops::Range;
+use std::sync::Arc;
+use std::sync::mpsc;
+use thiserror::Error;
+use wgpu::{
+    BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoderDescriptor,
+    CompositeAlphaMode, DeviceDescriptor, Extent3d, Instance, LoadOp, MapMode, MultisampleState,
+    Operations, Origin3d, PollType, PresentMode, RenderPassColorAttachment, RenderPassDescriptor,
+    RequestAdapterOptions, SurfaceConfiguration, TexelCopyBufferInfo, TexelCopyBufferLayout,
+    TexelCopyTextureInfo, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages, TextureViewDescriptor,
+};
+use winit::{
+    application::ApplicationHandler,
+    dpi::{LogicalSize, PhysicalSize},
+    event::{KeyEvent, WindowEvent},
+    event_loop::{ActiveEventLoop, EventLoop},
+    keyboard::{Key, NamedKey},
+    window::{Window, WindowAttributes},
+};
+
+/// Native player window error.
+#[derive(Debug, Error)]
+pub enum NativeWindowError {
+    #[error("event loop error: {0}")]
+    EventLoop(String),
+    #[error("no display pages were provided")]
+    EmptyPages,
+    #[error("readback failed: {0}")]
+    Readback(String),
+}
+
+/// Raw framebuffer capture produced by the native rich-text renderer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeFrameCapture {
+    /// Capture width in pixels.
+    pub width: u32,
+    /// Capture height in pixels.
+    pub height: u32,
+    /// Unpadded RGBA8 pixels in row-major order.
+    pub rgba: Vec<u8>,
+    /// Bounding box of pixels that differ from the clear background.
+    pub content_bbox: Option<NativeFrameContentBBox>,
+    /// Count of pixels that differ from the clear background.
+    pub content_pixels: u64,
+}
+
+/// Pixel-space bounds of non-background framebuffer content.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct NativeFrameContentBBox {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Native rich-text element kinds addressable by Agent debug captures.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum NativeFrameElement {
+    TextRun { index: usize },
+    Ruby { index: usize },
+}
+
+/// Pixel-space bounds for one native rich-text element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeFrameElementBounds {
+    pub element: NativeFrameElement,
+    pub bbox: NativeFrameContentBBox,
+}
+
+/// Debug-image region rendered by the native adapter for Agent capture tools.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeFrameDebugRegion {
+    /// Optional native rich-text element whose shaped bounds should override the fallback box.
+    pub element: Option<NativeFrameElement>,
+    /// Fallback bounds used for non-text objects or when an element is not visible on this page.
+    pub fallback_bbox: NativeFrameContentBBox,
+    /// RGBA color written into the debug image.
+    pub color: [u8; 4],
+}
+
+/// Viewport and page selection for native offscreen captures.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeCaptureViewport {
+    pub width: u32,
+    pub height: u32,
+    pub left: f32,
+    pub top: f32,
+    pub page_index: usize,
+}
+
+impl NativeCaptureViewport {
+    /// Builds a capture viewport for one rendered rich-text page.
+    pub const fn new(width: u32, height: u32, left: f32, top: f32, page_index: usize) -> Self {
+        Self {
+            width,
+            height,
+            left,
+            top,
+            page_index,
+        }
+    }
+}
+
+/// Reusable offscreen native text capture state for repeated debug reads.
+///
+/// The one-shot `capture_frame_*` helpers create this internally. Long-lived
+/// tooling adapters should keep a session and call its methods so repeated
+/// framebuffer, layer, and object captures reuse the same device and text atlas.
+pub struct NativeOffscreenCaptureSession {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    format: TextureFormat,
+    renderer: NativeOffscreenTextRenderer,
+}
+
+impl NativeOffscreenCaptureSession {
+    /// Creates a reusable offscreen capture session.
+    pub fn new() -> Result<Self, NativeWindowError> {
+        let (device, queue) = pollster::block_on(request_capture_device())?;
+        let format = TextureFormat::Rgba8UnormSrgb;
+        let renderer = NativeOffscreenTextRenderer::new(&device, &queue, format);
+        Ok(Self {
+            device,
+            queue,
+            format,
+            renderer,
+        })
+    }
+
+    /// Renders the first page of a rich-text frame at a viewport origin.
+    pub fn capture_frame_rgba_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        left: f32,
+        top: f32,
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        self.capture_frame_rgba_in(
+            frame,
+            NativeCaptureViewport::new(width, height, left, top, 0),
+        )
+    }
+
+    /// Renders a page of a rich-text frame within a viewport.
+    pub fn capture_frame_rgba_in(
+        &mut self,
+        frame: &LineDisplayFrame,
+        viewport: NativeCaptureViewport,
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
+        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let Some(page) = page_from_display_map_range(frame, page_range) else {
+            return Err(NativeWindowError::EmptyPages);
+        };
+        self.capture_rich_text_rgba(
+            &page.rich_text,
+            width,
+            height,
+            NativeTextOrigin {
+                left: viewport.left,
+                top: viewport.top,
+            },
+        )
+    }
+
+    /// Builds a native-layout debug capture for object-id and mask capture modes.
+    pub fn capture_frame_debug_regions_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        left: f32,
+        top: f32,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        self.capture_frame_debug_regions_in(
+            frame,
+            NativeCaptureViewport::new(width, height, left, top, 0),
+            regions,
+        )
+    }
+
+    /// Builds a native-layout debug capture for object-id and mask capture modes on a page.
+    pub fn capture_frame_debug_regions_in(
+        &mut self,
+        frame: &LineDisplayFrame,
+        viewport: NativeCaptureViewport,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
+        let background = [0, 0, 0, 0];
+        let mut rgba = self
+            .capture_debug_text_regions_rgba_at(
+                frame,
+                width,
+                height,
+                NativeTextOrigin {
+                    left: viewport.left,
+                    top: viewport.top,
+                },
+                viewport.page_index,
+                regions,
+            )?
+            .unwrap_or_else(|| solid_rgba(width, height, background));
+        for region in regions {
+            if region.element.is_none() {
+                fill_native_rect(&mut rgba, width, height, region.fallback_bbox, region.color);
+            }
+        }
+        let stats = native_frame_content_stats(&rgba, width, height, background);
+        Ok(NativeFrameCapture {
+            width,
+            height,
+            rgba,
+            content_bbox: stats.content_bbox,
+            content_pixels: stats.content_pixels,
+        })
+    }
+
+    /// Builds an isolated native-layout color capture for selected rich-text regions.
+    pub fn capture_frame_color_regions_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        left: f32,
+        top: f32,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        self.capture_frame_color_regions_in(
+            frame,
+            NativeCaptureViewport::new(width, height, left, top, 0),
+            regions,
+        )
+    }
+
+    /// Builds an isolated native-layout color capture for selected rich-text regions on a page.
+    pub fn capture_frame_color_regions_in(
+        &mut self,
+        frame: &LineDisplayFrame,
+        viewport: NativeCaptureViewport,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
+        let background = [0, 0, 0, 0];
+        let rgba = self
+            .capture_color_text_regions_rgba_at(
+                frame,
+                width,
+                height,
+                NativeTextOrigin {
+                    left: viewport.left,
+                    top: viewport.top,
+                },
+                viewport.page_index,
+                regions,
+            )?
+            .unwrap_or_else(|| solid_rgba(width, height, background));
+        let stats = native_frame_content_stats(&rgba, width, height, background);
+        Ok(NativeFrameCapture {
+            width,
+            height,
+            rgba,
+            content_bbox: stats.content_bbox,
+            content_pixels: stats.content_pixels,
+        })
+    }
+
+    fn capture_rich_text_rgba(
+        &mut self,
+        rich_text: &WindowRichText,
+        width: u32,
+        height: u32,
+        origin: NativeTextOrigin,
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let rgba = self.render_rich_text_rgba_with_clear(
+            rich_text,
+            width,
+            height,
+            origin,
+            wgpu::Color::BLACK,
+        )?;
+        let stats = native_frame_content_stats(&rgba, width, height, [0, 0, 0, 255]);
+        Ok(NativeFrameCapture {
+            width,
+            height,
+            rgba,
+            content_bbox: stats.content_bbox,
+            content_pixels: stats.content_pixels,
+        })
+    }
+
+    fn capture_debug_text_regions_rgba_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        origin: NativeTextOrigin,
+        page_index: usize,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<Option<Vec<u8>>, NativeWindowError> {
+        let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
+            return Err(NativeWindowError::EmptyPages);
+        };
+        let Some(rich_text) =
+            debug_rich_text_for_regions(frame, &page_range, &page.rich_text, regions)
+        else {
+            return Ok(None);
+        };
+        let mut rgba = self.render_rich_text_rgba_with_clear(
+            &rich_text,
+            width,
+            height,
+            origin,
+            wgpu::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
+        )?;
+        clear_transparent_rgb(&mut rgba);
+        Ok(Some(rgba))
+    }
+
+    fn capture_color_text_regions_rgba_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        origin: NativeTextOrigin,
+        page_index: usize,
+        regions: &[NativeFrameDebugRegion],
+    ) -> Result<Option<Vec<u8>>, NativeWindowError> {
+        let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
+            return Err(NativeWindowError::EmptyPages);
+        };
+        let Some(rich_text) =
+            color_rich_text_for_regions(frame, &page_range, &page.rich_text, regions)
+        else {
+            return Ok(None);
+        };
+        let mut rgba = self.render_rich_text_rgba_with_clear(
+            &rich_text,
+            width,
+            height,
+            origin,
+            wgpu::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
+        )?;
+        clear_transparent_rgb(&mut rgba);
+        Ok(Some(rgba))
+    }
+
+    fn render_rich_text_rgba_with_clear(
+        &mut self,
+        rich_text: &WindowRichText,
+        width: u32,
+        height: u32,
+        origin: NativeTextOrigin,
+        clear: wgpu::Color,
+    ) -> Result<Vec<u8>, NativeWindowError> {
+        self.renderer
+            .prepare(&self.device, &self.queue, rich_text, width, height, origin)?;
+        let texture = self.renderer.render_texture_with_clear(
+            &self.device,
+            &self.queue,
+            width,
+            height,
+            self.format,
+            clear,
+        )?;
+        readback_texture_rgba(&self.device, &self.queue, &texture, width, height)
+    }
+}
+
+/// Opens a native window and renders one text frame.
+pub fn run_text_window(title: &str, text: &str) -> Result<(), NativeWindowError> {
+    run_pages_window(title, vec![WindowPage::plain(text)])
+}
+
+/// Opens a native window and renders one rich text frame.
+pub fn run_frame_window(title: &str, frame: &LineDisplayFrame) -> Result<(), NativeWindowError> {
+    run_pages_window(title, WindowPage::from_frame(frame))
+}
+
+/// Opens a native window and renders rich text frames with page advancement.
+pub fn run_frames_window(
+    title: &str,
+    frames: &[LineDisplayFrame],
+) -> Result<(), NativeWindowError> {
+    run_pages_window(
+        title,
+        frames.iter().flat_map(WindowPage::from_frame).collect(),
+    )
+}
+
+/// Renders the first page of a rich-text frame to an offscreen texture and reads it back.
+pub fn capture_frame_rgba(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    capture_frame_rgba_at(frame, width, height, NATIVE_TEXT_LEFT, NATIVE_TEXT_TOP)
+}
+
+/// Renders the first page of a rich-text frame at a viewport origin and reads it back.
+pub fn capture_frame_rgba_at(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    capture_frame_rgba_at_page(frame, width, height, left, top, 0)
+}
+
+/// Renders a page of a rich-text frame at a viewport origin and reads it back.
+pub fn capture_frame_rgba_at_page(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    NativeOffscreenCaptureSession::new()?.capture_frame_rgba_in(
+        frame,
+        NativeCaptureViewport::new(width, height, left, top, page_index),
+    )
+}
+
+/// Measures first-page rich-text element bounds using the same native text layout as rendering.
+pub fn measure_frame_elements_at(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    measure_frame_elements_at_page(frame, width, height, left, top, 0)
+}
+
+/// Measures native rich-text element bounds for a rendered page.
+pub fn measure_frame_elements_at_page(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    let origin = NativeTextOrigin { left, top };
+    let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+    let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
+        return Err(NativeWindowError::EmptyPages);
+    };
+    let mut font_system = FontSystem::new();
+    let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+    prepare_window_text_buffers(
+        &mut font_system,
+        &mut text_buffer,
+        &page.rich_text,
+        width.max(1),
+        height.max(1),
+    );
+    let mut bounds = Vec::new();
+    bounds.extend(native_text_run_bounds(
+        frame,
+        &page_range,
+        &page.rich_text,
+        &text_buffer,
+        origin,
+        width.max(1),
+        height.max(1),
+    ));
+    bounds.extend(native_ruby_bounds(
+        frame,
+        &page_range,
+        &page.rich_text,
+        &text_buffer,
+        origin,
+        width.max(1),
+        height.max(1),
+    ));
+    Ok(bounds)
+}
+
+/// Builds a native-layout debug capture for object-id and mask capture modes.
+pub fn capture_frame_debug_regions_at(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    regions: &[NativeFrameDebugRegion],
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    capture_frame_debug_regions_at_page(frame, width, height, left, top, 0, regions)
+}
+
+/// Builds a native-layout debug capture for object-id and mask capture modes on a page.
+pub fn capture_frame_debug_regions_at_page(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+    regions: &[NativeFrameDebugRegion],
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    NativeOffscreenCaptureSession::new()?.capture_frame_debug_regions_in(
+        frame,
+        NativeCaptureViewport::new(width, height, left, top, page_index),
+        regions,
+    )
+}
+
+/// Builds an isolated native-layout color capture for selected rich-text regions.
+pub fn capture_frame_color_regions_at(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    regions: &[NativeFrameDebugRegion],
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    capture_frame_color_regions_at_page(frame, width, height, left, top, 0, regions)
+}
+
+/// Builds an isolated native-layout color capture for selected rich-text regions on a page.
+pub fn capture_frame_color_regions_at_page(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+    regions: &[NativeFrameDebugRegion],
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    NativeOffscreenCaptureSession::new()?.capture_frame_color_regions_in(
+        frame,
+        NativeCaptureViewport::new(width, height, left, top, page_index),
+        regions,
+    )
+}
+
+fn run_pages_window(title: &str, pages: Vec<WindowPage>) -> Result<(), NativeWindowError> {
+    if pages.is_empty() {
+        return Err(NativeWindowError::EmptyPages);
+    }
+    let event_loop =
+        EventLoop::new().map_err(|error| NativeWindowError::EventLoop(error.to_string()))?;
+    event_loop
+        .run_app(Application {
+            title: title.to_owned(),
+            pages,
+            page_index: 0,
+            window_state: None,
+        })
+        .map_err(|error| NativeWindowError::EventLoop(error.to_string()))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WindowPage {
+    rich_text: WindowRichText,
+}
+
+impl WindowPage {
+    fn plain(text: &str) -> Self {
+        Self {
+            rich_text: WindowRichText::plain(text),
+        }
+    }
+
+    fn from_frame(frame: &LineDisplayFrame) -> Vec<Self> {
+        WindowPageBuilder::from_frame(frame)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WindowRichText {
+    text: String,
+    spans: Vec<WindowTextSpan>,
+    ruby_annotations: Vec<WindowRubyAnnotation>,
+}
+
+impl WindowRichText {
+    fn plain(text: &str) -> Self {
+        Self {
+            text: text.to_owned(),
+            spans: vec![WindowTextSpan {
+                range: 0..text.len(),
+                style: NativeTextStyle::default(),
+            }],
+            ruby_annotations: Vec::new(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
+#[derive(Default)]
+struct WindowPageBuilder {
+    pages: Vec<WindowPage>,
+    current: WindowRichTextBuilder,
+}
+
+impl WindowPageBuilder {
+    fn from_frame(frame: &LineDisplayFrame) -> Vec<WindowPage> {
+        if has_display_map(&frame.display_map) {
+            return pages_from_display_map(frame);
+        }
+        let mut builder = Self {
+            current: WindowRichTextBuilder::with_base_styles(frame.base_styles.clone()),
+            ..Self::default()
+        };
+        for node in &frame.nodes {
+            builder.push_node(node);
+        }
+        builder.finish()
+    }
+
+    fn push_node(&mut self, node: &RichTextNode) {
+        if let RichTextNode::Control(RichTextControl::Page | RichTextControl::LineWait) = node {
+            self.flush_page();
+            return;
+        }
+        self.current.push_node(node);
+    }
+
+    fn flush_page(&mut self) {
+        let base_styles = self.current.base_styles.clone();
+        let current = std::mem::replace(
+            &mut self.current,
+            WindowRichTextBuilder::with_base_styles(base_styles),
+        )
+        .finish();
+        if !current.is_empty() {
+            self.pages.push(WindowPage { rich_text: current });
+        }
+    }
+
+    fn finish(mut self) -> Vec<WindowPage> {
+        self.flush_page();
+        self.pages
+    }
+}
+
+fn has_display_map(display_map: &RichTextDisplayMap) -> bool {
+    !display_map.text_runs.is_empty()
+        || !display_map.ruby_annotations.is_empty()
+        || !display_map.controls.is_empty()
+}
+
+fn pages_from_display_map(frame: &LineDisplayFrame) -> Vec<WindowPage> {
+    display_map_page_ranges(frame)
+        .into_iter()
+        .filter_map(|range| page_from_display_map_range(frame, range))
+        .collect()
+}
+
+fn display_map_page_ranges(frame: &LineDisplayFrame) -> Vec<Range<usize>> {
+    let mut break_offsets = frame
+        .display_map
+        .controls
+        .iter()
+        .filter(|marker| {
+            matches!(
+                marker.control,
+                RichTextControl::Page | RichTextControl::LineWait | RichTextControl::Clear
+            )
+        })
+        .map(|marker| display_map_offset_before_node(frame, marker.node_index))
+        .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
+        .collect::<Vec<_>>();
+    break_offsets.sort_unstable();
+    break_offsets.dedup();
+
+    let mut start = 0;
+    let mut ranges = Vec::with_capacity(break_offsets.len() + 1);
+    for end in break_offsets {
+        if start <= end {
+            ranges.push(start..end);
+            start = end;
+        }
+    }
+    ranges.push(start..frame.text.len());
+    ranges
+}
+
+fn display_map_non_empty_page_range_at(
+    frame: &LineDisplayFrame,
+    page_index: usize,
+) -> Result<Range<usize>, NativeWindowError> {
+    display_map_page_ranges(frame)
+        .into_iter()
+        .filter(|range| !range.is_empty())
+        .nth(page_index)
+        .ok_or(NativeWindowError::EmptyPages)
+}
+
+fn display_map_offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| run.node_index < node_index)
+        .map(|run| run.range.end)
+        .max()
+        .unwrap_or(0)
+}
+
+fn page_from_display_map_range(
+    frame: &LineDisplayFrame,
+    page_range: Range<usize>,
+) -> Option<WindowPage> {
+    let text = frame.text.get(page_range.clone())?.to_owned();
+    if text.is_empty() {
+        return None;
+    }
+
+    let spans = display_map_spans_for_range(frame, &page_range);
+    let spans = if spans.is_empty() {
+        vec![WindowTextSpan {
+            range: 0..text.len(),
+            style: NativeTextStyle::default(),
+        }]
+    } else {
+        spans
+    };
+    let ruby_annotations = display_map_ruby_for_range(frame, &page_range);
+    Some(WindowPage {
+        rich_text: WindowRichText {
+            text,
+            spans,
+            ruby_annotations,
+        },
+    })
+}
+
+fn display_map_spans_for_range(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+) -> Vec<WindowTextSpan> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter_map(|run| {
+            let range = intersect_display_range(run.range, page_range)?;
+            Some(WindowTextSpan {
+                range: (range.start - page_range.start)..(range.end - page_range.start),
+                style: native_style_from_styles(&run.styles),
+            })
+        })
+        .collect()
+}
+
+fn display_map_ruby_for_range(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+) -> Vec<WindowRubyAnnotation> {
+    frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .filter_map(|annotation| {
+            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
+            if base_range.start < page_range.start || base_range.end > page_range.end {
+                return None;
+            }
+            Some(WindowRubyAnnotation {
+                base_range: (base_range.start - page_range.start)
+                    ..(base_range.end - page_range.start),
+                ruby: annotation.ruby.clone(),
+                style: native_ruby_style_from_styles(&annotation.styles),
+            })
+        })
+        .collect()
+}
+
+fn debug_rich_text_for_regions(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    page_rich_text: &WindowRichText,
+    regions: &[NativeFrameDebugRegion],
+) -> Option<WindowRichText> {
+    let selected_text = debug_selected_text_ranges(frame, page_range, regions);
+    let selected_ruby = debug_selected_ruby_indices(regions);
+    if selected_text.is_empty() && selected_ruby.is_empty() {
+        return None;
+    }
+    let spans = debug_text_spans(page_rich_text, &selected_text);
+    let ruby_annotations = frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| {
+            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
+            if base_range.start < page_range.start || base_range.end > page_range.end {
+                return None;
+            }
+            let mut style = native_ruby_style_from_styles(&annotation.styles);
+            style.color = selected_ruby
+                .iter()
+                .find_map(|(selected_index, color)| (*selected_index == index).then_some(*color))
+                .map_or(NativeTextColor::rgba(0, 0, 0, 0), native_color_from_rgba);
+            Some(WindowRubyAnnotation {
+                base_range: (base_range.start - page_range.start)
+                    ..(base_range.end - page_range.start),
+                ruby: annotation.ruby.clone(),
+                style,
+            })
+        })
+        .collect();
+    Some(WindowRichText {
+        text: page_rich_text.text.clone(),
+        spans,
+        ruby_annotations,
+    })
+}
+
+fn color_rich_text_for_regions(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    page_rich_text: &WindowRichText,
+    regions: &[NativeFrameDebugRegion],
+) -> Option<WindowRichText> {
+    let selected_text = color_selected_text_ranges(frame, page_range, regions);
+    let selected_ruby = color_selected_ruby_indices(regions);
+    if selected_text.is_empty() && selected_ruby.is_empty() {
+        return None;
+    }
+    let spans = color_text_spans(page_rich_text, &selected_text);
+    let ruby_annotations = frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| {
+            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
+            if base_range.start < page_range.start || base_range.end > page_range.end {
+                return None;
+            }
+            let mut style = native_ruby_style_from_styles(&annotation.styles);
+            if !selected_ruby.contains(&index) {
+                style.color = NativeTextColor::rgba(0, 0, 0, 0);
+            }
+            Some(WindowRubyAnnotation {
+                base_range: (base_range.start - page_range.start)
+                    ..(base_range.end - page_range.start),
+                ruby: annotation.ruby.clone(),
+                style,
+            })
+        })
+        .collect();
+    Some(WindowRichText {
+        text: page_rich_text.text.clone(),
+        spans,
+        ruby_annotations,
+    })
+}
+
+fn debug_selected_text_ranges(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    regions: &[NativeFrameDebugRegion],
+) -> Vec<(Range<usize>, [u8; 4])> {
+    regions
+        .iter()
+        .filter_map(|region| {
+            let NativeFrameElement::TextRun { index } = region.element? else {
+                return None;
+            };
+            let run = frame.display_map.text_runs.get(index)?;
+            let range = intersect_display_range(run.range, page_range)?;
+            Some((
+                (range.start - page_range.start)..(range.end - page_range.start),
+                region.color,
+            ))
+        })
+        .collect()
+}
+
+fn color_selected_text_ranges(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    regions: &[NativeFrameDebugRegion],
+) -> Vec<Range<usize>> {
+    regions
+        .iter()
+        .filter_map(|region| {
+            let NativeFrameElement::TextRun { index } = region.element? else {
+                return None;
+            };
+            let run = frame.display_map.text_runs.get(index)?;
+            let range = intersect_display_range(run.range, page_range)?;
+            Some((range.start - page_range.start)..(range.end - page_range.start))
+        })
+        .collect()
+}
+
+fn debug_selected_ruby_indices(regions: &[NativeFrameDebugRegion]) -> Vec<(usize, [u8; 4])> {
+    regions
+        .iter()
+        .filter_map(|region| {
+            let NativeFrameElement::Ruby { index } = region.element? else {
+                return None;
+            };
+            Some((index, region.color))
+        })
+        .collect()
+}
+
+fn color_selected_ruby_indices(regions: &[NativeFrameDebugRegion]) -> Vec<usize> {
+    regions
+        .iter()
+        .filter_map(|region| {
+            let NativeFrameElement::Ruby { index } = region.element? else {
+                return None;
+            };
+            Some(index)
+        })
+        .collect()
+}
+
+fn debug_text_spans(
+    rich_text: &WindowRichText,
+    selected: &[(Range<usize>, [u8; 4])],
+) -> Vec<WindowTextSpan> {
+    let mut boundaries = vec![0, rich_text.text.len()];
+    boundaries.extend(
+        rich_text
+            .spans
+            .iter()
+            .flat_map(|span| [span.range.start, span.range.end]),
+    );
+    boundaries.extend(
+        selected
+            .iter()
+            .flat_map(|(range, _)| [range.start, range.end]),
+    );
+    boundaries.retain(|offset| {
+        *offset <= rich_text.text.len() && rich_text.text.is_char_boundary(*offset)
+    });
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    boundaries
+        .windows(2)
+        .filter_map(|window| {
+            let start = window[0];
+            let end = window[1];
+            if start >= end {
+                return None;
+            }
+            let mut style = rich_text
+                .spans
+                .iter()
+                .find(|span| span.range.start <= start && end <= span.range.end)
+                .map_or_else(NativeTextStyle::default, |span| span.style.clone());
+            style.color = selected
+                .iter()
+                .find_map(|(range, color)| {
+                    (range.start <= start && end <= range.end).then_some(*color)
+                })
+                .map_or(NativeTextColor::rgba(0, 0, 0, 0), native_color_from_rgba);
+            Some(WindowTextSpan {
+                range: start..end,
+                style,
+            })
+        })
+        .collect()
+}
+
+fn color_text_spans(rich_text: &WindowRichText, selected: &[Range<usize>]) -> Vec<WindowTextSpan> {
+    let mut boundaries = vec![0, rich_text.text.len()];
+    boundaries.extend(
+        rich_text
+            .spans
+            .iter()
+            .flat_map(|span| [span.range.start, span.range.end]),
+    );
+    boundaries.extend(selected.iter().flat_map(|range| [range.start, range.end]));
+    boundaries.retain(|offset| {
+        *offset <= rich_text.text.len() && rich_text.text.is_char_boundary(*offset)
+    });
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    boundaries
+        .windows(2)
+        .filter_map(|window| {
+            let start = window[0];
+            let end = window[1];
+            if start >= end {
+                return None;
+            }
+            let mut style = rich_text
+                .spans
+                .iter()
+                .find(|span| span.range.start <= start && end <= span.range.end)
+                .map_or_else(NativeTextStyle::default, |span| span.style.clone());
+            if !selected
+                .iter()
+                .any(|range| range.start <= start && end <= range.end)
+            {
+                style.color = NativeTextColor::rgba(0, 0, 0, 0);
+            }
+            Some(WindowTextSpan {
+                range: start..end,
+                style,
+            })
+        })
+        .collect()
+}
+
+fn native_color_from_rgba(color: [u8; 4]) -> NativeTextColor {
+    NativeTextColor::rgba(color[0], color[1], color[2], color[3])
+}
+
+fn intersect_display_range(
+    range: RichTextRange,
+    page_range: &Range<usize>,
+) -> Option<Range<usize>> {
+    let start = range.start.max(page_range.start);
+    let end = range.end.min(page_range.end);
+    (start < end).then_some(start..end)
+}
+
+fn valid_display_range(range: RichTextRange, text: &str) -> Option<Range<usize>> {
+    if range.start <= range.end
+        && range.end <= text.len()
+        && text.is_char_boundary(range.start)
+        && text.is_char_boundary(range.end)
+    {
+        Some(range.start..range.end)
+    } else {
+        None
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WindowTextSpan {
+    range: Range<usize>,
+    style: NativeTextStyle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WindowRubyAnnotation {
+    base_range: Range<usize>,
+    ruby: String,
+    style: NativeTextStyle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeTextColor {
+    red: u8,
+    green: u8,
+    blue: u8,
+    alpha: u8,
+}
+
+impl NativeTextColor {
+    const fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        }
+    }
+
+    const fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha,
+        }
+    }
+
+    fn from_render_color(color: &RichTextColor) -> Self {
+        match color {
+            RichTextColor::Rgb { red, green, blue } => Self::new(*red, *green, *blue),
+            RichTextColor::Named { name } => match name.as_str() {
+                "red" => Self::new(240, 110, 110),
+                "green" => Self::new(120, 220, 150),
+                "blue" => Self::new(130, 180, 255),
+                "yellow" => Self::new(240, 220, 120),
+                "muted" | "quiet" => Self::new(170, 170, 170),
+                _ => Self::new(245, 245, 245),
+            },
+        }
+    }
+
+    const fn into_glyphon(self) -> Color {
+        Color::rgba(self.red, self.green, self.blue, self.alpha)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeTextStyle {
+    color: NativeTextColor,
+    family: NativeFontFamily,
+    weight: NativeTextWeight,
+    italic: bool,
+    size: Option<u16>,
+}
+
+impl NativeTextStyle {
+    fn attrs(&self) -> Attrs<'_> {
+        let mut attrs = Attrs::new()
+            .family(self.family.as_glyphon_family())
+            .color(self.color.into_glyphon());
+        if self.weight == NativeTextWeight::Bold {
+            attrs = attrs.weight(Weight::BOLD);
+        }
+        if self.italic {
+            attrs = attrs.style(Style::Italic);
+        }
+        if let Some(size) = self.size {
+            attrs = attrs.metrics(Metrics::new(f32::from(size), f32::from(size) * 1.35));
+        }
+        attrs
+    }
+}
+
+impl Default for NativeTextStyle {
+    fn default() -> Self {
+        Self {
+            color: NativeTextColor::new(245, 245, 245),
+            family: NativeFontFamily::SansSerif,
+            weight: NativeTextWeight::Regular,
+            italic: false,
+            size: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum NativeFontFamily {
+    Serif,
+    SansSerif,
+    Monospace,
+    Cursive,
+    Fantasy,
+    Named(String),
+}
+
+impl NativeFontFamily {
+    fn from_render_family(family: &RichTextFontFamily) -> Self {
+        match family {
+            RichTextFontFamily::Serif => Self::Serif,
+            RichTextFontFamily::SansSerif => Self::SansSerif,
+            RichTextFontFamily::Monospace => Self::Monospace,
+            RichTextFontFamily::Cursive => Self::Cursive,
+            RichTextFontFamily::Fantasy => Self::Fantasy,
+            RichTextFontFamily::Named { name } => Self::Named(name.clone()),
+        }
+    }
+
+    fn as_glyphon_family(&self) -> Family<'_> {
+        match self {
+            Self::Serif => Family::Serif,
+            Self::SansSerif => Family::SansSerif,
+            Self::Monospace => Family::Monospace,
+            Self::Cursive => Family::Cursive,
+            Self::Fantasy => Family::Fantasy,
+            Self::Named(name) => Family::Name(name),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NativeTextWeight {
+    Regular,
+    Bold,
+}
+
+#[derive(Default)]
+struct WindowRichTextBuilder {
+    text: String,
+    spans: Vec<WindowTextSpan>,
+    ruby_annotations: Vec<WindowRubyAnnotation>,
+    base_styles: Vec<RichTextStyle>,
+    active_styles: Vec<RichTextStyle>,
+}
+
+impl WindowRichTextBuilder {
+    fn with_base_styles(base_styles: Vec<RichTextStyle>) -> Self {
+        Self {
+            base_styles,
+            ..Self::default()
+        }
+    }
+
+    fn push_node(&mut self, node: &RichTextNode) {
+        match node {
+            RichTextNode::Text { text } => {
+                self.push_text(text, self.current_style());
+            }
+            RichTextNode::Ruby { base, ruby } => {
+                let base_style = self.current_style();
+                let base_range = self.push_text(base, base_style.clone());
+                let ruby_style = NativeTextStyle {
+                    color: NativeTextColor::new(170, 190, 220),
+                    size: Some(16),
+                    ..base_style
+                };
+                self.ruby_annotations.push(WindowRubyAnnotation {
+                    base_range,
+                    ruby: ruby.clone(),
+                    style: ruby_style,
+                });
+            }
+            RichTextNode::StyleStart { style } => self.active_styles.push(style.clone()),
+            RichTextNode::StyleEnd { name } => {
+                if let Some(index) = self
+                    .active_styles
+                    .iter()
+                    .rposition(|style| style.tag_name() == name)
+                {
+                    self.active_styles.remove(index);
+                }
+            }
+            RichTextNode::Control(control) => self.push_control(control),
+            RichTextNode::Interpolation { expr, .. } => {
+                self.push_text(expr, self.current_style());
+            }
+            RichTextNode::HostEvent(_) => {}
+        }
+    }
+
+    fn push_control(&mut self, control: &RichTextControl) {
+        match control {
+            RichTextControl::HardBreak | RichTextControl::Page | RichTextControl::LineWait => {
+                self.push_text("\n", self.current_style());
+            }
+            RichTextControl::Raw { text } => {
+                self.push_text(text, self.current_style());
+            }
+            RichTextControl::TimedWait { .. }
+            | RichTextControl::Clear
+            | RichTextControl::Mark { .. }
+            | RichTextControl::Unknown { .. } => {}
+            RichTextControl::Reset => self.active_styles.clear(),
+        }
+    }
+
+    fn push_text(&mut self, text: &str, style: NativeTextStyle) -> Range<usize> {
+        if text.is_empty() {
+            return self.text.len()..self.text.len();
+        }
+        let start = self.text.len();
+        self.text.push_str(text);
+        let range = start..self.text.len();
+        self.spans.push(WindowTextSpan {
+            range: range.clone(),
+            style,
+        });
+        range
+    }
+
+    fn current_style(&self) -> NativeTextStyle {
+        native_style_from_styles(self.base_styles.iter().chain(self.active_styles.iter()))
+    }
+
+    fn finish(self) -> WindowRichText {
+        WindowRichText {
+            text: self.text,
+            spans: self.spans,
+            ruby_annotations: self.ruby_annotations,
+        }
+    }
+}
+
+fn native_style_from_styles<'a>(
+    styles: impl IntoIterator<Item = &'a RichTextStyle>,
+) -> NativeTextStyle {
+    styles
+        .into_iter()
+        .fold(NativeTextStyle::default(), apply_style)
+}
+
+fn native_ruby_style_from_styles(styles: &[RichTextStyle]) -> NativeTextStyle {
+    NativeTextStyle {
+        color: NativeTextColor::new(170, 190, 220),
+        size: Some(16),
+        ..native_style_from_styles(styles)
+    }
+}
+
+fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) -> NativeTextStyle {
+    match style {
+        RichTextStyle::Em { .. } => native.italic = true,
+        RichTextStyle::Strong { .. } => native.weight = NativeTextWeight::Bold,
+        RichTextStyle::Color { value } => {
+            native.color = NativeTextColor::from_render_color(value);
+        }
+        RichTextStyle::Font { family } => {
+            native.family = NativeFontFamily::from_render_family(family);
+        }
+        RichTextStyle::Size { points, .. } => {
+            native.size = *points;
+        }
+        RichTextStyle::Speed { .. } | RichTextStyle::Unknown { .. } => {}
+    }
+    native
+}
+
+struct WindowState {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: wgpu::Surface<'static>,
+    surface_config: SurfaceConfiguration,
+    font_system: FontSystem,
+    swash_cache: SwashCache,
+    viewport: Viewport,
+    atlas: TextAtlas,
+    text_renderer: TextRenderer,
+    text_buffer: Buffer,
+    ruby_buffers: Vec<WindowRubyBuffer>,
+    rich_text: WindowRichText,
+    window: Arc<dyn Window>,
+}
+
+struct WindowRubyBuffer {
+    buffer: Buffer,
+    left: f32,
+    top: f32,
+}
+
+impl WindowState {
+    async fn new(
+        window: Arc<dyn Window>,
+        _event_loop: &dyn ActiveEventLoop,
+        rich_text: &WindowRichText,
+    ) -> Self {
+        let physical_size = window.surface_size();
+        let instance = Instance::default();
+        let adapter = instance
+            .request_adapter(&RequestAdapterOptions::default())
+            .await
+            .expect("request graphics adapter");
+        let (device, queue) = adapter
+            .request_device(&DeviceDescriptor::default())
+            .await
+            .expect("request graphics device");
+        let surface = instance
+            .create_surface(window.clone())
+            .expect("create surface");
+        let surface_format = TextureFormat::Bgra8UnormSrgb;
+        let surface_config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: physical_size.width.max(1),
+            height: physical_size.height.max(1),
+            present_mode: PresentMode::Fifo,
+            alpha_mode: CompositeAlphaMode::Opaque,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &surface_config);
+
+        let mut font_system = FontSystem::new();
+        let swash_cache = SwashCache::new();
+        let cache = Cache::new(&device);
+        let viewport = Viewport::new(&device, &cache);
+        let mut atlas = TextAtlas::new(&device, &queue, &cache, surface_format);
+        let text_renderer =
+            TextRenderer::new(&mut atlas, &device, MultisampleState::default(), None);
+        let text_buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+
+        let mut state = Self {
+            device,
+            queue,
+            surface,
+            surface_config,
+            font_system,
+            swash_cache,
+            viewport,
+            atlas,
+            text_renderer,
+            text_buffer,
+            ruby_buffers: Vec::new(),
+            rich_text: rich_text.clone(),
+            window,
+        };
+        state.set_rich_text(rich_text);
+        state
+    }
+
+    fn set_rich_text(&mut self, rich_text: &WindowRichText) {
+        self.rich_text = rich_text.clone();
+        prepare_window_text_buffers(
+            &mut self.font_system,
+            &mut self.text_buffer,
+            rich_text,
+            self.surface_config.width,
+            self.surface_config.height,
+        );
+        self.ruby_buffers = build_ruby_buffers(
+            &mut self.font_system,
+            &self.text_buffer,
+            rich_text,
+            self.surface_config.width,
+            self.surface_config.height,
+            NativeTextOrigin::default(),
+        );
+        self.window.request_redraw();
+    }
+
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.surface_config.width = size.width.max(1);
+        self.surface_config.height = size.height.max(1);
+        self.surface.configure(&self.device, &self.surface_config);
+        let rich_text = self.rich_text.clone();
+        self.set_rich_text(&rich_text);
+    }
+}
+
+fn build_ruby_buffers(
+    font_system: &mut FontSystem,
+    text_buffer: &Buffer,
+    rich_text: &WindowRichText,
+    width: u32,
+    height: u32,
+    origin: NativeTextOrigin,
+) -> Vec<WindowRubyBuffer> {
+    rich_text
+        .ruby_annotations
+        .iter()
+        .map(|annotation| {
+            let mut buffer = Buffer::new(font_system, Metrics::new(16.0, 20.0));
+            buffer.set_size(
+                font_system,
+                Some(surface_extent_f32(width)),
+                Some(surface_extent_f32(height)),
+            );
+            let attrs = annotation.style.attrs();
+            let spans = [(annotation.ruby.as_str(), attrs.clone())];
+            buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
+            buffer.shape_until_scroll(font_system, false);
+            let ruby_width = buffer.layout_runs().next().map_or(0.0, |run| run.line_w);
+            let (base_left, top, base_width) =
+                ruby_overlay_geometry(text_buffer, rich_text, &annotation.base_range, origin)
+                    .unwrap_or_else(|| {
+                        ruby_overlay_geometry_estimate(rich_text, &annotation.base_range, origin)
+                    });
+            let left = base_left + (base_width - ruby_width).max(0.0) / 2.0;
+            WindowRubyBuffer { buffer, left, top }
+        })
+        .collect()
+}
+
+const NATIVE_TEXT_LEFT: f32 = 24.0;
+const NATIVE_TEXT_TOP: f32 = 24.0;
+const NATIVE_RUBY_BASELINE_OFFSET: f32 = 48.0;
+const NATIVE_RUBY_FALLBACK_ADVANCE: f32 = 16.0;
+
+#[derive(Clone, Copy, Debug)]
+struct NativeTextOrigin {
+    left: f32,
+    top: f32,
+}
+
+impl Default for NativeTextOrigin {
+    fn default() -> Self {
+        Self {
+            left: NATIVE_TEXT_LEFT,
+            top: NATIVE_TEXT_TOP,
+        }
+    }
+}
+
+fn ruby_overlay_geometry(
+    text_buffer: &Buffer,
+    rich_text: &WindowRichText,
+    base_range: &Range<usize>,
+    origin: NativeTextOrigin,
+) -> Option<(f32, f32, f32)> {
+    let line_starts = text_line_start_offsets(&rich_text.text);
+    for run in text_buffer.layout_runs() {
+        let line_start = *line_starts.get(run.line_i)?;
+        let line_end = line_starts
+            .get(run.line_i + 1)
+            .copied()
+            .unwrap_or(rich_text.text.len());
+        let start = base_range.start.max(line_start);
+        let end = base_range.end.min(line_end);
+        if start >= end {
+            continue;
+        }
+        let local_start = start - line_start;
+        let local_end = end - line_start;
+        let mut left: Option<f32> = None;
+        let mut right: Option<f32> = None;
+        for glyph in run.glyphs {
+            if glyph.end <= local_start || glyph.start >= local_end {
+                continue;
+            }
+            let glyph_left = origin.left + glyph.x;
+            let glyph_right = glyph_left + glyph.w;
+            left = Some(left.map_or(glyph_left, |value| value.min(glyph_left)));
+            right = Some(right.map_or(glyph_right, |value| value.max(glyph_right)));
+        }
+        let (Some(left), Some(right)) = (left, right) else {
+            continue;
+        };
+        let top = (origin.top + run.line_y - NATIVE_RUBY_BASELINE_OFFSET).max(0.0);
+        return Some((left, top, (right - left).max(1.0)));
+    }
+    None
+}
+
+fn native_text_run_bounds(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    rich_text: &WindowRichText,
+    text_buffer: &Buffer,
+    origin: NativeTextOrigin,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, run)| {
+            let range = intersect_display_range(run.range, page_range)?;
+            let local_range = (range.start - page_range.start)..(range.end - page_range.start);
+            if rich_text.text.get(local_range.clone())?.trim().is_empty() {
+                return None;
+            }
+            let bbox =
+                text_range_bbox(text_buffer, rich_text, &local_range, origin, width, height)?;
+            Some(NativeFrameElementBounds {
+                element: NativeFrameElement::TextRun { index },
+                bbox,
+            })
+        })
+        .collect()
+}
+
+fn native_ruby_bounds(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    rich_text: &WindowRichText,
+    text_buffer: &Buffer,
+    origin: NativeTextOrigin,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| {
+            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
+            if base_range.start < page_range.start || base_range.end > page_range.end {
+                return None;
+            }
+            let local_base =
+                (base_range.start - page_range.start)..(base_range.end - page_range.start);
+            let base_bbox =
+                text_range_bbox(text_buffer, rich_text, &local_base, origin, width, height)?;
+            let (base_left, ruby_top, base_width) =
+                ruby_overlay_geometry(text_buffer, rich_text, &local_base, origin).unwrap_or_else(
+                    || ruby_overlay_geometry_estimate(rich_text, &local_base, origin),
+                );
+            let ruby_width = native_text_width(
+                &annotation.ruby,
+                &native_ruby_style_from_styles(&annotation.styles),
+            );
+            let ruby_left = base_left + (base_width - ruby_width).max(0.0) / 2.0;
+            let ruby_bbox = native_float_bbox(
+                ruby_left,
+                ruby_top,
+                ruby_width.max(1.0),
+                20.0,
+                width,
+                height,
+            )?;
+            Some(NativeFrameElementBounds {
+                element: NativeFrameElement::Ruby { index },
+                bbox: union_native_bboxes(base_bbox, ruby_bbox),
+            })
+        })
+        .collect()
+}
+
+fn text_range_bbox(
+    text_buffer: &Buffer,
+    rich_text: &WindowRichText,
+    range: &Range<usize>,
+    origin: NativeTextOrigin,
+    width: u32,
+    height: u32,
+) -> Option<NativeFrameContentBBox> {
+    let line_starts = text_line_start_offsets(&rich_text.text);
+    let mut left: Option<f32> = None;
+    let mut right: Option<f32> = None;
+    let mut top: Option<f32> = None;
+    let mut bottom: Option<f32> = None;
+    for run in text_buffer.layout_runs() {
+        let line_start = *line_starts.get(run.line_i)?;
+        let line_end = line_starts
+            .get(run.line_i + 1)
+            .copied()
+            .unwrap_or(rich_text.text.len());
+        let start = range.start.max(line_start);
+        let end = range.end.min(line_end);
+        if start >= end {
+            continue;
+        }
+        let local_start = start - line_start;
+        let local_end = end - line_start;
+        let line_top = (origin.top + run.line_y - 32.0).max(0.0);
+        let line_bottom = line_top + 42.0;
+        for glyph in run.glyphs {
+            if glyph.end <= local_start || glyph.start >= local_end {
+                continue;
+            }
+            let glyph_left = origin.left + glyph.x;
+            let glyph_right = glyph_left + glyph.w.max(1.0);
+            left = Some(left.map_or(glyph_left, |value| value.min(glyph_left)));
+            right = Some(right.map_or(glyph_right, |value| value.max(glyph_right)));
+            top = Some(top.map_or(line_top, |value| value.min(line_top)));
+            bottom = Some(bottom.map_or(line_bottom, |value| value.max(line_bottom)));
+        }
+    }
+    native_float_bbox(
+        left?,
+        top?,
+        (right? - left?).max(1.0),
+        (bottom? - top?).max(1.0),
+        width,
+        height,
+    )
+}
+
+fn native_text_width(text: &str, style: &NativeTextStyle) -> f32 {
+    let mut font_system = FontSystem::new();
+    let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
+    buffer.set_size(&mut font_system, Some(4096.0), Some(64.0));
+    let attrs = style.attrs();
+    let spans = [(text, attrs.clone())];
+    buffer.set_rich_text(&mut font_system, spans, &attrs, Shaping::Advanced, None);
+    buffer.shape_until_scroll(&mut font_system, false);
+    buffer
+        .layout_runs()
+        .next()
+        .map_or(1.0, |run| run.line_w.max(1.0))
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+fn native_float_bbox(
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Option<NativeFrameContentBBox> {
+    let x = x.floor().max(0.0) as u32;
+    let y = y.floor().max(0.0) as u32;
+    if x >= viewport_width || y >= viewport_height {
+        return None;
+    }
+    let width = width.ceil().max(1.0).min(u32::MAX as f32) as u32;
+    let height = height.ceil().max(1.0).min(u32::MAX as f32) as u32;
+    Some(NativeFrameContentBBox {
+        x,
+        y,
+        width: width.min(viewport_width.saturating_sub(x)).max(1),
+        height: height.min(viewport_height.saturating_sub(y)).max(1),
+    })
+}
+
+fn union_native_bboxes(
+    first: NativeFrameContentBBox,
+    second: NativeFrameContentBBox,
+) -> NativeFrameContentBBox {
+    let x = first.x.min(second.x);
+    let y = first.y.min(second.y);
+    let right = first
+        .x
+        .saturating_add(first.width)
+        .max(second.x.saturating_add(second.width));
+    let bottom = first
+        .y
+        .saturating_add(first.height)
+        .max(second.y.saturating_add(second.height));
+    NativeFrameContentBBox {
+        x,
+        y,
+        width: right.saturating_sub(x).max(1),
+        height: bottom.saturating_sub(y).max(1),
+    }
+}
+
+fn text_line_start_offsets(text: &str) -> Vec<usize> {
+    let mut offsets = vec![0];
+    offsets.extend(
+        text.char_indices()
+            .filter_map(|(index, ch)| (ch == '\n').then_some(index + ch.len_utf8())),
+    );
+    offsets
+}
+
+fn ruby_overlay_geometry_estimate(
+    rich_text: &WindowRichText,
+    base_range: &Range<usize>,
+    origin: NativeTextOrigin,
+) -> (f32, f32, f32) {
+    let prefix = rich_text.text.get(..base_range.start).unwrap_or_default();
+    let line = prefix.chars().filter(|value| *value == '\n').count();
+    let column = prefix
+        .rsplit('\n')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .count();
+    let base_width =
+        rich_text
+            .text
+            .get(base_range.clone())
+            .map_or(NATIVE_RUBY_FALLBACK_ADVANCE, |base| {
+                usize_to_f32_saturating(base.chars().count()).max(1.0)
+                    * NATIVE_RUBY_FALLBACK_ADVANCE
+            });
+    (
+        origin.left + usize_to_f32_saturating(column) * NATIVE_RUBY_FALLBACK_ADVANCE,
+        (origin.top + usize_to_f32_saturating(line) * 42.0 - NATIVE_RUBY_BASELINE_OFFSET).max(0.0),
+        base_width,
+    )
+}
+
+struct Application {
+    title: String,
+    pages: Vec<WindowPage>,
+    page_index: usize,
+    window_state: Option<WindowState>,
+}
+
+impl Application {
+    fn current_page(&self) -> &WindowPage {
+        &self.pages[self.page_index]
+    }
+
+    fn advance_page(&mut self) -> Option<WindowRichText> {
+        let next_index = self.page_index + 1;
+        if next_index >= self.pages.len() {
+            return None;
+        }
+        self.page_index = next_index;
+        Some(self.current_page().rich_text.clone())
+    }
+}
+
+impl ApplicationHandler for Application {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self.window_state.is_some() {
+            return;
+        }
+        let window = event_loop
+            .create_window(
+                WindowAttributes::default()
+                    .with_surface_size(LogicalSize::new(960.0, 540.0))
+                    .with_title(self.title.clone()),
+            )
+            .expect("create window");
+        let window = Arc::<dyn Window>::from(window);
+        self.window_state = Some(pollster::block_on(WindowState::new(
+            window,
+            event_loop,
+            &self.current_page().rich_text,
+        )));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        if let WindowEvent::KeyboardInput {
+            event,
+            is_synthetic: false,
+            ..
+        } = &event
+        {
+            if key_closes_window(event) {
+                event_loop.exit();
+                return;
+            }
+            if key_advances_page(event) {
+                let Some(rich_text) = self.advance_page() else {
+                    event_loop.exit();
+                    return;
+                };
+                if let Some(state) = self.window_state.as_mut() {
+                    state.set_rich_text(&rich_text);
+                }
+                return;
+            }
+        }
+        let Some(state) = self.window_state.as_mut() else {
+            return;
+        };
+        match event {
+            WindowEvent::SurfaceResized(size) => {
+                state.resize(size);
+            }
+            WindowEvent::RedrawRequested => redraw(state),
+            WindowEvent::CloseRequested => event_loop.exit(),
+            _ => {}
+        }
+    }
+}
+
+fn key_advances_page(event: &KeyEvent) -> bool {
+    if !event.state.is_pressed() {
+        return false;
+    }
+    match event.key_without_modifiers.as_ref() {
+        Key::Named(NamedKey::Enter) => true,
+        Key::Character(value) => value == " " || value.eq_ignore_ascii_case("n"),
+        _ => false,
+    }
+}
+
+fn key_closes_window(event: &KeyEvent) -> bool {
+    event.state.is_pressed()
+        && matches!(
+            event.key_without_modifiers.as_ref(),
+            Key::Named(NamedKey::Escape)
+        )
+}
+
+async fn request_capture_device() -> Result<(wgpu::Device, wgpu::Queue), NativeWindowError> {
+    let instance = Instance::default();
+    let adapter = instance
+        .request_adapter(&RequestAdapterOptions::default())
+        .await
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+    adapter
+        .request_device(&DeviceDescriptor::default())
+        .await
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))
+}
+
+struct NativeOffscreenTextRenderer {
+    font_system: FontSystem,
+    swash_cache: SwashCache,
+    viewport: Viewport,
+    atlas: TextAtlas,
+    text_renderer: TextRenderer,
+    text_buffer: Buffer,
+    ruby_buffers: Vec<WindowRubyBuffer>,
+}
+
+impl NativeOffscreenTextRenderer {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: TextureFormat,
+    ) -> NativeOffscreenTextRenderer {
+        let cache = Cache::new(device);
+        let mut atlas = TextAtlas::new(device, queue, &cache, format);
+        let text_renderer =
+            TextRenderer::new(&mut atlas, device, MultisampleState::default(), None);
+        let mut font_system = FontSystem::new();
+        let text_buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        Self {
+            font_system,
+            swash_cache: SwashCache::new(),
+            viewport: Viewport::new(device, &cache),
+            atlas,
+            text_renderer,
+            text_buffer,
+            ruby_buffers: Vec::new(),
+        }
+    }
+
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rich_text: &WindowRichText,
+        width: u32,
+        height: u32,
+        origin: NativeTextOrigin,
+    ) -> Result<(), NativeWindowError> {
+        prepare_window_text_buffers(
+            &mut self.font_system,
+            &mut self.text_buffer,
+            rich_text,
+            width,
+            height,
+        );
+        self.ruby_buffers = build_ruby_buffers(
+            &mut self.font_system,
+            &self.text_buffer,
+            rich_text,
+            width,
+            height,
+            origin,
+        );
+        self.viewport.update(queue, Resolution { width, height });
+        let text_areas =
+            window_text_areas(&self.text_buffer, &self.ruby_buffers, width, height, origin);
+        self.text_renderer
+            .prepare(
+                device,
+                queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &self.viewport,
+                text_areas,
+                &mut self.swash_cache,
+            )
+            .map_err(|error| NativeWindowError::Readback(error.to_string()))
+    }
+
+    fn render_texture_with_clear(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        format: TextureFormat,
+        clear: wgpu::Color,
+    ) -> Result<wgpu::Texture, NativeWindowError> {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("arcweft native capture texture"),
+            size: Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("arcweft native capture encoder"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("arcweft native capture pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(clear),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.text_renderer
+                .render(&self.atlas, &self.viewport, &mut pass)
+                .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+        }
+        queue.submit(Some(encoder.finish()));
+        self.atlas.trim();
+        Ok(texture)
+    }
+}
+
+fn readback_texture_rgba(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, NativeWindowError> {
+    let padded_row_bytes = padded_rgba_row_bytes(width);
+    let buffer_size = u64::from(padded_row_bytes).saturating_mul(u64::from(height));
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("arcweft native capture readback"),
+        size: buffer_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("arcweft native readback encoder"),
+    });
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_row_bytes),
+                rows_per_image: Some(height),
+            },
+        },
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(Some(encoder.finish()));
+
+    let slice = readback.slice(..);
+    let (sender, receiver) = mpsc::channel();
+    slice.map_async(MapMode::Read, move |result| {
+        let _ = sender.send(result.map_err(|error| error.to_string()));
+    });
+    device
+        .poll(PollType::wait_indefinitely())
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+    receiver
+        .recv()
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))?
+        .map_err(NativeWindowError::Readback)?;
+
+    let mapped = slice.get_mapped_range();
+    let rgba = unpad_rgba_rows(&mapped, width, height, padded_row_bytes);
+    drop(mapped);
+    readback.unmap();
+    Ok(rgba)
+}
+
+fn prepare_window_text_buffers(
+    font_system: &mut FontSystem,
+    text_buffer: &mut Buffer,
+    rich_text: &WindowRichText,
+    width: u32,
+    height: u32,
+) {
+    text_buffer.set_size(
+        font_system,
+        Some(surface_extent_f32(width)),
+        Some(surface_extent_f32(height)),
+    );
+    let default_style = NativeTextStyle::default();
+    let default_attrs = default_style.attrs();
+    let spans = rich_text
+        .spans
+        .iter()
+        .map(|span| (&rich_text.text[span.range.clone()], span.style.attrs()));
+    text_buffer.set_rich_text(font_system, spans, &default_attrs, Shaping::Advanced, None);
+    text_buffer.shape_until_scroll(font_system, false);
+}
+
+fn window_text_areas<'a>(
+    text_buffer: &'a Buffer,
+    ruby_buffers: &'a [WindowRubyBuffer],
+    width: u32,
+    height: u32,
+    origin: NativeTextOrigin,
+) -> Vec<TextArea<'a>> {
+    let bounds = TextBounds {
+        left: 0,
+        top: 0,
+        right: surface_extent_i32(width),
+        bottom: surface_extent_i32(height),
+    };
+    let mut areas = Vec::with_capacity(1 + ruby_buffers.len());
+    areas.push(TextArea {
+        buffer: text_buffer,
+        left: origin.left,
+        top: origin.top,
+        scale: 1.0,
+        bounds,
+        default_color: Color::rgb(245, 245, 245),
+        custom_glyphs: &[],
+    });
+    areas.extend(ruby_buffers.iter().map(|ruby| TextArea {
+        buffer: &ruby.buffer,
+        left: ruby.left,
+        top: ruby.top,
+        scale: 1.0,
+        bounds,
+        default_color: Color::rgb(170, 190, 220),
+        custom_glyphs: &[],
+    }));
+    areas
+}
+
+fn padded_rgba_row_bytes(width: u32) -> u32 {
+    let row_bytes = width.saturating_mul(4);
+    row_bytes.saturating_add(COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT
+        * COPY_BYTES_PER_ROW_ALIGNMENT
+}
+
+fn unpad_rgba_rows(mapped: &[u8], width: u32, height: u32, padded_row_bytes: u32) -> Vec<u8> {
+    let row_bytes = usize::try_from(width.saturating_mul(4)).unwrap_or(0);
+    let padded_row_bytes = usize::try_from(padded_row_bytes).unwrap_or(0);
+    let mut rgba =
+        Vec::with_capacity(row_bytes.saturating_mul(usize::try_from(height).unwrap_or(0)));
+    for row in 0..usize::try_from(height).unwrap_or(0) {
+        let start = row.saturating_mul(padded_row_bytes);
+        let end = start.saturating_add(row_bytes);
+        if let Some(bytes) = mapped.get(start..end) {
+            rgba.extend_from_slice(bytes);
+        }
+    }
+    rgba
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeFrameContentStats {
+    content_bbox: Option<NativeFrameContentBBox>,
+    content_pixels: u64,
+}
+
+fn native_frame_content_stats(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    background: [u8; 4],
+) -> NativeFrameContentStats {
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut count = 0_u64;
+    for y in 0..height {
+        for x in 0..width {
+            let index = usize::try_from(y)
+                .unwrap_or(0)
+                .saturating_mul(usize::try_from(width).unwrap_or(0))
+                .saturating_add(usize::try_from(x).unwrap_or(0))
+                .saturating_mul(4);
+            let Some(pixel) = rgba.get(index..index.saturating_add(4)) else {
+                continue;
+            };
+            if pixel == background {
+                continue;
+            }
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+            count = count.saturating_add(1);
+        }
+    }
+    NativeFrameContentStats {
+        content_bbox: (count > 0).then_some(NativeFrameContentBBox {
+            x: min_x,
+            y: min_y,
+            width: max_x.saturating_sub(min_x).saturating_add(1),
+            height: max_y.saturating_sub(min_y).saturating_add(1),
+        }),
+        content_pixels: count,
+    }
+}
+
+fn solid_rgba(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
+    let pixel_count = usize::try_from(width)
+        .unwrap_or(0)
+        .saturating_mul(usize::try_from(height).unwrap_or(0));
+    let mut rgba = Vec::with_capacity(pixel_count.saturating_mul(4));
+    for _ in 0..pixel_count {
+        rgba.extend_from_slice(&color);
+    }
+    rgba
+}
+
+fn clear_transparent_rgb(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] == 0 {
+            pixel.copy_from_slice(&[0, 0, 0, 0]);
+        }
+    }
+}
+
+fn fill_native_rect(
+    rgba: &mut [u8],
+    bitmap_width: u32,
+    bitmap_height: u32,
+    bbox: NativeFrameContentBBox,
+    color: [u8; 4],
+) {
+    if bitmap_width == 0 || bitmap_height == 0 {
+        return;
+    }
+    let x = bbox.x.min(bitmap_width.saturating_sub(1));
+    let y = bbox.y.min(bitmap_height.saturating_sub(1));
+    let x_end = x.saturating_add(bbox.width).min(bitmap_width);
+    let y_end = y.saturating_add(bbox.height).min(bitmap_height);
+    let bitmap_width = usize::try_from(bitmap_width).unwrap_or(0);
+    for py in y..y_end {
+        let py = usize::try_from(py).unwrap_or(0);
+        for px in x..x_end {
+            let px = usize::try_from(px).unwrap_or(0);
+            let index = py
+                .saturating_mul(bitmap_width)
+                .saturating_add(px)
+                .saturating_mul(4);
+            if let Some(pixel) = rgba.get_mut(index..index.saturating_add(4)) {
+                pixel.copy_from_slice(&color);
+            }
+        }
+    }
+}
+
+fn redraw(state: &mut WindowState) {
+    state.viewport.update(
+        &state.queue,
+        Resolution {
+            width: state.surface_config.width,
+            height: state.surface_config.height,
+        },
+    );
+    let text_areas = window_text_areas(
+        &state.text_buffer,
+        &state.ruby_buffers,
+        state.surface_config.width,
+        state.surface_config.height,
+        NativeTextOrigin::default(),
+    );
+    if state
+        .text_renderer
+        .prepare(
+            &state.device,
+            &state.queue,
+            &mut state.font_system,
+            &mut state.atlas,
+            &state.viewport,
+            text_areas,
+            &mut state.swash_cache,
+        )
+        .is_err()
+    {
+        return;
+    }
+    let frame = match state.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+        wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+            state.window.request_redraw();
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Outdated
+        | wgpu::CurrentSurfaceTexture::Lost
+        | wgpu::CurrentSurfaceTexture::Suboptimal(_) => {
+            state
+                .surface
+                .configure(&state.device, &state.surface_config);
+            state.window.request_redraw();
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Validation => return,
+    };
+    let view = frame.texture.create_view(&TextureViewDescriptor::default());
+    let mut encoder = state
+        .device
+        .create_command_encoder(&CommandEncoderDescriptor { label: None });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let _ = state
+            .text_renderer
+            .render(&state.atlas, &state.viewport, &mut pass);
+    }
+    state.queue.submit(Some(encoder.finish()));
+    frame.present();
+    state.atlas.trim();
+}
+
+fn surface_extent_f32(value: u32) -> f32 {
+    f32::from(u16::try_from(value).unwrap_or(u16::MAX))
+}
+
+fn surface_extent_i32(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
+fn usize_to_f32_saturating(value: usize) -> f32 {
+    f32::from(u16::try_from(value).unwrap_or(u16::MAX))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::plan::RuntimeLineId;
+    use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RuntimeLineContext};
+
+    #[test]
+    fn window_rich_text_uses_display_map_for_style_spans_and_ruby_hint() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.001".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: vec![RichTextStyle::from_tag("color", "#aabedc")],
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Hello ".to_owned(),
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::from_tag("color", "#80c0ff"),
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::from_tag("font", "monospace"),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "font".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "color".to_owned(),
+                },
+            ]),
+        };
+        let mut frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        frame.nodes.clear();
+
+        let pages = WindowPage::from_frame(&frame);
+        let rich_text = &pages[0].rich_text;
+
+        assert_eq!(rich_text.text, "Hello 夢");
+        assert_eq!(
+            rich_text.ruby_annotations,
+            vec![WindowRubyAnnotation {
+                base_range: "Hello ".len().."Hello 夢".len(),
+                ruby: "ゆめ".to_owned(),
+                style: NativeTextStyle {
+                    color: NativeTextColor::new(170, 190, 220),
+                    family: NativeFontFamily::Monospace,
+                    weight: NativeTextWeight::Regular,
+                    italic: false,
+                    size: Some(16),
+                }
+            }]
+        );
+        assert!(rich_text.spans.iter().any(|span| {
+            &rich_text.text[span.range.clone()] == "夢"
+                && span.style.color == NativeTextColor::new(128, 192, 255)
+                && span.style.family == NativeFontFamily::Monospace
+        }));
+
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        buffer.set_size(&mut font_system, Some(800.0), Some(600.0));
+        let default_style = NativeTextStyle::default();
+        let default_attrs = default_style.attrs();
+        let spans = rich_text
+            .spans
+            .iter()
+            .map(|span| (&rich_text.text[span.range.clone()], span.style.attrs()));
+        buffer.set_rich_text(
+            &mut font_system,
+            spans,
+            &default_attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+        let measured = ruby_overlay_geometry(
+            &buffer,
+            rich_text,
+            &rich_text.ruby_annotations[0].base_range,
+            NativeTextOrigin::default(),
+        )
+        .expect("ruby base has shaped glyph geometry");
+        let estimated = ruby_overlay_geometry_estimate(
+            rich_text,
+            &rich_text.ruby_annotations[0].base_range,
+            NativeTextOrigin::default(),
+        );
+        assert!(measured.2 > 1.0);
+        assert!(
+            (measured.0 - estimated.0).abs() > 0.5 || (measured.2 - estimated.2).abs() > 0.5,
+            "ruby overlay geometry should come from shaped glyph metrics"
+        );
+    }
+
+    #[test]
+    fn native_layout_reports_text_run_and_ruby_element_bounds() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.bounds".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Hello ".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds = measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("native layout bounds resolve");
+
+        assert!(bounds.iter().any(|bounds| {
+            matches!(bounds.element, NativeFrameElement::TextRun { index: 0 | 1 })
+                && bounds.bbox.x >= 96
+                && bounds.bbox.y >= 540
+        }));
+        let ruby = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
+            .expect("ruby element has native bounds");
+        assert!(ruby.bbox.width < 180);
+        assert!(ruby.bbox.height < 120);
+    }
+
+    #[test]
+    fn native_debug_capture_uses_layout_bounds_for_text_elements() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.debug".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Hello ".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let fallback_bbox = NativeFrameContentBBox {
+            x: 1,
+            y: 1,
+            width: 8,
+            height: 8,
+        };
+        let capture = capture_frame_debug_regions_at(
+            &frame,
+            800,
+            600,
+            96.0,
+            572.0,
+            &[NativeFrameDebugRegion {
+                element: Some(NativeFrameElement::Ruby { index: 0 }),
+                fallback_bbox,
+                color: [255, 255, 255, 255],
+            }],
+        )
+        .expect("debug capture resolves");
+
+        let bbox = capture
+            .content_bbox
+            .expect("debug capture has visible content");
+        assert_ne!(bbox, fallback_bbox);
+        assert!(bbox.x >= 96);
+        assert!(bbox.y >= 520);
+        let bbox_area = u64::from(bbox.width) * u64::from(bbox.height);
+        assert!(capture.content_pixels > 0);
+        assert!(capture.content_pixels < bbox_area);
+    }
+
+    #[test]
+    fn native_color_region_capture_preserves_selected_text_style() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.color.region".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: vec![RichTextStyle::from_tag("color", "#ff0000")],
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Red ".to_owned(),
+                },
+                RichTextNode::Text {
+                    text: "Hidden".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let fallback_bbox = NativeFrameContentBBox {
+            x: 1,
+            y: 1,
+            width: 8,
+            height: 8,
+        };
+        let capture = capture_frame_color_regions_at(
+            &frame,
+            800,
+            600,
+            96.0,
+            572.0,
+            &[NativeFrameDebugRegion {
+                element: Some(NativeFrameElement::TextRun { index: 0 }),
+                fallback_bbox,
+                color: [0, 0, 0, 0],
+            }],
+        )
+        .expect("color region capture resolves");
+
+        let bbox = capture
+            .content_bbox
+            .expect("color region capture has visible content");
+        assert_ne!(bbox, fallback_bbox);
+        assert!(bbox.x >= 96);
+        assert!(bbox.y >= 540);
+        assert!(capture.content_pixels > 0);
+        assert!(capture.rgba.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(40)
+                && pixel[0] > pixel[2].saturating_add(40)
+                && pixel[3] > 0
+        }));
+    }
+
+    #[test]
+    fn native_offscreen_capture_session_reuses_renderer_for_multiple_capture_modes() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.session".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: vec![RichTextStyle::from_tag("color", "#ff0000")],
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Red ".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let fallback_bbox = NativeFrameContentBBox {
+            x: 1,
+            y: 1,
+            width: 8,
+            height: 8,
+        };
+        let regions = [NativeFrameDebugRegion {
+            element: Some(NativeFrameElement::TextRun { index: 0 }),
+            fallback_bbox,
+            color: [255, 255, 255, 255],
+        }];
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+
+        let full = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("full capture resolves");
+        let debug = session
+            .capture_frame_debug_regions_at(&frame, 800, 600, 96.0, 572.0, &regions)
+            .expect("debug capture resolves");
+        let color = session
+            .capture_frame_color_regions_at(&frame, 800, 600, 96.0, 572.0, &regions)
+            .expect("color capture resolves");
+
+        assert_eq!((full.width, full.height), (800, 600));
+        assert!(full.content_pixels > 0);
+        assert!(debug.content_pixels > 0);
+        assert!(color.content_pixels > 0);
+        assert_ne!(debug.content_bbox, Some(fallback_bbox));
+        assert!(color.rgba.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(40)
+                && pixel[0] > pixel[2].saturating_add(40)
+                && pixel[3] > 0
+        }));
+    }
+
+    #[test]
+    fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.002".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: vec![RichTextStyle::from_tag("font", "serif")],
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "one".to_owned(),
+                },
+                RichTextNode::Control(RichTextControl::Page),
+                RichTextNode::Text {
+                    text: "two".to_owned(),
+                },
+                RichTextNode::Control(RichTextControl::LineWait),
+                RichTextNode::Text {
+                    text: "three".to_owned(),
+                },
+                RichTextNode::Control(RichTextControl::Clear),
+                RichTextNode::Text {
+                    text: "four".to_owned(),
+                },
+            ]),
+        };
+        let mut frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        frame.nodes.clear();
+
+        let pages = WindowPage::from_frame(&frame);
+
+        assert_eq!(pages.len(), 4);
+        assert_eq!(pages[0].rich_text.text, "one");
+        assert_eq!(pages[1].rich_text.text, "two");
+        assert_eq!(pages[2].rich_text.text, "three");
+        assert_eq!(pages[3].rich_text.text, "four");
+        assert!(pages.iter().all(|page| {
+            page.rich_text
+                .spans
+                .iter()
+                .all(|span| span.style.family == NativeFontFamily::Serif)
+        }));
+    }
+
+    #[test]
+    fn native_capture_content_stats_measure_non_background_bounds() {
+        let mut rgba = (0..12).flat_map(|_| [0, 0, 0, 255]).collect::<Vec<_>>();
+        let width = 4;
+        for (x, y) in [(1_u32, 1_u32), (2, 1), (2, 2)] {
+            let index = usize::try_from(y)
+                .unwrap()
+                .saturating_mul(usize::try_from(width).unwrap())
+                .saturating_add(usize::try_from(x).unwrap())
+                .saturating_mul(4);
+            rgba[index..index + 4].copy_from_slice(&[245, 245, 245, 255]);
+        }
+
+        let stats = native_frame_content_stats(&rgba, width, 3, [0, 0, 0, 255]);
+
+        assert_eq!(
+            stats.content_bbox,
+            Some(NativeFrameContentBBox {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            })
+        );
+        assert_eq!(stats.content_pixels, 3);
+    }
+
+    #[test]
+    fn native_capture_row_padding_uses_wgpu_alignment() {
+        assert_eq!(padded_rgba_row_bytes(1), COPY_BYTES_PER_ROW_ALIGNMENT);
+        assert_eq!(padded_rgba_row_bytes(64), COPY_BYTES_PER_ROW_ALIGNMENT);
+        assert_eq!(padded_rgba_row_bytes(65), COPY_BYTES_PER_ROW_ALIGNMENT * 2);
+    }
+}

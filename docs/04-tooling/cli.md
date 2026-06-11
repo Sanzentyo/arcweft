@@ -296,6 +296,180 @@ run must exercise the wgpu backend; without that feature, explicit `wgpu`
 requests report that the GPU backend is unavailable instead of silently
 changing backend.
 
+## Agent Observation
+
+`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
+is the first Agent Debug Bus CLI slice. `arcw agent mcp` exposes the same
+observation and resource-read path as a minimal line-delimited JSON-RPC stdio
+MCP server for local Agent debugging. The stdio server supports
+`resources/templates/list` before observation, so a client can discover the
+stable `arcweft://` URI families for observation JSON, object JSON,
+viewport/layer/object PNG captures, and raw RGBA captures without knowing the
+current frame yet.
+
+It uses the same checked-source and runtime execution path as `arcw run`, but it
+also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When
+execution emits a dialogue-line event, the command resolves that line against
+the runtime binding snapshot and returns an `arcweft-agent-protocol`
+observation:
+
+- `viewport`, `state_hash`, and `render_hash`
+- `images` with a color PNG/raw RGBA or overlay SVG resource URI suitable for
+  future MCP resources
+- `layers` for visible render layers, including viewport bbox, object count, and
+  layer-local color/object-id/mask capture refs in PNG and raw RGBA forms
+- `objects` for visible dialogue textboxes, including viewport bbox, polygon,
+  resolved text, structured rich-text nodes, base styles, host events, inline
+  failures, unresolved interpolation names, object-local capture refs, and
+  object-id debug colors. The rich-text frame also includes a `display_map` that
+  maps resolved text byte ranges back to text, interpolation, ruby base, and
+  control nodes. Visible rich-text text runs and ruby annotations are also
+  emitted as `dialogue.rich_text` child objects with their own bbox, capture
+  refs, and `rich_text_ref` metadata that records the parent display-map
+  element kind, index, byte range, source category, and node index.
+- `actions` with a semantic `advance_text` target
+- runtime logs, signals, metrics, events, diagnostics, and final fiber status
+
+`--image overlay` embeds the deterministic overlay SVG in JSON. `--image png` and `--image raw-rgba` use the native `wgpu`/`glyphon` offscreen renderer. `--capture color` is the default for PNG/raw and returns the native framebuffer or selected native crop.
+`--capture object-id` fills each observed object with a stable object color;
+`--capture mask` emits a white/transparent selection mask. With no selector, the
+capture covers the whole viewport. With no selector it
+returns the full viewport; with `--layer` or `--object` it returns a crop of the
+native framebuffer at the selected layer/object bbox. When the selected color
+scope cannot be redrawn from rich-text elements, the native fallback masks the
+framebuffer to the selected object rectangles before cropping and reports
+`composition = "masked_framebuffer_crop"`, so layer/object image resources do
+not carry unrelated pixels from outside the selected scope. Rich-text child
+object crops use the native text layout bounds measured from the same glyphon
+layout used for drawing, so ruby and text-run element captures can be inspected
+against the actual framebuffer. It currently requires `--image png` or `--image
+raw-rgba`. With `--capture object-id` or `--capture mask`, the native renderer
+uses the same native scope/layout bounds. Text/ruby-backed scopes render
+selected glyphs through the offscreen text framebuffer; non-text fallback scopes
+still emit explicit debug geometry. In both cases object-id and mask captures
+stay aligned with native rich-text element crops before non-text renderer
+ID/mask attachments exist.
+`--layer LAYER` crops the capture to that layer's observed object bounds.
+`--object OBJECT_ID` crops the capture to one observed object's bbox. The color
+debug raster uses resolved display text plus `display_map` ruby annotations, so
+interpolation output, ruby annotations, and inline element crops are based on
+the same byte ranges reported in observation JSON.
+Each observed layer carries `capture_refs` with stable layer-crop URIs for
+color, object-id, and mask captures in PNG and raw RGBA forms. Each observed
+object also carries `capture_refs` with stable object-crop URIs for color,
+object-id, and mask captures in PNG and raw RGBA forms, plus the object-id debug
+color used by object-id images. Agent/MCP clients can inspect `latest.json` for
+layer captures or `objects.json` for object captures, then request the exact
+image they need.
+For inline debugging, this includes child object URIs such as
+`arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png`.
+The `rich_text.display_map` field lets debuggers correlate those captures with
+the resolved text stream: ruby annotations point at their base byte ranges, and
+text runs preserve the source category and active style stack used to render
+that range. Rich-text child objects also carry `rich_text_ref`, so clients can
+map a returned crop directly back to the display-map entry without parsing the
+object id. When native layout metrics are available, those child object bboxes
+are refined from the same glyph/ruby bounds used by native captures, so
+`crop_origin`, width, and height line up with the observed object metadata.
+`--read-uri URI` reads one `arcweft://` Agent resource URI from the current
+observation, including layer-local and object-local capture refs, and returns an
+`AgentResource` or MCP `resources/read` / tool-result output when paired with
+`--mcp`. If the same invocation generated an image with `--image`, reading the
+matching `images[0].uri` returns that cached image body and metadata, preserving
+native renderer/composition choices such as framebuffer crops, isolated
+rich-text regions, and debug-geometry captures. If `--read-uri` targets a capture URI and no cached image matches it, that URI is reconstructed through the native capture path.
+`--out` writes the selected image bytes to disk and must be paired with
+`--image`. `--resource image` returns the selected image as an MCP-style
+`AgentResource` with a base64 body; `--resource all` includes that image
+resource when `--image` is present and also materializes layer-local and
+object-local color/object-id/mask capture refs for textbox and rich-text child
+objects. Add
+`--mcp` with `--resource` to emit MCP `resources/read` compatible output (`text`
+for textual resources and base64 `blob` for PNG/raw images) through
+`arcweft-agent-mcp`. `--mcp-format read` is the default and returns
+`resources/read`-style contents, `list` returns `resources/list`-style
+descriptors for the selected resources, and `tool-result` returns MCP
+tool-result content blocks. Image descriptors include the image kind, renderer,
+scope, composition, and dimensions in the MCP description field, giving clients
+a cheap way to select a viewport, layer, or object capture before reading image
+bytes. A single image resource in `tool-result` form is
+emitted as a compact JSON metadata text block followed by an image content block
+for multimodal clients. The metadata includes the resource URI, image kind,
+producing `renderer` (`native`), structured capture `scope`
+(`viewport`, `layer`, or `object`), `composition` (`overlay_vector`, `framebuffer`, `framebuffer_crop`,
+`masked_framebuffer_crop`, `isolated_regions`, or `debug_geometry`), width,
+height, and, for raw RGBA captures,
+`pixel_format = "rgba8_unorm"` and
+`row_stride_bytes = width * 4`. Raster captures also report `content_bbox` and
+`content_viewport_bbox` plus `content_pixels`, measured against the capture
+background, so debuggers can detect empty crops or unexpected bbox expansion
+without decoding the image. `content_bbox` is image-local; when the image maps
+to viewport coordinates, `content_viewport_bbox` gives the same non-background
+pixel bounds directly in viewport space.
+The stdio MCP server exposed by `arcw agent mcp` also provides
+`arcweft.capture`, which captures the latest observed viewport, layer, or object
+as `png` or `raw-rgba` with `color`, `object-id`, or `mask` content and returns
+the metadata plus image/blob directly as a tool result. The tool also accepts a
+listed image `uri` directly; that URI determines PNG versus raw RGBA, color
+versus object-id versus mask, and viewport versus layer versus object scope,
+using the native renderer.
+`arcweft.session.info` returns the latest frame identifiers, resources, images,
+observed layers, observed objects, resource templates, and latest capture
+metadata. That lets a client discover rich-text child object ids and their
+capture refs before choosing an image URI. When a capture has already run,
+session info also includes `latest_capture_uri` and `latest_capture_resource`
+for immediate readback or recapture. If `source` is supplied to
+`arcweft.capture`, the server first runs the bounded observation and updates the
+latest resource set, so a client can request a layer/object image in one tool
+call without a separate `arcweft.observe`. `arcweft.observe` and
+`arcweft.capture` uses the same native full-viewport,
+layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
+`resources/templates/list` returns the corresponding URI template families,
+including the color special cases where layer/object color captures omit the
+`.color` suffix.
+The latest `arcweft.capture` result is kept as the current resource body for
+its URI, replacing any generated fallback resource with the same URI, so later
+MCP `resources/read`, `arcweft.resource.read`, and `resources/list` stay aligned
+with the capture renderer and composition.
+After `arcweft.observe`, both MCP `resources/read` and
+`arcweft.resource.read` return the cached selected image when the requested URI
+matches the latest image, so multimodal clients can list a native layer/object
+image and read the exact same pixels instead of an implicitly reconstructed
+native capture path.
+
+The default PNG/raw path is a headless debug raster. The native renderer now
+fills the same `images` slots for full-viewport, layer-crop, and object-crop
+color readback, and text/ruby-backed native object-id/mask captures are rendered
+through the offscreen text framebuffer before optional cropping. Rich-text-only
+native color captures and textbox-parent object/layer color captures report
+`composition = "isolated_regions"` because they redraw selected glyph regions
+with original styling before cropping. Native textbox-parent object-id/mask
+captures expand through the rich-text display map, so the image contains glyph
+geometry rather than a filled textbox bbox and reports `framebuffer` or
+`framebuffer_crop`. Native color scopes that have no rich-text element mapping
+now use `masked_framebuffer_crop`; native object-id/mask scopes without a
+rich-text mapping still fall back to `debug_geometry`. Later player sessions
+should extend those slots with real overlay, non-text object-id/mask
+attachments, and dedicated layer framebuffer passes.
+
+```bash
+arcw agent observe game/routes/opening.arcw --json
+arcw agent observe game/routes/opening.arcw --json --image overlay
+arcw agent observe game/routes/opening.arcw --image overlay --out overlay.svg
+arcw agent observe game/routes/opening.arcw --image png --out native.png --json
+arcw agent observe game/routes/opening.arcw --image png --layer dialogue --out dialogue.png --json
+arcw agent observe game/routes/opening.arcw --image png --capture object-id --layer dialogue --out object-id.png --json
+arcw agent observe game/routes/opening.arcw --image raw-rgba --capture mask --object object.dialogue.0.0 --out object-mask.rgba --json
+arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image
+arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp
+arcw agent observe game/routes/opening.arcw --image png --capture object-id --layer dialogue --resource all --mcp --mcp-format list
+arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp --mcp-format tool-result
+arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba
+arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png --mcp --mcp-format tool-result
+arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
+arcw agent observe --manifest arcw.toml --profile game.dev --json
+```
+
 Current runtime lowering is strict and still intentionally bounded. It supports
 the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `await
 with`, bounded `traverse(...).parallel(limit = N)` fanout, `let`, `let else`,
@@ -710,4 +884,5 @@ materialization treats `with { ... }`, `with:`, and flat `=== with ===`
 line-plan attachments as the same source construct; flat `=== line ... ===`
 heads are materialized with the same `@say...` / `@text...` rules as colon and
 bracket dialogue calls.
+
 

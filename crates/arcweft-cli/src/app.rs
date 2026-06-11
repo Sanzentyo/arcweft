@@ -16,6 +16,20 @@ use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use crate::{server_adapter, toolchain_profile};
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_agent_mcp::{
+    McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
+    list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
+    tool_result_for_resources,
+};
+use arcweft_agent_protocol::{
+    AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
+    AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
+    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
+    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
+    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
+    AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
+    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
     BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileSpace,
@@ -26,9 +40,9 @@ use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_core::plan::{
-    FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeRouteSpec,
+    FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -62,6 +76,10 @@ use arcweft_lang_syntax::{
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
+use arcweft_render_text::{
+    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextRange,
+    RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
+};
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
     RuntimePureWorkerCount, math::RuntimeMathBackend,
@@ -90,8 +108,11 @@ use arcweft_verify::{
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::fs;
+use std::io::{BufRead as _, Write as _};
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Component, Path, PathBuf};
@@ -108,6 +129,10 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum CliCommand {
     Check(CheckOptions),
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
     Verify(VerifyOptions),
     VerifyTypes(VerifyTypesOptions),
     Unsafe(UnsafeOptions),
@@ -139,6 +164,13 @@ enum CliCommand {
 #[derive(Debug, Subcommand)]
 enum IdsCommand {
     Materialize(ToolingCommandOptions),
+}
+
+#[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
+enum AgentCommand {
+    Observe(AgentObserveOptions),
+    Mcp(AgentMcpOptions),
 }
 
 #[derive(Debug, Subcommand)]
@@ -218,6 +250,7 @@ impl From<CliRuntimeStepMode> for BundleRunnerStepMode {
 fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<(), ExitCode> {
     match cli.command {
         CliCommand::Check(options) => check_command(&options),
+        CliCommand::Agent { command } => agent_command(command, adapter_registrars),
         CliCommand::Verify(options) => verify_command(&options),
         CliCommand::VerifyTypes(options) => verify_types_command(&options, adapter_registrars),
         CliCommand::Unsafe(options) => unsafe_command(&options),
@@ -1588,6 +1621,2948 @@ fn runtime_run_command(
         );
         Ok(())
     }
+}
+
+fn agent_command(
+    command: AgentCommand,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    match command {
+        AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
+        AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
+    }
+}
+
+fn agent_mcp_command(
+    _options: &AgentMcpOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    let mut state = AgentMcpState::default();
+    for line in stdin.lock().lines() {
+        let line = line.map_err(|error| {
+            eprintln!("error: failed to read MCP request: {error}");
+            ExitCode::FAILURE
+        })?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let response = match serde_json::from_str::<AgentMcpJsonRpcRequest>(&line) {
+            Ok(request) => agent_mcp_handle_request(request, &mut state, adapter_registrars),
+            Err(error) => Some(agent_mcp_error_response(
+                None,
+                -32700,
+                &format!("parse error: {error}"),
+            )),
+        };
+        if let Some(response) = response {
+            serde_json::to_writer(&mut stdout, &response).map_err(|error| {
+                eprintln!("error: failed to write MCP response: {error}");
+                ExitCode::FAILURE
+            })?;
+            stdout.write_all(b"\n").map_err(|error| {
+                eprintln!("error: failed to write MCP response newline: {error}");
+                ExitCode::FAILURE
+            })?;
+            stdout.flush().map_err(|error| {
+                eprintln!("error: failed to flush MCP response: {error}");
+                ExitCode::FAILURE
+            })?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct AgentMcpState {
+    report: Option<AgentObservationReport>,
+    image_output: Option<AgentImageOutput>,
+    capture_resources: Vec<AgentResource>,
+    native_capture_session: Option<arcweft_player_native::native::NativeOffscreenCaptureSession>,
+}
+
+#[derive(serde::Deserialize)]
+struct AgentMcpJsonRpcRequest {
+    #[serde(default)]
+    id: Option<serde_json::Value>,
+    method: String,
+    #[serde(default)]
+    params: serde_json::Value,
+}
+
+fn agent_mcp_handle_request(
+    request: AgentMcpJsonRpcRequest,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Option<serde_json::Value> {
+    let id = request.id;
+    let result = match request.method.as_str() {
+        "notifications/initialized" => return None,
+        "initialize" => Ok(serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+                "tools": {},
+                "resources": {}
+            },
+            "serverInfo": {
+                "name": "arcweft-agent",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        })),
+        "tools/list" => Ok(serde_json::json!({
+            "tools": agent_tool_descriptors()
+        })),
+        "resources/templates/list" => serde_json::to_value(list_resource_templates_result())
+            .map_err(|error| format!("failed to serialize MCP resource templates: {error}")),
+        "resources/list" => agent_mcp_resource_list(state),
+        "resources/read" => agent_mcp_resource_read(&request.params, state),
+        "tools/call" => agent_mcp_tool_call(&request.params, state, adapter_registrars),
+        method => Err(format!("unsupported MCP method `{method}`")),
+    };
+    Some(match result {
+        Ok(result) => agent_mcp_success_response(id.as_ref(), &result),
+        Err(message) => agent_mcp_error_response(id.as_ref(), -32603, &message),
+    })
+}
+
+fn agent_mcp_resource_list(state: &AgentMcpState) -> Result<serde_json::Value, String> {
+    if state.report.is_none() {
+        return Ok(serde_json::json!({ "resources": [] }));
+    }
+    let resources = agent_mcp_current_resources(state)
+        .map_err(|_| "failed to build Agent resource list".to_owned())?;
+    serde_json::to_value(list_resources_result(&resources))
+        .map_err(|error| format!("failed to serialize MCP resource list: {error}"))
+}
+
+fn agent_mcp_resource_read(
+    params: &serde_json::Value,
+    state: &AgentMcpState,
+) -> Result<serde_json::Value, String> {
+    let uri = params
+        .get("uri")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "resources/read requires params.uri".to_owned())?;
+    let Some(report) = &state.report else {
+        return Err("resources/read requires a prior arcweft.observe call".to_owned());
+    };
+    let resource = agent_mcp_cached_capture_resource(state, uri)
+        .or_else(|| agent_observe_cached_image_resource(report, state.image_output.as_ref(), uri))
+        .map_or_else(|| agent_observe_resource_by_uri(report, uri), Ok)
+        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+    let read = read_resource_result(&resource)
+        .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
+    serde_json::to_value(read).map_err(|error| format!("failed to serialize MCP read: {error}"))
+}
+
+fn agent_mcp_tool_call(
+    params: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<serde_json::Value, String> {
+    let name = params
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "tools/call requires params.name".to_owned())?;
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    match name {
+        "arcweft.observe" => agent_mcp_call_observe(&arguments, state, adapter_registrars),
+        "arcweft.session.info" => {
+            let tool = agent_mcp_call_session_info(state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP session info: {error}"))
+        }
+        "arcweft.resource.read" => {
+            let tool = agent_mcp_call_resource_read(&arguments, state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
+        }
+        "arcweft.capture" => {
+            let tool = agent_mcp_call_capture(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP capture result: {error}"))
+        }
+        tool => Err(format!("unsupported Arcweft MCP tool `{tool}`")),
+    }
+}
+
+fn agent_mcp_call_observe(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<serde_json::Value, String> {
+    let (report, image_output, resources) =
+        agent_mcp_run_observation(arguments, adapter_registrars)?;
+    state.report = Some(report);
+    state.image_output = image_output;
+    state.capture_resources.clear();
+    let tool = tool_result_for_resources(&resources);
+    serde_json::to_value(tool)
+        .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
+}
+
+fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResult, String> {
+    let info = if let Some(report) = &state.report {
+        let resources = agent_mcp_current_resources(state)
+            .map_err(|_| "failed to build Agent session resource list".to_owned())?;
+        let descriptors = list_resources_result(&resources).resources;
+        let latest_capture = agent_mcp_latest_capture_resource(state);
+        let latest_capture_descriptor = latest_capture.map(resource_descriptor);
+        serde_json::json!({
+            "observed": true,
+            "session_id": report.session_id,
+            "tick": report.tick,
+            "frame_id": report.frame_id,
+            "source": report.source,
+            "final_status": report.final_status,
+            "resource_count": descriptors.len(),
+            "resources": descriptors,
+            "resource_templates": list_resource_templates_result().resource_templates,
+            "images": report.images,
+            "layers": report.layers,
+            "objects": report.objects,
+            "capture_resource_count": state.capture_resources.len(),
+            "native_capture_session_active": state.native_capture_session.is_some(),
+            "latest_capture": latest_capture.and_then(|resource| resource.image.as_ref()),
+            "latest_capture_uri": latest_capture.map(|resource| resource.uri.as_str()),
+            "latest_capture_resource": latest_capture_descriptor,
+        })
+    } else {
+        serde_json::json!({
+            "observed": false,
+            "resource_count": 0,
+            "resources": [],
+            "resource_templates": list_resource_templates_result().resource_templates,
+            "images": [],
+            "layers": [],
+            "objects": [],
+            "capture_resource_count": 0,
+            "native_capture_session_active": false,
+            "latest_capture": null,
+            "latest_capture_uri": null,
+            "latest_capture_resource": null,
+        })
+    };
+    let text = serde_json::to_string(&info)
+        .map_err(|error| format!("failed to serialize Agent session info: {error}"))?;
+    Ok(McpCallToolResult {
+        content: vec![McpContentBlock::Text { text }],
+        is_error: false,
+    })
+}
+
+fn agent_mcp_run_observation(
+    arguments: &serde_json::Value,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<
+    (
+        AgentObservationReport,
+        Option<AgentImageOutput>,
+        Vec<AgentResource>,
+    ),
+    String,
+> {
+    let options = agent_mcp_observe_options(arguments)?;
+    validate_agent_observe_options(&options).map_err(|_| "invalid observe options".to_owned())?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)
+        .map_err(|_| "failed to resolve MCP observe source".to_owned())?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+        options.pure_object_artifacts,
+        options.math_backend,
+        options.math_wgpu_min_elements,
+    )
+    .map_err(|_| "failed to resolve runtime pure config".to_owned())?;
+    let checked = load_and_check_selection(&selection, None)
+        .map_err(|_| "failed to check MCP observe source".to_owned())?;
+    let host_policy = native_host_policy_for_selection(&selection)
+        .map_err(|_| "failed to resolve native host policy".to_owned())?;
+    let lowered = lower_runtime_plan_with_stats(&checked.hir)
+        .map_err(|_| "failed to lower runtime plan".to_owned())?;
+    let mut plan = lowered.plan;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
+        .map_err(|_| "failed to select runtime entry".to_owned())?;
+    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
+    let mut report = run_agent_observation(
+        &mut executor,
+        &lowered.line_display_catalog,
+        NativeRunHost {
+            source_path: Some(selection.path()),
+            policy: &host_policy,
+            adapter_registrars,
+        },
+        &options,
+        selection.path(),
+    )
+    .map_err(|error| error.to_string())?;
+    let image_output = agent_observe_image_output(&mut report, &options)
+        .map_err(|_| "failed to build MCP observe image output".to_owned())?;
+    let resources = agent_observe_all_resources(&report, image_output.as_ref())
+        .map_err(|_| "failed to build MCP observe resources".to_owned())?;
+    Ok((report, image_output, resources))
+}
+
+fn agent_mcp_call_resource_read(
+    arguments: &serde_json::Value,
+    state: &AgentMcpState,
+) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
+    let uri = arguments
+        .get("uri")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
+    let Some(report) = &state.report else {
+        return Err("arcweft.resource.read requires a prior arcweft.observe call".to_owned());
+    };
+    let resource = agent_mcp_cached_capture_resource(state, uri)
+        .or_else(|| agent_observe_cached_image_resource(report, state.image_output.as_ref(), uri))
+        .map_or_else(|| agent_observe_resource_by_uri(report, uri), Ok)
+        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+    tool_result_for_resource(&resource)
+        .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
+}
+
+fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResource>, ExitCode> {
+    let Some(report) = &state.report else {
+        return Ok(Vec::new());
+    };
+    let mut resources = agent_observe_all_resources(report, state.image_output.as_ref())?;
+    for capture in &state.capture_resources {
+        resources.retain(|resource| resource.uri != capture.uri);
+        resources.push(capture.clone());
+    }
+    Ok(resources)
+}
+
+fn agent_mcp_cached_capture_resource(state: &AgentMcpState, uri: &str) -> Option<AgentResource> {
+    state
+        .capture_resources
+        .iter()
+        .rev()
+        .find(|resource| resource.uri == uri)
+        .or_else(|| {
+            if uri.contains('?') {
+                return None;
+            }
+            state.capture_resources.iter().rev().find(|resource| {
+                agent_uri_without_query(&resource.uri)
+                    .is_some_and(|resource_uri| resource_uri == uri)
+            })
+        })
+        .cloned()
+}
+
+fn agent_mcp_latest_capture_resource(state: &AgentMcpState) -> Option<&AgentResource> {
+    state.capture_resources.last()
+}
+
+fn agent_uri_without_query(uri: &str) -> Option<&str> {
+    uri.split_once('?').map(|(base, _)| base)
+}
+
+fn agent_mcp_call_capture(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
+    if arguments.get("source").is_some() {
+        let (report, image_output, _) = agent_mcp_run_observation(
+            &agent_mcp_capture_observe_arguments(arguments),
+            adapter_registrars,
+        )?;
+        state.report = Some(report);
+        state.image_output = image_output;
+    }
+    let Some(report) = state.report.clone() else {
+        return Err(
+            "arcweft.capture requires a prior arcweft.observe call or arguments.source".to_owned(),
+        );
+    };
+    let request = agent_mcp_capture_request(arguments, &report)?;
+    let resource = agent_mcp_capture_resource(&report, &request, state)
+        .map_err(|_| format!("failed to capture Agent image `{}`", request.uri))?;
+    state
+        .capture_resources
+        .retain(|cached| cached.uri != resource.uri);
+    state.capture_resources.push(resource.clone());
+    tool_result_for_resource(&resource)
+        .map_err(|error| format!("failed to serialize MCP capture resource: {error}"))
+}
+
+fn agent_mcp_capture_resource(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    state: &mut AgentMcpState,
+) -> Result<AgentResource, ExitCode> {
+    let native_session = agent_mcp_native_capture_session(state)?;
+    agent_native_capture_resource_with_session(report, request, native_session)
+}
+
+fn agent_mcp_native_capture_session(
+    state: &mut AgentMcpState,
+) -> Result<&mut arcweft_player_native::native::NativeOffscreenCaptureSession, ExitCode> {
+    if state.native_capture_session.is_none() {
+        state.native_capture_session = Some(
+            arcweft_player_native::native::NativeOffscreenCaptureSession::new().map_err(
+                |error| {
+                    eprintln!("error: native capture failed: {error}");
+                    ExitCode::FAILURE
+                },
+            )?,
+        );
+    }
+    Ok(state
+        .native_capture_session
+        .as_mut()
+        .expect("native capture session initialized above"))
+}
+
+fn agent_mcp_capture_observe_arguments(arguments: &serde_json::Value) -> serde_json::Value {
+    let mut observe_arguments = arguments.clone();
+    if let Some(object) = observe_arguments.as_object_mut() {
+        object.remove("format");
+        object.remove("capture");
+        object.remove("image");
+        object.remove("uri");
+        object.remove("page");
+    }
+    observe_arguments
+}
+
+fn agent_mcp_capture_request(
+    arguments: &serde_json::Value,
+    report: &AgentObservationReport,
+) -> Result<AgentCaptureReadRequest, String> {
+    if let Some(uri) = arguments.get("uri").and_then(serde_json::Value::as_str) {
+        for key in ["format", "capture", "layer", "object"] {
+            if arguments.get(key).is_some() {
+                return Err(
+                    "arcweft.capture accepts arguments.uri or format/capture/layer/object selectors, not both"
+                        .to_owned(),
+                );
+            }
+        }
+        let mut request = agent_capture_request_from_uri(report, uri)
+            .ok_or_else(|| format!("unsupported Agent image capture URI `{uri}`"))?;
+        if arguments.get("renderer").is_some() {
+            return Err("arcweft.capture no longer accepts arguments.renderer".to_owned());
+        }
+        if arguments.get("page").is_some() {
+            request.page = agent_mcp_capture_page(arguments)?;
+        }
+        return Ok(request);
+    }
+    let page = agent_mcp_capture_page(arguments)?;
+    let image_kind = arguments
+        .get("format")
+        .and_then(serde_json::Value::as_str)
+        .map(agent_mcp_capture_image_kind)
+        .transpose()?
+        .unwrap_or(AgentObserveImageKind::Png);
+    let capture_kind = arguments
+        .get("capture")
+        .and_then(serde_json::Value::as_str)
+        .map(agent_mcp_capture_kind)
+        .transpose()?
+        .unwrap_or(AgentObserveCaptureKind::Color);
+    if arguments.get("renderer").is_some() {
+        return Err("arcweft.capture no longer accepts arguments.renderer".to_owned());
+    }
+    let layer = arguments
+        .get("layer")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let object = arguments
+        .get("object")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    if layer.is_some() && object.is_some() {
+        return Err(
+            "arcweft.capture accepts either arguments.layer or arguments.object, not both"
+                .to_owned(),
+        );
+    }
+    let extension = match image_kind {
+        AgentObserveImageKind::Png => "png",
+        AgentObserveImageKind::RawRgba => "rgba",
+        AgentObserveImageKind::Overlay => {
+            return Err("arcweft.capture supports format png or raw-rgba".to_owned());
+        }
+    };
+    let (scope, name) = if let Some(object) = object {
+        let name = agent_scoped_capture_name("object", &object, capture_kind.resource_name());
+        (AgentCaptureScope::Object(object), name)
+    } else if let Some(layer) = layer {
+        let name = agent_scoped_capture_name("layer", &layer, capture_kind.resource_name());
+        (AgentCaptureScope::Layer(layer), name)
+    } else {
+        (
+            AgentCaptureScope::Viewport,
+            capture_kind.resource_name().to_owned(),
+        )
+    };
+    let uri =
+        agent_frame_capture_uri_for_page(&report.session_id, report.tick, &name, extension, page);
+    Ok(AgentCaptureReadRequest {
+        uri,
+        image_kind,
+        capture_kind,
+        scope,
+        page,
+    })
+}
+
+fn agent_mcp_capture_page(arguments: &serde_json::Value) -> Result<usize, String> {
+    agent_mcp_page_argument(arguments, "arcweft.capture")
+}
+
+fn agent_mcp_page_argument(arguments: &serde_json::Value, tool: &str) -> Result<usize, String> {
+    let Some(value) = arguments.get("page") else {
+        return Ok(0);
+    };
+    let page = value
+        .as_u64()
+        .ok_or_else(|| format!("{tool} argument page must be a non-negative integer"))?;
+    usize::try_from(page)
+        .map_err(|_| format!("{tool} argument page is too large for this platform"))
+}
+
+fn agent_mcp_capture_image_kind(value: &str) -> Result<AgentObserveImageKind, String> {
+    match value {
+        "png" => Ok(AgentObserveImageKind::Png),
+        "raw-rgba" => Ok(AgentObserveImageKind::RawRgba),
+        _ => Err(format!("unsupported capture format `{value}`")),
+    }
+}
+
+fn agent_mcp_observe_options(arguments: &serde_json::Value) -> Result<AgentObserveOptions, String> {
+    let source = arguments
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "arcweft.observe requires arguments.source".to_owned())?;
+    if arguments.get("renderer").is_some() {
+        return Err("arcweft.observe no longer accepts arguments.renderer".to_owned());
+    }
+    Ok(AgentObserveOptions {
+        path: Some(PathBuf::from(source)),
+        profile: ProfileOptions {
+            profile: arguments
+                .get("profile")
+                .and_then(serde_json::Value::as_str)
+                .map(ToOwned::to_owned),
+            manifest: arguments
+                .get("manifest")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| PathBuf::from("arcw.toml"), PathBuf::from),
+        },
+        entry: arguments
+            .get("entry")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        flow: arguments
+            .get("flow")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        executor: CliRuntimeExecutorTier::BytecodeVm,
+        pure_backend: None,
+        pure_workers: None,
+        pure_batch_min_len: None,
+        pure_object_artifacts: false,
+        math_backend: None,
+        math_wgpu_min_elements: None,
+        steps: agent_mcp_usize_argument(arguments, "steps").unwrap_or(8),
+        mode: CliRuntimeStepMode::Drain,
+        max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(64),
+        values: Vec::new(),
+        image: arguments
+            .get("image")
+            .and_then(serde_json::Value::as_str)
+            .map(agent_mcp_image_kind)
+            .transpose()?,
+        capture: arguments
+            .get("capture")
+            .and_then(serde_json::Value::as_str)
+            .map(agent_mcp_capture_kind)
+            .transpose()?,
+        layer: arguments
+            .get("layer")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        object: arguments
+            .get("object")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        page: arguments
+            .get("page")
+            .map(|_| agent_mcp_page_argument(arguments, "arcweft.observe"))
+            .transpose()?,
+        resource: None,
+        read_uri: None,
+        mcp: false,
+        mcp_format: AgentObserveMcpFormat::Read,
+        out: None,
+        json: false,
+    })
+}
+
+fn agent_mcp_usize_argument(arguments: &serde_json::Value, name: &str) -> Option<usize> {
+    arguments
+        .get(name)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+}
+
+fn agent_mcp_image_kind(value: &str) -> Result<AgentObserveImageKind, String> {
+    match value {
+        "overlay" => Ok(AgentObserveImageKind::Overlay),
+        "png" => Ok(AgentObserveImageKind::Png),
+        "raw-rgba" => Ok(AgentObserveImageKind::RawRgba),
+        _ => Err(format!("unsupported image kind `{value}`")),
+    }
+}
+
+fn agent_mcp_capture_kind(value: &str) -> Result<AgentObserveCaptureKind, String> {
+    match value {
+        "color" => Ok(AgentObserveCaptureKind::Color),
+        "object-id" => Ok(AgentObserveCaptureKind::ObjectId),
+        "mask" => Ok(AgentObserveCaptureKind::Mask),
+        _ => Err(format!("unsupported capture kind `{value}`")),
+    }
+}
+
+fn agent_mcp_success_response(
+    id: Option<&serde_json::Value>,
+    result: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result
+    })
+}
+
+fn agent_mcp_error_response(
+    id: Option<&serde_json::Value>,
+    code: i64,
+    message: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
+
+fn agent_observe_command(
+    options: &AgentObserveOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    validate_agent_observe_options(options)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+        options.pure_object_artifacts,
+        options.math_backend,
+        options.math_wgpu_min_elements,
+    )?;
+    let checked = load_and_check_selection(&selection, None)?;
+    let host_policy = native_host_policy_for_selection(&selection)?;
+    let lowered = lower_runtime_plan_with_stats(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {}", error.message());
+        }
+        ExitCode::FAILURE
+    })?;
+    let mut plan = lowered.plan;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
+    let report = run_agent_observation(
+        &mut executor,
+        &lowered.line_display_catalog,
+        NativeRunHost {
+            source_path: Some(selection.path()),
+            policy: &host_policy,
+            adapter_registrars,
+        },
+        options,
+        selection.path(),
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
+    let mut report = report;
+    let image_output = agent_observe_image_output(&mut report, options)?;
+    if let Some(uri) = &options.read_uri {
+        let resource = agent_observe_cached_image_resource(&report, image_output.as_ref(), uri)
+            .map_or_else(
+                || agent_observe_resource_by_uri_with_page(&report, uri, options.page),
+                Ok,
+            )?;
+        if options.mcp {
+            let resource = agent_observe_mcp_resource_output(
+                AgentObserveResourceOutput::One(Box::new(resource)),
+                options.mcp_format,
+            )?;
+            return print_json(&resource);
+        }
+        return print_json(&resource);
+    }
+    if let Some(out) = &options.out {
+        let Some(image_output) = &image_output else {
+            eprintln!("error: --out requires --image");
+            return Err(ExitCode::from(2));
+        };
+        fs::write(out, &image_output.bytes).map_err(|error| {
+            eprintln!("error: failed to write {}: {error}", out.display());
+            ExitCode::FAILURE
+        })?;
+    }
+    if let Some(resource) = options.resource {
+        let resource = agent_observe_resource(&report, image_output.as_ref(), resource)?;
+        if options.mcp {
+            let resource = agent_observe_mcp_resource_output(resource, options.mcp_format)?;
+            print_json(&resource)
+        } else {
+            print_json(&resource)
+        }
+    } else if options.json {
+        print_json(&report)
+    } else {
+        println!(
+            "ok: {} ({} object(s), {} diagnostic(s), render_hash={})",
+            report.source,
+            report.objects.len(),
+            report.diagnostics.len(),
+            report.render_hash
+        );
+        Ok(())
+    }
+}
+
+fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), ExitCode> {
+    if options.steps == 0 {
+        eprintln!("error: --steps must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    if options.layer.is_some() && options.object.is_some() {
+        eprintln!("error: --layer and --object cannot be used together");
+        return Err(ExitCode::from(2));
+    }
+    if options.out.is_some() && options.image.is_none() {
+        eprintln!("error: --out requires --image");
+        return Err(ExitCode::from(2));
+    }
+    if options.capture.is_some()
+        && !matches!(
+            options.image,
+            Some(AgentObserveImageKind::Png | AgentObserveImageKind::RawRgba)
+        )
+    {
+        eprintln!("error: --capture requires --image png or --image raw-rgba");
+        return Err(ExitCode::from(2));
+    }
+    if matches!(options.resource, Some(AgentObserveResourceKind::Overlay))
+        && !matches!(options.image, Some(AgentObserveImageKind::Overlay))
+    {
+        eprintln!("error: --resource overlay requires --image overlay");
+        return Err(ExitCode::from(2));
+    }
+    if options.read_uri.is_some() && options.resource.is_some() {
+        eprintln!("error: --read-uri and --resource cannot be used together");
+        return Err(ExitCode::from(2));
+    }
+    if options.mcp && options.resource.is_none() && options.read_uri.is_none() {
+        eprintln!("error: --mcp requires --resource or --read-uri");
+        return Err(ExitCode::from(2));
+    }
+    if !options.mcp && options.mcp_format != AgentObserveMcpFormat::Read {
+        eprintln!("error: --mcp-format requires --mcp");
+        return Err(ExitCode::from(2));
+    }
+    Ok(())
+}
+
+fn agent_observe_resource_by_uri(
+    report: &AgentObservationReport,
+    uri: &str,
+) -> Result<AgentResource, ExitCode> {
+    agent_observe_resource_by_uri_with_page(report, uri, None)
+}
+
+fn agent_observe_resource_by_uri_with_page(
+    report: &AgentObservationReport,
+    uri: &str,
+    page_override: Option<usize>,
+) -> Result<AgentResource, ExitCode> {
+    if uri
+        == format!(
+            "arcweft://session/{}/observation/latest.json",
+            report.session_id
+        )
+    {
+        return report
+            .observation_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    if uri
+        == format!(
+            "arcweft://session/{}/frame/{}/objects.json",
+            report.session_id, report.tick
+        )
+    {
+        return report
+            .objects_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    if uri
+        == format!(
+            "arcweft://session/{}/frame/{}/overlay.svg",
+            report.session_id, report.tick
+        )
+    {
+        let selected = report.objects.iter().collect::<Vec<_>>();
+        let overlay = agent_overlay_svg(&report.viewport, &selected);
+        return Ok(AgentResource {
+            uri: uri.to_owned(),
+            kind: arcweft_agent_protocol::AgentResourceKind::OverlaySvg,
+            mime_type: "image/svg+xml".to_owned(),
+            hash: hash_hex(overlay.as_bytes()),
+            image: None,
+            body: arcweft_agent_protocol::AgentResourceBody::Text(overlay),
+        });
+    }
+    if uri == format!("arcweft://session/{}/logs.ndjson", report.session_id) {
+        return report
+            .logs_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    if uri == format!("arcweft://session/{}/signals.json", report.session_id) {
+        return report
+            .signals_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    if uri == format!("arcweft://session/{}/audio.json", report.session_id) {
+        return report
+            .audio_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    let Some(request) = agent_capture_request_from_uri(report, uri) else {
+        eprintln!("error: unsupported Agent resource URI: {uri}");
+        return Err(ExitCode::from(2));
+    };
+    let request = AgentCaptureReadRequest {
+        page: page_override.unwrap_or(request.page),
+        ..request
+    };
+    agent_observe_capture_resource(report, &request)
+}
+
+#[derive(Clone, Debug)]
+struct AgentCaptureReadRequest {
+    uri: String,
+    image_kind: AgentObserveImageKind,
+    capture_kind: AgentObserveCaptureKind,
+    scope: AgentCaptureScope,
+    page: usize,
+}
+
+#[derive(Clone, Debug)]
+enum AgentCaptureScope {
+    Viewport,
+    Layer(String),
+    Object(String),
+}
+
+fn agent_capture_request_from_uri(
+    report: &AgentObservationReport,
+    uri: &str,
+) -> Option<AgentCaptureReadRequest> {
+    let (uri_without_query, page) = agent_capture_uri_query(uri)?;
+    let prefix = format!(
+        "arcweft://session/{}/frame/{}/",
+        report.session_id, report.tick
+    );
+    let name = uri_without_query.strip_prefix(&prefix)?;
+    let (stem, extension) = name.rsplit_once('.')?;
+    let image_kind = match extension {
+        "png" => AgentObserveImageKind::Png,
+        "rgba" => AgentObserveImageKind::RawRgba,
+        _ => return None,
+    };
+    let (capture_stem, capture_kind) = if let Some(base) = stem.strip_suffix(".object-id") {
+        (base, AgentObserveCaptureKind::ObjectId)
+    } else if let Some(base) = stem.strip_suffix(".mask") {
+        (base, AgentObserveCaptureKind::Mask)
+    } else if stem == "object-id" {
+        ("", AgentObserveCaptureKind::ObjectId)
+    } else if stem == "mask" {
+        ("", AgentObserveCaptureKind::Mask)
+    } else {
+        (stem, AgentObserveCaptureKind::Color)
+    };
+    let scope = if capture_stem.is_empty() || capture_stem == "color" {
+        AgentCaptureScope::Viewport
+    } else if let Some(layer) = capture_stem.strip_prefix("layer.") {
+        AgentCaptureScope::Layer(layer.to_owned())
+    } else if let Some(object) = capture_stem.strip_prefix("object.") {
+        AgentCaptureScope::Object(object.to_owned())
+    } else {
+        return None;
+    };
+    Some(AgentCaptureReadRequest {
+        uri: uri.to_owned(),
+        image_kind,
+        capture_kind,
+        scope,
+        page,
+    })
+}
+
+fn agent_capture_uri_query(uri: &str) -> Option<(&str, usize)> {
+    let Some((base, query)) = uri.split_once('?') else {
+        return Some((uri, 0));
+    };
+    let mut page = 0;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=')?;
+        match key {
+            "page" => {
+                page = value.parse::<usize>().ok()?;
+            }
+            _ => return None,
+        }
+    }
+    Some((base, page))
+}
+
+fn agent_observe_capture_resource(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+) -> Result<AgentResource, ExitCode> {
+    agent_native_capture_resource(report, request)
+}
+
+fn agent_native_capture_resource(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+) -> Result<AgentResource, ExitCode> {
+    let (image, bytes) = agent_native_capture_image(report, request)?;
+    Ok(report.image_resource(&image, &bytes))
+}
+
+fn agent_native_capture_resource_with_session(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
+) -> Result<AgentResource, ExitCode> {
+    let (image, bytes) = agent_native_capture_image_with_session(report, request, native_session)?;
+    Ok(report.image_resource(&image, &bytes))
+}
+
+fn agent_native_capture_image(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+) -> Result<(AgentImageResource, Vec<u8>), ExitCode> {
+    let mut native_session = arcweft_player_native::native::NativeOffscreenCaptureSession::new()
+        .map_err(|error| {
+            eprintln!("error: native capture failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    agent_native_capture_image_with_session(report, request, &mut native_session)
+}
+
+fn agent_native_capture_image_with_session(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
+) -> Result<(AgentImageResource, Vec<u8>), ExitCode> {
+    let Some(textbox) = report
+        .objects
+        .iter()
+        .find(|object| object.role == "textbox")
+    else {
+        eprintln!("error: native renderer requires an observed textbox frame");
+        return Err(ExitCode::from(2));
+    };
+    let (left, top) = agent_native_text_origin(textbox);
+    let capture = native_session
+        .capture_frame_rgba_in(
+            &textbox.rich_text,
+            arcweft_player_native::native::NativeCaptureViewport::new(
+                report.viewport.width,
+                report.viewport.height,
+                left,
+                top,
+                request.page,
+            ),
+        )
+        .map_err(|error| {
+            eprintln!("error: native capture failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    let capture = agent_native_scoped_capture(
+        &capture,
+        AgentNativeCaptureContext {
+            frame: &textbox.rich_text,
+            left,
+            top,
+            objects: &report.objects,
+            page_index: request.page,
+        },
+        &request.scope,
+        request.capture_kind,
+        Some(native_session),
+    )?;
+    let (mime_type, bytes) = match request.image_kind {
+        AgentObserveImageKind::Png => ("image/png", agent_encode_png(&capture)?),
+        AgentObserveImageKind::RawRgba => ("application/octet-stream", capture.rgba.clone()),
+        AgentObserveImageKind::Overlay => unreachable!("overlay is not a raster capture"),
+    };
+    let stats = capture.content_stats();
+    let content_viewport_bbox = agent_content_viewport_bbox(capture.crop_origin, stats.bbox);
+    let image = AgentImageResource {
+        kind: agent_image_kind(request.capture_kind),
+        renderer: AgentImageRenderer::Native,
+        scope: agent_image_scope_for_capture_scope(&request.scope),
+        composition: capture.composition,
+        page: request.page,
+        uri: request.uri.clone(),
+        mime_type: mime_type.to_owned(),
+        width: capture.width,
+        height: capture.height,
+        hash: hash_hex(&bytes),
+        crop_origin: capture.crop_origin,
+        content_bbox: stats.bbox,
+        content_viewport_bbox,
+        content_pixels: Some(stats.content_pixels),
+        written: None,
+    };
+    Ok((image, bytes))
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn agent_native_text_origin(textbox: &AgentObservedObject) -> (f32, f32) {
+    (
+        textbox.bbox.x.saturating_add(24) as f32,
+        textbox.bbox.y.saturating_add(24) as f32,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct AgentNativeCaptureContext<'a> {
+    frame: &'a LineDisplayFrame,
+    left: f32,
+    top: f32,
+    objects: &'a [AgentObservedObject],
+    page_index: usize,
+}
+
+fn agent_native_scoped_capture(
+    capture: &arcweft_player_native::native::NativeFrameCapture,
+    context: AgentNativeCaptureContext<'_>,
+    scope: &AgentCaptureScope,
+    capture_kind: AgentObserveCaptureKind,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+) -> Result<AgentRasterCapture, ExitCode> {
+    let full = AgentRasterCapture {
+        width: capture.width,
+        height: capture.height,
+        crop_origin: None,
+        composition: AgentImageComposition::Framebuffer,
+        background: [0, 0, 0, 255],
+        rgba: capture.rgba.clone(),
+    };
+    let selected = agent_capture_objects_for_scope(context.objects, scope)?;
+    let selected = agent_native_capture_objects_for_page(
+        capture.width,
+        capture.height,
+        context,
+        scope,
+        selected,
+    )?;
+    if capture_kind == AgentObserveCaptureKind::Color {
+        let AgentCaptureScope::Viewport = scope else {
+            if matches!(scope, AgentCaptureScope::Layer(_))
+                && selected
+                    .iter()
+                    .any(|object| !object.role.starts_with("rich_text_"))
+            {
+                let (x, y, width, height) =
+                    agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+                return Ok(agent_crop_raster_capture(&full, x, y, width, height));
+            }
+            if let Some(isolated) =
+                agent_native_color_capture(capture, context, &selected, native_session)?
+            {
+                let full = AgentRasterCapture {
+                    width: isolated.width,
+                    height: isolated.height,
+                    crop_origin: None,
+                    composition: AgentImageComposition::IsolatedRegions,
+                    background: [0, 0, 0, 0],
+                    rgba: isolated.rgba,
+                };
+                let (x, y, width, height) =
+                    agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+                return Ok(agent_crop_raster_capture(&full, x, y, width, height));
+            }
+            return agent_native_masked_framebuffer_capture(capture, context, &selected);
+        };
+        return Ok(full);
+    }
+
+    let debug =
+        agent_native_debug_capture(capture, context, &selected, capture_kind, native_session)?;
+    let full = AgentRasterCapture {
+        width: debug.capture.width,
+        height: debug.capture.height,
+        crop_origin: None,
+        composition: debug.composition,
+        background: [0, 0, 0, 0],
+        rgba: debug.capture.rgba,
+    };
+    if !matches!(scope, AgentCaptureScope::Viewport) {
+        let (x, y, width, height) =
+            agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+        return Ok(agent_crop_raster_capture(&full, x, y, width, height));
+    }
+    Ok(full)
+}
+
+fn agent_native_capture_objects_for_page<'a>(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'a>,
+    scope: &AgentCaptureScope,
+    selected: Vec<&'a AgentObservedObject>,
+) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    if !matches!(scope, AgentCaptureScope::Layer(_)) {
+        return Ok(selected);
+    }
+    selected
+        .into_iter()
+        .filter_map(|object| {
+            match agent_native_object_is_visible_on_page(
+                capture_width,
+                capture_height,
+                context,
+                object,
+            ) {
+                Ok(true) => Some(Ok(object)),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .collect()
+}
+
+fn agent_native_object_is_visible_on_page(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    object: &AgentObservedObject,
+) -> Result<bool, ExitCode> {
+    if !object.role.starts_with("rich_text_") {
+        return Ok(true);
+    }
+    agent_native_rich_text_child_rect(
+        capture_width,
+        capture_height,
+        context.objects,
+        object,
+        context.page_index,
+    )
+    .map(|rect| rect.is_some())
+}
+
+struct AgentNativeDebugCapture {
+    capture: arcweft_player_native::native::NativeFrameCapture,
+    composition: AgentImageComposition,
+}
+
+fn agent_native_color_capture(
+    capture: &arcweft_player_native::native::NativeFrameCapture,
+    context: AgentNativeCaptureContext<'_>,
+    selected: &[&AgentObservedObject],
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+) -> Result<Option<arcweft_player_native::native::NativeFrameCapture>, ExitCode> {
+    let mut regions = Vec::new();
+    for object in selected {
+        let object_regions = agent_native_regions_for_object(
+            capture.width,
+            capture.height,
+            context,
+            object,
+            [0, 0, 0, 0],
+        )?;
+        if object_regions.iter().any(|region| region.element.is_none()) {
+            return Ok(None);
+        }
+        regions.extend(object_regions);
+    }
+    let capture_result = if let Some(native_session) = native_session {
+        native_session.capture_frame_color_regions_in(
+            context.frame,
+            arcweft_player_native::native::NativeCaptureViewport::new(
+                capture.width,
+                capture.height,
+                context.left,
+                context.top,
+                context.page_index,
+            ),
+            &regions,
+        )
+    } else {
+        arcweft_player_native::native::capture_frame_color_regions_at_page(
+            context.frame,
+            capture.width,
+            capture.height,
+            context.left,
+            context.top,
+            context.page_index,
+            &regions,
+        )
+    };
+    capture_result.map(Some).map_err(|error| {
+        eprintln!("error: native color region capture failed: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+fn agent_native_debug_capture(
+    capture: &arcweft_player_native::native::NativeFrameCapture,
+    context: AgentNativeCaptureContext<'_>,
+    selected: &[&AgentObservedObject],
+    capture_kind: AgentObserveCaptureKind,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+) -> Result<AgentNativeDebugCapture, ExitCode> {
+    let mut regions = Vec::new();
+    for object in selected {
+        let color = match capture_kind {
+            AgentObserveCaptureKind::Color => {
+                unreachable!("native geometry capture is debug-only")
+            }
+            AgentObserveCaptureKind::ObjectId => agent_object_id_color(&object.id),
+            AgentObserveCaptureKind::Mask => [255, 255, 255, 255],
+        };
+        regions.extend(agent_native_regions_for_object(
+            capture.width,
+            capture.height,
+            context,
+            object,
+            color,
+        )?);
+    }
+    let composition = match capture_kind {
+        AgentObserveCaptureKind::Color => {
+            unreachable!("native geometry capture is debug-only")
+        }
+        AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
+        AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
+    };
+    let capture_result = if let Some(native_session) = native_session {
+        native_session.capture_frame_debug_regions_in(
+            context.frame,
+            arcweft_player_native::native::NativeCaptureViewport::new(
+                capture.width,
+                capture.height,
+                context.left,
+                context.top,
+                context.page_index,
+            ),
+            &regions,
+        )
+    } else {
+        arcweft_player_native::native::capture_frame_debug_regions_at_page(
+            context.frame,
+            capture.width,
+            capture.height,
+            context.left,
+            context.top,
+            context.page_index,
+            &regions,
+        )
+    };
+    capture_result
+        .map(|capture| AgentNativeDebugCapture {
+            capture,
+            composition,
+        })
+        .map_err(|error| {
+            eprintln!("error: native debug capture failed: {error}");
+            ExitCode::FAILURE
+        })
+}
+
+fn agent_native_masked_framebuffer_capture(
+    capture: &arcweft_player_native::native::NativeFrameCapture,
+    context: AgentNativeCaptureContext<'_>,
+    selected: &[&AgentObservedObject],
+) -> Result<AgentRasterCapture, ExitCode> {
+    let mut masked = AgentRasterCapture::new(
+        capture.width,
+        capture.height,
+        [0, 0, 0, 0],
+        AgentImageComposition::MaskedFramebufferCrop,
+    );
+    for object in selected {
+        let (x, y, width, height) =
+            agent_native_object_rect(capture.width, capture.height, context, object)?;
+        agent_copy_native_framebuffer_rect(&mut masked, capture, x, y, width, height);
+    }
+    let (x, y, width, height) =
+        agent_native_scope_rect(capture.width, capture.height, context, selected)?;
+    Ok(agent_crop_raster_capture(&masked, x, y, width, height))
+}
+
+fn agent_copy_native_framebuffer_rect(
+    target: &mut AgentRasterCapture,
+    source: &arcweft_player_native::native::NativeFrameCapture,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) {
+    let source_width = usize::try_from(source.width).unwrap_or(0);
+    let target_width = usize::try_from(target.width).unwrap_or(0);
+    let copy_width = usize::try_from(width).unwrap_or(0);
+    let row_bytes = copy_width.saturating_mul(4);
+    for row in 0..height {
+        let source_y = y.saturating_add(row);
+        let source_start = usize::try_from(source_y)
+            .unwrap_or(0)
+            .saturating_mul(source_width)
+            .saturating_add(usize::try_from(x).unwrap_or(0))
+            .saturating_mul(4);
+        let target_start = usize::try_from(source_y)
+            .unwrap_or(0)
+            .saturating_mul(target_width)
+            .saturating_add(usize::try_from(x).unwrap_or(0))
+            .saturating_mul(4);
+        let Some(source_row) = source
+            .rgba
+            .get(source_start..source_start.saturating_add(row_bytes))
+        else {
+            continue;
+        };
+        let Some(target_row) = target
+            .rgba
+            .get_mut(target_start..target_start.saturating_add(row_bytes))
+        else {
+            continue;
+        };
+        target_row.copy_from_slice(source_row);
+    }
+}
+
+fn agent_native_regions_for_object(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    object: &AgentObservedObject,
+    color: [u8; 4],
+) -> Result<Vec<arcweft_player_native::native::NativeFrameDebugRegion>, ExitCode> {
+    let (x, y, width, height) =
+        agent_native_object_rect(capture_width, capture_height, context, object)?;
+    let fallback_bbox = arcweft_player_native::native::NativeFrameContentBBox {
+        x,
+        y,
+        width,
+        height,
+    };
+    let elements = agent_native_elements_for_object(object);
+    if elements.is_empty() {
+        return Ok(vec![
+            arcweft_player_native::native::NativeFrameDebugRegion {
+                element: None,
+                fallback_bbox,
+                color,
+            },
+        ]);
+    }
+    Ok(elements
+        .into_iter()
+        .map(
+            |element| arcweft_player_native::native::NativeFrameDebugRegion {
+                element: Some(element),
+                fallback_bbox,
+                color,
+            },
+        )
+        .collect())
+}
+
+fn agent_native_elements_for_object(
+    object: &AgentObservedObject,
+) -> Vec<arcweft_player_native::native::NativeFrameElement> {
+    if object.role == "textbox" {
+        return object
+            .rich_text
+            .display_map
+            .text_runs
+            .iter()
+            .enumerate()
+            .map(|(index, _)| arcweft_player_native::native::NativeFrameElement::TextRun { index })
+            .chain(
+                object
+                    .rich_text
+                    .display_map
+                    .ruby_annotations
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(index, _)| arcweft_player_native::native::NativeFrameElement::Ruby {
+                            index,
+                        },
+                    ),
+            )
+            .collect();
+    }
+    agent_native_element_for_object_id(&object.id)
+        .into_iter()
+        .collect()
+}
+
+fn agent_native_scope_rect(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    selected: &[&AgentObservedObject],
+) -> Result<(u32, u32, u32, u32), ExitCode> {
+    let mut min_x = capture_width;
+    let mut min_y = capture_height;
+    let mut max_x = 0_u32;
+    let mut max_y = 0_u32;
+    for object in selected {
+        let (x, y, width, height) =
+            agent_native_object_rect(capture_width, capture_height, context, object)?;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x.saturating_add(width));
+        max_y = max_y.max(y.saturating_add(height));
+    }
+    let x = min_x.min(capture_width.saturating_sub(1));
+    let y = min_y.min(capture_height.saturating_sub(1));
+    let width = max_x
+        .saturating_sub(x)
+        .min(capture_width.saturating_sub(x))
+        .max(1);
+    let height = max_y
+        .saturating_sub(y)
+        .min(capture_height.saturating_sub(y))
+        .max(1);
+    Ok((x, y, width, height))
+}
+
+fn agent_native_object_rect(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    object: &AgentObservedObject,
+) -> Result<(u32, u32, u32, u32), ExitCode> {
+    if object.role.starts_with("rich_text_")
+        && let Some(rect) = agent_native_rich_text_child_rect(
+            capture_width,
+            capture_height,
+            context.objects,
+            object,
+            context.page_index,
+        )?
+    {
+        return Ok(rect);
+    }
+    Ok(agent_clamped_bbox_rect(
+        capture_width,
+        capture_height,
+        object.bbox.x,
+        object.bbox.y,
+        object.bbox.width,
+        object.bbox.height,
+    ))
+}
+
+fn agent_native_rich_text_child_rect(
+    capture_width: u32,
+    capture_height: u32,
+    objects: &[AgentObservedObject],
+    object: &AgentObservedObject,
+    page_index: usize,
+) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
+    let Some(element) = agent_native_element_for_object_id(&object.id) else {
+        return Ok(None);
+    };
+    let Some(textbox) = objects.iter().find(|object| object.role == "textbox") else {
+        return Ok(None);
+    };
+    let (left, top) = agent_native_text_origin(textbox);
+    let bounds = arcweft_player_native::native::measure_frame_elements_at_page(
+        &textbox.rich_text,
+        capture_width,
+        capture_height,
+        left,
+        top,
+        page_index,
+    )
+    .map_err(|error| {
+        eprintln!("error: native text layout measurement failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(bounds
+        .into_iter()
+        .find(|bounds| bounds.element == element)
+        .map(|bounds| {
+            agent_clamped_bbox_rect(
+                capture_width,
+                capture_height,
+                bounds.bbox.x,
+                bounds.bbox.y,
+                bounds.bbox.width,
+                bounds.bbox.height,
+            )
+        }))
+}
+
+fn agent_native_element_for_object_id(
+    object_id: &str,
+) -> Option<arcweft_player_native::native::NativeFrameElement> {
+    if let Some((_, index)) = object_id.rsplit_once(".run.") {
+        return index
+            .parse()
+            .ok()
+            .map(|index| arcweft_player_native::native::NativeFrameElement::TextRun { index });
+    }
+    if let Some((_, index)) = object_id.rsplit_once(".ruby.") {
+        return index
+            .parse()
+            .ok()
+            .map(|index| arcweft_player_native::native::NativeFrameElement::Ruby { index });
+    }
+    None
+}
+
+fn agent_clamped_bbox_rect(
+    capture_width: u32,
+    capture_height: u32,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> (u32, u32, u32, u32) {
+    let x = x.min(capture_width.saturating_sub(1));
+    let y = y.min(capture_height.saturating_sub(1));
+    let width = width.min(capture_width.saturating_sub(x)).max(1);
+    let height = height.min(capture_height.saturating_sub(y)).max(1);
+    (x, y, width, height)
+}
+
+fn agent_crop_raster_capture(
+    source: &AgentRasterCapture,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> AgentRasterCapture {
+    let mut crop = AgentRasterCapture::new(
+        width,
+        height,
+        source.background,
+        agent_cropped_composition(source.composition),
+    );
+    crop.crop_origin = Some(agent_crop_origin(source.crop_origin, x, y));
+    let source_width = usize::try_from(source.width).unwrap_or(0);
+    let crop_width = usize::try_from(width).unwrap_or(0);
+    let row_bytes = crop_width.saturating_mul(4);
+    for row in 0..height {
+        let source_y = y.saturating_add(row);
+        let source_start = usize::try_from(source_y)
+            .unwrap_or(0)
+            .saturating_mul(source_width)
+            .saturating_add(usize::try_from(x).unwrap_or(0))
+            .saturating_mul(4);
+        let crop_start = usize::try_from(row)
+            .unwrap_or(0)
+            .saturating_mul(crop_width)
+            .saturating_mul(4);
+        let Some(source_row) = source
+            .rgba
+            .get(source_start..source_start.saturating_add(row_bytes))
+        else {
+            continue;
+        };
+        let Some(crop_row) = crop
+            .rgba
+            .get_mut(crop_start..crop_start.saturating_add(row_bytes))
+        else {
+            continue;
+        };
+        crop_row.copy_from_slice(source_row);
+    }
+    crop
+}
+
+fn agent_cropped_composition(composition: AgentImageComposition) -> AgentImageComposition {
+    match composition {
+        AgentImageComposition::Framebuffer => AgentImageComposition::FramebufferCrop,
+        composition => composition,
+    }
+}
+
+fn agent_crop_origin(
+    source_origin: Option<AgentImageCropOrigin>,
+    x: u32,
+    y: u32,
+) -> AgentImageCropOrigin {
+    let source_origin = source_origin.unwrap_or(AgentImageCropOrigin {
+        space: AgentCoordinateSpace::Viewport,
+        x: 0,
+        y: 0,
+    });
+    AgentImageCropOrigin {
+        space: source_origin.space,
+        x: source_origin.x.saturating_add(x),
+        y: source_origin.y.saturating_add(y),
+    }
+}
+
+fn agent_content_viewport_bbox(
+    crop_origin: Option<AgentImageCropOrigin>,
+    content_bbox: Option<AgentImageContentBBox>,
+) -> Option<AgentImageContentBBox> {
+    let content_bbox = content_bbox?;
+    let origin = crop_origin.unwrap_or(AgentImageCropOrigin {
+        space: AgentCoordinateSpace::Viewport,
+        x: 0,
+        y: 0,
+    });
+    (origin.space == AgentCoordinateSpace::Viewport).then_some(AgentImageContentBBox {
+        x: origin.x.saturating_add(content_bbox.x),
+        y: origin.y.saturating_add(content_bbox.y),
+        width: content_bbox.width,
+        height: content_bbox.height,
+    })
+}
+
+fn agent_capture_objects_for_scope<'a>(
+    objects: &'a [AgentObservedObject],
+    scope: &AgentCaptureScope,
+) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    match scope {
+        AgentCaptureScope::Viewport => Ok(objects.iter().collect()),
+        AgentCaptureScope::Layer(layer) => {
+            let selected = objects
+                .iter()
+                .filter(|object| object.layer == *layer)
+                .collect::<Vec<_>>();
+            if selected.is_empty() {
+                eprintln!("error: no observed object matches resource layer {layer}");
+                return Err(ExitCode::from(2));
+            }
+            Ok(selected)
+        }
+        AgentCaptureScope::Object(object_id) => {
+            let Some(object) = objects.iter().find(|object| object.id == *object_id) else {
+                eprintln!("error: no observed object matches resource object {object_id}");
+                return Err(ExitCode::from(2));
+            };
+            Ok(vec![object])
+        }
+    }
+}
+
+fn agent_observe_mcp_resource_output(
+    resource: AgentObserveResourceOutput,
+    format: AgentObserveMcpFormat,
+) -> Result<AgentObserveMcpResourceOutput, ExitCode> {
+    let resources = match resource {
+        AgentObserveResourceOutput::One(resource) => vec![*resource],
+        AgentObserveResourceOutput::Many(resources) => resources,
+    };
+    match format {
+        AgentObserveMcpFormat::Read => {
+            let mut read_results = resources
+                .into_iter()
+                .map(|resource| {
+                    read_resource_result(&resource).map_err(|error| agent_json_error(&error))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if read_results.len() == 1 {
+                Ok(AgentObserveMcpResourceOutput::OneRead(
+                    read_results.remove(0),
+                ))
+            } else {
+                Ok(AgentObserveMcpResourceOutput::ManyRead(read_results))
+            }
+        }
+        AgentObserveMcpFormat::List => Ok(AgentObserveMcpResourceOutput::List(
+            list_resources_result(&resources),
+        )),
+        AgentObserveMcpFormat::ToolResult => {
+            if resources.len() == 1 {
+                let resource = resources.first().expect("length checked");
+                Ok(AgentObserveMcpResourceOutput::ToolResult(
+                    tool_result_for_resource(resource).map_err(|error| agent_json_error(&error))?,
+                ))
+            } else {
+                Ok(AgentObserveMcpResourceOutput::ToolResult(
+                    tool_result_for_resources(&resources),
+                ))
+            }
+        }
+    }
+}
+
+fn agent_observe_resource(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+    resource: AgentObserveResourceKind,
+) -> Result<AgentObserveResourceOutput, ExitCode> {
+    let resource = match resource {
+        AgentObserveResourceKind::Observation => AgentObserveResourceOutput::One(Box::new(
+            report
+                .observation_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
+        AgentObserveResourceKind::Objects => AgentObserveResourceOutput::One(Box::new(
+            report
+                .objects_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
+        AgentObserveResourceKind::Overlay => {
+            let Some(resource) = report.overlay_svg_resource() else {
+                eprintln!("error: overlay resource was not generated");
+                return Err(ExitCode::from(2));
+            };
+            AgentObserveResourceOutput::One(Box::new(resource))
+        }
+        AgentObserveResourceKind::Image => {
+            let Some(resource) = agent_observe_image_resource(report, image_output) else {
+                eprintln!("error: --resource image requires --image");
+                return Err(ExitCode::from(2));
+            };
+            AgentObserveResourceOutput::One(Box::new(resource))
+        }
+        AgentObserveResourceKind::Logs => AgentObserveResourceOutput::One(Box::new(
+            report
+                .logs_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
+        AgentObserveResourceKind::Signals => AgentObserveResourceOutput::One(Box::new(
+            report
+                .signals_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
+        AgentObserveResourceKind::Audio => AgentObserveResourceOutput::One(Box::new(
+            report
+                .audio_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
+        AgentObserveResourceKind::All => {
+            AgentObserveResourceOutput::Many(agent_observe_all_resources(report, image_output)?)
+        }
+    };
+    Ok(resource)
+}
+
+fn agent_observe_all_resources(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+) -> Result<Vec<AgentResource>, ExitCode> {
+    let mut resources = vec![
+        report
+            .observation_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .objects_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .logs_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .signals_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .audio_resource()
+            .map_err(|error| agent_json_error(&error))?,
+    ];
+    if let Some(overlay) = report.overlay_svg_resource() {
+        resources.push(overlay);
+    }
+    if let Some(image) = agent_observe_image_resource(report, image_output) {
+        resources.push(image);
+    }
+    let mut known = resources
+        .iter()
+        .map(|resource| resource.uri.clone())
+        .collect::<BTreeSet<_>>();
+    for uri in report.layers.iter().flat_map(|layer| {
+        layer
+            .capture_refs
+            .captures
+            .iter()
+            .map(|capture| capture.uri.as_str())
+    }) {
+        if known.insert(uri.to_owned()) {
+            resources.push(agent_observe_resource_by_uri(report, uri)?);
+        }
+    }
+    for uri in report.objects.iter().flat_map(|object| {
+        object
+            .capture_refs
+            .captures
+            .iter()
+            .map(|capture| capture.uri.as_str())
+    }) {
+        if known.insert(uri.to_owned()) {
+            resources.push(agent_observe_resource_by_uri(report, uri)?);
+        }
+    }
+    Ok(resources)
+}
+
+fn agent_observe_image_resource(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+) -> Option<AgentResource> {
+    let image = report.images.first()?;
+    let output = image_output?;
+    if image.uri != output.uri {
+        return None;
+    }
+    Some(report.image_resource(image, &output.bytes))
+}
+
+fn agent_observe_cached_image_resource(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+    uri: &str,
+) -> Option<AgentResource> {
+    let output = image_output?;
+    if output.uri != uri {
+        return None;
+    }
+    let image = report.images.iter().find(|image| image.uri == uri)?;
+    Some(report.image_resource(image, &output.bytes))
+}
+
+fn agent_json_error(error: &serde_json::Error) -> ExitCode {
+    eprintln!("error: failed to build agent resource JSON: {error}");
+    ExitCode::FAILURE
+}
+
+fn run_agent_observation(
+    executor: &mut RuntimeExecutorInstance,
+    catalog: &LineDisplayCatalog,
+    host_config: NativeRunHost<'_>,
+    options: &AgentObserveOptions,
+    source_path: &Path,
+) -> Result<AgentObservationReport, arcweft_host_adapter::HostAdapterError> {
+    let viewport = AgentViewport {
+        width: 1280,
+        height: 720,
+        scale: 1.0,
+    };
+    let mut host = host_config
+        .source_path
+        .map(|path| {
+            NativeTaskBridge::try_new(
+                path,
+                host_config.policy.clone(),
+                host_config.adapter_registrars,
+            )
+        })
+        .transpose()?;
+    let mut task_events = Vec::new();
+    let mut objects: Vec<AgentObservedObject> = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut task_request_count = 0usize;
+    let mut tick = 0usize;
+    for step_index in 0..options.steps {
+        tick = step_index;
+        let result = executor.step_with_root_bindings(
+            RuntimeStepInput {
+                task_events: std::mem::take(&mut task_events),
+                ..RuntimeStepInput::default()
+            },
+            &options.values,
+            step_options(options.mode, options.max_ops),
+        );
+        let RuntimeStepResult { mut output, .. } = result;
+        diagnostics.extend(output.diagnostics.iter().map(|diagnostic| AgentDiagnostic {
+            step: step_index,
+            severity: AgentDiagnosticSeverity::Error,
+            message: diagnostic.message.clone(),
+        }));
+        for event in &output.flow_events {
+            if let FlowEvent::DialogueLine { line, bindings } = event {
+                let Some(spec) = catalog.find(line) else {
+                    diagnostics.push(AgentDiagnostic {
+                        step: step_index,
+                        severity: AgentDiagnosticSeverity::Warning,
+                        message: format!("missing display catalog entry for line {}", line.0),
+                    });
+                    continue;
+                };
+                match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
+                    Ok(frame) => {
+                        let index = objects
+                            .iter()
+                            .filter(|object| object.role == "textbox")
+                            .count();
+                        let textbox = agent_textbox_object(step_index, index, frame, &viewport);
+                        let native_bounds =
+                            agent_native_rich_text_element_bboxes(&textbox, &viewport);
+                        let children = agent_rich_text_child_objects(
+                            step_index,
+                            index,
+                            &textbox,
+                            &native_bounds,
+                        );
+                        objects.push(textbox);
+                        objects.extend(children);
+                    }
+                    Err(error) => diagnostics.push(AgentDiagnostic {
+                        step: step_index,
+                        severity: AgentDiagnosticSeverity::Error,
+                        message: error.to_string(),
+                    }),
+                }
+            }
+        }
+        let task_requests = std::mem::take(&mut output.requests.tasks);
+        task_request_count += task_requests.len();
+        let done = matches!(
+            executor.fiber().status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        if done {
+            break;
+        }
+        if let Some(host) = host.as_mut() {
+            task_events = host.complete_tasks(task_requests);
+        }
+    }
+    Ok(finish_agent_observation_report(
+        executor,
+        source_path,
+        AgentObservationTrace {
+            viewport,
+            objects,
+            diagnostics,
+            task_request_count,
+            tick,
+        },
+        options,
+    ))
+}
+
+fn finish_agent_observation_report(
+    executor: &RuntimeExecutorInstance,
+    source_path: &Path,
+    trace: AgentObservationTrace,
+    _options: &AgentObserveOptions,
+) -> AgentObservationReport {
+    let AgentObservationTrace {
+        viewport,
+        objects,
+        diagnostics,
+        task_request_count,
+        tick,
+    } = trace;
+    let object_refs = objects.iter().collect::<Vec<_>>();
+    let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
+    let render_hash = hash_hex(overlay_svg.as_bytes());
+    let observations = &executor.fiber().observations;
+    let signals = observations
+        .signals
+        .iter()
+        .map(|(name, value)| AgentAssignment {
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect::<Vec<_>>();
+    let metrics = observations
+        .metrics
+        .iter()
+        .map(|(name, value)| AgentAssignment {
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect::<Vec<_>>();
+    let actions = objects
+        .iter()
+        .map(|object| AgentActionTarget {
+            id: format!("action.advance_text.{}", object.id),
+            target: object.id.clone(),
+            action: AgentActionKind::AdvanceText,
+            kind: AgentActionDispatch::Semantic,
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    let layers = agent_observed_layers("cli", tick, &objects);
+    let status = flow_status_label(&executor.fiber().status);
+    let state_hash = hash_hex(
+        format!(
+            "{}:{}:{}:{}:{}",
+            status,
+            tick,
+            objects.len(),
+            diagnostics.len(),
+            task_request_count
+        )
+        .as_bytes(),
+    );
+    AgentObservationReport {
+        status: if matches!(executor.fiber().status, FlowFiberStatus::Failed(_)) {
+            "failed".to_owned()
+        } else {
+            "ok".to_owned()
+        },
+        session_id: "cli".to_owned(),
+        tick,
+        frame_id: format!("frame.{tick}"),
+        state_hash,
+        render_hash: render_hash.clone(),
+        source: report_path(source_path),
+        viewport,
+        images: Vec::new(),
+        layers,
+        objects,
+        actions,
+        ui_tree: AgentUiTree {
+            root: "ui.root".to_owned(),
+            children: vec!["dialogue.layer".to_owned()],
+        },
+        scene_graph: Vec::new(),
+        audio_state: AgentAudioState {
+            active_voices: Vec::new(),
+            pending_events: Vec::new(),
+        },
+        logs: observations.logs.clone(),
+        signals,
+        metrics,
+        events: observations.events.clone(),
+        diagnostics,
+        steps: tick + 1,
+        task_requests: task_request_count,
+        final_status: status,
+        overlay_svg: None,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AgentImageOutput {
+    uri: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct AgentRasterCapture {
+    width: u32,
+    height: u32,
+    crop_origin: Option<AgentImageCropOrigin>,
+    composition: AgentImageComposition,
+    background: [u8; 4],
+    rgba: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AgentRasterContentStats {
+    bbox: Option<AgentImageContentBBox>,
+    content_pixels: u64,
+}
+
+impl AgentRasterCapture {
+    fn new(width: u32, height: u32, color: [u8; 4], composition: AgentImageComposition) -> Self {
+        let pixel_count = usize::try_from(width)
+            .unwrap_or(0)
+            .saturating_mul(usize::try_from(height).unwrap_or(0));
+        let mut rgba = Vec::with_capacity(pixel_count.saturating_mul(4));
+        for _ in 0..pixel_count {
+            rgba.extend_from_slice(&color);
+        }
+        Self {
+            width,
+            height,
+            crop_origin: None,
+            composition,
+            background: color,
+            rgba,
+        }
+    }
+
+    fn content_stats(&self) -> AgentRasterContentStats {
+        let mut min_x = self.width;
+        let mut min_y = self.height;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        let mut count = 0_u64;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let index = usize::try_from(y)
+                    .unwrap_or(0)
+                    .saturating_mul(usize::try_from(self.width).unwrap_or(0))
+                    .saturating_add(usize::try_from(x).unwrap_or(0))
+                    .saturating_mul(4)
+                    .saturating_add(3);
+                let Some(pixel) = self
+                    .rgba
+                    .get(index.saturating_sub(3)..index.saturating_add(1))
+                else {
+                    continue;
+                };
+                if pixel == self.background {
+                    continue;
+                }
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+                count = count.saturating_add(1);
+            }
+        }
+        AgentRasterContentStats {
+            bbox: (count > 0).then_some(AgentImageContentBBox {
+                x: min_x,
+                y: min_y,
+                width: max_x.saturating_sub(min_x).saturating_add(1),
+                height: max_y.saturating_sub(min_y).saturating_add(1),
+            }),
+            content_pixels: count,
+        }
+    }
+}
+
+fn agent_observe_image_output(
+    report: &mut AgentObservationReport,
+    options: &AgentObserveOptions,
+) -> Result<Option<AgentImageOutput>, ExitCode> {
+    let Some(image) = options.image else {
+        return Ok(None);
+    };
+    match image {
+        AgentObserveImageKind::Overlay => {
+            let overlay_svg = {
+                let selected = select_agent_capture_objects(&report.objects, options)?;
+                agent_overlay_svg(&report.viewport, &selected)
+            };
+            let hash = hash_hex(overlay_svg.as_bytes());
+            report.render_hash.clone_from(&hash);
+            let uri = agent_capture_uri(report, "overlay", "svg", options);
+            report.images = vec![AgentImageResource {
+                kind: AgentImageKind::OverlaySvg,
+                renderer: AgentImageRenderer::Native,
+                scope: agent_image_scope_for_capture_scope(&agent_capture_scope_for_options(
+                    options,
+                )),
+                composition: AgentImageComposition::OverlayVector,
+                page: 0,
+                uri: uri.clone(),
+                mime_type: "image/svg+xml".to_owned(),
+                width: report.viewport.width,
+                height: report.viewport.height,
+                hash,
+                crop_origin: None,
+                content_bbox: None,
+                content_viewport_bbox: None,
+                content_pixels: None,
+                written: options.out.as_deref().map(report_path),
+            }];
+            report.overlay_svg = Some(overlay_svg.clone());
+            Ok(Some(AgentImageOutput {
+                uri,
+                bytes: overlay_svg.into_bytes(),
+            }))
+        }
+        AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
+            let request = agent_capture_request_for_options(report, image, options);
+            let (mut image, bytes) = agent_native_capture_image(report, &request)?;
+            image.written = options.out.as_deref().map(report_path);
+            report.render_hash.clone_from(&image.hash);
+            let uri = image.uri.clone();
+            report.images = vec![image];
+            Ok(Some(AgentImageOutput { uri, bytes }))
+        }
+    }
+}
+
+fn agent_capture_request_for_options(
+    report: &AgentObservationReport,
+    image_kind: AgentObserveImageKind,
+    options: &AgentObserveOptions,
+) -> AgentCaptureReadRequest {
+    let capture_kind = agent_capture_kind(options);
+    let extension = match image_kind {
+        AgentObserveImageKind::Png => "png",
+        AgentObserveImageKind::RawRgba => "rgba",
+        AgentObserveImageKind::Overlay => "svg",
+    };
+    AgentCaptureReadRequest {
+        uri: agent_capture_uri(report, capture_kind.resource_name(), extension, options),
+        image_kind,
+        capture_kind,
+        scope: agent_capture_scope_for_options(options),
+        page: options.page.unwrap_or(0),
+    }
+}
+
+fn agent_capture_scope_for_options(options: &AgentObserveOptions) -> AgentCaptureScope {
+    if let Some(object_id) = &options.object {
+        AgentCaptureScope::Object(object_id.clone())
+    } else if let Some(layer) = &options.layer {
+        AgentCaptureScope::Layer(layer.clone())
+    } else {
+        AgentCaptureScope::Viewport
+    }
+}
+
+fn agent_image_scope_for_capture_scope(scope: &AgentCaptureScope) -> AgentImageScope {
+    match scope {
+        AgentCaptureScope::Viewport => AgentImageScope::Viewport,
+        AgentCaptureScope::Layer(id) => AgentImageScope::Layer { id: id.clone() },
+        AgentCaptureScope::Object(id) => AgentImageScope::Object { id: id.clone() },
+    }
+}
+
+fn select_agent_capture_objects<'a>(
+    objects: &'a [AgentObservedObject],
+    options: &AgentObserveOptions,
+) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    if let Some(object_id) = &options.object {
+        let Some(object) = objects.iter().find(|object| object.id == *object_id) else {
+            eprintln!("error: no observed object matches --object {object_id}");
+            return Err(ExitCode::from(2));
+        };
+        return Ok(vec![object]);
+    }
+    if let Some(layer) = &options.layer {
+        let selected = objects
+            .iter()
+            .filter(|object| object.layer == *layer)
+            .collect::<Vec<_>>();
+        if selected.is_empty() {
+            eprintln!("error: no observed object matches --layer {layer}");
+            return Err(ExitCode::from(2));
+        }
+        return Ok(selected);
+    }
+    Ok(objects.iter().collect())
+}
+
+fn agent_capture_kind(options: &AgentObserveOptions) -> AgentObserveCaptureKind {
+    options.capture.unwrap_or(AgentObserveCaptureKind::Color)
+}
+
+fn agent_image_kind(capture: AgentObserveCaptureKind) -> AgentImageKind {
+    match capture {
+        AgentObserveCaptureKind::Color => AgentImageKind::Color,
+        AgentObserveCaptureKind::ObjectId => AgentImageKind::ObjectId,
+        AgentObserveCaptureKind::Mask => AgentImageKind::Mask,
+    }
+}
+
+impl AgentObserveCaptureKind {
+    fn resource_name(self) -> &'static str {
+        match self {
+            Self::Color => "color",
+            Self::ObjectId => "object-id",
+            Self::Mask => "mask",
+        }
+    }
+}
+
+fn agent_object_id_color(id: &str) -> [u8; 4] {
+    let color = agent_object_id_rgba_color(id);
+    [color.red, color.green, color.blue, color.alpha]
+}
+
+fn agent_object_id_rgba_color(id: &str) -> AgentRgbaColor {
+    let hash = blake3::hash(id.as_bytes());
+    let bytes = hash.as_bytes();
+    AgentRgbaColor {
+        red: bytes[0].saturating_div(2).saturating_add(64),
+        green: bytes[1].saturating_div(2).saturating_add(64),
+        blue: bytes[2].saturating_div(2).saturating_add(64),
+        alpha: 255,
+    }
+}
+
+fn agent_encode_png(capture: &AgentRasterCapture) -> Result<Vec<u8>, ExitCode> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, capture.width, capture.height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|error| agent_png_error(&error))?;
+        writer
+            .write_image_data(&capture.rgba)
+            .map_err(|error| agent_png_error(&error))?;
+        writer.finish().map_err(|error| agent_png_error(&error))?;
+    }
+    Ok(bytes)
+}
+
+fn agent_png_error(error: &png::EncodingError) -> ExitCode {
+    eprintln!("error: failed to encode PNG capture: {error}");
+    ExitCode::FAILURE
+}
+
+fn agent_capture_uri(
+    report: &AgentObservationReport,
+    default_name: &str,
+    extension: &str,
+    options: &AgentObserveOptions,
+) -> String {
+    let name = if let Some(object_id) = &options.object {
+        agent_scoped_capture_name("object", object_id, default_name)
+    } else if let Some(layer) = &options.layer {
+        agent_scoped_capture_name("layer", layer, default_name)
+    } else {
+        default_name.to_owned()
+    };
+    agent_frame_capture_uri_for_page(
+        &report.session_id,
+        report.tick,
+        &name,
+        extension,
+        options.page.unwrap_or(0),
+    )
+}
+
+fn agent_frame_capture_uri(session_id: &str, tick: usize, name: &str, extension: &str) -> String {
+    agent_frame_capture_uri_for_page(session_id, tick, name, extension, 0)
+}
+
+fn agent_frame_capture_uri_for_page(
+    session_id: &str,
+    tick: usize,
+    name: &str,
+    extension: &str,
+    page: usize,
+) -> String {
+    let base = agent_frame_capture_uri_base(session_id, tick, name, extension);
+    if page == 0 {
+        return base;
+    }
+    format!("{base}?page={page}")
+}
+
+fn agent_frame_capture_uri_base(
+    session_id: &str,
+    tick: usize,
+    name: &str,
+    extension: &str,
+) -> String {
+    format!("arcweft://session/{session_id}/frame/{tick}/{name}.{extension}")
+}
+
+fn agent_scoped_capture_name(prefix: &str, scope: &str, default_name: &str) -> String {
+    let scope = agent_uri_component(scope);
+    if default_name == "color" {
+        format!("{prefix}.{scope}")
+    } else {
+        format!("{prefix}.{scope}.{default_name}")
+    }
+}
+
+fn agent_uri_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn agent_textbox_object(
+    step: usize,
+    index: usize,
+    frame: LineDisplayFrame,
+    viewport: &AgentViewport,
+) -> AgentObservedObject {
+    let width = viewport.width.saturating_sub(192);
+    let lines = u32::try_from(frame.text.lines().count().max(1)).unwrap_or(u32::MAX);
+    let height = (96 + lines * 28).min(220);
+    let object_slot = u32::try_from(index % 4).unwrap_or(0);
+    let bottom_margin = 48 + object_slot * 10;
+    let y = viewport
+        .height
+        .saturating_sub(height)
+        .saturating_sub(bottom_margin);
+    let bbox = AgentBBox {
+        space: AgentCoordinateSpace::Viewport,
+        x: 96,
+        y,
+        width,
+        height,
+    };
+    let object_id = format!("object.dialogue.{step}.{index}");
+    let capture_refs = agent_object_capture_refs("cli", step, &object_id, &bbox);
+    AgentObservedObject {
+        id: object_id,
+        entity: Some(frame.callee.clone()),
+        layer: "dialogue".to_owned(),
+        role: "textbox".to_owned(),
+        visible: true,
+        bbox: bbox.clone(),
+        polygon: bbox.polygon(),
+        capture_refs,
+        text: Some(frame.text.clone()),
+        rich_text_ref: None,
+        rich_text: frame,
+    }
+}
+
+fn agent_rich_text_child_objects(
+    step: usize,
+    index: usize,
+    textbox: &AgentObservedObject,
+    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+) -> Vec<AgentObservedObject> {
+    let mut children = Vec::new();
+    for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
+        if matches!(
+            run.source,
+            RichTextTextSource::ControlHardBreak | RichTextTextSource::ControlRaw
+        ) {
+            continue;
+        }
+        if let Some(object) =
+            agent_rich_text_run_object(step, index, run_index, textbox, run, native_bounds)
+        {
+            children.push(object);
+        }
+    }
+    for (ruby_index, ruby) in textbox
+        .rich_text
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+    {
+        if let Some(object) =
+            agent_rich_text_ruby_object(step, index, ruby_index, textbox, ruby, native_bounds)
+        {
+            children.push(object);
+        }
+    }
+    children
+}
+
+fn agent_native_rich_text_element_bboxes(
+    textbox: &AgentObservedObject,
+    viewport: &AgentViewport,
+) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox> {
+    let (left, top) = agent_native_text_origin(textbox);
+    let mut bboxes = BTreeMap::new();
+    for page_index in 0.. {
+        let bounds = match arcweft_player_native::native::measure_frame_elements_at_page(
+            &textbox.rich_text,
+            viewport.width,
+            viewport.height,
+            left,
+            top,
+            page_index,
+        ) {
+            Ok(bounds) => bounds,
+            Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => break,
+            Err(_) => return BTreeMap::new(),
+        };
+        for bounds in bounds {
+            bboxes.entry(bounds.element).or_insert(AgentBBox {
+                space: AgentCoordinateSpace::Viewport,
+                x: bounds.bbox.x,
+                y: bounds.bbox.y,
+                width: bounds.bbox.width,
+                height: bounds.bbox.height,
+            });
+        }
+    }
+    bboxes
+}
+
+fn agent_rich_text_run_object(
+    step: usize,
+    index: usize,
+    run_index: usize,
+    textbox: &AgentObservedObject,
+    run: &RichTextTextRun,
+    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+) -> Option<AgentObservedObject> {
+    let text = textbox
+        .rich_text
+        .text
+        .get(valid_rich_text_range(run.range, &textbox.rich_text.text)?)?;
+    if text.trim().is_empty() {
+        return None;
+    }
+    let bbox = native_bounds
+        .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
+        .cloned()?;
+    let object_id = format!("object.dialogue.{step}.{index}.run.{run_index}");
+    let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
+    Some(agent_rich_text_child_object(
+        step,
+        textbox,
+        AgentRichTextChildObjectSpec {
+            object_id: &object_id,
+            role: "rich_text_run",
+            text: text.to_owned(),
+            bbox: &bbox,
+            rich_text_ref: AgentRichTextElementRef {
+                kind: AgentRichTextElementKind::TextRun,
+                index: run_index,
+                page,
+                range: run.range,
+                node_index: run.node_index,
+                source: Some(run.source),
+                ruby: None,
+            },
+            page,
+        },
+    ))
+}
+
+fn agent_rich_text_ruby_object(
+    step: usize,
+    index: usize,
+    ruby_index: usize,
+    textbox: &AgentObservedObject,
+    ruby: &RichTextRubyAnnotation,
+    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+) -> Option<AgentObservedObject> {
+    let base_range = valid_rich_text_range(ruby.base_range, &textbox.rich_text.text)?;
+    let base_text = textbox.rich_text.text.get(base_range)?;
+    let bbox = native_bounds
+        .get(&arcweft_player_native::native::NativeFrameElement::Ruby { index: ruby_index })
+        .cloned()?;
+    let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
+    let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
+    Some(agent_rich_text_child_object(
+        step,
+        textbox,
+        AgentRichTextChildObjectSpec {
+            object_id: &object_id,
+            role: "rich_text_ruby",
+            text: format!("{base_text} ({})", ruby.ruby),
+            bbox: &bbox,
+            rich_text_ref: AgentRichTextElementRef {
+                kind: AgentRichTextElementKind::Ruby,
+                index: ruby_index,
+                page,
+                range: ruby.base_range,
+                node_index: ruby.node_index,
+                source: None,
+                ruby: Some(ruby.ruby.clone()),
+            },
+            page,
+        },
+    ))
+}
+
+struct AgentRichTextChildObjectSpec<'a> {
+    object_id: &'a str,
+    role: &'a str,
+    text: String,
+    bbox: &'a AgentBBox,
+    rich_text_ref: AgentRichTextElementRef,
+    page: usize,
+}
+
+fn agent_rich_text_child_object(
+    step: usize,
+    textbox: &AgentObservedObject,
+    spec: AgentRichTextChildObjectSpec<'_>,
+) -> AgentObservedObject {
+    AgentObservedObject {
+        id: spec.object_id.to_owned(),
+        entity: textbox.entity.clone(),
+        layer: "dialogue.rich_text".to_owned(),
+        role: spec.role.to_owned(),
+        visible: textbox.visible,
+        bbox: spec.bbox.clone(),
+        polygon: spec.bbox.polygon(),
+        capture_refs: agent_object_capture_refs_for_page(
+            "cli",
+            step,
+            spec.object_id,
+            spec.bbox,
+            spec.page,
+        ),
+        text: Some(spec.text.clone()),
+        rich_text_ref: Some(spec.rich_text_ref),
+        rich_text: agent_child_line_display_frame(&textbox.rich_text, spec.text),
+    }
+}
+
+fn agent_rich_text_page_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> usize {
+    let Some(valid_range) = valid_rich_text_range(range, &frame.text) else {
+        return 0;
+    };
+    agent_rich_text_page_ranges(frame)
+        .into_iter()
+        .filter(|page_range| !page_range.is_empty())
+        .position(|page_range| {
+            valid_range.start >= page_range.start && valid_range.end <= page_range.end
+        })
+        .unwrap_or(0)
+}
+
+fn agent_rich_text_page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<usize>> {
+    let mut break_offsets = frame
+        .display_map
+        .controls
+        .iter()
+        .filter(|marker| {
+            matches!(
+                marker.control,
+                RichTextControl::Page | RichTextControl::LineWait | RichTextControl::Clear
+            )
+        })
+        .map(|marker| agent_display_map_offset_before_node(frame, marker.node_index))
+        .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
+        .collect::<Vec<_>>();
+    break_offsets.sort_unstable();
+    break_offsets.dedup();
+
+    let mut start = 0;
+    let mut ranges = Vec::with_capacity(break_offsets.len() + 1);
+    for end in break_offsets {
+        if start <= end {
+            ranges.push(start..end);
+            start = end;
+        }
+    }
+    ranges.push(start..frame.text.len());
+    ranges
+}
+
+fn agent_display_map_offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| run.node_index < node_index)
+        .map(|run| run.range.end)
+        .max()
+        .unwrap_or(0)
+}
+
+fn agent_child_line_display_frame(parent: &LineDisplayFrame, text: String) -> LineDisplayFrame {
+    LineDisplayFrame {
+        line: parent.line.clone(),
+        callee: parent.callee.clone(),
+        text: text.clone(),
+        base_styles: parent.base_styles.clone(),
+        default_inline_failure_policy: parent.default_inline_failure_policy.clone(),
+        nodes: vec![RichTextNode::Text { text }],
+        display_map: arcweft_render_text::RichTextDisplayMap::default(),
+        host_events: Vec::new(),
+        inline_failures: Vec::new(),
+        unresolved: Vec::new(),
+    }
+}
+
+fn valid_rich_text_range(range: RichTextRange, text: &str) -> Option<std::ops::Range<usize>> {
+    if range.start <= range.end
+        && range.end <= text.len()
+        && text.is_char_boundary(range.start)
+        && text.is_char_boundary(range.end)
+    {
+        Some(range.start..range.end)
+    } else {
+        None
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AgentLayerAccumulator {
+    visible: bool,
+    bbox: AgentBBox,
+    object_count: usize,
+}
+
+fn agent_observed_layers(
+    session_id: &str,
+    tick: usize,
+    objects: &[AgentObservedObject],
+) -> Vec<AgentObservedLayer> {
+    let mut layers = BTreeMap::<String, AgentLayerAccumulator>::new();
+    for object in objects {
+        layers
+            .entry(object.layer.clone())
+            .and_modify(|layer| {
+                layer.visible |= object.visible;
+                layer.object_count = layer.object_count.saturating_add(1);
+                layer.bbox = agent_union_bbox(&layer.bbox, &object.bbox);
+            })
+            .or_insert_with(|| AgentLayerAccumulator {
+                visible: object.visible,
+                bbox: object.bbox.clone(),
+                object_count: 1,
+            });
+    }
+    layers
+        .into_iter()
+        .map(|(id, layer)| AgentObservedLayer {
+            capture_refs: agent_layer_capture_refs(session_id, tick, &id, &layer.bbox),
+            id,
+            visible: layer.visible,
+            bbox: layer.bbox,
+            object_count: layer.object_count,
+        })
+        .collect()
+}
+
+fn agent_union_bbox(left: &AgentBBox, right: &AgentBBox) -> AgentBBox {
+    let x = left.x.min(right.x);
+    let y = left.y.min(right.y);
+    let max_x = left
+        .x
+        .saturating_add(left.width)
+        .max(right.x.saturating_add(right.width));
+    let max_y = left
+        .y
+        .saturating_add(left.height)
+        .max(right.y.saturating_add(right.height));
+    AgentBBox {
+        space: left.space,
+        x,
+        y,
+        width: max_x.saturating_sub(x).max(1),
+        height: max_y.saturating_sub(y).max(1),
+    }
+}
+
+fn agent_layer_capture_refs(
+    session_id: &str,
+    tick: usize,
+    layer_id: &str,
+    bbox: &AgentBBox,
+) -> AgentLayerCaptureRefs {
+    let name = agent_scoped_capture_name("layer", layer_id, "color");
+    let object_id_name = agent_scoped_capture_name("layer", layer_id, "object-id");
+    let mask_name = agent_scoped_capture_name("layer", layer_id, "mask");
+    AgentLayerCaptureRefs {
+        captures: vec![
+            agent_layer_capture_ref(session_id, tick, &name, "png", AgentImageKind::Color, bbox),
+            agent_layer_capture_ref(session_id, tick, &name, "rgba", AgentImageKind::Color, bbox),
+            agent_layer_capture_ref(
+                session_id,
+                tick,
+                &object_id_name,
+                "png",
+                AgentImageKind::ObjectId,
+                bbox,
+            ),
+            agent_layer_capture_ref(
+                session_id,
+                tick,
+                &object_id_name,
+                "rgba",
+                AgentImageKind::ObjectId,
+                bbox,
+            ),
+            agent_layer_capture_ref(
+                session_id,
+                tick,
+                &mask_name,
+                "png",
+                AgentImageKind::Mask,
+                bbox,
+            ),
+            agent_layer_capture_ref(
+                session_id,
+                tick,
+                &mask_name,
+                "rgba",
+                AgentImageKind::Mask,
+                bbox,
+            ),
+        ],
+    }
+}
+
+fn agent_layer_capture_ref(
+    session_id: &str,
+    tick: usize,
+    name: &str,
+    extension: &str,
+    kind: AgentImageKind,
+    bbox: &AgentBBox,
+) -> AgentLayerCaptureRef {
+    AgentLayerCaptureRef {
+        kind,
+        uri: agent_frame_capture_uri(session_id, tick, name, extension),
+        mime_type: agent_capture_mime_type(extension).to_owned(),
+        page: 0,
+        width: bbox.width.max(1),
+        height: bbox.height.max(1),
+    }
+}
+
+fn agent_object_capture_refs(
+    session_id: &str,
+    tick: usize,
+    object_id: &str,
+    bbox: &AgentBBox,
+) -> AgentObjectCaptureRefs {
+    agent_object_capture_refs_for_page(session_id, tick, object_id, bbox, 0)
+}
+
+fn agent_object_capture_refs_for_page(
+    session_id: &str,
+    tick: usize,
+    object_id: &str,
+    bbox: &AgentBBox,
+    page: usize,
+) -> AgentObjectCaptureRefs {
+    let name = agent_scoped_capture_name("object", object_id, "color");
+    let object_id_name = agent_scoped_capture_name("object", object_id, "object-id");
+    let mask_name = agent_scoped_capture_name("object", object_id, "mask");
+    AgentObjectCaptureRefs {
+        object_id_color: agent_object_id_rgba_color(object_id),
+        captures: vec![
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &name,
+                "png",
+                AgentImageKind::Color,
+                bbox,
+                page,
+            ),
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &name,
+                "rgba",
+                AgentImageKind::Color,
+                bbox,
+                page,
+            ),
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &object_id_name,
+                "png",
+                AgentImageKind::ObjectId,
+                bbox,
+                page,
+            ),
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &object_id_name,
+                "rgba",
+                AgentImageKind::ObjectId,
+                bbox,
+                page,
+            ),
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &mask_name,
+                "png",
+                AgentImageKind::Mask,
+                bbox,
+                page,
+            ),
+            agent_object_capture_ref(
+                session_id,
+                tick,
+                &mask_name,
+                "rgba",
+                AgentImageKind::Mask,
+                bbox,
+                page,
+            ),
+        ],
+    }
+}
+
+fn agent_object_capture_ref(
+    session_id: &str,
+    tick: usize,
+    name: &str,
+    extension: &str,
+    kind: AgentImageKind,
+    bbox: &AgentBBox,
+    page: usize,
+) -> AgentObjectCaptureRef {
+    AgentObjectCaptureRef {
+        kind,
+        uri: agent_frame_capture_uri_for_page(session_id, tick, name, extension, page),
+        mime_type: agent_capture_mime_type(extension).to_owned(),
+        page,
+        width: bbox.width.max(1),
+        height: bbox.height.max(1),
+    }
+}
+
+fn agent_capture_mime_type(extension: &str) -> &'static str {
+    match extension {
+        "png" => "image/png",
+        _ => "application/octet-stream",
+    }
+}
+
+fn agent_overlay_svg(viewport: &AgentViewport, objects: &[&AgentObservedObject]) -> String {
+    let mut svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}"><rect width="100%" height="100%" fill="#101418"/>"##,
+        viewport.width, viewport.height, viewport.width, viewport.height
+    );
+    for object in objects {
+        let _ = write!(
+            svg,
+            r##"<rect x="{}" y="{}" width="{}" height="{}" rx="8" fill="#1f2630" stroke="#76d7c4" stroke-width="2"/>"##,
+            object.bbox.x, object.bbox.y, object.bbox.width, object.bbox.height
+        );
+        if let Some(text) = &object.text {
+            let escaped = escape_xml(text);
+            let _ = write!(
+                svg,
+                r##"<text x="{}" y="{}" fill="#f4f7fb" font-family="sans-serif" font-size="24">{}</text>"##,
+                object.bbox.x + 24,
+                object.bbox.y + 48,
+                escaped
+            );
+        }
+    }
+    svg.push_str("</svg>");
+    svg
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn hash_hex(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
 }
 
 fn runtime_run_bench_selection(
@@ -5460,6 +8435,331 @@ struct PlanOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+struct AgentObserveOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 8)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 64)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long, value_enum)]
+    image: Option<AgentObserveImageKind>,
+    #[arg(long, value_enum)]
+    capture: Option<AgentObserveCaptureKind>,
+    #[arg(long)]
+    layer: Option<String>,
+    #[arg(long)]
+    object: Option<String>,
+    #[arg(long)]
+    page: Option<usize>,
+    #[arg(long, value_enum)]
+    resource: Option<AgentObserveResourceKind>,
+    #[arg(long)]
+    read_uri: Option<String>,
+    #[arg(long)]
+    mcp: bool,
+    #[arg(long, value_enum, default_value_t = AgentObserveMcpFormat::Read)]
+    mcp_format: AgentObserveMcpFormat,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct AgentMcpOptions {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum AgentObserveImageKind {
+    Overlay,
+    RawRgba,
+    Png,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum AgentObserveCaptureKind {
+    Color,
+    ObjectId,
+    Mask,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_line_display_frame() -> LineDisplayFrame {
+        LineDisplayFrame {
+            line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
+            callee: "test".to_owned(),
+            text: String::new(),
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            nodes: Vec::new(),
+            display_map: arcweft_render_text::RichTextDisplayMap::default(),
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
+
+    fn test_resolved_line_display_frame() -> LineDisplayFrame {
+        let spec = arcweft_render_text::LineDisplaySpec {
+            line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
+            callee: "test".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: arcweft_render_text::RichTextDocument::new(vec![RichTextNode::Text {
+                text: "native attachment seed".to_owned(),
+            }]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("test frame resolves")
+    }
+
+    fn test_observed_object(
+        id: &str,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> AgentObservedObject {
+        let bbox = AgentBBox {
+            space: AgentCoordinateSpace::Viewport,
+            x,
+            y,
+            width,
+            height,
+        };
+        AgentObservedObject {
+            id: id.to_owned(),
+            entity: None,
+            layer: "ui".to_owned(),
+            role: "panel".to_owned(),
+            visible: true,
+            polygon: bbox.polygon(),
+            bbox,
+            capture_refs: AgentObjectCaptureRefs {
+                object_id_color: AgentRgbaColor {
+                    red: 1,
+                    green: 2,
+                    blue: 3,
+                    alpha: 255,
+                },
+                captures: Vec::new(),
+            },
+            text: None,
+            rich_text_ref: None,
+            rich_text: test_line_display_frame(),
+        }
+    }
+
+    fn pixel_at(capture: &AgentRasterCapture, x: u32, y: u32) -> &[u8] {
+        let index = usize::try_from(y)
+            .unwrap()
+            .saturating_mul(usize::try_from(capture.width).unwrap())
+            .saturating_add(usize::try_from(x).unwrap())
+            .saturating_mul(4);
+        &capture.rgba[index..index + 4]
+    }
+
+    #[test]
+    fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
+        let source = arcweft_player_native::native::NativeFrameCapture {
+            width: 8,
+            height: 4,
+            rgba: [9, 8, 7, 255].repeat(32),
+            content_bbox: None,
+            content_pixels: 0,
+        };
+        let objects = vec![
+            test_observed_object("object.ui.left", 1, 1, 2, 2),
+            test_observed_object("object.ui.right", 5, 1, 2, 2),
+        ];
+        let selected = objects.iter().collect::<Vec<_>>();
+        let frame = test_line_display_frame();
+        let context = AgentNativeCaptureContext {
+            frame: &frame,
+            left: 0.0,
+            top: 0.0,
+            objects: &objects,
+            page_index: 0,
+        };
+
+        let capture = agent_native_masked_framebuffer_capture(&source, context, &selected).unwrap();
+
+        assert_eq!(capture.width, 6);
+        assert_eq!(capture.height, 2);
+        assert_eq!(
+            capture.composition,
+            AgentImageComposition::MaskedFramebufferCrop
+        );
+        assert_eq!(
+            capture.crop_origin,
+            Some(AgentImageCropOrigin {
+                space: AgentCoordinateSpace::Viewport,
+                x: 1,
+                y: 1,
+            })
+        );
+        assert_eq!(pixel_at(&capture, 0, 0), &[9, 8, 7, 255]);
+        assert_eq!(pixel_at(&capture, 1, 1), &[9, 8, 7, 255]);
+        assert_eq!(pixel_at(&capture, 2, 0), &[0, 0, 0, 0]);
+        assert_eq!(pixel_at(&capture, 3, 1), &[0, 0, 0, 0]);
+        assert_eq!(pixel_at(&capture, 4, 0), &[9, 8, 7, 255]);
+        assert_eq!(pixel_at(&capture, 5, 1), &[9, 8, 7, 255]);
+    }
+
+    #[test]
+    fn native_non_text_debug_capture_reports_dedicated_attachments() {
+        let source = arcweft_player_native::native::NativeFrameCapture {
+            width: 32,
+            height: 24,
+            rgba: [0, 0, 0, 255].repeat(32 * 24),
+            content_bbox: None,
+            content_pixels: 0,
+        };
+        let objects = vec![test_observed_object("object.ui.panel", 4, 5, 7, 6)];
+        let selected = objects.iter().collect::<Vec<_>>();
+        let frame = test_resolved_line_display_frame();
+        let context = AgentNativeCaptureContext {
+            frame: &frame,
+            left: 0.0,
+            top: 0.0,
+            objects: &objects,
+            page_index: 0,
+        };
+
+        let object_id = agent_native_debug_capture(
+            &source,
+            context,
+            &selected,
+            AgentObserveCaptureKind::ObjectId,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            object_id.composition,
+            AgentImageComposition::ObjectIdAttachment
+        );
+        assert_eq!(
+            object_id.capture.content_bbox,
+            Some(arcweft_player_native::native::NativeFrameContentBBox {
+                x: 4,
+                y: 5,
+                width: 7,
+                height: 6,
+            })
+        );
+        let object_id_color = agent_object_id_color("object.ui.panel");
+        assert_eq!(
+            pixel_at(
+                &AgentRasterCapture {
+                    width: object_id.capture.width,
+                    height: object_id.capture.height,
+                    crop_origin: None,
+                    composition: object_id.composition,
+                    background: [0, 0, 0, 0],
+                    rgba: object_id.capture.rgba.clone(),
+                },
+                4,
+                5,
+            ),
+            object_id_color.as_slice()
+        );
+
+        let mask = agent_native_debug_capture(
+            &source,
+            context,
+            &selected,
+            AgentObserveCaptureKind::Mask,
+            None,
+        )
+        .unwrap();
+        assert_eq!(mask.composition, AgentImageComposition::MaskAttachment);
+        assert_eq!(mask.capture.content_pixels, 42);
+        assert_eq!(
+            pixel_at(
+                &AgentRasterCapture {
+                    width: mask.capture.width,
+                    height: mask.capture.height,
+                    crop_origin: None,
+                    composition: mask.composition,
+                    background: [0, 0, 0, 0],
+                    rgba: mask.capture.rgba,
+                },
+                10,
+                10,
+            ),
+            &[255, 255, 255, 255]
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum AgentObserveResourceKind {
+    Observation,
+    Objects,
+    Overlay,
+    Image,
+    Logs,
+    Signals,
+    Audio,
+    All,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum AgentObserveMcpFormat {
+    Read,
+    List,
+    ToolResult,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
+enum AgentObserveResourceOutput {
+    One(Box<AgentResource>),
+    Many(Vec<AgentResource>),
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
+enum AgentObserveMcpResourceOutput {
+    OneRead(arcweft_agent_mcp::McpReadResourceResult),
+    ManyRead(Vec<arcweft_agent_mcp::McpReadResourceResult>),
+    List(arcweft_agent_mcp::McpListResourcesResult),
+    ToolResult(arcweft_agent_mcp::McpCallToolResult),
+}
+
+#[derive(Args, Clone, Debug)]
 struct RuntimeRunOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
@@ -5877,6 +9177,15 @@ impl From<CliRuntimePureWorkers> for RuntimePureWorkerCount {
             CliRuntimePureWorkers::Fixed(value) => Self::Fixed(value),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct AgentObservationTrace {
+    viewport: AgentViewport,
+    objects: Vec<AgentObservedObject>,
+    diagnostics: Vec<AgentDiagnostic>,
+    task_request_count: usize,
+    tick: usize,
 }
 
 #[derive(serde::Serialize)]

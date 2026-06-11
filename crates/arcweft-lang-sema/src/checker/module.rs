@@ -599,7 +599,11 @@ impl TypeChecker<'_> {
         if let Some(portrait) = dialogue.portrait() {
             self.check_expr(portrait);
         }
-        let marks = self.check_dialogue_content(dialogue.content().tokens());
+        self.check_dialogue_default_inline_failure_policy(dialogue);
+        let marks = self.check_dialogue_content(
+            dialogue.content().tokens(),
+            dialogue_has_default_inline_failure_policy(dialogue),
+        );
         self.with_line_runtime_scope(|checker| {
             if let Some(focus) = dialogue.focus() {
                 checker.check_expr(focus);
@@ -671,6 +675,40 @@ impl TypeChecker<'_> {
             }
             TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
             TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
+        }
+    }
+
+    fn check_dialogue_default_inline_failure_policy(
+        &mut self,
+        dialogue: &arcweft_lang_hir::model::HirDialogue,
+    ) {
+        let policy_args = dialogue
+            .args()
+            .iter()
+            .filter(|arg| {
+                matches!(
+                    arg.name(),
+                    "inline_fallback" | "inline_error" | "inline_error_policy"
+                )
+            })
+            .collect::<Vec<_>>();
+        if policy_args.len() > 1 {
+            self.errors
+                .push(TypeCheckError::inline_failure_policy_conflict(format!(
+                    "{} default inline policy",
+                    dialogue.callee()
+                )));
+        }
+        for arg in policy_args {
+            if matches!(arg.name(), "inline_error" | "inline_error_policy")
+                && let Some(policy) = unknown_default_inline_failure_policy(arg.value())
+            {
+                self.errors
+                    .push(TypeCheckError::unknown_inline_failure_policy(
+                        format!("{} default inline policy", dialogue.callee()),
+                        policy,
+                    ));
+            }
         }
     }
 
@@ -769,6 +807,127 @@ fn collect_flow_params(module: &HirModule) -> std::collections::HashMap<String, 
             ))
         })
         .collect()
+}
+
+fn dialogue_has_default_inline_failure_policy(
+    dialogue: &arcweft_lang_hir::model::HirDialogue,
+) -> bool {
+    dialogue.args().iter().any(|arg| {
+        matches!(
+            arg.name(),
+            "inline_fallback" | "inline_error" | "inline_error_policy"
+        )
+    })
+}
+
+fn unknown_default_inline_failure_policy(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => unknown_default_inline_failure_atom(path),
+        Expr::Field { target, field } => match target.as_ref() {
+            Expr::Path(namespace) => unknown_default_inline_failure_field(namespace, field),
+            _ => None,
+        },
+        Expr::Call { callee, args } => unknown_default_inline_failure_constructor(callee, args),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => unknown_default_inline_failure_method_constructor(receiver, method, args),
+        _ => None,
+    }
+}
+
+fn unknown_default_inline_failure_constructor(
+    callee: &Expr,
+    args: &[arcweft_lang_syntax::expr::CallArg],
+) -> Option<String> {
+    let constructor = match callee {
+        Expr::Path(path) if path == "fallback" => "fallback",
+        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure") => {
+            field
+        }
+        _ => return None,
+    };
+    if constructor != "fallback" {
+        return Some(default_inline_policy_label(callee));
+    }
+    args.iter().find_map(|arg| match arg {
+        arcweft_lang_syntax::expr::CallArg::Positional(value) => {
+            unknown_default_inline_fallback_value(value)
+        }
+        arcweft_lang_syntax::expr::CallArg::Named { name, value }
+            if name == "value" || name == "text" =>
+        {
+            unknown_default_inline_fallback_value(value)
+        }
+        arcweft_lang_syntax::expr::CallArg::Named { .. }
+        | arcweft_lang_syntax::expr::CallArg::Spread { .. } => None,
+    })
+}
+
+fn unknown_default_inline_failure_method_constructor(
+    receiver: &Expr,
+    method: &str,
+    args: &[arcweft_lang_syntax::expr::CallArg],
+) -> Option<String> {
+    if !matches!(receiver, Expr::Path(namespace) if namespace == "InlineFailure") {
+        return None;
+    }
+    if method != "fallback" {
+        return Some(format!("InlineFailure.{method}"));
+    }
+    args.iter().find_map(|arg| match arg {
+        arcweft_lang_syntax::expr::CallArg::Positional(value) => {
+            unknown_default_inline_fallback_value(value)
+        }
+        arcweft_lang_syntax::expr::CallArg::Named { name, value }
+            if name == "value" || name == "text" =>
+        {
+            unknown_default_inline_fallback_value(value)
+        }
+        arcweft_lang_syntax::expr::CallArg::Named { .. }
+        | arcweft_lang_syntax::expr::CallArg::Spread { .. } => None,
+    })
+}
+
+fn unknown_default_inline_fallback_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => unknown_default_inline_fallback_atom(path),
+        Expr::Field { target, field } => match target.as_ref() {
+            Expr::Path(namespace) => unknown_default_inline_fallback_field(namespace, field),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn unknown_default_inline_failure_atom(path: &str) -> Option<String> {
+    let variant = path.strip_prefix('.')?;
+    (!matches!(variant, "fail" | "discard" | "line_error")).then(|| path.to_owned())
+}
+
+fn unknown_default_inline_failure_field(namespace: &str, field: &str) -> Option<String> {
+    (namespace == "InlineFailure" && !matches!(field, "fail" | "discard" | "line_error"))
+        .then(|| format!("{namespace}.{field}"))
+}
+
+fn unknown_default_inline_fallback_atom(path: &str) -> Option<String> {
+    let variant = path.strip_prefix('.')?;
+    (!matches!(variant, "expr_source" | "call_source" | "value_plain")).then(|| path.to_owned())
+}
+
+fn unknown_default_inline_fallback_field(namespace: &str, field: &str) -> Option<String> {
+    (namespace == "InlineFallback"
+        && !matches!(field, "expr_source" | "call_source" | "value_plain"))
+    .then(|| format!("{namespace}.{field}"))
+}
+
+fn default_inline_policy_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Path(path) => path.clone(),
+        Expr::Field { target, field } => format!("{}.{field}", default_inline_policy_label(target)),
+        _ => format!("{expr:?}"),
+    }
 }
 
 fn type_ref_contains_choice(ty: &TypeRef) -> bool {

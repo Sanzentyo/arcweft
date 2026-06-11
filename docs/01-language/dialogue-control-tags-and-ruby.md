@@ -233,7 +233,7 @@ If formatting needs options, use `fmt(...)` explicitly:
 
 ```arcw
 narrator.say()[
-    スコアは#[fmt(score, style="number")]点です。[p]
+    スコアは#[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点です。[p]
 ]
 ```
 
@@ -248,8 +248,36 @@ pub trait DisplayText {
 Built-in implementations include common scalar types, `String`, `LocalizedText`, `Ref<T>`, and selected wrappers. `Option<T>` must be explicitly handled or formatted with a fallback:
 
 ```arcw
-#[fmt(state.nickname, none="名無し")]
+#[fmt(state.nickname, none="名無し", on_error=InlineFailure.fallback("名無し"))]
 ```
+
+Inline function calls inside `#[...]` must declare how interpolation failures are
+handled, unless the line, speaker preset, character state, or dialogue defaults
+supplies an inline failure policy. Canonical values use the `InlineFailure` enum
+namespace. Contextual shorthand such as `.fail` and `.discard` is valid only
+where an `InlineFailure` value is expected. For ordinary display text, prefer a
+default policy on the line, preset, or character instead of repeating policy
+arguments on every `fmt(...)` call:
+
+```arcw
+let alice_text = alice(inline_error=InlineFailure.fallback("?"))
+alice_text: #[fmt(score, style="number")]点[p]
+alice: #[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点[p]
+alice(inline_error=.discard): #[fmt(debug_label)] [p]
+alice: #[fmt(score, on_error=.fail)]点[p]
+alice: #[fmt(score, style="number", on_error=InlineFailure.fallback(InlineFallback.expr_source))]点[p]
+alice: #[fmt(score, style="number", on_error=InlineFailure.fallback(InlineFallback.call_source))]点[p]
+```
+
+`on_error`, `fallback`, and `discard_error` are mutually exclusive. Use exactly
+one per inline call. `fallback="..."` is shorthand for
+`on_error=InlineFailure.fallback("...")`.
+
+`InlineFallback.expr_source` renders the primary input expression without the
+formatting call. For `fmt(score, style="number")`, it renders `score`.
+`InlineFallback.call_source` renders the full failed call source.
+`InlineFallback.value_plain` is reserved for formatter failures where the runtime
+value was available but formatter/style application failed.
 
 Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark .name]` plus `with: on mark(.name):`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
 
@@ -388,6 +416,26 @@ alice: [color #a8b5ff:夜]だけが光っていた。[p]
 They normalize to the same rich-text span model as `[em]...[/em]`,
 `[strong]...[/strong]`, and `[color value="..."]...[/color]`.
 
+Font spans are typed rich-text style spans. Canonical generic families are
+`serif`, `sans-serif`, `monospace`, `cursive`, and `fantasy`; any other quoted
+or unquoted value is a requested named family that renderers may resolve through
+their font system.
+
+```arcw
+alice: [font serif]Serif text[/font][p]
+alice: [font "Noto Sans JP"]日本語フォント指定[/font][p]
+```
+
+Line-level dialogue `style` can set the base font for the whole line. Inline
+`[font ...]` spans override that base font only for their span:
+
+```arcw
+alice(style=font(monospace)): 全体は monospace。[font serif]ここだけ serif[/font][p]
+
+let alice_serif = alice(style=text_style(font=serif, color="#f7e8ff"))
+alice_serif: この preset の通常表示は serif です。[p]
+```
+
 ---
 
 ## Color and style hooks
@@ -442,7 +490,7 @@ Values used by dialogue interpolation should be defined in the surrounding flow 
 let emphasis_color = rgb("#a8b5ff")
 
 alice.say()[
-    #[fmt("夢", color=emphasis_color)]を見た。[p]
+    #[fmt("夢", color=emphasis_color, on_error=InlineFailure.fallback("夢"))]を見た。[p]
 ]
 ```
 

@@ -73,7 +73,10 @@ impl Engine {
                 }
             }
             FlowOp::Dialogue { line, task_group } => {
-                output.flow_events.push(FlowEvent::DialogueLine { line });
+                output.flow_events.push(FlowEvent::DialogueLine {
+                    line,
+                    bindings: self.fiber.env.bindings_snapshot(),
+                });
                 let Some(group) = self.plan.line_task_groups.get(task_group) else {
                     self.fiber.status =
                         FlowFiberStatus::Failed(format!("missing line task group {task_group}"));

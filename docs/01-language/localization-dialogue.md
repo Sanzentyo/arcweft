@@ -423,7 +423,7 @@ error[LOCALE_PLACEHOLDER_MISSING]:
 Runtime interpolation still requires `DisplayText` or explicit `fmt(...)`:
 
 ```arcw
-narrator: スコアは#[fmt(score, style="number")]点です。[p]
+narrator: スコアは#[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点です。[p]
 ```
 
 ---

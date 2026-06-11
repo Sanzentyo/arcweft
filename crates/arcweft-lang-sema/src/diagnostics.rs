@@ -32,6 +32,12 @@ pub enum TypeCheckErrorKind {
         expected: String,
         actual: String,
     },
+    /// An inline dialogue function call omitted explicit error handling.
+    InlineCallErrorPolicyMissing { function: String },
+    /// An inline dialogue function call declared more than one failure policy.
+    InlineFailurePolicyConflict { function: String },
+    /// An inline dialogue function call declared an unknown failure policy.
+    UnknownInlineFailurePolicy { function: String, policy: String },
 }
 
 /// Non-fatal semantic lint emitted by type analysis.
@@ -86,6 +92,40 @@ impl TypeCheckError {
                 expected,
                 actual,
             },
+        }
+    }
+
+    pub(crate) fn inline_call_error_policy_missing(function: impl Into<String>) -> Self {
+        let function = function.into();
+        Self {
+            message: format!(
+                "inline dialogue call `{function}` must declare `on_error`, `fallback`, or `discard_error`"
+            ),
+            kind: TypeCheckErrorKind::InlineCallErrorPolicyMissing { function },
+        }
+    }
+
+    pub(crate) fn inline_failure_policy_conflict(function: impl Into<String>) -> Self {
+        let function = function.into();
+        Self {
+            message: format!(
+                "inline dialogue call `{function}` declares multiple failure policies; use exactly one of `on_error`, `fallback`, or `discard_error`"
+            ),
+            kind: TypeCheckErrorKind::InlineFailurePolicyConflict { function },
+        }
+    }
+
+    pub(crate) fn unknown_inline_failure_policy(
+        function: impl Into<String>,
+        policy: impl Into<String>,
+    ) -> Self {
+        let function = function.into();
+        let policy = policy.into();
+        Self {
+            message: format!(
+                "inline dialogue call `{function}` uses unknown inline failure policy `{policy}`"
+            ),
+            kind: TypeCheckErrorKind::UnknownInlineFailurePolicy { function, policy },
         }
     }
 

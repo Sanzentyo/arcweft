@@ -659,7 +659,7 @@ for simultaneous values.
 
 ```arcw
 alice.say(id=@say.opening.dream_hint, voice=auto, look=.smile)[
-    今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
+    今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"), on_error=InlineFailure.fallback("変な夢"))]を見たんだ。[p]
 ]
 with {
     reveal = voice
@@ -675,7 +675,7 @@ Colon sugar can attach the same line plan with `with { ... }`:
 
 ```arcw
 alice(id=@say.opening.dream_hint, voice=auto, look=.smile):
-    今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
+    今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"), on_error=InlineFailure.fallback("変な夢"))]を見たんだ。[p]
 with {
     at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
 }

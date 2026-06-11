@@ -36,6 +36,8 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 
 - Prefer small, compiling increments.
 - Use Jujutsu (`jj`) for repository state when available; prefer `jj status`, `jj diff`, and `jj describe` over equivalent Git commands for local workflow reporting.
+- Push autonomously at reasonable, reviewable cut points after validation instead of waiting for an explicit push request every time. A cut point should be a coherent implementation slice, not every small edit and not a large bag of unrelated work.
+- Keep remote branch/bookmark hygiene tight. Reuse the current task branch/bookmark for follow-up fixes on the same task instead of creating new branches, avoid pushing speculative WIP branches, and remove or ask to remove merged/obsolete remote branches when cleanup is available and safe.
 - Keep crate boundaries aligned with architecture layers. Lower-level crates must not depend on higher-level crates.
 - Keep `arcweft-core` Sans I/O.
 - `arcweft-core` is runtime/data core only. Do not make it depend on dialogue, presentation, syntax, verifier, CLI, LSP, GPU, filesystem, network, Servo, Wasmtime, CPAL, camera, USB, MCP, or OS adapters.

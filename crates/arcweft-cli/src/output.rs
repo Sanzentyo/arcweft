@@ -1325,7 +1325,7 @@ impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
 
 fn flow_event_label(event: &FlowEvent) -> String {
     match event {
-        FlowEvent::DialogueLine { line } => format!("dialogue {}", line.0),
+        FlowEvent::DialogueLine { line, .. } => format!("dialogue {}", line.0),
         FlowEvent::LineCancelled { trigger } => format!("line_cancelled {trigger}"),
         FlowEvent::ChoicePresented { id } => {
             format!("choice_presented {}", id.as_deref().unwrap_or("-"))
