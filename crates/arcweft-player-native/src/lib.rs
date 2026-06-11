@@ -71,7 +71,7 @@ pub fn compile_source(source: &str) -> Result<NativePlayerProgram, NativePlayerE
         return Err(NativePlayerError::Parse(parsed.errors().to_vec()));
     }
     let hir = lower_to_hir(parsed.typed_tree()).map_err(NativePlayerError::Hir)?;
-    let type_report = analyze_types(&hir, &TypeCheckEnv::new());
+    let type_report = analyze_types(&hir, &TypeCheckEnv::standard());
     type_report.into_result().map_err(NativePlayerError::Type)?;
     let report = lower_runtime_plan_with_stats(&hir).map_err(NativePlayerError::RuntimePlan)?;
     Ok(NativePlayerProgram {

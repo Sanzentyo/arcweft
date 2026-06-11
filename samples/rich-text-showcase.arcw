@@ -1,9 +1,37 @@
 pub surface character @character.alice Alice as alice {
     default_voice = auto
+    dialogue_style {
+        font = "Yu Gothic"
+        text_color = "#d9f2ff"
+        text_size = 30
+    }
 }
 
 pub surface character @character.narrator Narrator as narrator {
     default_voice = auto
+    dialogue_style {
+        font = "Yu Gothic UI"
+        text_color = "#e8e8e8"
+        text_size = 28
+    }
+}
+
+pub surface character @character.benio Benio as benio {
+    default_voice = auto
+    dialogue_style {
+        font = "Meiryo"
+        text_color = "#ffd9e8"
+        text_size = 29
+    }
+}
+
+pub surface character @character.clerk Clerk as clerk {
+    default_voice = auto
+    dialogue_style {
+        font = "MS Gothic"
+        text_color = "#e8ffd9"
+        text_size = 27
+    }
 }
 
 entry game @entry.main {
@@ -12,15 +40,27 @@ entry game @entry.main {
 
 flow @flow.rich_text_showcase rich_text_showcase {
     alice.say(id=@say.rich_text.001, voice=auto, look=.smile)[
-        [font "Noto Sans JP"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl]縦書き[/]も混ざる。[p]
+        [font "Yu Gothic"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl][font "Yu Mincho"]縦書きも混ざる[/font][/]。[p]
     ]
 
     narrator.say(id=@say.rich_text.002, voice=auto)[
-        [.jitter amp=1px seed=still]静かな揺らぎ[/]、[.arc radius=24px start=-20deg step=10deg]円弧配置[/]、[.shader id=soft_glow amount=0.6 dir=1,0]shader参照[/]を同じ rich-text presentation に乗せる。[p]
+        [font "Segoe UI"]Segoe UI[/font] と [font "Consolas"]Consolas 123[/font]、[font "MS Mincho"]明朝[/font]、[font "Meiryo"]メイリオ[/font] を同じ行で確認する。[p]
     ]
 
-    alice.say(id=@say.rich_text.003, voice=auto)[
-        [.keyword]未知の dot selector は marker として残し、[.typewriter cps=18]typewriter[/] は glyph mask effect として保持する。[p]
+    benio.say(id=@say.rich_text.003, voice=auto, look=.confident)[
+        [strong]太字[/strong]、[em]強調[/em]、[italic]italic[/italic]、[oblique 12deg]斜体角度[/oblique]、[size 36]大きな文字[/size]、[color #ff9ac8]色指定[/color]。[p]
+    ]
+
+    clerk.say(id=@say.rich_text.004, voice=auto)[
+        [.vertical_rl][font "MS Mincho"]縦書き専用行。春夏秋冬、天地左右、和文の詰まりを見る。[/font][/] [font "MS Gothic"]横組み MS Gothic で比較[/font]。[p]
+    ]
+
+    narrator.say(id=@say.rich_text.005, voice=auto)[
+        [.jitter amp=1px seed=still]静かな揺らぎ[/]、[.arc radius=24px start=-20deg step=10deg]円弧配置[/]、[.shader id=soft_glow amount=0.6 dir=1,0]shader参照[/]、[.typewriter cps=18]typewriter[/] を保持する。[p]
+    ]
+
+    alice.say(id=@say.rich_text.006, voice=auto)[
+        [.keyword]未知の dot selector は marker として残し、[reset][font "Yu Gothic"]reset 後の通常文字[/font]へ戻す。[p]
     ]
 
     return "rich_text_showcase"

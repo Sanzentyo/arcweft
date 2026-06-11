@@ -181,6 +181,7 @@ pub enum DialogueHostEvent {
     Rotate { attrs: String },
     Anim { attrs: String },
     Shake { attrs: String },
+    TimedCue { attrs: String },
     Call { attrs: String },
     Signal { attrs: String },
     Conditional { name: String, attrs: String },

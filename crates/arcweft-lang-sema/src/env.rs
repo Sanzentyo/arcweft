@@ -195,6 +195,17 @@ impl TypeCheckEnv {
         Self::default()
     }
 
+    /// Creates the standard source type-checking environment.
+    pub fn standard() -> Self {
+        Self::new().with_standard_builtins()
+    }
+
+    /// Registers builtins that are available to ordinary Arcweft source files.
+    #[must_use]
+    pub fn with_standard_builtins(self) -> Self {
+        self.with_function("fmt", TypeKind::DisplayText)
+    }
+
     /// Registers a variable, constant, or resolved path.
     #[must_use]
     pub fn with_symbol(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
@@ -415,6 +426,14 @@ mod tests {
                     .collect::<Vec<_>>()
             }),
             Some(vec!["fs.read"])
+        );
+    }
+
+    #[test]
+    fn standard_env_contains_dialogue_fmt_builtin() {
+        assert_eq!(
+            TypeCheckEnv::standard().function_type("fmt"),
+            Some(&TypeKind::DisplayText)
         );
     }
 }

@@ -1,0 +1,76 @@
+pub surface character @character.alice Alice as alice {
+    default_voice = auto
+    dialogue_style {
+        font = "Yu Gothic"
+        text_color = "#d9f2ff"
+        text_size = 29
+    }
+}
+
+pub surface character @character.bob Bob as bob {
+    default_voice = auto
+    dialogue_style {
+        font = "Meiryo"
+        text_color = "#ffe0d0"
+        text_size = 28
+    }
+}
+
+pub surface character @character.narrator Narrator as narrator {
+    default_voice = auto
+    dialogue_style {
+        font = "Segoe UI"
+        text_color = "#e8e8e8"
+        text_size = 27
+    }
+}
+
+entry game {
+    start @flow.rich_text_full_grammar
+}
+
+flow @flow.rich_text_full_grammar rich_text_full_grammar {
+    let player_name = "澪"
+    let score: i32 = 42
+    let debug_label = "debug-ok"
+
+    alice.say(id=@say.full.001, voice=auto, look=.smile, inline_error=InlineFailure.fallback("?"))[
+        ルビ: |[変な夢](へんなゆめ)、|悪夢{あくむ}、｜星影《ほしかげ》、[ruby rt="時計塔"]時の塔[/ruby]、[rb rt=ゆめ]夢[/rb]、#[ruby("秘密", "ひみつ")]。[p]
+    ]
+
+    bob.say(id=@say.full.002, voice=auto, inline_error=InlineFailure.fallback("?"))[
+        補間: #[player_name]、$(debug_label)、#[fmt(score, style="number")]点、#[fmt(score, fallback="?")]、#[fmt(score, on_error=.discard)]。[p]
+    ]
+
+    narrator.say(id=@say.full.003, voice=auto)[
+        待機と改行: 一行目[l]続き[w time=500ms]短縮待ち[w 250ms]改行[r]br別名[br]wait別名[wait]nl別名[nl]ページ別名[page]クリア[clear][er][cm][p]
+    ]
+
+    alice.say(id=@say.full.004, voice=auto)[
+        装飾: [em:夢]、[strong:本当に]、[color #a8b5ff:夜]、[font serif]serif[/font]、[font "Yu Gothic"]游ゴシック[/font]、[size 36]大[/size]、[speed cps=24]速度[/speed]、[reset]reset後。[p]
+    ]
+
+    bob.say(id=@say.full.005, voice=auto)[
+        推論: [.italic]italic[/]、[.oblique 12deg]oblique[/]、[.vertical_rl]縦書き[/]、[.vertical_lr]縦LR[/]、[.offset x=4px y=-2px]offset[/]、[.rotate angle=8deg]rotate[/]、[.scale x=1.2 y=1.2]scale[/]、[.wave amp=2px dir=0,1]wave[/]、[.shake amp=1px seed=full]shake[/]、[.typewriter cps=20]typewriter[/]、[.keyword]marker。[p]
+    ]
+
+    narrator.say(id=@say.full.006, voice=auto)[
+        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg]transform[/transform]、[effect .jitter amp=1px seed=full]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0]shader[/effect]。[p]
+    ]
+
+    alice.say(id=@say.full.007, voice=auto)[
+        cue: [voice auto][face smile][pose idle][show alice][hide bob][move x=10 y=0][scale x=1.1][rotate 5deg][anim blink][shake amp=2][at 0.2s call=flash][call flash(color=#ffffff, time=90ms)][! sparkle(intensity=2)][signal .seen][if flag]条件[else]代替[endif][mark .release][p]
+    ]
+
+    bob.say(id=@say.full.008, voice=auto)[
+        raw短縮 [raw: [p]や#[expr]をそのまま表示] と escape \[ \] \# \$ \( \) \| \{ \} \: \｜ \《 \》 \\。[p]
+    ]
+
+    narrator.say(id=@say.full.009, voice=auto)[
+        [raw]
+        raw block: [p] も [.shake] も #[player_name] も解釈しない。
+        [/raw][p]
+    ]
+
+    return "rich_text_full_grammar"
+}

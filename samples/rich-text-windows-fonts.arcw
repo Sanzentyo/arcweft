@@ -1,0 +1,76 @@
+pub surface character @character.akira Akira as akira {
+    default_voice = auto
+    dialogue_style {
+        font = "Yu Gothic"
+        text_color = "#d9f2ff"
+        text_size = 30
+    }
+}
+
+pub surface character @character.mio Mio as mio {
+    default_voice = auto
+    dialogue_style {
+        font = "Meiryo"
+        text_color = "#ffd9f0"
+        text_size = 29
+    }
+}
+
+pub surface character @character.sen Sen as sen {
+    default_voice = auto
+    dialogue_style {
+        font = "MS Mincho"
+        text_color = "#fff0c8"
+        text_size = 30
+    }
+}
+
+pub surface character @character.terminal Terminal as terminal {
+    default_voice = auto
+    dialogue_style {
+        font = "Consolas"
+        text_color = "#d8ffd8"
+        text_size = 27
+    }
+}
+
+pub surface character @character.narrator Narrator as narrator {
+    default_voice = auto
+    dialogue_style {
+        font = "Segoe UI"
+        text_color = "#e8e8e8"
+        text_size = 28
+    }
+}
+
+entry game {
+    start @flow.windows_font_showcase
+}
+
+flow @flow.windows_font_showcase windows_font_showcase {
+    sen.say(id=@say.windows_fonts.001, voice=auto)[
+        [.vertical_rl][font "MS Mincho"]縦書きの見本。春夏秋冬、朝昼夕夜、天地左右。[/font][/] [font "Yu Gothic"]横書き比較[/font]。[p]
+    ]
+
+    akira.say(id=@say.windows_fonts.002, voice=auto, look=.smile)[
+        [font "Yu Gothic"][color #8fd7ff]Yu Gothic[/color] は本文寄り。[strong]太字[/strong]、[em]強調[/em]、[size 36]大きな語[/size]を混ぜる。[p]
+    ]
+
+    mio.say(id=@say.windows_fonts.003, voice=auto, look=.bright)[
+        [font "Meiryo"]Meiryo[/font] で、[italic]italic[/italic]、[oblique 10deg]oblique[/oblique]、[color #ff9ac8]色指定[/color]を見る。[p]
+    ]
+
+    terminal.say(id=@say.windows_fonts.004, voice=auto)[
+        [font "Consolas"]Consolas: let score = 42; 0123456789[/font] と [font "MS Gothic"]MS Gothic 等幅かな交じり[/font]。[p]
+    ]
+
+    narrator.say(id=@say.windows_fonts.005, voice=auto)[
+        [font "Segoe UI"]Segoe UI[/font]、[font "Yu Gothic UI"]Yu Gothic UI[/font]、[font "MS Gothic"]MS Gothic[/font]、[font "MS Mincho"]MS Mincho[/font] を同じ rich text に並べる。[p]
+    ]
+
+    akira.say(id=@say.windows_fonts.006, voice=auto)[
+        [.wave amp=2px dir=0,1 period=7 speed=1]波[/]、[.shake amp=1px seed=windows-fonts]揺れ[/]、[.offset x=8px y=-3px]|[星影](ほしかげ)[/]、[.typewriter cps=20]typewriter[/]。[p]
+    ]
+
+    return "windows_font_showcase"
+}

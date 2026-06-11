@@ -495,6 +495,9 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
         "shake" => host_event(DialogueHostEvent::Shake {
             attrs: tag.attrs().to_owned(),
         }),
+        "at" => host_event(DialogueHostEvent::TimedCue {
+            attrs: tag.attrs().to_owned(),
+        }),
         "call" => host_event(DialogueHostEvent::Call {
             attrs: tag.attrs().to_owned(),
         }),
@@ -1025,7 +1028,7 @@ mod tests {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice(style=text_style(font=serif, color="#f7e8ff"), inline_error=InlineFailure.fallback("?")): Hello #[player] |[夢](ゆめ)[r][font monospace][em:quiet][voice auto][face smile][signal .seen][p]
+    alice(style=text_style(font=serif, color="#f7e8ff"), inline_error=InlineFailure.fallback("?")): Hello #[player] |[夢](ゆめ)[r][font monospace][em:quiet][voice auto][face smile][at 0.2s call=flash][signal .seen][p]
 }
 "##,
         );
@@ -1095,6 +1098,13 @@ flow @flow.main main {
             matches!(
                 node,
                 RichTextNode::HostEvent(DialogueHostEvent::Voice { .. })
+            )
+        }));
+        assert!(spec.content.nodes.iter().any(|node| {
+            matches!(
+                node,
+                RichTextNode::HostEvent(DialogueHostEvent::TimedCue { attrs })
+                    if attrs == "0.2s call=flash"
             )
         }));
         assert!(spec.content.nodes.iter().any(|node| {

@@ -34,7 +34,7 @@ fn assert_check_pipeline(path: &Path) {
         .unwrap_or_else(|errors| panic!("{} reference errors: {errors:?}", path.display()));
     validate_typecheck_ready(&hir)
         .unwrap_or_else(|errors| panic!("{} readiness errors: {errors:?}", path.display()));
-    typecheck_hir(&hir, &TypeCheckEnv::new())
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
         .unwrap_or_else(|errors| panic!("{} typecheck errors: {errors:?}", path.display()));
 }
 

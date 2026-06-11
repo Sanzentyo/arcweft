@@ -947,7 +947,7 @@ fn jit_check_source_target(
     path: &Path,
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
-    let checked = load_and_check_with_env(path, &TypeCheckEnv::new(), Vec::new())?;
+    let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
     let pure_report = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -8171,7 +8171,7 @@ fn typecheck_env_for_selection(
             manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
-    Ok(manifest.apply_to_env(TypeCheckEnv::new()))
+    Ok(manifest.apply_to_env(TypeCheckEnv::standard()))
 }
 
 fn adapter_manifest_for_selection(
