@@ -5,6 +5,16 @@ use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod rich_effects;
+
+pub use rich_effects::{
+    Milli, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
+    RichTextInlineDirection, RichTextLayout, RichTextParam, RichTextPresentation,
+    RichTextRubyPosition, RichTextShaderRef, RichTextStateScope, RichTextTransform,
+    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
+    parse_decimal_milli, parse_milli_token,
+};
+
 /// Rich-text display sidecar generated while lowering a runtime plan.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct LineDisplayCatalog {
@@ -109,10 +119,16 @@ pub enum FallbackStylePolicy {
 pub enum RichTextStyle {
     Em { attrs: String },
     Strong { attrs: String },
+    Italic { attrs: String },
+    Oblique { angle: RichTextAngle, raw: String },
     Color { value: RichTextColor },
     Font { family: RichTextFontFamily },
     Size { points: Option<u16>, raw: String },
     Speed { value: String },
+    Layout { layout: RichTextLayout },
+    Transform { transform: RichTextTransform },
+    Effect { effect: RichTextEffectDescriptor },
+    Shader { shader: RichTextShaderRef },
     Unknown { name: String, attrs: String },
 }
 
@@ -220,6 +236,8 @@ pub struct RichTextTextRun {
     pub source: RichTextTextSource,
     pub node_index: usize,
     pub styles: Vec<RichTextStyle>,
+    #[serde(default)]
+    pub presentation: RichTextPresentation,
 }
 
 /// Source category for a resolved visible text run.
@@ -241,6 +259,8 @@ pub struct RichTextRubyAnnotation {
     pub ruby: String,
     pub node_index: usize,
     pub styles: Vec<RichTextStyle>,
+    #[serde(default)]
+    pub presentation: RichTextPresentation,
 }
 
 /// Control node marker in the resolved display stream.
@@ -346,6 +366,15 @@ impl RichTextStyle {
             "strong" => Self::Strong {
                 attrs: attrs.to_owned(),
             },
+            "i" | "italic" => Self::Italic {
+                attrs: attrs.to_owned(),
+            },
+            "oblique" | "slant" => Self::Oblique {
+                angle: RichTextAngle {
+                    degrees: parse_milli_token(attrs),
+                },
+                raw: attrs.to_owned(),
+            },
             "color" => Self::Color {
                 value: RichTextColor::from_attrs(attrs),
             },
@@ -374,10 +403,14 @@ impl RichTextStyle {
         match self {
             Self::Em { .. } => "em",
             Self::Strong { .. } => "strong",
+            Self::Italic { .. } | Self::Oblique { .. } => "style",
             Self::Color { .. } => "color",
             Self::Font { .. } => "font",
             Self::Size { .. } => "size",
             Self::Speed { .. } => "speed",
+            Self::Layout { .. } => "layout",
+            Self::Transform { .. } => "transform",
+            Self::Effect { .. } | Self::Shader { .. } => "effect",
             Self::Unknown { name, .. } => name,
         }
     }
@@ -536,13 +569,16 @@ impl<'a> LineDisplayFrameResolver<'a> {
 
     fn push_ruby_node(&mut self, base: &str, ruby: &str, node_index: usize, node: &RichTextNode) {
         let range = self.push_visible_text(base, RichTextTextSource::RubyBase, node_index);
+        let styles = self.current_styles();
+        let presentation = presentation_from_styles(styles.iter());
         self.display_map
             .ruby_annotations
             .push(RichTextRubyAnnotation {
                 base_range: range,
                 ruby: ruby.to_owned(),
                 node_index,
-                styles: self.current_styles(),
+                styles,
+                presentation,
             });
         self.nodes.push(node.clone());
     }
@@ -692,11 +728,13 @@ fn push_display_text_run(
     text.push_str(value);
     let range = RichTextRange::new(start, text.len());
     if !value.is_empty() {
+        let styles = current_styles(base_styles, active_styles);
         display_map.text_runs.push(RichTextTextRun {
             range,
             source,
             node_index,
-            styles: current_styles(base_styles, active_styles),
+            presentation: presentation_from_styles(styles.iter()),
+            styles,
         });
     }
     range
@@ -714,12 +752,56 @@ fn current_styles(
 }
 
 fn remove_active_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {
+    if name == "/" {
+        active_styles.pop();
+        return;
+    }
+    let name = canonical_style_name(name);
     if let Some(index) = active_styles
         .iter()
         .rposition(|style| style.tag_name() == name)
     {
         active_styles.remove(index);
     }
+}
+
+/// Canonicalizes style end names used by authored aliases and inferred spans.
+pub fn canonical_style_name(name: &str) -> &str {
+    match name {
+        "" | "/" => "/",
+        "i" | "italic" | "oblique" | "slant" | "style" => "style",
+        "vertical" | "vertical_rl" | "vertical_lr" | "horizontal_tb" | "layout" => "layout",
+        "offset" | "pos" | "rotate" | "scale" | "transform" => "transform",
+        "shader" | "effect" | "fx" => "effect",
+        other => other,
+    }
+}
+
+/// Aggregates presentation metadata from active rich-text styles.
+pub fn presentation_from_styles<'a>(
+    styles: impl IntoIterator<Item = &'a RichTextStyle>,
+) -> RichTextPresentation {
+    styles
+        .into_iter()
+        .fold(RichTextPresentation::default(), |mut out, style| {
+            match style {
+                RichTextStyle::Em { .. } | RichTextStyle::Italic { .. } => out.italic = true,
+                RichTextStyle::Oblique { angle, .. } => out.oblique = Some(*angle),
+                RichTextStyle::Layout { layout } => out.layout = Some(layout.clone()),
+                RichTextStyle::Transform { transform } => {
+                    out.transform = Some(transform.clone());
+                }
+                RichTextStyle::Effect { effect } => out.effects.push(effect.clone()),
+                RichTextStyle::Shader { shader } => out.shaders.push(shader.clone()),
+                RichTextStyle::Strong { .. }
+                | RichTextStyle::Color { .. }
+                | RichTextStyle::Font { .. }
+                | RichTextStyle::Size { .. }
+                | RichTextStyle::Speed { .. }
+                | RichTextStyle::Unknown { .. } => {}
+            }
+            out
+        })
 }
 
 fn fallback_text(expr: &str, fallback_source: &str, fallback: &InlineFallback) -> Option<String> {
@@ -861,6 +943,7 @@ mod tests {
                 styles: vec![RichTextStyle::Font {
                     family: RichTextFontFamily::Monospace
                 }],
+                presentation: RichTextPresentation::default(),
             }]
         );
         assert_eq!(

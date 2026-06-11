@@ -29,6 +29,8 @@ use thiserror::Error;
 pub struct FormatOptions {
     /// Rewrite script-friendly sugar into canonical block/call forms.
     pub expand_sugar: bool,
+    /// Rewrite inferred rich-text tags into explicit style/layout/transform/effect spans.
+    pub canonical_rich_text: bool,
 }
 
 /// A half-open source edit over UTF-8 byte offsets.
@@ -90,11 +92,12 @@ pub fn format_source(
     source: &str,
     options: FormatOptions,
 ) -> Result<ToolingEditReport, ToolingError> {
-    let edits = if options.expand_sugar {
-        sugar_expansion_edits(source)
-    } else {
-        Vec::new()
-    };
+    let mut edits = Vec::new();
+    if options.expand_sugar {
+        edits.extend(sugar_expansion_edits(source));
+    } else if options.canonical_rich_text {
+        edits.extend(rich_text_canonical_edits(source));
+    }
     report_from_edits(source, edits)
 }
 
@@ -275,7 +278,7 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
             edits.push(edit);
         }
     }
-    for edit in dialogue_text_sugar_edits(source, &parsed) {
+    for edit in dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::All) {
         if !edits.iter().any(|existing| edits_overlap(existing, &edit)) {
             edits.push(edit);
         }
@@ -283,14 +286,29 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     edits
 }
 
+fn rich_text_canonical_edits(source: &str) -> Vec<TextEdit> {
+    let parsed = parse_source(source);
+    dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::RichTextOnly)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DialogueSugarMode {
+    All,
+    RichTextOnly,
+}
+
 fn edits_overlap(lhs: &TextEdit, rhs: &TextEdit) -> bool {
     lhs.start < rhs.end && rhs.start < lhs.end
 }
 
-fn dialogue_text_sugar_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
+fn dialogue_text_sugar_edits(
+    source: &str,
+    parsed: &ParsedSource,
+    mode: DialogueSugarMode,
+) -> Vec<TextEdit> {
     let mut edits = Vec::new();
     for item in parsed.typed_tree().items() {
-        collect_dialogue_text_sugar_edits_from_item(source, item, &mut edits);
+        collect_dialogue_text_sugar_edits_from_item(source, item, &mut edits, mode);
     }
     edits
 }
@@ -299,15 +317,16 @@ fn collect_dialogue_text_sugar_edits_from_item(
     source: &str,
     item: &Item,
     edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
 ) {
     match item {
         Item::Flow(flow) => {
             for item in flow.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         Item::FlowItem(item) => {
-            collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+            collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
         }
         _ => {}
     }
@@ -317,77 +336,78 @@ fn collect_dialogue_text_sugar_edits_from_flow_item(
     source: &str,
     item: &FlowItem,
     edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
 ) {
     match item {
         FlowItem::SpeakerLine(line) => {
-            collect_dialogue_content_sugar_edits(source, line.content(), edits);
+            collect_dialogue_content_sugar_edits(source, line.content(), edits, mode);
         }
         FlowItem::ContentCall(call) => {
-            collect_dialogue_content_sugar_edits(source, call.content(), edits);
+            collect_dialogue_content_sugar_edits(source, call.content(), edits, mode);
         }
         FlowItem::Scope(scope) => {
             for item in scope.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::If(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::IfLet(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::Match(block) => {
             for arm in block.arms() {
                 for item in arm.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
                 }
             }
         }
         FlowItem::Loop(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::While(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::WhileLet(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::For(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::Select(block) => {
             for branch in block.branches() {
                 for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
                 }
             }
         }
         FlowItem::BorrowBlock(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::SourceLocale(block) => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
             }
         }
         FlowItem::AwaitWith(await_with) => {
             for branch in await_with.branches() {
                 for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits);
+                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
                 }
             }
         }
@@ -399,11 +419,12 @@ fn collect_dialogue_content_sugar_edits(
     source: &str,
     content: &DialogueContent,
     edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
 ) {
     let Some(base) = dialogue_content_source_base(source, content) else {
         return;
     };
-    edits.extend(dialogue_text_canonical_edits(content.raw(), base));
+    edits.extend(dialogue_text_canonical_edits(content.raw(), base, mode));
 }
 
 fn dialogue_content_source_base(source: &str, content: &DialogueContent) -> Option<usize> {
@@ -422,9 +443,10 @@ fn dialogue_content_source_base(source: &str, content: &DialogueContent) -> Opti
     source.find(content.raw())
 }
 
-fn dialogue_text_canonical_edits(raw: &str, base: usize) -> Vec<TextEdit> {
+fn dialogue_text_canonical_edits(raw: &str, base: usize, mode: DialogueSugarMode) -> Vec<TextEdit> {
     let mut edits = Vec::new();
     let mut cursor = 0;
+    let mut inferred_span_stack = Vec::new();
     while cursor < raw.len() {
         let Some(ch) = raw[cursor..].chars().next() else {
             break;
@@ -436,7 +458,7 @@ fn dialogue_text_canonical_edits(raw: &str, base: usize) -> Vec<TextEdit> {
                     cursor += escaped.len_utf8();
                 }
             }
-            '｜' => {
+            '｜' if mode == DialogueSugarMode::All => {
                 if let Some((end, replacement)) = natural_ruby_edit(raw, cursor) {
                     edits.push(TextEdit {
                         start: base + cursor,
@@ -448,7 +470,7 @@ fn dialogue_text_canonical_edits(raw: &str, base: usize) -> Vec<TextEdit> {
                     cursor += ch.len_utf8();
                 }
             }
-            '|' => {
+            '|' if mode == DialogueSugarMode::All => {
                 if let Some((end, replacement)) = compact_ruby_edit(raw, cursor) {
                     edits.push(TextEdit {
                         start: base + cursor,
@@ -460,7 +482,7 @@ fn dialogue_text_canonical_edits(raw: &str, base: usize) -> Vec<TextEdit> {
                     cursor += ch.len_utf8();
                 }
             }
-            '$' => {
+            '$' if mode == DialogueSugarMode::All => {
                 if let Some((end, replacement)) = dollar_expr_edit(raw, cursor) {
                     edits.push(TextEdit {
                         start: base + cursor,
@@ -473,7 +495,9 @@ fn dialogue_text_canonical_edits(raw: &str, base: usize) -> Vec<TextEdit> {
                 }
             }
             '[' => {
-                if let Some((end, replacement)) = bracket_dialogue_edit(raw, cursor) {
+                if let Some((end, replacement)) =
+                    bracket_dialogue_edit(raw, cursor, &mut inferred_span_stack, mode)
+                {
                     edits.push(TextEdit {
                         start: base + cursor,
                         end: base + end,
@@ -545,8 +569,15 @@ fn dollar_expr_edit(raw: &str, start: usize) -> Option<(usize, String)> {
     Some((end, format!("#[{expr}]")))
 }
 
-fn bracket_dialogue_edit(raw: &str, start: usize) -> Option<(usize, String)> {
-    if let Some(body) = raw.get(start..)?.strip_prefix("[raw:") {
+fn bracket_dialogue_edit(
+    raw: &str,
+    start: usize,
+    inferred_span_stack: &mut Vec<&'static str>,
+    mode: DialogueSugarMode,
+) -> Option<(usize, String)> {
+    if mode == DialogueSugarMode::All
+        && let Some(body) = raw.get(start..)?.strip_prefix("[raw:")
+    {
         let close_relative = body.rfind(']')?;
         let raw_body = body[..close_relative].trim_start();
         return Some((
@@ -557,27 +588,46 @@ fn bracket_dialogue_edit(raw: &str, start: usize) -> Option<(usize, String)> {
     let close = raw.get(start + '['.len_utf8()..)?.find(']')? + start + '['.len_utf8();
     let inside = raw.get(start + '['.len_utf8()..close)?.trim();
     let end = close + ']'.len_utf8();
-    if inside == "page" {
+    if inside == "/" {
+        let family = inferred_span_stack.pop()?;
+        return Some((end, format!("[/{family}]")));
+    }
+    if mode == DialogueSugarMode::All && inside == "page" {
         return Some((end, "[p]".to_owned()));
     }
-    if inside == "wait" {
+    if mode == DialogueSugarMode::All && inside == "wait" {
         return Some((end, "[l]".to_owned()));
     }
-    if inside == "nl" {
+    if mode == DialogueSugarMode::All && inside == "nl" {
         return Some((end, "[r]".to_owned()));
     }
-    if let Some(rest) = inside.strip_prefix("! ") {
+    if mode == DialogueSugarMode::All
+        && let Some(rest) = inside.strip_prefix("! ")
+    {
         return Some((end, format!("[call {rest}]")));
     }
     if inside.starts_with('.') && inside.len() > 1 {
-        return Some((end, format!("[mark {inside}]")));
+        let (selector, attrs) = split_dialogue_tag_head(inside);
+        if let Some(family) = inferred_rich_text_family(selector.trim_start_matches('.')) {
+            inferred_span_stack.push(family);
+            let replacement = if attrs.is_empty() {
+                format!("[{family} {selector}]")
+            } else {
+                format!("[{family} {selector} {attrs}]")
+            };
+            return Some((end, replacement));
+        }
+        return Some((end, format!("[mark {selector}]")));
     }
-    if let Some(time) = inside.strip_prefix("w ")
+    if mode == DialogueSugarMode::All
+        && let Some(time) = inside.strip_prefix("w ")
         && !time.contains('=')
     {
         return Some((end, format!("[w time={}]", time.trim())));
     }
-    if let Some((tag, body)) = inside.split_once(':') {
+    if mode == DialogueSugarMode::All
+        && let Some((tag, body)) = inside.split_once(':')
+    {
         let body = body.trim_start();
         if tag == "em" || tag == "strong" {
             return Some((end, format!("[{tag}]{body}[/{tag}]")));
@@ -589,7 +639,35 @@ fn bracket_dialogue_edit(raw: &str, start: usize) -> Option<(usize, String)> {
             ));
         }
     }
-    rb_tag_edit(raw, start, inside, end)
+    if mode == DialogueSugarMode::All {
+        rb_tag_edit(raw, start, inside, end)
+    } else {
+        None
+    }
+}
+
+fn split_dialogue_tag_head(source: &str) -> (&str, &str) {
+    let mut parts = source.splitn(2, char::is_whitespace);
+    (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default().trim(),
+    )
+}
+
+fn inferred_rich_text_family(selector: &str) -> Option<&'static str> {
+    match selector {
+        "italic" | "oblique" => Some("style"),
+        "horizontal_tb"
+        | "vertical_rl"
+        | "vertical_lr"
+        | "dir"
+        | "ruby_over"
+        | "ruby_under"
+        | "ruby_inter_character" => Some("layout"),
+        "offset" | "pos" | "rotate" | "scale" | "skew" => Some("transform"),
+        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => Some("effect"),
+        _ => None,
+    }
 }
 
 fn rb_tag_edit(raw: &str, _start: usize, inside: &str, open_end: usize) -> Option<(usize, String)> {
@@ -1417,8 +1495,14 @@ mod tests {
     #[test]
     fn expands_speaker_with_and_parent_sugar() {
         let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n";
-        let report =
-            format_source(source, FormatOptions { expand_sugar: true }).expect("format report");
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
         assert!(report.output.contains("alice.say()[hi[p]]"));
         assert!(report.output.contains("with {"));
         assert!(report.output.contains("    }"));
@@ -1428,8 +1512,14 @@ mod tests {
     #[test]
     fn expands_speaker_presets_from_typed_tree_without_helper_false_positive() {
         let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let helper = compute()\n    alice2: preset[p]\n    helper: helper[p]\n}\n";
-        let report =
-            format_source(source, FormatOptions { expand_sugar: true }).expect("format report");
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
 
         assert!(report.output.contains("alice2[preset[p]]"));
         assert!(report.output.contains("helper.say()[helper[p]]"));
@@ -1439,8 +1529,14 @@ mod tests {
     #[test]
     fn expands_chained_speaker_presets_from_typed_tree() {
         let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let alice3 = alice2(face=smile)\n    alice3: chained[p]\n}\n";
-        let report =
-            format_source(source, FormatOptions { expand_sugar: true }).expect("format report");
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
 
         assert!(report.output.contains("alice3[chained[p]]"));
     }
@@ -1451,8 +1547,14 @@ mod tests {
         let preserved = format_source(source, FormatOptions::default()).expect("format report");
         assert_eq!(preserved.output, source);
 
-        let expanded =
-            format_source(source, FormatOptions { expand_sugar: true }).expect("format report");
+        let expanded = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
         assert!(expanded.output.contains("|[変な夢](へんなゆめ)"));
         assert!(expanded.output.contains("|[悪夢](あくむ)"));
         assert!(expanded.output.contains("#[name]"));
@@ -1462,6 +1564,27 @@ mod tests {
         assert!(expanded.output.contains("[p]"));
         assert!(expanded.output.contains("[em]夢[/em]"));
         assert!(expanded.output.contains("[raw][p][/raw]"));
+    }
+
+    #[test]
+    fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
+        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px pattern=a,b,c]there[/][page]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(report.output.contains("$(name)"));
+        assert!(
+            report
+                .output
+                .contains("[effect .shake amp=2px pattern=a,b,c]there[/effect]")
+        );
+        assert!(report.output.contains("[page]"));
     }
 
     #[test]

@@ -8,8 +8,12 @@ use arcweft_lang_hir::syntax::ast::items::{EntityDeclItem, EntityDeclKind};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, parse_expr};
 use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LineDisplayArg,
-    LineDisplaySpec, RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily,
-    RichTextNode, RichTextStyle,
+    LineDisplaySpec, Milli, RichTextAngle, RichTextColor, RichTextControl, RichTextDocument,
+    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
+    RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition,
+    RichTextShaderRef, RichTextStateScope, RichTextStyle, RichTextTransform,
+    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
+    parse_decimal_milli, parse_milli_token,
 };
 use std::collections::BTreeMap;
 
@@ -406,13 +410,21 @@ fn lower_dialogue_token(
             })]
         }
         DialogueToken::Tag(tag) => lower_tag(tag),
+        DialogueToken::InferredTag(tag) => lower_inferred_tag(tag),
         DialogueToken::Mark(mark) => {
             vec![RichTextNode::Control(RichTextControl::Mark {
                 name: mark.name().to_owned(),
             })]
         }
         DialogueToken::EndTag(name) => {
-            vec![RichTextNode::StyleEnd { name: name.clone() }]
+            vec![RichTextNode::StyleEnd {
+                name: canonical_end_tag(name).to_owned(),
+            }]
+        }
+        DialogueToken::InferredEndTag => {
+            vec![RichTextNode::StyleEnd {
+                name: "/".to_owned(),
+            }]
         }
         DialogueToken::Expr(expr) => {
             vec![RichTextNode::Interpolation {
@@ -443,11 +455,16 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
         })],
         "clear" | "er" | "cm" => vec![RichTextNode::Control(RichTextControl::Clear)],
         "reset" => vec![RichTextNode::Control(RichTextControl::Reset)],
-        "em" | "strong" | "color" | "font" | "size" | "speed" => {
+        "em" | "strong" | "color" | "font" | "size" | "speed" | "i" | "italic" | "oblique"
+        | "slant" => {
             vec![RichTextNode::StyleStart {
                 style: RichTextStyle::from_tag(tag.name(), tag.attrs()),
             }]
         }
+        "style" => lower_style_tag(tag),
+        "layout" => lower_layout_tag(tag),
+        "transform" => lower_transform_tag(tag),
+        "effect" | "fx" => lower_effect_tag(tag),
         "voice" => host_event(DialogueHostEvent::Voice {
             attrs: tag.attrs().to_owned(),
         }),
@@ -493,6 +510,362 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
             attrs: tag.attrs().to_owned(),
         })],
     }
+}
+
+fn lower_inferred_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let selector = tag.name().trim_start_matches('.');
+    match inferred_tag_family(selector) {
+        Some(InferredTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
+        Some(InferredTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
+        Some(InferredTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
+        Some(InferredTagFamily::Effect) => lower_effect_selector(selector, tag.attrs()),
+        Some(InferredTagFamily::Marker) | None => {
+            vec![RichTextNode::Control(RichTextControl::Mark {
+                name: tag.name().to_owned(),
+            })]
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InferredTagFamily {
+    Style,
+    Layout,
+    Transform,
+    Effect,
+    Marker,
+}
+
+fn inferred_tag_family(selector: &str) -> Option<InferredTagFamily> {
+    match selector {
+        "italic" | "oblique" => Some(InferredTagFamily::Style),
+        "horizontal_tb"
+        | "vertical_rl"
+        | "vertical_lr"
+        | "dir"
+        | "ruby_over"
+        | "ruby_under"
+        | "ruby_inter_character" => Some(InferredTagFamily::Layout),
+        "offset" | "pos" | "rotate" | "scale" | "skew" => Some(InferredTagFamily::Transform),
+        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => {
+            Some(InferredTagFamily::Effect)
+        }
+        "mark" => Some(InferredTagFamily::Marker),
+        _ => None,
+    }
+}
+
+fn lower_style_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let (selector, attrs) = split_selector_attrs(tag.attrs());
+    lower_style_selector(selector.trim_start_matches('.'), attrs)
+}
+
+fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+    let style = match selector {
+        "italic" | "i" => RichTextStyle::Italic {
+            attrs: attrs.to_owned(),
+        },
+        "oblique" | "slant" => RichTextStyle::Oblique {
+            angle: angle_from_attrs(attrs, "deg").unwrap_or_else(|| RichTextAngle {
+                degrees: parse_milli_token(attrs),
+            }),
+            raw: attrs.to_owned(),
+        },
+        _ => RichTextStyle::Unknown {
+            name: "style".to_owned(),
+            attrs: attrs.to_owned(),
+        },
+    };
+    vec![RichTextNode::StyleStart { style }]
+}
+
+fn lower_layout_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let (selector, attrs) = split_selector_attrs(tag.attrs());
+    lower_layout_selector(selector.trim_start_matches('.'), attrs)
+}
+
+fn lower_layout_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+    vec![RichTextNode::StyleStart {
+        style: RichTextStyle::Layout {
+            layout: layout_from_selector(selector, attrs),
+        },
+    }]
+}
+
+fn lower_transform_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let (selector, attrs) = split_selector_attrs(tag.attrs());
+    lower_transform_selector(selector.trim_start_matches('.'), attrs)
+}
+
+fn lower_transform_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+    vec![RichTextNode::StyleStart {
+        style: RichTextStyle::Transform {
+            transform: transform_from_selector(selector, attrs),
+        },
+    }]
+}
+
+fn lower_effect_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let (selector, attrs) = split_selector_attrs(tag.attrs());
+    lower_effect_selector(selector.trim_start_matches('.'), attrs)
+}
+
+fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+    if selector == "shader" {
+        return vec![RichTextNode::StyleStart {
+            style: RichTextStyle::Shader {
+                shader: shader_from_attrs(attrs),
+            },
+        }];
+    }
+    vec![RichTextNode::StyleStart {
+        style: RichTextStyle::Effect {
+            effect: effect_from_selector(selector, attrs),
+        },
+    }]
+}
+
+fn canonical_end_tag(name: &str) -> &str {
+    match name {
+        "style" | "italic" | "i" | "oblique" | "slant" => "style",
+        "layout" | "vertical" | "vertical_rl" | "vertical_lr" | "horizontal_tb" => "layout",
+        "transform" | "offset" | "pos" | "rotate" | "scale" | "skew" => "transform",
+        "effect" | "fx" | "shader" => "effect",
+        other => other,
+    }
+}
+
+fn split_selector_attrs(attrs: &str) -> (&str, &str) {
+    let attrs = attrs.trim();
+    let mut parts = attrs.splitn(2, char::is_whitespace);
+    let first = parts.next().unwrap_or_default();
+    if first.starts_with('.') {
+        (first, parts.next().unwrap_or_default().trim())
+    } else {
+        ("", attrs)
+    }
+}
+
+fn layout_from_selector(selector: &str, attrs: &str) -> RichTextLayout {
+    let attrs = parse_attrs(attrs);
+    RichTextLayout {
+        writing_mode: match selector {
+            "vertical_rl" | "vertical" => RichTextWritingMode::VerticalRl,
+            "vertical_lr" => RichTextWritingMode::VerticalLr,
+            "horizontal_tb" => RichTextWritingMode::HorizontalTb,
+            _ => match attrs.get("mode").map(String::as_str) {
+                Some("vertical_rl" | "vertical" | "rl") => RichTextWritingMode::VerticalRl,
+                Some("vertical_lr" | "lr") => RichTextWritingMode::VerticalLr,
+                _ => RichTextWritingMode::HorizontalTb,
+            },
+        },
+        direction: match attrs
+            .get("dir")
+            .or_else(|| attrs.get("value"))
+            .map(String::as_str)
+        {
+            Some("ltr") => RichTextInlineDirection::Ltr,
+            Some("rtl") => RichTextInlineDirection::Rtl,
+            _ => RichTextInlineDirection::Auto,
+        },
+        vertical_latin: match attrs.get("latin").map(String::as_str) {
+            Some("upright") => RichTextVerticalLatinMode::Upright,
+            Some("sideways") => RichTextVerticalLatinMode::Sideways,
+            _ => RichTextVerticalLatinMode::Mixed,
+        },
+        ruby_position: match selector {
+            "ruby_over" => RichTextRubyPosition::Over,
+            "ruby_under" => RichTextRubyPosition::Under,
+            "ruby_inter_character" => RichTextRubyPosition::InterCharacter,
+            _ => RichTextRubyPosition::Auto,
+        },
+        column_gap: milli_attr(&attrs, "gap").unwrap_or(Milli(8000)),
+    }
+}
+
+fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
+    let attrs = parse_attrs(attrs);
+    let mut transform = RichTextTransform::default();
+    match selector {
+        "offset" | "pos" => {
+            transform.translate = RichTextVec2::new(
+                milli_attr(&attrs, "x").unwrap_or_default(),
+                milli_attr(&attrs, "y").unwrap_or_default(),
+            );
+        }
+        "rotate" => {
+            transform.rotate = angle_from_attrs_map(&attrs, "deg").unwrap_or_default();
+            transform.origin = RichTextTransformOrigin::Center;
+        }
+        "scale" => {
+            transform.scale = RichTextVec2::new(
+                milli_attr(&attrs, "x").unwrap_or(Milli::ONE),
+                milli_attr(&attrs, "y").unwrap_or(Milli::ONE),
+            );
+            transform.origin = RichTextTransformOrigin::Center;
+        }
+        "skew" => {
+            transform.skew = RichTextVec2::new(
+                milli_attr(&attrs, "x").unwrap_or_default(),
+                milli_attr(&attrs, "y").unwrap_or_default(),
+            );
+        }
+        _ => {}
+    }
+    transform.target = target_attr(&attrs);
+    transform
+}
+
+fn effect_from_selector(selector: &str, attrs: &str) -> RichTextEffectDescriptor {
+    let attrs = parse_attrs(attrs);
+    RichTextEffectDescriptor {
+        id: selector.to_owned(),
+        params: attrs
+            .iter()
+            .filter(|(key, _)| !matches!(key.as_str(), "target" | "phase" | "state" | "scope"))
+            .map(|(key, value)| (key.clone(), param_from_value(value)))
+            .collect(),
+        target: target_attr(&attrs),
+        phase: phase_attr(&attrs).unwrap_or_else(|| default_effect_phase(selector)),
+        state_scope: state_scope_attr(&attrs),
+    }
+}
+
+fn shader_from_attrs(attrs: &str) -> RichTextShaderRef {
+    let attrs = parse_attrs(attrs);
+    RichTextShaderRef {
+        id: attrs.get("id").cloned().unwrap_or_default(),
+        params: attrs
+            .iter()
+            .filter(|(key, _)| !matches!(key.as_str(), "id" | "phase"))
+            .map(|(key, value)| (key.clone(), param_from_value(value)))
+            .collect(),
+        phase: phase_attr(&attrs).unwrap_or(RichTextEffectPhase::RunOffscreenPass),
+    }
+}
+
+fn default_effect_phase(selector: &str) -> RichTextEffectPhase {
+    match selector {
+        "shader" => RichTextEffectPhase::RunOffscreenPass,
+        "typewriter" => RichTextEffectPhase::GlyphMask,
+        _ => RichTextEffectPhase::GlyphTransform,
+    }
+}
+
+fn target_attr(attrs: &BTreeMap<String, String>) -> RichTextEffectTarget {
+    match attrs.get("target").map(String::as_str) {
+        Some("document") => RichTextEffectTarget::Document,
+        Some("line") => RichTextEffectTarget::Line,
+        Some("sentence") => RichTextEffectTarget::Sentence,
+        Some("glyph") => RichTextEffectTarget::Glyph,
+        Some("textbox" | "box") => RichTextEffectTarget::TextBox,
+        Some("screen") => RichTextEffectTarget::Screen,
+        _ => RichTextEffectTarget::Run,
+    }
+}
+
+fn state_scope_attr(attrs: &BTreeMap<String, String>) -> RichTextStateScope {
+    match attrs
+        .get("state")
+        .or_else(|| attrs.get("scope"))
+        .map(String::as_str)
+    {
+        Some("glyph") => RichTextStateScope::Glyph,
+        Some("line") => RichTextStateScope::Line,
+        Some("sentence") => RichTextStateScope::Sentence,
+        Some("paragraph") => RichTextStateScope::Paragraph,
+        Some("document") => RichTextStateScope::Document,
+        Some("dialogue_line") => RichTextStateScope::DialogueLine,
+        Some("speaker") => RichTextStateScope::Speaker,
+        Some("window") => RichTextStateScope::Window,
+        Some("global") => RichTextStateScope::Global,
+        _ => RichTextStateScope::Run,
+    }
+}
+
+fn phase_attr(attrs: &BTreeMap<String, String>) -> Option<RichTextEffectPhase> {
+    match attrs.get("phase").map(String::as_str)? {
+        "before_layout" => Some(RichTextEffectPhase::BeforeLayout),
+        "layout_transform" => Some(RichTextEffectPhase::LayoutTransform),
+        "glyph_transform" => Some(RichTextEffectPhase::GlyphTransform),
+        "glyph_color" => Some(RichTextEffectPhase::GlyphColor),
+        "glyph_mask" => Some(RichTextEffectPhase::GlyphMask),
+        "run_offscreen" | "run_offscreen_pass" => Some(RichTextEffectPhase::RunOffscreenPass),
+        "post_process" => Some(RichTextEffectPhase::PostProcess),
+        "host_event" => Some(RichTextEffectPhase::HostEvent),
+        _ => None,
+    }
+}
+
+fn param_from_value(value: &str) -> RichTextParam {
+    let value = trim_quotes(value);
+    if value == "true" {
+        return RichTextParam::Bool { value: true };
+    }
+    if value == "false" {
+        return RichTextParam::Bool { value: false };
+    }
+    if let Some(selector) = value.strip_prefix('.') {
+        return RichTextParam::Selector {
+            value: format!(".{selector}"),
+        };
+    }
+    if let Ok(parsed) = value.parse::<i64>() {
+        return RichTextParam::Int { value: parsed };
+    }
+    if let Some(milli) = parse_param_milli(value) {
+        return RichTextParam::Milli { value: milli };
+    }
+    RichTextParam::Raw {
+        value: value.to_owned(),
+    }
+}
+
+fn parse_param_milli(value: &str) -> Option<Milli> {
+    let trimmed = value.trim();
+    let numeric = trimmed
+        .strip_suffix("px")
+        .or_else(|| trimmed.strip_suffix("deg"))
+        .or_else(|| trimmed.strip_suffix("ch"))
+        .unwrap_or(trimmed)
+        .trim();
+    parse_decimal_milli(numeric)
+}
+
+fn angle_from_attrs(attrs: &str, name: &str) -> Option<RichTextAngle> {
+    angle_from_attrs_map(&parse_attrs(attrs), name)
+}
+
+fn angle_from_attrs_map(attrs: &BTreeMap<String, String>, name: &str) -> Option<RichTextAngle> {
+    attrs.get(name).map(|value| RichTextAngle {
+        degrees: parse_milli_token(value),
+    })
+}
+
+fn milli_attr(attrs: &BTreeMap<String, String>, name: &str) -> Option<Milli> {
+    attrs.get(name).map(|value| parse_milli_token(value))
+}
+
+fn parse_attrs(source: &str) -> BTreeMap<String, String> {
+    source
+        .split_whitespace()
+        .filter_map(|item| {
+            let (key, value) = item.split_once('=')?;
+            Some((key.to_owned(), trim_quotes(value).to_owned()))
+        })
+        .collect()
+}
+
+fn trim_quotes(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(value)
 }
 
 fn host_event(event: DialogueHostEvent) -> Vec<RichTextNode> {
@@ -643,7 +1016,7 @@ mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
-    use arcweft_render_text::{RichTextColor, RichTextFontFamily};
+    use arcweft_render_text::{RichTextColor, RichTextFontFamily, RuntimeLineContext};
 
     #[test]
     fn lowers_full_tag_families_to_render_text_nodes() {
@@ -740,6 +1113,90 @@ flow @flow.main main {
                 }
             )
         }));
+    }
+
+    #[test]
+    fn inferred_dot_rich_text_lowers_to_effect_presentation_and_raw_params() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.shake amp=2px dir=0,1 pattern=a,b,c seed=dialogue]BC[/]D[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.001".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let effect_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .expect("effect text run");
+        let effect = effect_run
+            .presentation
+            .effects
+            .first()
+            .expect("effect presentation");
+
+        assert_eq!(effect.id, "shake");
+        assert_eq!(
+            effect.params.get("amp"),
+            Some(&RichTextParam::Milli { value: Milli(2000) })
+        );
+        assert_eq!(
+            effect.params.get("dir"),
+            Some(&RichTextParam::Raw {
+                value: "0,1".to_owned()
+            })
+        );
+        assert_eq!(
+            effect.params.get("pattern"),
+            Some(&RichTextParam::Raw {
+                value: "a,b,c".to_owned()
+            })
+        );
+        assert_eq!(
+            effect.params.get("seed"),
+            Some(&RichTextParam::Raw {
+                value: "dialogue".to_owned()
+            })
+        );
+        let plain_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "D")
+            })
+            .expect("plain text run after inferred close");
+        assert!(plain_run.presentation.effects.is_empty());
     }
 
     #[test]

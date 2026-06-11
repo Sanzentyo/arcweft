@@ -107,6 +107,41 @@ Project-specific aliases may map to these names, but canonical names remain rese
 
 ---
 
+## Inferred rich-text selectors
+
+Inline rich-text presentation selectors may be written with dot shorthand when
+the selector is unambiguous:
+
+```arcw
+alice: [.shake amp=2px dir=0,1]揺れる文字[/][p]
+alice: [.vertical_rl]縦書き[/][p]
+alice: [.offset x=4px y=-2px]少しずらす[/][p]
+```
+
+The canonical forms keep the family explicit:
+
+```arcw
+alice: [effect .shake amp=2px dir=0,1]揺れる文字[/effect][p]
+alice: [layout .vertical_rl]縦書き[/layout][p]
+alice: [transform .offset x=4px y=-2px]少しずらす[/transform][p]
+```
+
+`[/]` closes the most recent inferred rich-text span. Canonical tooling expands
+it to the explicit family end tag, such as `[/effect]`.
+
+Known selector families are style (`.italic`, `.oblique`), layout
+(`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
+selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
+effect (`.wave`, `.shake`, `.arc`, `.typewriter`, `.jitter`, `.shader`,
+`.host`). Unknown dot selectors are markers and canonicalize to `[mark .name]`.
+
+Effect and shader parameters preserve unknown values as raw authoring tokens.
+The parser does not infer comma-separated values or expression-like strings as
+structured values globally; renderer builtins interpret only the parameter names
+they own, such as `dir=0,1` for a wave direction.
+
+---
+
 ## Wait and newline tags
 
 ```arcw

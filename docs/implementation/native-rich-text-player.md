@@ -15,8 +15,9 @@ The CLI also exposes this display path through `arcw agent observe`. That comman
 checked source and runtime executor path, keeps the display catalog, resolves emitted dialogue lines,
 and returns `arcweft-agent-protocol` observation JSON with textbox objects, viewport bounds,
 semantic actions, diagnostics, optional overlay SVG, and deterministic PNG/raw RGBA debug captures
-for the full viewport, a selected layer bbox, or a selected object bbox. The debug raster is built from
-resolved display text plus `display_map` text runs and ruby annotations, so interpolation output,
+for the full viewport, a selected layer bbox, or a selected object bbox. Native
+offscreen capture is built from resolved display text plus `display_map` text
+runs and ruby annotations, so interpolation output,
 inline color/size/generic-and-named-font/strong/em styling, and inline ruby captures use the same ranges reported in observation JSON.
 It uses system fonts when available so Unicode dialogue text is visible in captures, and falls back to
 a built-in ASCII debug glyph set on minimal environments. Observed layers and objects include `capture_refs` so an
@@ -27,7 +28,7 @@ maps text runs and ruby annotations back to byte ranges in the displayed text; t
 ruby annotations are also emitted as `dialogue.rich_text` child objects with `rich_text_ref`
 metadata and their own crop URIs.
 When native element bounds are unavailable, fallback child bboxes and ruby
-placement advance through the same display-map run styles as the debug raster,
+placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence
 cursor positions instead of assuming a single fixed-width text stream.
 This is the current LLM/debugger-facing way to inspect rich text rendering without starting the
@@ -73,6 +74,19 @@ this map to correlate captured pixels, object crops, and rich-text semantics.
 The resolver now treats `[reset]` as a style/reveal reset for following runs by
 clearing active inline styles after recording the reset control marker, so
 Agent JSON and native display no longer leak prior inline styles across a reset.
+Rich-text presentation spans also carry renderer-facing layout, transform,
+effect, and shader descriptors. Runtime-plan lowering accepts inferred dot
+selectors such as `[.shake]...[/]`, canonical tooling can expand them to
+`[effect .shake]...[/effect]`, and the display map stores the resulting
+presentation on text runs and ruby annotations. Effect parameters keep
+non-trivial authoring values as raw tokens; native builtins interpret only
+known parameters at the renderer boundary, such as `dir=0,1` for wave direction
+or raw string seeds for deterministic shake jitter.
+The native crate exposes a deterministic `NativeVisualPlan` that applies
+resolved transforms, vertical layout hints, builtin glyph effects, and shader
+filter references without creating a compatibility renderer. The same
+presentation data is available to native debug/capture paths through
+`LineDisplayFrame::display_map`.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

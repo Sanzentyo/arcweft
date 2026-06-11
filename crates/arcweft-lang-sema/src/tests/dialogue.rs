@@ -408,9 +408,9 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
         |token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "call" && tag.attrs() == "flash(color=#ffffff)")
     ));
     assert!(
-        tokens
-            .iter()
-            .any(|token| matches!(token, DialogueToken::Mark(mark) if mark.name() == ".keyword"))
+        tokens.iter().any(
+            |token| matches!(token, DialogueToken::InferredTag(tag) if tag.name() == ".keyword")
+        )
     );
     assert!(tokens.iter().any(
         |token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "w" && tag.attrs() == "time=500ms")

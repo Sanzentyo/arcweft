@@ -47,10 +47,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   stable color/object-id/mask PNG and raw RGBA capture refs, matching the
   object-local refs used by textbox and rich-text child objects. Image resource
   metadata includes renderer kind plus structured capture scope so MCP clients
-  can identify debug-raster/native viewport/layer/object captures without
-  parsing URIs. `--renderer native` and MCP `renderer: "native"` reuse the
-  native offscreen readback for full-viewport, layer-bbox, and object-bbox color
-  PNG/raw RGBA captures. Color scopes that cannot be redrawn from rich-text
+  can identify native viewport/layer/object captures without parsing URIs. PNG
+  and raw RGBA requests use native offscreen readback for full-viewport,
+  layer-bbox, and object-bbox color captures. Color scopes that cannot be redrawn from rich-text
   elements now use masked framebuffer crops, keeping selected layer/object image
   resources free of unrelated outside-scope pixels. Text/ruby-backed native
   object-id/mask captures also render selected glyphs through the offscreen text
@@ -65,8 +64,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   observed objects so a debugger can find rich-text child ids and capture refs
   without rereading `latest.json` or `objects.json`; after a capture, it also
   returns the latest capture URI and descriptor for direct readback. CLI
-  `--read-uri` also honors `--renderer native` for capture URIs when no cached
-  selected image is available. The MCP crate is Sans I/O and leaves stdio/HTTP
+  `--read-uri` also reconstructs native capture URIs when no cached selected
+  image is available. The MCP crate is Sans I/O and leaves stdio/HTTP
   transport, authentication, session lifecycle, and real renderer readback to
   future adapter crates.
 - Awaited capability calls now carry typed `HostTaskRequest` data through

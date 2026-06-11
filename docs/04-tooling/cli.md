@@ -350,10 +350,10 @@ still emit explicit debug geometry. In both cases object-id and mask captures
 stay aligned with native rich-text element crops before non-text renderer
 ID/mask attachments exist.
 `--layer LAYER` crops the capture to that layer's observed object bounds.
-`--object OBJECT_ID` crops the capture to one observed object's bbox. The color
-debug raster uses resolved display text plus `display_map` ruby annotations, so
-interpolation output, ruby annotations, and inline element crops are based on
-the same byte ranges reported in observation JSON.
+`--object OBJECT_ID` crops the capture to one observed object's bbox. Native
+color capture uses resolved display text plus `display_map` ruby annotations,
+so interpolation output, ruby annotations, and inline element crops are based
+on the same byte ranges reported in observation JSON.
 Each observed layer carries `capture_refs` with stable layer-crop URIs for
 color, object-id, and mask captures in PNG and raw RGBA forms. Each observed
 object also carries `capture_refs` with stable object-crop URIs for color,
@@ -437,11 +437,11 @@ matches the latest image, so multimodal clients can list a native layer/object
 image and read the exact same pixels instead of an implicitly reconstructed
 native capture path.
 
-The default PNG/raw path is a headless debug raster. The native renderer now
-fills the same `images` slots for full-viewport, layer-crop, and object-crop
-color readback, and text/ruby-backed native object-id/mask captures are rendered
-through the offscreen text framebuffer before optional cropping. Rich-text-only
-native color captures and textbox-parent object/layer color captures report
+The PNG/raw path uses native offscreen readback. It fills the same `images`
+slots for full-viewport, layer-crop, and object-crop color readback, and
+text/ruby-backed native object-id/mask captures are rendered through the
+offscreen text framebuffer before optional cropping. Rich-text-only native color
+captures and textbox-parent object/layer color captures report
 `composition = "isolated_regions"` because they redraw selected glyph regions
 with original styling before cropping. Native textbox-parent object-id/mask
 captures expand through the rich-text display map, so the image contains glyph
@@ -830,6 +830,7 @@ Default formatting preserves indentation sugar such as `with:`. Expansion is exp
 ```bash
 arcw fmt game/routes/opening.arcw
 arcw fmt --expand-sugar game/routes/opening.arcw
+arcw fmt --canonical-rich-text game/routes/opening.arcw
 arcw fmt --expand-sugar --write game/routes/
 ```
 
@@ -851,6 +852,12 @@ $(expr)              -> #[expr]
 [w 500ms]            -> [w time=500ms]
 [page]/[wait]/[nl]   -> [p]/[l]/[r]
 ```
+
+`--canonical-rich-text` is narrower than `--expand-sugar`: it rewrites inferred
+dot rich-text selectors such as `[.shake]...[/]` to explicit family tags such as
+`[effect .shake]...[/effect]`, and rewrites unknown dot selectors to
+`[mark .name]`. It does not expand unrelated dialogue sugar such as `$(expr)`,
+ruby shorthand, `[page]`, or speaker-line sugar.
 
 The expansion must preserve the callee kind. A lexical `SpeakerPreset` remains a
 callable speaker value, so `alice2(voice=auto): text` expands to

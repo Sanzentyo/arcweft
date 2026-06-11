@@ -1427,6 +1427,7 @@ fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
             source,
             FormatOptions {
                 expand_sugar: options.expand_sugar,
+                canonical_rich_text: options.canonical_rich_text,
             },
         )
     })
@@ -9091,10 +9092,13 @@ struct ProfileOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 struct ToolingCommandOptions {
     path: PathBuf,
     #[arg(long)]
     expand_sugar: bool,
+    #[arg(long)]
+    canonical_rich_text: bool,
     #[arg(long)]
     write: bool,
     #[arg(long)]

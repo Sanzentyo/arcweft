@@ -431,16 +431,27 @@ fn parse_tag(source: &str, start: usize) -> Option<(DialogueToken, usize)> {
     let inside = &source[start..start + close_relative];
     let consumed_to = start + close_relative + 1;
     if let Some(name) = inside.strip_prefix('/') {
-        return Some((DialogueToken::EndTag(name.trim().to_owned()), consumed_to));
+        let name = name.trim();
+        return Some((
+            if name.is_empty() {
+                DialogueToken::InferredEndTag
+            } else {
+                DialogueToken::EndTag(name.to_owned())
+            },
+            consumed_to,
+        ));
     }
 
     let trimmed = inside.trim();
     if trimmed.is_empty() {
         return None;
     }
-    if let Some(name) = trimmed.strip_prefix('.') {
-        let name = format!(".{name}");
-        return Some((DialogueToken::Mark(LineMark::new(name)), consumed_to));
+    if trimmed.starts_with('.') {
+        let (selector, attrs) = split_tag_name_attrs(trimmed);
+        return Some((
+            DialogueToken::InferredTag(DialogueTag::new(selector.to_owned(), attrs.to_owned())),
+            consumed_to,
+        ));
     }
     if let Some(attrs) = trimmed.strip_prefix('!') {
         return Some((

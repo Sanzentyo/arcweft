@@ -224,6 +224,14 @@ impl TypeChecker<'_> {
                         )));
                     }
                 }
+                DialogueToken::InferredTag(tag) if inferred_tag_is_mark(tag.name()) => {
+                    if !marks.insert(tag.name().to_owned()) {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "duplicate dialogue mark `{}` in line content",
+                            tag.name()
+                        )));
+                    }
+                }
                 DialogueToken::Tag(tag) if tag.name() == "hook" => {
                     self.errors.push(TypeCheckError::new(
                         "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on mark(.name):`".to_owned(),
@@ -233,6 +241,8 @@ impl TypeChecker<'_> {
                 | DialogueToken::Text(_)
                 | DialogueToken::Raw(_)
                 | DialogueToken::EndTag(_)
+                | DialogueToken::InferredTag(_)
+                | DialogueToken::InferredEndTag
                 | DialogueToken::Ruby { .. }
                 | DialogueToken::Escape(_) => {}
             }
@@ -281,6 +291,33 @@ impl TypeChecker<'_> {
             }
         }
     }
+}
+
+fn inferred_tag_is_mark(name: &str) -> bool {
+    !matches!(
+        name.trim_start_matches('.'),
+        "italic"
+            | "oblique"
+            | "horizontal_tb"
+            | "vertical_rl"
+            | "vertical_lr"
+            | "dir"
+            | "ruby_over"
+            | "ruby_under"
+            | "ruby_inter_character"
+            | "offset"
+            | "pos"
+            | "rotate"
+            | "scale"
+            | "skew"
+            | "wave"
+            | "shake"
+            | "arc"
+            | "typewriter"
+            | "jitter"
+            | "shader"
+            | "host"
+    )
 }
 
 fn reject_inline_calls_without_failure_policy(

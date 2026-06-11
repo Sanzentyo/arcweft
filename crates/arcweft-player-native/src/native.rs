@@ -1,13 +1,16 @@
 //! Minimal native window renderer for rich-text player frames.
 
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextColor, RichTextControl, RichTextDisplayMap, RichTextFontFamily,
-    RichTextNode, RichTextRange, RichTextStyle,
+    LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
+    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
+    RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
+    RichTextStyle, RichTextWritingMode, parse_decimal_milli,
 };
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -87,6 +90,164 @@ pub struct NativeFrameDebugRegion {
     pub fallback_bbox: NativeFrameContentBBox,
     /// RGBA color written into the debug image.
     pub color: [u8; 4],
+}
+
+/// Deterministic rich-text visual plan consumed by native debug and slow render paths.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct NativeVisualPlan {
+    pub pages: Vec<NativeVisualPage>,
+}
+
+/// One rendered text page in native visual coordinates.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct NativeVisualPage {
+    pub page_index: usize,
+    pub text: String,
+    pub runs: Vec<NativeVisualRun>,
+    pub glyphs: Vec<NativeGlyphPlacement>,
+    pub shaders: Vec<NativeResolvedShaderFilter>,
+}
+
+/// One rich-text display-map run with presentation metadata.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct NativeVisualRun {
+    pub source_run_index: usize,
+    pub range: Range<usize>,
+    pub local_range: Range<usize>,
+    pub presentation: RichTextPresentation,
+}
+
+/// CPU-side glyph placement used for deterministic debugging and effect tests.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct NativeGlyphPlacement {
+    pub run_index: usize,
+    pub glyph_index: usize,
+    pub range: Range<usize>,
+    pub x: f32,
+    pub y: f32,
+    pub rotate_degrees: f32,
+    pub scale_x: f32,
+    pub scale_y: f32,
+    pub opacity: f32,
+}
+
+/// Host-resolved shader/filter reference for one native page.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct NativeResolvedShaderFilter {
+    pub id: String,
+    pub phase: RichTextEffectPhase,
+    pub amount: f32,
+    pub direction: [f32; 2],
+}
+
+/// Key used by renderer-local rich-text state stores.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RichTextStateScopeKey {
+    Document,
+    Line(String),
+    Sentence {
+        line: String,
+        sentence_index: usize,
+    },
+    Run {
+        line: String,
+        run_index: usize,
+    },
+    Glyph {
+        line: String,
+        run_index: usize,
+        glyph_index: usize,
+    },
+}
+
+/// Renderer-local shared value for stateful rich-text effects.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SharedTextValue {
+    Bool(bool),
+    I64(i64),
+    F32(f32),
+    Vec2([f32; 2]),
+    Text(String),
+}
+
+/// Renderer-local state store. It is intentionally not part of `LineDisplayFrame`.
+#[derive(Default)]
+pub struct RichTextStateStore {
+    values: BTreeMap<(RichTextStateScopeKey, String), SharedTextValue>,
+}
+
+impl RichTextStateStore {
+    pub fn get(&self, scope: &RichTextStateScopeKey, name: &str) -> Option<&SharedTextValue> {
+        self.values.get(&(scope.clone(), name.to_owned()))
+    }
+
+    pub fn set(
+        &mut self,
+        scope: RichTextStateScopeKey,
+        name: impl Into<String>,
+        value: SharedTextValue,
+    ) {
+        self.values.insert((scope, name.into()), value);
+    }
+}
+
+/// Per-glyph effect context supplied to renderer-local effect implementations.
+pub struct TextEffectGlyphContext<'a> {
+    pub time_seconds: f32,
+    pub line_id: &'a str,
+    pub run_index: usize,
+    pub glyph_index: usize,
+    pub glyph_count: usize,
+    pub state: &'a mut RichTextStateStore,
+    pub placement: &'a mut NativeGlyphPlacement,
+}
+
+/// Renderer-local stateful rich-text effect.
+pub trait RichTextEffectClass: Send {
+    fn apply_glyph(&mut self, ctx: &mut TextEffectGlyphContext<'_>);
+}
+
+pub type GlyphLambda = Box<dyn FnMut(&mut TextEffectGlyphContext<'_>) + Send + 'static>;
+
+pub enum RegisteredTextEffect {
+    Class(Box<dyn RichTextEffectClass>),
+    Lambda(GlyphLambda),
+}
+
+/// Registry that resolves `RichTextEffectDescriptor::id` to native execution.
+#[derive(Default)]
+pub struct RichTextEffectRegistry {
+    effects: BTreeMap<String, RegisteredTextEffect>,
+}
+
+impl RichTextEffectRegistry {
+    pub fn insert_class(
+        &mut self,
+        id: impl Into<String>,
+        effect: impl RichTextEffectClass + 'static,
+    ) {
+        self.effects
+            .insert(id.into(), RegisteredTextEffect::Class(Box::new(effect)));
+    }
+
+    pub fn insert_lambda(
+        &mut self,
+        id: impl Into<String>,
+        effect: impl FnMut(&mut TextEffectGlyphContext<'_>) + Send + 'static,
+    ) {
+        self.effects
+            .insert(id.into(), RegisteredTextEffect::Lambda(Box::new(effect)));
+    }
+
+    pub fn apply_host_effect(&mut self, id: &str, ctx: &mut TextEffectGlyphContext<'_>) {
+        let Some(effect) = self.effects.get_mut(id) else {
+            return;
+        };
+        match effect {
+            RegisteredTextEffect::Class(effect) => effect.apply_glyph(ctx),
+            RegisteredTextEffect::Lambda(effect) => effect(ctx),
+        }
+    }
 }
 
 /// Viewport and page selection for native offscreen captures.
@@ -563,6 +724,333 @@ pub fn capture_frame_color_regions_at_page(
         NativeCaptureViewport::new(width, height, left, top, page_index),
         regions,
     )
+}
+
+/// Builds a deterministic native visual plan for a rich-text frame.
+pub fn visual_plan_from_frame(frame: &LineDisplayFrame, time_seconds: f32) -> NativeVisualPlan {
+    let pages = display_map_page_ranges(frame)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(page_index, page_range)| {
+            visual_page_from_range(frame, page_index, page_range, time_seconds)
+        })
+        .collect();
+    NativeVisualPlan { pages }
+}
+
+/// Test-facing helper for deterministic visual-plan snapshots.
+pub fn visual_plan_from_frame_for_test(
+    frame: &LineDisplayFrame,
+    time_seconds: f32,
+) -> NativeVisualPlan {
+    visual_plan_from_frame(frame, time_seconds)
+}
+
+fn visual_page_from_range(
+    frame: &LineDisplayFrame,
+    page_index: usize,
+    page_range: Range<usize>,
+    time_seconds: f32,
+) -> Option<NativeVisualPage> {
+    let text = frame.text.get(page_range.clone())?.to_owned();
+    if text.is_empty() {
+        return None;
+    }
+    let runs = frame
+        .display_map
+        .text_runs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, run)| {
+            let range = intersect_display_range(run.range, &page_range)?;
+            Some(NativeVisualRun {
+                source_run_index: index,
+                range: range.clone(),
+                local_range: (range.start - page_range.start)..(range.end - page_range.start),
+                presentation: run.presentation.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let glyphs = runs
+        .iter()
+        .flat_map(|run| placements_for_run(frame, run, time_seconds))
+        .collect();
+    let shaders = runs
+        .iter()
+        .flat_map(|run| run.presentation.shaders.iter().map(resolve_shader_filter))
+        .collect();
+    Some(NativeVisualPage {
+        page_index,
+        text,
+        runs,
+        glyphs,
+        shaders,
+    })
+}
+
+fn placements_for_run(
+    frame: &LineDisplayFrame,
+    run: &NativeVisualRun,
+    time_seconds: f32,
+) -> Vec<NativeGlyphPlacement> {
+    let Some(text) = frame.text.get(run.range.clone()) else {
+        return Vec::new();
+    };
+    let glyph_count = text.chars().count().max(1);
+    text.char_indices()
+        .map(|(offset, ch)| {
+            let glyph_index = text[..offset].chars().count();
+            let start = run.range.start + offset;
+            let end = start + ch.len_utf8();
+            let mut placement = NativeGlyphPlacement {
+                run_index: run.source_run_index,
+                glyph_index,
+                range: start..end,
+                x: usize_to_f32_saturating(glyph_index) * 18.0,
+                y: 0.0,
+                rotate_degrees: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                opacity: 1.0,
+            };
+            apply_presentation_to_placement(
+                &frame.line.0,
+                run,
+                glyph_count,
+                time_seconds,
+                &mut placement,
+            );
+            placement
+        })
+        .collect()
+}
+
+fn apply_presentation_to_placement(
+    line_id: &str,
+    run: &NativeVisualRun,
+    glyph_count: usize,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    if let Some(transform) = &run.presentation.transform {
+        placement.x += transform.translate.x.as_f32();
+        placement.y += transform.translate.y.as_f32();
+        placement.rotate_degrees += transform.rotate.as_degrees_f32();
+        placement.scale_x *= transform.scale.x.as_f32();
+        placement.scale_y *= transform.scale.y.as_f32();
+    }
+    if let Some(layout) = &run.presentation.layout
+        && !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
+    {
+        let column_sign = if matches!(layout.writing_mode, RichTextWritingMode::VerticalRl) {
+            -1.0
+        } else {
+            1.0
+        };
+        placement.x = column_sign * 42.0;
+        placement.y += usize_to_f32_saturating(placement.glyph_index) * 42.0;
+    }
+    if let Some(opacity) = run.presentation.opacity {
+        placement.opacity *= opacity.as_f32();
+    }
+    for effect in &run.presentation.effects {
+        apply_builtin_descriptor(line_id, effect, glyph_count, time_seconds, placement);
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn apply_builtin_descriptor(
+    line_id: &str,
+    effect: &RichTextEffectDescriptor,
+    glyph_count: usize,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    if !matches!(
+        effect.target,
+        RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
+    ) {
+        return;
+    }
+    match effect.id.as_str() {
+        "wave" => {
+            let amplitude = param_milli(effect, "amp").unwrap_or(Milli(4000)).as_f32();
+            let period = param_milli(effect, "period")
+                .unwrap_or(Milli(12000))
+                .as_f32()
+                .max(0.001);
+            let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
+            let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
+            let direction = param_vec2(effect, "dir")
+                .or_else(|| axis_direction(effect))
+                .unwrap_or([0.0, 1.0]);
+            let t = (usize_to_f32_saturating(placement.glyph_index) / period
+                + time_seconds * speed
+                + phase)
+                * std::f32::consts::TAU;
+            let delta = amplitude * t.sin();
+            placement.x += direction[0] * delta;
+            placement.y += direction[1] * delta;
+        }
+        "shake" | "jitter" => {
+            let amplitude = param_milli(effect, "amp").unwrap_or(Milli(2000)).as_f32();
+            let speed = param_milli(effect, "speed")
+                .unwrap_or(Milli(16000))
+                .as_f32();
+            let noise_seed = param_seed(effect, "seed").unwrap_or(0);
+            let time_bucket = if effect.id == "jitter" {
+                0.0
+            } else {
+                time_seconds * speed
+            };
+            let noise =
+                deterministic_noise(noise_seed, line_id, placement.glyph_index, time_bucket);
+            placement.x += (noise[0] * 2.0 - 1.0) * amplitude;
+            placement.y += (noise[1] * 2.0 - 1.0) * amplitude;
+        }
+        "arc" => {
+            let radius = param_milli(effect, "radius")
+                .unwrap_or(Milli(120_000))
+                .as_f32();
+            let start = param_milli(effect, "start").unwrap_or_default().as_f32();
+            let step = param_milli(effect, "step").unwrap_or(Milli(8000)).as_f32();
+            let angle =
+                (start + step * usize_to_f32_saturating(placement.glyph_index)).to_radians();
+            placement.x += radius * angle.cos();
+            placement.y += radius * angle.sin();
+            placement.rotate_degrees += angle.to_degrees() + 90.0;
+        }
+        "typewriter" => {
+            let cps = param_milli(effect, "cps").unwrap_or(Milli(28000)).as_f32();
+            let visible = (time_seconds * cps).floor() as usize;
+            if placement.glyph_index >= visible.min(glyph_count) {
+                placement.opacity = 0.0;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_shader_filter(shader: &RichTextShaderRef) -> NativeResolvedShaderFilter {
+    NativeResolvedShaderFilter {
+        id: shader.id.clone(),
+        phase: shader.phase,
+        amount: shader_param_milli(shader, "amount")
+            .unwrap_or(Milli::ONE)
+            .as_f32(),
+        direction: shader_param_vec2(shader, "dir").unwrap_or([0.0, 1.0]),
+    }
+}
+
+fn param_milli(effect: &RichTextEffectDescriptor, name: &str) -> Option<Milli> {
+    param_as_milli(effect.params.get(name)?)
+}
+
+fn param_seed(effect: &RichTextEffectDescriptor, name: &str) -> Option<u64> {
+    effect.params.get(name).map(param_as_seed)
+}
+
+fn param_vec2(effect: &RichTextEffectDescriptor, name: &str) -> Option<[f32; 2]> {
+    param_as_vec2(effect.params.get(name)?)
+}
+
+fn shader_param_milli(shader: &RichTextShaderRef, name: &str) -> Option<Milli> {
+    param_as_milli(shader.params.get(name)?)
+}
+
+fn shader_param_vec2(shader: &RichTextShaderRef, name: &str) -> Option<[f32; 2]> {
+    param_as_vec2(shader.params.get(name)?)
+}
+
+fn param_as_milli(param: &RichTextParam) -> Option<Milli> {
+    match param {
+        RichTextParam::Milli { value } => Some(*value),
+        RichTextParam::Int { value } => {
+            Some(Milli(i32::try_from(*value).ok()?.saturating_mul(1000)))
+        }
+        RichTextParam::Raw { value } | RichTextParam::Text { value } => parse_raw_milli(value),
+        _ => None,
+    }
+}
+
+fn param_as_seed(param: &RichTextParam) -> u64 {
+    match param {
+        RichTextParam::Bool { value } => u64::from(*value),
+        RichTextParam::Int { value } => u64::from_ne_bytes(value.to_ne_bytes()),
+        RichTextParam::Milli { value } => u64::from_ne_bytes(i64::from(value.0).to_ne_bytes()),
+        RichTextParam::Vec2 { value } => {
+            u64::from_ne_bytes(i64::from(value.x.0).to_ne_bytes())
+                ^ u64::from_ne_bytes(i64::from(value.y.0).to_ne_bytes()).rotate_left(17)
+        }
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value } => stable_text_hash(value),
+        RichTextParam::Expr { source } => stable_text_hash(source),
+    }
+}
+
+fn param_as_vec2(param: &RichTextParam) -> Option<[f32; 2]> {
+    match param {
+        RichTextParam::Vec2 { value } => Some([value.x.as_f32(), value.y.as_f32()]),
+        RichTextParam::Raw { value } | RichTextParam::Text { value } => parse_raw_vec2(value),
+        _ => None,
+    }
+}
+
+fn parse_raw_milli(value: &str) -> Option<Milli> {
+    let trimmed = value.trim();
+    let numeric = trimmed
+        .strip_suffix("px")
+        .or_else(|| trimmed.strip_suffix("deg"))
+        .or_else(|| trimmed.strip_suffix("ch"))
+        .unwrap_or(trimmed)
+        .trim();
+    parse_decimal_milli(numeric)
+}
+
+fn parse_raw_vec2(value: &str) -> Option<[f32; 2]> {
+    let (x, y) = value.split_once(',')?;
+    Some([parse_raw_milli(x)?.as_f32(), parse_raw_milli(y)?.as_f32()])
+}
+
+fn axis_direction(effect: &RichTextEffectDescriptor) -> Option<[f32; 2]> {
+    match effect.params.get("axis")? {
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value } => match value.as_str() {
+            "x" | ".x" => Some([1.0, 0.0]),
+            "y" | ".y" => Some([0.0, 1.0]),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn stable_text_hash(value: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in value.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    hash
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+fn deterministic_noise(seed: u64, line_id: &str, glyph_index: usize, time_bucket: f32) -> [f32; 2] {
+    let mut hash =
+        seed ^ glyph_index as u64 ^ (time_bucket.floor() as u64).wrapping_mul(0x9E37_79B9);
+    for byte in line_id.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x1000_0000_01B3);
+    }
+    let x = ((hash & 0xffff) as f32) / 65535.0;
+    hash = hash.rotate_left(17).wrapping_mul(0xD6E8_FD50_9A2C_8395);
+    let y = ((hash & 0xffff) as f32) / 65535.0;
+    [x, y]
 }
 
 fn run_pages_window(title: &str, pages: Vec<WindowPage>) -> Result<(), NativeWindowError> {
@@ -1315,7 +1803,9 @@ fn native_ruby_style_from_styles(styles: &[RichTextStyle]) -> NativeTextStyle {
 
 fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) -> NativeTextStyle {
     match style {
-        RichTextStyle::Em { .. } => native.italic = true,
+        RichTextStyle::Em { .. } | RichTextStyle::Italic { .. } | RichTextStyle::Oblique { .. } => {
+            native.italic = true;
+        }
         RichTextStyle::Strong { .. } => native.weight = NativeTextWeight::Bold,
         RichTextStyle::Color { value } => {
             native.color = NativeTextColor::from_render_color(value);
@@ -1326,7 +1816,12 @@ fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) -> NativeText
         RichTextStyle::Size { points, .. } => {
             native.size = *points;
         }
-        RichTextStyle::Speed { .. } | RichTextStyle::Unknown { .. } => {}
+        RichTextStyle::Speed { .. }
+        | RichTextStyle::Layout { .. }
+        | RichTextStyle::Transform { .. }
+        | RichTextStyle::Effect { .. }
+        | RichTextStyle::Shader { .. }
+        | RichTextStyle::Unknown { .. } => {}
     }
     native
 }
@@ -2739,5 +3234,62 @@ mod tests {
         assert_eq!(padded_rgba_row_bytes(1), COPY_BYTES_PER_ROW_ALIGNMENT);
         assert_eq!(padded_rgba_row_bytes(64), COPY_BYTES_PER_ROW_ALIGNMENT);
         assert_eq!(padded_rgba_row_bytes(65), COPY_BYTES_PER_ROW_ALIGNMENT * 2);
+    }
+
+    #[test]
+    fn native_visual_plan_reads_raw_effect_params_at_builtin_boundary() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.raw.effect".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "wave".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: "2px".to_owned(),
+                                    },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: "0,1".to_owned(),
+                                    },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let plan = visual_plan_from_frame_for_test(&frame, 0.25);
+        let glyph = plan.pages[0].glyphs.first().expect("glyph placement");
+
+        assert!(glyph.x.abs() < f32::EPSILON);
+        assert!(glyph.y.abs() > 0.1);
+        assert_eq!(plan.pages[0].runs[0].presentation.effects[0].id, "wave");
     }
 }
