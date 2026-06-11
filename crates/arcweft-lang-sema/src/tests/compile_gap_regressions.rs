@@ -54,6 +54,27 @@ flow @flow.second second { return "right" }
 }
 
 #[test]
+fn entry_accepts_bare_start_flow_target() {
+    let tree = parse_ok(
+        r#"
+entry game @entry.main {
+    start @flow.second
+}
+flow @flow.first first { return "wrong" }
+flow @flow.second second { return "right" }
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("entry lowers");
+    validate_typecheck_ready(&hir).expect("bare start entry is typecheck ready");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with bare start entry");
+    assert!(
+        plan.entry_flow
+            .as_ref()
+            .is_some_and(|id| id.0 == "flow.second")
+    );
+}
+
+#[test]
 fn capability_file_read_is_need_request_not_string_call() {
     let tree = parse_ok(
         r#"

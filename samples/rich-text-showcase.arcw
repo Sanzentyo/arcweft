@@ -6,6 +6,10 @@ pub surface character @character.narrator Narrator as narrator {
     default_voice = auto
 }
 
+entry game @entry.main {
+    start @flow.rich_text_showcase
+}
+
 flow @flow.rich_text_showcase rich_text_showcase {
     alice.say(id=@say.rich_text.001, voice=auto, look=.smile)[
         [font "Noto Sans JP"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl]縦書き[/]も混ざる。[p]
