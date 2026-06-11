@@ -57,7 +57,7 @@ flow @flow.second second { return "right" }
 fn entry_accepts_bare_start_flow_target() {
     let tree = parse_ok(
         r#"
-entry game @entry.main {
+entry game {
     start @flow.second
 }
 flow @flow.first first { return "wrong" }

@@ -1,4 +1,4 @@
-entry game @entry.main {
+entry game {
     start @flow.second
 }
 
