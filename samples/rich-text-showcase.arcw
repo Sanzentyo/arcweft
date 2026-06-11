@@ -1,0 +1,23 @@
+pub surface character @character.alice Alice as alice {
+    default_voice = auto
+}
+
+pub surface character @character.narrator Narrator as narrator {
+    default_voice = auto
+}
+
+flow @flow.rich_text_showcase rich_text_showcase {
+    alice.say(id=@say.rich_text.001, voice=auto, look=.smile)[
+        [font "Noto Sans JP"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl]縦書き[/]も混ざる。[p]
+    ]
+
+    narrator.say(id=@say.rich_text.002, voice=auto)[
+        [.jitter amp=1px seed=still]静かな揺らぎ[/]、[.arc radius=24px start=-20deg step=10deg]円弧配置[/]、[.shader id=soft_glow amount=0.6 dir=1,0]shader参照[/]を同じ rich-text presentation に乗せる。[p]
+    ]
+
+    alice.say(id=@say.rich_text.003, voice=auto)[
+        [.keyword]未知の dot selector は marker として残し、[.typewriter cps=18]typewriter[/] は glyph mask effect として保持する。[p]
+    ]
+
+    return "rich_text_showcase"
+}
