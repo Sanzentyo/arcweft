@@ -3126,6 +3126,74 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging() {
+    let hanging_path = temp_arcw(
+        "agent-observe-native-jlreq-hanging-punctuation",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地、人人[/][p]
+}
+",
+    );
+    let hanging = observe_native_rich_text_layer_report(&hanging_path);
+    fs::remove_file(&hanging_path).expect("remove temp hanging punctuation source");
+    assert_native_rich_text_layer_image_has_content(&hanging);
+
+    let earth = find_rich_text_cluster_object(&hanging, "地", 3, 6);
+    let comma = find_rich_text_cluster_object(&hanging, "、", 6, 9);
+    let next_person = find_rich_text_cluster_object(&hanging, "人", 9, 12);
+    assert_eq!(
+        earth["bbox"]["x"], comma["bbox"]["x"],
+        "hanging punctuation should remain in the previous column"
+    );
+    assert!(
+        agent_json_bbox_y(&comma["bbox"]) > agent_json_bbox_y(&earth["bbox"]),
+        "hanging punctuation should sit after the previous cluster"
+    );
+    assert!(
+        agent_json_bbox_x(&next_person["bbox"]) < agent_json_bbox_x(&comma["bbox"])
+            && agent_json_bbox_y(&next_person["bbox"]) < agent_json_bbox_y(&comma["bbox"]),
+        "text after hanging punctuation should start the next vertical_rl column"
+    );
+
+    let compression_path = temp_arcw(
+        "agent-observe-native-jlreq-punctuation-compression",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天、。人[/][p]
+}
+",
+    );
+    let compression = observe_native_rich_text_layer_report(&compression_path);
+    fs::remove_file(&compression_path).expect("remove temp punctuation compression source");
+    assert_native_rich_text_layer_image_has_content(&compression);
+
+    let first = find_rich_text_cluster_object(&compression, "天", 0, 3);
+    let comma = find_rich_text_cluster_object(&compression, "、", 3, 6);
+    let period = find_rich_text_cluster_object(&compression, "。", 6, 9);
+    let person = find_rich_text_cluster_object(&compression, "人", 9, 12);
+    assert_eq!(first["bbox"]["x"], comma["bbox"]["x"]);
+    assert_eq!(comma["bbox"]["x"], period["bbox"]["x"]);
+    assert_eq!(period["bbox"]["x"], person["bbox"]["x"]);
+    let body_advance = agent_json_bbox_y(&comma["bbox"]) - agent_json_bbox_y(&first["bbox"]);
+    let compressed_advance = agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]);
+    assert_eq!(
+        compressed_advance * 2,
+        body_advance,
+        "compressed punctuation should advance by half a body cell"
+    );
+    assert_eq!(
+        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&period["bbox"]),
+        compressed_advance,
+        "following text should consume the space left by punctuation compression"
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
     let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
