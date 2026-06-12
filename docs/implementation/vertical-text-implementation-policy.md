@@ -201,7 +201,10 @@ the concrete choices to follow when turning that package into production code.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
   fresh native capture against it with `imq` when both Windows fonts and the
-  `imq` binary are available.
+  `imq` binary are available. The normal CLI test path also validates the
+  checked-in fixture structure and PNG dimensions without requiring font- or
+  renderer-exact pixel parity, so broken visual fixtures are caught before the
+  Tier2 `imq` job is run.
   The expanded JLREQ pair profile is also exercised through native Agent
   fixtures that observe `dialogue.rich_text` cluster geometry for leader marks,
   compact bracket pairs, small kana, prolonged-sound marks, iteration marks,

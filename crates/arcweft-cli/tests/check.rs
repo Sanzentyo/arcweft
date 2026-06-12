@@ -2657,6 +2657,39 @@ flow @flow.main main {
 }
 
 #[test]
+fn native_vertical_tutr_golden_fixture_is_well_formed() {
+    let source = include_str!("../../../tests/fixtures/native_capture/vertical_tutr_golden.arcw");
+    assert!(
+        source.contains("[.vertical_rl]"),
+        "vertical Tu/Tr golden source should exercise vertical_rl rich text"
+    );
+    assert!(
+        source.contains("MS Mincho"),
+        "vertical Tu/Tr golden source should pin the Windows fixture font"
+    );
+    assert!(
+        source.contains("。") && source.contains("ー"),
+        "vertical Tu/Tr golden source should include UAX #50 Tu and Tr glyph forms"
+    );
+    assert!(
+        source.contains("2026"),
+        "vertical Tu/Tr golden source should include a text-combine-upright candidate"
+    );
+
+    let golden = include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
+    assert_eq!(&golden[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(
+        png_dimensions(golden),
+        Some((1280, 720)),
+        "checked-in native vertical Tu/Tr golden should stay at the Agent capture size"
+    );
+    assert!(
+        golden.len() > 1024,
+        "checked-in native vertical Tu/Tr golden should contain image data"
+    );
+}
+
+#[test]
 #[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
 fn agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden() {
     if !cfg!(windows) {
@@ -12531,6 +12564,15 @@ fn assert_native_capture_has_content(report: &serde_json::Value, written_name: &
     assert_eq!(report["images"][0]["height"], 720);
     assert!(report["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(report["images"][0]["written"], written_name);
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    (bytes.len() >= 24 && &bytes[..8] == PNG_SIGNATURE && &bytes[12..16] == b"IHDR").then(|| {
+        let width = u32::from_be_bytes(bytes[16..20].try_into().expect("IHDR width bytes"));
+        let height = u32::from_be_bytes(bytes[20..24].try_into().expect("IHDR height bytes"));
+        (width, height)
+    })
 }
 
 fn metric_score(report: &serde_json::Value, metric_name: &str) -> f64 {

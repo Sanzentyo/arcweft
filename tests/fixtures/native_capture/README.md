@@ -15,4 +15,7 @@ cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical
 ```
 
 The CLI test compares a fresh candidate capture against the checked-in PNG with
-`imq` when both Windows and the `imq` binary are available.
+`imq` when both Windows and the `imq` binary are available. A non-ignored CLI
+fixture-integrity test also checks that the checked-in source keeps the vertical
+Tu/Tr and text-combine coverage and that the PNG remains a 1280x720 Agent
+capture; exact pixel parity stays in the Tier2 `imq` visual regression.
