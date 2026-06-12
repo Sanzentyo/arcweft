@@ -2656,6 +2656,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
 fn agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden() {
     if !cfg!(windows) {
         eprintln!("skipping checked-in vertical Tu/Tr golden comparison: Windows font fixture");
@@ -3681,6 +3682,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
     let path = temp_arcw(
         "agent-mcp-rich-text-image",
@@ -3710,6 +3712,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_lists_resource_templates_before_observe() {
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
@@ -3979,6 +3982,7 @@ fn mcp_content_metadata(block: &serde_json::Value, parse_message: &str) -> serde
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_without_prior_observe() {
     let path = temp_arcw(
         "agent-mcp-direct-capture",
@@ -4131,6 +4135,7 @@ fn assert_agent_mcp_direct_capture_resources(response: &serde_json::Value) {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-capture",
@@ -4202,6 +4207,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_clear_after_page_object_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-page-object-capture",
@@ -4259,6 +4265,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_reads_page_query_capture_ref_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-page-query-read",
@@ -4325,6 +4332,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_object_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-object-capture",
@@ -4381,6 +4389,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_layer_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-layer-capture",
@@ -4488,6 +4497,7 @@ fn assert_native_layer_resource_descriptor(response: &serde_json::Value) {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_reads_latest_native_layer_image_resource() {
     let path = temp_arcw(
         "agent-mcp-native-layer-read-resource",
@@ -4553,6 +4563,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_ruby_element_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-ruby-capture",
@@ -4614,6 +4625,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_ruby_object_id_with_native_renderer() {
     let path = temp_arcw(
         "agent-mcp-native-ruby-object-id",

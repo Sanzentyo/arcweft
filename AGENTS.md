@@ -71,8 +71,8 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Use `cargo clippy --workspace --all-targets --all-features` when feasible.
 - Follow `docs/implementation/test-execution-policy.md` for test scope. Prefer
   focused changed-crate tests during tight loops, run workspace check/clippy at
-  reviewable cut points, and reserve the slow MCP stdio/full workspace suite for
-  changes that touch that risk area or milestone validation.
+  reviewable cut points, and reserve the ignored Tier 2 MCP stdio / exact visual
+  golden suite for changes that touch that risk area or milestone validation.
 - Keep public API intentional.
 - Prefer `pub mod` boundaries for subsystem APIs and keep item visibility narrow inside those modules. Use root `pub use` only for small, deliberate facade surfaces.
 - Split large `lib.rs` / `main.rs` files by responsibility before they become architectural boundaries in practice. Prefer `module.rs` plus subdirectories over `mod.rs`.

@@ -15,6 +15,14 @@ clippy:
 test:
     @cargo test --workspace
 
+test-slow-mcp:
+    @cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
+
+test-visual-golden:
+    @cargo test -p arcweft-cli --test check agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden -- --ignored --nocapture
+
+test-tier2: test-slow-mcp test-visual-golden
+
 regression:
     @cargo test -p arcweft-cli --test regression_harness
 
@@ -25,6 +33,8 @@ scan-removed-dsl:
     @cargo test -p arcweft-cli source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims --test regression_harness
 
 verify: fmt-check clippy test scan-absolute-paths scan-removed-dsl
+
+verify-full: verify test-tier2
 
 toolchain-profile-pure-jit-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat {{repeat}} --warmup {{warmup}} --json
