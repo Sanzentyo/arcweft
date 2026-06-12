@@ -4863,6 +4863,107 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_jlreq_opening_punctuation_mask_raw_crop() {
+    let path = temp_arcw(
+        "agent-observe-native-jlreq-opening-punctuation-mask",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春「人外[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-jlreq-opening-punctuation-mask");
+    let raw_path = dir.join("native-jlreq-opening-punctuation-mask.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.3.9.12")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ opening punctuation mask raw crop");
+
+    assert!(
+        output.status.success(),
+        "native JLREQ opening punctuation mask crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native JLREQ opening punctuation mask report is JSON");
+    assert_eq!(json["images"][0]["kind"], "mask");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(json["images"][0]["composition"], "mask_attachment");
+
+    let spring = find_rich_text_cluster_object(&json, "春", 6, 9);
+    let opening_bracket = find_rich_text_cluster_object(&json, "「", 9, 12);
+    let person = find_rich_text_cluster_object(&json, "人", 12, 15);
+    assert_eq!(
+        opening_bracket["rich_text_ref"]["orientation"],
+        "sideways_cw"
+    );
+    assert_eq!(
+        opening_bracket["rich_text_ref"]["vertical_form"],
+        "rotated_alternate"
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        opening_bracket["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        opening_bracket["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], opening_bracket["bbox"]["width"]);
+    assert_eq!(
+        json["images"][0]["height"],
+        opening_bracket["bbox"]["height"]
+    );
+    assert!(
+        agent_json_bbox_x(&opening_bracket["bbox"]) < agent_json_bbox_x(&spring["bbox"]),
+        "line-end-prohibited opening punctuation should move to the next vertical_rl column"
+    );
+    assert!(
+        agent_json_bbox_y(&opening_bracket["bbox"]) < agent_json_bbox_y(&spring["bbox"]),
+        "opening punctuation moved from a column end should restart near the column top"
+    );
+    assert_vertical_cluster_after(
+        opening_bracket,
+        person,
+        "text after opening punctuation should continue in the same moved column",
+    );
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    let bytes = fs::read(&raw_path).expect("read native JLREQ opening punctuation mask raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(transparent > 0);
+
+    fs::remove_file(&path).expect("remove temp native JLREQ opening punctuation mask source");
+    fs::remove_dir_all(&dir).expect("remove temp native JLREQ opening punctuation mask dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry() {
     let path = temp_arcw(
         "agent-observe-native-textbox-mask",

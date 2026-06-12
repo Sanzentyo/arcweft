@@ -245,7 +245,10 @@ the concrete choices to follow when turning that package into production code.
   remain tied to the same cluster bbox. It also checks that
   line-end-prohibited opening punctuation moves to the next vertical column,
   matching the JLREQ 3.1.7/3.1.8 treatment of characters not starting or ending
-  lines. Preset-specific native Agent coverage compares `jlreq=loose` and
+  lines; that moved opening-punctuation cluster is also covered by a raw native
+  mask crop, so its rendered pixels, crop origin, and observed post-kinsoku bbox
+  are verified together. Preset-specific native Agent coverage compares
+  `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset. Broader
   paragraph-style native Agent coverage now combines comma compression,
