@@ -1,5 +1,6 @@
 //! Minimal native window renderer for rich-text player frames.
 
+use arcweft_glyphon::{GlyphonAreaOptions, glyph_area_from_layout};
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
@@ -11,8 +12,8 @@ use arcweft_text_layout::{
     layout_frame,
 };
 use glyphon::{
-    Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
-    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
+    Attrs, Buffer, Cache, CacheKey, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
+    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector, Viewport, Weight,
 };
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -329,11 +330,17 @@ impl NativeOffscreenCaptureSession {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let page_layout = layout_page_range(
+            frame,
+            page_range.clone(),
+            native_text_layout_config(width, height, viewport.left, viewport.top),
+        )?;
         let Some(page) = page_from_display_map_range(frame, page_range) else {
             return Err(NativeWindowError::EmptyPages);
         };
         self.capture_rich_text_rgba(
             &page.rich_text,
+            NativeRenderLayout::glyph_area(&page_layout.layout),
             width,
             height,
             NativeTextOrigin {
@@ -451,12 +458,14 @@ impl NativeOffscreenCaptureSession {
     fn capture_rich_text_rgba(
         &mut self,
         rich_text: &WindowRichText,
+        layout: NativeRenderLayout<'_>,
         width: u32,
         height: u32,
         origin: NativeTextOrigin,
     ) -> Result<NativeFrameCapture, NativeWindowError> {
         let rgba = self.render_rich_text_rgba_with_clear(
             rich_text,
+            layout,
             width,
             height,
             origin,
@@ -482,6 +491,11 @@ impl NativeOffscreenCaptureSession {
         regions: &[NativeFrameDebugRegion],
     ) -> Result<Option<Vec<u8>>, NativeWindowError> {
         let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let page_layout = layout_page_range(
+            frame,
+            page_range.clone(),
+            native_text_layout_config(width, height, origin.left, origin.top),
+        )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
         };
@@ -492,6 +506,7 @@ impl NativeOffscreenCaptureSession {
         };
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
+            NativeRenderLayout::text_area(Some(&page_layout.layout)),
             width,
             height,
             origin,
@@ -516,6 +531,11 @@ impl NativeOffscreenCaptureSession {
         regions: &[NativeFrameDebugRegion],
     ) -> Result<Option<Vec<u8>>, NativeWindowError> {
         let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let page_layout = layout_page_range(
+            frame,
+            page_range.clone(),
+            native_text_layout_config(width, height, origin.left, origin.top),
+        )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
         };
@@ -526,6 +546,7 @@ impl NativeOffscreenCaptureSession {
         };
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
+            NativeRenderLayout::text_area(Some(&page_layout.layout)),
             width,
             height,
             origin,
@@ -543,13 +564,23 @@ impl NativeOffscreenCaptureSession {
     fn render_rich_text_rgba_with_clear(
         &mut self,
         rich_text: &WindowRichText,
+        layout: NativeRenderLayout<'_>,
         width: u32,
         height: u32,
         origin: NativeTextOrigin,
         clear: wgpu::Color,
     ) -> Result<Vec<u8>, NativeWindowError> {
-        self.renderer
-            .prepare(&self.device, &self.queue, rich_text, width, height, origin)?;
+        self.renderer.prepare(
+            &self.device,
+            &self.queue,
+            rich_text,
+            layout,
+            NativeRenderTarget {
+                width,
+                height,
+                origin,
+            },
+        )?;
         let texture = self.renderer.render_texture_with_clear(
             &self.device,
             &self.queue,
@@ -948,8 +979,8 @@ fn native_element_bounds_from_layout(
         let index = *page_layout.ruby_indices.get(ruby.ruby_index)?;
         let bounds = inflate_layout_rect_asymmetric(
             ruby.base_bounds.union(ruby.ruby_bounds),
-            0.0,
-            128.0,
+            16.0,
+            16.0,
             16.0,
             16.0,
         );
@@ -2087,6 +2118,7 @@ impl WindowState {
             &mut self.font_system,
             &self.text_buffer,
             rich_text,
+            None,
             self.surface_config.width,
             self.surface_config.height,
             NativeTextOrigin::default(),
@@ -2107,6 +2139,7 @@ fn build_ruby_buffers(
     font_system: &mut FontSystem,
     text_buffer: &Buffer,
     rich_text: &WindowRichText,
+    layout: Option<&LaidOutText>,
     width: u32,
     height: u32,
     origin: NativeTextOrigin,
@@ -2114,7 +2147,8 @@ fn build_ruby_buffers(
     rich_text
         .ruby_annotations
         .iter()
-        .map(|annotation| {
+        .enumerate()
+        .map(|(ruby_index, annotation)| {
             let mut buffer = Buffer::new(font_system, Metrics::new(16.0, 20.0));
             buffer.set_size(
                 font_system,
@@ -2126,21 +2160,36 @@ fn build_ruby_buffers(
             buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
             buffer.shape_until_scroll(font_system, false);
             let ruby_width = buffer.layout_runs().next().map_or(0.0, |run| run.line_w);
-            let (base_left, top, base_width) =
-                ruby_overlay_geometry(text_buffer, rich_text, &annotation.base_range, origin)
-                    .unwrap_or_else(|| {
-                        ruby_overlay_geometry_estimate(rich_text, &annotation.base_range, origin)
-                    });
-            let left = base_left + (base_width - ruby_width).max(0.0) / 2.0;
+            let (left, top) = ruby_layout_geometry(layout, ruby_index).unwrap_or_else(|| {
+                let (base_left, top, base_width) =
+                    ruby_overlay_geometry(text_buffer, rich_text, &annotation.base_range, origin)
+                        .unwrap_or_else(|| {
+                            ruby_overlay_geometry_estimate(
+                                rich_text,
+                                &annotation.base_range,
+                                origin,
+                            )
+                        });
+                (base_left + (base_width - ruby_width).max(0.0) / 2.0, top)
+            });
             WindowRubyBuffer { buffer, left, top }
         })
         .collect()
+}
+
+fn ruby_layout_geometry(layout: Option<&LaidOutText>, ruby_index: usize) -> Option<(f32, f32)> {
+    let ruby = layout?
+        .ruby
+        .iter()
+        .find(|ruby| ruby.ruby_index == ruby_index)?;
+    Some((ruby.ruby_bounds.x, ruby.ruby_bounds.y))
 }
 
 const NATIVE_TEXT_LEFT: f32 = 24.0;
 const NATIVE_TEXT_TOP: f32 = 24.0;
 const NATIVE_RUBY_BASELINE_OFFSET: f32 = 48.0;
 const NATIVE_RUBY_FALLBACK_ADVANCE: f32 = 16.0;
+const NATIVE_GLYPHAREA_BASELINE_OFFSET: f32 = 30.0;
 
 #[derive(Clone, Copy, Debug)]
 struct NativeTextOrigin {
@@ -2386,6 +2435,41 @@ struct NativeOffscreenTextRenderer {
     ruby_buffers: Vec<WindowRubyBuffer>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct NativeRenderTarget {
+    width: u32,
+    height: u32,
+    origin: NativeTextOrigin,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeRenderLayout<'a> {
+    layout: Option<&'a LaidOutText>,
+    body_mode: NativeBodyRenderMode,
+}
+
+impl<'a> NativeRenderLayout<'a> {
+    const fn glyph_area(layout: &'a LaidOutText) -> Self {
+        Self {
+            layout: Some(layout),
+            body_mode: NativeBodyRenderMode::GlyphArea,
+        }
+    }
+
+    const fn text_area(layout: Option<&'a LaidOutText>) -> Self {
+        Self {
+            layout,
+            body_mode: NativeBodyRenderMode::TextArea,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NativeBodyRenderMode {
+    TextArea,
+    GlyphArea,
+}
+
 impl NativeOffscreenTextRenderer {
     fn new(
         device: &wgpu::Device,
@@ -2414,39 +2498,79 @@ impl NativeOffscreenTextRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         rich_text: &WindowRichText,
-        width: u32,
-        height: u32,
-        origin: NativeTextOrigin,
+        layout: NativeRenderLayout<'_>,
+        target: NativeRenderTarget,
     ) -> Result<(), NativeWindowError> {
         prepare_window_text_buffers(
             &mut self.font_system,
             &mut self.text_buffer,
             rich_text,
-            width,
-            height,
+            target.width,
+            target.height,
         );
         self.ruby_buffers = build_ruby_buffers(
             &mut self.font_system,
             &self.text_buffer,
             rich_text,
-            width,
-            height,
-            origin,
+            layout.layout,
+            target.width,
+            target.height,
+            target.origin,
         );
-        self.viewport.update(queue, Resolution { width, height });
-        let text_areas =
-            window_text_areas(&self.text_buffer, &self.ruby_buffers, width, height, origin);
-        self.text_renderer
-            .prepare(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                text_areas,
-                &mut self.swash_cache,
+        self.viewport.update(
+            queue,
+            Resolution {
+                width: target.width,
+                height: target.height,
+            },
+        );
+        if let (NativeBodyRenderMode::GlyphArea, Some(layout)) = (layout.body_mode, layout.layout) {
+            let cache_keys = text_buffer_cache_keys(&self.text_buffer, rich_text);
+            let bounds = native_text_bounds(target.width, target.height);
+            let glyph_area = glyph_area_from_layout(
+                layout,
+                GlyphonAreaOptions {
+                    bounds,
+                    origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                    skip_missing_glyphs: true,
+                    ..GlyphonAreaOptions::default()
+                },
+                |_index, glyph| cache_key_for_layout_glyph(glyph.range, &cache_keys),
             )
-            .map_err(|error| NativeWindowError::Readback(error.to_string()))
+            .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+            let ruby_areas = ruby_text_areas(&self.ruby_buffers, target.width, target.height);
+            self.text_renderer
+                .prepare_text_and_glyph_areas(
+                    device,
+                    queue,
+                    &mut self.font_system,
+                    &mut self.atlas,
+                    &self.viewport,
+                    ruby_areas,
+                    [glyph_area.as_glyph_area()],
+                    &mut self.swash_cache,
+                )
+                .map_err(|error| NativeWindowError::Readback(error.to_string()))
+        } else {
+            let text_areas = window_text_areas(
+                &self.text_buffer,
+                &self.ruby_buffers,
+                target.width,
+                target.height,
+                target.origin,
+            );
+            self.text_renderer
+                .prepare(
+                    device,
+                    queue,
+                    &mut self.font_system,
+                    &mut self.atlas,
+                    &self.viewport,
+                    text_areas,
+                    &mut self.swash_cache,
+                )
+                .map_err(|error| NativeWindowError::Readback(error.to_string()))
+        }
     }
 
     fn render_texture_with_clear(
@@ -2619,6 +2743,63 @@ fn window_text_areas<'a>(
         custom_glyphs: &[],
     }));
     areas
+}
+
+fn ruby_text_areas(
+    ruby_buffers: &[WindowRubyBuffer],
+    width: u32,
+    height: u32,
+) -> Vec<TextArea<'_>> {
+    let bounds = native_text_bounds(width, height);
+    ruby_buffers
+        .iter()
+        .map(|ruby| TextArea {
+            buffer: &ruby.buffer,
+            left: ruby.left,
+            top: ruby.top,
+            scale: 1.0,
+            bounds,
+            default_color: Color::rgb(170, 190, 220),
+            custom_glyphs: &[],
+        })
+        .collect()
+}
+
+fn native_text_bounds(width: u32, height: u32) -> TextBounds {
+    TextBounds {
+        left: 0,
+        top: 0,
+        right: surface_extent_i32(width),
+        bottom: surface_extent_i32(height),
+    }
+}
+
+fn text_buffer_cache_keys(
+    text_buffer: &Buffer,
+    rich_text: &WindowRichText,
+) -> Vec<(RichTextRange, CacheKey)> {
+    let line_starts = text_line_start_offsets(&rich_text.text);
+    text_buffer
+        .layout_runs()
+        .flat_map(|run| {
+            let line_start = line_starts.get(run.line_i).copied().unwrap_or(0);
+            run.glyphs.iter().filter_map(move |glyph| {
+                let start = line_start.saturating_add(glyph.start);
+                let end = line_start.saturating_add(glyph.end);
+                let cache_key = glyph.physical((0.0, 0.0), 1.0).cache_key;
+                (start < end).then_some((RichTextRange::new(start, end), cache_key))
+            })
+        })
+        .collect()
+}
+
+fn cache_key_for_layout_glyph(
+    range: RichTextRange,
+    cache_keys: &[(RichTextRange, CacheKey)],
+) -> Option<CacheKey> {
+    cache_keys.iter().find_map(|(candidate, cache_key)| {
+        (candidate.start < range.end && range.start < candidate.end).then_some(*cache_key)
+    })
 }
 
 fn padded_rgba_row_bytes(width: u32) -> u32 {

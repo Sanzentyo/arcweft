@@ -397,6 +397,7 @@ name = "arcweft-player-native"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-glyphon",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",

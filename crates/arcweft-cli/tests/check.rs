@@ -23,6 +23,7 @@ use base64::{Engine as _, engine::general_purpose};
 
 static CUSTOM_BUNDLE_ADAPTER_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUSTOM_BUNDLE_ADAPTER_OUTPUT: Mutex<Option<PathBuf>> = Mutex::new(None);
+static AGENT_MCP_STDIO_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn jit_check_json_compares_cranelift_and_vm() {
@@ -4538,6 +4539,9 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> [serde_json::Value; 1
 }
 
 fn run_agent_mcp_stdio(requests: &[serde_json::Value]) -> std::process::Output {
+    let _guard = AGENT_MCP_STDIO_LOCK
+        .lock()
+        .expect("agent MCP stdio tests serialize native subprocesses");
     let mut child = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("mcp")

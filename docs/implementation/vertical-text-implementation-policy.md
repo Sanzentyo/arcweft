@@ -77,6 +77,24 @@ the concrete choices to follow when turning that package into production code.
   equivalent full-reference image metric in CI artifacts. Do not commit generated
   image outputs unless they are stable fixtures intentionally added for tests.
 
+## Current Implementation Notes
+
+- `arcweft-text-layout` keeps renderer-independent glyph/run/ruby geometry and
+  preserves layout cursors across adjacent display-map text runs. Style/effect
+  splitting must not reset inline progression.
+- `arcweft-glyphon` converts `LaidOutText` into glyphon `GlyphArea` input. It
+  owns renderer-coordinate adjustments such as glyph origin offsets; Sans I/O
+  layout coordinates stay cell/bounds oriented.
+- The native headless full-frame capture path renders body text through
+  `GlyphArea` and keeps ruby overlays on `TextArea` until ruby shaping is moved
+  into the same geometry stream.
+- Debug/object/color capture geometry is measured from `LaidOutText`; pixel
+  readback remains only a verification and capture output path.
+- Remaining work includes native window rendering through `GlyphArea`,
+  multi-glyph `TextCombineUpright`, real Unicode segmentation/orientation,
+  vertical shaping policy, ruby collision/layout feedback, and `imq` regression
+  comparison fixtures.
+
 ## Explicit Defaults
 
 - Repository workflow remains `main` only unless a branch is explicitly

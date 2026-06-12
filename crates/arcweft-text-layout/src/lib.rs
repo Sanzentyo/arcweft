@@ -216,6 +216,7 @@ pub fn layout_frame(
     config: TextLayoutConfig,
 ) -> Result<LaidOutText, TextLayoutError> {
     let mut out = LaidOutText::default();
+    let mut state = TextLayoutState::new(config);
     for (run_index, run) in frame.display_map.text_runs.iter().enumerate() {
         let range = valid_range(frame, run.range)?;
         let text = frame
@@ -244,6 +245,7 @@ pub fn layout_frame(
                     text,
                     &run.presentation,
                     config,
+                    &mut state,
                 );
             }
             RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
@@ -253,7 +255,14 @@ pub fn layout_frame(
                     presentation: &run.presentation,
                     config,
                 };
-                layout_vertical_run(&mut out.glyphs, text, writing_mode, vertical_latin, context);
+                layout_vertical_run(
+                    &mut out.glyphs,
+                    text,
+                    writing_mode,
+                    vertical_latin,
+                    context,
+                    &mut state,
+                );
             }
         }
         if let Some(bounds) =
@@ -279,6 +288,41 @@ pub fn layout_frame(
     Ok(out)
 }
 
+#[derive(Clone, Copy, Debug)]
+struct TextLayoutState {
+    horizontal: LayoutCursor,
+    vertical_rl: LayoutCursor,
+    vertical_lr: LayoutCursor,
+}
+
+impl TextLayoutState {
+    fn new(config: TextLayoutConfig) -> Self {
+        Self {
+            horizontal: LayoutCursor::new(config.origin.x, config.origin.y),
+            vertical_rl: LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                config.origin.y,
+            ),
+            vertical_lr: LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalLr, config),
+                config.origin.y,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LayoutCursor {
+    x: f32,
+    y: f32,
+}
+
+impl LayoutCursor {
+    const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
 fn layout_horizontal_run(
     glyphs: &mut Vec<LaidOutGlyph>,
     run_index: usize,
@@ -286,31 +330,31 @@ fn layout_horizontal_run(
     text: &str,
     presentation: &RichTextPresentation,
     config: TextLayoutConfig,
+    state: &mut TextLayoutState,
 ) {
-    let mut x = config.origin.x;
-    let mut y = config.origin.y;
+    let cursor = &mut state.horizontal;
     for (offset, ch) in text.char_indices() {
         if ch == '\n' {
-            x = config.origin.x;
-            y += config.line_advance;
+            cursor.x = config.origin.x;
+            cursor.y += config.line_advance;
             continue;
         }
         let width = horizontal_advance(ch, config.font_size);
         let start = range_start + offset;
         let end = start + ch.len_utf8();
-        let bounds = LayoutRect::new(x, y, width.max(1.0), config.line_advance);
+        let bounds = LayoutRect::new(cursor.x, cursor.y, width.max(1.0), config.line_advance);
         glyphs.push(LaidOutGlyph {
             run_index,
             range: RichTextRange::new(start, end),
             text: ch.to_string(),
-            origin: LayoutPoint::new(x, y),
+            origin: LayoutPoint::new(cursor.x, cursor.y),
             advance: LayoutSize::new(width, 0.0),
             bounds,
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
             presentation: presentation.clone(),
         });
-        x += width;
+        cursor.x += width;
     }
 }
 
@@ -320,36 +364,42 @@ fn layout_vertical_run(
     writing_mode: RichTextWritingMode,
     vertical_latin: RichTextVerticalLatinMode,
     context: RunLayoutContext<'_>,
+    state: &mut TextLayoutState,
 ) {
     let config = context.config;
-    let mut x = vertical_column_start(writing_mode, config);
-    let mut y = config.origin.y;
     let column_step = vertical_column_step(writing_mode, context.presentation, config);
+    let cursor = match writing_mode {
+        RichTextWritingMode::VerticalRl => &mut state.vertical_rl,
+        RichTextWritingMode::VerticalLr => &mut state.vertical_lr,
+        RichTextWritingMode::HorizontalTb => {
+            unreachable!("horizontal runs use layout_horizontal_run")
+        }
+    };
     for cluster in vertical_clusters(text, vertical_latin) {
         if cluster.text == "\n" {
-            x += column_step;
-            y = config.origin.y;
+            cursor.x += column_step;
+            cursor.y = config.origin.y;
             continue;
         }
-        if y + config.line_advance > config.origin.y + config.size.height {
-            x += column_step;
-            y = config.origin.y;
+        if cursor.y + config.line_advance > config.origin.y + config.size.height {
+            cursor.x += column_step;
+            cursor.y = config.origin.y;
         }
         let start = context.range_start + cluster.range.start;
         let end = context.range_start + cluster.range.end;
-        let bounds = LayoutRect::new(x, y, config.line_advance, config.line_advance);
+        let bounds = LayoutRect::new(cursor.x, cursor.y, config.line_advance, config.line_advance);
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range: RichTextRange::new(start, end),
             text: cluster.text,
-            origin: LayoutPoint::new(x, y),
+            origin: LayoutPoint::new(cursor.x, cursor.y),
             advance: LayoutSize::new(0.0, config.line_advance),
             bounds,
             writing_mode,
             orientation: cluster.orientation,
             presentation: context.presentation.clone(),
         });
-        y += config.line_advance;
+        cursor.y += config.line_advance;
     }
 }
 
@@ -586,6 +636,45 @@ mod tests {
         }
     }
 
+    fn frame_with_split_runs(
+        text: &str,
+        split_at: usize,
+        presentation: RichTextPresentation,
+    ) -> LineDisplayFrame {
+        LineDisplayFrame {
+            line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
+            callee: "alice.say".to_owned(),
+            text: text.to_owned(),
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            nodes: Vec::new(),
+            display_map: RichTextDisplayMap {
+                text_runs: vec![
+                    RichTextTextRun {
+                        range: RichTextRange::new(0, split_at),
+                        source: RichTextTextSource::Text,
+                        node_index: 0,
+                        styles: Vec::new(),
+                        presentation: presentation.clone(),
+                    },
+                    RichTextTextRun {
+                        range: RichTextRange::new(split_at, text.len()),
+                        source: RichTextTextSource::Text,
+                        node_index: 1,
+                        styles: Vec::new(),
+                        presentation,
+                    },
+                ],
+                ruby_annotations: Vec::new(),
+                controls: Vec::new(),
+                host_events: Vec::new(),
+            },
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
+
     #[test]
     fn horizontal_layout_keeps_source_ranges() {
         let frame = frame_with_run("A夢", RichTextPresentation::default());
@@ -596,6 +685,17 @@ mod tests {
         assert_eq!(layout.glyphs[1].range, RichTextRange::new(1, 4));
         assert_eq!(layout.glyphs[0].orientation, GlyphOrientation::Upright);
         assert_eq!(layout.runs.len(), 1);
+    }
+
+    #[test]
+    fn horizontal_layout_keeps_cursor_across_style_runs() {
+        let frame = frame_with_split_runs("AB", 1, RichTextPresentation::default());
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert_f32_eq(layout.glyphs[0].origin.x, 24.0);
+        assert!(layout.glyphs[1].origin.x > layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[1].origin.y, layout.glyphs[0].origin.y);
     }
 
     #[test]
@@ -616,6 +716,20 @@ mod tests {
         assert_f32_eq(layout.glyphs[1].origin.y, 66.0);
         assert!(layout.glyphs[2].origin.x < layout.glyphs[1].origin.x);
         assert_f32_eq(layout.glyphs[2].origin.y, 24.0);
+    }
+
+    #[test]
+    fn vertical_layout_keeps_cursor_across_style_runs() {
+        let frame = frame_with_split_runs(
+            "天地",
+            "天".len(),
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert_f32_eq(layout.glyphs[1].origin.x, layout.glyphs[0].origin.x);
+        assert!(layout.glyphs[1].origin.y > layout.glyphs[0].origin.y);
     }
 
     #[test]

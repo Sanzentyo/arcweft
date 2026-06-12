@@ -2710,13 +2710,15 @@ fn agent_native_scoped_capture(
             if let Some(isolated) =
                 agent_native_color_capture(capture, context, &selected, native_session)?
             {
+                let mut rgba = isolated.rgba;
+                make_nontransparent_pixels_opaque(&mut rgba);
                 let full = AgentRasterCapture {
                     width: isolated.width,
                     height: isolated.height,
                     crop_origin: None,
                     composition: AgentImageComposition::IsolatedRegions,
                     background: [0, 0, 0, 0],
-                    rgba: isolated.rgba,
+                    rgba,
                 };
                 let (x, y, width, height) =
                     agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
@@ -2743,6 +2745,14 @@ fn agent_native_scoped_capture(
         return Ok(agent_crop_raster_capture(&full, x, y, width, height));
     }
     Ok(full)
+}
+
+fn make_nontransparent_pixels_opaque(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] > 0 {
+            pixel[3] = 255;
+        }
+    }
 }
 
 fn agent_native_capture_objects_for_page<'a>(

@@ -27,6 +27,8 @@ pub struct GlyphonAreaOptions {
     pub top: f32,
     /// Area scale.
     pub scale: f32,
+    /// Offset applied to each layout glyph origin before submitting to glyphon.
+    pub origin_offset: Vector,
     /// Clip bounds.
     pub bounds: TextBounds,
     /// Default glyph color.
@@ -41,6 +43,7 @@ impl Default for GlyphonAreaOptions {
             left: 0.0,
             top: 0.0,
             scale: 1.0,
+            origin_offset: Vector::new(0.0, 0.0),
             bounds: TextBounds::default(),
             default_color: Color::rgb(245, 245, 245),
             skip_missing_glyphs: false,
@@ -114,7 +117,12 @@ pub fn glyph_area_from_layout(
             }
             return Err(GlyphonAdapterError::MissingCacheKey { glyph_index });
         };
-        glyphs.push(glyph_instance(glyph_index, glyph, cache_key));
+        glyphs.push(glyph_instance(
+            glyph_index,
+            glyph,
+            cache_key,
+            options.origin_offset,
+        ));
     }
     Ok(OwnedGlyphArea {
         glyphs,
@@ -127,10 +135,18 @@ pub fn glyph_area_from_layout(
     })
 }
 
-fn glyph_instance(glyph_index: usize, glyph: &LaidOutGlyph, cache_key: CacheKey) -> GlyphInstance {
+fn glyph_instance(
+    glyph_index: usize,
+    glyph: &LaidOutGlyph,
+    cache_key: CacheKey,
+    origin_offset: Vector,
+) -> GlyphInstance {
     GlyphInstance {
         source: GlyphSource::Text { cache_key },
-        origin: Point::new(glyph.origin.x, glyph.origin.y),
+        origin: Point::new(
+            glyph.origin.x + origin_offset.x,
+            glyph.origin.y + origin_offset.y,
+        ),
         advance: Vector::new(glyph.advance.width, glyph.advance.height),
         ink_bounds: Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
         transform: glyph_transform(glyph.orientation),
@@ -222,6 +238,38 @@ mod tests {
                 index: 1
             })
         );
+    }
+
+    #[test]
+    fn origin_offset_moves_submitted_glyph_origin() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, 1),
+                text: "A".to_owned(),
+                origin: LayoutPoint::new(10.0, 20.0),
+                advance: LayoutSize::new(16.0, 0.0),
+                bounds: LayoutRect::new(10.0, 20.0, 16.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::HorizontalTb,
+                orientation: GlyphOrientation::Upright,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                origin_offset: Vector::new(2.0, 30.0),
+                ..GlyphonAreaOptions::default()
+            },
+            |_index, _glyph| Some(fake_cache_key(1)),
+        )
+        .expect("area adapts");
+
+        assert_eq!(area.glyphs()[0].origin, Point::new(12.0, 50.0));
     }
 
     #[test]
