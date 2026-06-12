@@ -89,9 +89,11 @@ the concrete choices to follow when turning that package into production code.
   UAX #29 boundaries, so combining-mark Latin clusters and emoji ZWJ sequences
   stay intact before orientation and text-combine policy are applied. Mixed
   vertical orientation is resolved through a generated Unicode 17.0.0 UAX #50
-  `Vertical_Orientation` range table in `arcweft-text-layout`. `Tu` resolves to
-  upright and `Tr` currently resolves to sideways fallback until vertical
-  alternate shaping is implemented.
+  `Vertical_Orientation` range table in `arcweft-text-layout`. `Tu` and `Tr`
+  now produce `GlyphVerticalForm::{UprightAlternate,RotatedAlternate}` metadata
+  on `LaidOutGlyph`; native visual-plan/debug geometry preserves that request so
+  Agent observations can distinguish fallback rotation from missing vertical
+  alternate shaping.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
@@ -117,9 +119,9 @@ the concrete choices to follow when turning that package into production code.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
-  full JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
-  alternates, full ruby base expansion/overhang/line-break feedback, and
-  checked-in `imq` golden fixtures.
+  full JLREQ line-breaking policy, OpenType feature/cache-key shaping for
+  `Tu`/`Tr` alternates, full ruby base expansion/overhang/line-break feedback,
+  and checked-in `imq` golden fixtures.
 
 ## Explicit Defaults
 

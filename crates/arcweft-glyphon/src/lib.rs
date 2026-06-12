@@ -319,7 +319,8 @@ const fn glyph_transform(orientation: GlyphOrientation) -> GlyphTransform {
 mod tests {
     use super::*;
     use arcweft_text_layout::{
-        LaidOutGlyph, LayoutPoint, LayoutRect, LayoutSize, TextLayoutConfig, layout_frame,
+        GlyphVerticalForm, LaidOutGlyph, LayoutPoint, LayoutRect, LayoutSize, TextLayoutConfig,
+        layout_frame,
     };
     use glyphon::{
         Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, cosmic_text::CacheKeyFlags,
@@ -370,6 +371,7 @@ mod tests {
                     bounds: LayoutRect::new(10.0, 20.0, 42.0, 42.0),
                     writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
                     orientation: GlyphOrientation::Upright,
+                    vertical_form: GlyphVerticalForm::None,
                     presentation: arcweft_render_text::RichTextPresentation::default(),
                 },
                 LaidOutGlyph {
@@ -381,6 +383,7 @@ mod tests {
                     bounds: LayoutRect::new(10.0, 62.0, 42.0, 42.0),
                     writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
                     orientation: GlyphOrientation::SidewaysCw,
+                    vertical_form: GlyphVerticalForm::None,
                     presentation: arcweft_render_text::RichTextPresentation::default(),
                 },
             ],
@@ -420,6 +423,7 @@ mod tests {
                 bounds: LayoutRect::new(10.0, 20.0, 16.0, 42.0),
                 writing_mode: arcweft_render_text::RichTextWritingMode::HorizontalTb,
                 orientation: GlyphOrientation::Upright,
+                vertical_form: GlyphVerticalForm::None,
                 presentation: arcweft_render_text::RichTextPresentation::default(),
             }],
             runs: Vec::new(),
@@ -452,6 +456,7 @@ mod tests {
                 bounds: LayoutRect::new(100.0, 24.0, 42.0, 42.0),
                 writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
                 orientation: GlyphOrientation::TextCombineUpright,
+                vertical_form: GlyphVerticalForm::None,
                 presentation: arcweft_render_text::RichTextPresentation::default(),
             }],
             runs: Vec::new(),
@@ -495,6 +500,7 @@ mod tests {
                 bounds: LayoutRect::new(100.0, 24.0, 42.0, 42.0),
                 writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
                 orientation: GlyphOrientation::TextCombineUpright,
+                vertical_form: GlyphVerticalForm::None,
                 presentation: arcweft_render_text::RichTextPresentation::default(),
             }],
             runs: Vec::new(),

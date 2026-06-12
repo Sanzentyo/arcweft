@@ -10,8 +10,8 @@ use arcweft_render_text::{
     RichTextStyle, parse_decimal_milli,
 };
 use arcweft_text_layout::{
-    GlyphOrientation, LaidOutText, LayoutPoint, LayoutRect, LayoutSize, TextLayoutConfig,
-    layout_frame,
+    GlyphOrientation, GlyphVerticalForm, LaidOutText, LayoutPoint, LayoutRect, LayoutSize,
+    TextLayoutConfig, layout_frame,
 };
 use glyphon::{
     Attrs, Buffer, Cache, CacheKey, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
@@ -135,6 +135,7 @@ pub struct NativeGlyphPlacement {
     pub x: f32,
     pub y: f32,
     pub rotate_degrees: f32,
+    pub vertical_form: GlyphVerticalForm,
     pub scale_x: f32,
     pub scale_y: f32,
     pub opacity: f32,
@@ -940,6 +941,7 @@ fn native_glyph_placements_from_layout(
                 x: glyph.origin.x,
                 y: glyph.origin.y,
                 rotate_degrees: glyph_orientation_degrees(glyph.orientation),
+                vertical_form: glyph.vertical_form,
                 scale_x: 1.0,
                 scale_y: 1.0,
                 opacity: 1.0,
@@ -3265,7 +3267,7 @@ mod tests {
                     },
                 },
                 RichTextNode::Text {
-                    text: "縦書き".to_owned(),
+                    text: "縦Ａ。ー".to_owned(),
                 },
                 RichTextNode::StyleEnd {
                     name: "/".to_owned(),
@@ -3290,8 +3292,22 @@ mod tests {
             .find_map(|run| run.presentation.layout.as_ref())
             .expect("layout presentation is preserved");
 
-        assert_eq!(page.rich_text.text, "縦書き");
+        assert_eq!(page.rich_text.text, "縦Ａ。ー");
         assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
+
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+        let visual_page = plan.pages.first().expect("visual page exists");
+        let vertical_form_for = |text: &str| {
+            visual_page
+                .glyphs
+                .iter()
+                .find(|glyph| visual_page.text.get(glyph.range.clone()) == Some(text))
+                .map(|glyph| glyph.vertical_form)
+                .expect("glyph placement exists")
+        };
+
+        assert_eq!(vertical_form_for("。"), GlyphVerticalForm::UprightAlternate);
+        assert_eq!(vertical_form_for("ー"), GlyphVerticalForm::RotatedAlternate);
     }
 
     #[test]

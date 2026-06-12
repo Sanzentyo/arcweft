@@ -157,6 +157,19 @@ pub enum GlyphOrientation {
     TextCombineUpright,
 }
 
+/// Vertical shaping form requested by UAX #50 orientation resolution.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlyphVerticalForm {
+    /// No vertical alternate is requested.
+    #[default]
+    None,
+    /// Use a vertical alternate when the font has one; fallback stays upright.
+    UprightAlternate,
+    /// Prefer a rotated vertical alternate when available; fallback is sideways.
+    RotatedAlternate,
+}
+
 /// One source-cluster placement in layout order.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LaidOutGlyph {
@@ -176,6 +189,8 @@ pub struct LaidOutGlyph {
     pub writing_mode: RichTextWritingMode,
     /// Physical glyph orientation.
     pub orientation: GlyphOrientation,
+    /// Vertical shaping form requested before renderer fallback transforms.
+    pub vertical_form: GlyphVerticalForm,
     /// Resolved presentation metadata for the source run.
     pub presentation: RichTextPresentation,
 }
@@ -369,6 +384,7 @@ fn layout_horizontal_run(
             bounds,
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
+            vertical_form: GlyphVerticalForm::None,
             presentation: presentation.clone(),
         });
         cursor.x += width;
@@ -416,6 +432,7 @@ fn layout_vertical_run(
             bounds,
             writing_mode,
             orientation: cluster.orientation,
+            vertical_form: cluster.vertical_form,
             presentation: context.presentation.clone(),
         });
         cursor.y += config.line_advance;
@@ -632,6 +649,7 @@ struct VerticalCluster {
     range: Range<usize>,
     text: String,
     orientation: GlyphOrientation,
+    vertical_form: GlyphVerticalForm,
     break_allowed_before: bool,
 }
 
@@ -666,23 +684,28 @@ fn vertical_clusters(
                     range: offset..end,
                     text: value,
                     orientation: GlyphOrientation::TextCombineUpright,
+                    vertical_form: GlyphVerticalForm::None,
                     break_allowed_before,
                 });
                 continue;
             }
+            let orientation = vertical_orientation(grapheme, vertical_latin);
             clusters.push(VerticalCluster {
                 range: offset..end,
                 text: value,
-                orientation: vertical_orientation(grapheme, vertical_latin),
+                orientation,
+                vertical_form: vertical_form(grapheme, vertical_latin),
                 break_allowed_before,
             });
             continue;
         }
         index += 1;
+        let orientation = vertical_orientation(grapheme, vertical_latin);
         clusters.push(VerticalCluster {
             range: offset..offset + grapheme.len(),
             text: grapheme.to_owned(),
-            orientation: vertical_orientation(grapheme, vertical_latin),
+            orientation,
+            vertical_form: vertical_form(grapheme, vertical_latin),
             break_allowed_before: break_offsets.contains(&offset),
         });
     }
@@ -723,6 +746,19 @@ fn vertical_orientation(
                 | UnicodeVerticalOrientation::TransformedRotated => GlyphOrientation::SidewaysCw,
             }
         }
+    }
+}
+
+fn vertical_form(grapheme: &str, vertical_latin: RichTextVerticalLatinMode) -> GlyphVerticalForm {
+    if !matches!(vertical_latin, RichTextVerticalLatinMode::Mixed) {
+        return GlyphVerticalForm::None;
+    }
+    match unicode_vertical_orientation_for_grapheme(grapheme) {
+        UnicodeVerticalOrientation::Upright | UnicodeVerticalOrientation::Rotated => {
+            GlyphVerticalForm::None
+        }
+        UnicodeVerticalOrientation::TransformedUpright => GlyphVerticalForm::UprightAlternate,
+        UnicodeVerticalOrientation::TransformedRotated => GlyphVerticalForm::RotatedAlternate,
     }
 }
 
@@ -979,10 +1015,19 @@ mod tests {
         assert_eq!(layout.glyphs[0].orientation, GlyphOrientation::SidewaysCw);
         assert_eq!(layout.glyphs[1].text, "Ａ");
         assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::Upright);
+        assert_eq!(layout.glyphs[1].vertical_form, GlyphVerticalForm::None);
         assert_eq!(layout.glyphs[2].text, "。");
         assert_eq!(layout.glyphs[2].orientation, GlyphOrientation::Upright);
+        assert_eq!(
+            layout.glyphs[2].vertical_form,
+            GlyphVerticalForm::UprightAlternate
+        );
         assert_eq!(layout.glyphs[3].text, "ー");
         assert_eq!(layout.glyphs[3].orientation, GlyphOrientation::SidewaysCw);
+        assert_eq!(
+            layout.glyphs[3].vertical_form,
+            GlyphVerticalForm::RotatedAlternate
+        );
     }
 
     #[test]
@@ -1001,6 +1046,7 @@ mod tests {
         );
         assert_eq!(layout.glyphs[1].text, "5");
         assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::SidewaysCw);
+        assert_eq!(layout.glyphs[0].vertical_form, GlyphVerticalForm::None);
     }
 
     #[test]
