@@ -2,13 +2,13 @@
 
 use arcweft_glyphon::{
     GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, glyph_area_from_layout,
-    glyph_area_from_shaped_buffer,
+    glyph_area_from_shaped_buffer, vertical_glyph_area_from_shaped_buffer,
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
     RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
-    RichTextStyle, parse_decimal_milli,
+    RichTextStyle, RichTextWritingMode, parse_decimal_milli,
 };
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
@@ -2135,6 +2135,16 @@ struct WindowRubyBuffer {
     buffer: Buffer,
     left: f32,
     top: f32,
+    placement: RubyGlyphPlacement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RubyGlyphPlacement {
+    Horizontal,
+    Vertical {
+        cell_width: f32,
+        vertical_advance: f32,
+    },
 }
 
 impl WindowState {
@@ -2265,14 +2275,28 @@ fn build_ruby_buffers(
                 .collect::<Vec<_>>();
             if !segments.is_empty() {
                 buffers.extend(segments.into_iter().map(|segment| {
+                    let ruby_char_count = segment.ruby.chars().count().max(1);
+                    let placement =
+                        if matches!(segment.writing_mode, RichTextWritingMode::HorizontalTb) {
+                            RubyGlyphPlacement::Horizontal
+                        } else {
+                            RubyGlyphPlacement::Vertical {
+                                cell_width: segment.ruby_bounds.width,
+                                vertical_advance: segment.ruby_bounds.height
+                                    / usize_to_f32_saturating(ruby_char_count),
+                            }
+                        };
                     build_ruby_buffer(
                         font_system,
                         &annotation.style,
-                        &segment.ruby,
-                        segment.ruby_bounds.x,
-                        segment.ruby_bounds.y,
-                        width,
-                        height,
+                        RubyBufferSpec {
+                            ruby: &segment.ruby,
+                            left: segment.ruby_bounds.x,
+                            top: segment.ruby_bounds.y,
+                            placement,
+                            width,
+                            height,
+                        },
                     )
                 }));
                 continue;
@@ -2298,7 +2322,12 @@ fn build_ruby_buffers(
                     });
             (base_left + (base_width - ruby_width).max(0.0) / 2.0, top)
         });
-        buffers.push(WindowRubyBuffer { buffer, left, top });
+        buffers.push(WindowRubyBuffer {
+            buffer,
+            left,
+            top,
+            placement: RubyGlyphPlacement::Horizontal,
+        });
     }
     buffers
 }
@@ -2306,23 +2335,34 @@ fn build_ruby_buffers(
 fn build_ruby_buffer(
     font_system: &mut FontSystem,
     style: &NativeTextStyle,
-    ruby: &str,
-    left: f32,
-    top: f32,
-    width: u32,
-    height: u32,
+    spec: RubyBufferSpec<'_>,
 ) -> WindowRubyBuffer {
     let mut buffer = Buffer::new(font_system, Metrics::new(16.0, 20.0));
     buffer.set_size(
         font_system,
-        Some(surface_extent_f32(width)),
-        Some(surface_extent_f32(height)),
+        Some(surface_extent_f32(spec.width)),
+        Some(surface_extent_f32(spec.height)),
     );
     let attrs = style.attrs();
-    let spans = [(ruby, attrs.clone())];
+    let spans = [(spec.ruby, attrs.clone())];
     buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
-    WindowRubyBuffer { buffer, left, top }
+    WindowRubyBuffer {
+        buffer,
+        left: spec.left,
+        top: spec.top,
+        placement: spec.placement,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RubyBufferSpec<'a> {
+    ruby: &'a str,
+    left: f32,
+    top: f32,
+    placement: RubyGlyphPlacement,
+    width: u32,
+    height: u32,
 }
 
 fn ruby_layout_geometry(layout: Option<&LaidOutText>, ruby_index: usize) -> Option<(f32, f32)> {
@@ -2878,19 +2918,32 @@ fn ruby_glyph_areas(
     let bounds = native_text_bounds(width, height);
     ruby_buffers
         .iter()
-        .map(|ruby| {
-            glyph_area_from_shaped_buffer(
+        .map(|ruby| match ruby.placement {
+            RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
                 &ruby.buffer,
-                GlyphonAreaOptions {
-                    bounds,
-                    default_color: Color::rgb(170, 190, 220),
-                    left: ruby.left,
-                    top: ruby.top,
-                    ..GlyphonAreaOptions::default()
-                },
-            )
+                ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+            ),
+            RubyGlyphPlacement::Vertical {
+                cell_width,
+                vertical_advance,
+            } => vertical_glyph_area_from_shaped_buffer(
+                &ruby.buffer,
+                ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+                cell_width,
+                vertical_advance,
+            ),
         })
         .collect()
+}
+
+fn ruby_glyph_area_options(bounds: TextBounds, left: f32, top: f32) -> GlyphonAreaOptions {
+    GlyphonAreaOptions {
+        bounds,
+        default_color: Color::rgb(170, 190, 220),
+        left,
+        top,
+        ..GlyphonAreaOptions::default()
+    }
 }
 
 fn native_text_bounds(width: u32, height: u32) -> TextBounds {
@@ -3626,9 +3679,28 @@ mod tests {
         let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600);
 
         assert!(ruby_buffers[1].left > ruby_buffers[0].left);
+        let RubyGlyphPlacement::Vertical {
+            cell_width,
+            vertical_advance,
+        } = ruby_buffers[0].placement
+        else {
+            panic!("vertical layout ruby should use vertical glyph placement");
+        };
+        assert!((cell_width - layout.ruby[0].ruby_bounds.width).abs() < f32::EPSILON);
+        assert!((vertical_advance - layout.ruby[0].ruby_bounds.height / 3.0).abs() < 0.0001);
         assert_eq!(ruby_glyph_areas.len(), 2);
         assert!(!ruby_glyph_areas[0].is_empty());
         assert!(!ruby_glyph_areas[1].is_empty());
+        assert!(
+            ruby_glyph_areas[0].glyphs()[1].origin.y > ruby_glyph_areas[0].glyphs()[0].origin.y,
+            "vertical ruby glyphs should advance downward inside each segment"
+        );
+        assert!(
+            (ruby_glyph_areas[0].glyphs()[1].origin.x - ruby_glyph_areas[0].glyphs()[0].origin.x)
+                .abs()
+                <= layout.ruby[0].ruby_bounds.width,
+            "vertical ruby glyphs should remain in the same annotation track"
+        );
         assert!(
             ruby_glyph_areas[1].glyphs()[0].origin.x > ruby_glyph_areas[0].glyphs()[0].origin.x
         );

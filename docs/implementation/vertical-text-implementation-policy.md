@@ -150,7 +150,10 @@ the concrete choices to follow when turning that package into production code.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
-  `GlyphArea` instances positioned from `LaidOutText` ruby geometry.
+  `GlyphArea` instances positioned from `LaidOutText` ruby geometry. Vertical
+  ruby annotations keep glyphon/cosmic-text shaping for cache keys, but their
+  glyph instances are stacked top-to-bottom from the `LaidOutRuby::ruby_bounds`
+  cell width and vertical advance so rendered ruby tracks match Agent geometry.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain
   stable while captures can vary glyph visibility by capture time.

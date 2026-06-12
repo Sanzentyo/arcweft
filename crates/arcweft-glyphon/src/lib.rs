@@ -203,6 +203,62 @@ pub fn glyph_area_from_shaped_buffer(
     }
 }
 
+/// Adapts an already-shaped glyphon text buffer to vertically stacked absolute
+/// `GlyphArea` instances.
+///
+/// This is used for vertical ruby annotations whose glyph shaping still comes
+/// from glyphon/cosmic-text, but whose placement is owned by Arcweft's vertical
+/// ruby layout.
+pub fn vertical_glyph_area_from_shaped_buffer(
+    buffer: &Buffer,
+    options: GlyphonAreaOptions,
+    cell_width: f32,
+    vertical_advance: f32,
+) -> OwnedGlyphArea {
+    let cell_width = cell_width.max(1.0);
+    let vertical_advance = vertical_advance.max(1.0);
+    let glyphs = buffer
+        .layout_runs()
+        .flat_map(|run| {
+            run.glyphs
+                .iter()
+                .enumerate()
+                .map(move |(glyph_index, glyph)| {
+                    let physical = glyph.physical((0.0, 0.0), options.scale);
+                    let glyph_width = glyph.w * options.scale;
+                    let origin_x = options.left + (cell_width - glyph_width).max(0.0) * 0.5;
+                    let origin_y = options.top + (usize_to_f32(glyph_index) * vertical_advance);
+                    GlyphInstance {
+                        source: GlyphSource::Text {
+                            cache_key: physical.cache_key,
+                        },
+                        origin: Point::new(origin_x, origin_y),
+                        advance: Vector::new(0.0, vertical_advance),
+                        ink_bounds: Rect::new(0.0, 0.0, glyph_width, vertical_advance),
+                        transform: GlyphTransform::Identity,
+                        color: glyph.color_opt,
+                        metadata: glyph.metadata,
+                        cluster: Some(TextCluster {
+                            start: glyph.start,
+                            end: glyph.end,
+                            index: u32::try_from(glyph.start).unwrap_or(u32::MAX),
+                        }),
+                    }
+                })
+        })
+        .collect();
+
+    OwnedGlyphArea {
+        glyphs,
+        left: 0.0,
+        top: 0.0,
+        scale: 1.0,
+        bounds: options.bounds,
+        default_color: options.default_color,
+        skipped_glyphs: 0,
+    }
+}
+
 fn is_buffer_run_visible(line_top: f32, line_height: f32, options: GlyphonAreaOptions) -> bool {
     let start_y = options.top + (line_top * options.scale);
     let end_y = start_y + (line_height * options.scale);
@@ -324,6 +380,10 @@ fn i32_to_f32(value: i32) -> f32 {
     } else {
         i16::MAX
     }))
+}
+
+fn usize_to_f32(value: usize) -> f32 {
+    f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
 
 const fn glyph_transform(orientation: GlyphOrientation) -> GlyphTransform {
@@ -640,6 +700,48 @@ mod tests {
         assert_f32_eq(area.as_glyph_area().top, 0.0);
         assert!(area.glyphs()[0].origin.x >= 12.0);
         assert!(area.glyphs()[0].origin.y >= 34.0);
+    }
+
+    #[test]
+    fn shaped_buffer_can_map_to_vertical_ruby_instances() {
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
+        buffer.set_size(&mut font_system, Some(400.0), Some(100.0));
+        let attrs = Attrs::new().family(Family::SansSerif);
+        buffer.set_rich_text(
+            &mut font_system,
+            [("ゆめ", attrs.clone())],
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        let area = vertical_glyph_area_from_shaped_buffer(
+            &buffer,
+            GlyphonAreaOptions {
+                left: 70.0,
+                top: 30.0,
+                bounds: TextBounds {
+                    left: 0,
+                    top: 0,
+                    right: 400,
+                    bottom: 200,
+                },
+                default_color: Color::rgb(170, 190, 220),
+                ..GlyphonAreaOptions::default()
+            },
+            14.0,
+            14.0,
+        );
+
+        assert!(area.len() >= 2);
+        assert_f32_eq(area.as_glyph_area().left, 0.0);
+        assert_f32_eq(area.as_glyph_area().top, 0.0);
+        assert!(area.glyphs()[1].origin.y > area.glyphs()[0].origin.y);
+        assert!(area.glyphs()[1].origin.x < area.glyphs()[0].origin.x + 14.0);
+        assert_f32_eq(area.glyphs()[0].advance.x, 0.0);
+        assert_f32_eq(area.glyphs()[0].advance.y, 14.0);
     }
 
     #[test]
