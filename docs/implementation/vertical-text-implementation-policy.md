@@ -271,7 +271,11 @@ the concrete choices to follow when turning that package into production code.
   matching the JLREQ 3.1.7/3.1.8 treatment of characters not starting or ending
   lines; that moved opening-punctuation cluster is also covered by a raw native
   mask crop, so its rendered pixels, crop origin, and observed post-kinsoku bbox
-  are verified together. Preset-specific native Agent coverage compares
+  are verified together. Mirrored `vertical_lr` native Agent coverage now checks
+  the same line-end opening-punctuation movement and half-cell hanging
+  punctuation with rightward column progression, so the JLREQ edge behavior is
+  not only proven for `vertical_rl`. Preset-specific native Agent coverage
+  compares
   `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset. Broader

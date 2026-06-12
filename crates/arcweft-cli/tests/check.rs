@@ -3468,6 +3468,72 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_lr_jlreq_edge_geometry() {
+    let opening_path = temp_arcw(
+        "agent-observe-native-vertical-lr-jlreq-opening-punctuation",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr]天地春「人外[/][p]
+}
+",
+    );
+    let opening = observe_native_rich_text_layer_report(&opening_path);
+    fs::remove_file(&opening_path).expect("remove temp vertical_lr JLREQ opening source");
+    assert_native_rich_text_layer_image_has_content(&opening);
+
+    let spring = find_rich_text_cluster_object(&opening, "春", 6, 9);
+    let opening_bracket = find_rich_text_cluster_object(&opening, "「", 9, 12);
+    let person = find_rich_text_cluster_object(&opening, "人", 12, 15);
+    assert!(
+        agent_json_bbox_x(&opening_bracket["bbox"]) > agent_json_bbox_x(&spring["bbox"]),
+        "line-end-prohibited opening punctuation should move to the next vertical_lr column"
+    );
+    assert!(
+        agent_json_bbox_y(&opening_bracket["bbox"]) < agent_json_bbox_y(&spring["bbox"]),
+        "opening punctuation moved from a vertical_lr column end should restart near the column top"
+    );
+    assert_vertical_cluster_after(
+        opening_bracket,
+        person,
+        "text after vertical_lr opening punctuation should continue in the same moved column",
+    );
+    assert_rich_text_object_has_mask_capture(opening_bracket, "vertical_lr opening punctuation");
+
+    let hanging_path = temp_arcw(
+        "agent-observe-native-vertical-lr-jlreq-hanging-punctuation",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr]天地、人人[/][p]
+}
+",
+    );
+    let hanging = observe_native_rich_text_layer_report(&hanging_path);
+    fs::remove_file(&hanging_path).expect("remove temp vertical_lr JLREQ hanging source");
+    assert_native_rich_text_layer_image_has_content(&hanging);
+
+    let earth = find_rich_text_cluster_object(&hanging, "地", 3, 6);
+    let comma = find_rich_text_cluster_object(&hanging, "、", 6, 9);
+    let next_person = find_rich_text_cluster_object(&hanging, "人", 9, 12);
+    assert_eq!(
+        earth["bbox"]["x"], comma["bbox"]["x"],
+        "vertical_lr hanging punctuation should remain in the previous column"
+    );
+    assert!(
+        agent_json_bbox_y(&comma["bbox"]) > agent_json_bbox_y(&earth["bbox"]),
+        "vertical_lr hanging punctuation should sit after the previous cluster"
+    );
+    assert!(
+        agent_json_bbox_x(&next_person["bbox"]) > agent_json_bbox_x(&comma["bbox"])
+            && agent_json_bbox_y(&next_person["bbox"]) < agent_json_bbox_y(&comma["bbox"]),
+        "text after vertical_lr hanging punctuation should start the next column"
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry() {
     let loose = observe_native_jlreq_preset_fixture("loose", "preset-loose");
     let normal = observe_native_jlreq_preset_fixture("normal", "preset-normal");
