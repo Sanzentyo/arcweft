@@ -18,7 +18,9 @@ use unicode_segmentation::UnicodeSegmentation as _;
 mod jlreq_punctuation;
 mod jlreq_punctuation_data;
 mod vertical_orientation;
-pub use jlreq_punctuation_data::JLREQ_PUNCTUATION_DATA_VERSION;
+pub use jlreq_punctuation_data::{
+    JLREQ_PAIR_ADJUSTMENT_DATA_VERSION, JLREQ_PUNCTUATION_DATA_VERSION,
+};
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
 
@@ -629,8 +631,35 @@ fn vertical_column_segment_cost(
     let badness = 100.0 * (remaining / capacity).powi(3);
     let overflow_penalty =
         ((overflow - allowed_overhang).max(0.0) / context.config.line_advance).powi(2) * 10_000.0;
-    let break_penalty = if column_end < segment_end { 5.0 } else { 0.0 };
+    let break_penalty = if column_end < segment_end {
+        5.0 + vertical_column_pair_break_penalty(clusters, column_start, column_end)
+    } else {
+        0.0
+    };
     Some(badness + overflow_penalty + break_penalty)
+}
+
+fn vertical_column_pair_break_penalty(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+) -> f32 {
+    let Some(left) = clusters[column_start..column_end]
+        .iter()
+        .rev()
+        .find(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+    else {
+        return 0.0;
+    };
+    let Some(right) = clusters[column_end..]
+        .iter()
+        .find(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+    else {
+        return 0.0;
+    };
+    f32::from(
+        jlreq_punctuation::pair_adjustment_for_clusters(&left.text, &right.text).break_penalty,
+    )
 }
 
 fn vertical_column_segment_required_extent(
@@ -1726,6 +1755,14 @@ mod tests {
             plan.break_before,
             vec![false, false, false, true, false, false]
         );
+    }
+
+    #[test]
+    fn vertical_column_plan_reads_generated_pair_break_penalty() {
+        let clusters = vertical_clusters("天地。「人", RichTextVerticalLatinMode::Mixed);
+        let penalty = vertical_column_pair_break_penalty(&clusters, 0, 3);
+
+        assert_f32_eq(penalty, 25.0);
     }
 
     #[test]

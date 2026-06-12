@@ -1,10 +1,14 @@
 //! Checked-in JLREQ punctuation range data.
 //!
-//! This file is generated from `../data/jlreq_punctuation_ranges.txt`.
+//! This file is generated from `../data/jlreq_punctuation_ranges.txt`
+//! and `../data/jlreq_pair_adjustments.txt`.
 //! Do not edit range data by hand; run `tools/generate_jlreq_punctuation_data.rs`.
 
 /// Checked-in JLREQ punctuation data version.
 pub const JLREQ_PUNCTUATION_DATA_VERSION: &str = "arcweft-jlreq-punctuation-2026-06-12";
+
+/// Checked-in JLREQ pair adjustment data version.
+pub const JLREQ_PAIR_ADJUSTMENT_DATA_VERSION: &str = "arcweft-jlreq-pair-adjustment-2026-06-12";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum JlreqPunctuationClass {
@@ -949,5 +953,61 @@ pub(crate) const JLREQ_PUNCTUATION_RANGES: &[JlreqPunctuationRange] = &[
         start: 0xFF70,
         end: 0xFF70,
         class: JlreqPunctuationClass::Dash,
+    },
+];
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct JlreqPairAdjustment {
+    pub(crate) keep_together: bool,
+    pub(crate) break_penalty: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct JlreqPairAdjustmentRule {
+    pub(crate) left: Option<JlreqPunctuationClass>,
+    pub(crate) right: JlreqPunctuationClass,
+    pub(crate) adjustment: JlreqPairAdjustment,
+}
+
+pub(crate) const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::RepeatMark,
+        adjustment: JlreqPairAdjustment {
+            keep_together: true,
+            break_penalty: 1000,
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::Dash),
+        right: JlreqPunctuationClass::Dash,
+        adjustment: JlreqPairAdjustment {
+            keep_together: true,
+            break_penalty: 1000,
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::Leader),
+        right: JlreqPunctuationClass::Leader,
+        adjustment: JlreqPairAdjustment {
+            keep_together: true,
+            break_penalty: 1000,
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::Closing),
+        right: JlreqPunctuationClass::Opening,
+        adjustment: JlreqPairAdjustment {
+            keep_together: false,
+            break_penalty: 25,
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::MiddleDot),
+        right: JlreqPunctuationClass::Opening,
+        adjustment: JlreqPairAdjustment {
+            keep_together: false,
+            break_penalty: 15,
+        },
     },
 ];

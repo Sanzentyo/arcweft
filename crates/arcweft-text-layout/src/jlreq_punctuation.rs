@@ -1,42 +1,8 @@
-//! JLREQ punctuation classes and pair adjustment rules for vertical layout.
+//! JLREQ punctuation policy for vertical layout.
 
-use crate::jlreq_punctuation_data::{JLREQ_PUNCTUATION_RANGES, JlreqPunctuationClass};
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct JlreqPairAdjustment {
-    pub(crate) keep_together: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct JlreqPairAdjustmentRule {
-    left: Option<JlreqPunctuationClass>,
-    right: JlreqPunctuationClass,
-    adjustment: JlreqPairAdjustment,
-}
-
-const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[
-    JlreqPairAdjustmentRule {
-        left: None,
-        right: JlreqPunctuationClass::RepeatMark,
-        adjustment: JlreqPairAdjustment {
-            keep_together: true,
-        },
-    },
-    JlreqPairAdjustmentRule {
-        left: Some(JlreqPunctuationClass::Dash),
-        right: JlreqPunctuationClass::Dash,
-        adjustment: JlreqPairAdjustment {
-            keep_together: true,
-        },
-    },
-    JlreqPairAdjustmentRule {
-        left: Some(JlreqPunctuationClass::Leader),
-        right: JlreqPunctuationClass::Leader,
-        adjustment: JlreqPairAdjustment {
-            keep_together: true,
-        },
-    },
-];
+use crate::jlreq_punctuation_data::{
+    JLREQ_PAIR_ADJUSTMENTS, JLREQ_PUNCTUATION_RANGES, JlreqPairAdjustment, JlreqPunctuationClass,
+};
 
 pub(crate) fn is_line_end_prohibited_cluster(grapheme: &str) -> bool {
     cluster_class(grapheme) == Some(JlreqPunctuationClass::Opening)
@@ -103,9 +69,13 @@ fn char_class(ch: char) -> Option<JlreqPunctuationClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jlreq_punctuation_data::{JLREQ_PUNCTUATION_DATA_VERSION, JlreqPunctuationRange};
+    use crate::jlreq_punctuation_data::{
+        JLREQ_PAIR_ADJUSTMENT_DATA_VERSION, JLREQ_PUNCTUATION_DATA_VERSION,
+        JlreqPairAdjustmentRule, JlreqPunctuationRange,
+    };
 
     const JLREQ_PUNCTUATION_SOURCE: &str = include_str!("../data/jlreq_punctuation_ranges.txt");
+    const JLREQ_PAIR_ADJUSTMENT_SOURCE: &str = include_str!("../data/jlreq_pair_adjustments.txt");
 
     #[test]
     fn records_generated_data_version() {
@@ -113,12 +83,22 @@ mod tests {
             JLREQ_PUNCTUATION_DATA_VERSION,
             "arcweft-jlreq-punctuation-2026-06-12"
         );
+        assert_eq!(
+            JLREQ_PAIR_ADJUSTMENT_DATA_VERSION,
+            "arcweft-jlreq-pair-adjustment-2026-06-12"
+        );
     }
 
     #[test]
     fn generated_range_table_matches_source_data() {
         let expected = parse_source_ranges();
         assert_eq!(JLREQ_PUNCTUATION_RANGES, expected.as_slice());
+    }
+
+    #[test]
+    fn generated_pair_table_matches_source_data() {
+        let expected = parse_pair_source_rules();
+        assert_eq!(JLREQ_PAIR_ADJUSTMENTS, expected.as_slice());
     }
 
     #[test]
@@ -172,6 +152,7 @@ mod tests {
         assert!(pair_adjustment_for_clusters("山", "々").keep_together);
         assert!(pair_adjustment_for_clusters("ー", "ー").keep_together);
         assert!(pair_adjustment_for_clusters("…", "…").keep_together);
+        assert_eq!(pair_adjustment_for_clusters("。", "「").break_penalty, 25);
         assert!(!pair_adjustment_for_clusters("。", "人").keep_together);
         assert!(!pair_adjustment_for_clusters("ー", "人").keep_together);
     }
@@ -254,5 +235,71 @@ mod tests {
             normalized.push(range);
         }
         normalized
+    }
+
+    fn parse_pair_source_rules() -> Vec<JlreqPairAdjustmentRule> {
+        JLREQ_PAIR_ADJUSTMENT_SOURCE
+            .lines()
+            .enumerate()
+            .filter_map(|(line_index, line)| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    return None;
+                }
+                Some(parse_pair_source_line(line_index + 1, line))
+            })
+            .collect()
+    }
+
+    fn parse_pair_source_line(line_number: usize, line: &str) -> JlreqPairAdjustmentRule {
+        let mut parts = line.splitn(5, ';').map(str::trim);
+        let left = parts.next().map_or_else(
+            || panic!("line {line_number}: missing left class"),
+            parse_pair_source_left,
+        );
+        let right = parts
+            .next()
+            .and_then(parse_source_class)
+            .unwrap_or_else(|| panic!("line {line_number}: invalid right class"));
+        let keep_together = parts
+            .next()
+            .and_then(parse_source_bool)
+            .unwrap_or_else(|| panic!("line {line_number}: invalid keep-together flag"));
+        let break_penalty = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {line_number}: missing break penalty"))
+            .parse::<u16>()
+            .unwrap_or_else(|_| panic!("line {line_number}: invalid break penalty"));
+        assert!(
+            parts.next().is_some_and(|notes| !notes.is_empty()),
+            "line {line_number}: missing notes"
+        );
+        JlreqPairAdjustmentRule {
+            left,
+            right,
+            adjustment: JlreqPairAdjustment {
+                keep_together,
+                break_penalty,
+            },
+        }
+    }
+
+    fn parse_pair_source_left(value: &str) -> Option<JlreqPunctuationClass> {
+        if value == "Any" {
+            None
+        } else {
+            Some(
+                parse_source_class(value)
+                    .unwrap_or_else(|| panic!("invalid pair-adjustment left class {value}")),
+            )
+        }
+    }
+
+    fn parse_source_bool(value: &str) -> Option<bool> {
+        match value {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
     }
 }

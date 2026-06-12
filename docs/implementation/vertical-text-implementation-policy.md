@@ -105,25 +105,30 @@ the concrete choices to follow when turning that package into production code.
   moving the opening punctuation to the next column when it would otherwise be
   stranded at the previous column end. JLREQ punctuation policy lives in
   `arcweft-text-layout/src/jlreq_punctuation.rs`; reviewable source ranges live
-  in `arcweft-text-layout/data/jlreq_punctuation_ranges.txt`; the checked-in
-  generated table lives in `arcweft-text-layout/src/jlreq_punctuation_data.rs`.
-  `tools/generate_jlreq_punctuation_data.rs` regenerates or checks that table,
-  and `just generate-jlreq-punctuation` / `just check-jlreq-punctuation` wrap
-  the tool. The table classifies opening/closing punctuation, small kana, dash
-  marks, leaders, middle dots, and repeat marks, including fullwidth,
-  halfwidth, vertical presentation, and broader paired-bracket codepoints. The
-  initial pair table keeps repeated dash/leader marks together and keeps
-  iteration marks with the previous cluster. Initial punctuation compression
-  reduces the inline advance of compressible closing punctuation and middle dots
-  to half a body cell. When such punctuation must remain at the column end for
-  kinsoku, the layout applies half-cell hanging by moving its glyph origin
-  upward while keeping full cell bounds for capture/hit geometry from the same
-  rendered placement. Break decisions for a vertical run are collected into a
-  `VerticalColumnPlan` before glyph placement. The plan builder now uses
-  paragraph-level dynamic programming across each explicit line-break-separated
-  segment. Candidate columns include ruby-required inline extent, JLREQ
-  line-head prohibition, line-end prohibition for opening punctuation, and
-  separation-prohibited punctuation pairs. The cost model preserves existing
+  in `arcweft-text-layout/data/jlreq_punctuation_ranges.txt`; reviewable
+  pair/cost source rules live in
+  `arcweft-text-layout/data/jlreq_pair_adjustments.txt`; the checked-in
+  generated tables live in
+  `arcweft-text-layout/src/jlreq_punctuation_data.rs`.
+  `tools/generate_jlreq_punctuation_data.rs` regenerates or checks those
+  tables, and `just generate-jlreq-punctuation` /
+  `just check-jlreq-punctuation` wrap the tool. The range table classifies
+  opening/closing punctuation, small kana, dash marks, leaders, middle dots,
+  and repeat marks, including fullwidth, halfwidth, vertical presentation, and
+  broader paired-bracket codepoints. The generated pair/cost table keeps
+  repeated dash/leader marks together, keeps iteration marks with the previous
+  cluster, and supplies planner break penalties for weaker punctuation pairs.
+  Initial punctuation compression reduces the inline advance of compressible
+  closing punctuation and middle dots to half a body cell. When such punctuation
+  must remain at the column end for kinsoku, the layout applies half-cell
+  hanging by moving its glyph origin upward while keeping full cell bounds for
+  capture/hit geometry from the same rendered placement. Break decisions for a
+  vertical run are collected into a `VerticalColumnPlan` before glyph placement.
+  The plan builder now uses paragraph-level dynamic programming across each
+  explicit line-break-separated segment. Candidate columns include
+  ruby-required inline extent, JLREQ line-head prohibition, line-end prohibition
+  for opening punctuation, separation-prohibited punctuation pairs, and
+  generated pair break penalties. The cost model preserves existing
   fill-forward behavior for ties, treats accepted kinsoku overhang as allowed
   overhang instead of bad overflow, and balances columns when paragraph badness
   is materially lower.
@@ -164,9 +169,9 @@ the concrete choices to follow when turning that package into production code.
   with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
-  initial pair-adjustment table coverage, and paragraph-DP column planner,
-  especially expanding the current hand-written class-pair rules into a fuller
-  generated JLREQ pair/cost table.
+  generated pair/cost table, and paragraph-DP column planner, especially
+  expanding the current seed pair/cost data into a fuller JLREQ class-pair
+  profile with strictness presets.
 
 ## Explicit Defaults
 
