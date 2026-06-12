@@ -103,13 +103,15 @@ the concrete choices to follow when turning that package into production code.
   middle dots out of column heads as an initial kinsoku rule. The layout also
   applies an initial JLREQ line-end prohibition for opening punctuation by
   moving the opening punctuation to the next column when it would otherwise be
-  stranded at the previous column end. JLREQ punctuation classes and pair
-  adjustments live in `arcweft-text-layout/src/jlreq_punctuation.rs`: the
-  checked-in seed range table classifies opening/closing punctuation, small kana,
-  dash marks, leaders, middle dots, and repeat marks, and the initial pair table
-  keeps repeated dash/leader marks together and keeps iteration marks with the
-  previous cluster. Initial punctuation compression reduces the inline advance
-  of compressible closing punctuation and middle dots to half a body cell. When
+  stranded at the previous column end. JLREQ punctuation policy lives in
+  `arcweft-text-layout/src/jlreq_punctuation.rs`, while the checked-in seed
+  range data lives in `arcweft-text-layout/src/jlreq_punctuation_data.rs` so a
+  generator can replace the data without changing layout call sites. The seed
+  table classifies opening/closing punctuation, small kana, dash marks, leaders,
+  middle dots, and repeat marks, and the initial pair table keeps repeated
+  dash/leader marks together and keeps iteration marks with the previous
+  cluster. Initial punctuation compression reduces the inline advance of
+  compressible closing punctuation and middle dots to half a body cell. When
   such punctuation must remain at the column end for kinsoku, the layout applies
   half-cell hanging by moving its glyph origin upward while keeping full cell
   bounds for capture/hit geometry from the same rendered placement.

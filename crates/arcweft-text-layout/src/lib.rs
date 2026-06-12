@@ -16,8 +16,9 @@ use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 mod jlreq_punctuation;
+mod jlreq_punctuation_data;
 mod vertical_orientation;
-pub use jlreq_punctuation::JLREQ_PUNCTUATION_DATA_VERSION;
+pub use jlreq_punctuation_data::JLREQ_PUNCTUATION_DATA_VERSION;
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
 
