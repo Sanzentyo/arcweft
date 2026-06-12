@@ -2656,6 +2656,66 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden() {
+    if !cfg!(windows) {
+        eprintln!("skipping checked-in vertical Tu/Tr golden comparison: Windows font fixture");
+        return;
+    }
+    if !imq_is_available() {
+        eprintln!("skipping checked-in vertical Tu/Tr golden comparison: imq is not available");
+        return;
+    }
+
+    let source_path =
+        workspace_root().join("tests/fixtures/native_capture/vertical_tutr_golden.arcw");
+    let golden_path =
+        workspace_root().join("tests/fixtures/native_capture/vertical_tutr_golden.png");
+    let golden_bytes =
+        include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
+    assert_eq!(&golden_bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    let dir = temp_dir("agent-observe-native-vertical-tutr-golden");
+    let candidate_path = dir.join("vertical-tutr-candidate.png");
+    let candidate_json = capture_native_png_report(&source_path, &candidate_path);
+    assert_native_capture_has_content(&candidate_json, "vertical-tutr-candidate.png");
+
+    let imq_output = Command::new("imq")
+        .arg("image")
+        .arg(&golden_path)
+        .arg(&candidate_path)
+        .arg("--metrics")
+        .arg("psnr,ssim,mse,mae,maxae")
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("imq compares checked-in vertical Tu/Tr golden");
+    assert!(
+        imq_output.status.success(),
+        "imq checked-in golden comparison should succeed, stderr: {}",
+        String::from_utf8_lossy(&imq_output.stderr)
+    );
+    let imq_json: serde_json::Value =
+        serde_json::from_slice(&imq_output.stdout).expect("imq output is JSON");
+    assert_eq!(imq_json["dimensions"]["width"], 1280);
+    assert_eq!(imq_json["dimensions"]["height"], 720);
+    assert_metric_close(metric_score(&imq_json, "mse"), 0.0, 0.0, "mse");
+    assert_metric_close(metric_score(&imq_json, "mae"), 0.0, 0.0, "mae");
+    assert_metric_close(metric_score(&imq_json, "maxae"), 0.0, 0.0, "maxae");
+    assert!(
+        metric_score(&imq_json, "ssim") >= 0.999_999,
+        "ssim should match the checked-in vertical Tu/Tr golden: {imq_json}"
+    );
+    assert_metric_close(
+        metric_detail(&imq_json, "psnr", "mse"),
+        0.0,
+        0.0,
+        "psnr.mse",
+    );
+
+    fs::remove_dir_all(&dir).expect("remove temp native Tu/Tr golden dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_vertical_lr_ruby_text_combine_geometry() {
     let path = temp_arcw(
         "agent-observe-native-vertical-lr-ruby-combine",

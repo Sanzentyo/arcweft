@@ -136,13 +136,13 @@ the concrete choices to follow when turning that package into production code.
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
   ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
-  geometry is produced by the native renderer. Checked-in golden baselines remain
-  future work once rendering baselines are stable across CI targets.
+  geometry is produced by the native renderer. `tests/fixtures/native_capture/`
+  contains a checked-in Windows native PNG golden for a vertical `Tu`/`Tr`
+  alternate fixture, and the CLI test compares a fresh native capture against it
+  with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes broader JLREQ line-breaking classes beyond closing
   punctuation/small-kana heads, opening punctuation tails, and initial
-  dash/leader/repeat-mark separation rules, proof against stable checked-in
-  font/capture baselines for `Tu`/`Tr` alternates, and checked-in `imq` golden
-  fixtures.
+  dash/leader/repeat-mark separation rules.
 
 ## Explicit Defaults
 
