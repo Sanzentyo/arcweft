@@ -119,7 +119,10 @@ the concrete choices to follow when turning that package into production code.
   iteration marks with the previous cluster, supplies loose/normal/strict
   strictness presets through `TextLayoutConfig::jlreq_strictness`, keeps
   repeated dash/leader marks together outside loose composition, and supplies
-  preset-specific planner break penalties for weaker punctuation pairs.
+  preset-specific planner break penalties for weaker punctuation pairs. Authors
+  can select the per-span preset with layout attributes such as
+  `[.vertical_rl jlreq=strict]`; `jlreq=auto`/omitted inherits the host textbox
+  `TextLayoutConfig` preset.
   Initial punctuation compression reduces the inline advance of compressible
   closing punctuation and middle dots to half a body cell. When such punctuation
   must remain at the column end for kinsoku, the layout applies half-cell
@@ -189,7 +192,7 @@ the concrete choices to follow when turning that package into production code.
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,
   especially expanding the current seed class-pair profile with more
-  JLREQ-derived pair classes and product-facing preset selection.
+  JLREQ-derived pair classes.
 
 ## Explicit Defaults
 

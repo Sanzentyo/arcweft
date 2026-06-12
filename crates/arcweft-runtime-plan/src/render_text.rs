@@ -10,8 +10,8 @@ use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LineDisplayArg,
     LineDisplaySpec, Milli, RichTextAngle, RichTextColor, RichTextControl, RichTextDocument,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
-    RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition,
-    RichTextShaderRef, RichTextStateScope, RichTextStyle, RichTextTransform,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam,
+    RichTextRubyPosition, RichTextShaderRef, RichTextStateScope, RichTextStyle, RichTextTransform,
     RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
     parse_decimal_milli, parse_milli_token,
 };
@@ -682,7 +682,22 @@ fn layout_from_selector(selector: &str, attrs: &str) -> RichTextLayout {
             "ruby_inter_character" => RichTextRubyPosition::InterCharacter,
             _ => RichTextRubyPosition::Auto,
         },
+        jlreq_strictness: jlreq_strictness_attr(&attrs),
         column_gap: milli_attr(&attrs, "gap").unwrap_or(Milli(8000)),
+    }
+}
+
+fn jlreq_strictness_attr(attrs: &BTreeMap<String, String>) -> RichTextJlreqStrictness {
+    match attrs
+        .get("jlreq")
+        .or_else(|| attrs.get("strictness"))
+        .or_else(|| attrs.get("kinsoku"))
+        .map(String::as_str)
+    {
+        Some("loose") => RichTextJlreqStrictness::Loose,
+        Some("normal") => RichTextJlreqStrictness::Normal,
+        Some("strict") => RichTextJlreqStrictness::Strict,
+        _ => RichTextJlreqStrictness::Auto,
     }
 }
 
@@ -1207,6 +1222,43 @@ flow @flow.main main {
             })
             .expect("plain text run after inferred close");
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn inferred_layout_selector_lowers_jlreq_strictness_preset() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=strict]天地。「人[/][p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.002".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let run = frame.display_map.text_runs.first().expect("text run");
+        let layout = run.presentation.layout.as_ref().expect("layout");
+
+        assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
+        assert_eq!(layout.jlreq_strictness, RichTextJlreqStrictness::Strict);
     }
 
     #[test]

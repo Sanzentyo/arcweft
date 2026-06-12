@@ -105,6 +105,21 @@ pub enum RichTextRubyPosition {
     InterCharacter,
 }
 
+/// Authored JLREQ strictness preset for vertical column planning.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RichTextJlreqStrictness {
+    /// Inherit the host textbox/layout configuration.
+    #[default]
+    Auto,
+    /// Looser Japanese punctuation pairing.
+    Loose,
+    /// Balanced narrative default.
+    Normal,
+    /// Stricter Japanese punctuation pairing.
+    Strict,
+}
+
 /// Effect target granularity.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -187,6 +202,8 @@ pub struct RichTextLayout {
     pub vertical_latin: RichTextVerticalLatinMode,
     #[serde(default)]
     pub ruby_position: RichTextRubyPosition,
+    #[serde(default)]
+    pub jlreq_strictness: RichTextJlreqStrictness,
     #[serde(default = "default_column_gap")]
     pub column_gap: Milli,
 }
@@ -202,6 +219,7 @@ impl Default for RichTextLayout {
             direction: RichTextInlineDirection::Auto,
             vertical_latin: RichTextVerticalLatinMode::Mixed,
             ruby_position: RichTextRubyPosition::Auto,
+            jlreq_strictness: RichTextJlreqStrictness::Auto,
             column_gap: default_column_gap(),
         }
     }

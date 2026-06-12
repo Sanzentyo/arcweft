@@ -9,10 +9,10 @@ mod rich_effects;
 
 pub use rich_effects::{
     Milli, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
-    RichTextInlineDirection, RichTextLayout, RichTextParam, RichTextPresentation,
-    RichTextRubyPosition, RichTextShaderRef, RichTextStateScope, RichTextTransform,
-    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
-    parse_decimal_milli, parse_milli_token,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextParam,
+    RichTextPresentation, RichTextRubyPosition, RichTextShaderRef, RichTextStateScope,
+    RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
+    RichTextWritingMode, parse_decimal_milli, parse_milli_token,
 };
 
 /// Rich-text display sidecar generated while lowering a runtime plan.

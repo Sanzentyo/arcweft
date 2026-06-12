@@ -5,8 +5,8 @@
 //! renderer-specific buffers.
 
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextPresentation, RichTextRange, RichTextRubyAnnotation,
-    RichTextVerticalLatinMode, RichTextWritingMode,
+    LineDisplayFrame, RichTextJlreqStrictness, RichTextPresentation, RichTextRange,
+    RichTextRubyAnnotation, RichTextVerticalLatinMode, RichTextWritingMode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -288,6 +288,7 @@ pub fn layout_frame(
             .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
                 layout.vertical_latin
             });
+        let run_config = text_layout_config_for_presentation(config, &run.presentation);
         let glyph_start = out.glyphs.len();
         match writing_mode {
             RichTextWritingMode::HorizontalTb => {
@@ -297,7 +298,7 @@ pub fn layout_frame(
                     range.start,
                     text,
                     &run.presentation,
-                    config,
+                    run_config,
                     &mut state,
                 );
             }
@@ -307,7 +308,7 @@ pub fn layout_frame(
                     range_start: range.start,
                     presentation: &run.presentation,
                     ruby_annotations: &frame.display_map.ruby_annotations,
-                    config,
+                    config: run_config,
                 };
                 layout_vertical_run(
                     &mut out.glyphs,
@@ -340,6 +341,25 @@ pub fn layout_frame(
         );
     }
     Ok(out)
+}
+
+fn text_layout_config_for_presentation(
+    config: TextLayoutConfig,
+    presentation: &RichTextPresentation,
+) -> TextLayoutConfig {
+    let Some(layout) = &presentation.layout else {
+        return config;
+    };
+    let jlreq_strictness = match layout.jlreq_strictness {
+        RichTextJlreqStrictness::Auto => config.jlreq_strictness,
+        RichTextJlreqStrictness::Loose => JlreqStrictness::Loose,
+        RichTextJlreqStrictness::Normal => JlreqStrictness::Normal,
+        RichTextJlreqStrictness::Strict => JlreqStrictness::Strict,
+    };
+    TextLayoutConfig {
+        jlreq_strictness,
+        ..config
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1416,7 +1436,8 @@ fn usize_to_f32(value: usize) -> f32 {
 mod tests {
     use super::*;
     use arcweft_render_text::{
-        LineDisplayFrame, RichTextDisplayMap, RichTextLayout, RichTextTextRun, RichTextTextSource,
+        LineDisplayFrame, RichTextDisplayMap, RichTextJlreqStrictness, RichTextLayout,
+        RichTextTextRun, RichTextTextSource,
     };
 
     fn frame_with_run(text: &str, presentation: RichTextPresentation) -> LineDisplayFrame {
@@ -1819,6 +1840,37 @@ mod tests {
             vertical_column_pair_break_penalty(&clusters, 0, 3, JlreqStrictness::Strict),
             100.0,
         );
+    }
+
+    #[test]
+    fn rich_text_layout_jlreq_strictness_overrides_host_config_when_explicit() {
+        let mut presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
+        presentation
+            .layout
+            .as_mut()
+            .expect("vertical presentation has layout")
+            .jlreq_strictness = RichTextJlreqStrictness::Strict;
+        let config = TextLayoutConfig {
+            jlreq_strictness: JlreqStrictness::Loose,
+            ..TextLayoutConfig::default()
+        };
+
+        let resolved = text_layout_config_for_presentation(config, &presentation);
+
+        assert_eq!(resolved.jlreq_strictness, JlreqStrictness::Strict);
+    }
+
+    #[test]
+    fn rich_text_layout_jlreq_auto_inherits_host_config() {
+        let presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
+        let config = TextLayoutConfig {
+            jlreq_strictness: JlreqStrictness::Strict,
+            ..TextLayoutConfig::default()
+        };
+
+        let resolved = text_layout_config_for_presentation(config, &presentation);
+
+        assert_eq!(resolved.jlreq_strictness, JlreqStrictness::Strict);
     }
 
     #[test]

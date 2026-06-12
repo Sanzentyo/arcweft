@@ -2849,6 +2849,24 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
+    let textbox = json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["role"] == "textbox" && object["rich_text"]["line"] == "say.full.005")
+        .expect("target textbox object is observed");
+    let vertical_rl_display_run = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| {
+            run["range"]["start"].as_u64() == Some(27) && run["range"]["end"].as_u64() == Some(63)
+        })
+        .expect("vertical_rl display-map run is observed");
+    assert_eq!(
+        vertical_rl_display_run["presentation"]["layout"]["jlreq_strictness"],
+        "strict"
+    );
     let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
     assert_eq!(vertical_rl["entity"], "bob.say");
     assert_eq!(vertical_rl["rich_text"]["line"], "say.full.005");

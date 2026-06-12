@@ -114,7 +114,7 @@ the selector is unambiguous:
 
 ```arcw
 alice: [.shake amp=2px dir=0,1]揺れる文字[/][p]
-alice: [.vertical_rl]縦書き[/][p]
+alice: [.vertical_rl jlreq=strict]縦書き[/][p]
 alice: [.offset x=4px y=-2px]少しずらす[/][p]
 ```
 
@@ -122,7 +122,7 @@ The canonical forms keep the family explicit:
 
 ```arcw
 alice: [effect .shake amp=2px dir=0,1]揺れる文字[/effect][p]
-alice: [layout .vertical_rl]縦書き[/layout][p]
+alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
 alice: [transform .offset x=4px y=-2px]少しずらす[/transform][p]
 ```
 
@@ -139,6 +139,10 @@ Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as
 structured values globally; renderer builtins interpret only the parameter names
 they own, such as `dir=0,1` for a wave direction.
+
+Layout selectors accept `jlreq=loose|normal|strict` to choose the vertical
+Japanese punctuation-pair planning preset for that span. Omitting it keeps the
+host textbox/default layout preset.
 
 ---
 

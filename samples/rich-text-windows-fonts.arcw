@@ -49,7 +49,7 @@ entry game {
 
 flow @flow.windows_font_showcase windows_font_showcase {
     sen.say(id=@say.windows_fonts.001, voice=auto)[
-        [.vertical_rl][font "MS Mincho"]縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。[/font][/] [font "Yu Gothic"]横書き比較[/font]。[p]
+        [.vertical_rl jlreq=normal][font "MS Mincho"]縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。[/font][/] [font "Yu Gothic"]横書き比較[/font]。[p]
     ]
 
     akira.say(id=@say.windows_fonts.002, voice=auto, look=.smile)[
