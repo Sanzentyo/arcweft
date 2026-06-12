@@ -19,6 +19,13 @@ struct Range {
 struct PairAdjustmentRule {
     left: Option<String>,
     right: String,
+    loose: PairAdjustment,
+    normal: PairAdjustment,
+    strict: PairAdjustment,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PairAdjustment {
     keep_together: bool,
     break_penalty: u16,
 }
@@ -177,7 +184,7 @@ fn parse_pair_rules(source: &str) -> Result<Vec<PairAdjustmentRule>, String> {
             continue;
         }
 
-        let mut parts = line.splitn(5, ';').map(str::trim);
+        let mut parts = line.splitn(9, ';').map(str::trim);
         let left = parts
             .next()
             .filter(|value| !value.is_empty())
@@ -193,19 +200,48 @@ fn parse_pair_rules(source: &str) -> Result<Vec<PairAdjustmentRule>, String> {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| format!("line {line_number}: missing right class"))?;
         validate_class(right).map_err(|error| format!("line {line_number}: {error}"))?;
-        let keep_together = parse_bool(
+        let loose_keep = parse_bool(
             parts
                 .next()
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| format!("line {line_number}: missing keep-together flag"))?,
+                .ok_or_else(|| format!("line {line_number}: missing loose keep flag"))?,
         )
         .map_err(|error| format!("line {line_number}: {error}"))?;
-        let break_penalty = parts
+        let normal_keep = parse_bool(
+            parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("line {line_number}: missing normal keep flag"))?,
+        )
+        .map_err(|error| format!("line {line_number}: {error}"))?;
+        let strict_keep = parse_bool(
+            parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("line {line_number}: missing strict keep flag"))?,
+        )
+        .map_err(|error| format!("line {line_number}: {error}"))?;
+        let loose_penalty = parse_pair_penalty(
+            parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("line {line_number}: missing loose break penalty"))?,
+            line_number,
+        )?;
+        let normal_penalty = parse_pair_penalty(
+            parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("line {line_number}: missing normal break penalty"))?,
+            line_number,
+        )?;
+        let strict_penalty = parse_pair_penalty(
+            parts
             .next()
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| format!("line {line_number}: missing break penalty"))?
-            .parse::<u16>()
-            .map_err(|error| format!("line {line_number}: invalid break penalty: {error}"))?;
+                .ok_or_else(|| format!("line {line_number}: missing strict break penalty"))?,
+            line_number,
+        )?;
         let _notes = parts
             .next()
             .filter(|value| !value.is_empty())
@@ -213,11 +249,27 @@ fn parse_pair_rules(source: &str) -> Result<Vec<PairAdjustmentRule>, String> {
         rules.push(PairAdjustmentRule {
             left,
             right: right.to_owned(),
-            keep_together,
-            break_penalty,
+            loose: PairAdjustment {
+                keep_together: loose_keep,
+                break_penalty: loose_penalty,
+            },
+            normal: PairAdjustment {
+                keep_together: normal_keep,
+                break_penalty: normal_penalty,
+            },
+            strict: PairAdjustment {
+                keep_together: strict_keep,
+                break_penalty: strict_penalty,
+            },
         });
     }
     Ok(rules)
+}
+
+fn parse_pair_penalty(value: &str, line_number: usize) -> Result<u16, String> {
+    value
+        .parse::<u16>()
+        .map_err(|error| format!("line {line_number}: invalid break penalty: {error}"))
 }
 
 fn parse_bool(value: &str) -> Result<bool, String> {
@@ -247,7 +299,8 @@ fn generate(
     output.push_str(version);
     output.push_str("\";\n\n");
     output.push_str("/// Checked-in JLREQ pair adjustment data version.\n");
-    output.push_str("pub const JLREQ_PAIR_ADJUSTMENT_DATA_VERSION: &str = \"");
+    output.push_str("pub const JLREQ_PAIR_ADJUSTMENT_DATA_VERSION: &str =\n");
+    output.push_str("    \"");
     output.push_str(pair_version);
     output.push_str("\";\n\n");
     output.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
@@ -283,11 +336,29 @@ fn generate(
     output.push_str("    pub(crate) keep_together: bool,\n");
     output.push_str("    pub(crate) break_penalty: u16,\n");
     output.push_str("}\n\n");
+    output.push_str("#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]\n");
+    output.push_str("pub(crate) struct JlreqPairAdjustmentSet {\n");
+    output.push_str("    pub(crate) loose: JlreqPairAdjustment,\n");
+    output.push_str("    pub(crate) normal: JlreqPairAdjustment,\n");
+    output.push_str("    pub(crate) strict: JlreqPairAdjustment,\n");
+    output.push_str("}\n\n");
+    output.push_str("impl JlreqPairAdjustmentSet {\n");
+    output.push_str("    pub(crate) const fn for_strictness(\n");
+    output.push_str("        self,\n");
+    output.push_str("        strictness: crate::JlreqStrictness,\n");
+    output.push_str("    ) -> JlreqPairAdjustment {\n");
+    output.push_str("        match strictness {\n");
+    output.push_str("            crate::JlreqStrictness::Loose => self.loose,\n");
+    output.push_str("            crate::JlreqStrictness::Normal => self.normal,\n");
+    output.push_str("            crate::JlreqStrictness::Strict => self.strict,\n");
+    output.push_str("        }\n");
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
     output.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
     output.push_str("pub(crate) struct JlreqPairAdjustmentRule {\n");
     output.push_str("    pub(crate) left: Option<JlreqPunctuationClass>,\n");
     output.push_str("    pub(crate) right: JlreqPunctuationClass,\n");
-    output.push_str("    pub(crate) adjustment: JlreqPairAdjustment,\n");
+    output.push_str("    pub(crate) adjustments: JlreqPairAdjustmentSet,\n");
     output.push_str("}\n\n");
     output.push_str("pub(crate) const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[\n");
     for rule in pair_rules {
@@ -303,20 +374,30 @@ fn generate(
         output.push_str("        right: JlreqPunctuationClass::");
         output.push_str(&rule.right);
         output.push_str(",\n");
-        output.push_str("        adjustment: JlreqPairAdjustment {\n");
-        output.push_str(&format!(
-            "            keep_together: {},\n",
-            rule.keep_together
-        ));
-        output.push_str(&format!(
-            "            break_penalty: {},\n",
-            rule.break_penalty
-        ));
+        output.push_str("        adjustments: JlreqPairAdjustmentSet {\n");
+        push_pair_adjustment(&mut output, "loose", &rule.loose);
+        push_pair_adjustment(&mut output, "normal", &rule.normal);
+        push_pair_adjustment(&mut output, "strict", &rule.strict);
         output.push_str("        },\n");
         output.push_str("    },\n");
     }
     output.push_str("];\n");
     output
+}
+
+fn push_pair_adjustment(output: &mut String, name: &str, adjustment: &PairAdjustment) {
+    output.push_str("            ");
+    output.push_str(name);
+    output.push_str(": JlreqPairAdjustment {\n");
+    output.push_str(&format!(
+        "                keep_together: {},\n",
+        adjustment.keep_together
+    ));
+    output.push_str(&format!(
+        "                break_penalty: {},\n",
+        adjustment.break_penalty
+    ));
+    output.push_str("            },\n");
 }
 
 fn check_output(path: &Path, expected: &str) -> Result<(), String> {

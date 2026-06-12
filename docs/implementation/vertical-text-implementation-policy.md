@@ -116,8 +116,10 @@ the concrete choices to follow when turning that package into production code.
   opening/closing punctuation, small kana, dash marks, leaders, middle dots,
   and repeat marks, including fullwidth, halfwidth, vertical presentation, and
   broader paired-bracket codepoints. The generated pair/cost table keeps
-  repeated dash/leader marks together, keeps iteration marks with the previous
-  cluster, and supplies planner break penalties for weaker punctuation pairs.
+  iteration marks with the previous cluster, supplies loose/normal/strict
+  strictness presets through `TextLayoutConfig::jlreq_strictness`, keeps
+  repeated dash/leader marks together outside loose composition, and supplies
+  preset-specific planner break penalties for weaker punctuation pairs.
   Initial punctuation compression reduces the inline advance of compressible
   closing punctuation and middle dots to half a body cell. When such punctuation
   must remain at the column end for kinsoku, the layout applies half-cell
@@ -169,9 +171,9 @@ the concrete choices to follow when turning that package into production code.
   with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
-  generated pair/cost table, and paragraph-DP column planner, especially
-  expanding the current seed pair/cost data into a fuller JLREQ class-pair
-  profile with strictness presets.
+  generated strictness-aware pair/cost table, and paragraph-DP column planner,
+  especially expanding the current seed class-pair profile with more
+  JLREQ-derived pair classes and product-facing preset selection.
 
 ## Explicit Defaults
 

@@ -1,15 +1,18 @@
 # Arcweft JLREQ punctuation pair adjustment source data.
-# version: arcweft-jlreq-pair-adjustment-2026-06-12
+# version: arcweft-jlreq-pair-adjustment-2026-06-12-strictness
 #
 # Format:
-#   LeftClassOrAny; RightClass; KeepTogether; BreakPenalty; Notes
+#   LeftClassOrAny; RightClass; LooseKeep; NormalKeep; StrictKeep; LoosePenalty; NormalPenalty; StrictPenalty; Notes
 #
 # LeftClassOrAny is one of the generated `JlreqPunctuationClass` names or `Any`.
-# KeepTogether is true/false. BreakPenalty is a non-negative integer added by
-# the vertical column planner when it breaks before RightClass after LeftClass.
+# Keep fields are true/false. Penalty fields are non-negative integers added by
+# the vertical column planner when it breaks before RightClass after LeftClass
+# under the selected `TextLayoutConfig::jlreq_strictness` preset.
 
-Any; RepeatMark; true; 1000; iteration marks stay with the previous cluster
-Dash; Dash; true; 1000; repeated dash/prolonged-sound marks stay together
-Leader; Leader; true; 1000; repeated leader marks stay together
-Closing; Opening; false; 25; avoid weak breaks between adjacent closing and opening punctuation
-MiddleDot; Opening; false; 15; prefer not to separate middle dot from following opening punctuation
+Any; RepeatMark; true; true; true; 1000; 1000; 1000; iteration marks stay with the previous cluster
+Dash; Dash; false; true; true; 100; 1000; 1000; repeated dash/prolonged-sound marks stay together outside loose composition
+Leader; Leader; false; true; true; 100; 1000; 1000; repeated leader marks stay together outside loose composition
+Closing; Opening; false; false; false; 5; 25; 100; avoid weak breaks between adjacent closing and opening punctuation
+Closing; Closing; false; false; false; 5; 20; 75; prefer not to split adjacent closing punctuation in stricter composition
+MiddleDot; Opening; false; false; true; 0; 15; 1000; strict composition keeps middle dot with following opening punctuation
+MiddleDot; Closing; false; false; false; 0; 10; 50; stricter composition avoids separating middle dot from following closing punctuation

@@ -135,6 +135,8 @@ pub struct TextLayoutConfig {
     pub ruby_font_size: f32,
     /// Default writing mode when a run has no layout presentation.
     pub writing_mode: RichTextWritingMode,
+    /// JLREQ punctuation pair strictness used by vertical column planning.
+    pub jlreq_strictness: JlreqStrictness,
 }
 
 impl Default for TextLayoutConfig {
@@ -146,8 +148,22 @@ impl Default for TextLayoutConfig {
             line_advance: 42.0,
             ruby_font_size: 14.0,
             writing_mode: RichTextWritingMode::HorizontalTb,
+            jlreq_strictness: JlreqStrictness::Normal,
         }
     }
+}
+
+/// Strictness preset for JLREQ punctuation pair planning.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JlreqStrictness {
+    /// Prefer looser breaks, while still keeping non-separable repeat marks.
+    Loose,
+    /// Balanced default for narrative text.
+    #[default]
+    Normal,
+    /// Prefer stricter Japanese composition around weak punctuation pairs.
+    Strict,
 }
 
 /// Physical glyph orientation selected by layout.
@@ -604,7 +620,9 @@ fn vertical_column_segment_cost(
     if column_start >= column_end {
         return None;
     }
-    if column_end < segment_end && !vertical_cluster_can_start_column(column_end, clusters) {
+    if column_end < segment_end
+        && !vertical_cluster_can_start_column(column_end, clusters, context.config.jlreq_strictness)
+    {
         return None;
     }
     if column_end < segment_end
@@ -632,7 +650,12 @@ fn vertical_column_segment_cost(
     let overflow_penalty =
         ((overflow - allowed_overhang).max(0.0) / context.config.line_advance).powi(2) * 10_000.0;
     let break_penalty = if column_end < segment_end {
-        5.0 + vertical_column_pair_break_penalty(clusters, column_start, column_end)
+        5.0 + vertical_column_pair_break_penalty(
+            clusters,
+            column_start,
+            column_end,
+            context.config.jlreq_strictness,
+        )
     } else {
         0.0
     };
@@ -643,6 +666,7 @@ fn vertical_column_pair_break_penalty(
     clusters: &[VerticalCluster],
     column_start: usize,
     column_end: usize,
+    strictness: JlreqStrictness,
 ) -> f32 {
     let Some(left) = clusters[column_start..column_end]
         .iter()
@@ -658,7 +682,8 @@ fn vertical_column_pair_break_penalty(
         return 0.0;
     };
     f32::from(
-        jlreq_punctuation::pair_adjustment_for_clusters(&left.text, &right.text).break_penalty,
+        jlreq_punctuation::pair_adjustment_for_clusters(&left.text, &right.text, strictness)
+            .break_penalty,
     )
 }
 
@@ -701,7 +726,11 @@ fn vertical_column_segment_overhang_allowance(
     };
     let last_cluster = &clusters[last_cluster_index];
     if jlreq_punctuation::is_line_head_prohibited_cluster(&last_cluster.text)
-        || vertical_cluster_has_jlreq_separation_prohibited_before(last_cluster_index, clusters)
+        || vertical_cluster_has_jlreq_separation_prohibited_before(
+            last_cluster_index,
+            clusters,
+            config.jlreq_strictness,
+        )
     {
         config.line_advance
     } else {
@@ -709,13 +738,21 @@ fn vertical_column_segment_overhang_allowance(
     }
 }
 
-fn vertical_cluster_can_start_column(cluster_index: usize, clusters: &[VerticalCluster]) -> bool {
+fn vertical_cluster_can_start_column(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+    strictness: JlreqStrictness,
+) -> bool {
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
     cluster.break_allowed_before
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
-        && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, clusters)
+        && !vertical_cluster_has_jlreq_separation_prohibited_before(
+            cluster_index,
+            clusters,
+            strictness,
+        )
 }
 
 fn vertical_column_ends_with_line_end_prohibited(
@@ -788,6 +825,7 @@ fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
 fn vertical_cluster_has_jlreq_separation_prohibited_before(
     cluster_index: usize,
     clusters: &[VerticalCluster],
+    strictness: JlreqStrictness,
 ) -> bool {
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
@@ -797,8 +835,12 @@ fn vertical_cluster_has_jlreq_separation_prohibited_before(
         .rev()
         .find(|candidate| !is_vertical_line_break_cluster(&candidate.text))
         .is_some_and(|previous| {
-            jlreq_punctuation::pair_adjustment_for_clusters(&previous.text, &cluster.text)
-                .keep_together
+            jlreq_punctuation::pair_adjustment_for_clusters(
+                &previous.text,
+                &cluster.text,
+                strictness,
+            )
+            .keep_together
         })
 }
 
@@ -1760,9 +1802,23 @@ mod tests {
     #[test]
     fn vertical_column_plan_reads_generated_pair_break_penalty() {
         let clusters = vertical_clusters("天地。「人", RichTextVerticalLatinMode::Mixed);
-        let penalty = vertical_column_pair_break_penalty(&clusters, 0, 3);
+        let penalty = vertical_column_pair_break_penalty(&clusters, 0, 3, JlreqStrictness::Normal);
 
         assert_f32_eq(penalty, 25.0);
+    }
+
+    #[test]
+    fn vertical_column_pair_break_penalty_uses_jlreq_strictness() {
+        let clusters = vertical_clusters("天地。「人", RichTextVerticalLatinMode::Mixed);
+
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&clusters, 0, 3, JlreqStrictness::Loose),
+            5.0,
+        );
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&clusters, 0, 3, JlreqStrictness::Strict),
+            100.0,
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! JLREQ punctuation policy for vertical layout.
 
+use crate::JlreqStrictness;
 use crate::jlreq_punctuation_data::{
     JLREQ_PAIR_ADJUSTMENTS, JLREQ_PUNCTUATION_RANGES, JlreqPairAdjustment, JlreqPunctuationClass,
 };
@@ -31,7 +32,11 @@ pub(crate) fn is_hanging_cluster(grapheme: &str) -> bool {
     is_compressible_cluster(grapheme)
 }
 
-pub(crate) fn pair_adjustment_for_clusters(left: &str, right: &str) -> JlreqPairAdjustment {
+pub(crate) fn pair_adjustment_for_clusters(
+    left: &str,
+    right: &str,
+    strictness: JlreqStrictness,
+) -> JlreqPairAdjustment {
     let left = cluster_class(left);
     let Some(right) = cluster_class(right) else {
         return JlreqPairAdjustment::default();
@@ -41,7 +46,9 @@ pub(crate) fn pair_adjustment_for_clusters(left: &str, right: &str) -> JlreqPair
         .find(|rule| {
             rule.right == right && rule.left.is_none_or(|rule_left| left == Some(rule_left))
         })
-        .map_or_else(JlreqPairAdjustment::default, |rule| rule.adjustment)
+        .map_or_else(JlreqPairAdjustment::default, |rule| {
+            rule.adjustments.for_strictness(strictness)
+        })
 }
 
 fn cluster_class(grapheme: &str) -> Option<JlreqPunctuationClass> {
@@ -71,7 +78,7 @@ mod tests {
     use super::*;
     use crate::jlreq_punctuation_data::{
         JLREQ_PAIR_ADJUSTMENT_DATA_VERSION, JLREQ_PUNCTUATION_DATA_VERSION,
-        JlreqPairAdjustmentRule, JlreqPunctuationRange,
+        JlreqPairAdjustmentRule, JlreqPairAdjustmentSet, JlreqPunctuationRange,
     };
 
     const JLREQ_PUNCTUATION_SOURCE: &str = include_str!("../data/jlreq_punctuation_ranges.txt");
@@ -85,7 +92,7 @@ mod tests {
         );
         assert_eq!(
             JLREQ_PAIR_ADJUSTMENT_DATA_VERSION,
-            "arcweft-jlreq-pair-adjustment-2026-06-12"
+            "arcweft-jlreq-pair-adjustment-2026-06-12-strictness"
         );
     }
 
@@ -149,12 +156,30 @@ mod tests {
 
     #[test]
     fn pair_table_keeps_jlreq_separation_pairs_together() {
-        assert!(pair_adjustment_for_clusters("山", "々").keep_together);
-        assert!(pair_adjustment_for_clusters("ー", "ー").keep_together);
-        assert!(pair_adjustment_for_clusters("…", "…").keep_together);
-        assert_eq!(pair_adjustment_for_clusters("。", "「").break_penalty, 25);
-        assert!(!pair_adjustment_for_clusters("。", "人").keep_together);
-        assert!(!pair_adjustment_for_clusters("ー", "人").keep_together);
+        assert!(pair_adjustment_for_clusters("山", "々", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("ー", "ー", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("…", "…", JlreqStrictness::Normal).keep_together);
+        assert_eq!(
+            pair_adjustment_for_clusters("。", "「", JlreqStrictness::Normal).break_penalty,
+            25
+        );
+        assert!(!pair_adjustment_for_clusters("。", "人", JlreqStrictness::Normal).keep_together);
+        assert!(!pair_adjustment_for_clusters("ー", "人", JlreqStrictness::Normal).keep_together);
+    }
+
+    #[test]
+    fn pair_table_selects_jlreq_strictness_presets() {
+        assert_eq!(
+            pair_adjustment_for_clusters("。", "「", JlreqStrictness::Loose).break_penalty,
+            5
+        );
+        assert_eq!(
+            pair_adjustment_for_clusters("。", "「", JlreqStrictness::Strict).break_penalty,
+            100
+        );
+        assert!(!pair_adjustment_for_clusters("・", "「", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("・", "「", JlreqStrictness::Strict).keep_together);
+        assert!(!pair_adjustment_for_clusters("ー", "ー", JlreqStrictness::Loose).keep_together);
     }
 
     fn parse_source_ranges() -> Vec<JlreqPunctuationRange> {
@@ -252,7 +277,7 @@ mod tests {
     }
 
     fn parse_pair_source_line(line_number: usize, line: &str) -> JlreqPairAdjustmentRule {
-        let mut parts = line.splitn(5, ';').map(str::trim);
+        let mut parts = line.splitn(9, ';').map(str::trim);
         let left = parts.next().map_or_else(
             || panic!("line {line_number}: missing left class"),
             parse_pair_source_left,
@@ -261,15 +286,33 @@ mod tests {
             .next()
             .and_then(parse_source_class)
             .unwrap_or_else(|| panic!("line {line_number}: invalid right class"));
-        let keep_together = parts
+        let loose_keep = parts
             .next()
             .and_then(parse_source_bool)
-            .unwrap_or_else(|| panic!("line {line_number}: invalid keep-together flag"));
-        let break_penalty = parts
+            .unwrap_or_else(|| panic!("line {line_number}: invalid loose keep flag"));
+        let normal_keep = parts
             .next()
-            .unwrap_or_else(|| panic!("line {line_number}: missing break penalty"))
+            .and_then(parse_source_bool)
+            .unwrap_or_else(|| panic!("line {line_number}: invalid normal keep flag"));
+        let strict_keep = parts
+            .next()
+            .and_then(parse_source_bool)
+            .unwrap_or_else(|| panic!("line {line_number}: invalid strict keep flag"));
+        let loose_penalty = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {line_number}: missing loose break penalty"))
             .parse::<u16>()
-            .unwrap_or_else(|_| panic!("line {line_number}: invalid break penalty"));
+            .unwrap_or_else(|_| panic!("line {line_number}: invalid loose break penalty"));
+        let normal_penalty = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {line_number}: missing normal break penalty"))
+            .parse::<u16>()
+            .unwrap_or_else(|_| panic!("line {line_number}: invalid normal break penalty"));
+        let strict_penalty = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {line_number}: missing strict break penalty"))
+            .parse::<u16>()
+            .unwrap_or_else(|_| panic!("line {line_number}: invalid strict break penalty"));
         assert!(
             parts.next().is_some_and(|notes| !notes.is_empty()),
             "line {line_number}: missing notes"
@@ -277,9 +320,19 @@ mod tests {
         JlreqPairAdjustmentRule {
             left,
             right,
-            adjustment: JlreqPairAdjustment {
-                keep_together,
-                break_penalty,
+            adjustments: JlreqPairAdjustmentSet {
+                loose: JlreqPairAdjustment {
+                    keep_together: loose_keep,
+                    break_penalty: loose_penalty,
+                },
+                normal: JlreqPairAdjustment {
+                    keep_together: normal_keep,
+                    break_penalty: normal_penalty,
+                },
+                strict: JlreqPairAdjustment {
+                    keep_together: strict_keep,
+                    break_penalty: strict_penalty,
+                },
             },
         }
     }
