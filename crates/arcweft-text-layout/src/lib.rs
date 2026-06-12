@@ -446,12 +446,13 @@ fn layout_vertical_run(
             cursor.y = config.origin.y;
         }
         let advance = vertical_cluster_advance(&cluster.text, config);
-        let bounds = LayoutRect::new(cursor.x, cursor.y, config.line_advance, config.line_advance);
+        let glyph_y = vertical_cluster_origin_y(&cluster.text, cursor.y, advance, config);
+        let bounds = LayoutRect::new(cursor.x, glyph_y, config.line_advance, config.line_advance);
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range,
             text: cluster.text.clone(),
-            origin: LayoutPoint::new(cursor.x, cursor.y),
+            origin: LayoutPoint::new(cursor.x, glyph_y),
             advance: LayoutSize::new(0.0, advance),
             bounds,
             writing_mode,
@@ -460,6 +461,23 @@ fn layout_vertical_run(
             presentation: context.presentation.clone(),
         });
         cursor.y += advance;
+    }
+}
+
+fn vertical_cluster_origin_y(
+    grapheme: &str,
+    cursor_y: f32,
+    advance: f32,
+    config: TextLayoutConfig,
+) -> f32 {
+    let column_end = config.origin.y + config.size.height;
+    if is_jlreq_hanging_punctuation_cluster(grapheme)
+        && cursor_y + config.line_advance > column_end
+        && cursor_y > config.origin.y
+    {
+        (column_end - advance).max(config.origin.y)
+    } else {
+        cursor_y
     }
 }
 
@@ -1067,6 +1085,13 @@ fn is_jlreq_compressible_punctuation_cluster(grapheme: &str) -> bool {
         .is_some_and(is_jlreq_compressible_punctuation_char)
 }
 
+fn is_jlreq_hanging_punctuation_cluster(grapheme: &str) -> bool {
+    grapheme
+        .chars()
+        .next()
+        .is_some_and(is_jlreq_hanging_punctuation_char)
+}
+
 const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
     is_jlreq_closing_punctuation_char(ch)
         || is_jlreq_small_kana_char(ch)
@@ -1076,6 +1101,10 @@ const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
 
 const fn is_jlreq_compressible_punctuation_char(ch: char) -> bool {
     is_jlreq_closing_punctuation_char(ch) || is_jlreq_middle_dot_char(ch)
+}
+
+const fn is_jlreq_hanging_punctuation_char(ch: char) -> bool {
+    is_jlreq_compressible_punctuation_char(ch)
 }
 
 fn is_jlreq_separation_prohibited_pair(left: &str, right: &str) -> bool {
@@ -1542,14 +1571,54 @@ mod tests {
         assert_eq!(layout.glyphs.len(), 4);
         assert_eq!(layout.glyphs[2].text, "。");
         assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert_f32_eq(
+            layout.glyphs[2].origin.y,
+            config.origin.y + config.size.height - config.line_advance * 0.5,
+        );
+        assert_f32_eq(
+            layout.glyphs[2].bounds.bottom(),
+            config.origin.y + config.size.height + config.line_advance * 0.5,
+        );
         assert!(
             layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-            "closing punctuation may overhang the current column instead of violating kinsoku"
+            "closing punctuation may hang past the current column instead of violating kinsoku"
         );
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(
             layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
             "the next breakable cluster should start the next vertical_rl column"
+        );
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_hanging_punctuation_limits_column_overhang_to_half_cell() {
+        let frame = frame_with_run(
+            "天地、人人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        let column_end = config.origin.y + config.size.height;
+
+        assert_eq!(layout.glyphs.len(), 5);
+        assert_eq!(layout.glyphs[2].text, "、");
+        assert_f32_eq(layout.glyphs[2].advance.height, config.line_advance * 0.5);
+        assert_f32_eq(
+            layout.glyphs[2].origin.y,
+            column_end - config.line_advance * 0.5,
+        );
+        assert_f32_eq(
+            layout.glyphs[2].bounds.bottom(),
+            column_end + config.line_advance * 0.5,
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(
+            layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
+            "ordinary text after hanging punctuation should start the next column"
         );
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
     }
