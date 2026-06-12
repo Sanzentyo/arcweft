@@ -101,6 +101,10 @@ the concrete choices to follow when turning that package into production code.
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
   `GlyphArea` instances positioned from `LaidOutText` ruby geometry.
+- Ruby geometry applies deterministic same-track collision separation in
+  `arcweft-text-layout` before native rendering and Agent bounds consume it.
+  This keeps adjacent horizontal and vertical ruby annotations from occupying
+  the same annotation track.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
 - CLI regression coverage includes an `imq` native vertical capture parity check
@@ -109,8 +113,8 @@ the concrete choices to follow when turning that package into production code.
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping/compression,
   UAX #14/JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
-  alternates, ruby collision/layout feedback, and checked-in `imq` golden
-  fixtures.
+  alternates, full ruby base expansion/overhang/line-break feedback, and
+  checked-in `imq` golden fixtures.
 
 ## Explicit Defaults
 

@@ -103,6 +103,14 @@ impl LayoutRect {
         let bottom = self.bottom().max(other.bottom());
         Self::new(left, top, (right - left).max(0.0), (bottom - top).max(0.0))
     }
+
+    /// Returns whether two rectangles overlap with positive area.
+    pub fn intersects(self, other: Self) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
+    }
 }
 
 /// Static layout configuration supplied by the host textbox.
@@ -198,6 +206,8 @@ pub struct LaidOutRuby {
     pub base_bounds: LayoutRect,
     /// Ruby annotation bounds.
     pub ruby_bounds: LayoutRect,
+    /// Writing mode of the base text that produced this placement.
+    pub writing_mode: RichTextWritingMode,
     /// Presentation metadata on the ruby annotation.
     pub presentation: RichTextPresentation,
 }
@@ -421,7 +431,7 @@ fn layout_ruby(
     glyphs: &[LaidOutGlyph],
     config: TextLayoutConfig,
 ) -> Vec<LaidOutRuby> {
-    frame
+    let mut ruby = frame
         .display_map
         .ruby_annotations
         .iter()
@@ -429,7 +439,9 @@ fn layout_ruby(
         .filter_map(|(ruby_index, annotation)| {
             layout_one_ruby(ruby_index, annotation, glyphs, config)
         })
-        .collect()
+        .collect::<Vec<_>>();
+    resolve_ruby_collisions(&mut ruby, config);
+    ruby
 }
 
 fn layout_one_ruby(
@@ -448,6 +460,12 @@ fn layout_one_ruby(
         .iter()
         .find(|glyph| ranges_overlap(glyph.range, annotation.base_range))
         .is_some_and(|glyph| !matches!(glyph.writing_mode, RichTextWritingMode::HorizontalTb));
+    let writing_mode = glyphs
+        .iter()
+        .find(|glyph| ranges_overlap(glyph.range, annotation.base_range))
+        .map_or(RichTextWritingMode::HorizontalTb, |glyph| {
+            glyph.writing_mode
+        });
     let ruby_bounds = if vertical {
         let height = usize_to_f32(annotation.ruby.chars().count().max(1)) * config.ruby_font_size;
         LayoutRect::new(
@@ -471,8 +489,91 @@ fn layout_one_ruby(
         ruby: annotation.ruby.clone(),
         base_bounds,
         ruby_bounds,
+        writing_mode,
         presentation: annotation.presentation.clone(),
     })
+}
+
+fn resolve_ruby_collisions(ruby: &mut [LaidOutRuby], config: TextLayoutConfig) {
+    let mut placed = Vec::new();
+    for annotation in ruby {
+        let resolved = match annotation.writing_mode {
+            RichTextWritingMode::HorizontalTb => {
+                resolve_horizontal_ruby_collision(annotation.ruby_bounds, &placed, config)
+            }
+            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
+                resolve_vertical_ruby_collision(
+                    annotation.ruby_bounds,
+                    annotation.writing_mode,
+                    &placed,
+                    config,
+                )
+            }
+        };
+        annotation.ruby_bounds = resolved;
+        placed.push(RubyTrackPlacement {
+            writing_mode: annotation.writing_mode,
+            bounds: resolved,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RubyTrackPlacement {
+    writing_mode: RichTextWritingMode,
+    bounds: LayoutRect,
+}
+
+fn resolve_horizontal_ruby_collision(
+    mut bounds: LayoutRect,
+    placed: &[RubyTrackPlacement],
+    config: TextLayoutConfig,
+) -> LayoutRect {
+    const GAP: f32 = 2.0;
+    for previous in placed
+        .iter()
+        .filter(|placement| matches!(placement.writing_mode, RichTextWritingMode::HorizontalTb))
+    {
+        if bounds.intersects(previous.bounds) {
+            bounds.x = previous.bounds.right() + GAP;
+        }
+    }
+    let max_right = config.origin.x + config.size.width;
+    if bounds.right() > max_right {
+        bounds.x = (max_right - bounds.width).max(config.origin.x);
+        bounds.y = (bounds.y - config.ruby_font_size - GAP).max(0.0);
+    }
+    bounds
+}
+
+fn resolve_vertical_ruby_collision(
+    mut bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+    placed: &[RubyTrackPlacement],
+    config: TextLayoutConfig,
+) -> LayoutRect {
+    const GAP: f32 = 2.0;
+    for previous in placed.iter().filter(|placement| {
+        matches!(
+            placement.writing_mode,
+            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr
+        )
+    }) {
+        if bounds.intersects(previous.bounds) {
+            bounds.y = previous.bounds.bottom() + GAP;
+        }
+    }
+    let max_bottom = config.origin.y + config.size.height;
+    if bounds.bottom() > max_bottom {
+        bounds.y = config.origin.y;
+        bounds.x += match writing_mode {
+            RichTextWritingMode::VerticalRl => config.ruby_font_size + GAP,
+            RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
+                -(config.ruby_font_size + GAP)
+            }
+        };
+    }
+    bounds
 }
 
 fn valid_range(
@@ -914,6 +1015,66 @@ mod tests {
         assert_eq!(layout.ruby.len(), 1);
         assert_eq!(layout.ruby[0].base_bounds, layout.glyphs[0].bounds);
         assert!(layout.ruby[0].ruby_bounds.y < layout.glyphs[0].bounds.y);
+    }
+
+    #[test]
+    fn horizontal_ruby_collision_shifts_adjacent_annotations() {
+        let mut frame = frame_with_run("夢星", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
+        push_ruby(&mut frame, "夢".len(), "夢星".len(), "ながいよみ");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 2);
+        assert_eq!(
+            layout.ruby[0].writing_mode,
+            RichTextWritingMode::HorizontalTb
+        );
+        assert!(
+            !layout.ruby[0]
+                .ruby_bounds
+                .intersects(layout.ruby[1].ruby_bounds)
+        );
+        assert!(
+            layout.ruby[1].ruby_bounds.x >= layout.ruby[0].ruby_bounds.right(),
+            "second horizontal ruby should move after the first annotation"
+        );
+    }
+
+    #[test]
+    fn vertical_ruby_collision_shifts_adjacent_annotations_inline() {
+        let mut frame = frame_with_run(
+            "夢星",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
+        push_ruby(&mut frame, "夢".len(), "夢星".len(), "ながいよみ");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 2);
+        assert_eq!(layout.ruby[0].writing_mode, RichTextWritingMode::VerticalRl);
+        assert!(
+            !layout.ruby[0]
+                .ruby_bounds
+                .intersects(layout.ruby[1].ruby_bounds)
+        );
+        assert!(
+            layout.ruby[1].ruby_bounds.y >= layout.ruby[0].ruby_bounds.bottom(),
+            "second vertical ruby should move below the first annotation"
+        );
+        assert_f32_eq(layout.ruby[1].ruby_bounds.x, layout.ruby[0].ruby_bounds.x);
+    }
+
+    fn push_ruby(frame: &mut LineDisplayFrame, start: usize, end: usize, ruby: &str) {
+        frame
+            .display_map
+            .ruby_annotations
+            .push(RichTextRubyAnnotation {
+                base_range: RichTextRange::new(start, end),
+                ruby: ruby.to_owned(),
+                node_index: frame.display_map.ruby_annotations.len(),
+                styles: Vec::new(),
+                presentation: RichTextPresentation::default(),
+            });
     }
 
     fn assert_f32_eq(actual: f32, expected: f32) {
