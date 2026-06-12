@@ -1636,6 +1636,7 @@ fn display_map_ruby_for_range(
                     ..(base_range.end - page_range.start),
                 ruby: annotation.ruby.clone(),
                 style: native_ruby_style_from_styles(&annotation.styles),
+                presentation: annotation.presentation.clone(),
             })
         })
         .collect()
@@ -1673,6 +1674,7 @@ fn debug_rich_text_for_regions(
                     ..(base_range.end - page_range.start),
                 ruby: annotation.ruby.clone(),
                 style,
+                presentation: annotation.presentation.clone(),
             })
         })
         .collect();
@@ -1714,6 +1716,7 @@ fn color_rich_text_for_regions(
                     ..(base_range.end - page_range.start),
                 ruby: annotation.ruby.clone(),
                 style,
+                presentation: annotation.presentation.clone(),
             })
         })
         .collect();
@@ -1930,6 +1933,7 @@ struct WindowRubyAnnotation {
     base_range: Range<usize>,
     ruby: String,
     style: NativeTextStyle,
+    presentation: RichTextPresentation,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2102,6 +2106,7 @@ impl WindowRichTextBuilder {
                     base_range,
                     ruby: ruby.clone(),
                     style: ruby_style,
+                    presentation: RichTextPresentation::default(),
                 });
             }
             RichTextNode::StyleStart { style } => self.active_styles.push(style.clone()),
@@ -2229,6 +2234,8 @@ struct WindowRubyBuffer {
     left: f32,
     top: f32,
     placement: RubyGlyphPlacement,
+    color: NativeTextColor,
+    presentation: RichTextPresentation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2387,6 +2394,7 @@ fn build_ruby_buffers(
                             left: segment.ruby_bounds.x,
                             top: segment.ruby_bounds.y,
                             placement,
+                            presentation: &annotation.presentation,
                             width,
                             height,
                         },
@@ -2421,6 +2429,8 @@ fn build_ruby_buffers(
             left,
             top,
             placement: RubyGlyphPlacement::Horizontal,
+            color: annotation.style.color,
+            presentation: annotation.presentation.clone(),
         });
     }
     buffers
@@ -2446,6 +2456,8 @@ fn build_ruby_buffer(
         left: spec.left,
         top: spec.top,
         placement: spec.placement,
+        color: style.color,
+        presentation: spec.presentation.clone(),
     }
 }
 
@@ -2455,6 +2467,7 @@ struct RubyBufferSpec<'a> {
     left: f32,
     top: f32,
     placement: RubyGlyphPlacement,
+    presentation: &'a RichTextPresentation,
     width: u32,
     height: u32,
 }
@@ -2784,7 +2797,12 @@ impl NativeOffscreenTextRenderer {
             layout.layout,
             target.time_seconds,
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&self.ruby_buffers, target.width, target.height);
+        let ruby_glyph_areas = ruby_glyph_areas(
+            &self.ruby_buffers,
+            target.width,
+            target.height,
+            target.time_seconds,
+        );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
         glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
@@ -2978,24 +2996,36 @@ fn ruby_glyph_areas(
     ruby_buffers: &[WindowRubyBuffer],
     width: u32,
     height: u32,
+    time_seconds: f32,
 ) -> Vec<OwnedGlyphArea> {
     let bounds = native_text_bounds(width, height);
     ruby_buffers
         .iter()
-        .map(|ruby| match ruby.placement {
-            RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
-                &ruby.buffer,
-                ruby_glyph_area_options(bounds, ruby.left, ruby.top),
-            ),
-            RubyGlyphPlacement::Vertical {
-                cell_width,
-                vertical_advance,
-            } => vertical_glyph_area_from_shaped_buffer(
-                &ruby.buffer,
-                ruby_glyph_area_options(bounds, ruby.left, ruby.top),
-                cell_width,
-                vertical_advance,
-            ),
+        .map(|ruby| {
+            let mut area = match ruby.placement {
+                RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
+                    &ruby.buffer,
+                    ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+                ),
+                RubyGlyphPlacement::Vertical {
+                    cell_width,
+                    vertical_advance,
+                } => vertical_glyph_area_from_shaped_buffer(
+                    &ruby.buffer,
+                    ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+                    cell_width,
+                    vertical_advance,
+                ),
+            };
+            let mut color = ruby.color;
+            color.alpha = scaled_alpha(
+                color.alpha,
+                presentation_alpha_for_visibility_time(&ruby.presentation, time_seconds),
+            );
+            let color = color.into_glyphon();
+            area.set_default_color(color);
+            area.set_color_for_all_glyphs(color);
+            area
         })
         .collect()
 }
@@ -3338,7 +3368,10 @@ fn apply_text_colors_to_glyph_area(
             .iter()
             .find(|span| span.range.start <= glyph.range.start && glyph.range.end <= span.range.end)
             .map_or_else(|| NativeTextStyle::default().color, |span| span.style.color);
-        color.alpha = glyph_alpha_for_time(glyph, *run_glyph_index, glyph_count, time_seconds);
+        color.alpha = scaled_alpha(
+            color.alpha,
+            glyph_alpha_for_time(glyph, *run_glyph_index, glyph_count, time_seconds),
+        );
         glyph_area.set_color_for_layout_glyph(glyph_index, color.into_glyphon());
         *run_glyph_index += 1;
     }
@@ -3377,6 +3410,40 @@ fn glyph_alpha_for_time(
     (alpha * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn presentation_alpha_for_visibility_time(
+    presentation: &RichTextPresentation,
+    time_seconds: f32,
+) -> u8 {
+    let mut alpha = presentation
+        .opacity
+        .map_or(1.0, Milli::as_f32)
+        .clamp(0.0, 1.0);
+    for effect in &presentation.effects {
+        if effect.id != "typewriter"
+            || !matches!(
+                effect.target,
+                RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
+            )
+        {
+            continue;
+        }
+        let cps = param_milli(effect, "cps")
+            .unwrap_or(Milli(28000))
+            .as_f32()
+            .max(0.0);
+        if (time_seconds.max(0.0) * cps).floor() < 1.0 {
+            alpha = 0.0;
+        }
+    }
+    (alpha * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+fn scaled_alpha(base: u8, factor: u8) -> u8 {
+    let scaled = u16::from(base) * u16::from(factor);
+    u8::try_from((scaled + 127) / 255).unwrap_or(u8::MAX)
+}
+
 fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
     state.viewport.update(
         &state.queue,
@@ -3409,6 +3476,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             &state.ruby_buffers,
             state.surface_config.width,
             state.surface_config.height,
+            60.0,
         );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -3532,7 +3600,8 @@ mod tests {
                     weight: NativeTextWeight::Regular,
                     italic: false,
                     size: Some(16),
-                }
+                },
+                presentation: RichTextPresentation::default(),
             }]
         );
         assert!(rich_text.spans.iter().any(|span| {
@@ -3619,7 +3688,7 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600);
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
         assert_eq!(ruby_glyph_areas.len(), 1);
         assert!(!ruby_glyph_areas[0].is_empty());
         assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
@@ -3754,7 +3823,7 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600);
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
 
         assert!(ruby_buffers[1].left > ruby_buffers[0].left);
         let RubyGlyphPlacement::Vertical {
@@ -3781,6 +3850,98 @@ mod tests {
         );
         assert!(
             ruby_glyph_areas[1].glyphs()[0].origin.x > ruby_glyph_areas[0].glyphs()[0].origin.x
+        );
+    }
+
+    #[test]
+    fn ruby_glyph_areas_apply_typewriter_visibility_alpha() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.ruby.typewriter.alpha".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([(
+                                "cps".to_owned(),
+                                RichTextParam::Milli { value: Milli::ONE },
+                            )]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphMask,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ながいよみ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("page exists");
+        let layout = layout_frame(
+            page.layout_frame.as_ref().expect("layout frame"),
+            native_text_layout_config(800, 600, 0.0, 0.0),
+        )
+        .expect("layout resolves");
+
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let ruby_buffers = build_ruby_buffers(
+            &mut font_system,
+            &buffer,
+            &page.rich_text,
+            Some(&layout),
+            800,
+            600,
+            NativeTextOrigin::default(),
+        );
+
+        let hidden = ruby_glyph_areas(&ruby_buffers, 800, 600, 0.0);
+        let visible = ruby_glyph_areas(&ruby_buffers, 800, 600, 4.0);
+
+        assert!(!hidden.is_empty());
+        assert!(
+            hidden
+                .iter()
+                .flat_map(OwnedGlyphArea::glyphs)
+                .all(|glyph| glyph.color == Some(Color::rgba(170, 190, 220, 0)))
+        );
+        assert!(
+            visible
+                .iter()
+                .flat_map(OwnedGlyphArea::glyphs)
+                .all(|glyph| glyph.color == Some(Color::rgba(170, 190, 220, 255)))
         );
     }
 
@@ -3883,7 +4044,7 @@ mod tests {
         let page_layout = layout_page_range(
             &frame,
             0.."天地夢".len(),
-            native_text_layout_config(220, 120, 0.0, 0.0),
+            native_text_layout_config(220, 120, 48.0, 0.0),
         )
         .expect("page layout resolves");
         assert!(page_layout.layout.ruby.len() > 1);
@@ -3907,7 +4068,7 @@ mod tests {
             &frame,
             220,
             120,
-            0.0,
+            48.0,
             0.0,
             &[NativeFrameDebugRegion {
                 element: Some(NativeFrameElement::Ruby { index: 0 }),
@@ -4061,6 +4222,14 @@ mod tests {
         let frame = spec
             .resolve_frame(&RuntimeLineContext::default())
             .expect("frame resolves");
+        let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+        let page_layout = layout_page_range(
+            &frame,
+            page_range,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("page layout resolves");
+        assert_eq!(page_layout.layout.ruby.len(), 1);
         let bounds = measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
             .expect("native layout bounds resolve");
 
@@ -4092,6 +4261,73 @@ mod tests {
             .expect("ruby element has native bounds");
         assert!(ruby.bbox.width < 180);
         assert!(ruby.bbox.height < 120);
+    }
+
+    #[test]
+    fn native_layout_reports_vertical_typewriter_ruby_element_bounds() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.typewriter.ruby.bounds".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "天地春夏秋冬".to_owned(),
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([(
+                                "cps".to_owned(),
+                                RichTextParam::Milli { value: Milli::ONE },
+                            )]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphMask,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ながいながいよみ".to_owned(),
+                },
+                RichTextNode::Text {
+                    text: "人外".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds = measure_frame_elements_at(&frame, 1280, 720, 120.0, 572.0)
+            .expect("native layout bounds resolve");
+
+        assert!(
+            bounds
+                .iter()
+                .any(|bounds| { matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }) })
+        );
     }
 
     #[test]
@@ -4443,6 +4679,114 @@ mod tests {
                 NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(4.0),
             )
             .expect("visible typewriter capture resolves");
+
+        assert_eq!(hidden.content_pixels, 0);
+        assert!(visible.content_pixels > 0);
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn native_debug_ruby_capture_applies_typewriter_visibility() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.typewriter.vertical.ruby.debug".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "天地春夏秋冬".to_owned(),
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([(
+                                "cps".to_owned(),
+                                RichTextParam::Milli { value: Milli::ONE },
+                            )]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphMask,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ながいながいよみ".to_owned(),
+                },
+                RichTextNode::Text {
+                    text: "人外".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds =
+            measure_frame_elements_at(&frame, 1280, 720, 120.0, 572.0).expect("bounds resolve");
+        let ruby = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
+            .expect("ruby element is observed");
+        let region = NativeFrameDebugRegion {
+            element: Some(NativeFrameElement::Ruby { index: 0 }),
+            fallback_bbox: ruby.bbox,
+            color: [255, 255, 255, 255],
+        };
+        let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+        let page = page_from_display_map_range(&frame, page_range.clone()).expect("page");
+        let debug_rich_text =
+            debug_rich_text_for_regions(&frame, &page_range, &page.rich_text, &[region])
+                .expect("debug rich text");
+        assert!(
+            debug_rich_text
+                .spans
+                .iter()
+                .all(|span| span.style.color.alpha == 0)
+        );
+        assert_eq!(debug_rich_text.ruby_annotations.len(), 1);
+        assert_eq!(
+            presentation_alpha_for_visibility_time(
+                &debug_rich_text.ruby_annotations[0].presentation,
+                0.0
+            ),
+            0
+        );
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        let hidden = session
+            .capture_frame_debug_regions_in(
+                &frame,
+                NativeCaptureViewport::new(1280, 720, 120.0, 572.0, 0).with_time_seconds(0.0),
+                &[region],
+            )
+            .expect("hidden ruby debug capture resolves");
+        let visible = session
+            .capture_frame_debug_regions_in(
+                &frame,
+                NativeCaptureViewport::new(1280, 720, 120.0, 572.0, 0).with_time_seconds(4.0),
+                &[region],
+            )
+            .expect("visible ruby debug capture resolves");
 
         assert_eq!(hidden.content_pixels, 0);
         assert!(visible.content_pixels > 0);

@@ -125,7 +125,10 @@ visibility-only glyph effects such as typewriter reveal; the same resolved
 Agent geometry is reused while the native GlyphArea colors are updated for the
 requested capture time. Native Agent tests cover both ordinary vertical
 clusters and text-combine-upright digit clusters, so multi-instance combined
-cells are checked against the same visibility/readback rule.
+cells are checked against the same visibility/readback rule. Ruby annotation
+GlyphAreas use the annotation presentation as well, so ruby object masks can be
+captured before and after reveal without changing the observed ruby base and
+annotation bboxes.
 Image resources include non-zero `page` metadata. Rich-text child objects also
 record their rendered page in `rich_text_ref.page`, and their `capture_refs`
 append `?page=N` for non-zero pages while also exposing `capture_refs[].page`
@@ -152,7 +155,10 @@ before rendering. These captures report `object_id_attachment` or
 crops. Native regions without a rich-text element mapping use their observed
 bbox as an attachment primitive, so non-text object-id and mask captures still
 report `object_id_attachment` or `mask_attachment` instead of falling back to
-generic debug geometry.
+generic debug geometry. The selected-region render combines debug style alpha
+with capture-time effect alpha, preserving transparent unselected spans while
+still letting typewriter reveal control selected glyph clusters, text-combine
+cells, and ruby annotations.
 Native color scopes without a rich-text element mapping now mask the original
 framebuffer to the selected object rectangles before cropping and report
 `masked_framebuffer_crop`, so object color image resources avoid carrying

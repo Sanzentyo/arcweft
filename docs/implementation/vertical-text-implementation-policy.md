@@ -164,7 +164,11 @@ the concrete choices to follow when turning that package into production code.
   and visible raw mask captures differ only in rendered alpha content. The same
   capture-time path is also covered for a `text-combine-upright` digit cluster,
   verifying that all native GlyphArea instances emitted for the combined cell
-  follow the layout glyph's visibility without changing Agent geometry.
+  follow the layout glyph's visibility without changing Agent geometry. Ruby
+  annotation buffers also carry the resolved presentation into their absolute
+  GlyphArea instances, so ruby object mask readback can hide and reveal the
+  annotation at capture time without changing the observed base/annotation
+  bboxes.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Long ruby annotations first expand the base allocation along the writing
@@ -188,7 +192,11 @@ the concrete choices to follow when turning that package into production code.
   offscreen debug and isolated-color captures use the same GlyphArea path as
   normal body rendering, so vertical glyph cluster bboxes, object-id masks, and
   color crops share one placement model instead of falling back to glyphon's
-  horizontal TextArea layout. Native GlyphArea preparation treats missing
+  horizontal TextArea layout. Debug capture alpha combines selected-region style
+  alpha with capture-time effect alpha instead of replacing one with the other,
+  so transparent unselected spans stay hidden while typewriter-controlled spans,
+  text-combine cells, and ruby annotations can still be inspected at different
+  capture times. Native GlyphArea preparation treats missing
   renderer cache keys as errors instead of silently skipping layout glyphs, so a
   broken shaping/cache-key mapping fails capture preparation rather than
   producing partial debug imagery. Legacy horizontal TextArea rendering may

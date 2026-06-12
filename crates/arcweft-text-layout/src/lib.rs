@@ -1436,9 +1436,11 @@ fn usize_to_f32(value: usize) -> f32 {
 mod tests {
     use super::*;
     use arcweft_render_text::{
-        LineDisplayFrame, RichTextDisplayMap, RichTextJlreqStrictness, RichTextLayout,
-        RichTextTextRun, RichTextTextSource,
+        LineDisplayFrame, Milli, RichTextDisplayMap, RichTextEffectDescriptor, RichTextEffectPhase,
+        RichTextEffectTarget, RichTextJlreqStrictness, RichTextLayout, RichTextParam,
+        RichTextStateScope, RichTextTextRun, RichTextTextSource,
     };
+    use std::collections::BTreeMap;
 
     fn frame_with_run(text: &str, presentation: RichTextPresentation) -> LineDisplayFrame {
         LineDisplayFrame {
@@ -2259,6 +2261,31 @@ mod tests {
             layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
             "vertical_lr ruby annotation should be placed on the left side of the base"
         );
+    }
+
+    #[test]
+    fn vertical_ruby_layout_survives_typewriter_visibility_effect() {
+        let mut presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
+        presentation.effects.push(RichTextEffectDescriptor {
+            id: "typewriter".to_owned(),
+            params: BTreeMap::from([(
+                "cps".to_owned(),
+                RichTextParam::Milli { value: Milli::ONE },
+            )]),
+            target: RichTextEffectTarget::Run,
+            phase: RichTextEffectPhase::GlyphMask,
+            state_scope: RichTextStateScope::Run,
+        });
+        let mut frame = frame_with_run("夢", presentation);
+        frame.display_map.text_runs[0].source = RichTextTextSource::RubyBase;
+        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 1);
+        assert_eq!(layout.ruby.len(), 1);
+        assert_eq!(layout.ruby[0].base_range, RichTextRange::new(0, "夢".len()));
+        assert_eq!(layout.ruby[0].writing_mode, RichTextWritingMode::VerticalRl);
     }
 
     #[test]

@@ -5004,6 +5004,10 @@ fn observe_native_typewriter_cluster_mask_at(
     (json, bytes)
 }
 
+fn opaque_pixel_count(bytes: &[u8]) -> usize {
+    bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count()
+}
+
 #[test]
 fn agent_observe_native_typewriter_capture_time_changes_visibility_without_relayout() {
     let path = temp_arcw(
@@ -5047,14 +5051,8 @@ flow @flow.main main {
     assert_eq!(hidden["images"][0]["content_pixels"], 0);
     assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
 
-    let hidden_opaque = hidden_bytes
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0)
-        .count();
-    let visible_opaque = visible_bytes
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0)
-        .count();
+    let hidden_opaque = opaque_pixel_count(&hidden_bytes);
+    let visible_opaque = opaque_pixel_count(&visible_bytes);
     assert_eq!(hidden_opaque, 0);
     assert_eq!(
         visible_opaque as u64,
@@ -5116,14 +5114,8 @@ flow @flow.main main {
     assert_eq!(hidden["images"][0]["content_pixels"], 0);
     assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
 
-    let hidden_opaque = hidden_bytes
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0)
-        .count();
-    let visible_opaque = visible_bytes
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0)
-        .count();
+    let hidden_opaque = opaque_pixel_count(&hidden_bytes);
+    let visible_opaque = opaque_pixel_count(&visible_bytes);
     assert_eq!(hidden_opaque, 0);
     assert_eq!(
         visible_opaque as u64,
@@ -5132,6 +5124,67 @@ flow @flow.main main {
 
     fs::remove_file(&path).expect("remove temp native typewriter text-combine source");
     fs::remove_dir_all(&dir).expect("remove temp native typewriter text-combine dir");
+}
+
+#[test]
+fn agent_observe_native_typewriter_ruby_capture_time_controls_base_and_annotation() {
+    let path = temp_arcw(
+        "agent-observe-native-typewriter-ruby-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-typewriter-ruby-capture-time");
+    let hidden_path = dir.join("native-typewriter-ruby-hidden-mask.rgba");
+    let visible_path = dir.join("native-typewriter-ruby-visible-mask.rgba");
+
+    let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &hidden_path,
+        "object.dialogue.0.0.ruby.0",
+        "0",
+    );
+    let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &visible_path,
+        "object.dialogue.0.0.ruby.0",
+        "4",
+    );
+    let hidden_ruby = find_rich_text_ruby_object(&hidden, 0);
+    let visible_ruby = find_rich_text_ruby_object(&visible, 0);
+    assert_eq!(hidden_ruby["bbox"], visible_ruby["bbox"]);
+    assert_eq!(
+        hidden_ruby["rich_text_ref"]["ruby_base_bbox"],
+        visible_ruby["rich_text_ref"]["ruby_base_bbox"]
+    );
+    assert_eq!(
+        hidden_ruby["rich_text_ref"]["ruby_annotation_bbox"],
+        visible_ruby["rich_text_ref"]["ruby_annotation_bbox"]
+    );
+    assert_eq!(
+        hidden["images"][0]["crop_origin"],
+        visible["images"][0]["crop_origin"]
+    );
+    assert_eq!(hidden["images"][0]["width"], visible["images"][0]["width"]);
+    assert_eq!(
+        hidden["images"][0]["height"],
+        visible["images"][0]["height"]
+    );
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+    assert_eq!(
+        opaque_pixel_count(&visible_bytes) as u64,
+        visible["images"][0]["content_pixels"].as_u64().unwrap()
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter ruby source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter ruby dir");
 }
 
 #[test]

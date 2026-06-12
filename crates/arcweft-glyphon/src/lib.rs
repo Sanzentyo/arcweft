@@ -91,6 +91,19 @@ impl OwnedGlyphArea {
         }
     }
 
+    /// Assigns an explicit color to every glyph instance in this area.
+    pub fn set_color_for_all_glyphs(&mut self, color: Color) {
+        for glyph in &mut self.glyphs {
+            glyph.color = Some(color);
+        }
+    }
+
+    /// Assigns the fallback color used by glyphon for glyph instances without
+    /// an explicit per-glyph color.
+    pub fn set_default_color(&mut self, color: Color) {
+        self.default_color = color;
+    }
+
     /// Number of laid-out glyphs skipped because cache keys were unavailable.
     pub const fn skipped_glyphs(&self) -> usize {
         self.skipped_glyphs
