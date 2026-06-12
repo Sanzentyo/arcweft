@@ -429,6 +429,7 @@ fn layout_vertical_run(
         if cursor.y + required_inline_extent > config.origin.y + config.size.height
             && cursor.y > config.origin.y
             && cluster.break_allowed_before
+            && !is_jlreq_line_head_prohibited_cluster(&cluster.text)
         {
             cursor.x += column_step;
             cursor.y = config.origin.y;
@@ -926,6 +927,77 @@ fn is_jlreq_line_end_prohibited_cluster(grapheme: &str) -> bool {
         .is_some_and(is_jlreq_line_end_prohibited_char)
 }
 
+fn is_jlreq_line_head_prohibited_cluster(grapheme: &str) -> bool {
+    grapheme
+        .chars()
+        .next()
+        .is_some_and(is_jlreq_line_head_prohibited_char)
+}
+
+const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
+    is_jlreq_closing_punctuation_char(ch) || is_jlreq_small_kana_char(ch)
+}
+
+const fn is_jlreq_closing_punctuation_char(ch: char) -> bool {
+    matches!(
+        ch,
+        ')' | ']'
+            | '}'
+            | '\u{2019}'
+            | '\u{201d}'
+            | '\u{3001}'
+            | '\u{3002}'
+            | '\u{3009}'
+            | '\u{300b}'
+            | '\u{300d}'
+            | '\u{300f}'
+            | '\u{3011}'
+            | '\u{3015}'
+            | '\u{3017}'
+            | '\u{3019}'
+            | '\u{301b}'
+            | '\u{301e}'
+            | '\u{301f}'
+            | '\u{ff09}'
+            | '\u{ff0c}'
+            | '\u{ff0e}'
+            | '\u{ff3d}'
+            | '\u{ff5d}'
+            | '\u{ff60}'
+    )
+}
+
+const fn is_jlreq_small_kana_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3041}'
+            | '\u{3043}'
+            | '\u{3045}'
+            | '\u{3047}'
+            | '\u{3049}'
+            | '\u{3063}'
+            | '\u{3083}'
+            | '\u{3085}'
+            | '\u{3087}'
+            | '\u{308e}'
+            | '\u{3095}'
+            | '\u{3096}'
+            | '\u{30a1}'
+            | '\u{30a3}'
+            | '\u{30a5}'
+            | '\u{30a7}'
+            | '\u{30a9}'
+            | '\u{30c3}'
+            | '\u{30e3}'
+            | '\u{30e5}'
+            | '\u{30e7}'
+            | '\u{30ee}'
+            | '\u{30f5}'
+            | '\u{30f6}'
+            | '\u{31f0}'..='\u{31ff}'
+    )
+}
+
 const fn is_jlreq_line_end_prohibited_char(ch: char) -> bool {
     matches!(
         ch,
@@ -1306,6 +1378,33 @@ mod tests {
         assert!(
             layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
             "the next breakable cluster should start the next vertical_rl column"
+        );
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_small_kana_out_of_column_heads() {
+        let frame = frame_with_run(
+            "天地ぁ人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, "ぁ");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "small kana may overhang the current column instead of starting the next column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(
+            layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
+            "the next ordinary cluster should start the next vertical_rl column"
         );
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
     }
