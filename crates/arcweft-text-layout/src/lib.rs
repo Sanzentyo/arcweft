@@ -487,20 +487,24 @@ fn layout_one_ruby(
         .map_or(RichTextWritingMode::HorizontalTb, |glyph| {
             glyph.writing_mode
         });
+    let ruby_extent = ruby_text_extent(&annotation.ruby, config.ruby_font_size);
+    let base_bounds = if vertical {
+        expand_vertical_ruby_base(base_bounds, ruby_extent, config)
+    } else {
+        expand_horizontal_ruby_base(base_bounds, ruby_extent, config)
+    };
     let ruby_bounds = if vertical {
-        let height = usize_to_f32(annotation.ruby.chars().count().max(1)) * config.ruby_font_size;
         LayoutRect::new(
-            base_bounds.right() + config.ruby_font_size * 0.25,
-            base_bounds.y,
+            vertical_ruby_track_x(base_bounds, writing_mode, config),
+            base_bounds.y + (base_bounds.height - ruby_extent).max(0.0) / 2.0,
             config.ruby_font_size,
-            height.max(config.ruby_font_size),
+            ruby_extent,
         )
     } else {
-        let width = usize_to_f32(annotation.ruby.chars().count().max(1)) * config.ruby_font_size;
         LayoutRect::new(
-            base_bounds.x + (base_bounds.width - width).max(0.0) / 2.0,
+            base_bounds.x + (base_bounds.width - ruby_extent).max(0.0) / 2.0,
             (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
-            width.max(config.ruby_font_size),
+            ruby_extent,
             config.ruby_font_size,
         )
     };
@@ -513,6 +517,52 @@ fn layout_one_ruby(
         writing_mode,
         presentation: annotation.presentation.clone(),
     })
+}
+
+fn ruby_text_extent(ruby: &str, ruby_font_size: f32) -> f32 {
+    usize_to_f32(ruby.chars().count().max(1)) * ruby_font_size
+}
+
+fn expand_horizontal_ruby_base(
+    base_bounds: LayoutRect,
+    ruby_width: f32,
+    config: TextLayoutConfig,
+) -> LayoutRect {
+    let width = ruby_width.max(base_bounds.width).min(config.size.width);
+    let max_right = config.origin.x + config.size.width;
+    let centered_x = base_bounds.x + (base_bounds.width - width) * 0.5;
+    let x = centered_x
+        .max(config.origin.x)
+        .min((max_right - width).max(config.origin.x));
+    LayoutRect::new(x, base_bounds.y, width, base_bounds.height)
+}
+
+fn expand_vertical_ruby_base(
+    base_bounds: LayoutRect,
+    ruby_height: f32,
+    config: TextLayoutConfig,
+) -> LayoutRect {
+    let height = ruby_height.max(base_bounds.height).min(config.size.height);
+    let max_bottom = config.origin.y + config.size.height;
+    let centered_y = base_bounds.y + (base_bounds.height - height) * 0.5;
+    let y = centered_y
+        .max(config.origin.y)
+        .min((max_bottom - height).max(config.origin.y));
+    LayoutRect::new(base_bounds.x, y, base_bounds.width, height)
+}
+
+fn vertical_ruby_track_x(
+    base_bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+    config: TextLayoutConfig,
+) -> f32 {
+    let gap = config.ruby_font_size * 0.25;
+    match writing_mode {
+        RichTextWritingMode::VerticalLr => base_bounds.x - config.ruby_font_size - gap,
+        RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb => {
+            base_bounds.right() + gap
+        }
+    }
 }
 
 fn resolve_ruby_collisions(ruby: &mut [LaidOutRuby], config: TextLayoutConfig) {
@@ -1135,6 +1185,24 @@ mod tests {
     }
 
     #[test]
+    fn long_horizontal_ruby_expands_base_allocation_before_overhang() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 1);
+        assert!(
+            layout.ruby[0].base_bounds.width > layout.glyphs[0].bounds.width,
+            "long ruby should expand the base allocation before using overhang"
+        );
+        assert_f32_eq(
+            layout.ruby[0].base_bounds.width,
+            layout.ruby[0].ruby_bounds.width,
+        );
+        assert_f32_eq(layout.ruby[0].ruby_bounds.x, layout.ruby[0].base_bounds.x);
+    }
+
+    #[test]
     fn vertical_ruby_collision_shifts_adjacent_annotations_inline() {
         let mut frame = frame_with_run(
             "夢星",
@@ -1156,6 +1224,25 @@ mod tests {
             "second vertical ruby should move below the first annotation"
         );
         assert_f32_eq(layout.ruby[1].ruby_bounds.x, layout.ruby[0].ruby_bounds.x);
+    }
+
+    #[test]
+    fn vertical_lr_ruby_uses_left_annotation_track_with_base_expansion() {
+        let mut frame =
+            frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalLr));
+        push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 1);
+        assert_eq!(layout.ruby[0].writing_mode, RichTextWritingMode::VerticalLr);
+        assert!(
+            layout.ruby[0].base_bounds.height > layout.glyphs[0].bounds.height,
+            "long vertical ruby should expand the base allocation along inline progression"
+        );
+        assert!(
+            layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
+            "vertical_lr ruby annotation should be placed on the left side of the base"
+        );
     }
 
     fn push_ruby(frame: &mut LineDisplayFrame, start: usize, end: usize, ruby: &str) {
