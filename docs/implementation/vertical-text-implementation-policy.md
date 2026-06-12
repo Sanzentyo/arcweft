@@ -104,14 +104,15 @@ the concrete choices to follow when turning that package into production code.
   applies an initial JLREQ line-end prohibition for opening punctuation by
   moving the opening punctuation to the next column when it would otherwise be
   stranded at the previous column end. JLREQ punctuation classes and pair
-  adjustments live in `arcweft-text-layout/src/jlreq_punctuation.rs`: the initial
-  table keeps repeated dash/leader marks together and keeps iteration marks with
-  the previous cluster. Initial punctuation compression reduces the inline
-  advance of compressible closing punctuation and middle dots to half a body
-  cell. When such punctuation must remain at the column end for kinsoku, the
-  layout applies half-cell hanging by moving its glyph origin upward while
-  keeping full cell bounds for capture/hit geometry from the same rendered
-  placement.
+  adjustments live in `arcweft-text-layout/src/jlreq_punctuation.rs`: the
+  checked-in seed range table classifies opening/closing punctuation, small kana,
+  dash marks, leaders, middle dots, and repeat marks, and the initial pair table
+  keeps repeated dash/leader marks together and keeps iteration marks with the
+  previous cluster. Initial punctuation compression reduces the inline advance
+  of compressible closing punctuation and middle dots to half a body cell. When
+  such punctuation must remain at the column end for kinsoku, the layout applies
+  half-cell hanging by moving its glyph origin upward while keeping full cell
+  bounds for capture/hit geometry from the same rendered placement.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -148,9 +149,9 @@ the concrete choices to follow when turning that package into production code.
   alternate fixture, and the CLI test compares a fresh native capture against it
   with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
-  separation, punctuation-compression, half-cell hanging, and initial
-  pair-adjustment table coverage, especially broader generated data for
-  punctuation adjustment.
+  separation, punctuation-compression, half-cell hanging, seed range table, and
+  initial pair-adjustment table coverage, especially replacing the seed with
+  broader generated data for punctuation adjustment.
 
 ## Explicit Defaults
 
