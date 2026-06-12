@@ -2756,6 +2756,10 @@ flow @flow.main main {
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("native vertical_lr report is JSON");
+    assert_native_vertical_lr_ruby_text_combine_report(&json);
+}
+
+fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) {
     let image = &json["images"][0];
     assert_eq!(image["renderer"], "native");
     assert_eq!(image["scope"]["kind"], "layer");
@@ -2797,6 +2801,31 @@ flow @flow.main main {
         digit_run["bbox"]["height"].as_u64().unwrap()
             > digit_run["bbox"]["width"].as_u64().unwrap(),
         "vertical_lr text-combine run geometry should be column-oriented"
+    );
+    let text_combine = find_rich_text_cluster_object(json, "2026", 9, 13);
+    assert_eq!(text_combine["rich_text_ref"]["kind"], "glyph_cluster");
+    let next_latin = find_rich_text_cluster_object(json, "A", 14, 15);
+    assert!(
+        text_combine["bbox"]["width"].as_u64().unwrap()
+            <= next_latin["bbox"]["width"].as_u64().unwrap()
+            && text_combine["bbox"]["height"].as_u64().unwrap()
+                <= next_latin["bbox"]["height"].as_u64().unwrap(),
+        "4-digit text-combine cluster should occupy one vertical cell: {text_combine}"
+    );
+    assert!(
+        next_latin["bbox"]["x"].as_u64().unwrap() > text_combine["bbox"]["x"].as_u64().unwrap(),
+        "vertical_lr text after a text-combine cluster should advance to the next column"
+    );
+    assert!(
+        text_combine["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba"))),
+        "text-combine cluster should expose native mask capture refs"
     );
 
     let ruby = objects

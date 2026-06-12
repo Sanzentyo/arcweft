@@ -180,8 +180,9 @@ the concrete choices to follow when turning that package into production code.
 - CLI regression coverage includes an `imq` native vertical capture parity check
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
-  ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
-  geometry is produced by the native renderer. The checked-in rich-text samples
+  ruby and a 4-digit text-combine run, asserting that the observed
+  layer/run/ruby and text-combine cluster geometry is produced by the native
+  renderer. The checked-in rich-text samples
   `samples/rich-text-full-grammar.arcw` and
   `samples/rich-text-windows-fonts.arcw` are now also observed through the native
   `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`
