@@ -247,7 +247,10 @@ the concrete choices to follow when turning that package into production code.
   base and annotation bboxes.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
-  JLREQ preset PNG goldens for the repeated-leader column-planning fixture. The
+  JLREQ preset PNG goldens for the repeated-leader column-planning fixture, and
+  a `vertical_lr` ruby/text-combine PNG golden that covers mirrored column
+  progression, ruby annotation placement, sideways Latin, upright punctuation,
+  and 4-digit text-combine-upright rendering. The
   CLI test compares fresh native captures against those PNGs with bounded `imq`
   MSE/MAE drift when both Windows fonts and the `imq` binary are available. The
   normal CLI test path also validates the checked-in fixture structure, PNG

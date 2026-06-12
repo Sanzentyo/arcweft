@@ -2677,6 +2677,22 @@ fn native_checked_in_visual_golden_fixtures_are_well_formed() {
         "jlreq=normal",
         "normal JLREQ golden source should pin the normal preset",
     );
+    let vertical_lr_ruby_text_combine_source = include_str!(
+        "../../../tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw"
+    );
+    assert_native_golden_fixture_source(
+        vertical_lr_ruby_text_combine_source,
+        "[.vertical_lr]",
+        "vertical_lr ruby/text-combine golden source should exercise vertical_lr rich text",
+    );
+    assert!(
+        vertical_lr_ruby_text_combine_source.contains("|[夢](ゆめ)[r]"),
+        "vertical_lr ruby/text-combine golden source should exercise ruby annotation"
+    );
+    assert!(
+        vertical_lr_ruby_text_combine_source.contains("2026"),
+        "vertical_lr ruby/text-combine golden source should exercise text-combine digits"
+    );
 
     let tutr = include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
     let loose = include_bytes!(
@@ -2685,10 +2701,17 @@ fn native_checked_in_visual_golden_fixtures_are_well_formed() {
     let normal = include_bytes!(
         "../../../tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png"
     );
+    let vertical_lr_ruby_text_combine = include_bytes!(
+        "../../../tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png"
+    );
     for (label, golden) in [
         ("vertical Tu/Tr", tutr.as_slice()),
         ("loose JLREQ preset", loose.as_slice()),
         ("normal JLREQ preset", normal.as_slice()),
+        (
+            "vertical_lr ruby/text-combine",
+            vertical_lr_ruby_text_combine.as_slice(),
+        ),
     ] {
         assert_checked_in_native_png_golden(label, golden);
     }
@@ -2709,7 +2732,7 @@ fn assert_native_golden_fixture_source(source: &str, required_fragment: &str, co
         "{context}: source should pin the Windows fixture font"
     );
     assert!(
-        source.contains("[.vertical_rl"),
+        source.contains("[.vertical_rl") || source.contains("[.vertical_lr"),
         "{context}: source should exercise vertical Japanese text"
     );
 }
@@ -2756,6 +2779,12 @@ fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures() {
         "vertical_jlreq_preset_normal_golden.arcw",
         "vertical_jlreq_preset_normal_golden.png",
         "vertical-jlreq-preset-normal-candidate.png",
+    );
+    assert_checked_in_native_imq_golden(
+        "vertical_lr ruby/text-combine",
+        "vertical_lr_ruby_text_combine_golden.arcw",
+        "vertical_lr_ruby_text_combine_golden.png",
+        "vertical-lr-ruby-text-combine-candidate.png",
     );
 }
 
