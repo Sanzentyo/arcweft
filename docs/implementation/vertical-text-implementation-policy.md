@@ -171,6 +171,11 @@ the concrete choices to follow when turning that package into production code.
   bboxes.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
+  Vertical layout reserves the inline-side annotation track before placing the
+  first column, shifting `vertical_rl` base columns left and `vertical_lr` base
+  columns right only when ruby annotations in that writing mode need the side
+  track. This keeps short edge-adjacent ruby annotations inside the layout box
+  without changing the side-of-base semantics.
   Long ruby annotations first expand the base allocation along the writing
   mode's inline axis, then use a bounded overhang allowance before same-track
   collision separation keeps adjacent horizontal and vertical annotations from

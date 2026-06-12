@@ -269,7 +269,7 @@ pub fn layout_frame(
     config: TextLayoutConfig,
 ) -> Result<LaidOutText, TextLayoutError> {
     let mut out = LaidOutText::default();
-    let mut state = TextLayoutState::new(config);
+    let mut state = TextLayoutState::new(config, vertical_ruby_track_reservation(frame, config));
     for (run_index, run) in frame.display_map.text_runs.iter().enumerate() {
         let range = valid_range(frame, run.range)?;
         let text = frame
@@ -370,19 +370,84 @@ struct TextLayoutState {
 }
 
 impl TextLayoutState {
-    fn new(config: TextLayoutConfig) -> Self {
+    fn new(config: TextLayoutConfig, ruby_track: VerticalRubyTrackReservation) -> Self {
         Self {
             horizontal: LayoutCursor::new(config.origin.x, config.origin.y),
             vertical_rl: LayoutCursor::new(
-                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                vertical_column_start(RichTextWritingMode::VerticalRl, config)
+                    - ruby_track.vertical_rl,
                 config.origin.y,
             ),
             vertical_lr: LayoutCursor::new(
-                vertical_column_start(RichTextWritingMode::VerticalLr, config),
+                vertical_column_start(RichTextWritingMode::VerticalLr, config)
+                    + ruby_track.vertical_lr,
                 config.origin.y,
             ),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct VerticalRubyTrackReservation {
+    vertical_rl: f32,
+    vertical_lr: f32,
+}
+
+fn vertical_ruby_track_reservation(
+    frame: &LineDisplayFrame,
+    config: TextLayoutConfig,
+) -> VerticalRubyTrackReservation {
+    frame.display_map.ruby_annotations.iter().fold(
+        VerticalRubyTrackReservation::default(),
+        |mut reservation, annotation| {
+            let track_width = vertical_ruby_track_reservation_width(annotation, config);
+            match ruby_annotation_writing_mode(frame, annotation, config) {
+                RichTextWritingMode::VerticalRl => {
+                    reservation.vertical_rl = reservation.vertical_rl.max(track_width);
+                }
+                RichTextWritingMode::VerticalLr => {
+                    reservation.vertical_lr = reservation.vertical_lr.max(track_width);
+                }
+                RichTextWritingMode::HorizontalTb => {}
+            }
+            reservation
+        },
+    )
+}
+
+fn ruby_annotation_writing_mode(
+    frame: &LineDisplayFrame,
+    annotation: &RichTextRubyAnnotation,
+    config: TextLayoutConfig,
+) -> RichTextWritingMode {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .find(|run| ranges_overlap(run.range, annotation.base_range))
+        .and_then(|run| run.presentation.layout.as_ref())
+        .map_or(config.writing_mode, |layout| layout.writing_mode)
+}
+
+fn vertical_ruby_track_reservation_width(
+    annotation: &RichTextRubyAnnotation,
+    config: TextLayoutConfig,
+) -> f32 {
+    let gap = config.ruby_font_size * 0.25;
+    let segment_count = vertical_ruby_segment_count(annotation.ruby.chars().count(), config).max(1);
+    gap + config.ruby_font_size
+        + usize_to_f32(segment_count.saturating_sub(1))
+            * vertical_ruby_continuation_track_step(config)
+}
+
+fn vertical_ruby_segment_count(char_count: usize, config: TextLayoutConfig) -> usize {
+    let max_chars = max_ruby_chars_per_vertical_segment(config).max(1);
+    char_count.max(1).div_ceil(max_chars)
+}
+
+fn vertical_ruby_continuation_track_step(config: TextLayoutConfig) -> f32 {
+    const GAP: f32 = 2.0;
+    config.ruby_font_size + GAP
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1123,11 +1188,10 @@ fn vertical_ruby_continuation_step(
     writing_mode: RichTextWritingMode,
     config: TextLayoutConfig,
 ) -> f32 {
-    const GAP: f32 = 2.0;
     match writing_mode {
-        RichTextWritingMode::VerticalRl => config.ruby_font_size + GAP,
+        RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(config),
         RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
-            -(config.ruby_font_size + GAP)
+            -vertical_ruby_continuation_track_step(config)
         }
     }
 }
@@ -1215,9 +1279,9 @@ fn resolve_vertical_ruby_collision(
     if bounds.bottom() > max_bottom {
         bounds.y = min_top;
         bounds.x += match writing_mode {
-            RichTextWritingMode::VerticalRl => config.ruby_font_size + GAP,
+            RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(config),
             RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
-                -(config.ruby_font_size + GAP)
+                -vertical_ruby_continuation_track_step(config)
             }
         };
     }
@@ -2261,6 +2325,37 @@ mod tests {
             layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
             "vertical_lr ruby annotation should be placed on the left side of the base"
         );
+    }
+
+    #[test]
+    fn vertical_ruby_reserves_annotation_track_inside_layout_width() {
+        for (writing_mode, annotation_on_right) in [
+            (RichTextWritingMode::VerticalRl, true),
+            (RichTextWritingMode::VerticalLr, false),
+        ] {
+            let mut frame = frame_with_run("夢", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+            let config = TextLayoutConfig {
+                origin: LayoutPoint::new(0.0, 0.0),
+                size: LayoutSize::new(84.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            assert_eq!(layout.ruby.len(), 1);
+            let base = layout.ruby[0].base_bounds;
+            let annotation = layout.ruby[0].ruby_bounds;
+            assert!(
+                annotation.x >= config.origin.x
+                    && annotation.right() <= config.origin.x + config.size.width,
+                "{writing_mode:?} ruby annotation should stay inside the layout width: {annotation:?}"
+            );
+            if annotation_on_right {
+                assert!(annotation.x >= base.right());
+            } else {
+                assert!(annotation.right() <= base.x);
+            }
+        }
     }
 
     #[test]

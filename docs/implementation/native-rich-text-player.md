@@ -171,7 +171,11 @@ objects now use an isolated selected-region render with original text
 styling before cropping, so unrelated glyphs are not carried in from the full
 framebuffer. Rich-text child observed bboxes and object crops use a native
 layout measurement API that returns glyphon-derived bounds for display-map text
-runs and ruby annotations across all rendered rich-text pages. Page-selected
+runs and ruby annotations across all rendered rich-text pages. Vertical ruby
+annotations reserve their side track in Sans I/O layout before native
+measurement, so short `vertical_rl` ruby at the viewport edge remains visible as
+a ruby child object and keeps its annotation bbox inside the captured viewport.
+Page-selected
 rich-text layer captures filter out child elements that are not visible on the
 requested rendered page before computing the crop rectangle, so `[clear]` or
 page-wait captures do not carry stale bboxes from earlier pages. Layer/object crops report

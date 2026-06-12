@@ -4331,6 +4331,55 @@ mod tests {
     }
 
     #[test]
+    fn native_layout_reports_short_vertical_rl_ruby_at_viewport_edge() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.short.ruby.edge".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "天地春夏秋冬".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds = measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("native layout bounds resolve");
+
+        let ruby = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
+            .expect("short vertical_rl ruby remains observable at the viewport edge");
+        let geometry = ruby.ruby.expect("ruby geometry is reported");
+        assert!(geometry.annotation_bbox.x >= geometry.base_bbox.x);
+        assert!(geometry.annotation_bbox.x < 800);
+    }
+
+    #[test]
     fn native_debug_capture_uses_layout_bounds_for_text_elements() {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.debug".to_owned()),

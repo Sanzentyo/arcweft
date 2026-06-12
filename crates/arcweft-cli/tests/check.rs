@@ -3068,6 +3068,40 @@ flow @flow.main main {
     );
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_short_vertical_rl_ruby_at_edge() {
+    let path = temp_arcw(
+        "agent-observe-native-short-vertical-rl-ruby-edge",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春夏秋冬|[夢](ゆめ)[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native short vertical_rl ruby edge source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let ruby = find_rich_text_ruby_object(&json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_rich_text_object_has_mask_capture(ruby, "short vertical_rl ruby object");
+
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    assert!(
+        agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+        "short vertical_rl ruby annotation should stay on the right side of the base: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_right(annotation)
+            <= json["viewport"]["width"].as_u64().expect("viewport width"),
+        "short vertical_rl ruby annotation should remain inside the viewport: {ruby}"
+    );
+}
+
 fn assert_native_vertical_ruby_collision_geometry(writing_mode: &str, ruby_on_right: bool) {
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-ruby-collision"),
