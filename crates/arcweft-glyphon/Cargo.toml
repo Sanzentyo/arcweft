@@ -1,0 +1,20 @@
+[package]
+name = "arcweft-glyphon"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-text-layout = { path = "../arcweft-text-layout" }
+
+glyphon.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-render-text = { path = "../arcweft-render-text" }
+
+[lints]
+workspace = true

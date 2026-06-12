@@ -282,6 +282,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-glyphon"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-render-text",
+ "arcweft-text-layout",
+ "glyphon",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-host-adapter"
 version = "0.1.0"
 dependencies = [
