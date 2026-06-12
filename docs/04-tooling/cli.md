@@ -323,10 +323,10 @@ observation:
   failures, unresolved interpolation names, object-local capture refs, and
   object-id debug colors. The rich-text frame also includes a `display_map` that
   maps resolved text byte ranges back to text, interpolation, ruby base, and
-  control nodes. Visible rich-text text runs and ruby annotations are also
-  emitted as `dialogue.rich_text` child objects with their own bbox, capture
-  refs, and `rich_text_ref` metadata that records the parent display-map
-  element kind, index, byte range, source category, and node index.
+  control nodes. Visible rich-text text runs, ruby annotations, and glyph
+  clusters are also emitted as `dialogue.rich_text` child objects with their own
+  bbox, capture refs, and `rich_text_ref` metadata that records the parent
+  display-map element kind, index, byte range, source category, and node index.
 - `actions` with a semantic `advance_text` target
 - runtime logs, signals, metrics, events, diagnostics, and final fiber status
 
@@ -439,9 +439,9 @@ native capture path.
 
 The PNG/raw path uses native offscreen readback. It fills the same `images`
 slots for full-viewport, layer-crop, and object-crop color readback, and
-text/ruby-backed native object-id/mask captures are rendered through the
-offscreen text framebuffer before optional cropping. Rich-text-only native color
-captures and textbox-parent object/layer color captures report
+text/ruby/glyph-cluster-backed native object-id/mask captures are rendered
+through the offscreen text framebuffer before optional cropping. Rich-text-only
+native color captures and textbox-parent object/layer color captures report
 `composition = "isolated_regions"` because they redraw selected glyph regions
 with original styling before cropping. Native textbox-parent object-id/mask
 captures expand through the rich-text display map, so the image contains glyph

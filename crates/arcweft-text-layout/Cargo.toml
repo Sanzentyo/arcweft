@@ -9,7 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
 
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 unicode-linebreak.workspace = true
 unicode-segmentation.workspace = true

@@ -11,8 +11,8 @@ use arcweft_render_text::{
     RichTextStyle, parse_decimal_milli,
 };
 use arcweft_text_layout::{
-    GlyphOrientation, GlyphVerticalForm, LaidOutText, LayoutPoint, LayoutRect, LayoutSize,
-    TextLayoutConfig, layout_frame,
+    GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
+    LayoutSize, TextLayoutConfig, layout_frame,
 };
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
@@ -279,6 +279,7 @@ pub struct NativeCaptureViewport {
     pub left: f32,
     pub top: f32,
     pub page_index: usize,
+    pub time_seconds: f32,
 }
 
 impl NativeCaptureViewport {
@@ -290,7 +291,15 @@ impl NativeCaptureViewport {
             left,
             top,
             page_index,
+            time_seconds: 60.0,
         }
+    }
+
+    /// Overrides the capture time used by visibility-only glyph effects.
+    #[must_use]
+    pub const fn with_time_seconds(mut self, time_seconds: f32) -> Self {
+        self.time_seconds = time_seconds;
+        self
     }
 }
 
@@ -361,6 +370,7 @@ impl NativeOffscreenCaptureSession {
                 left: viewport.left,
                 top: viewport.top,
             },
+            viewport.time_seconds,
         )
     }
 
@@ -392,17 +402,7 @@ impl NativeOffscreenCaptureSession {
         let height = viewport.height.max(1);
         let background = [0, 0, 0, 0];
         let mut rgba = self
-            .capture_debug_text_regions_rgba_at(
-                frame,
-                width,
-                height,
-                NativeTextOrigin {
-                    left: viewport.left,
-                    top: viewport.top,
-                },
-                viewport.page_index,
-                regions,
-            )?
+            .capture_debug_text_regions_rgba_at(frame, viewport, regions)?
             .unwrap_or_else(|| solid_rgba(width, height, background));
         for region in regions {
             if region.element.is_none() {
@@ -447,17 +447,7 @@ impl NativeOffscreenCaptureSession {
         let height = viewport.height.max(1);
         let background = [0, 0, 0, 0];
         let rgba = self
-            .capture_color_text_regions_rgba_at(
-                frame,
-                width,
-                height,
-                NativeTextOrigin {
-                    left: viewport.left,
-                    top: viewport.top,
-                },
-                viewport.page_index,
-                regions,
-            )?
+            .capture_color_text_regions_rgba_at(frame, viewport, regions)?
             .unwrap_or_else(|| solid_rgba(width, height, background));
         let stats = native_frame_content_stats(&rgba, width, height, background);
         Ok(NativeFrameCapture {
@@ -476,13 +466,17 @@ impl NativeOffscreenCaptureSession {
         width: u32,
         height: u32,
         origin: NativeTextOrigin,
+        time_seconds: f32,
     ) -> Result<NativeFrameCapture, NativeWindowError> {
         let rgba = self.render_rich_text_rgba_with_clear(
             rich_text,
             layout,
-            width,
-            height,
-            origin,
+            NativeRenderTarget {
+                width,
+                height,
+                origin,
+                time_seconds,
+            },
             wgpu::Color::BLACK,
         )?;
         let stats = native_frame_content_stats(&rgba, width, height, [0, 0, 0, 255]);
@@ -498,13 +492,16 @@ impl NativeOffscreenCaptureSession {
     fn capture_debug_text_regions_rgba_at(
         &mut self,
         frame: &LineDisplayFrame,
-        width: u32,
-        height: u32,
-        origin: NativeTextOrigin,
-        page_index: usize,
+        viewport: NativeCaptureViewport,
         regions: &[NativeFrameDebugRegion],
     ) -> Result<Option<Vec<u8>>, NativeWindowError> {
-        let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
+        let origin = NativeTextOrigin {
+            left: viewport.left,
+            top: viewport.top,
+        };
+        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
@@ -521,9 +518,12 @@ impl NativeOffscreenCaptureSession {
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
-            width,
-            height,
-            origin,
+            NativeRenderTarget {
+                width,
+                height,
+                origin,
+                time_seconds: viewport.time_seconds,
+            },
             wgpu::Color {
                 r: 0.0,
                 g: 0.0,
@@ -538,13 +538,16 @@ impl NativeOffscreenCaptureSession {
     fn capture_color_text_regions_rgba_at(
         &mut self,
         frame: &LineDisplayFrame,
-        width: u32,
-        height: u32,
-        origin: NativeTextOrigin,
-        page_index: usize,
+        viewport: NativeCaptureViewport,
         regions: &[NativeFrameDebugRegion],
     ) -> Result<Option<Vec<u8>>, NativeWindowError> {
-        let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
+        let origin = NativeTextOrigin {
+            left: viewport.left,
+            top: viewport.top,
+        };
+        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
@@ -561,9 +564,12 @@ impl NativeOffscreenCaptureSession {
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
-            width,
-            height,
-            origin,
+            NativeRenderTarget {
+                width,
+                height,
+                origin,
+                time_seconds: viewport.time_seconds,
+            },
             wgpu::Color {
                 r: 0.0,
                 g: 0.0,
@@ -579,31 +585,26 @@ impl NativeOffscreenCaptureSession {
         &mut self,
         rich_text: &WindowRichText,
         layout: NativeRenderLayout<'_>,
-        width: u32,
-        height: u32,
-        origin: NativeTextOrigin,
+        target: NativeRenderTarget,
         clear: wgpu::Color,
     ) -> Result<Vec<u8>, NativeWindowError> {
-        self.renderer.prepare(
-            &self.device,
-            &self.queue,
-            rich_text,
-            layout,
-            NativeRenderTarget {
-                width,
-                height,
-                origin,
-            },
-        )?;
+        self.renderer
+            .prepare(&self.device, &self.queue, rich_text, layout, target)?;
         let texture = self.renderer.render_texture_with_clear(
             &self.device,
             &self.queue,
-            width,
-            height,
+            target.width,
+            target.height,
             self.format,
             clear,
         )?;
-        readback_texture_rgba(&self.device, &self.queue, &texture, width, height)
+        readback_texture_rgba(
+            &self.device,
+            &self.queue,
+            &texture,
+            target.width,
+            target.height,
+        )
     }
 }
 
@@ -2576,6 +2577,7 @@ struct NativeRenderTarget {
     width: u32,
     height: u32,
     origin: NativeTextOrigin,
+    time_seconds: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2661,7 +2663,12 @@ impl NativeOffscreenTextRenderer {
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
         )
         .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
-        apply_text_colors_to_glyph_area(&mut glyph_area, rich_text, layout.layout);
+        apply_text_colors_to_glyph_area(
+            &mut glyph_area,
+            rich_text,
+            layout.layout,
+            target.time_seconds,
+        );
         let ruby_glyph_areas = ruby_glyph_areas(&self.ruby_buffers, target.width, target.height);
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -3184,16 +3191,62 @@ fn apply_text_colors_to_glyph_area(
     glyph_area: &mut OwnedGlyphArea,
     rich_text: &WindowRichText,
     layout: &LaidOutText,
+    time_seconds: f32,
 ) {
+    let mut glyph_index_by_run = BTreeMap::<usize, usize>::new();
+    let glyph_count_by_run =
+        layout
+            .glyphs
+            .iter()
+            .fold(BTreeMap::<usize, usize>::new(), |mut counts, glyph| {
+                *counts.entry(glyph.run_index).or_default() += 1;
+                counts
+            });
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
-        if let Some(span) = rich_text
+        let run_glyph_index = glyph_index_by_run.entry(glyph.run_index).or_default();
+        let glyph_count = *glyph_count_by_run.get(&glyph.run_index).unwrap_or(&1);
+        let mut color = rich_text
             .spans
             .iter()
             .find(|span| span.range.start <= glyph.range.start && glyph.range.end <= span.range.end)
+            .map_or_else(|| NativeTextStyle::default().color, |span| span.style.color);
+        color.alpha = glyph_alpha_for_time(glyph, *run_glyph_index, glyph_count, time_seconds);
+        glyph_area.set_color_for_layout_glyph(glyph_index, color.into_glyphon());
+        *run_glyph_index += 1;
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn glyph_alpha_for_time(
+    glyph: &LaidOutGlyph,
+    glyph_index: usize,
+    glyph_count: usize,
+    time_seconds: f32,
+) -> u8 {
+    let mut alpha = glyph
+        .presentation
+        .opacity
+        .map_or(1.0, Milli::as_f32)
+        .clamp(0.0, 1.0);
+    for effect in &glyph.presentation.effects {
+        if effect.id != "typewriter"
+            || !matches!(
+                effect.target,
+                RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
+            )
         {
-            glyph_area.set_color_for_layout_glyph(glyph_index, span.style.color.into_glyphon());
+            continue;
+        }
+        let cps = param_milli(effect, "cps")
+            .unwrap_or(Milli(28000))
+            .as_f32()
+            .max(0.0);
+        let visible = (time_seconds.max(0.0) * cps).floor() as usize;
+        if glyph_index >= visible.min(glyph_count) {
+            alpha = 0.0;
         }
     }
+    (alpha * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
@@ -3224,7 +3277,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         ) else {
             return Err(());
         };
-        apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout);
+        apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             state.surface_config.width,
@@ -4015,6 +4068,102 @@ mod tests {
                 && pixel[0] > pixel[2].saturating_add(40)
                 && pixel[3] > 0
         }));
+    }
+
+    #[test]
+    fn native_typewriter_capture_changes_visibility_without_relayout() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.typewriter.vertical".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([(
+                                "cps".to_owned(),
+                                RichTextParam::Milli { value: Milli::ONE },
+                            )]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "吾輩".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let at_zero = visual_plan_from_frame_for_test(&frame, 0.0);
+        let at_later = visual_plan_from_frame_for_test(&frame, 4.0);
+        assert_eq!(
+            at_zero.pages[0].glyphs.len(),
+            at_later.pages[0].glyphs.len()
+        );
+        for (hidden, visible) in at_zero.pages[0]
+            .glyphs
+            .iter()
+            .zip(&at_later.pages[0].glyphs)
+        {
+            assert_eq!(hidden.range, visible.range);
+            assert!((hidden.x - visible.x).abs() < f32::EPSILON);
+            assert!((hidden.y - visible.y).abs() < f32::EPSILON);
+        }
+        assert!(
+            at_zero.pages[0]
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.opacity == 0.0)
+        );
+        assert!(
+            at_later.pages[0]
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.opacity > 0.0)
+        );
+
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        let hidden = session
+            .capture_frame_rgba_in(
+                &frame,
+                NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(0.0),
+            )
+            .expect("hidden typewriter capture resolves");
+        let visible = session
+            .capture_frame_rgba_in(
+                &frame,
+                NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(4.0),
+            )
+            .expect("visible typewriter capture resolves");
+
+        assert_eq!(hidden.content_pixels, 0);
+        assert!(visible.content_pixels > 0);
     }
 
     #[test]

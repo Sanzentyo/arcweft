@@ -67,6 +67,24 @@ Re-measured after adding rich-text glyph-cluster observation work:
 | `cargo test -p arcweft-cli --test check jit_check_json --quiet` | CLI JIT comparison tests | 1.993s wall / 1.26s test body | passed |
 | `cargo test -p arcweft-cli --test regression_harness --quiet` | checked-in source-tree regression harness | 1.687s wall / 0.41s test body | passed |
 
+Re-profiled after the local loop was found too slow:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test --workspace --quiet` | full workspace, Tier 2 ignored, after local edits | 42.900s wall / `check.rs` 6.80s test body | passed, 13 ignored |
+| `cargo test -p arcweft-cli --test check --quiet` | CLI integration binary, Tier 2 ignored | 20.610s wall / 7.64s test body | passed, 13 ignored |
+| `cargo test -p arcweft-player-native --lib --quiet` | native player library tests | 7.550s wall / 1.38s test body | passed |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.550s wall / 4.73s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --test regression_harness --quiet` | checked-in source-tree regression harness | 1.850s wall / 0.38s test body | passed |
+| `cargo test --workspace --no-run --quiet` | compile workspace test binaries only | 9.490s wall | passed |
+| `cargo test --workspace --quiet` | warm full workspace, Tier 2 ignored | 22.100s wall / `check.rs` 6.42s test body | passed, 13 ignored |
+| `cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | proposed smoke route | 13.870s wall / native body 1.37s | passed |
+
+The crate-level profile also exposed one policy issue: `arcweft-test` only
+compiled when another workspace member happened to enable `serde/derive`.
+Crates that derive serde traits must declare `features = ["derive"]`
+themselves so focused crate tests remain trustworthy.
+
 `cargo nextest` was not installed in this local environment during this
 measurement. The numbers above therefore use Rust's standard test harness and
 coarse command-level wall-clock profiling. If individual-test timing becomes
@@ -100,7 +118,6 @@ tests marked with `#[ignore]`.
 Tier 0 is for tight implementation loops:
 
 ```bash
-cargo fmt -p <changed-crate>
 cargo check -p <changed-crate>
 cargo test -p <changed-crate>
 ```
@@ -118,7 +135,7 @@ If a focused command is routinely slower than that, split the exact behavior
 test from the broad integration group and keep the broad group in Tier 1 or
 Tier 2.
 
-Tier 1 is the normal pre-push cut-point validation:
+Tier 1 is the normal reviewable cut-point validation:
 
 ```bash
 cargo check --workspace
@@ -140,12 +157,17 @@ For routine local execution through Justfile, use:
 just test-fast
 just test-cli-native
 just test-cli-check
+just test-workspace
 ```
 
-`just test-fast` is the full workspace fast path with ignored Tier 2 tests
-excluded. `just test-cli-native` is the normal native rich-text/Agent observe
-slice. `just test-cli-check` is useful before a CLI-heavy cut point, but it is
-not required after every small parser, layout, or protocol edit.
+`just test-fast` is now a smoke route, not a full workspace route. It covers
+the core/render-text/text-layout/native-player library path used by rich-text
+and native capture work. `just test-rich-text` adds the direct native
+`agent observe` slice. `just test-workspace` is the full workspace fast path
+with ignored Tier 2 tests excluded. `just test-cli-native` is the normal native
+rich-text/Agent observe slice. `just test-cli-check` is useful before a
+CLI-heavy cut point, but it is not required after every small parser, layout,
+or protocol edit.
 
 Do not use broad filters such as `agent_observe` as a routine Tier 1 shortcut.
 That filter also selects slow resource-matrix coverage. Use the narrow exact
@@ -181,9 +203,12 @@ Operational budget:
 
 - Tight loop: changed-crate `cargo check` plus exact focused tests.
 - Reviewable local cut point: `cargo check --workspace`, clippy when feasible,
-  and focused tests for touched behavior.
-- Main push cut point: add `just test-fast`; add `just test-cli-check` when the
-  CLI integration surface changed broadly.
+  and focused tests for touched behavior. Use `just test-fast` or
+  `just test-rich-text` when the touched behavior is in the render/layout/native
+  path.
+- Main push cut point: add `just test-workspace` unless the change is docs-only
+  or otherwise demonstrably outside Rust behavior. Add `just test-cli-check`
+  when the CLI integration surface changed broadly.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
 

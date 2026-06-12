@@ -145,6 +145,9 @@ the concrete choices to follow when turning that package into production code.
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
   `GlyphArea` instances positioned from `LaidOutText` ruby geometry.
+- Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
+  path. It does not recompute `LaidOutText`, so line and column breaks remain
+  stable while captures can vary glyph visibility by capture time.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Long ruby annotations first expand the base allocation along the writing

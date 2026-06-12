@@ -10,7 +10,7 @@ repository.workspace = true
 arcweft-core = { path = "../arcweft-core" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 base64.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
 [lints]

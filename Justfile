@@ -15,8 +15,21 @@ clippy:
 test:
     @cargo test --workspace
 
-test-fast:
+test-workspace:
     @cargo test --workspace --quiet
+
+test-fast:
+    @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet
+
+check-crate crate:
+    @cargo check -p {{crate}}
+
+test-crate crate:
+    @cargo test -p {{crate}} --quiet
+
+test-rich-text:
+    @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet
+    @cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet
 
 test-cli-check:
     @cargo test -p arcweft-cli --test check --quiet
@@ -25,7 +38,9 @@ test-cli-native:
     @cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet
 
 test-profile:
+    @Measure-Command { cargo test --workspace --no-run --quiet }
     @Measure-Command { cargo test --workspace --quiet }
+    @Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet }
     @Measure-Command { cargo test -p arcweft-cli --test check --quiet }
     @Measure-Command { cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet }
     @Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }
@@ -60,7 +75,7 @@ scan-absolute-paths:
 scan-removed-dsl:
     @cargo test -p arcweft-cli source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims --test regression_harness
 
-verify: fmt-check clippy test scan-absolute-paths scan-removed-dsl
+verify: fmt-check clippy test-workspace scan-absolute-paths scan-removed-dsl
 
 verify-full: verify test-tier2
 

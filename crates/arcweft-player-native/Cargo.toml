@@ -20,7 +20,7 @@ clap = { workspace = true, features = ["derive"] }
 glyphon.workspace = true
 png.workspace = true
 pollster.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }

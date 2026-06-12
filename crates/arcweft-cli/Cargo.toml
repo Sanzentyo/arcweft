@@ -33,7 +33,7 @@ arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
 blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }
 png.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 

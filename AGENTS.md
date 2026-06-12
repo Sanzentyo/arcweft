@@ -74,8 +74,10 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
   reviewable cut points, and reserve the ignored Tier 2 MCP stdio / exact visual
   golden suite for changes that touch that risk area or milestone validation.
 - Do not run full workspace tests after every small edit. Use `just test-fast`
-  for the normal fast workspace pass, `just test-cli-native` for native
-  rich-text/Agent observe work, `just test-cli-check` for CLI-heavy cut points,
+  for the short core/render-text/text-layout/native-player smoke route,
+  `just test-rich-text` or `just test-cli-native` for native rich-text/Agent
+  observe work, `just test-workspace` for the full ignored-Tier-2 workspace
+  pass at main push cut points, `just test-cli-check` for CLI-heavy cut points,
   and `just test-tier2` only for explicit slow validation.
 - Keep public API intentional.
 - Prefer `pub mod` boundaries for subsystem APIs and keep item visibility narrow inside those modules. Use root `pub use` only for small, deliberate facade surfaces.

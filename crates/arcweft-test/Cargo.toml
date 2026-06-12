@@ -8,7 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
