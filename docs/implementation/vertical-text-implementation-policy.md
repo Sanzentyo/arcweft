@@ -85,6 +85,11 @@ the concrete choices to follow when turning that package into production code.
 - `arcweft-glyphon` converts `LaidOutText` into glyphon `GlyphArea` input. It
   owns renderer-coordinate adjustments such as glyph origin offsets; Sans I/O
   layout coordinates stay cell/bounds oriented.
+- Vertical layout clustering uses `unicode-segmentation` grapheme indices for
+  UAX #29 boundaries, so combining-mark Latin clusters and emoji ZWJ sequences
+  stay intact before orientation and text-combine policy are applied. Mixed
+  vertical orientation is still a deterministic Arcweft policy heuristic, not a
+  generated UAX #50 table.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The current
@@ -101,8 +106,9 @@ the concrete choices to follow when turning that package into production code.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping/compression,
-  real Unicode segmentation/orientation, vertical shaping policy, ruby
-  collision/layout feedback, and checked-in `imq` golden fixtures.
+  generated UAX #50 orientation data, UAX #14/JLREQ line-breaking policy,
+  vertical shaping policy, ruby collision/layout feedback, and checked-in `imq`
+  golden fixtures.
 
 ## Explicit Defaults
 

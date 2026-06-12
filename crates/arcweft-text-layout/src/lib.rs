@@ -11,6 +11,7 @@ use arcweft_render_text::{
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 use thiserror::Error;
+use unicode_segmentation::UnicodeSegmentation as _;
 
 /// Text layout failed before geometry could be produced.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -376,7 +377,7 @@ fn layout_vertical_run(
         }
     };
     for cluster in vertical_clusters(text, vertical_latin) {
-        if cluster.text == "\n" {
+        if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
             continue;
@@ -524,25 +525,31 @@ struct VerticalCluster {
     orientation: GlyphOrientation,
 }
 
+const MAX_TEXT_COMBINE_DIGITS: usize = 4;
+
 fn vertical_clusters(
     text: &str,
     vertical_latin: RichTextVerticalLatinMode,
 ) -> Vec<VerticalCluster> {
     let mut clusters = Vec::new();
-    let mut iter = text.char_indices().peekable();
-    while let Some((offset, ch)) = iter.next() {
-        if ch.is_ascii_digit() {
-            let mut end = offset + ch.len_utf8();
-            let mut value = ch.to_string();
-            while let Some((next_offset, next)) = iter.peek().copied() {
-                if !next.is_ascii_digit() || value.chars().count() >= 4 {
+    let graphemes: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
+    let mut index = 0;
+    while let Some((offset, grapheme)) = graphemes.get(index).copied() {
+        if is_ascii_digit_grapheme(grapheme) {
+            let mut end = offset + grapheme.len();
+            let mut value = grapheme.to_owned();
+            let mut digit_count = 1;
+            index += 1;
+            while let Some((next_offset, next)) = graphemes.get(index).copied() {
+                if !is_ascii_digit_grapheme(next) || digit_count >= MAX_TEXT_COMBINE_DIGITS {
                     break;
                 }
-                iter.next();
-                value.push(next);
-                end = next_offset + next.len_utf8();
+                value.push_str(next);
+                end = next_offset + next.len();
+                digit_count += 1;
+                index += 1;
             }
-            if value.chars().count() >= 2 {
+            if digit_count >= 2 {
                 clusters.push(VerticalCluster {
                     range: offset..end,
                     text: value,
@@ -553,31 +560,90 @@ fn vertical_clusters(
             clusters.push(VerticalCluster {
                 range: offset..end,
                 text: value,
-                orientation: vertical_orientation(ch, vertical_latin),
+                orientation: vertical_orientation(grapheme, vertical_latin),
             });
             continue;
         }
+        index += 1;
         clusters.push(VerticalCluster {
-            range: offset..offset + ch.len_utf8(),
-            text: ch.to_string(),
-            orientation: vertical_orientation(ch, vertical_latin),
+            range: offset..offset + grapheme.len(),
+            text: grapheme.to_owned(),
+            orientation: vertical_orientation(grapheme, vertical_latin),
         });
     }
     clusters
 }
 
-fn vertical_orientation(ch: char, vertical_latin: RichTextVerticalLatinMode) -> GlyphOrientation {
+fn is_ascii_digit_grapheme(grapheme: &str) -> bool {
+    matches!(grapheme.as_bytes(), [b'0'..=b'9'])
+}
+
+fn is_vertical_line_break_cluster(grapheme: &str) -> bool {
+    matches!(grapheme, "\n" | "\r\n")
+}
+
+fn vertical_orientation(
+    grapheme: &str,
+    vertical_latin: RichTextVerticalLatinMode,
+) -> GlyphOrientation {
     match vertical_latin {
         RichTextVerticalLatinMode::Upright => GlyphOrientation::Upright,
         RichTextVerticalLatinMode::Sideways => GlyphOrientation::SidewaysCw,
         RichTextVerticalLatinMode::Mixed => {
-            if ch.is_ascii_alphabetic() {
+            if mixed_vertical_grapheme_is_sideways(grapheme) {
                 GlyphOrientation::SidewaysCw
             } else {
                 GlyphOrientation::Upright
             }
         }
     }
+}
+
+fn mixed_vertical_grapheme_is_sideways(grapheme: &str) -> bool {
+    let mut has_sideways_base = false;
+    let all_sideways = grapheme.chars().all(|ch| {
+        if mixed_vertical_char_is_sideways(ch) {
+            has_sideways_base = true;
+            true
+        } else {
+            is_combining_mark(ch)
+        }
+    });
+    all_sideways && has_sideways_base
+}
+
+fn mixed_vertical_char_is_sideways(ch: char) -> bool {
+    is_basic_latin_letter(ch) || is_latin_1_supplement_letter(ch) || is_latin_extended(ch)
+}
+
+fn is_basic_latin_letter(ch: char) -> bool {
+    ch.is_ascii_alphabetic()
+}
+
+fn is_latin_1_supplement_letter(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{00c0}'..='\u{00d6}' | '\u{00d8}'..='\u{00f6}' | '\u{00f8}'..='\u{00ff}'
+    ) && ch.is_alphabetic()
+}
+
+const fn is_latin_extended(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0100}'..='\u{024f}'
+            | '\u{1e00}'..='\u{1eff}'
+    )
+}
+
+const fn is_combining_mark(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0300}'..='\u{036f}'
+            | '\u{1ab0}'..='\u{1aff}'
+            | '\u{1dc0}'..='\u{1dff}'
+            | '\u{20d0}'..='\u{20ff}'
+            | '\u{fe20}'..='\u{fe2f}'
+    )
 }
 
 fn union_bounds(rects: impl IntoIterator<Item = LayoutRect>) -> Option<LayoutRect> {
@@ -719,6 +785,26 @@ mod tests {
     }
 
     #[test]
+    fn vertical_lr_lays_out_top_to_bottom_then_left_to_right() {
+        let frame = frame_with_run(
+            "天地人",
+            vertical_presentation(RichTextWritingMode::VerticalLr),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(120.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_f32_eq(layout.glyphs[0].origin.x, 24.0);
+        assert_f32_eq(layout.glyphs[0].origin.y, 24.0);
+        assert_f32_eq(layout.glyphs[1].origin.x, 24.0);
+        assert_f32_eq(layout.glyphs[1].origin.y, 66.0);
+        assert!(layout.glyphs[2].origin.x > layout.glyphs[1].origin.x);
+        assert_f32_eq(layout.glyphs[2].origin.y, 24.0);
+    }
+
+    #[test]
     fn vertical_layout_keeps_cursor_across_style_runs() {
         let frame = frame_with_split_runs(
             "天地",
@@ -748,6 +834,58 @@ mod tests {
             layout.glyphs[2].orientation,
             GlyphOrientation::TextCombineUpright
         );
+    }
+
+    #[test]
+    fn vertical_layout_uses_grapheme_clusters_for_mixed_orientation() {
+        let text = "e\u{301}👨‍👩‍👧‍👦A";
+        let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalRl));
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 3);
+        assert_eq!(layout.glyphs[0].text, "e\u{301}");
+        assert_eq!(
+            layout.glyphs[0].range,
+            RichTextRange::new(0, "e\u{301}".len())
+        );
+        assert_eq!(layout.glyphs[0].orientation, GlyphOrientation::SidewaysCw);
+        assert_eq!(layout.glyphs[1].text, "👨‍👩‍👧‍👦");
+        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::Upright);
+        assert_eq!(layout.glyphs[2].text, "A");
+        assert_eq!(layout.glyphs[2].orientation, GlyphOrientation::SidewaysCw);
+    }
+
+    #[test]
+    fn vertical_text_combine_uses_at_most_four_ascii_digits() {
+        let frame = frame_with_run(
+            "20265",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert_eq!(layout.glyphs[0].text, "2026");
+        assert_eq!(
+            layout.glyphs[0].orientation,
+            GlyphOrientation::TextCombineUpright
+        );
+        assert_eq!(layout.glyphs[1].text, "5");
+        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::Upright);
+    }
+
+    #[test]
+    fn vertical_crlf_advances_to_next_column_without_emitting_glyph() {
+        let frame = frame_with_run(
+            "天\r\n地",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert_eq!(layout.glyphs[0].text, "天");
+        assert_eq!(layout.glyphs[1].text, "地");
+        assert!(layout.glyphs[1].origin.x < layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[1].origin.y, layout.glyphs[0].origin.y);
     }
 
     #[test]

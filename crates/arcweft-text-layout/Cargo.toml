@@ -11,6 +11,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 
 serde.workspace = true
 thiserror.workspace = true
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
 arcweft-core = { path = "../arcweft-core" }
