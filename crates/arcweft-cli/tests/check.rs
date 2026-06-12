@@ -4506,6 +4506,90 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_vertical_lr_ruby_mask_raw_crop() {
+    let path = temp_arcw(
+        "agent-observe-native-vertical-lr-ruby-mask",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr]天地|[夢](ゆめ)星[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-vertical-lr-ruby-mask");
+    let raw_path = dir.join("native-vertical-lr-ruby-mask.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg("object.dialogue.0.0.ruby.0")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native vertical_lr ruby mask raw crop");
+
+    assert!(
+        output.status.success(),
+        "native vertical_lr ruby mask crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native vertical_lr ruby mask report is JSON");
+    assert_eq!(json["images"][0]["kind"], "mask");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(json["images"][0]["composition"], "mask_attachment");
+
+    let ruby = find_rich_text_ruby_object(&json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_eq!(json["images"][0]["crop_origin"]["x"], ruby["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], ruby["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], ruby["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], ruby["bbox"]["height"]);
+
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    assert!(
+        agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+        "vertical_lr ruby annotation should render on the left side of the base: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_x(&json["images"][0]["content_viewport_bbox"])
+            >= agent_json_bbox_x(annotation)
+            && agent_json_bbox_right(&json["images"][0]["content_viewport_bbox"])
+                <= agent_json_bbox_right(base),
+        "vertical_lr ruby mask content should stay within the ruby base/annotation union: {ruby}"
+    );
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    let bytes = fs::read(&raw_path).expect("read native vertical_lr ruby mask raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(transparent > 0);
+
+    fs::remove_file(&path).expect("remove temp native vertical_lr ruby mask source");
+    fs::remove_dir_all(&dir).expect("remove temp native vertical_lr ruby mask dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_text_combine_mask_raw_crop() {
     let path = temp_arcw(
         "agent-observe-native-text-combine-mask",
