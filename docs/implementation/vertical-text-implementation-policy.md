@@ -189,16 +189,18 @@ the concrete choices to follow when turning that package into production code.
   golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
   fresh native capture against it with `imq` when both Windows fonts and the
   `imq` binary are available.
-  The expanded JLREQ pair profile is also exercised through a native Agent
-  fixture that observes the `dialogue.rich_text` cluster geometry for a leader
-  mark sequence in vertical text, matching the published JLREQ line-composition
-  treatment of punctuation classes and unbreakable character sequences
-  (`https://www.w3.org/TR/2008/WD-jlreq-20081015/`, section 3.1).
+  The expanded JLREQ pair profile is also exercised through native Agent
+  fixtures that observe `dialogue.rich_text` cluster geometry for leader marks,
+  compact bracket pairs, small kana, prolonged-sound marks, iteration marks,
+  and strict middle-dot pairs in vertical text, matching the published JLREQ
+  line-composition treatment of punctuation classes and unbreakable character
+  sequences (`https://www.w3.org/TR/2008/WD-jlreq-20081015/`, section 3.1).
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,
-  especially broadening production fixture coverage beyond the current leader
-  mark, bracket-pair, small-kana, dash, middle-dot, and iteration-mark examples.
+  especially adding broader published JLREQ paragraph examples, preset-specific
+  visual goldens, and edge-case fixtures beyond the current punctuation-pair
+  native Agent coverage.
 
 ## Explicit Defaults
 

@@ -2896,6 +2896,134 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_expanded_jlreq_normal_pair_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-expanded-jlreq-normal-pairs",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp expanded normal JLREQ source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let textbox = json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .expect("textbox object is observed");
+    let run = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("text run is observed");
+    assert_eq!(run["presentation"]["layout"]["jlreq_strictness"], "normal");
+
+    let mountain = find_rich_text_cluster_object(&json, "山", 18, 21);
+    let iteration = find_rich_text_cluster_object(&json, "々", 21, 24);
+    let person = find_rich_text_cluster_object(&json, "人", 24, 27);
+    assert_vertical_cluster_after(
+        mountain,
+        iteration,
+        "iteration mark should stay with the previous cluster",
+    );
+    assert_vertical_cluster_after(
+        iteration,
+        person,
+        "text after iteration mark should continue in the same column",
+    );
+
+    let open = find_rich_text_cluster_object(&json, "「", 27, 30);
+    let close = find_rich_text_cluster_object(&json, "」", 30, 33);
+    let river = find_rich_text_cluster_object(&json, "川", 33, 36);
+    assert_vertical_cluster_after(open, close, "compact bracket pair should stay together");
+    assert_vertical_cluster_after(
+        close,
+        river,
+        "text after compact bracket pair should stay in the same column",
+    );
+
+    let large_kana = find_rich_text_cluster_object(&json, "あ", 36, 39);
+    let small_kana = find_rich_text_cluster_object(&json, "っ", 39, 42);
+    let next_kana = find_rich_text_cluster_object(&json, "い", 42, 45);
+    assert_vertical_cluster_after(
+        large_kana,
+        small_kana,
+        "small kana should stay out of a column head",
+    );
+    assert_vertical_cluster_after(
+        small_kana,
+        next_kana,
+        "text after small kana should continue in the same column",
+    );
+
+    let vowel = find_rich_text_cluster_object(&json, "お", 45, 48);
+    let prolonged_sound = find_rich_text_cluster_object(&json, "ー", 48, 51);
+    let after_dash = find_rich_text_cluster_object(&json, "え", 51, 54);
+    assert_vertical_cluster_after(
+        vowel,
+        prolonged_sound,
+        "prolonged sound mark should stay with the previous cluster",
+    );
+    assert_vertical_cluster_after(
+        prolonged_sound,
+        after_dash,
+        "text after prolonged sound mark should continue in the same column",
+    );
+}
+
+#[test]
+fn agent_observe_native_renderer_reports_strict_jlreq_middle_dot_pair_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-strict-jlreq-middle-dot-pair",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=strict]天地春夏秋冬月火中・外[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp strict JLREQ source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let textbox = json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .expect("textbox object is observed");
+    let run = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("text run is observed");
+    assert_eq!(run["presentation"]["layout"]["jlreq_strictness"], "strict");
+
+    let inside = find_rich_text_cluster_object(&json, "中", 24, 27);
+    let middle_dot = find_rich_text_cluster_object(&json, "・", 27, 30);
+    let outside = find_rich_text_cluster_object(&json, "外", 30, 33);
+    assert_vertical_cluster_after(
+        inside,
+        middle_dot,
+        "strict middle-dot pair should stay in the same native-layout column",
+    );
+    assert_vertical_cluster_after(
+        middle_dot,
+        outside,
+        "text after strict middle dot should remain in the same observed column",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
     let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
@@ -12056,6 +12184,27 @@ fn find_rich_text_cluster_object<'a>(
                 "rich-text cluster `{text}` {range_start}..{range_end} should be observed: {report}"
             )
         })
+}
+
+fn assert_vertical_cluster_after(
+    previous: &serde_json::Value,
+    next: &serde_json::Value,
+    context: &str,
+) {
+    assert_eq!(
+        previous["bbox"]["x"], next["bbox"]["x"],
+        "{context}: clusters should share the same vertical column"
+    );
+    let previous_y = previous["bbox"]["y"]
+        .as_i64()
+        .expect("previous cluster y is numeric");
+    let next_y = next["bbox"]["y"]
+        .as_i64()
+        .expect("next cluster y is numeric");
+    assert!(
+        next_y > previous_y,
+        "{context}: next cluster should advance downward within the column"
+    );
 }
 
 fn rich_text_object_capture_uri<'a>(
