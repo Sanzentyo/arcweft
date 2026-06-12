@@ -3869,6 +3869,48 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures() {
+    let cases = [
+        (
+            "windows-fonts",
+            workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+            "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
+            120,
+            400,
+        ),
+        (
+            "full-grammar",
+            workspace_root().join("samples/rich-text-full-grammar.arcw"),
+            "吾輩は猫である。ABC 123 2026",
+            120,
+            260,
+        ),
+    ];
+    let dir = temp_dir("agent-observe-native-sample-full-frame-png");
+    for (label, source_path, run_text, min_height, max_width) in cases {
+        let png_path = dir.join(format!("{label}-full-frame.png"));
+        let json = capture_native_png_report(&source_path, &png_path);
+        assert_native_capture_has_content(&json, &format!("{label}-full-frame.png"));
+        let run = find_rich_text_run_object(&json, run_text);
+        assert!(
+            run["bbox"]["height"].as_u64().unwrap() >= min_height,
+            "{label} full-frame PNG report should preserve vertical run height: {run}"
+        );
+        assert!(
+            run["bbox"]["width"].as_u64().unwrap() <= max_width,
+            "{label} full-frame PNG report should preserve column-shaped width: {run}"
+        );
+        assert!(
+            json["images"][0]["content_bbox"]["height"]
+                .as_u64()
+                .is_some_and(|height| height > 0),
+            "{label} full-frame PNG should contain rendered native pixels: {json}"
+        );
+    }
+    fs::remove_dir_all(&dir).expect("remove temp native sample full-frame dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",

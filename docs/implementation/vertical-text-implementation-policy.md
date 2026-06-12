@@ -227,7 +227,10 @@ the concrete choices to follow when turning that package into production code.
   `samples/rich-text-full-grammar.arcw` and
   `samples/rich-text-windows-fonts.arcw` are now also observed through the native
   `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`
-  runs, source ranges, masks, and column-shaped bounds remain covered.
+  runs, source ranges, masks, and column-shaped bounds remain covered. The same
+  samples are also captured as full-frame native PNGs while asserting the
+  vertical runs stay column-shaped in the capture report, so the acceptance path
+  is not limited to cropped layer images.
   `rich_text_cluster` child objects expose glyph-cluster source ranges and
   renderer-facing orientation/vertical-form metadata plus object-local
   color/object-id/mask capture refs; the full-grammar sample test follows a
