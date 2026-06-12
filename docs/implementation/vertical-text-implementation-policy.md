@@ -155,6 +155,11 @@ the concrete choices to follow when turning that package into production code.
   ruby annotations keep glyphon/cosmic-text shaping for cache keys, but their
   glyph instances are stacked top-to-bottom from the `LaidOutRuby::ruby_bounds`
   cell width and vertical advance so rendered ruby tracks match Agent geometry.
+  Unit coverage now also fixes the window page-construction path for a
+  `vertical_lr` page that combines side-track ruby and a 4-digit
+  text-combine-upright cluster, proving the page-local layout source can be
+  adapted into the same body and ruby GlyphAreas used by the actual window
+  renderer.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain
   stable while captures can vary glyph visibility by capture time. CLI

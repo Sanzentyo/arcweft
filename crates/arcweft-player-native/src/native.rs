@@ -3578,6 +3578,46 @@ mod tests {
         frame
     }
 
+    fn vertical_lr_ruby_text_combine_frame() -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.lr.window.ruby.combine".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalLr,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "天地".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
+                },
+                RichTextNode::Text {
+                    text: "2026Z".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
+    }
+
     #[test]
     fn window_rich_text_uses_display_map_for_style_spans_and_ruby_hint() {
         let frame = styled_ruby_test_frame();
@@ -3760,6 +3800,98 @@ mod tests {
 
         assert_eq!(vertical_form_for("。"), GlyphVerticalForm::UprightAlternate);
         assert_eq!(vertical_form_for("ー"), GlyphVerticalForm::RotatedAlternate);
+    }
+
+    #[test]
+    fn window_pages_keep_vertical_ruby_text_combine_source_for_glyph_area_rendering() {
+        let frame = vertical_lr_ruby_text_combine_frame();
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("page exists");
+
+        assert_eq!(page.rich_text.text, "天地夢2026Z");
+        assert_eq!(page.rich_text.ruby_annotations.len(), 1);
+        assert_eq!(page.rich_text.ruby_annotations[0].base_range, 6..9);
+
+        let page_layout_frame = page
+            .layout_frame
+            .as_ref()
+            .expect("window page keeps page-local layout source");
+        let layout_presentation = page_layout_frame
+            .display_map
+            .text_runs
+            .iter()
+            .find_map(|run| run.presentation.layout.as_ref())
+            .expect("layout presentation is preserved");
+        assert_eq!(
+            layout_presentation.writing_mode,
+            RichTextWritingMode::VerticalLr
+        );
+
+        let layout = layout_frame(
+            page_layout_frame,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let combine_index = layout
+            .glyphs
+            .iter()
+            .position(|glyph| glyph.text == "2026")
+            .expect("text-combine glyph exists");
+        assert_eq!(
+            layout.glyphs[combine_index].orientation,
+            GlyphOrientation::TextCombineUpright
+        );
+
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let glyph_area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(800, 600),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .expect("window layout source adapts to glyph area");
+        assert_eq!(glyph_area.skipped_glyphs(), 0);
+        assert_eq!(
+            glyph_area
+                .glyphs()
+                .iter()
+                .filter(|glyph| glyph.metadata == combine_index)
+                .count(),
+            4,
+            "text-combine cluster should expand to one glyph instance per digit"
+        );
+
+        let ruby_buffers = build_ruby_buffers(
+            &mut font_system,
+            &buffer,
+            &page.rich_text,
+            Some(&layout),
+            800,
+            600,
+            NativeTextOrigin::default(),
+        );
+        assert_eq!(ruby_buffers.len(), 1);
+        assert!(matches!(
+            ruby_buffers[0].placement,
+            RubyGlyphPlacement::Vertical { .. }
+        ));
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
+        assert_eq!(ruby_glyph_areas.len(), 1);
+        assert!(
+            ruby_glyph_areas[0]
+                .glyphs()
+                .iter()
+                .all(|glyph| glyph.origin.x >= layout.ruby[0].ruby_bounds.x.floor())
+        );
     }
 
     #[test]

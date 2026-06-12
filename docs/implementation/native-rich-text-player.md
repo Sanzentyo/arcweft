@@ -129,6 +129,11 @@ cells are checked against the same visibility/readback rule. Ruby annotation
 GlyphAreas use the annotation presentation as well, so ruby object masks can be
 captured before and after reveal without changing the observed ruby base and
 annotation bboxes.
+The interactive window path shares the same layout-backed body/ruby GlyphArea
+model: window page construction is covered for a `vertical_lr` line containing
+side-track ruby plus a 4-digit text-combine-upright cluster, and the test adapts
+that page-local layout source into the same body and ruby GlyphAreas used by the
+window renderer.
 Image resources include non-zero `page` metadata. Rich-text child objects also
 record their rendered page in `rich_text_ref.page`, and their `capture_refs`
 append `?page=N` for non-zero pages while also exposing `capture_refs[].page`
