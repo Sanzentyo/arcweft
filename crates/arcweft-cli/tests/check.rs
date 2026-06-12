@@ -2810,6 +2810,92 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_expanded_jlreq_pair_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-expanded-jlreq-pairs",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火…人[/][p]
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--layer")
+        .arg("dialogue.rich_text")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports expanded JLREQ pair geometry");
+
+    fs::remove_file(&path).expect("remove temp expanded JLREQ source");
+    assert!(
+        output.status.success(),
+        "native expanded JLREQ observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("expanded JLREQ report is JSON");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let textbox = json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .expect("textbox object is observed");
+    let run = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("text run is observed");
+    assert_eq!(run["presentation"]["layout"]["jlreq_strictness"], "normal");
+
+    let fire = find_rich_text_cluster_object(&json, "火", 21, 24);
+    let leader = find_rich_text_cluster_object(&json, "…", 24, 27);
+    let person = find_rich_text_cluster_object(&json, "人", 27, 30);
+    assert_eq!(
+        fire["bbox"]["x"], leader["bbox"]["x"],
+        "leader should stay in the same native-layout column as the previous cluster"
+    );
+    assert_eq!(
+        leader["bbox"]["x"], person["bbox"]["x"],
+        "following text should remain in the same observed column after the leader"
+    );
+    assert!(
+        leader["bbox"]["y"].as_u64().unwrap() > fire["bbox"]["y"].as_u64().unwrap(),
+        "leader should advance after the previous cluster within the column"
+    );
+    assert!(
+        person["bbox"]["y"].as_u64().unwrap() > leader["bbox"]["y"].as_u64().unwrap(),
+        "text after the leader should advance after the leader within the column"
+    );
+    assert!(
+        leader["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba"))),
+        "expanded JLREQ cluster should expose native mask capture refs"
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
     let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
