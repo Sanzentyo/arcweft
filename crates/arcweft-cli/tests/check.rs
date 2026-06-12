@@ -4599,6 +4599,103 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_text_combine_object_id_raw_crop() {
+    let path = temp_arcw(
+        "agent-observe-native-text-combine-object-id",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]A 2026 B[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-text-combine-object-id");
+    let raw_path = dir.join("native-text-combine-object-id.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("object-id")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.2.6")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native text-combine object-id raw crop");
+
+    assert!(
+        output.status.success(),
+        "native text-combine object-id crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native text-combine object-id report is JSON");
+    assert_eq!(json["images"][0]["kind"], "object_id");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+
+    let text_combine = find_rich_text_cluster_object(&json, "2026", 2, 6);
+    assert_eq!(
+        text_combine["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        text_combine["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        text_combine["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], text_combine["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], text_combine["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+
+    let color = &text_combine["capture_refs"]["object_id_color"];
+    let expected = [
+        u8::try_from(color["red"].as_u64().expect("object-id red"))
+            .expect("object-id red fits in u8"),
+        u8::try_from(color["green"].as_u64().expect("object-id green"))
+            .expect("object-id green fits in u8"),
+        u8::try_from(color["blue"].as_u64().expect("object-id blue"))
+            .expect("object-id blue fits in u8"),
+        u8::try_from(color["alpha"].as_u64().expect("object-id alpha"))
+            .expect("object-id alpha fits in u8"),
+    ];
+    let bytes = fs::read(&raw_path).expect("read native text-combine object-id raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let exact_color = bytes
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == expected)
+        .count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(
+        exact_color > 0,
+        "text-combine object-id crop should contain the observed object color"
+    );
+
+    fs::remove_file(&path).expect("remove temp native text-combine object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native text-combine object-id dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry() {
     let path = temp_arcw(
         "agent-observe-native-textbox-mask",
