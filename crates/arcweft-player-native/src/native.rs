@@ -1,7 +1,8 @@
 //! Minimal native window renderer for rich-text player frames.
 
 use arcweft_glyphon::{
-    GlyphonAreaOptions, OwnedGlyphArea, glyph_area_from_layout, glyph_area_from_shaped_buffer,
+    GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, glyph_area_from_layout,
+    glyph_area_from_shaped_buffer,
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
@@ -14,7 +15,7 @@ use arcweft_text_layout::{
     TextLayoutConfig, layout_frame,
 };
 use glyphon::{
-    Attrs, Buffer, Cache, CacheKey, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
+    Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector, Viewport, Weight,
     cosmic_text::{FeatureTag, FontFeatures},
 };
@@ -2822,8 +2823,8 @@ fn native_text_bounds(width: u32, height: u32) -> TextBounds {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct LayoutGlyphCacheKeys {
-    shaped: Vec<(RichTextRange, CacheKey)>,
-    vertical_alternates: BTreeMap<usize, Vec<CacheKey>>,
+    shaped: Vec<(RichTextRange, ResolvedGlyph)>,
+    vertical_alternates: BTreeMap<usize, Vec<ResolvedGlyph>>,
 }
 
 fn layout_glyph_cache_keys(
@@ -2853,7 +2854,7 @@ fn layout_glyph_cache_keys(
 fn text_buffer_cache_keys(
     text_buffer: &Buffer,
     rich_text: &WindowRichText,
-) -> Vec<(RichTextRange, CacheKey)> {
+) -> Vec<(RichTextRange, ResolvedGlyph)> {
     let line_starts = text_line_start_offsets(&rich_text.text);
     text_buffer
         .layout_runs()
@@ -2863,7 +2864,13 @@ fn text_buffer_cache_keys(
                 let start = line_start.saturating_add(glyph.start);
                 let end = line_start.saturating_add(glyph.end);
                 let cache_key = glyph.physical((0.0, 0.0), 1.0).cache_key;
-                (start < end).then_some((RichTextRange::new(start, end), cache_key))
+                (start < end).then_some((
+                    RichTextRange::new(start, end),
+                    ResolvedGlyph {
+                        cache_key,
+                        advance: Vector::new(glyph.w, 0.0),
+                    },
+                ))
             })
         })
         .collect()
@@ -2884,7 +2891,7 @@ fn vertical_form_cache_keys(
     font_system: &mut FontSystem,
     glyph: &arcweft_text_layout::LaidOutGlyph,
     style: &NativeTextStyle,
-) -> Vec<CacheKey> {
+) -> Vec<ResolvedGlyph> {
     let mut buffer = Buffer::new(font_system, Metrics::new(30.0, 42.0));
     let attrs = style
         .attrs()
@@ -2895,13 +2902,17 @@ fn vertical_form_cache_keys(
     text_buffer_cache_keys_for_text(&buffer)
 }
 
-fn text_buffer_cache_keys_for_text(buffer: &Buffer) -> Vec<CacheKey> {
+fn text_buffer_cache_keys_for_text(buffer: &Buffer) -> Vec<ResolvedGlyph> {
     buffer
         .layout_runs()
         .flat_map(|run| {
-            run.glyphs
-                .iter()
-                .map(|glyph| glyph.physical((0.0, 0.0), 1.0).cache_key)
+            run.glyphs.iter().map(|glyph| {
+                let cache_key = glyph.physical((0.0, 0.0), 1.0).cache_key;
+                ResolvedGlyph {
+                    cache_key,
+                    advance: Vector::new(glyph.w, 0.0),
+                }
+            })
         })
         .collect()
 }
@@ -2924,15 +2935,15 @@ fn cache_keys_for_layout_glyph(
     glyph_index: usize,
     range: RichTextRange,
     cache_keys: &LayoutGlyphCacheKeys,
-) -> Vec<CacheKey> {
+) -> Vec<ResolvedGlyph> {
     if let Some(cache_keys) = cache_keys.vertical_alternates.get(&glyph_index) {
         return cache_keys.clone();
     }
     cache_keys
         .shaped
         .iter()
-        .filter_map(|(candidate, cache_key)| {
-            (candidate.start < range.end && range.start < candidate.end).then_some(*cache_key)
+        .filter_map(|(candidate, resolved)| {
+            (candidate.start < range.end && range.start < candidate.end).then_some(*resolved)
         })
         .collect()
 }

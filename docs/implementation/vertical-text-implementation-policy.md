@@ -102,10 +102,11 @@ the concrete choices to follow when turning that package into production code.
   keeping closing punctuation out of column heads as an initial kinsoku rule.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
-  cluster cell instead of collapsing the cluster to a single glyph. It applies
-  deterministic horizontal affine compression so 2-4 digit clusters fit inside
-  one vertical cell while preserving shared source-cluster metadata. Production
-  shaping metrics and kerning still belong in the layout/shaping policy.
+  cluster cell instead of collapsing the cluster to a single glyph. The resolver
+  carries shaped glyph advances with those cache keys, and the adapter uses their
+  summed advance to apply deterministic horizontal affine compression so 2-4
+  digit clusters fit inside one vertical cell while preserving shared
+  source-cluster metadata.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
@@ -122,10 +123,9 @@ the concrete choices to follow when turning that package into production code.
   ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
   geometry is produced by the native renderer. Checked-in golden baselines remain
   future work once rendering baselines are stable across CI targets.
-- Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
-  full JLREQ line-breaking policy, proof against stable checked-in font/capture
-  baselines for `Tu`/`Tr` alternates, full ruby base expansion/overhang/line-break
-  feedback, and checked-in `imq` golden fixtures.
+- Remaining work includes full JLREQ line-breaking policy, proof against stable
+  checked-in font/capture baselines for `Tu`/`Tr` alternates, full ruby base
+  expansion/overhang/line-break feedback, and checked-in `imq` golden fixtures.
 
 ## Explicit Defaults
 

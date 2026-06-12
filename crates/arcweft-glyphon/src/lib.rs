@@ -97,6 +97,15 @@ impl OwnedGlyphArea {
     }
 }
 
+/// One shaped renderer glyph resolved from a laid-out Arcweft source cluster.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedGlyph {
+    /// glyphon/cosmic-text cache key for the shaped glyph.
+    pub cache_key: CacheKey,
+    /// Shaped advance before Arcweft vertical/text-combine transforms.
+    pub advance: Vector,
+}
+
 /// Adapts Arcweft layout geometry to a glyphon `GlyphArea`.
 ///
 /// The resolver boundary keeps font shaping and cache-key ownership in the
@@ -105,13 +114,13 @@ impl OwnedGlyphArea {
 pub fn glyph_area_from_layout(
     layout: &LaidOutText,
     options: GlyphonAreaOptions,
-    mut resolve_cache_keys: impl FnMut(usize, &LaidOutGlyph) -> Vec<CacheKey>,
+    mut resolve_glyphs: impl FnMut(usize, &LaidOutGlyph) -> Vec<ResolvedGlyph>,
 ) -> Result<OwnedGlyphArea, GlyphonAdapterError> {
     let mut skipped_glyphs = 0;
     let mut glyphs = Vec::with_capacity(layout.glyphs.len());
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
-        let cache_keys = resolve_cache_keys(glyph_index, glyph);
-        if cache_keys.is_empty() {
+        let resolved = resolve_glyphs(glyph_index, glyph);
+        if resolved.is_empty() {
             if options.skip_missing_glyphs {
                 skipped_glyphs += 1;
                 continue;
@@ -122,7 +131,7 @@ pub fn glyph_area_from_layout(
             &mut glyphs,
             glyph_index,
             glyph,
-            &cache_keys,
+            &resolved,
             options.origin_offset,
         );
     }
@@ -194,18 +203,18 @@ fn append_glyph_instances(
     instances: &mut Vec<GlyphInstance>,
     glyph_index: usize,
     glyph: &LaidOutGlyph,
-    cache_keys: &[CacheKey],
+    resolved: &[ResolvedGlyph],
     origin_offset: Vector,
 ) {
     if glyph.orientation == GlyphOrientation::TextCombineUpright {
-        append_text_combine_instances(instances, glyph_index, glyph, cache_keys, origin_offset);
+        append_text_combine_instances(instances, glyph_index, glyph, resolved, origin_offset);
         return;
     }
-    if let Some(cache_key) = cache_keys.first().copied() {
+    if let Some(resolved) = resolved.first().copied() {
         instances.push(glyph_instance(
             glyph_index,
             glyph,
-            cache_key,
+            resolved.cache_key,
             Point::new(glyph.origin.x, glyph.origin.y),
             Vector::new(glyph.advance.width, glyph.advance.height),
             Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
@@ -218,27 +227,26 @@ fn append_text_combine_instances(
     instances: &mut Vec<GlyphInstance>,
     glyph_index: usize,
     glyph: &LaidOutGlyph,
-    cache_keys: &[CacheKey],
+    resolved: &[ResolvedGlyph],
     origin_offset: Vector,
 ) {
-    let count = cache_keys.len().max(1);
-    let placement = text_combine_placement(glyph, count);
-    for (index, cache_key) in cache_keys.iter().copied().enumerate() {
-        let origin = Point::new(
-            placement.start_x + placement.advance.x * usize_to_f32(index),
-            placement.origin_y,
-        );
+    let placement = text_combine_placement(glyph, resolved);
+    let mut cursor_x = placement.start_x;
+    for glyph_resolved in resolved.iter().copied() {
+        let advance_x = (glyph_resolved.advance.x * placement.scale_x).max(1.0);
+        let origin = Point::new(cursor_x, placement.origin_y);
         let mut instance = glyph_instance(
             glyph_index,
             glyph,
-            cache_key,
+            glyph_resolved.cache_key,
             origin,
-            Vector::new(placement.advance.x, 0.0),
-            Rect::new(0.0, 0.0, placement.advance.x, placement.advance.y),
+            Vector::new(advance_x, 0.0),
+            Rect::new(0.0, 0.0, advance_x, placement.cell_height),
             origin_offset,
         );
         instance.transform = placement.transform;
         instances.push(instance);
+        cursor_x += advance_x;
     }
 }
 
@@ -246,25 +254,31 @@ fn append_text_combine_instances(
 struct TextCombinePlacement {
     start_x: f32,
     origin_y: f32,
-    advance: Vector,
+    scale_x: f32,
+    cell_height: f32,
     transform: GlyphTransform,
 }
 
-fn text_combine_placement(glyph: &LaidOutGlyph, count: usize) -> TextCombinePlacement {
-    let count_f32 = usize_to_f32(count).max(1.0);
+fn text_combine_placement(
+    glyph: &LaidOutGlyph,
+    resolved: &[ResolvedGlyph],
+) -> TextCombinePlacement {
     let cell_width = glyph.bounds.width.max(1.0);
     let cell_height = glyph.bounds.height.max(1.0);
     let em = cell_width.min(cell_height).max(1.0);
-    let nominal_digit_advance = (em * 0.55).max(1.0);
-    let uncompressed_width = nominal_digit_advance * count_f32;
+    let uncompressed_width = resolved
+        .iter()
+        .map(|resolved| resolved.advance.x.max(1.0))
+        .sum::<f32>()
+        .max(em * 0.5);
     let scale_x = (cell_width / uncompressed_width).min(1.0);
-    let compressed_advance = (nominal_digit_advance * scale_x).max(1.0);
-    let compressed_width = compressed_advance * count_f32;
+    let compressed_width = uncompressed_width * scale_x;
     let start_x = glyph.origin.x + (cell_width - compressed_width).max(0.0) * 0.5;
     TextCombinePlacement {
         start_x,
         origin_y: glyph.origin.y,
-        advance: Vector::new(compressed_advance, cell_height),
+        scale_x,
+        cell_height,
         transform: GlyphTransform::Affine(Affine2::new([scale_x, 0.0, 0.0, 1.0, 0.0, 0.0])),
     }
 }
@@ -292,10 +306,6 @@ fn glyph_instance(
             index: u32::try_from(glyph_index).unwrap_or(u32::MAX),
         }),
     }
-}
-
-fn usize_to_f32(value: usize) -> f32 {
-    f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
 
 fn i32_to_f32(value: i32) -> f32 {
@@ -337,6 +347,13 @@ mod tests {
             CacheKeyFlags::empty(),
         );
         key
+    }
+
+    fn fake_resolved_glyph(glyph_id: u16, advance_x: f32) -> ResolvedGlyph {
+        ResolvedGlyph {
+            cache_key: fake_cache_key(glyph_id),
+            advance: Vector::new(advance_x, 0.0),
+        }
     }
 
     fn assert_f32_eq(left: f32, right: f32) {
@@ -394,7 +411,10 @@ mod tests {
 
         let area =
             glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |index, _glyph| {
-                vec![fake_cache_key(u16::try_from(index).unwrap_or(u16::MAX))]
+                vec![fake_resolved_glyph(
+                    u16::try_from(index).unwrap_or(u16::MAX),
+                    16.0,
+                )]
             })
             .expect("area adapts");
 
@@ -437,7 +457,7 @@ mod tests {
                 origin_offset: Vector::new(2.0, 30.0),
                 ..GlyphonAreaOptions::default()
             },
-            |_index, _glyph| vec![fake_cache_key(1)],
+            |_index, _glyph| vec![fake_resolved_glyph(1, 16.0)],
         )
         .expect("area adapts");
 
@@ -466,17 +486,19 @@ mod tests {
 
         let area =
             glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
-                vec![fake_cache_key(1), fake_cache_key(2)]
+                vec![fake_resolved_glyph(1, 18.0), fake_resolved_glyph(2, 24.0)]
             })
             .expect("area adapts");
 
         assert_eq!(area.len(), 2);
-        assert_affine_scale_x(area.glyphs()[0].transform, 42.0 / 46.2);
+        assert_affine_scale_x(area.glyphs()[0].transform, 1.0);
         assert_eq!(area.glyphs()[1].transform, area.glyphs()[0].transform);
         assert_f32_eq(area.glyphs()[0].origin.x, 100.0);
         assert_f32_eq(area.glyphs()[0].origin.y, 24.0);
-        assert_f32_eq(area.glyphs()[1].origin.x, 121.0);
+        assert_f32_eq(area.glyphs()[1].origin.x, 118.0);
         assert_f32_eq(area.glyphs()[1].origin.y, 24.0);
+        assert_f32_eq(area.glyphs()[0].advance.x, 18.0);
+        assert_f32_eq(area.glyphs()[1].advance.x, 24.0);
         assert_eq!(
             area.glyphs()[0].cluster,
             Some(TextCluster {
@@ -511,22 +533,25 @@ mod tests {
         let area =
             glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
                 vec![
-                    fake_cache_key(2),
-                    fake_cache_key(0),
-                    fake_cache_key(2),
-                    fake_cache_key(6),
+                    fake_resolved_glyph(2, 15.0),
+                    fake_resolved_glyph(0, 13.0),
+                    fake_resolved_glyph(2, 15.0),
+                    fake_resolved_glyph(6, 17.0),
                 ]
             })
             .expect("area adapts");
 
         assert_eq!(area.len(), 4);
         for glyph in area.glyphs() {
-            assert_affine_scale_x(glyph.transform, 42.0 / 92.4);
-            assert_f32_eq(glyph.advance.x, 10.5);
+            assert_affine_scale_x(glyph.transform, 42.0 / 60.0);
         }
         assert_f32_eq(area.glyphs()[0].origin.x, 100.0);
         assert_f32_eq(area.glyphs()[0].origin.y, 24.0);
-        assert_f32_eq(area.glyphs()[3].origin.x, 131.5);
+        assert_f32_eq(area.glyphs()[0].advance.x, 10.5);
+        assert_f32_eq(area.glyphs()[1].advance.x, 9.1);
+        assert_f32_eq(area.glyphs()[2].advance.x, 10.5);
+        assert_f32_eq(area.glyphs()[3].advance.x, 11.9);
+        assert_f32_eq(area.glyphs()[3].origin.x, 130.1);
         assert_f32_eq(area.glyphs()[3].origin.y, 24.0);
         assert!(
             area.glyphs()[3].origin.x + area.glyphs()[3].advance.x <= 142.0,
