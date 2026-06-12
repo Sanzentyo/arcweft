@@ -39,6 +39,7 @@ members = [
     "crates/arcweft-verify-z3",
     "crates/arcweft-cli",
 ]
+exclude = ["vendor/glyphon"]
 resolver = "3"
 
 [workspace.package]

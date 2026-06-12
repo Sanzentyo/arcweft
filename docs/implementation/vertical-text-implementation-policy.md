@@ -10,8 +10,8 @@ the concrete choices to follow when turning that package into production code.
 - Arcweft owns vertical text layout. glyphon remains the GPU text renderer and
   receives a pre-laid glyph stream.
 - Do not implement vertical writing by inserting newlines, rotating a whole
-  `TextArea`, or keeping a compatibility shim around the old rich-text flatten
-  path.
+  `TextArea`, or preserving an old rich-text flatten path through a transitional
+  compatibility layer.
 - Use a vendored glyphon fork at `vendor/glyphon` through `[patch.crates-io]`.
   The fork must keep existing `TextArea` behavior intact and add a sibling
   `GlyphArea` API for pre-laid glyphs.
@@ -83,6 +83,6 @@ the concrete choices to follow when turning that package into production code.
   requested.
 - Existing public rich-text syntax is reused; no alternate vertical-writing
   syntax is introduced.
-- Backward compatibility shims are not added for internal renderer/layout
+- Backward compatibility layers are not added for internal renderer/layout
   refactors. Replace the old internal model directly and fix call sites.
 - Layout correctness takes priority over short-term rendering shortcuts.

@@ -1,9 +1,9 @@
-use std::hint;
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
 use criterion::{criterion_group, criterion_main, Criterion};
 use glyphon::{
     Cache, ColorMode, Resolution, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
+use std::hint;
 use wgpu::{MultisampleState, TextureFormat};
 
 mod state;

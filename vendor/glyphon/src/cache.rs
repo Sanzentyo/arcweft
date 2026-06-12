@@ -94,6 +94,16 @@ impl Cache {
                     offset: mem::size_of::<u32>() as u64 * 6,
                     shader_location: 5,
                 },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: mem::size_of::<u32>() as u64 * 7,
+                    shader_location: 6,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: mem::size_of::<u32>() as u64 * 11,
+                    shader_location: 7,
+                },
             ],
         };
 

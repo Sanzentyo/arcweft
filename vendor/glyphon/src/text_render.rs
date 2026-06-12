@@ -1,8 +1,8 @@
 use crate::{
-    custom_glyph::CustomGlyphCacheKey, ColorMode, ContentType, FontSystem, GlyphDetails,
-    GlyphToRender, GpuCacheStatus, PrepareError, RasterizeCustomGlyphRequest,
-    RasterizedCustomGlyph, RenderError, State, SwashCache, SwashContent, TextArea, TextAtlas,
-    Viewport,
+    custom_glyph::CustomGlyphCacheKey, ColorMode, ContentType, FontSystem, GlyphArea, GlyphDetails,
+    GlyphSource, GlyphToRender, GlyphTransform, GpuCacheStatus, PrepareError,
+    RasterizeCustomGlyphRequest, RasterizedCustomGlyph, RenderError, State, SwashCache,
+    SwashContent, TextArea, TextAtlas, Viewport,
 };
 use cosmic_text::{Color, SubpixelBin};
 use std::slice;
@@ -197,6 +197,7 @@ impl TextRenderer {
                         color,
                         metadata: glyph.metadata,
                         cache_key,
+                        transform: GlyphTransform::Identity,
                     },
                     bounds,
                     |_system, rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
@@ -268,6 +269,7 @@ impl TextRenderer {
                             metadata: glyph.metadata,
                             cache_key: GlyphonCacheKey::Text(physical_glyph.cache_key),
                             scale_factor: text_area.scale,
+                            transform: GlyphTransform::Identity,
                         },
                         bounds,
                         |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
@@ -302,9 +304,124 @@ impl TextRenderer {
             }
         }
 
-        let will_render = !self.glyph_vertices.is_empty();
-        if !will_render {
-            return Ok(());
+        self.upload_vertices(device, queue);
+
+        Ok(())
+    }
+
+    /// Prepares all of the provided pre-laid glyph areas for rendering.
+    pub fn prepare_glyph_areas<'a>(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        font_system: &mut FontSystem,
+        atlas: &mut TextAtlas,
+        viewport: &Viewport,
+        glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
+        cache: &mut SwashCache,
+    ) -> Result<(), PrepareError> {
+        self.prepare_glyph_areas_with_depth(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            glyph_areas,
+            cache,
+            zero_depth,
+        )
+    }
+
+    /// Prepares all of the provided pre-laid glyph areas for rendering with depth metadata.
+    pub fn prepare_glyph_areas_with_depth<'a>(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        font_system: &mut FontSystem,
+        atlas: &mut TextAtlas,
+        viewport: &Viewport,
+        glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
+        cache: &mut SwashCache,
+        mut metadata_to_depth: impl FnMut(usize) -> f32,
+    ) -> Result<(), PrepareError> {
+        self.glyph_vertices.clear();
+
+        let state = State { device, queue };
+        let mut system = GlyphSystem {
+            atlas,
+            cache,
+            font_system,
+        };
+        let resolution = viewport.resolution();
+
+        for glyph_area in glyph_areas {
+            let bounds = GlyphBounds {
+                x: Bounds {
+                    min: glyph_area.bounds.left.max(0),
+                    max: glyph_area.bounds.right.min(resolution.width as i32),
+                },
+                y: Bounds {
+                    min: glyph_area.bounds.top.max(0),
+                    max: glyph_area.bounds.bottom.min(resolution.height as i32),
+                },
+            };
+
+            for glyph in glyph_area.glyphs {
+                let GlyphSource::Text { cache_key } = glyph.source else {
+                    continue;
+                };
+                let x = glyph_area.left + (glyph.origin.x * glyph_area.scale);
+                let y = glyph_area.top + (glyph.origin.y * glyph_area.scale);
+                let color = glyph.color.unwrap_or(glyph_area.default_color);
+
+                if let Some(glyph_to_render) = prepare_glyph(
+                    &state,
+                    &mut system,
+                    GlyphMetadata {
+                        x: x.round() as i32,
+                        y: y.round() as i32,
+                        line_y: 0.0,
+                        scale_factor: glyph_area.scale,
+                        color,
+                        metadata: glyph.metadata,
+                        cache_key: GlyphonCacheKey::Text(cache_key),
+                        transform: glyph.transform,
+                    },
+                    bounds,
+                    |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
+                        let image = system
+                            .cache
+                            .get_image_uncached(system.font_system, cache_key)?;
+
+                        let content_type = match image.content {
+                            SwashContent::Color => ContentType::Color,
+                            SwashContent::Mask | SwashContent::SubpixelMask => ContentType::Mask,
+                        };
+
+                        Some(GetGlyphImageResult {
+                            content_type,
+                            top: image.placement.top as i16,
+                            left: image.placement.left as i16,
+                            width: image.placement.width as u16,
+                            height: image.placement.height as u16,
+                            data: image.data,
+                        })
+                    },
+                    &mut metadata_to_depth,
+                    |_| None,
+                )? {
+                    self.glyph_vertices.push(glyph_to_render);
+                }
+            }
+        }
+
+        self.upload_vertices(device, queue);
+        Ok(())
+    }
+
+    fn upload_vertices(&mut self, device: &Device, queue: &Queue) {
+        if self.glyph_vertices.is_empty() {
+            return;
         }
 
         let vertices = self.glyph_vertices.as_slice();
@@ -330,8 +447,6 @@ impl TextRenderer {
             self.vertex_buffer = buffer;
             self.vertex_buffer_size = buffer_size;
         }
-
-        Ok(())
     }
 
     /// Renders all layouts that were previously provided to `prepare`.
@@ -415,6 +530,7 @@ struct GlyphMetadata {
     color: Color,
     metadata: usize,
     cache_key: GlyphonCacheKey,
+    transform: GlyphTransform,
 }
 
 #[derive(Clone, Copy)]
@@ -563,47 +679,63 @@ where
     let mut width = details.width as i32;
     let mut height = details.height as i32;
 
-    // Starts beyond right edge or ends beyond left edge
-    let max_x = x + width;
-    if x > bounds.x.max || max_x < bounds.x.min {
+    if metadata.transform == GlyphTransform::Identity {
+        // Starts beyond right edge or ends beyond left edge
+        let max_x = x + width;
+        if x > bounds.x.max || max_x < bounds.x.min {
+            return Ok(None);
+        }
+
+        // Starts beyond bottom edge or ends beyond top edge
+        let max_y = y + height;
+        if y > bounds.y.max || max_y < bounds.y.min {
+            return Ok(None);
+        }
+
+        // Clip left ege
+        if x < bounds.x.min {
+            let right_shift = bounds.x.min - x;
+
+            x = bounds.x.min;
+            width = max_x - bounds.x.min;
+            atlas_x += right_shift as u16;
+        }
+
+        // Clip right edge
+        if x + width > bounds.x.max {
+            width = bounds.x.max - x;
+        }
+
+        // Clip top edge
+        if y < bounds.y.min {
+            let bottom_shift = bounds.y.min - y;
+
+            y = bounds.y.min;
+            height = max_y - bounds.y.min;
+            atlas_y += bottom_shift as u16;
+        }
+
+        // Clip bottom edge
+        if y + height > bounds.y.max {
+            height = bounds.y.max - y;
+        }
+    } else if !transformed_quad_intersects_bounds(
+        x,
+        y,
+        width,
+        height,
+        metadata
+            .transform
+            .matrix_for_size(width as f32, height as f32),
+        bounds,
+    ) {
         return Ok(None);
-    }
-
-    // Starts beyond bottom edge or ends beyond top edge
-    let max_y = y + height;
-    if y > bounds.y.max || max_y < bounds.y.min {
-        return Ok(None);
-    }
-
-    // Clip left ege
-    if x < bounds.x.min {
-        let right_shift = bounds.x.min - x;
-
-        x = bounds.x.min;
-        width = max_x - bounds.x.min;
-        atlas_x += right_shift as u16;
-    }
-
-    // Clip right edge
-    if x + width > bounds.x.max {
-        width = bounds.x.max - x;
-    }
-
-    // Clip top edge
-    if y < bounds.y.min {
-        let bottom_shift = bounds.y.min - y;
-
-        y = bounds.y.min;
-        height = max_y - bounds.y.min;
-        atlas_y += bottom_shift as u16;
-    }
-
-    // Clip bottom edge
-    if y + height > bounds.y.max {
-        height = bounds.y.max - y;
     }
 
     let depth = metadata_to_depth(metadata.metadata);
+    let transform = metadata
+        .transform
+        .matrix_for_size(width as f32, height as f32);
 
     Ok(Some(GlyphToRender {
         pos: [x, y],
@@ -618,5 +750,56 @@ where
             } as u16,
         ],
         depth,
+        transform,
     }))
+}
+
+fn transformed_quad_intersects_bounds(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    transform: [f32; 6],
+    bounds: GlyphBounds,
+) -> bool {
+    let corners = [
+        transformed_corner(x, y, 0.0, 0.0, transform),
+        transformed_corner(x, y, width as f32, 0.0, transform),
+        transformed_corner(x, y, 0.0, height as f32, transform),
+        transformed_corner(x, y, width as f32, height as f32, transform),
+    ];
+    let min_x = corners
+        .iter()
+        .map(|point| point.0)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = corners
+        .iter()
+        .map(|point| point.0)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = corners
+        .iter()
+        .map(|point| point.1)
+        .fold(f32::INFINITY, f32::min);
+    let max_y = corners
+        .iter()
+        .map(|point| point.1)
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    min_x <= bounds.x.max as f32
+        && max_x >= bounds.x.min as f32
+        && min_y <= bounds.y.max as f32
+        && max_y >= bounds.y.min as f32
+}
+
+fn transformed_corner(
+    x: i32,
+    y: i32,
+    local_x: f32,
+    local_y: f32,
+    transform: [f32; 6],
+) -> (f32, f32) {
+    (
+        x as f32 + transform[0] * local_x + transform[1] * local_y + transform[4],
+        y as f32 + transform[2] * local_x + transform[3] * local_y + transform[5],
+    )
 }

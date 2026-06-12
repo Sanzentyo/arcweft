@@ -6,6 +6,8 @@ struct VertexInput {
     @location(3) color: u32,
     @location(4) content_type_with_srgb: u32,
     @location(5) depth: f32,
+    @location(6) transform0: vec4<f32>,
+    @location(7) transform1: vec2<f32>,
 }
 
 struct VertexOutput {
@@ -55,14 +57,18 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
     );
 
     let corner_offset = vec2<u32>(width, height) * corner_position;
+    let local = vec2<f32>(corner_offset);
+    let transformed_offset = vec2<f32>(
+        in_vert.transform0.x * local.x + in_vert.transform0.y * local.y + in_vert.transform1.x,
+        in_vert.transform0.z * local.x + in_vert.transform0.w * local.y + in_vert.transform1.y,
+    );
 
     uv = uv + corner_offset;
-    pos = pos + vec2<i32>(corner_offset);
 
     var vert_output: VertexOutput;
 
     vert_output.position = vec4<f32>(
-        2.0 * vec2<f32>(pos) / vec2<f32>(params.screen_resolution) - 1.0,
+        2.0 * (vec2<f32>(pos) + transformed_offset) / vec2<f32>(params.screen_resolution) - 1.0,
         in_vert.depth,
         1.0,
     );
