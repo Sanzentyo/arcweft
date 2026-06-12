@@ -1,0 +1,20 @@
+pub surface character @character.alice Alice as alice {
+    default_voice = auto
+    dialogue_style {
+        font = "MS Mincho"
+        text_color = "#d9f2ff"
+        text_size = 30
+    }
+}
+
+entry game {
+    start @flow.vertical_jlreq_preset_loose_golden
+}
+
+flow @flow.vertical_jlreq_preset_loose_golden vertical_jlreq_preset_loose_golden {
+    alice.say(id=@say.vertical_jlreq_preset_loose_golden.001, voice=auto)[
+        [.vertical_rl jlreq=loose][font "MS Mincho"]天地春夏秋冬月火……人[/font][/][p]
+    ]
+
+    return "vertical_jlreq_preset_loose_golden"
+}

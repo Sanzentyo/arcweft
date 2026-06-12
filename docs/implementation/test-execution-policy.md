@@ -115,11 +115,11 @@ coarse command-level wall-clock profiling. If individual-test timing becomes
 necessary, add `cargo-nextest` as a local developer tool before reshaping the
 test suite around per-test measurements.
 
-The direct native capture group failure was
-`agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden` with
-`mse=0.0003445231568253663` where the checked-in exact-image assertion expected
-zero. That test remains useful as an explicit visual-regression check, but it is
-not reliable enough for the default local or CI fast path.
+The direct native capture group failure was the checked-in native visual golden
+comparison with `mse=0.0003445231568253663` where the exact-image assertion
+expected zero. That Tier 2 suite remains useful as an explicit
+visual-regression check, but it is not reliable enough for the default local or
+CI fast path.
 
 Representative exact tests:
 
@@ -203,13 +203,13 @@ test or prefix for the behavior being changed.
 
 Tier 2 is opt-in validation for changes that touch Agent MCP protocol semantics,
 resource URI handling, subprocess stdio behavior, capture resource lifetime,
-exact visual golden output, or before a milestone handoff that explicitly needs
-full end-to-end evidence:
+bounded visual golden output, or before a milestone handoff that explicitly
+needs full end-to-end evidence:
 
 ```bash
 cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
 cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
-cargo test -p arcweft-cli --test check agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden -- --ignored --nocapture
+cargo test -p arcweft-cli --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
 ```
 
 The equivalent Justfile targets are:

@@ -199,10 +199,12 @@ the concrete choices to follow when turning that package into production code.
   `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
   observable in Agent output.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
-  golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
-  fresh native capture against it with `imq` when both Windows fonts and the
-  `imq` binary are available. The normal CLI test path also validates the
-  checked-in fixture structure and PNG dimensions without requiring font- or
+  golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
+  JLREQ preset PNG goldens for the repeated-leader column-planning fixture. The
+  CLI test compares fresh native captures against those PNGs with bounded `imq`
+  MSE/MAE drift when both Windows fonts and the `imq` binary are available. The
+  normal CLI test path also validates the checked-in fixture structure, PNG
+  dimensions, and loose vs normal preset image distinctness without requiring
   renderer-exact pixel parity, so broken visual fixtures are caught before the
   Tier2 `imq` job is run.
   The expanded JLREQ pair profile is also exercised through native Agent
@@ -225,9 +227,9 @@ the concrete choices to follow when turning that package into production code.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,
-  especially adding more published JLREQ paragraph examples, preset-specific
-  visual goldens, and edge-case fixtures beyond the current paragraph and
-  punctuation-pair native Agent coverage.
+  especially adding more published JLREQ paragraph examples and edge-case
+  fixtures beyond the current visual-golden, paragraph, and punctuation-pair
+  native Agent coverage.
 
 ## Explicit Defaults
 

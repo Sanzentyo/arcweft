@@ -55,7 +55,7 @@ test-slow-mcp:
     @cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
 
 test-visual-golden:
-    @cargo test -p arcweft-cli --test check agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden -- --ignored --nocapture
+    @cargo test -p arcweft-cli --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
 
 test-slow-agent-observe:
     @cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture

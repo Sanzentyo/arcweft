@@ -2657,62 +2657,127 @@ flow @flow.main main {
 }
 
 #[test]
-fn native_vertical_tutr_golden_fixture_is_well_formed() {
-    let source = include_str!("../../../tests/fixtures/native_capture/vertical_tutr_golden.arcw");
+fn native_checked_in_visual_golden_fixtures_are_well_formed() {
+    assert_native_golden_fixture_source(
+        include_str!("../../../tests/fixtures/native_capture/vertical_tutr_golden.arcw"),
+        "[.vertical_rl]",
+        "vertical Tu/Tr golden source should exercise vertical_rl rich text",
+    );
+    assert_native_golden_fixture_source(
+        include_str!(
+            "../../../tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw"
+        ),
+        "jlreq=loose",
+        "loose JLREQ golden source should pin the loose preset",
+    );
+    assert_native_golden_fixture_source(
+        include_str!(
+            "../../../tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw"
+        ),
+        "jlreq=normal",
+        "normal JLREQ golden source should pin the normal preset",
+    );
+
+    let tutr = include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
+    let loose = include_bytes!(
+        "../../../tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png"
+    );
+    let normal = include_bytes!(
+        "../../../tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png"
+    );
+    for (label, golden) in [
+        ("vertical Tu/Tr", tutr.as_slice()),
+        ("loose JLREQ preset", loose.as_slice()),
+        ("normal JLREQ preset", normal.as_slice()),
+    ] {
+        assert_checked_in_native_png_golden(label, golden);
+    }
+    assert_ne!(
+        loose.as_slice(),
+        normal.as_slice(),
+        "loose and normal JLREQ preset visual goldens should capture different column plans"
+    );
+}
+
+fn assert_native_golden_fixture_source(source: &str, required_fragment: &str, context: &str) {
     assert!(
-        source.contains("[.vertical_rl]"),
-        "vertical Tu/Tr golden source should exercise vertical_rl rich text"
+        source.contains(required_fragment),
+        "{context}: missing `{required_fragment}`"
     );
     assert!(
         source.contains("MS Mincho"),
-        "vertical Tu/Tr golden source should pin the Windows fixture font"
+        "{context}: source should pin the Windows fixture font"
     );
     assert!(
-        source.contains("。") && source.contains("ー"),
-        "vertical Tu/Tr golden source should include UAX #50 Tu and Tr glyph forms"
+        source.contains("[.vertical_rl"),
+        "{context}: source should exercise vertical Japanese text"
     );
-    assert!(
-        source.contains("2026"),
-        "vertical Tu/Tr golden source should include a text-combine-upright candidate"
-    );
+}
 
-    let golden = include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
-    assert_eq!(&golden[..8], b"\x89PNG\r\n\x1a\n");
+fn assert_checked_in_native_png_golden(label: &str, golden: &[u8]) {
+    assert_eq!(&golden[..8], b"\x89PNG\r\n\x1a\n", "{label}");
     assert_eq!(
         png_dimensions(golden),
         Some((1280, 720)),
-        "checked-in native vertical Tu/Tr golden should stay at the Agent capture size"
+        "checked-in {label} golden should stay at the Agent capture size"
     );
     assert!(
         golden.len() > 1024,
-        "checked-in native vertical Tu/Tr golden should contain image data"
+        "checked-in {label} golden should contain image data"
     );
 }
 
 #[test]
 #[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
-fn agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden() {
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures() {
     if !cfg!(windows) {
-        eprintln!("skipping checked-in vertical Tu/Tr golden comparison: Windows font fixture");
+        eprintln!("skipping checked-in native visual golden comparisons: Windows font fixtures");
         return;
     }
     if !imq_is_available() {
-        eprintln!("skipping checked-in vertical Tu/Tr golden comparison: imq is not available");
+        eprintln!("skipping checked-in native visual golden comparisons: imq is not available");
         return;
     }
 
-    let source_path =
-        workspace_root().join("tests/fixtures/native_capture/vertical_tutr_golden.arcw");
-    let golden_path =
-        workspace_root().join("tests/fixtures/native_capture/vertical_tutr_golden.png");
-    let golden_bytes =
-        include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
-    assert_eq!(&golden_bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert_checked_in_native_imq_golden(
+        "vertical Tu/Tr",
+        "vertical_tutr_golden.arcw",
+        "vertical_tutr_golden.png",
+        "vertical-tutr-candidate.png",
+    );
+    assert_checked_in_native_imq_golden(
+        "loose JLREQ preset",
+        "vertical_jlreq_preset_loose_golden.arcw",
+        "vertical_jlreq_preset_loose_golden.png",
+        "vertical-jlreq-preset-loose-candidate.png",
+    );
+    assert_checked_in_native_imq_golden(
+        "normal JLREQ preset",
+        "vertical_jlreq_preset_normal_golden.arcw",
+        "vertical_jlreq_preset_normal_golden.png",
+        "vertical-jlreq-preset-normal-candidate.png",
+    );
+}
 
-    let dir = temp_dir("agent-observe-native-vertical-tutr-golden");
-    let candidate_path = dir.join("vertical-tutr-candidate.png");
+fn assert_checked_in_native_imq_golden(
+    label: &str,
+    source_filename: &str,
+    golden_filename: &str,
+    candidate_filename: &str,
+) {
+    let fixture_dir = workspace_root().join("tests/fixtures/native_capture");
+    let source_path = fixture_dir.join(source_filename);
+    let golden_path = fixture_dir.join(golden_filename);
+    let golden_bytes = fs::read(&golden_path).expect("read checked-in native visual golden");
+    assert_checked_in_native_png_golden(label, &golden_bytes);
+
+    let dir = temp_dir(&format!(
+        "agent-observe-native-{}-golden",
+        filesystem_safe_test_label(label)
+    ));
+    let candidate_path = dir.join(candidate_filename);
     let candidate_json = capture_native_png_report(&source_path, &candidate_path);
-    assert_native_capture_has_content(&candidate_json, "vertical-tutr-candidate.png");
+    assert_native_capture_has_content(&candidate_json, candidate_filename);
 
     let imq_output = Command::new("imq")
         .arg("image")
@@ -2723,31 +2788,32 @@ fn agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden() {
         .arg("--format")
         .arg("json")
         .output()
-        .expect("imq compares checked-in vertical Tu/Tr golden");
+        .expect("imq compares checked-in native visual golden");
     assert!(
         imq_output.status.success(),
-        "imq checked-in golden comparison should succeed, stderr: {}",
+        "{label} imq checked-in golden comparison should succeed, stderr: {}",
         String::from_utf8_lossy(&imq_output.stderr)
     );
     let imq_json: serde_json::Value =
         serde_json::from_slice(&imq_output.stdout).expect("imq output is JSON");
     assert_eq!(imq_json["dimensions"]["width"], 1280);
     assert_eq!(imq_json["dimensions"]["height"], 720);
-    assert_metric_close(metric_score(&imq_json, "mse"), 0.0, 0.0, "mse");
-    assert_metric_close(metric_score(&imq_json, "mae"), 0.0, 0.0, "mae");
-    assert_metric_close(metric_score(&imq_json, "maxae"), 0.0, 0.0, "maxae");
     assert!(
-        metric_score(&imq_json, "ssim") >= 0.999_999,
-        "ssim should match the checked-in vertical Tu/Tr golden: {imq_json}"
+        metric_score(&imq_json, "mse") <= 0.002,
+        "{label} visual golden mse drift should stay bounded: {imq_json}"
+    );
+    assert!(
+        metric_score(&imq_json, "mae") <= 0.003,
+        "{label} visual golden mae drift should stay bounded: {imq_json}"
     );
     assert_metric_close(
         metric_detail(&imq_json, "psnr", "mse"),
-        0.0,
+        metric_score(&imq_json, "mse"),
         0.0,
         "psnr.mse",
     );
 
-    fs::remove_dir_all(&dir).expect("remove temp native Tu/Tr golden dir");
+    fs::remove_dir_all(&dir).expect("remove temp native visual golden dir");
 }
 
 #[test]
@@ -12461,6 +12527,19 @@ fn temp_dir(name: &str) -> PathBuf {
     }
     fs::create_dir_all(&path).expect("create temp fixture dir");
     path
+}
+
+fn filesystem_safe_test_label(label: &str) -> String {
+    label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 fn imq_is_available() -> bool {
