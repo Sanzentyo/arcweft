@@ -103,11 +103,22 @@ fn char_class(ch: char) -> Option<JlreqPunctuationClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jlreq_punctuation_data::JLREQ_PUNCTUATION_DATA_VERSION;
+    use crate::jlreq_punctuation_data::{JLREQ_PUNCTUATION_DATA_VERSION, JlreqPunctuationRange};
+
+    const JLREQ_PUNCTUATION_SOURCE: &str = include_str!("../data/jlreq_punctuation_ranges.txt");
 
     #[test]
-    fn records_seed_data_version() {
-        assert_eq!(JLREQ_PUNCTUATION_DATA_VERSION, "arcweft-seed-2026-06-12");
+    fn records_generated_data_version() {
+        assert_eq!(
+            JLREQ_PUNCTUATION_DATA_VERSION,
+            "arcweft-jlreq-punctuation-2026-06-12"
+        );
+    }
+
+    #[test]
+    fn generated_range_table_matches_source_data() {
+        let expected = parse_source_ranges();
+        assert_eq!(JLREQ_PUNCTUATION_RANGES, expected.as_slice());
     }
 
     #[test]
@@ -136,7 +147,13 @@ mod tests {
         assert!(is_line_head_prohibited_cluster("ぁ"));
         assert!(is_line_head_prohibited_cluster("ー"));
         assert!(is_line_head_prohibited_cluster("・"));
+        assert!(is_line_head_prohibited_cluster("？"));
+        assert!(is_line_head_prohibited_cluster("｡"));
+        assert!(is_line_head_prohibited_cluster("ｧ"));
+        assert!(is_line_head_prohibited_cluster("ｰ"));
         assert!(is_line_end_prohibited_cluster("「"));
+        assert!(is_line_end_prohibited_cluster("｢"));
+        assert!(is_line_end_prohibited_cluster("︵"));
         assert!(!is_line_head_prohibited_cluster("「"));
         assert!(!is_line_end_prohibited_cluster("。"));
     }
@@ -157,5 +174,85 @@ mod tests {
         assert!(pair_adjustment_for_clusters("…", "…").keep_together);
         assert!(!pair_adjustment_for_clusters("。", "人").keep_together);
         assert!(!pair_adjustment_for_clusters("ー", "人").keep_together);
+    }
+
+    fn parse_source_ranges() -> Vec<JlreqPunctuationRange> {
+        let mut ranges = JLREQ_PUNCTUATION_SOURCE
+            .lines()
+            .enumerate()
+            .filter_map(|(line_index, line)| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    return None;
+                }
+                Some(parse_source_line(line_index + 1, line))
+            })
+            .collect::<Vec<_>>();
+        ranges.sort_by_key(|range| (range.start, range.end));
+        normalize_source_ranges(ranges)
+    }
+
+    fn parse_source_line(line_number: usize, line: &str) -> JlreqPunctuationRange {
+        let mut parts = line.splitn(3, ';').map(str::trim);
+        let class = parts
+            .next()
+            .and_then(parse_source_class)
+            .unwrap_or_else(|| panic!("line {line_number}: invalid class"));
+        let range = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {line_number}: missing range"));
+        let (start, end) = parse_source_codepoint_range(range);
+        assert!(
+            parts.next().is_some_and(|notes| !notes.is_empty()),
+            "line {line_number}: missing notes"
+        );
+        JlreqPunctuationRange { start, end, class }
+    }
+
+    fn parse_source_class(class: &str) -> Option<JlreqPunctuationClass> {
+        match class {
+            "Closing" => Some(JlreqPunctuationClass::Closing),
+            "Opening" => Some(JlreqPunctuationClass::Opening),
+            "SmallKana" => Some(JlreqPunctuationClass::SmallKana),
+            "Dash" => Some(JlreqPunctuationClass::Dash),
+            "Leader" => Some(JlreqPunctuationClass::Leader),
+            "MiddleDot" => Some(JlreqPunctuationClass::MiddleDot),
+            "RepeatMark" => Some(JlreqPunctuationClass::RepeatMark),
+            _ => None,
+        }
+    }
+
+    fn parse_source_codepoint_range(range: &str) -> (u32, u32) {
+        if let Some((start, end)) = range.split_once("..") {
+            let start = parse_source_hex(start);
+            let end = parse_source_hex(end);
+            assert!(start <= end, "invalid range {range}");
+            (start, end)
+        } else {
+            let value = parse_source_hex(range);
+            (value, value)
+        }
+    }
+
+    fn parse_source_hex(value: &str) -> u32 {
+        u32::from_str_radix(value, 16).unwrap_or_else(|_| panic!("invalid hex value {value}"))
+    }
+
+    fn normalize_source_ranges(ranges: Vec<JlreqPunctuationRange>) -> Vec<JlreqPunctuationRange> {
+        let mut normalized: Vec<JlreqPunctuationRange> = Vec::new();
+        for range in ranges {
+            if let Some(previous) = normalized.last_mut() {
+                assert!(
+                    range.start > previous.end,
+                    "source ranges overlap: {previous:?} and {range:?}"
+                );
+                if previous.class == range.class && previous.end.saturating_add(1) == range.start {
+                    previous.end = range.end;
+                    continue;
+                }
+            }
+            normalized.push(range);
+        }
+        normalized
     }
 }

@@ -23,6 +23,14 @@ test-visual-golden:
 
 test-tier2: test-slow-mcp test-visual-golden
 
+generate-jlreq-punctuation:
+    @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe
+    @.\target\generate_jlreq_punctuation_data.exe --apply
+
+check-jlreq-punctuation:
+    @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe
+    @.\target\generate_jlreq_punctuation_data.exe --check
+
 regression:
     @cargo test -p arcweft-cli --test regression_harness
 
