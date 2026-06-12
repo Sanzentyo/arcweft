@@ -85,15 +85,15 @@ the concrete choices to follow when turning that package into production code.
 - `arcweft-glyphon` converts `LaidOutText` into glyphon `GlyphArea` input. It
   owns renderer-coordinate adjustments such as glyph origin offsets; Sans I/O
   layout coordinates stay cell/bounds oriented.
-- The native headless full-frame capture path renders body text through
-  `GlyphArea` and keeps ruby overlays on `TextArea` until ruby shaping is moved
-  into the same geometry stream.
+- The native window path and native headless full-frame capture path render body
+  text through `GlyphArea` when a display-map layout source is available. Ruby
+  overlays remain on `TextArea` until ruby shaping is moved into the same
+  geometry stream.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
-- Remaining work includes native window rendering through `GlyphArea`,
-  multi-glyph `TextCombineUpright`, real Unicode segmentation/orientation,
-  vertical shaping policy, ruby collision/layout feedback, and `imq` regression
-  comparison fixtures.
+- Remaining work includes multi-glyph `TextCombineUpright`, real Unicode
+  segmentation/orientation, vertical shaping policy, ruby collision/layout
+  feedback, and `imq` regression comparison fixtures.
 
 ## Explicit Defaults
 

@@ -1266,15 +1266,17 @@ fn run_pages_window(title: &str, pages: Vec<WindowPage>) -> Result<(), NativeWin
         .map_err(|error| NativeWindowError::EventLoop(error.to_string()))
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct WindowPage {
     rich_text: WindowRichText,
+    layout_frame: Option<LineDisplayFrame>,
 }
 
 impl WindowPage {
     fn plain(text: &str) -> Self {
         Self {
             rich_text: WindowRichText::plain(text),
+            layout_frame: None,
         }
     }
 
@@ -1344,7 +1346,10 @@ impl WindowPageBuilder {
         )
         .finish();
         if !current.is_empty() {
-            self.pages.push(WindowPage { rich_text: current });
+            self.pages.push(WindowPage {
+                rich_text: current,
+                layout_frame: None,
+            });
         }
     }
 
@@ -1443,6 +1448,9 @@ fn page_from_display_map_range(
             spans,
             ruby_annotations,
         },
+        layout_frame: page_local_layout_frame(frame, page_range)
+            .ok()
+            .map(|(frame, _, _)| frame),
     })
 }
 
@@ -2036,6 +2044,8 @@ struct WindowState {
     text_buffer: Buffer,
     ruby_buffers: Vec<WindowRubyBuffer>,
     rich_text: WindowRichText,
+    layout_frame: Option<LineDisplayFrame>,
+    layout: Option<LaidOutText>,
     window: Arc<dyn Window>,
 }
 
@@ -2049,7 +2059,7 @@ impl WindowState {
     async fn new(
         window: Arc<dyn Window>,
         _event_loop: &dyn ActiveEventLoop,
-        rich_text: &WindowRichText,
+        page: &WindowPage,
     ) -> Self {
         let physical_size = window.surface_size();
         let instance = Instance::default();
@@ -2098,40 +2108,59 @@ impl WindowState {
             text_renderer,
             text_buffer,
             ruby_buffers: Vec::new(),
-            rich_text: rich_text.clone(),
+            rich_text: page.rich_text.clone(),
+            layout_frame: page.layout_frame.clone(),
+            layout: None,
             window,
         };
-        state.set_rich_text(rich_text);
+        state.set_page(page);
         state
     }
 
-    fn set_rich_text(&mut self, rich_text: &WindowRichText) {
-        self.rich_text = rich_text.clone();
+    fn set_page(&mut self, page: &WindowPage) {
+        self.rich_text = page.rich_text.clone();
+        self.layout_frame.clone_from(&page.layout_frame);
+        self.prepare_rich_text();
+        self.window.request_redraw();
+    }
+
+    fn prepare_rich_text(&mut self) {
         prepare_window_text_buffers(
             &mut self.font_system,
             &mut self.text_buffer,
-            rich_text,
+            &self.rich_text,
             self.surface_config.width,
             self.surface_config.height,
         );
+        self.layout = self.layout_frame.as_ref().and_then(|frame| {
+            layout_frame(
+                frame,
+                native_text_layout_config(
+                    self.surface_config.width,
+                    self.surface_config.height,
+                    NATIVE_TEXT_LEFT,
+                    NATIVE_TEXT_TOP,
+                ),
+            )
+            .ok()
+        });
         self.ruby_buffers = build_ruby_buffers(
             &mut self.font_system,
             &self.text_buffer,
-            rich_text,
-            None,
+            &self.rich_text,
+            self.layout.as_ref(),
             self.surface_config.width,
             self.surface_config.height,
             NativeTextOrigin::default(),
         );
-        self.window.request_redraw();
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
         self.surface_config.width = size.width.max(1);
         self.surface_config.height = size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
-        let rich_text = self.rich_text.clone();
-        self.set_rich_text(&rich_text);
+        self.prepare_rich_text();
+        self.window.request_redraw();
     }
 }
 
@@ -2323,13 +2352,13 @@ impl Application {
         &self.pages[self.page_index]
     }
 
-    fn advance_page(&mut self) -> Option<WindowRichText> {
+    fn advance_page(&mut self) -> Option<WindowPage> {
         let next_index = self.page_index + 1;
         if next_index >= self.pages.len() {
             return None;
         }
         self.page_index = next_index;
-        Some(self.current_page().rich_text.clone())
+        Some(self.current_page().clone())
     }
 }
 
@@ -2349,7 +2378,7 @@ impl ApplicationHandler for Application {
         self.window_state = Some(pollster::block_on(WindowState::new(
             window,
             event_loop,
-            &self.current_page().rich_text,
+            self.current_page(),
         )));
     }
 
@@ -2370,12 +2399,12 @@ impl ApplicationHandler for Application {
                 return;
             }
             if key_advances_page(event) {
-                let Some(rich_text) = self.advance_page() else {
+                let Some(page) = self.advance_page() else {
                     event_loop.exit();
                     return;
                 };
                 if let Some(state) = self.window_state.as_mut() {
-                    state.set_rich_text(&rich_text);
+                    state.set_page(&page);
                 }
                 return;
             }
@@ -2921,33 +2950,7 @@ fn fill_native_rect(
 }
 
 fn redraw(state: &mut WindowState) {
-    state.viewport.update(
-        &state.queue,
-        Resolution {
-            width: state.surface_config.width,
-            height: state.surface_config.height,
-        },
-    );
-    let text_areas = window_text_areas(
-        &state.text_buffer,
-        &state.ruby_buffers,
-        state.surface_config.width,
-        state.surface_config.height,
-        NativeTextOrigin::default(),
-    );
-    if state
-        .text_renderer
-        .prepare(
-            &state.device,
-            &state.queue,
-            &mut state.font_system,
-            &mut state.atlas,
-            &state.viewport,
-            text_areas,
-            &mut state.swash_cache,
-        )
-        .is_err()
-    {
+    if prepare_window_text_renderer(state).is_err() {
         return;
     }
     let frame = match state.surface.get_current_texture() {
@@ -2997,6 +3000,70 @@ fn redraw(state: &mut WindowState) {
     state.atlas.trim();
 }
 
+fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
+    state.viewport.update(
+        &state.queue,
+        Resolution {
+            width: state.surface_config.width,
+            height: state.surface_config.height,
+        },
+    );
+    if let Some(layout) = state.layout.as_ref() {
+        let cache_keys = text_buffer_cache_keys(&state.text_buffer, &state.rich_text);
+        let bounds = native_text_bounds(state.surface_config.width, state.surface_config.height);
+        let Ok(glyph_area) = glyph_area_from_layout(
+            layout,
+            GlyphonAreaOptions {
+                bounds,
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                skip_missing_glyphs: true,
+                ..GlyphonAreaOptions::default()
+            },
+            |_index, glyph| cache_key_for_layout_glyph(glyph.range, &cache_keys),
+        ) else {
+            return Err(());
+        };
+        let ruby_areas = ruby_text_areas(
+            &state.ruby_buffers,
+            state.surface_config.width,
+            state.surface_config.height,
+        );
+        state
+            .text_renderer
+            .prepare_text_and_glyph_areas(
+                &state.device,
+                &state.queue,
+                &mut state.font_system,
+                &mut state.atlas,
+                &state.viewport,
+                ruby_areas,
+                [glyph_area.as_glyph_area()],
+                &mut state.swash_cache,
+            )
+            .map_err(|_| ())
+    } else {
+        let text_areas = window_text_areas(
+            &state.text_buffer,
+            &state.ruby_buffers,
+            state.surface_config.width,
+            state.surface_config.height,
+            NativeTextOrigin::default(),
+        );
+        state
+            .text_renderer
+            .prepare(
+                &state.device,
+                &state.queue,
+                &mut state.font_system,
+                &mut state.atlas,
+                &state.viewport,
+                text_areas,
+                &mut state.swash_cache,
+            )
+            .map_err(|_| ())
+    }
+}
+
 fn surface_extent_f32(value: u32) -> f32 {
     f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
@@ -3013,7 +3080,9 @@ fn usize_to_f32_saturating(value: usize) -> f32 {
 mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
-    use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RuntimeLineContext};
+    use arcweft_render_text::{
+        LineDisplaySpec, RichTextDocument, RichTextLayout, RichTextWritingMode, RuntimeLineContext,
+    };
 
     #[test]
     fn window_rich_text_uses_display_map_for_style_spans_and_ruby_hint() {
@@ -3056,6 +3125,10 @@ mod tests {
         frame.nodes.clear();
 
         let pages = WindowPage::from_frame(&frame);
+        assert!(
+            pages[0].layout_frame.is_some(),
+            "display-map pages retain page-local layout source for window GlyphArea rendering"
+        );
         let rich_text = &pages[0].rich_text;
 
         assert_eq!(rich_text.text, "Hello 夢");
@@ -3113,6 +3186,58 @@ mod tests {
             (measured.0 - estimated.0).abs() > 0.5 || (measured.2 - estimated.2).abs() > 0.5,
             "ruby overlay geometry should come from shaped glyph metrics"
         );
+    }
+
+    #[test]
+    fn window_pages_keep_vertical_layout_source_for_glyph_area_rendering() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.window".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "縦書き".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("page exists");
+        let layout_frame = page
+            .layout_frame
+            .as_ref()
+            .expect("page keeps layout source");
+        let layout = layout_frame
+            .display_map
+            .text_runs
+            .iter()
+            .find_map(|run| run.presentation.layout.as_ref())
+            .expect("layout presentation is preserved");
+
+        assert_eq!(page.rich_text.text, "縦書き");
+        assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
     }
 
     #[test]
