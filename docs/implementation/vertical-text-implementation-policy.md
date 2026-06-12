@@ -171,7 +171,8 @@ the concrete choices to follow when turning that package into production code.
   ruby annotations split into multiple `LaidOutRuby` segments with the same
   source ruby index; native rendering emits one ruby glyph area per segment and
   Agent/native element geometry unions the segments back to the authored ruby
-  object.
+  object while also exposing viewport-space base and annotation bboxes on the
+  ruby ref for debugging.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path. Native
   offscreen debug and isolated-color captures use the same GlyphArea path as
@@ -193,7 +194,10 @@ the concrete choices to follow when turning that package into production code.
   color/object-id/mask capture refs; the full-grammar sample test follows a
   vertical cluster mask URI and asserts the raw capture contains rendered
   pixels. Focused native Agent coverage checks sideways, upright-alternate,
-  rotated-alternate, and text-combine-upright cluster metadata.
+  rotated-alternate, and text-combine-upright cluster metadata. It also checks
+  adjacent `vertical_rl` and `vertical_lr` ruby annotations through separate
+  `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
+  observable in Agent output.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
   fresh native capture against it with `imq` when both Windows fonts and the

@@ -137,12 +137,20 @@ pub struct NativeGlyphClusterMetadata {
     pub vertical_form: NativeGlyphVerticalForm,
 }
 
+/// Native ruby geometry before it is unioned into an object crop bbox.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeRubyElementGeometry {
+    pub base_bbox: NativeFrameContentBBox,
+    pub annotation_bbox: NativeFrameContentBBox,
+}
+
 /// Pixel-space bounds for one native rich-text element.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeFrameElementBounds {
     pub element: NativeFrameElement,
     pub bbox: NativeFrameContentBBox,
     pub glyph: Option<NativeGlyphClusterMetadata>,
+    pub ruby: Option<NativeRubyElementGeometry>,
 }
 
 /// Debug-image region rendered by the native adapter for Agent capture tools.
@@ -1036,6 +1044,7 @@ fn native_element_bounds_from_layout(
                 element: NativeFrameElement::TextRun { index },
                 bbox: native_bbox_from_layout_rect(run.bounds, width, height)?,
                 glyph: None,
+                ruby: None,
             })
         })
         .collect::<Vec<_>>();
@@ -1059,6 +1068,7 @@ fn native_element_bounds_from_layout(
                         orientation: glyph.orientation.into(),
                         vertical_form: glyph.vertical_form.into(),
                     }),
+                    ruby: None,
                 })
             }),
     );
@@ -1068,31 +1078,64 @@ fn native_element_bounds_from_layout(
         .iter()
         .filter_map(|ruby| {
             let index = *page_layout.ruby_indices.get(ruby.ruby_index)?;
-            Some((index, ruby.base_bounds.union(ruby.ruby_bounds)))
+            Some((
+                index,
+                NativeRubyLayoutGeometry {
+                    object: ruby.base_bounds.union(ruby.ruby_bounds),
+                    base: ruby.base_bounds,
+                    annotation: ruby.ruby_bounds,
+                },
+            ))
         })
         .fold(
-            BTreeMap::<usize, LayoutRect>::new(),
-            |mut bounds, (index, rect)| {
+            BTreeMap::<usize, NativeRubyLayoutGeometry>::new(),
+            |mut bounds, (index, geometry)| {
                 bounds
                     .entry(index)
-                    .and_modify(|existing| *existing = existing.union(rect))
-                    .or_insert(rect);
+                    .and_modify(|existing| *existing = existing.union(geometry))
+                    .or_insert(geometry);
                 bounds
             },
         );
     bounds.extend(
         ruby_bounds_by_index
             .into_iter()
-            .filter_map(|(index, bounds)| {
-                let bounds = inflate_layout_rect_asymmetric(bounds, 16.0, 16.0, 16.0, 16.0);
+            .filter_map(|(index, geometry)| {
+                let bounds =
+                    inflate_layout_rect_asymmetric(geometry.object, 16.0, 16.0, 16.0, 16.0);
                 Some(NativeFrameElementBounds {
                     element: NativeFrameElement::Ruby { index },
                     bbox: native_bbox_from_layout_rect(bounds, width, height)?,
                     glyph: None,
+                    ruby: Some(NativeRubyElementGeometry {
+                        base_bbox: native_bbox_from_layout_rect(geometry.base, width, height)?,
+                        annotation_bbox: native_bbox_from_layout_rect(
+                            geometry.annotation,
+                            width,
+                            height,
+                        )?,
+                    }),
                 })
             }),
     );
     bounds
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NativeRubyLayoutGeometry {
+    object: LayoutRect,
+    base: LayoutRect,
+    annotation: LayoutRect,
+}
+
+impl NativeRubyLayoutGeometry {
+    fn union(self, other: Self) -> Self {
+        Self {
+            object: self.object.union(other.object),
+            base: self.base.union(other.base),
+            annotation: self.annotation.union(other.annotation),
+        }
+    }
 }
 
 fn native_text_layout_config(width: u32, height: u32, left: f32, top: f32) -> TextLayoutConfig {

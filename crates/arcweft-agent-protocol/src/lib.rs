@@ -412,6 +412,10 @@ pub struct AgentRichTextElementRef {
     pub orientation: Option<AgentGlyphOrientation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vertical_form: Option<AgentGlyphVerticalForm>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ruby_base_bbox: Option<AgentBBox>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ruby_annotation_bbox: Option<AgentBBox>,
 }
 
 /// Rich-text display-map element kind observed as a debuggable object.
@@ -800,6 +804,8 @@ mod tests {
                     ruby: None,
                     orientation: None,
                     vertical_form: None,
+                    ruby_base_bbox: None,
+                    ruby_annotation_bbox: None,
                 }),
                 rich_text: test_line_display_frame(),
             }],

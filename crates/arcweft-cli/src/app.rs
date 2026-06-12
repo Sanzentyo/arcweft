@@ -4171,14 +4171,9 @@ fn agent_native_rich_text_element_bboxes(
             bboxes
                 .entry(bounds.element)
                 .or_insert(AgentNativeRichTextElementBounds {
-                    bbox: AgentBBox {
-                        space: AgentCoordinateSpace::Viewport,
-                        x: bounds.bbox.x,
-                        y: bounds.bbox.y,
-                        width: bounds.bbox.width,
-                        height: bounds.bbox.height,
-                    },
+                    bbox: agent_bbox_from_native(bounds.bbox),
                     glyph: bounds.glyph,
+                    ruby: bounds.ruby.map(agent_ruby_geometry_from_native),
                 });
         }
     }
@@ -4189,6 +4184,13 @@ fn agent_native_rich_text_element_bboxes(
 struct AgentNativeRichTextElementBounds {
     bbox: AgentBBox,
     glyph: Option<arcweft_player_native::native::NativeGlyphClusterMetadata>,
+    ruby: Option<AgentRubyElementGeometry>,
+}
+
+#[derive(Clone, Debug)]
+struct AgentRubyElementGeometry {
+    base_bbox: AgentBBox,
+    annotation_bbox: AgentBBox,
 }
 
 fn agent_rich_text_run_object(
@@ -4232,6 +4234,8 @@ fn agent_rich_text_run_object(
                 ruby: None,
                 orientation: None,
                 vertical_form: None,
+                ruby_base_bbox: None,
+                ruby_annotation_bbox: None,
             },
             page,
         },
@@ -4253,7 +4257,7 @@ fn agent_rich_text_ruby_object(
     let base_text = textbox.rich_text.text.get(base_range)?;
     let bbox = native_bounds
         .get(&arcweft_player_native::native::NativeFrameElement::Ruby { index: ruby_index })
-        .map(|bounds| bounds.bbox.clone())?;
+        .cloned()?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
     Some(agent_rich_text_child_object(
@@ -4263,7 +4267,7 @@ fn agent_rich_text_ruby_object(
             object_id: &object_id,
             role: "rich_text_ruby",
             text: format!("{base_text} ({})", ruby.ruby),
-            bbox: &bbox,
+            bbox: &bbox.bbox,
             rich_text_ref: AgentRichTextElementRef {
                 kind: AgentRichTextElementKind::Ruby,
                 index: ruby_index,
@@ -4274,6 +4278,8 @@ fn agent_rich_text_ruby_object(
                 ruby: Some(ruby.ruby.clone()),
                 orientation: None,
                 vertical_form: None,
+                ruby_base_bbox: bbox.ruby.as_ref().map(|ruby| ruby.base_bbox.clone()),
+                ruby_annotation_bbox: bbox.ruby.as_ref().map(|ruby| ruby.annotation_bbox.clone()),
             },
             page,
         },
@@ -4340,12 +4346,35 @@ fn agent_rich_text_cluster_objects(
                         vertical_form: bounds.glyph.map(|glyph| {
                             agent_glyph_vertical_form_from_native(glyph.vertical_form)
                         }),
+                        ruby_base_bbox: None,
+                        ruby_annotation_bbox: None,
                     },
                     page,
                 },
             ))
         })
         .collect()
+}
+
+fn agent_bbox_from_native(
+    bbox: arcweft_player_native::native::NativeFrameContentBBox,
+) -> AgentBBox {
+    AgentBBox {
+        space: AgentCoordinateSpace::Viewport,
+        x: bbox.x,
+        y: bbox.y,
+        width: bbox.width,
+        height: bbox.height,
+    }
+}
+
+fn agent_ruby_geometry_from_native(
+    value: arcweft_player_native::native::NativeRubyElementGeometry,
+) -> AgentRubyElementGeometry {
+    AgentRubyElementGeometry {
+        base_bbox: agent_bbox_from_native(value.base_bbox),
+        annotation_bbox: agent_bbox_from_native(value.annotation_bbox),
+    }
 }
 
 const fn agent_glyph_orientation_from_native(

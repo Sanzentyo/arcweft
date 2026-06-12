@@ -374,6 +374,9 @@ are refined from the same glyph/ruby/cluster bounds used by native captures, so
 Glyph-cluster refs additionally expose `orientation` and `vertical_form`, which
 let debugging tools see whether the native renderer requested sideways
 rotation, text-combine-upright placement, or a vertical alternate.
+Ruby refs expose `ruby_base_bbox` and `ruby_annotation_bbox` separately from the
+object crop bbox, allowing CLI/MCP debuggers to inspect annotation placement and
+collision separation directly.
 `--read-uri URI` reads one `arcweft://` Agent resource URI from the current
 observation, including layer-local and object-local capture refs, and returns an
 `AgentResource` or MCP `resources/read` / tool-result output when paired with

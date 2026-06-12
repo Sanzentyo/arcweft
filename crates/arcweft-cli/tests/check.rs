@@ -2862,6 +2862,56 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_ruby_collision_geometry() {
+    assert_native_vertical_ruby_collision_geometry("vertical_rl", true);
+    assert_native_vertical_ruby_collision_geometry("vertical_lr", false);
+}
+
+fn assert_native_vertical_ruby_collision_geometry(writing_mode: &str, ruby_on_right: bool) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-ruby-collision"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいよみ)|[星](ながいよみ)[/][p]
+}}
+"
+        ),
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native ruby collision source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let first = find_rich_text_ruby_object(&json, 0);
+    let second = find_rich_text_ruby_object(&json, 1);
+    let first_annotation = &first["rich_text_ref"]["ruby_annotation_bbox"];
+    let second_annotation = &second["rich_text_ref"]["ruby_annotation_bbox"];
+    assert!(
+        !agent_json_bboxes_intersect(first_annotation, second_annotation),
+        "{writing_mode} adjacent ruby annotation bboxes should be separated: {first} / {second}"
+    );
+
+    for ruby in [first, second] {
+        let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+        let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+        if ruby_on_right {
+            assert!(
+                agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+                "vertical_rl ruby annotation should be on the right side of the base: {ruby}"
+            );
+        } else {
+            assert!(
+                agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+                "vertical_lr ruby annotation should be on the left side of the base: {ruby}"
+            );
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_expanded_jlreq_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-expanded-jlreq-pairs",
@@ -12238,6 +12288,18 @@ fn find_rich_text_cluster_object<'a>(
         })
 }
 
+fn find_rich_text_ruby_object(report: &serde_json::Value, index: u64) -> &serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_ruby"
+                && object["rich_text_ref"]["index"].as_u64() == Some(index)
+        })
+        .unwrap_or_else(|| panic!("rich-text ruby `{index}` should be observed: {report}"))
+}
+
 fn assert_rich_text_cluster_metadata(
     report: &serde_json::Value,
     text: &str,
@@ -12249,6 +12311,29 @@ fn assert_rich_text_cluster_metadata(
     let cluster = find_rich_text_cluster_object(report, text, range_start, range_end);
     assert_eq!(cluster["rich_text_ref"]["orientation"], orientation);
     assert_eq!(cluster["rich_text_ref"]["vertical_form"], vertical_form);
+}
+
+fn agent_json_bboxes_intersect(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+    agent_json_bbox_x(left) < agent_json_bbox_right(right)
+        && agent_json_bbox_x(right) < agent_json_bbox_right(left)
+        && agent_json_bbox_y(left) < agent_json_bbox_bottom(right)
+        && agent_json_bbox_y(right) < agent_json_bbox_bottom(left)
+}
+
+fn agent_json_bbox_x(bbox: &serde_json::Value) -> u64 {
+    bbox["x"].as_u64().expect("bbox x is reported")
+}
+
+fn agent_json_bbox_y(bbox: &serde_json::Value) -> u64 {
+    bbox["y"].as_u64().expect("bbox y is reported")
+}
+
+fn agent_json_bbox_right(bbox: &serde_json::Value) -> u64 {
+    agent_json_bbox_x(bbox) + bbox["width"].as_u64().expect("bbox width is reported")
+}
+
+fn agent_json_bbox_bottom(bbox: &serde_json::Value) -> u64 {
+    agent_json_bbox_y(bbox) + bbox["height"].as_u64().expect("bbox height is reported")
 }
 
 fn assert_vertical_cluster_after(
