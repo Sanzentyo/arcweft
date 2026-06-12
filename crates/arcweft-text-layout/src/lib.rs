@@ -410,7 +410,7 @@ fn layout_vertical_run(
         }
     };
     let clusters = vertical_clusters(text, vertical_latin);
-    for cluster in &clusters {
+    for (cluster_index, cluster) in clusters.iter().enumerate() {
         if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
@@ -430,6 +430,16 @@ fn layout_vertical_run(
             && cursor.y > config.origin.y
             && cluster.break_allowed_before
         {
+            cursor.x += column_step;
+            cursor.y = config.origin.y;
+        }
+        if vertical_cluster_should_break_before_line_end_prohibited(
+            cluster_index,
+            &clusters,
+            required_inline_extent,
+            context,
+            *cursor,
+        ) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
@@ -478,6 +488,43 @@ fn vertical_cluster_required_inline_extent(
         })
         .fold(config.line_advance, f32::max)
         .min(config.size.height)
+}
+
+fn vertical_cluster_should_break_before_line_end_prohibited(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+    required_inline_extent: f32,
+    context: RunLayoutContext<'_>,
+    cursor: LayoutCursor,
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    if cursor.y <= context.config.origin.y
+        || !cluster.break_allowed_before
+        || !is_jlreq_line_end_prohibited_cluster(&cluster.text)
+    {
+        return false;
+    }
+    let Some(next_cluster) = clusters[cluster_index + 1..]
+        .iter()
+        .find(|candidate| !is_vertical_line_break_cluster(&candidate.text))
+    else {
+        return false;
+    };
+    let next_range = RichTextRange::new(
+        context.range_start + next_cluster.range.start,
+        context.range_start + next_cluster.range.end,
+    );
+    let next_required_inline_extent = vertical_cluster_required_inline_extent(
+        next_range,
+        context.range_start,
+        clusters,
+        context.ruby_annotations,
+        context.config,
+    );
+    cursor.y + required_inline_extent + next_required_inline_extent
+        > context.config.origin.y + context.config.size.height
 }
 
 fn vertical_ruby_base_cluster_count(
@@ -872,6 +919,37 @@ fn is_vertical_line_break_cluster(grapheme: &str) -> bool {
     matches!(grapheme, "\n" | "\r\n")
 }
 
+fn is_jlreq_line_end_prohibited_cluster(grapheme: &str) -> bool {
+    grapheme
+        .chars()
+        .next()
+        .is_some_and(is_jlreq_line_end_prohibited_char)
+}
+
+const fn is_jlreq_line_end_prohibited_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '(' | '['
+            | '{'
+            | '\u{2018}'
+            | '\u{201c}'
+            | '\u{3008}'
+            | '\u{300a}'
+            | '\u{300c}'
+            | '\u{300e}'
+            | '\u{3010}'
+            | '\u{3014}'
+            | '\u{3016}'
+            | '\u{3018}'
+            | '\u{301a}'
+            | '\u{301d}'
+            | '\u{ff08}'
+            | '\u{ff3b}'
+            | '\u{ff5b}'
+            | '\u{ff5f}'
+    )
+}
+
 fn vertical_orientation(
     grapheme: &str,
     vertical_latin: RichTextVerticalLatinMode,
@@ -1230,6 +1308,30 @@ mod tests {
             "the next breakable cluster should start the next vertical_rl column"
         );
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_breaks_before_jlreq_line_end_prohibited_opening_punctuation() {
+        let frame = frame_with_run(
+            "天（地",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 3);
+        assert_eq!(layout.glyphs[1].text, "（");
+        assert!(
+            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
+            "opening punctuation should not remain at the previous column end"
+        );
+        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+        assert_eq!(layout.glyphs[2].text, "地");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(layout.glyphs[2].origin.y > layout.glyphs[1].origin.y);
     }
 
     #[test]

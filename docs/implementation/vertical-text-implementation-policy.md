@@ -100,6 +100,9 @@ the concrete choices to follow when turning that package into production code.
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
   keeping closing punctuation out of column heads as an initial kinsoku rule.
+  The layout also applies an initial JLREQ line-end prohibition for opening
+  punctuation by moving the opening punctuation to the next column when it would
+  otherwise be stranded at the previous column end.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -129,7 +132,8 @@ the concrete choices to follow when turning that package into production code.
   ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
   geometry is produced by the native renderer. Checked-in golden baselines remain
   future work once rendering baselines are stable across CI targets.
-- Remaining work includes full JLREQ line-breaking policy, proof against stable
+- Remaining work includes broader JLREQ line-breaking classes beyond closing
+  punctuation heads and opening punctuation tails, proof against stable
   checked-in font/capture baselines for `Tu`/`Tr` alternates, over-height ruby
   split policy for annotations that cannot fit in one column, and checked-in
   `imq` golden fixtures.
