@@ -2862,6 +2862,34 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         vertical_rl["bbox"]["width"].as_u64().unwrap() <= 260,
         "full grammar vertical_rl run should not flatten into a horizontal line: {vertical_rl}"
     );
+    let first_vertical_cluster = find_rich_text_cluster_object(&json, "吾", 27, 30);
+    assert_eq!(
+        first_vertical_cluster["rich_text_ref"]["kind"],
+        "glyph_cluster"
+    );
+    assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
+    assert_eq!(first_vertical_cluster["rich_text"]["line"], "say.full.005");
+    assert_eq!(first_vertical_cluster["bbox"]["width"], 42);
+    assert_eq!(first_vertical_cluster["bbox"]["height"], 42);
+    assert!(
+        first_vertical_cluster["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
+    );
+    let first_vertical_cluster_mask_uri =
+        rich_text_object_capture_uri(first_vertical_cluster, "mask", "application/octet-stream");
+    assert_agent_read_uri_object_image_has_content(
+        &source_path,
+        first_vertical_cluster_mask_uri,
+        first_vertical_cluster["id"].as_str().unwrap(),
+        42,
+        42,
+    );
 
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
     assert_eq!(vertical_lr["rich_text"]["line"], "say.full.005");
@@ -2872,6 +2900,14 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
             > vertical_lr["bbox"]["width"].as_u64().unwrap(),
         "short vertical_lr sample run should be visibly vertical: {vertical_lr}"
     );
+    let first_vertical_lr_cluster = find_rich_text_cluster_object(&json, "縦", 66, 69);
+    assert_eq!(
+        first_vertical_lr_cluster["rich_text_ref"]["kind"],
+        "glyph_cluster"
+    );
+    assert_eq!(first_vertical_lr_cluster["rich_text_ref"]["source"], "text");
+    assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 42);
+    assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 42);
 }
 
 #[test]
@@ -3380,6 +3416,45 @@ fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str) {
         resource["image"]["scope"]["id"],
         "object.dialogue.0.0.run.1"
     );
+    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn assert_agent_read_uri_object_image_has_content(
+    path: &Path,
+    uri: &str,
+    object_id: &str,
+    width: u64,
+    height: u64,
+) {
+    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--read-uri")
+        .arg(uri)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe reads object image capture ref");
+    assert!(
+        read_output.status.success(),
+        "object image capture ref read should succeed, stderr: {}",
+        String::from_utf8_lossy(&read_output.stderr)
+    );
+    let resource: serde_json::Value =
+        serde_json::from_slice(&read_output.stdout).expect("object image capture ref read is JSON");
+    assert_eq!(resource["kind"], "image");
+    assert_eq!(resource["uri"], uri);
+    assert_eq!(resource["image"]["renderer"], "native");
+    assert_eq!(resource["image"]["scope"]["kind"], "object");
+    assert_eq!(resource["image"]["scope"]["id"], object_id);
+    assert_eq!(resource["image"]["width"], width);
+    assert_eq!(resource["image"]["height"], height);
     assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
 }
 
@@ -11854,6 +11929,45 @@ fn find_rich_text_run_object<'a>(
         .iter()
         .find(|object| object["role"] == "rich_text_run" && object["text"] == text)
         .unwrap_or_else(|| panic!("rich-text run `{text}` should be observed: {report}"))
+}
+
+fn find_rich_text_cluster_object<'a>(
+    report: &'a serde_json::Value,
+    text: &str,
+    range_start: u64,
+    range_end: u64,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_cluster"
+                && object["text"] == text
+                && object["rich_text_ref"]["range"]["start"].as_u64() == Some(range_start)
+                && object["rich_text_ref"]["range"]["end"].as_u64() == Some(range_end)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "rich-text cluster `{text}` {range_start}..{range_end} should be observed: {report}"
+            )
+        })
+}
+
+fn rich_text_object_capture_uri<'a>(
+    object: &'a serde_json::Value,
+    kind: &str,
+    mime_type: &str,
+) -> &'a str {
+    object["capture_refs"]["captures"]
+        .as_array()
+        .expect("rich-text object has capture refs")
+        .iter()
+        .find(|capture| capture["kind"] == kind && capture["mime_type"] == mime_type)
+        .and_then(|capture| capture["uri"].as_str())
+        .unwrap_or_else(|| {
+            panic!("rich-text object should have {kind}/{mime_type} capture URI: {object}")
+        })
 }
 
 fn assert_native_capture_has_content(report: &serde_json::Value, written_name: &str) {

@@ -416,6 +416,7 @@ pub struct AgentRichTextElementRef {
 pub enum AgentRichTextElementKind {
     TextRun,
     Ruby,
+    GlyphCluster,
 }
 
 /// Capture resources addressable for one observed object.

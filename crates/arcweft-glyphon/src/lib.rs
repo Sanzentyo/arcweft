@@ -81,6 +81,16 @@ impl OwnedGlyphArea {
         &self.glyphs
     }
 
+    /// Assigns an explicit color to every glyph instance emitted for one
+    /// Arcweft layout glyph index.
+    pub fn set_color_for_layout_glyph(&mut self, glyph_index: usize, color: Color) {
+        for glyph in &mut self.glyphs {
+            if glyph.metadata == glyph_index {
+                glyph.color = Some(color);
+            }
+        }
+    }
+
     /// Number of laid-out glyphs skipped because cache keys were unavailable.
     pub const fn skipped_glyphs(&self) -> usize {
         self.skipped_glyphs
@@ -462,6 +472,41 @@ mod tests {
         .expect("area adapts");
 
         assert_eq!(area.glyphs()[0].origin, Point::new(12.0, 50.0));
+    }
+
+    #[test]
+    fn can_assign_color_by_layout_glyph_index() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, 4),
+                text: "2026".to_owned(),
+                origin: LayoutPoint::new(10.0, 20.0),
+                advance: LayoutSize::new(0.0, 42.0),
+                bounds: LayoutRect::new(10.0, 20.0, 42.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
+                orientation: GlyphOrientation::TextCombineUpright,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let mut area =
+            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
+                vec![fake_resolved_glyph(1, 16.0), fake_resolved_glyph(2, 16.0)]
+            })
+            .expect("area adapts");
+        area.set_color_for_layout_glyph(0, Color::rgb(255, 0, 0));
+
+        assert_eq!(area.glyphs().len(), 2);
+        assert!(
+            area.glyphs()
+                .iter()
+                .all(|glyph| glyph.color == Some(Color::rgb(255, 0, 0)))
+        );
     }
 
     #[test]

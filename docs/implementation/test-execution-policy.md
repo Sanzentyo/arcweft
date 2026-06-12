@@ -53,6 +53,26 @@ Re-measured while tightening the default policy:
 | `cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images --quiet -- --ignored --nocapture` | explicit Tier 2 run after policy change | 36.411s wall / 35.67s test body | passed |
 | `cargo test --workspace --quiet` | full workspace after moving matrix to Tier 2 | 27.968s wall / `check.rs` 5.47s test body | passed, 13 ignored |
 
+Re-measured after adding rich-text glyph-cluster observation work:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test --workspace --no-run --quiet` | compile all workspace test binaries after local edits | 28.6s wall | passed |
+| `cargo test --workspace --quiet` | full workspace, Tier 2 ignored | 25.872s wall / `check.rs` 6.51s test body | passed, 13 ignored |
+| `cargo test -p arcweft-cli --test check --quiet` | CLI integration test binary, Tier 2 ignored | 14.788s wall / 7.79s test body | passed, 13 ignored |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.241s wall / 4.43s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --test check agent_observe_json --quiet` | Agent observe JSON report tests | 0.800s wall / 0.05s test body | passed |
+| `cargo test -p arcweft-cli --test check run_json --quiet` | CLI runtime JSON tests | 0.903s wall / 0.28s test body | passed |
+| `cargo test -p arcweft-cli --test check bench_json --quiet` | CLI bench JSON tests | 1.875s wall / 1.18s test body | passed |
+| `cargo test -p arcweft-cli --test check jit_check_json --quiet` | CLI JIT comparison tests | 1.993s wall / 1.26s test body | passed |
+| `cargo test -p arcweft-cli --test regression_harness --quiet` | checked-in source-tree regression harness | 1.687s wall / 0.41s test body | passed |
+
+`cargo nextest` was not installed in this local environment during this
+measurement. The numbers above therefore use Rust's standard test harness and
+coarse command-level wall-clock profiling. If individual-test timing becomes
+necessary, add `cargo-nextest` as a local developer tool before reshaping the
+test suite around per-test measurements.
+
 The direct native capture group failure was
 `agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden` with
 `mse=0.0003445231568253663` where the checked-in exact-image assertion expected
@@ -93,6 +113,11 @@ cargo fmt -p arcweft-text-layout -p arcweft-glyphon -p arcweft-player-native
 cargo test -p arcweft-text-layout -p arcweft-glyphon -p arcweft-player-native
 ```
 
+Tier 0 should stay comfortably under about 5 seconds after the first compile.
+If a focused command is routinely slower than that, split the exact behavior
+test from the broad integration group and keep the broad group in Tier 1 or
+Tier 2.
+
 Tier 1 is the normal pre-push cut-point validation:
 
 ```bash
@@ -108,6 +133,19 @@ group first:
 ```bash
 cargo test -p arcweft-cli --test check agent_observe_native_renderer -- --nocapture
 ```
+
+For routine local execution through Justfile, use:
+
+```bash
+just test-fast
+just test-cli-native
+just test-cli-check
+```
+
+`just test-fast` is the full workspace fast path with ignored Tier 2 tests
+excluded. `just test-cli-native` is the normal native rich-text/Agent observe
+slice. `just test-cli-check` is useful before a CLI-heavy cut point, but it is
+not required after every small parser, layout, or protocol edit.
 
 Do not use broad filters such as `agent_observe` as a routine Tier 1 shortcut.
 That filter also selects slow resource-matrix coverage. Use the narrow exact
@@ -138,6 +176,16 @@ Because Tier 2 currently takes several minutes on Windows when the MCP stdio
 suite is included, and because the visual golden is environment-sensitive, do
 not run it automatically for every small mainline cut point unless the changed
 code is in that risk area.
+
+Operational budget:
+
+- Tight loop: changed-crate `cargo check` plus exact focused tests.
+- Reviewable local cut point: `cargo check --workspace`, clippy when feasible,
+  and focused tests for touched behavior.
+- Main push cut point: add `just test-fast`; add `just test-cli-check` when the
+  CLI integration surface changed broadly.
+- Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
+  that matches the risk, or `just test-tier2` for an exhaustive slow pass.
 
 ## CI Direction
 

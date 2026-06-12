@@ -213,7 +213,7 @@ requested rendered page before computing the crop, so layer crops after
 observed object's bbox. PNG/raw output is produced by the native
 `wgpu`/`glyphon` offscreen framebuffer readback. Full viewport, layer bbox
 crops, and object bbox crops are supported. Rich-text child object crops use
-native text layout bounds for text runs and ruby annotations.
+native text layout bounds for text runs, ruby annotations, and glyph clusters.
 The implemented object slice is focused on rich-text/textbox debugging: each
 observed layer includes a viewport bbox, object count, and stable
 `capture_refs` for color/object-id/mask PNG and raw RGBA images. Each
@@ -222,18 +222,18 @@ host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges
 for text/interpolation/ruby/control output, and a semantic `advance_text` action.
-Visible rich-text text runs and ruby annotations are also exposed as
-`dialogue.rich_text` child objects with their own bbox, `capture_refs`, and a
-structured `rich_text_ref` pointing back to the parent display-map element, so
-an Agent can request a crop such as
+Visible rich-text text runs, ruby annotations, and glyph clusters are also
+exposed as `dialogue.rich_text` child objects with their own bbox,
+`capture_refs`, and a structured `rich_text_ref` pointing back to the parent
+display-map element, so an Agent can request a crop such as
 `arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png` when a
 specific inline element needs visual inspection. For child objects on later
 rendered pages, `rich_text_ref.page` records the page and capture refs include a
 matching `?page=N` query plus `capture_refs[].page` metadata. Child object
 bboxes come from the native text layout metrics used by native image capture,
-so image crop origins and observed child bboxes describe the same glyph/ruby
-geometry. If native metrics are unavailable, the child object is omitted instead
-of emitting an approximate bbox.
+so image crop origins and observed child bboxes describe the same glyph, ruby,
+and cluster geometry. If native metrics are unavailable, the child object is omitted
+instead of emitting an approximate bbox.
 The same `display_map` is also consumed by the native rich-text window path, so
 Agents can compare an object or layer capture against the exact resolved text
 ranges and style/ruby metadata that the player adapter uses.

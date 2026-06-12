@@ -341,14 +341,14 @@ framebuffer to the selected object rectangles before cropping and reports
 `composition = "masked_framebuffer_crop"`, so layer/object image resources do
 not carry unrelated pixels from outside the selected scope. Rich-text child
 object crops use the native text layout bounds measured from the same glyphon
-layout used for drawing, so ruby and text-run element captures can be inspected
-against the actual framebuffer. It currently requires `--image png` or `--image
-raw-rgba`. With `--capture object-id` or `--capture mask`, the native renderer
-uses the same native scope/layout bounds. Text/ruby-backed scopes render
-selected glyphs through the offscreen text framebuffer; non-text fallback scopes
-still emit explicit debug geometry. In both cases object-id and mask captures
-stay aligned with native rich-text element crops before non-text renderer
-ID/mask attachments exist.
+layout used for drawing, so ruby, text-run, and glyph-cluster element captures
+can be inspected against the actual framebuffer. It currently requires
+`--image png` or `--image raw-rgba`. With `--capture object-id` or
+`--capture mask`, the native renderer uses the same native scope/layout bounds.
+Text/ruby/glyph-cluster-backed scopes render selected glyphs through the
+offscreen text framebuffer; non-text fallback scopes still emit explicit debug
+geometry. In both cases object-id and mask captures stay aligned with native
+rich-text element crops before non-text renderer ID/mask attachments exist.
 `--layer LAYER` crops the capture to that layer's observed object bounds.
 `--object OBJECT_ID` crops the capture to one observed object's bbox. Native
 color capture uses resolved display text plus `display_map` ruby annotations,
@@ -369,7 +369,7 @@ text runs preserve the source category and active style stack used to render
 that range. Rich-text child objects also carry `rich_text_ref`, so clients can
 map a returned crop directly back to the display-map entry without parsing the
 object id. When native layout metrics are available, those child object bboxes
-are refined from the same glyph/ruby bounds used by native captures, so
+are refined from the same glyph/ruby/cluster bounds used by native captures, so
 `crop_origin`, width, and height line up with the observed object metadata.
 `--read-uri URI` reads one `arcweft://` Agent resource URI from the current
 observation, including layer-local and object-local capture refs, and returns an

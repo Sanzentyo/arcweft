@@ -15,6 +15,23 @@ clippy:
 test:
     @cargo test --workspace
 
+test-fast:
+    @cargo test --workspace --quiet
+
+test-cli-check:
+    @cargo test -p arcweft-cli --test check --quiet
+
+test-cli-native:
+    @cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet
+
+test-profile:
+    @Measure-Command { cargo test --workspace --quiet }
+    @Measure-Command { cargo test -p arcweft-cli --test check --quiet }
+    @Measure-Command { cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet }
+    @Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }
+    @Measure-Command { cargo test -p arcweft-cli --test check run_json --quiet }
+    @Measure-Command { cargo test -p arcweft-cli --test check jit_check_json --quiet }
+
 test-slow-mcp:
     @cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
 

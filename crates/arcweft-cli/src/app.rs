@@ -2592,11 +2592,7 @@ fn agent_native_capture_image_with_session(
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
 ) -> Result<(AgentImageResource, Vec<u8>), ExitCode> {
-    let Some(textbox) = report
-        .objects
-        .iter()
-        .find(|object| object.role == "textbox")
-    else {
+    let Some(textbox) = agent_native_textbox_for_capture(report, &request.scope) else {
         eprintln!("error: native renderer requires an observed textbox frame");
         return Err(ExitCode::from(2));
     };
@@ -2654,6 +2650,39 @@ fn agent_native_capture_image_with_session(
         written: None,
     };
     Ok((image, bytes))
+}
+
+fn agent_native_textbox_for_capture<'a>(
+    report: &'a AgentObservationReport,
+    scope: &AgentCaptureScope,
+) -> Option<&'a AgentObservedObject> {
+    if let AgentCaptureScope::Object(object_id) = scope {
+        let object = report
+            .objects
+            .iter()
+            .find(|object| object.id == *object_id)?;
+        if object.role == "textbox" {
+            return Some(object);
+        }
+        if let Some(parent_id) = agent_rich_text_child_parent_object_id(&object.id) {
+            return report
+                .objects
+                .iter()
+                .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id);
+        }
+    }
+    report
+        .objects
+        .iter()
+        .find(|object| object.role == "textbox")
+}
+
+fn agent_rich_text_child_parent_object_id(object_id: &str) -> Option<&str> {
+    object_id
+        .split_once(".run.")
+        .or_else(|| object_id.split_once(".ruby."))
+        .or_else(|| object_id.split_once(".cluster."))
+        .map(|(parent, _)| parent)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -3044,7 +3073,7 @@ fn agent_native_elements_for_object(
             )
             .collect();
     }
-    agent_native_element_for_object_id(&object.id)
+    agent_native_element_for_object(object)
         .into_iter()
         .collect()
 }
@@ -3114,10 +3143,10 @@ fn agent_native_rich_text_child_rect(
     object: &AgentObservedObject,
     page_index: usize,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
-    let Some(element) = agent_native_element_for_object_id(&object.id) else {
+    let Some(element) = agent_native_element_for_object(object) else {
         return Ok(None);
     };
-    let Some(textbox) = objects.iter().find(|object| object.role == "textbox") else {
+    let Some(textbox) = agent_native_textbox_for_rich_text_child(objects, object) else {
         return Ok(None);
     };
     let (left, top) = agent_native_text_origin(textbox);
@@ -3146,6 +3175,36 @@ fn agent_native_rich_text_child_rect(
                 bounds.bbox.height,
             )
         }))
+}
+
+fn agent_native_textbox_for_rich_text_child<'a>(
+    objects: &'a [AgentObservedObject],
+    object: &AgentObservedObject,
+) -> Option<&'a AgentObservedObject> {
+    let parent_id = agent_rich_text_child_parent_object_id(&object.id)?;
+    objects
+        .iter()
+        .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id)
+}
+
+fn agent_native_element_for_object(
+    object: &AgentObservedObject,
+) -> Option<arcweft_player_native::native::NativeFrameElement> {
+    let Some(rich_text_ref) = &object.rich_text_ref else {
+        return agent_native_element_for_object_id(&object.id);
+    };
+    match rich_text_ref.kind {
+        AgentRichTextElementKind::TextRun | AgentRichTextElementKind::Ruby => {
+            agent_native_element_for_object_id(&object.id)
+        }
+        AgentRichTextElementKind::GlyphCluster => Some(
+            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+                index: rich_text_ref.index,
+                range_start: rich_text_ref.range.start,
+                range_end: rich_text_ref.range.end,
+            },
+        ),
+    }
 }
 
 fn agent_native_element_for_object_id(
@@ -4077,6 +4136,12 @@ fn agent_rich_text_child_objects(
             children.push(object);
         }
     }
+    children.extend(agent_rich_text_cluster_objects(
+        step,
+        index,
+        textbox,
+        native_bounds,
+    ));
     children
 }
 
@@ -4189,6 +4254,65 @@ fn agent_rich_text_ruby_object(
             page,
         },
     ))
+}
+
+fn agent_rich_text_cluster_objects(
+    step: usize,
+    index: usize,
+    textbox: &AgentObservedObject,
+    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+) -> Vec<AgentObservedObject> {
+    native_bounds
+        .iter()
+        .filter_map(|(element, bbox)| {
+            let arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+                index: cluster_index,
+                range_start,
+                range_end,
+            } = *element
+            else {
+                return None;
+            };
+            let range = RichTextRange::new(range_start, range_end);
+            let text = textbox
+                .rich_text
+                .text
+                .get(valid_rich_text_range(range, &textbox.rich_text.text)?)?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            let run = textbox
+                .rich_text
+                .display_map
+                .text_runs
+                .iter()
+                .find(|run| range.start >= run.range.start && range.end <= run.range.end)?;
+            let object_id = format!(
+                "object.dialogue.{step}.{index}.cluster.{cluster_index}.{range_start}.{range_end}"
+            );
+            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            Some(agent_rich_text_child_object(
+                step,
+                textbox,
+                AgentRichTextChildObjectSpec {
+                    object_id: &object_id,
+                    role: "rich_text_cluster",
+                    text: text.to_owned(),
+                    bbox,
+                    rich_text_ref: AgentRichTextElementRef {
+                        kind: AgentRichTextElementKind::GlyphCluster,
+                        index: cluster_index,
+                        page,
+                        range,
+                        node_index: run.node_index,
+                        source: Some(run.source),
+                        ruby: None,
+                    },
+                    page,
+                },
+            ))
+        })
+        .collect()
 }
 
 struct AgentRichTextChildObjectSpec<'a> {

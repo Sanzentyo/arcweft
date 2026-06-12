@@ -160,7 +160,11 @@ the concrete choices to follow when turning that package into production code.
   Agent/native element geometry unions the segments back to the authored ruby
   object.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
-  readback remains only a verification and capture output path.
+  readback remains only a verification and capture output path. Native
+  offscreen debug and isolated-color captures use the same GlyphArea path as
+  normal body rendering, so vertical glyph cluster bboxes, object-id masks, and
+  color crops share one placement model instead of falling back to glyphon's
+  horizontal TextArea layout.
 - CLI regression coverage includes an `imq` native vertical capture parity check
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
@@ -170,6 +174,10 @@ the concrete choices to follow when turning that package into production code.
   `samples/rich-text-windows-fonts.arcw` are now also observed through the native
   `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`
   runs, source ranges, masks, and column-shaped bounds remain covered.
+  `rich_text_cluster` child objects expose glyph-cluster source ranges and
+  object-local color/object-id/mask capture refs; the full-grammar sample test
+  follows a vertical cluster mask URI and asserts the raw capture contains
+  rendered pixels.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
   fresh native capture against it with `imq` when both Windows fonts and the

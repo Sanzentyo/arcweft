@@ -81,8 +81,17 @@ pub struct NativeFrameContentBBox {
 /// Native rich-text element kinds addressable by Agent debug captures.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum NativeFrameElement {
-    TextRun { index: usize },
-    Ruby { index: usize },
+    TextRun {
+        index: usize,
+    },
+    Ruby {
+        index: usize,
+    },
+    GlyphCluster {
+        index: usize,
+        range_start: usize,
+        range_end: usize,
+    },
 }
 
 /// Pixel-space bounds for one native rich-text element.
@@ -511,7 +520,7 @@ impl NativeOffscreenCaptureSession {
         };
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
-            NativeRenderLayout::text_area(Some(&page_layout.layout)),
+            NativeRenderLayout::glyph_area(&page_layout.layout),
             width,
             height,
             origin,
@@ -551,7 +560,7 @@ impl NativeOffscreenCaptureSession {
         };
         let mut rgba = self.render_rich_text_rgba_with_clear(
             &rich_text,
-            NativeRenderLayout::text_area(Some(&page_layout.layout)),
+            NativeRenderLayout::glyph_area(&page_layout.layout),
             width,
             height,
             origin,
@@ -802,6 +811,7 @@ fn visual_page_from_range(
 
 struct NativePageLayout {
     frame: LineDisplayFrame,
+    page_start: usize,
     layout: LaidOutText,
     text_run_indices: Vec<usize>,
     ruby_indices: Vec<usize>,
@@ -812,11 +822,13 @@ fn layout_page_range(
     page_range: Range<usize>,
     config: TextLayoutConfig,
 ) -> Result<NativePageLayout, NativeWindowError> {
+    let page_start = page_range.start;
     let (page_frame, text_run_indices, ruby_indices) = page_local_layout_frame(frame, page_range)?;
     let layout = layout_frame(&page_frame, config)
         .map_err(|error| NativeWindowError::TextLayout(error.to_string()))?;
     Ok(NativePageLayout {
         frame: page_frame,
+        page_start,
         layout,
         text_run_indices,
         ruby_indices,
@@ -981,6 +993,25 @@ fn native_element_bounds_from_layout(
             })
         })
         .collect::<Vec<_>>();
+    bounds.extend(
+        page_layout
+            .layout
+            .glyphs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, glyph)| {
+                let range_start = page_layout.page_start + glyph.range.start;
+                let range_end = page_layout.page_start + glyph.range.end;
+                Some(NativeFrameElementBounds {
+                    element: NativeFrameElement::GlyphCluster {
+                        index,
+                        range_start,
+                        range_end,
+                    },
+                    bbox: native_bbox_from_layout_rect(glyph.bounds, width, height)?,
+                })
+            }),
+    );
     let ruby_bounds_by_index = page_layout
         .layout
         .ruby
@@ -1607,11 +1638,20 @@ fn debug_selected_text_ranges(
     regions
         .iter()
         .filter_map(|region| {
-            let NativeFrameElement::TextRun { index } = region.element? else {
-                return None;
+            let range = match region.element? {
+                NativeFrameElement::TextRun { index } => {
+                    let run = frame.display_map.text_runs.get(index)?;
+                    intersect_display_range(run.range, page_range)?
+                }
+                NativeFrameElement::GlyphCluster {
+                    range_start,
+                    range_end,
+                    ..
+                } => {
+                    intersect_display_range(RichTextRange::new(range_start, range_end), page_range)?
+                }
+                NativeFrameElement::Ruby { .. } => return None,
             };
-            let run = frame.display_map.text_runs.get(index)?;
-            let range = intersect_display_range(run.range, page_range)?;
             Some((
                 (range.start - page_range.start)..(range.end - page_range.start),
                 region.color,
@@ -1628,11 +1668,20 @@ fn color_selected_text_ranges(
     regions
         .iter()
         .filter_map(|region| {
-            let NativeFrameElement::TextRun { index } = region.element? else {
-                return None;
+            let range = match region.element? {
+                NativeFrameElement::TextRun { index } => {
+                    let run = frame.display_map.text_runs.get(index)?;
+                    intersect_display_range(run.range, page_range)?
+                }
+                NativeFrameElement::GlyphCluster {
+                    range_start,
+                    range_end,
+                    ..
+                } => {
+                    intersect_display_range(RichTextRange::new(range_start, range_end), page_range)?
+                }
+                NativeFrameElement::Ruby { .. } => return None,
             };
-            let run = frame.display_map.text_runs.get(index)?;
-            let range = intersect_display_range(run.range, page_range)?;
             Some((range.start - page_range.start)..(range.end - page_range.start))
         })
         .collect()
@@ -2531,30 +2580,13 @@ struct NativeRenderTarget {
 
 #[derive(Clone, Copy, Debug)]
 struct NativeRenderLayout<'a> {
-    layout: Option<&'a LaidOutText>,
-    body_mode: NativeBodyRenderMode,
+    layout: &'a LaidOutText,
 }
 
 impl<'a> NativeRenderLayout<'a> {
     const fn glyph_area(layout: &'a LaidOutText) -> Self {
-        Self {
-            layout: Some(layout),
-            body_mode: NativeBodyRenderMode::GlyphArea,
-        }
+        Self { layout }
     }
-
-    const fn text_area(layout: Option<&'a LaidOutText>) -> Self {
-        Self {
-            layout,
-            body_mode: NativeBodyRenderMode::TextArea,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NativeBodyRenderMode {
-    TextArea,
-    GlyphArea,
 }
 
 impl NativeOffscreenTextRenderer {
@@ -2599,7 +2631,7 @@ impl NativeOffscreenTextRenderer {
             &mut self.font_system,
             &self.text_buffer,
             rich_text,
-            layout.layout,
+            Some(layout.layout),
             target.width,
             target.height,
             target.origin,
@@ -2611,62 +2643,41 @@ impl NativeOffscreenTextRenderer {
                 height: target.height,
             },
         );
-        if let (NativeBodyRenderMode::GlyphArea, Some(layout)) = (layout.body_mode, layout.layout) {
-            let cache_keys = layout_glyph_cache_keys(
+        let cache_keys = layout_glyph_cache_keys(
+            &mut self.font_system,
+            &self.text_buffer,
+            rich_text,
+            layout.layout,
+        );
+        let bounds = native_text_bounds(target.width, target.height);
+        let mut glyph_area = glyph_area_from_layout(
+            layout.layout,
+            GlyphonAreaOptions {
+                bounds,
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                skip_missing_glyphs: true,
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+        apply_text_colors_to_glyph_area(&mut glyph_area, rich_text, layout.layout);
+        let ruby_glyph_areas = ruby_glyph_areas(&self.ruby_buffers, target.width, target.height);
+        let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
+        glyph_areas.push(glyph_area.as_glyph_area());
+        glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
+        self.text_renderer
+            .prepare_text_and_glyph_areas(
+                device,
+                queue,
                 &mut self.font_system,
-                &self.text_buffer,
-                rich_text,
-                layout,
-            );
-            let bounds = native_text_bounds(target.width, target.height);
-            let glyph_area = glyph_area_from_layout(
-                layout,
-                GlyphonAreaOptions {
-                    bounds,
-                    origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
-                    skip_missing_glyphs: true,
-                    ..GlyphonAreaOptions::default()
-                },
-                |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+                &mut self.atlas,
+                &self.viewport,
+                std::iter::empty::<TextArea<'_>>(),
+                glyph_areas,
+                &mut self.swash_cache,
             )
-            .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
-            let ruby_glyph_areas =
-                ruby_glyph_areas(&self.ruby_buffers, target.width, target.height);
-            let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
-            glyph_areas.push(glyph_area.as_glyph_area());
-            glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
-            self.text_renderer
-                .prepare_text_and_glyph_areas(
-                    device,
-                    queue,
-                    &mut self.font_system,
-                    &mut self.atlas,
-                    &self.viewport,
-                    std::iter::empty::<TextArea<'_>>(),
-                    glyph_areas,
-                    &mut self.swash_cache,
-                )
-                .map_err(|error| NativeWindowError::Readback(error.to_string()))
-        } else {
-            let text_areas = window_text_areas(
-                &self.text_buffer,
-                &self.ruby_buffers,
-                target.width,
-                target.height,
-                target.origin,
-            );
-            self.text_renderer
-                .prepare(
-                    device,
-                    queue,
-                    &mut self.font_system,
-                    &mut self.atlas,
-                    &self.viewport,
-                    text_areas,
-                    &mut self.swash_cache,
-                )
-                .map_err(|error| NativeWindowError::Readback(error.to_string()))
-        }
+            .map_err(|error| NativeWindowError::Readback(error.to_string()))
     }
 
     fn render_texture_with_clear(
@@ -3169,6 +3180,22 @@ fn redraw(state: &mut WindowState) {
     state.atlas.trim();
 }
 
+fn apply_text_colors_to_glyph_area(
+    glyph_area: &mut OwnedGlyphArea,
+    rich_text: &WindowRichText,
+    layout: &LaidOutText,
+) {
+    for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
+        if let Some(span) = rich_text
+            .spans
+            .iter()
+            .find(|span| span.range.start <= glyph.range.start && glyph.range.end <= span.range.end)
+        {
+            glyph_area.set_color_for_layout_glyph(glyph_index, span.style.color.into_glyphon());
+        }
+    }
+}
+
 fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
     state.viewport.update(
         &state.queue,
@@ -3185,7 +3212,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             layout,
         );
         let bounds = native_text_bounds(state.surface_config.width, state.surface_config.height);
-        let Ok(glyph_area) = glyph_area_from_layout(
+        let Ok(mut glyph_area) = glyph_area_from_layout(
             layout,
             GlyphonAreaOptions {
                 bounds,
@@ -3197,6 +3224,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         ) else {
             return Err(());
         };
+        apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             state.surface_config.width,
@@ -3706,6 +3734,23 @@ mod tests {
                 && bounds.bbox.x >= 96
                 && bounds.bbox.y >= 540
         }));
+        let cluster = bounds
+            .iter()
+            .find(|bounds| {
+                matches!(
+                    bounds.element,
+                    NativeFrameElement::GlyphCluster {
+                        index: 0,
+                        range_start: 0,
+                        range_end: 1
+                    }
+                )
+            })
+            .expect("first glyph cluster has native bounds");
+        assert!(cluster.bbox.x >= 96);
+        assert!(cluster.bbox.y >= 540);
+        assert!(cluster.bbox.width > 0);
+        assert!(cluster.bbox.height > 0);
         let ruby = bounds
             .iter()
             .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
@@ -3769,6 +3814,87 @@ mod tests {
         let bbox_area = u64::from(bbox.width) * u64::from(bbox.height);
         assert!(capture.content_pixels > 0);
         assert!(capture.content_pixels < bbox_area);
+    }
+
+    #[test]
+    fn native_debug_capture_uses_glyph_area_for_vertical_clusters() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.cluster.debug".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "吾輩".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "layout".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds = measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("native layout bounds resolve");
+        let cluster = bounds
+            .iter()
+            .find(|bounds| {
+                matches!(
+                    bounds.element,
+                    NativeFrameElement::GlyphCluster {
+                        index: 0,
+                        range_start: 0,
+                        range_end: 3
+                    }
+                )
+            })
+            .expect("first vertical glyph cluster has native bounds");
+        let capture = capture_frame_debug_regions_at(
+            &frame,
+            800,
+            600,
+            96.0,
+            572.0,
+            &[NativeFrameDebugRegion {
+                element: Some(NativeFrameElement::GlyphCluster {
+                    index: 0,
+                    range_start: 0,
+                    range_end: 3,
+                }),
+                fallback_bbox: NativeFrameContentBBox {
+                    x: 1,
+                    y: 1,
+                    width: 8,
+                    height: 8,
+                },
+                color: [255, 255, 255, 255],
+            }],
+        )
+        .expect("debug capture resolves");
+
+        let bbox = capture
+            .content_bbox
+            .expect("vertical glyph cluster debug capture has visible content");
+        assert!(bbox.x >= cluster.bbox.x);
+        assert!(bbox.y >= cluster.bbox.y);
+        assert!(bbox.x.saturating_add(bbox.width) <= cluster.bbox.x + cluster.bbox.width);
+        assert!(bbox.y.saturating_add(bbox.height) <= cluster.bbox.y + cluster.bbox.height);
+        assert!(capture.content_pixels > 0);
     }
 
     #[test]
