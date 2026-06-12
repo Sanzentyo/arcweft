@@ -5900,6 +5900,15 @@ fn assert_mcp_raw_capture_content(response: &serde_json::Value) {
     );
 }
 
+fn mcp_raw_capture_bytes(response: &serde_json::Value) -> Vec<u8> {
+    let blob = response["result"]["content"][1]["resource"]["blob"]
+        .as_str()
+        .expect("raw capture response has a resource blob");
+    general_purpose::STANDARD
+        .decode(blob)
+        .expect("raw capture blob is base64")
+}
+
 fn assert_raw_resource_read_content(
     response: &serde_json::Value,
     source_capture_response: &serde_json::Value,
@@ -6647,6 +6656,100 @@ flow @flow.main main {
         responses[1]["result"]["content"][1]["data"]
             .as_str()
             .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
+    );
+}
+
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
+fn agent_mcp_stdio_capture_time_controls_text_combine_mask_with_native_renderer() {
+    let path = temp_arcw(
+        "agent-mcp-native-typewriter-text-combine-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
+}
+",
+    );
+    let object_id = "object.dialogue.0.0.cluster.0.0.4";
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.capture",
+                "arguments": {
+                    "source": path.display().to_string(),
+                    "format": "raw-rgba",
+                    "capture": "mask",
+                    "object": object_id,
+                    "capture_time": 0.0,
+                    "steps": 4,
+                    "max_ops": 64
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.capture",
+                "arguments": {
+                    "source": path.display().to_string(),
+                    "format": "raw-rgba",
+                    "capture": "mask",
+                    "object": object_id,
+                    "capture_time": 4.0,
+                    "steps": 4,
+                    "max_ops": 64
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    fs::remove_file(&path).expect("remove temp native MCP text-combine source");
+    assert!(
+        output.status.success(),
+        "agent mcp native typewriter text-combine capture-time should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+
+    let hidden = mcp_content_metadata(
+        &responses[1]["result"]["content"][0],
+        "hidden text-combine mask metadata is JSON",
+    );
+    let visible = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "visible text-combine mask metadata is JSON",
+    );
+    assert_eq!(hidden["image"]["kind"], "mask");
+    assert_eq!(visible["image"]["kind"], "mask");
+    assert_eq!(hidden["image"]["composition"], "mask_attachment");
+    assert_eq!(visible["image"]["composition"], "mask_attachment");
+    assert_eq!(hidden["image"]["scope"]["kind"], "object");
+    assert_eq!(hidden["image"]["scope"]["id"], object_id);
+    assert_eq!(visible["image"]["scope"]["id"], object_id);
+    assert_eq!(
+        hidden["image"]["crop_origin"],
+        visible["image"]["crop_origin"]
+    );
+    assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
+    assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
+    assert_eq!(hidden["image"]["content_pixels"], 0);
+    assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
+
+    let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
+    let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
+    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+    assert_eq!(
+        opaque_pixel_count(&visible_bytes) as u64,
+        visible["image"]["content_pixels"].as_u64().unwrap()
     );
 }
 
