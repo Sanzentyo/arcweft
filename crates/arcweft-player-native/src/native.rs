@@ -16,6 +16,7 @@ use arcweft_text_layout::{
 use glyphon::{
     Attrs, Buffer, Cache, CacheKey, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector, Viewport, Weight,
+    cosmic_text::{FeatureTag, FontFeatures},
 };
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -2558,7 +2559,12 @@ impl NativeOffscreenTextRenderer {
             },
         );
         if let (NativeBodyRenderMode::GlyphArea, Some(layout)) = (layout.body_mode, layout.layout) {
-            let cache_keys = text_buffer_cache_keys(&self.text_buffer, rich_text);
+            let cache_keys = layout_glyph_cache_keys(
+                &mut self.font_system,
+                &self.text_buffer,
+                rich_text,
+                layout,
+            );
             let bounds = native_text_bounds(target.width, target.height);
             let glyph_area = glyph_area_from_layout(
                 layout,
@@ -2568,7 +2574,7 @@ impl NativeOffscreenTextRenderer {
                     skip_missing_glyphs: true,
                     ..GlyphonAreaOptions::default()
                 },
-                |_index, glyph| cache_keys_for_layout_glyph(glyph.range, &cache_keys),
+                |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
             )
             .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
             let ruby_glyph_areas =
@@ -2814,6 +2820,36 @@ fn native_text_bounds(width: u32, height: u32) -> TextBounds {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct LayoutGlyphCacheKeys {
+    shaped: Vec<(RichTextRange, CacheKey)>,
+    vertical_alternates: BTreeMap<usize, Vec<CacheKey>>,
+}
+
+fn layout_glyph_cache_keys(
+    font_system: &mut FontSystem,
+    text_buffer: &Buffer,
+    rich_text: &WindowRichText,
+    layout: &LaidOutText,
+) -> LayoutGlyphCacheKeys {
+    let shaped = text_buffer_cache_keys(text_buffer, rich_text);
+    let vertical_alternates = layout
+        .glyphs
+        .iter()
+        .enumerate()
+        .filter(|(_, glyph)| glyph.vertical_form != GlyphVerticalForm::None)
+        .filter_map(|(glyph_index, glyph)| {
+            let style = native_style_for_display_range(rich_text, glyph.range);
+            let cache_keys = vertical_form_cache_keys(font_system, glyph, &style);
+            (!cache_keys.is_empty()).then_some((glyph_index, cache_keys))
+        })
+        .collect();
+    LayoutGlyphCacheKeys {
+        shaped,
+        vertical_alternates,
+    }
+}
+
 fn text_buffer_cache_keys(
     text_buffer: &Buffer,
     rich_text: &WindowRichText,
@@ -2833,11 +2869,67 @@ fn text_buffer_cache_keys(
         .collect()
 }
 
-fn cache_keys_for_layout_glyph(
+fn native_style_for_display_range(
+    rich_text: &WindowRichText,
     range: RichTextRange,
-    cache_keys: &[(RichTextRange, CacheKey)],
+) -> NativeTextStyle {
+    rich_text
+        .spans
+        .iter()
+        .find(|span| span.range.start <= range.start && range.end <= span.range.end)
+        .map_or_else(NativeTextStyle::default, |span| span.style.clone())
+}
+
+fn vertical_form_cache_keys(
+    font_system: &mut FontSystem,
+    glyph: &arcweft_text_layout::LaidOutGlyph,
+    style: &NativeTextStyle,
 ) -> Vec<CacheKey> {
+    let mut buffer = Buffer::new(font_system, Metrics::new(30.0, 42.0));
+    let attrs = style
+        .attrs()
+        .font_features(vertical_form_font_features(glyph.vertical_form));
+    let spans = [(glyph.text.as_str(), attrs.clone())];
+    buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    text_buffer_cache_keys_for_text(&buffer)
+}
+
+fn text_buffer_cache_keys_for_text(buffer: &Buffer) -> Vec<CacheKey> {
+    buffer
+        .layout_runs()
+        .flat_map(|run| {
+            run.glyphs
+                .iter()
+                .map(|glyph| glyph.physical((0.0, 0.0), 1.0).cache_key)
+        })
+        .collect()
+}
+
+fn vertical_form_font_features(vertical_form: GlyphVerticalForm) -> FontFeatures {
+    let mut features = FontFeatures::new();
+    match vertical_form {
+        GlyphVerticalForm::None => {}
+        GlyphVerticalForm::UprightAlternate => {
+            features.enable(FeatureTag::new(b"vert"));
+        }
+        GlyphVerticalForm::RotatedAlternate => {
+            features.enable(FeatureTag::new(b"vrtr"));
+        }
+    }
+    features
+}
+
+fn cache_keys_for_layout_glyph(
+    glyph_index: usize,
+    range: RichTextRange,
+    cache_keys: &LayoutGlyphCacheKeys,
+) -> Vec<CacheKey> {
+    if let Some(cache_keys) = cache_keys.vertical_alternates.get(&glyph_index) {
+        return cache_keys.clone();
+    }
     cache_keys
+        .shaped
         .iter()
         .filter_map(|(candidate, cache_key)| {
             (candidate.start < range.end && range.start < candidate.end).then_some(*cache_key)
@@ -3023,7 +3115,12 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         },
     );
     if let Some(layout) = state.layout.as_ref() {
-        let cache_keys = text_buffer_cache_keys(&state.text_buffer, &state.rich_text);
+        let cache_keys = layout_glyph_cache_keys(
+            &mut state.font_system,
+            &state.text_buffer,
+            &state.rich_text,
+            layout,
+        );
         let bounds = native_text_bounds(state.surface_config.width, state.surface_config.height);
         let Ok(glyph_area) = glyph_area_from_layout(
             layout,
@@ -3033,7 +3130,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
                 skip_missing_glyphs: true,
                 ..GlyphonAreaOptions::default()
             },
-            |_index, glyph| cache_keys_for_layout_glyph(glyph.range, &cache_keys),
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
         ) else {
             return Err(());
         };
@@ -3308,6 +3405,77 @@ mod tests {
 
         assert_eq!(vertical_form_for("。"), GlyphVerticalForm::UprightAlternate);
         assert_eq!(vertical_form_for("ー"), GlyphVerticalForm::RotatedAlternate);
+    }
+
+    #[test]
+    fn vertical_alternate_glyphs_use_feature_shaped_cache_keys() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.features".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalRl,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "縦Ａ。ー".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("page exists");
+        let layout = layout_frame(
+            page.layout_frame.as_ref().expect("layout frame"),
+            native_text_layout_config(800, 600, 0.0, 0.0),
+        )
+        .expect("layout resolves");
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let upright_index = layout
+            .glyphs
+            .iter()
+            .position(|glyph| glyph.text == "。")
+            .expect("upright alternate glyph exists");
+        let rotated_index = layout
+            .glyphs
+            .iter()
+            .position(|glyph| glyph.text == "ー")
+            .expect("rotated alternate glyph exists");
+
+        assert!(cache_keys.vertical_alternates.contains_key(&upright_index));
+        assert!(cache_keys.vertical_alternates.contains_key(&rotated_index));
+        assert_eq!(
+            vertical_form_font_features(GlyphVerticalForm::UprightAlternate).features[0].tag,
+            FeatureTag::new(b"vert")
+        );
+        assert_eq!(
+            vertical_form_font_features(GlyphVerticalForm::RotatedAlternate).features[0].tag,
+            FeatureTag::new(b"vrtr")
+        );
     }
 
     #[test]

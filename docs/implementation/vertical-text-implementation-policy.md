@@ -93,7 +93,9 @@ the concrete choices to follow when turning that package into production code.
   now produce `GlyphVerticalForm::{UprightAlternate,RotatedAlternate}` metadata
   on `LaidOutGlyph`; native visual-plan/debug geometry preserves that request so
   Agent observations can distinguish fallback rotation from missing vertical
-  alternate shaping.
+  alternate shaping. The native GlyphArea path uses that metadata to shape
+  affected clusters through cosmic-text with `vert` for `UprightAlternate` and
+  `vrtr` for `RotatedAlternate` before resolving glyphon cache keys.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
@@ -119,9 +121,9 @@ the concrete choices to follow when turning that package into production code.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
-  full JLREQ line-breaking policy, OpenType feature/cache-key shaping for
-  `Tu`/`Tr` alternates, full ruby base expansion/overhang/line-break feedback,
-  and checked-in `imq` golden fixtures.
+  full JLREQ line-breaking policy, proof against stable checked-in font/capture
+  baselines for `Tu`/`Tr` alternates, full ruby base expansion/overhang/line-break
+  feedback, and checked-in `imq` golden fixtures.
 
 ## Explicit Defaults
 
