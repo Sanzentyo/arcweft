@@ -197,11 +197,15 @@ the concrete choices to follow when turning that package into production code.
   offscreen debug and isolated-color captures use the same GlyphArea path as
   normal body rendering, so vertical glyph cluster bboxes, object-id masks, and
   color crops share one placement model instead of falling back to glyphon's
-  horizontal TextArea layout. Debug capture alpha combines selected-region style
-  alpha with capture-time effect alpha instead of replacing one with the other,
-  so transparent unselected spans stay hidden while typewriter-controlled spans,
-  text-combine cells, and ruby annotations can still be inspected at different
-  capture times. Native GlyphArea preparation treats missing
+  horizontal TextArea layout. The vendored glyphon `GlyphArea` path now carries
+  the area clip rectangle into the vertex stream and discards fragments outside
+  it in WGSL, so sideways, rotated, and affine-compressed glyphs obey the same
+  visible bounds contract as axis-aligned `TextArea` glyphs. Debug capture alpha
+  combines selected-region style alpha with capture-time effect alpha instead of
+  replacing one with the other, so transparent unselected spans stay hidden
+  while typewriter-controlled spans, text-combine cells, and ruby annotations
+  can still be inspected at different capture times. Native GlyphArea
+  preparation treats missing
   renderer cache keys as errors instead of silently skipping layout glyphs, so a
   broken shaping/cache-key mapping fails capture preparation rather than
   producing partial debug imagery. Legacy horizontal TextArea rendering may

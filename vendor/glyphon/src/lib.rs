@@ -61,6 +61,7 @@ pub(crate) struct GlyphToRender {
     content_type_with_srgb: [u16; 2],
     depth: f32,
     transform: [f32; 6],
+    clip_bounds: [f32; 4],
 }
 
 /// The screen resolution to use when rendering text.

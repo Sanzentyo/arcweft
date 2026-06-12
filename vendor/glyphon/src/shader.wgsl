@@ -8,6 +8,7 @@ struct VertexInput {
     @location(5) depth: f32,
     @location(6) transform0: vec4<f32>,
     @location(7) transform1: vec2<f32>,
+    @location(8) clip_bounds: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -15,6 +16,7 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) @interpolate(flat) content_type: u32,
+    @location(3) clip_bounds: vec4<f32>,
 };
 
 struct Params {
@@ -112,6 +114,7 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
     }
 
     vert_output.content_type = content_type;
+    vert_output.clip_bounds = in_vert.clip_bounds;
 
     vert_output.uv = vec2<f32>(uv) / vec2<f32>(dim);
 
@@ -120,6 +123,13 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in_frag: VertexOutput) -> @location(0) vec4<f32> {
+    if in_frag.position.x < in_frag.clip_bounds.x ||
+        in_frag.position.x >= in_frag.clip_bounds.z ||
+        in_frag.position.y < in_frag.clip_bounds.y ||
+        in_frag.position.y >= in_frag.clip_bounds.w {
+        discard;
+    }
+
     switch in_frag.content_type {
         case 0u: {
             return textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);

@@ -810,7 +810,17 @@ where
         ],
         depth,
         transform,
+        clip_bounds: clip_bounds_for_shader(bounds),
     }))
+}
+
+fn clip_bounds_for_shader(bounds: GlyphBounds) -> [f32; 4] {
+    [
+        bounds.x.min as f32,
+        bounds.y.min as f32,
+        bounds.x.max as f32,
+        bounds.y.max as f32,
+    ]
 }
 
 fn transformed_quad_intersects_bounds(
@@ -861,4 +871,44 @@ fn transformed_corner(
         x as f32 + transform[0] * local_x + transform[1] * local_y + transform[4],
         y as f32 + transform[2] * local_x + transform[3] * local_y + transform[5],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bounds, GlyphBounds, clip_bounds_for_shader, transformed_quad_intersects_bounds};
+
+    #[test]
+    fn transformed_quad_intersection_uses_transformed_bounds() {
+        let bounds = GlyphBounds {
+            x: Bounds { min: 0, max: 32 },
+            y: Bounds { min: 0, max: 32 },
+        };
+
+        assert!(transformed_quad_intersects_bounds(
+            20,
+            4,
+            10,
+            20,
+            [0.0, 1.0, -1.0, 0.0, 0.0, 10.0],
+            bounds,
+        ));
+        assert!(!transformed_quad_intersects_bounds(
+            80,
+            4,
+            10,
+            20,
+            [0.0, 1.0, -1.0, 0.0, 0.0, 10.0],
+            bounds,
+        ));
+    }
+
+    #[test]
+    fn shader_clip_bounds_preserve_glyph_area_bounds() {
+        let bounds = GlyphBounds {
+            x: Bounds { min: 3, max: 57 },
+            y: Bounds { min: 5, max: 89 },
+        };
+
+        assert_eq!(clip_bounds_for_shader(bounds), [3.0, 5.0, 57.0, 89.0]);
+    }
 }
