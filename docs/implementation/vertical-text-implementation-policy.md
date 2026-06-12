@@ -116,8 +116,11 @@ the concrete choices to follow when turning that package into production code.
   Long ruby annotations first expand the base allocation along the writing
   mode's inline axis, then use a bounded overhang allowance before same-track
   collision separation keeps adjacent horizontal and vertical annotations from
-  occupying the same annotation track. `vertical_rl` ruby uses the right
-  annotation track and `vertical_lr` ruby uses the left annotation track.
+  occupying the same annotation track. Vertical ruby base starts feed their
+  expanded inline allocation back into column breaking, so a long annotation or
+  multi-cluster base moves to the next column instead of placing its expanded
+  base past the column end. `vertical_rl` ruby uses the right annotation track
+  and `vertical_lr` ruby uses the left annotation track.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
 - CLI regression coverage includes an `imq` native vertical capture parity check
@@ -127,9 +130,9 @@ the concrete choices to follow when turning that package into production code.
   geometry is produced by the native renderer. Checked-in golden baselines remain
   future work once rendering baselines are stable across CI targets.
 - Remaining work includes full JLREQ line-breaking policy, proof against stable
-  checked-in font/capture baselines for `Tu`/`Tr` alternates, ruby line-break
-  feedback beyond base expansion/limited overhang, and checked-in `imq` golden
-  fixtures.
+  checked-in font/capture baselines for `Tu`/`Tr` alternates, over-height ruby
+  split policy for annotations that cannot fit in one column, and checked-in
+  `imq` golden fixtures.
 
 ## Explicit Defaults
 

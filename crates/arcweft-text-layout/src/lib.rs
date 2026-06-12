@@ -285,6 +285,7 @@ pub fn layout_frame(
                     run_index,
                     range_start: range.start,
                     presentation: &run.presentation,
+                    ruby_annotations: &frame.display_map.ruby_annotations,
                     config,
                 };
                 layout_vertical_run(
@@ -408,25 +409,35 @@ fn layout_vertical_run(
             unreachable!("horizontal runs use layout_horizontal_run")
         }
     };
-    for cluster in vertical_clusters(text, vertical_latin) {
+    let clusters = vertical_clusters(text, vertical_latin);
+    for cluster in &clusters {
         if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
             continue;
         }
-        if cursor.y + config.line_advance > config.origin.y + config.size.height
+        let start = context.range_start + cluster.range.start;
+        let end = context.range_start + cluster.range.end;
+        let range = RichTextRange::new(start, end);
+        let required_inline_extent = vertical_cluster_required_inline_extent(
+            range,
+            context.range_start,
+            &clusters,
+            context.ruby_annotations,
+            config,
+        );
+        if cursor.y + required_inline_extent > config.origin.y + config.size.height
+            && cursor.y > config.origin.y
             && cluster.break_allowed_before
         {
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
-        let start = context.range_start + cluster.range.start;
-        let end = context.range_start + cluster.range.end;
         let bounds = LayoutRect::new(cursor.x, cursor.y, config.line_advance, config.line_advance);
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
-            range: RichTextRange::new(start, end),
-            text: cluster.text,
+            range,
+            text: cluster.text.clone(),
             origin: LayoutPoint::new(cursor.x, cursor.y),
             advance: LayoutSize::new(0.0, config.line_advance),
             bounds,
@@ -444,7 +455,47 @@ struct RunLayoutContext<'a> {
     run_index: usize,
     range_start: usize,
     presentation: &'a RichTextPresentation,
+    ruby_annotations: &'a [RichTextRubyAnnotation],
     config: TextLayoutConfig,
+}
+
+fn vertical_cluster_required_inline_extent(
+    range: RichTextRange,
+    range_start: usize,
+    clusters: &[VerticalCluster],
+    ruby_annotations: &[RichTextRubyAnnotation],
+    config: TextLayoutConfig,
+) -> f32 {
+    ruby_annotations
+        .iter()
+        .filter(|annotation| annotation.base_range.start == range.start)
+        .filter(|annotation| ranges_overlap(annotation.base_range, range))
+        .map(|annotation| {
+            let base_cluster_extent =
+                vertical_ruby_base_cluster_count(annotation.base_range, range_start, clusters)
+                    * config.line_advance;
+            ruby_text_extent(&annotation.ruby, config.ruby_font_size).max(base_cluster_extent)
+        })
+        .fold(config.line_advance, f32::max)
+        .min(config.size.height)
+}
+
+fn vertical_ruby_base_cluster_count(
+    base_range: RichTextRange,
+    range_start: usize,
+    clusters: &[VerticalCluster],
+) -> f32 {
+    let count = clusters
+        .iter()
+        .filter(|cluster| {
+            let start = range_start + cluster.range.start;
+            let end = range_start + cluster.range.end;
+            ranges_overlap(RichTextRange::new(start, end), base_range)
+                && !is_vertical_line_break_cluster(&cluster.text)
+        })
+        .count()
+        .max(1);
+    usize_to_f32(count)
 }
 
 fn layout_ruby(
@@ -1310,6 +1361,66 @@ mod tests {
             layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
             "vertical_lr ruby annotation should be placed on the left side of the base"
         );
+    }
+
+    #[test]
+    fn vertical_ruby_base_expansion_feeds_back_into_column_breaks() {
+        let mut frame = frame_with_run(
+            "天夢",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        push_ruby(&mut frame, "天".len(), "天夢".len(), "ながいよみ");
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert_eq!(layout.glyphs[0].text, "天");
+        assert_eq!(layout.glyphs[1].text, "夢");
+        assert!(
+            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
+            "long ruby base allocation should force the annotated cluster to the next column"
+        );
+        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+        assert_eq!(layout.ruby.len(), 1);
+        assert_f32_eq(layout.ruby[0].base_bounds.y, config.origin.y);
+        assert!(
+            layout.ruby[0].base_bounds.bottom() <= config.origin.y + config.size.height,
+            "expanded ruby base should fit inside the column after feedback"
+        );
+    }
+
+    #[test]
+    fn vertical_ruby_multi_cluster_base_breaks_before_the_base_start() {
+        let mut frame = frame_with_run(
+            "天夢星",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        push_ruby(&mut frame, "天".len(), "天夢星".len(), "ゆめ");
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 3);
+        assert_eq!(layout.glyphs[1].text, "夢");
+        assert_eq!(layout.glyphs[2].text, "星");
+        assert!(
+            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
+            "multi-cluster ruby base should move as a unit before it is split by overflow"
+        );
+        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(layout.glyphs[2].origin.y > layout.glyphs[1].origin.y);
+        assert_eq!(layout.ruby.len(), 1);
+        assert_eq!(
+            layout.ruby[0].base_range,
+            RichTextRange::new("天".len(), "天夢星".len())
+        );
+        assert_f32_eq(layout.ruby[0].base_bounds.x, layout.glyphs[1].bounds.x);
     }
 
     fn push_ruby(frame: &mut LineDisplayFrame, start: usize, end: usize, ruby: &str) {
