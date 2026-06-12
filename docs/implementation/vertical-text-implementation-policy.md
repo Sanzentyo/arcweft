@@ -96,9 +96,13 @@ the concrete choices to follow when turning that package into production code.
   `GlyphArea` instances positioned from `LaidOutText` ruby geometry.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
+- CLI regression coverage includes an `imq` native vertical capture parity check
+  that compares repeated headless PNG captures for the same vertical fixture.
+  Checked-in golden baselines remain future work once rendering baselines are
+  stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping/compression,
   real Unicode segmentation/orientation, vertical shaping policy, ruby
-  collision/layout feedback, and `imq` regression comparison fixtures.
+  collision/layout feedback, and checked-in `imq` golden fixtures.
 
 ## Explicit Defaults
 

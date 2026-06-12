@@ -40,9 +40,9 @@ The window renderer consumes resolved `LineDisplayFrame` values and prefers the 
 annotations, and page/line-wait/clear controls. This keeps the native window aligned with the same
 debug metadata exposed through `arcw agent observe` and MCP-style resources, instead of having each
 adapter reinterpret authored rich-text nodes independently. Ruby base text remains in the main line
-while ruby annotations are rendered through separate small overlay buffers positioned from shaped
-glyph layout metrics, with a deterministic fixed-width fallback if metrics are unavailable, instead
-of being inserted as `base(ruby)` fallback text. Page, line-wait, and clear
+while ruby annotations are shaped with glyphon buffers and submitted as absolute `GlyphArea`
+geometry positioned from `LaidOutText`, instead of being inserted as `base(ruby)` fallback text.
+Page, line-wait, and clear
 controls split frames into native pages; Space, Enter, or `n` advances to the
 next page, and Escape closes the window. The
 renderer is deliberately outside `arcweft-core`; `arcweft-core` remains Sans I/O and only emits

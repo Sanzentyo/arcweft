@@ -2595,6 +2595,67 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_vertical_capture_matches_imq_reference() {
+    if !imq_is_available() {
+        eprintln!("skipping native vertical capture imq comparison: imq is not available");
+        return;
+    }
+
+    let path = temp_arcw(
+        "agent-observe-native-vertical-imq",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]吾輩は猫である。ABC 123 2026。[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-vertical-imq");
+    let reference_path = dir.join("vertical-reference.png");
+    let candidate_path = dir.join("vertical-candidate.png");
+
+    let reference_json = capture_native_png_report(&path, &reference_path);
+    let candidate_json = capture_native_png_report(&path, &candidate_path);
+    assert_native_capture_has_content(&reference_json, "vertical-reference.png");
+    assert_native_capture_has_content(&candidate_json, "vertical-candidate.png");
+
+    let imq_output = Command::new("imq")
+        .arg("image")
+        .arg(&reference_path)
+        .arg(&candidate_path)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("imq compares native vertical captures");
+    assert!(
+        imq_output.status.success(),
+        "imq comparison should succeed, stderr: {}",
+        String::from_utf8_lossy(&imq_output.stderr)
+    );
+    let imq_json: serde_json::Value =
+        serde_json::from_slice(&imq_output.stdout).expect("imq output is JSON");
+    assert_eq!(imq_json["dimensions"]["width"], 1280);
+    assert_eq!(imq_json["dimensions"]["height"], 720);
+    assert_metric_close(metric_score(&imq_json, "mse"), 0.0, 0.0, "mse");
+    assert_metric_close(metric_score(&imq_json, "mae"), 0.0, 0.0, "mae");
+    assert_metric_close(metric_score(&imq_json, "maxae"), 0.0, 0.0, "maxae");
+    assert!(
+        metric_score(&imq_json, "ssim") >= 0.999_999,
+        "ssim should report identical native captures: {imq_json}"
+    );
+    assert_metric_close(
+        metric_detail(&imq_json, "psnr", "mse"),
+        0.0,
+        0.0,
+        "psnr.mse",
+    );
+
+    fs::remove_file(&path).expect("remove temp native vertical source");
+    fs::remove_dir_all(&dir).expect("remove temp native vertical dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
@@ -11473,6 +11534,85 @@ fn temp_dir(name: &str) -> PathBuf {
     }
     fs::create_dir_all(&path).expect("create temp fixture dir");
     path
+}
+
+fn imq_is_available() -> bool {
+    Command::new("imq")
+        .arg("--help")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--out")
+        .arg(png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native PNG");
+
+    assert!(
+        output.status.success(),
+        "native PNG capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let bytes = fs::read(png_path).expect("read native PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    serde_json::from_slice(&output.stdout).expect("native capture report is JSON")
+}
+
+fn assert_native_capture_has_content(report: &serde_json::Value, written_name: &str) {
+    assert_eq!(report["images"][0]["kind"], "color");
+    assert_eq!(report["images"][0]["renderer"], "native");
+    assert_eq!(report["images"][0]["composition"], "framebuffer");
+    assert_eq!(report["images"][0]["mime_type"], "image/png");
+    assert_eq!(report["images"][0]["width"], 1280);
+    assert_eq!(report["images"][0]["height"], 720);
+    assert!(report["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    assert_eq!(report["images"][0]["written"], written_name);
+}
+
+fn metric_score(report: &serde_json::Value, metric_name: &str) -> f64 {
+    metric_entry(report, metric_name)["score"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("{metric_name} score should be numeric: {report}"))
+}
+
+fn metric_detail(report: &serde_json::Value, metric_name: &str, detail_name: &str) -> f64 {
+    metric_entry(report, metric_name)["details"][detail_name]
+        .as_f64()
+        .unwrap_or_else(|| panic!("{metric_name}.{detail_name} should be numeric: {report}"))
+}
+
+fn metric_entry<'a>(report: &'a serde_json::Value, metric_name: &str) -> &'a serde_json::Value {
+    report["metrics"]
+        .as_array()
+        .and_then(|metrics| {
+            metrics
+                .iter()
+                .find(|metric| metric["name"].as_str() == Some(metric_name))
+        })
+        .unwrap_or_else(|| panic!("{metric_name} metric should be present: {report}"))
+}
+
+fn assert_metric_close(actual: f64, expected: f64, epsilon: f64, label: &str) {
+    assert!(
+        (actual - expected).abs() <= epsilon,
+        "{label} should be {expected}, got {actual}"
+    );
 }
 
 fn assert_sample_summary_is_ordered(samples: &serde_json::Value) {
