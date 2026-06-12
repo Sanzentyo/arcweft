@@ -102,7 +102,9 @@ the concrete choices to follow when turning that package into production code.
   keeping closing punctuation and small kana out of column heads as an initial
   kinsoku rule. The layout also applies an initial JLREQ line-end prohibition
   for opening punctuation by moving the opening punctuation to the next column
-  when it would otherwise be stranded at the previous column end.
+  when it would otherwise be stranded at the previous column end. Initial JLREQ
+  separation-prohibition handling keeps repeated dash/leader marks together and
+  keeps iteration marks with the previous cluster.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -133,10 +135,11 @@ the concrete choices to follow when turning that package into production code.
   geometry is produced by the native renderer. Checked-in golden baselines remain
   future work once rendering baselines are stable across CI targets.
 - Remaining work includes broader JLREQ line-breaking classes beyond closing
-  punctuation/small-kana heads and opening punctuation tails, proof against
-  stable checked-in font/capture baselines for `Tu`/`Tr` alternates, over-height
-  ruby split policy for annotations that cannot fit in one column, and
-  checked-in `imq` golden fixtures.
+  punctuation/small-kana heads, opening punctuation tails, and initial
+  dash/leader/repeat-mark separation rules, proof against stable checked-in
+  font/capture baselines for `Tu`/`Tr` alternates, over-height ruby split policy
+  for annotations that cannot fit in one column, and checked-in `imq` golden
+  fixtures.
 
 ## Explicit Defaults
 

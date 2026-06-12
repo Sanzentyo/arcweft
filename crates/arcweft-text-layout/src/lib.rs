@@ -430,6 +430,7 @@ fn layout_vertical_run(
             && cursor.y > config.origin.y
             && cluster.break_allowed_before
             && !is_jlreq_line_head_prohibited_cluster(&cluster.text)
+            && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, &clusters)
         {
             cursor.x += column_step;
             cursor.y = config.origin.y;
@@ -526,6 +527,20 @@ fn vertical_cluster_should_break_before_line_end_prohibited(
     );
     cursor.y + required_inline_extent + next_required_inline_extent
         > context.config.origin.y + context.config.size.height
+}
+
+fn vertical_cluster_has_jlreq_separation_prohibited_before(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    clusters[..cluster_index]
+        .iter()
+        .rev()
+        .find(|candidate| !is_vertical_line_break_cluster(&candidate.text))
+        .is_some_and(|previous| is_jlreq_separation_prohibited_pair(&previous.text, &cluster.text))
 }
 
 fn vertical_ruby_base_cluster_count(
@@ -936,6 +951,34 @@ fn is_jlreq_line_head_prohibited_cluster(grapheme: &str) -> bool {
 
 const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
     is_jlreq_closing_punctuation_char(ch) || is_jlreq_small_kana_char(ch)
+}
+
+fn is_jlreq_separation_prohibited_pair(left: &str, right: &str) -> bool {
+    let Some(left) = left.chars().next() else {
+        return false;
+    };
+    let Some(right) = right.chars().next() else {
+        return false;
+    };
+    is_jlreq_repeat_mark_char(right)
+        || (is_jlreq_dash_char(left) && is_jlreq_dash_char(right))
+        || (is_jlreq_leader_char(left) && is_jlreq_leader_char(right))
+}
+
+const fn is_jlreq_repeat_mark_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3005}' | '\u{303b}' | '\u{3031}'
+            ..='\u{3035}' | '\u{309d}' | '\u{309e}' | '\u{30fd}' | '\u{30fe}'
+    )
+}
+
+const fn is_jlreq_dash_char(ch: char) -> bool {
+    matches!(ch, '\u{2014}' | '\u{2015}' | '\u{2500}' | '\u{30fc}')
+}
+
+const fn is_jlreq_leader_char(ch: char) -> bool {
+    matches!(ch, '\u{2025}' | '\u{2026}')
 }
 
 const fn is_jlreq_closing_punctuation_char(ch: char) -> bool {
@@ -1406,6 +1449,80 @@ mod tests {
             layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
             "the next ordinary cluster should start the next vertical_rl column"
         );
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_jlreq_leaders_together() {
+        let frame = frame_with_run(
+            "天……人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[1].text, "…");
+        assert_eq!(layout.glyphs[2].text, "…");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "the second leader mark should stay with the first instead of starting a new column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_jlreq_dashes_together() {
+        let frame = frame_with_run(
+            "天――人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[1].text, "―");
+        assert_eq!(layout.glyphs[2].text, "―");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "the second dash should stay with the first instead of starting a new column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_jlreq_iteration_marks_with_previous_cluster() {
+        let frame = frame_with_run(
+            "天地々人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, "々");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "iteration marks should stay with the previous cluster instead of starting a new column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
     }
 
