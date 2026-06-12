@@ -105,7 +105,9 @@ the concrete choices to follow when turning that package into production code.
   moving the opening punctuation to the next column when it would otherwise be
   stranded at the previous column end. Initial JLREQ separation-prohibition
   handling keeps repeated dash/leader marks together and keeps iteration marks
-  with the previous cluster.
+  with the previous cluster. Initial punctuation compression keeps full cell
+  bounds for capture/hit geometry while reducing the inline advance of
+  compressible closing punctuation and middle dots to half a body cell.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -141,9 +143,9 @@ the concrete choices to follow when turning that package into production code.
   contains a checked-in Windows native PNG golden for a vertical `Tu`/`Tr`
   alternate fixture, and the CLI test compares a fresh native capture against it
   with `imq` when both Windows fonts and the `imq` binary are available.
-- Remaining work includes JLREQ refinements beyond the current kinsoku and
-  separation class coverage, such as punctuation compression/hanging policy
-  tuning and eventual pair-table generation.
+- Remaining work includes JLREQ refinements beyond the current kinsoku,
+  separation, and initial punctuation-compression coverage, such as hanging
+  policy tuning and eventual pair-table generation.
 
 ## Explicit Defaults
 

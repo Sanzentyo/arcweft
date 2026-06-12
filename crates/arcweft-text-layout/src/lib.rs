@@ -445,20 +445,21 @@ fn layout_vertical_run(
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
+        let advance = vertical_cluster_advance(&cluster.text, config);
         let bounds = LayoutRect::new(cursor.x, cursor.y, config.line_advance, config.line_advance);
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range,
             text: cluster.text.clone(),
             origin: LayoutPoint::new(cursor.x, cursor.y),
-            advance: LayoutSize::new(0.0, config.line_advance),
+            advance: LayoutSize::new(0.0, advance),
             bounds,
             writing_mode,
             orientation: cluster.orientation,
             vertical_form: cluster.vertical_form,
             presentation: context.presentation.clone(),
         });
-        cursor.y += config.line_advance;
+        cursor.y += advance;
     }
 }
 
@@ -490,6 +491,14 @@ fn vertical_cluster_required_inline_extent(
         })
         .fold(config.line_advance, f32::max)
         .min(config.size.height)
+}
+
+fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
+    if is_jlreq_compressible_punctuation_cluster(grapheme) {
+        config.line_advance * 0.5
+    } else {
+        config.line_advance
+    }
 }
 
 fn vertical_cluster_should_break_before_line_end_prohibited(
@@ -1051,11 +1060,22 @@ fn is_jlreq_line_head_prohibited_cluster(grapheme: &str) -> bool {
         .is_some_and(is_jlreq_line_head_prohibited_char)
 }
 
+fn is_jlreq_compressible_punctuation_cluster(grapheme: &str) -> bool {
+    grapheme
+        .chars()
+        .next()
+        .is_some_and(is_jlreq_compressible_punctuation_char)
+}
+
 const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
     is_jlreq_closing_punctuation_char(ch)
         || is_jlreq_small_kana_char(ch)
         || is_jlreq_dash_char(ch)
         || is_jlreq_middle_dot_char(ch)
+}
+
+const fn is_jlreq_compressible_punctuation_char(ch: char) -> bool {
+    is_jlreq_closing_punctuation_char(ch) || is_jlreq_middle_dot_char(ch)
 }
 
 fn is_jlreq_separation_prohibited_pair(left: &str, right: &str) -> bool {
@@ -1532,6 +1552,33 @@ mod tests {
             "the next breakable cluster should start the next vertical_rl column"
         );
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_punctuation_compression_keeps_following_text_in_column() {
+        let frame = frame_with_run(
+            "天、。人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 126.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[1].text, "、");
+        assert_eq!(layout.glyphs[2].text, "。");
+        assert_f32_eq(layout.glyphs[1].advance.height, config.line_advance * 0.5);
+        assert_f32_eq(layout.glyphs[2].advance.height, config.line_advance * 0.5);
+        assert_f32_eq(layout.glyphs[1].bounds.height, config.line_advance);
+        assert_f32_eq(layout.glyphs[2].bounds.height, config.line_advance);
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert_f32_eq(layout.glyphs[3].origin.x, layout.glyphs[0].origin.x);
+        assert!(
+            layout.glyphs[3].origin.y < config.origin.y + config.size.height,
+            "compressed punctuation should leave room for the following cluster"
+        );
     }
 
     #[test]
