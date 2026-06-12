@@ -117,9 +117,11 @@ the concrete choices to follow when turning that package into production code.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
 - CLI regression coverage includes an `imq` native vertical capture parity check
-  that compares repeated headless PNG captures for the same vertical fixture.
-  Checked-in golden baselines remain future work once rendering baselines are
-  stable across CI targets.
+  that compares repeated headless PNG captures for the same `vertical_rl`
+  fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
+  ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
+  geometry is produced by the native renderer. Checked-in golden baselines remain
+  future work once rendering baselines are stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
   full JLREQ line-breaking policy, proof against stable checked-in font/capture
   baselines for `Tu`/`Tr` alternates, full ruby base expansion/overhang/line-break

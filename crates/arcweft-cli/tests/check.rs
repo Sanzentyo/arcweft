@@ -2656,6 +2656,98 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_lr_ruby_text_combine_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-vertical-lr-ruby-combine",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr]縦 |[夢](ゆめ)[r] 2026 ABC。[/][p]
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--layer")
+        .arg("dialogue.rich_text")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports native vertical_lr rich-text geometry");
+
+    fs::remove_file(&path).expect("remove temp native vertical_lr source");
+    assert!(
+        output.status.success(),
+        "native vertical_lr rich-text observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native vertical_lr report is JSON");
+    let image = &json["images"][0];
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["scope"]["kind"], "layer");
+    assert_eq!(image["scope"]["id"], "dialogue.rich_text");
+    assert_eq!(image["composition"], "isolated_regions");
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+
+    let textbox = json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .expect("textbox object is observed");
+    let text_runs = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .expect("text runs are reported");
+    assert!(
+        text_runs.iter().all(|run| {
+            run["presentation"]["layout"]["writing_mode"]
+                .as_str()
+                .is_some_and(|mode| mode == "vertical_lr")
+        }),
+        "all display-map runs in the sample should preserve vertical_lr presentation"
+    );
+    assert!(
+        text_runs.iter().any(|run| {
+            run["range"]["start"].as_u64() == Some(8) && run["range"]["end"].as_u64() == Some(20)
+        }),
+        "the run containing 2026 should remain observable for text-combine geometry"
+    );
+
+    let objects = json["objects"].as_array().unwrap();
+    let digit_run = objects
+        .iter()
+        .find(|object| object["role"] == "rich_text_run" && object["text"] == " 2026 ABC。")
+        .expect("vertical text-combine run object is observed");
+    assert_eq!(digit_run["rich_text_ref"]["source"], "text");
+    assert!(
+        digit_run["bbox"]["height"].as_u64().unwrap()
+            > digit_run["bbox"]["width"].as_u64().unwrap(),
+        "vertical_lr text-combine run geometry should be column-oriented"
+    );
+
+    let ruby = objects
+        .iter()
+        .find(|object| object["role"] == "rich_text_ruby")
+        .expect("vertical ruby child object is observed");
+    assert_eq!(ruby["rich_text_ref"]["kind"], "ruby");
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert!(ruby["bbox"]["width"].as_u64().unwrap() > 0);
+    assert!(ruby["bbox"]["height"].as_u64().unwrap() > 0);
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
