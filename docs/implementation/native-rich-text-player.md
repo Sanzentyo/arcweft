@@ -123,7 +123,9 @@ pages, so LLM/debugger tools can capture text after `[p]`, line waits, or
 It also accepts `--capture-time SECONDS` and MCP `capture_time` for
 visibility-only glyph effects such as typewriter reveal; the same resolved
 Agent geometry is reused while the native GlyphArea colors are updated for the
-requested capture time.
+requested capture time. Native Agent tests cover both ordinary vertical
+clusters and text-combine-upright digit clusters, so multi-instance combined
+cells are checked against the same visibility/readback rule.
 Image resources include non-zero `page` metadata. Rich-text child objects also
 record their rendered page in `rich_text_ref.page`, and their `capture_refs`
 append `?page=N` for non-zero pages while also exposing `capture_refs[].page`

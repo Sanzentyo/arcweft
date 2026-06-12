@@ -4966,6 +4966,7 @@ flow @flow.main main {
 fn observe_native_typewriter_cluster_mask_at(
     source_path: &Path,
     raw_path: &Path,
+    object_id: &str,
     capture_time: &str,
 ) -> (serde_json::Value, Vec<u8>) {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -4978,7 +4979,7 @@ fn observe_native_typewriter_cluster_mask_at(
         .arg("--capture")
         .arg("mask")
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.0.0.3")
+        .arg(object_id)
         .arg("--capture-time")
         .arg(capture_time)
         .arg("--out")
@@ -5019,10 +5020,18 @@ flow @flow.main main {
     let hidden_path = dir.join("native-typewriter-hidden-mask.rgba");
     let visible_path = dir.join("native-typewriter-visible-mask.rgba");
 
-    let (hidden, hidden_bytes) =
-        observe_native_typewriter_cluster_mask_at(&path, &hidden_path, "0");
-    let (visible, visible_bytes) =
-        observe_native_typewriter_cluster_mask_at(&path, &visible_path, "4");
+    let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &hidden_path,
+        "object.dialogue.0.0.cluster.0.0.3",
+        "0",
+    );
+    let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &visible_path,
+        "object.dialogue.0.0.cluster.0.0.3",
+        "4",
+    );
     let hidden_cluster = find_rich_text_cluster_object(&hidden, "吾", 0, 3);
     let visible_cluster = find_rich_text_cluster_object(&visible, "吾", 0, 3);
     assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
@@ -5054,6 +5063,75 @@ flow @flow.main main {
 
     fs::remove_file(&path).expect("remove temp native typewriter source");
     fs::remove_dir_all(&dir).expect("remove temp native typewriter dir");
+}
+
+#[test]
+fn agent_observe_native_typewriter_text_combine_capture_time_controls_all_glyphs() {
+    let path = temp_arcw(
+        "agent-observe-native-typewriter-text-combine-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-typewriter-text-combine-capture-time");
+    let hidden_path = dir.join("native-typewriter-text-combine-hidden-mask.rgba");
+    let visible_path = dir.join("native-typewriter-text-combine-visible-mask.rgba");
+
+    let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &hidden_path,
+        "object.dialogue.0.0.cluster.0.0.4",
+        "0",
+    );
+    let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
+        &path,
+        &visible_path,
+        "object.dialogue.0.0.cluster.0.0.4",
+        "4",
+    );
+    let hidden_cluster = find_rich_text_cluster_object(&hidden, "2026", 0, 4);
+    let visible_cluster = find_rich_text_cluster_object(&visible, "2026", 0, 4);
+    assert_eq!(
+        hidden_cluster["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(
+        visible_cluster["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
+    assert_eq!(
+        hidden["images"][0]["crop_origin"],
+        visible["images"][0]["crop_origin"]
+    );
+    assert_eq!(hidden["images"][0]["width"], visible["images"][0]["width"]);
+    assert_eq!(
+        hidden["images"][0]["height"],
+        visible["images"][0]["height"]
+    );
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    let hidden_opaque = hidden_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    let visible_opaque = visible_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    assert_eq!(hidden_opaque, 0);
+    assert_eq!(
+        visible_opaque as u64,
+        visible["images"][0]["content_pixels"].as_u64().unwrap()
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter text-combine source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter text-combine dir");
 }
 
 #[test]
