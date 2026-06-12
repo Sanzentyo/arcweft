@@ -184,7 +184,10 @@ the concrete choices to follow when turning that package into production code.
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
   ruby and a 4-digit text-combine run, asserting that the observed
   layer/run/ruby and text-combine cluster geometry is produced by the native
-  renderer. The checked-in rich-text samples
+  renderer. Focused native Agent coverage also compares the same text in
+  `vertical_rl` and `vertical_lr`, asserting that column progression moves left
+  for `vertical_rl` and right for `vertical_lr` from renderer-derived cluster
+  bboxes. The checked-in rich-text samples
   `samples/rich-text-full-grammar.arcw` and
   `samples/rich-text-windows-fonts.arcw` are now also observed through the native
   `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`

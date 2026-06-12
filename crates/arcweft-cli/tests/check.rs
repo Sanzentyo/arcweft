@@ -2938,6 +2938,59 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_column_progression_direction() {
+    assert_native_vertical_column_progression_direction("vertical_rl", false);
+    assert_native_vertical_column_progression_direction("vertical_lr", true);
+}
+
+fn assert_native_vertical_column_progression_direction(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-column-progression"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬月火水木金土[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native vertical progression source");
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+
+    let first_column_start = find_rich_text_cluster_object(&json, "天", 0, 3);
+    let next_column_start = find_rich_text_cluster_object(&json, "夏", 9, 12);
+    assert!(
+        agent_json_bbox_y(&first_column_start["bbox"])
+            .abs_diff(agent_json_bbox_y(&next_column_start["bbox"]))
+            <= 1,
+        "{writing_mode} next column should restart near the top inline origin"
+    );
+    if next_column_moves_right {
+        assert!(
+            agent_json_bbox_x(&next_column_start["bbox"])
+                > agent_json_bbox_x(&first_column_start["bbox"]),
+            "{writing_mode} next column should advance rightward: {first_column_start} / {next_column_start}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_x(&next_column_start["bbox"])
+                < agent_json_bbox_x(&first_column_start["bbox"]),
+            "{writing_mode} next column should advance leftward: {first_column_start} / {next_column_start}"
+        );
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_vertical_cluster_orientation_metadata() {
     let path = temp_arcw(
         "agent-observe-native-vertical-cluster-metadata",
