@@ -15,6 +15,7 @@ use thiserror::Error;
 use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation as _;
 
+mod jlreq_punctuation;
 mod vertical_orientation;
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
@@ -429,7 +430,7 @@ fn layout_vertical_run(
         if cursor.y + required_inline_extent > config.origin.y + config.size.height
             && cursor.y > config.origin.y
             && cluster.break_allowed_before
-            && !is_jlreq_line_head_prohibited_cluster(&cluster.text)
+            && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
             && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, &clusters)
         {
             cursor.x += column_step;
@@ -471,7 +472,7 @@ fn vertical_cluster_origin_y(
     config: TextLayoutConfig,
 ) -> f32 {
     let column_end = config.origin.y + config.size.height;
-    if is_jlreq_hanging_punctuation_cluster(grapheme)
+    if jlreq_punctuation::is_hanging_cluster(grapheme)
         && cursor_y + config.line_advance > column_end
         && cursor_y > config.origin.y
     {
@@ -512,7 +513,7 @@ fn vertical_cluster_required_inline_extent(
 }
 
 fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
-    if is_jlreq_compressible_punctuation_cluster(grapheme) {
+    if jlreq_punctuation::is_compressible_cluster(grapheme) {
         config.line_advance * 0.5
     } else {
         config.line_advance
@@ -531,7 +532,7 @@ fn vertical_cluster_should_break_before_line_end_prohibited(
     };
     if cursor.y <= context.config.origin.y
         || !cluster.break_allowed_before
-        || !is_jlreq_line_end_prohibited_cluster(&cluster.text)
+        || !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
     {
         return false;
     }
@@ -567,7 +568,10 @@ fn vertical_cluster_has_jlreq_separation_prohibited_before(
         .iter()
         .rev()
         .find(|candidate| !is_vertical_line_break_cluster(&candidate.text))
-        .is_some_and(|previous| is_jlreq_separation_prohibited_pair(&previous.text, &cluster.text))
+        .is_some_and(|previous| {
+            jlreq_punctuation::pair_adjustment_for_clusters(&previous.text, &cluster.text)
+                .keep_together
+        })
 }
 
 fn vertical_ruby_base_cluster_count(
@@ -1062,165 +1066,6 @@ fn is_ascii_digit_grapheme(grapheme: &str) -> bool {
 
 fn is_vertical_line_break_cluster(grapheme: &str) -> bool {
     matches!(grapheme, "\n" | "\r\n")
-}
-
-fn is_jlreq_line_end_prohibited_cluster(grapheme: &str) -> bool {
-    grapheme
-        .chars()
-        .next()
-        .is_some_and(is_jlreq_line_end_prohibited_char)
-}
-
-fn is_jlreq_line_head_prohibited_cluster(grapheme: &str) -> bool {
-    grapheme
-        .chars()
-        .next()
-        .is_some_and(is_jlreq_line_head_prohibited_char)
-}
-
-fn is_jlreq_compressible_punctuation_cluster(grapheme: &str) -> bool {
-    grapheme
-        .chars()
-        .next()
-        .is_some_and(is_jlreq_compressible_punctuation_char)
-}
-
-fn is_jlreq_hanging_punctuation_cluster(grapheme: &str) -> bool {
-    grapheme
-        .chars()
-        .next()
-        .is_some_and(is_jlreq_hanging_punctuation_char)
-}
-
-const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
-    is_jlreq_closing_punctuation_char(ch)
-        || is_jlreq_small_kana_char(ch)
-        || is_jlreq_dash_char(ch)
-        || is_jlreq_middle_dot_char(ch)
-}
-
-const fn is_jlreq_compressible_punctuation_char(ch: char) -> bool {
-    is_jlreq_closing_punctuation_char(ch) || is_jlreq_middle_dot_char(ch)
-}
-
-const fn is_jlreq_hanging_punctuation_char(ch: char) -> bool {
-    is_jlreq_compressible_punctuation_char(ch)
-}
-
-fn is_jlreq_separation_prohibited_pair(left: &str, right: &str) -> bool {
-    let Some(left) = left.chars().next() else {
-        return false;
-    };
-    let Some(right) = right.chars().next() else {
-        return false;
-    };
-    is_jlreq_repeat_mark_char(right)
-        || (is_jlreq_dash_char(left) && is_jlreq_dash_char(right))
-        || (is_jlreq_leader_char(left) && is_jlreq_leader_char(right))
-}
-
-const fn is_jlreq_repeat_mark_char(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{3005}' | '\u{303b}' | '\u{3031}'
-            ..='\u{3035}' | '\u{309d}' | '\u{309e}' | '\u{30fd}' | '\u{30fe}'
-    )
-}
-
-const fn is_jlreq_dash_char(ch: char) -> bool {
-    matches!(ch, '\u{2014}' | '\u{2015}' | '\u{2500}' | '\u{30fc}')
-}
-
-const fn is_jlreq_leader_char(ch: char) -> bool {
-    matches!(ch, '\u{2025}' | '\u{2026}')
-}
-
-const fn is_jlreq_middle_dot_char(ch: char) -> bool {
-    matches!(ch, '\u{00b7}' | '\u{30fb}' | '\u{ff65}')
-}
-
-const fn is_jlreq_closing_punctuation_char(ch: char) -> bool {
-    matches!(
-        ch,
-        ')' | ']'
-            | '}'
-            | '\u{2019}'
-            | '\u{201d}'
-            | '\u{3001}'
-            | '\u{3002}'
-            | '\u{3009}'
-            | '\u{300b}'
-            | '\u{300d}'
-            | '\u{300f}'
-            | '\u{3011}'
-            | '\u{3015}'
-            | '\u{3017}'
-            | '\u{3019}'
-            | '\u{301b}'
-            | '\u{301e}'
-            | '\u{301f}'
-            | '\u{ff09}'
-            | '\u{ff0c}'
-            | '\u{ff0e}'
-            | '\u{ff3d}'
-            | '\u{ff5d}'
-            | '\u{ff60}'
-    )
-}
-
-const fn is_jlreq_small_kana_char(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{3041}'
-            | '\u{3043}'
-            | '\u{3045}'
-            | '\u{3047}'
-            | '\u{3049}'
-            | '\u{3063}'
-            | '\u{3083}'
-            | '\u{3085}'
-            | '\u{3087}'
-            | '\u{308e}'
-            | '\u{3095}'
-            | '\u{3096}'
-            | '\u{30a1}'
-            | '\u{30a3}'
-            | '\u{30a5}'
-            | '\u{30a7}'
-            | '\u{30a9}'
-            | '\u{30c3}'
-            | '\u{30e3}'
-            | '\u{30e5}'
-            | '\u{30e7}'
-            | '\u{30ee}'
-            | '\u{30f5}'
-            | '\u{30f6}'
-            | '\u{31f0}'..='\u{31ff}'
-    )
-}
-
-const fn is_jlreq_line_end_prohibited_char(ch: char) -> bool {
-    matches!(
-        ch,
-        '(' | '['
-            | '{'
-            | '\u{2018}'
-            | '\u{201c}'
-            | '\u{3008}'
-            | '\u{300a}'
-            | '\u{300c}'
-            | '\u{300e}'
-            | '\u{3010}'
-            | '\u{3014}'
-            | '\u{3016}'
-            | '\u{3018}'
-            | '\u{301a}'
-            | '\u{301d}'
-            | '\u{ff08}'
-            | '\u{ff3b}'
-            | '\u{ff5b}'
-            | '\u{ff5f}'
-    )
 }
 
 fn vertical_orientation(
