@@ -88,8 +88,10 @@ the concrete choices to follow when turning that package into production code.
 - Vertical layout clustering uses `unicode-segmentation` grapheme indices for
   UAX #29 boundaries, so combining-mark Latin clusters and emoji ZWJ sequences
   stay intact before orientation and text-combine policy are applied. Mixed
-  vertical orientation is still a deterministic Arcweft policy heuristic, not a
-  generated UAX #50 table.
+  vertical orientation is resolved through a generated Unicode 17.0.0 UAX #50
+  `Vertical_Orientation` range table in `arcweft-text-layout`. `Tu` resolves to
+  upright and `Tr` currently resolves to sideways fallback until vertical
+  alternate shaping is implemented.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The current
@@ -106,9 +108,9 @@ the concrete choices to follow when turning that package into production code.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping/compression,
-  generated UAX #50 orientation data, UAX #14/JLREQ line-breaking policy,
-  vertical shaping policy, ruby collision/layout feedback, and checked-in `imq`
-  golden fixtures.
+  UAX #14/JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
+  alternates, ruby collision/layout feedback, and checked-in `imq` golden
+  fixtures.
 
 ## Explicit Defaults
 

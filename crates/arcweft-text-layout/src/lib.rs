@@ -13,6 +13,10 @@ use std::ops::Range;
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation as _;
 
+mod vertical_orientation;
+pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
+use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
+
 /// Text layout failed before geometry could be produced.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TextLayoutError {
@@ -590,49 +594,29 @@ fn vertical_orientation(
         RichTextVerticalLatinMode::Upright => GlyphOrientation::Upright,
         RichTextVerticalLatinMode::Sideways => GlyphOrientation::SidewaysCw,
         RichTextVerticalLatinMode::Mixed => {
-            if mixed_vertical_grapheme_is_sideways(grapheme) {
-                GlyphOrientation::SidewaysCw
-            } else {
-                GlyphOrientation::Upright
+            match unicode_vertical_orientation_for_grapheme(grapheme) {
+                UnicodeVerticalOrientation::Upright
+                | UnicodeVerticalOrientation::TransformedUpright => GlyphOrientation::Upright,
+                UnicodeVerticalOrientation::Rotated
+                | UnicodeVerticalOrientation::TransformedRotated => GlyphOrientation::SidewaysCw,
             }
         }
     }
 }
 
-fn mixed_vertical_grapheme_is_sideways(grapheme: &str) -> bool {
-    let mut has_sideways_base = false;
-    let all_sideways = grapheme.chars().all(|ch| {
-        if mixed_vertical_char_is_sideways(ch) {
-            has_sideways_base = true;
-            true
-        } else {
-            is_combining_mark(ch)
-        }
-    });
-    all_sideways && has_sideways_base
+fn unicode_vertical_orientation_for_grapheme(grapheme: &str) -> UnicodeVerticalOrientation {
+    grapheme
+        .chars()
+        .find(|ch| !is_grapheme_modifier_or_join_control(*ch))
+        .or_else(|| grapheme.chars().next())
+        .map_or(
+            UnicodeVerticalOrientation::Rotated,
+            unicode_vertical_orientation,
+        )
 }
 
-fn mixed_vertical_char_is_sideways(ch: char) -> bool {
-    is_basic_latin_letter(ch) || is_latin_1_supplement_letter(ch) || is_latin_extended(ch)
-}
-
-fn is_basic_latin_letter(ch: char) -> bool {
-    ch.is_ascii_alphabetic()
-}
-
-fn is_latin_1_supplement_letter(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{00c0}'..='\u{00d6}' | '\u{00d8}'..='\u{00f6}' | '\u{00f8}'..='\u{00ff}'
-    ) && ch.is_alphabetic()
-}
-
-const fn is_latin_extended(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{0100}'..='\u{024f}'
-            | '\u{1e00}'..='\u{1eff}'
-    )
+const fn is_grapheme_modifier_or_join_control(ch: char) -> bool {
+    is_combining_mark(ch) || is_variation_selector(ch) || matches!(ch, '\u{200c}' | '\u{200d}')
 }
 
 const fn is_combining_mark(ch: char) -> bool {
@@ -644,6 +628,10 @@ const fn is_combining_mark(ch: char) -> bool {
             | '\u{20d0}'..='\u{20ff}'
             | '\u{fe20}'..='\u{fe2f}'
     )
+}
+
+const fn is_variation_selector(ch: char) -> bool {
+    matches!(ch, '\u{fe00}'..='\u{fe0f}' | '\u{e0100}'..='\u{e01ef}')
 }
 
 fn union_bounds(rects: impl IntoIterator<Item = LayoutRect>) -> Option<LayoutRect> {
@@ -856,6 +844,26 @@ mod tests {
     }
 
     #[test]
+    fn vertical_mixed_orientation_uses_unicode_vertical_orientation_data() {
+        let frame = frame_with_run(
+            "AＡ。ー",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(UNICODE_VERTICAL_ORIENTATION_VERSION, "17.0.0");
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[0].text, "A");
+        assert_eq!(layout.glyphs[0].orientation, GlyphOrientation::SidewaysCw);
+        assert_eq!(layout.glyphs[1].text, "Ａ");
+        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::Upright);
+        assert_eq!(layout.glyphs[2].text, "。");
+        assert_eq!(layout.glyphs[2].orientation, GlyphOrientation::Upright);
+        assert_eq!(layout.glyphs[3].text, "ー");
+        assert_eq!(layout.glyphs[3].orientation, GlyphOrientation::SidewaysCw);
+    }
+
+    #[test]
     fn vertical_text_combine_uses_at_most_four_ascii_digits() {
         let frame = frame_with_run(
             "20265",
@@ -870,7 +878,7 @@ mod tests {
             GlyphOrientation::TextCombineUpright
         );
         assert_eq!(layout.glyphs[1].text, "5");
-        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::Upright);
+        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::SidewaysCw);
     }
 
     #[test]
