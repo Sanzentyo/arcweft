@@ -165,10 +165,15 @@ the concrete choices to follow when turning that package into production code.
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
   ruby and a 4-digit text-combine run, asserting that the observed layer/run/ruby
-  geometry is produced by the native renderer. `tests/fixtures/native_capture/`
-  contains a checked-in Windows native PNG golden for a vertical `Tu`/`Tr`
-  alternate fixture, and the CLI test compares a fresh native capture against it
-  with `imq` when both Windows fonts and the `imq` binary are available.
+  geometry is produced by the native renderer. The checked-in rich-text samples
+  `samples/rich-text-full-grammar.arcw` and
+  `samples/rich-text-windows-fonts.arcw` are now also observed through the native
+  `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`
+  runs, source ranges, masks, and column-shaped bounds remain covered.
+  `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
+  golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
+  fresh native capture against it with `imq` when both Windows fonts and the
+  `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,

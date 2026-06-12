@@ -2810,6 +2810,71 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
+    let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
+    let json = observe_native_rich_text_layer_report(&source_path);
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    let run = find_rich_text_run_object(
+        &json,
+        "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
+    );
+    assert_eq!(run["entity"], "sen.say");
+    assert_eq!(run["rich_text"]["line"], "say.windows_fonts.001");
+    assert_eq!(run["rich_text_ref"]["range"]["start"], 0);
+    assert_eq!(run["rich_text_ref"]["range"]["end"], 105);
+    assert!(
+        run["bbox"]["height"].as_u64().unwrap() >= 120,
+        "sample vertical_rl run should occupy multiple vertical cells: {run}"
+    );
+    assert!(
+        run["bbox"]["width"].as_u64().unwrap() <= 400,
+        "sample vertical_rl run should be column-shaped rather than one long horizontal line: {run}"
+    );
+    assert!(
+        run["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
+    );
+}
+
+#[test]
+fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry() {
+    let source_path = workspace_root().join("samples/rich-text-full-grammar.arcw");
+    let json = observe_native_rich_text_layer_report(&source_path);
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
+    assert_eq!(vertical_rl["entity"], "bob.say");
+    assert_eq!(vertical_rl["rich_text"]["line"], "say.full.005");
+    assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 27);
+    assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 63);
+    assert!(
+        vertical_rl["bbox"]["height"].as_u64().unwrap() >= 120,
+        "full grammar vertical_rl run should preserve column geometry: {vertical_rl}"
+    );
+    assert!(
+        vertical_rl["bbox"]["width"].as_u64().unwrap() <= 260,
+        "full grammar vertical_rl run should not flatten into a horizontal line: {vertical_rl}"
+    );
+
+    let vertical_lr = find_rich_text_run_object(&json, "縦LR");
+    assert_eq!(vertical_lr["rich_text"]["line"], "say.full.005");
+    assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);
+    assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 71);
+    assert!(
+        vertical_lr["bbox"]["height"].as_u64().unwrap()
+            > vertical_lr["bbox"]["width"].as_u64().unwrap(),
+        "short vertical_lr sample run should be visibly vertical: {vertical_lr}"
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
@@ -11737,6 +11802,58 @@ fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json:
     let bytes = fs::read(png_path).expect("read native PNG");
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     serde_json::from_slice(&output.stdout).expect("native capture report is JSON")
+}
+
+fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--layer")
+        .arg("dialogue.rich_text")
+        .arg("--page")
+        .arg("0")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe reports native rich-text layer");
+
+    assert!(
+        output.status.success(),
+        "native rich-text layer observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("native rich-text layer report is JSON")
+}
+
+fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {
+    let image = &report["images"][0];
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["scope"]["kind"], "layer");
+    assert_eq!(image["scope"]["id"], "dialogue.rich_text");
+    assert_eq!(image["composition"], "isolated_regions");
+    assert_eq!(image["mime_type"], "image/png");
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn find_rich_text_run_object<'a>(
+    report: &'a serde_json::Value,
+    text: &str,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "rich_text_run" && object["text"] == text)
+        .unwrap_or_else(|| panic!("rich-text run `{text}` should be observed: {report}"))
 }
 
 fn assert_native_capture_has_content(report: &serde_json::Value, written_name: &str) {
