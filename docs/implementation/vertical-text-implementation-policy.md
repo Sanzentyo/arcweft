@@ -275,9 +275,9 @@ the concrete choices to follow when turning that package into production code.
   the same line-end opening-punctuation movement and half-cell hanging
   punctuation with rightward column progression, so the JLREQ edge behavior is
   not only proven for `vertical_rl`. The `vertical_lr` moved opening-punctuation
-  cluster is also captured as a raw native mask crop, tying the mirrored Agent
-  bbox and crop origin back to rendered GlyphArea pixels. Preset-specific native
-  Agent coverage compares
+  cluster and hanging punctuation cluster are also captured as raw native mask
+  crops, tying the mirrored Agent bboxes and crop origins back to rendered
+  GlyphArea pixels. Preset-specific native Agent coverage compares
   `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset. Broader
