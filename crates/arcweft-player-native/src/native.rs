@@ -2773,7 +2773,6 @@ impl NativeOffscreenTextRenderer {
             GlyphonAreaOptions {
                 bounds,
                 origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
-                skip_missing_glyphs: true,
                 ..GlyphonAreaOptions::default()
             },
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
@@ -3399,7 +3398,6 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             GlyphonAreaOptions {
                 bounds,
                 origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
-                skip_missing_glyphs: true,
                 ..GlyphonAreaOptions::default()
             },
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
