@@ -55,6 +55,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   object-id/mask captures also render selected glyphs through the offscreen text
   framebuffer, while non-text debug scopes still fall back to explicit geometry
   fills.
+- Long-term vertical rich-text rendering policy is fixed in
+  `docs/implementation/vertical-text-implementation-policy.md`. The adopted
+  direction is to vendor glyphon, add a pre-laid `GlyphArea` renderer path, and
+  move vertical writing, ruby, text-combine, line breaking, hit-test, and Agent
+  geometry into a Sans I/O `arcweft-text-layout` crate instead of relying on
+  renderer shims or whole-`TextArea` rotation.
 - `arcweft-agent-mcp` now converts Agent Debug Bus resources into MCP
   `resources/read`, `resources/list`, `resources/templates/list`, and image
   tool-result shapes. The CLI stdio MCP adapter can pass a listed capture URI
