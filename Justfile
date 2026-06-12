@@ -21,7 +21,10 @@ test-slow-mcp:
 test-visual-golden:
     @cargo test -p arcweft-cli --test check agent_observe_native_renderer_vertical_tutr_matches_checked_in_imq_golden -- --ignored --nocapture
 
-test-tier2: test-slow-mcp test-visual-golden
+test-slow-agent-observe:
+    @cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
+
+test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
 
 generate-jlreq-punctuation:
     @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe

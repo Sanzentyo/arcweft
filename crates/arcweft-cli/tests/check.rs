@@ -1942,6 +1942,7 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 Agent observe resource matrix: slow multi-subprocess image/resource coverage"]
 #[allow(clippy::too_many_lines)]
 fn agent_observe_writes_layer_png_and_object_raw_images() {
     let path = temp_arcw(
