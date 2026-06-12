@@ -178,7 +178,11 @@ the concrete choices to follow when turning that package into production code.
   offscreen debug and isolated-color captures use the same GlyphArea path as
   normal body rendering, so vertical glyph cluster bboxes, object-id masks, and
   color crops share one placement model instead of falling back to glyphon's
-  horizontal TextArea layout.
+  horizontal TextArea layout. Legacy horizontal TextArea rendering may still
+  place ruby from shaped glyph geometry when no `LaidOutText` is available, but
+  it no longer fabricates estimated ruby positions; if neither layout nor shaped
+  base glyph geometry exists, the ruby buffer is omitted instead of emitting a
+  compatibility placement.
 - CLI regression coverage includes an `imq` native vertical capture parity check
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with

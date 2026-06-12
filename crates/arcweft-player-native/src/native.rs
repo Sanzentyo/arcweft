@@ -2406,15 +2406,16 @@ fn build_ruby_buffers(
         let spans = [(annotation.ruby.as_str(), attrs.clone())];
         buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(font_system, false);
-        let ruby_width = buffer.layout_runs().next().map_or(0.0, |run| run.line_w);
-        let (left, top) = ruby_layout_geometry(layout, ruby_index).unwrap_or_else(|| {
-            let (base_left, top, base_width) =
-                ruby_overlay_geometry(text_buffer, rich_text, &annotation.base_range, origin)
-                    .unwrap_or_else(|| {
-                        ruby_overlay_geometry_estimate(rich_text, &annotation.base_range, origin)
-                    });
-            (base_left + (base_width - ruby_width).max(0.0) / 2.0, top)
-        });
+        let Some((left, top)) = ruby_layout_geometry(layout, ruby_index).or_else(|| {
+            let ruby_width = buffer.layout_runs().next().map_or(0.0, |run| run.line_w);
+            ruby_overlay_geometry(text_buffer, rich_text, &annotation.base_range, origin).map(
+                |(base_left, top, base_width)| {
+                    (base_left + (base_width - ruby_width).max(0.0) / 2.0, top)
+                },
+            )
+        }) else {
+            continue;
+        };
         buffers.push(WindowRubyBuffer {
             buffer,
             left,
@@ -2469,7 +2470,6 @@ fn ruby_layout_geometry(layout: Option<&LaidOutText>, ruby_index: usize) -> Opti
 const NATIVE_TEXT_LEFT: f32 = 24.0;
 const NATIVE_TEXT_TOP: f32 = 24.0;
 const NATIVE_RUBY_BASELINE_OFFSET: f32 = 48.0;
-const NATIVE_RUBY_FALLBACK_ADVANCE: f32 = 16.0;
 const NATIVE_GLYPHAREA_BASELINE_OFFSET: f32 = 30.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -2562,34 +2562,6 @@ fn text_line_start_offsets(text: &str) -> Vec<usize> {
             .filter_map(|(index, ch)| (ch == '\n').then_some(index + ch.len_utf8())),
     );
     offsets
-}
-
-fn ruby_overlay_geometry_estimate(
-    rich_text: &WindowRichText,
-    base_range: &Range<usize>,
-    origin: NativeTextOrigin,
-) -> (f32, f32, f32) {
-    let prefix = rich_text.text.get(..base_range.start).unwrap_or_default();
-    let line = prefix.chars().filter(|value| *value == '\n').count();
-    let column = prefix
-        .rsplit('\n')
-        .next()
-        .unwrap_or_default()
-        .chars()
-        .count();
-    let base_width =
-        rich_text
-            .text
-            .get(base_range.clone())
-            .map_or(NATIVE_RUBY_FALLBACK_ADVANCE, |base| {
-                usize_to_f32_saturating(base.chars().count()).max(1.0)
-                    * NATIVE_RUBY_FALLBACK_ADVANCE
-            });
-    (
-        origin.left + usize_to_f32_saturating(column) * NATIVE_RUBY_FALLBACK_ADVANCE,
-        (origin.top + usize_to_f32_saturating(line) * 42.0 - NATIVE_RUBY_BASELINE_OFFSET).max(0.0),
-        base_width,
-    )
 }
 
 struct Application {
@@ -3595,22 +3567,37 @@ mod tests {
             NativeTextOrigin::default(),
         )
         .expect("ruby base has shaped glyph geometry");
-        let estimated = ruby_overlay_geometry_estimate(
-            rich_text,
-            &rich_text.ruby_annotations[0].base_range,
-            NativeTextOrigin::default(),
-        );
         assert!(measured.2 > 1.0);
-        assert!(
-            (measured.0 - estimated.0).abs() > 0.5 || (measured.2 - estimated.2).abs() > 0.5,
-            "ruby overlay geometry should come from shaped glyph metrics"
-        );
 
         assert_ruby_glyph_areas_use_absolute_glypharea(
             &mut font_system,
             &buffer,
             rich_text,
             &pages,
+        );
+    }
+
+    #[test]
+    fn ruby_buffers_without_layout_require_shaped_base_geometry() {
+        let frame = styled_ruby_test_frame();
+        let pages = WindowPage::from_frame(&frame);
+        let rich_text = &pages[0].rich_text;
+        let mut font_system = FontSystem::new();
+        let empty_buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+
+        let ruby_buffers = build_ruby_buffers(
+            &mut font_system,
+            &empty_buffer,
+            rich_text,
+            None,
+            800,
+            600,
+            NativeTextOrigin::default(),
+        );
+
+        assert!(
+            ruby_buffers.is_empty(),
+            "ruby buffers without layout should not fall back to estimated positions"
         );
     }
 
