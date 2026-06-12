@@ -9,7 +9,7 @@ pub const JLREQ_PUNCTUATION_DATA_VERSION: &str = "arcweft-jlreq-punctuation-2026
 
 /// Checked-in JLREQ pair adjustment data version.
 pub const JLREQ_PAIR_ADJUSTMENT_DATA_VERSION: &str =
-    "arcweft-jlreq-pair-adjustment-2026-06-12-strictness";
+    "arcweft-jlreq-pair-adjustment-2026-06-12-expanded-pairs";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum JlreqPunctuationClass {
@@ -1046,6 +1046,24 @@ pub(crate) const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[
         },
     },
     JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::Opening),
+        right: JlreqPunctuationClass::Closing,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
         left: Some(JlreqPunctuationClass::Closing),
         right: JlreqPunctuationClass::Opening,
         adjustments: JlreqPairAdjustmentSet {
@@ -1114,6 +1132,78 @@ pub(crate) const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[
             strict: JlreqPairAdjustment {
                 keep_together: false,
                 break_penalty: 50,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::SmallKana,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::Dash,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: false,
+                break_penalty: 100,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::Leader,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: false,
+                break_penalty: 50,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 500,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::MiddleDot,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: false,
+                break_penalty: 0,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: false,
+                break_penalty: 25,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
             },
         },
     },

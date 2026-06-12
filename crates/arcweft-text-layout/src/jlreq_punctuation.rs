@@ -92,7 +92,7 @@ mod tests {
         );
         assert_eq!(
             JLREQ_PAIR_ADJUSTMENT_DATA_VERSION,
-            "arcweft-jlreq-pair-adjustment-2026-06-12-strictness"
+            "arcweft-jlreq-pair-adjustment-2026-06-12-expanded-pairs"
         );
     }
 
@@ -159,6 +159,9 @@ mod tests {
         assert!(pair_adjustment_for_clusters("山", "々", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("ー", "ー", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("…", "…", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("「", "」", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("あ", "っ", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("あ", "ー", JlreqStrictness::Normal).keep_together);
         assert_eq!(
             pair_adjustment_for_clusters("。", "「", JlreqStrictness::Normal).break_penalty,
             25
@@ -180,6 +183,10 @@ mod tests {
         assert!(!pair_adjustment_for_clusters("・", "「", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("・", "「", JlreqStrictness::Strict).keep_together);
         assert!(!pair_adjustment_for_clusters("ー", "ー", JlreqStrictness::Loose).keep_together);
+        assert!(!pair_adjustment_for_clusters("あ", "…", JlreqStrictness::Loose).keep_together);
+        assert!(pair_adjustment_for_clusters("あ", "…", JlreqStrictness::Normal).keep_together);
+        assert!(!pair_adjustment_for_clusters("あ", "・", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("あ", "・", JlreqStrictness::Strict).keep_together);
     }
 
     fn parse_source_ranges() -> Vec<JlreqPunctuationRange> {

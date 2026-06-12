@@ -1,5 +1,5 @@
 # Arcweft JLREQ punctuation pair adjustment source data.
-# version: arcweft-jlreq-pair-adjustment-2026-06-12-strictness
+# version: arcweft-jlreq-pair-adjustment-2026-06-12-expanded-pairs
 #
 # Format:
 #   LeftClassOrAny; RightClass; LooseKeep; NormalKeep; StrictKeep; LoosePenalty; NormalPenalty; StrictPenalty; Notes
@@ -12,7 +12,12 @@
 Any; RepeatMark; true; true; true; 1000; 1000; 1000; iteration marks stay with the previous cluster
 Dash; Dash; false; true; true; 100; 1000; 1000; repeated dash/prolonged-sound marks stay together outside loose composition
 Leader; Leader; false; true; true; 100; 1000; 1000; repeated leader marks stay together outside loose composition
+Opening; Closing; true; true; true; 1000; 1000; 1000; adjacent opening/closing brackets stay together as a compact pair
 Closing; Opening; false; false; false; 5; 25; 100; avoid weak breaks between adjacent closing and opening punctuation
 Closing; Closing; false; false; false; 5; 20; 75; prefer not to split adjacent closing punctuation in stricter composition
 MiddleDot; Opening; false; false; true; 0; 15; 1000; strict composition keeps middle dot with following opening punctuation
 MiddleDot; Closing; false; false; false; 0; 10; 50; stricter composition avoids separating middle dot from following closing punctuation
+Any; SmallKana; true; true; true; 1000; 1000; 1000; small kana stay with the previous cluster in vertical composition
+Any; Dash; false; true; true; 100; 1000; 1000; dash/prolonged-sound marks stay with the previous cluster outside loose composition
+Any; Leader; false; true; true; 50; 500; 1000; leader marks stay with the previous cluster outside loose composition
+Any; MiddleDot; false; false; true; 0; 25; 1000; strict composition keeps middle dots with the previous cluster

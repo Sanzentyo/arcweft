@@ -1843,6 +1843,31 @@ mod tests {
     }
 
     #[test]
+    fn vertical_column_pair_break_penalty_reads_expanded_jlreq_pairs() {
+        let leader_clusters = vertical_clusters("天…人", RichTextVerticalLatinMode::Mixed);
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&leader_clusters, 0, 1, JlreqStrictness::Loose),
+            50.0,
+        );
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&leader_clusters, 0, 1, JlreqStrictness::Normal),
+            500.0,
+        );
+
+        let middle_dot_clusters = vertical_clusters("天・人", RichTextVerticalLatinMode::Mixed);
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&middle_dot_clusters, 0, 1, JlreqStrictness::Strict),
+            1000.0,
+        );
+
+        let bracket_clusters = vertical_clusters("「」人", RichTextVerticalLatinMode::Mixed);
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(&bracket_clusters, 0, 1, JlreqStrictness::Normal),
+            1000.0,
+        );
+    }
+
+    #[test]
     fn rich_text_layout_jlreq_strictness_overrides_host_config_when_explicit() {
         let mut presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
         presentation
