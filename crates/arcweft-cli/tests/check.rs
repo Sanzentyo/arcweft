@@ -3346,6 +3346,45 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_jlreq_line_end_prohibited_opening_punctuation() {
+    let path = temp_arcw(
+        "agent-observe-native-jlreq-line-end-opening-punctuation",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春「人外[/][p]
+}
+",
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp JLREQ opening punctuation source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let spring = find_rich_text_cluster_object(&json, "春", 6, 9);
+    let opening_bracket = find_rich_text_cluster_object(&json, "「", 9, 12);
+    let person = find_rich_text_cluster_object(&json, "人", 12, 15);
+    assert!(
+        agent_json_bbox_x(&opening_bracket["bbox"]) < agent_json_bbox_x(&spring["bbox"]),
+        "line-end-prohibited opening punctuation should move to the next vertical_rl column"
+    );
+    assert!(
+        agent_json_bbox_y(&opening_bracket["bbox"]) < agent_json_bbox_y(&spring["bbox"]),
+        "opening punctuation moved from a column end should restart near the column top"
+    );
+    assert_vertical_cluster_after(
+        opening_bracket,
+        person,
+        "text after opening punctuation should continue in the same moved column",
+    );
+    assert_eq!(
+        opening_bracket["rich_text_ref"]["vertical_form"],
+        "rotated_alternate"
+    );
+    assert_rich_text_object_has_mask_capture(opening_bracket, "opening punctuation cluster");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry() {
     let loose = observe_native_jlreq_preset_fixture("loose", "preset-loose");
     let normal = observe_native_jlreq_preset_fixture("normal", "preset-normal");
