@@ -42,6 +42,10 @@ still updating `resources/list`. Capture resources are retained in the current
 MCP session by URI, so later captures do not evict earlier PNG/raw resources;
 `resources/read` and `arcweft.resource.read` return the same native renderer
 composition, metadata, and image bytes that each capture tool call produced.
+`arcweft.observe` and `arcweft.capture` both accept `capture_time` as a
+non-negative seconds value for native visibility-only glyph effects such as
+typewriter reveal. The time affects rendered glyph alpha in PNG/raw captures
+without changing the observed Agent geometry.
 `arcweft.session.info` returns the latest frame identifiers, resources, images,
 observed layers, observed objects, resource templates, and latest capture
 metadata so a debugger can recover current capture options, object ids, and

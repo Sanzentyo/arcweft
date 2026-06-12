@@ -157,7 +157,11 @@ the concrete choices to follow when turning that package into production code.
   cell width and vertical advance so rendered ruby tracks match Agent geometry.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain
-  stable while captures can vary glyph visibility by capture time.
+  stable while captures can vary glyph visibility by capture time. CLI
+  `--capture-time` and MCP `capture_time` pass that time into full-frame,
+  layer/object color, object-id, and mask readback; native Agent coverage checks
+  that a vertical typewriter cluster keeps the same observed bbox while hidden
+  and visible raw mask captures differ only in rendered alpha content.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Long ruby annotations first expand the base allocation along the writing

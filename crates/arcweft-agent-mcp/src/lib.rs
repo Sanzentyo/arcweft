@@ -149,6 +149,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." },
                     "steps": { "type": "integer", "minimum": 1 },
                     "max_ops": { "type": "integer", "minimum": 1 }
                 },
@@ -184,7 +185,8 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "capture": { "type": "string", "enum": ["color", "object-id", "mask"], "default": "color" },
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
-                    "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." }
+                    "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." }
                 }
             }),
         },
@@ -767,6 +769,8 @@ mod tests {
         assert_eq!(properties["object"]["type"], "string");
         assert_eq!(properties["page"]["type"], "integer");
         assert_eq!(properties["page"]["minimum"], 0);
+        assert_eq!(properties["capture_time"]["type"], "number");
+        assert_eq!(properties["capture_time"]["minimum"], 0);
 
         let capture = tools
             .iter()
@@ -781,5 +785,7 @@ mod tests {
         );
         assert_eq!(properties["page"]["type"], "integer");
         assert_eq!(properties["page"]["minimum"], 0);
+        assert_eq!(properties["capture_time"]["type"], "number");
+        assert_eq!(properties["capture_time"]["minimum"], 0);
     }
 }

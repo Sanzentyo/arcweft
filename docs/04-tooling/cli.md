@@ -298,7 +298,7 @@ changing backend.
 
 ## Agent Observation
 
-`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
+`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
 is the first Agent Debug Bus CLI slice. `arcw agent mcp` exposes the same
 observation and resource-read path as a minimal line-delimited JSON-RPC stdio
 MCP server for local Agent debugging. The stdio server supports
@@ -430,6 +430,10 @@ latest resource set, so a client can request a layer/object image in one tool
 call without a separate `arcweft.observe`. `arcweft.observe` and
 `arcweft.capture` uses the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
+Both tools accept a non-negative capture time in seconds (`--capture-time` on
+the CLI, `capture_time` in MCP) for visibility-only glyph effects such as
+typewriter reveal; layout and Agent geometry remain derived from the same
+resolved text frame while rendered glyph alpha can vary by capture time.
 `resources/templates/list` returns the corresponding URI template families,
 including the color special cases where layer/object color captures omit the
 `.color` suffix.

@@ -4963,6 +4963,99 @@ flow @flow.main main {
     fs::remove_dir_all(&dir).expect("remove temp native JLREQ opening punctuation mask dir");
 }
 
+fn observe_native_typewriter_cluster_mask_at(
+    source_path: &Path,
+    raw_path: &Path,
+    capture_time: &str,
+) -> (serde_json::Value, Vec<u8>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.0.0.3")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native typewriter mask crop");
+
+    assert!(
+        output.status.success(),
+        "native typewriter mask crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json =
+        serde_json::from_slice(&output.stdout).expect("native typewriter mask report is JSON");
+    let bytes = fs::read(raw_path).expect("read native typewriter mask raw crop");
+    (json, bytes)
+}
+
+#[test]
+fn agent_observe_native_typewriter_capture_time_changes_visibility_without_relayout() {
+    let path = temp_arcw(
+        "agent-observe-native-typewriter-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-typewriter-capture-time");
+    let hidden_path = dir.join("native-typewriter-hidden-mask.rgba");
+    let visible_path = dir.join("native-typewriter-visible-mask.rgba");
+
+    let (hidden, hidden_bytes) =
+        observe_native_typewriter_cluster_mask_at(&path, &hidden_path, "0");
+    let (visible, visible_bytes) =
+        observe_native_typewriter_cluster_mask_at(&path, &visible_path, "4");
+    let hidden_cluster = find_rich_text_cluster_object(&hidden, "吾", 0, 3);
+    let visible_cluster = find_rich_text_cluster_object(&visible, "吾", 0, 3);
+    assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
+    assert_eq!(
+        hidden["images"][0]["crop_origin"],
+        visible["images"][0]["crop_origin"]
+    );
+    assert_eq!(hidden["images"][0]["width"], visible["images"][0]["width"]);
+    assert_eq!(
+        hidden["images"][0]["height"],
+        visible["images"][0]["height"]
+    );
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    let hidden_opaque = hidden_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    let visible_opaque = visible_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    assert_eq!(hidden_opaque, 0);
+    assert_eq!(
+        visible_opaque as u64,
+        visible["images"][0]["content_pixels"].as_u64().unwrap()
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter dir");
+}
+
 #[test]
 fn agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry() {
     let path = temp_arcw(

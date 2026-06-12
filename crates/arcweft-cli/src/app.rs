@@ -2058,9 +2058,13 @@ fn agent_mcp_capture_request(
         if arguments.get("page").is_some() {
             request.page = agent_mcp_capture_page(arguments)?;
         }
+        request.capture_time_seconds =
+            agent_mcp_capture_time_argument(arguments, "arcweft.capture")?.unwrap_or(60.0);
         return Ok(request);
     }
     let page = agent_mcp_capture_page(arguments)?;
+    let capture_time_seconds =
+        agent_mcp_capture_time_argument(arguments, "arcweft.capture")?.unwrap_or(60.0);
     let image_kind = arguments
         .get("format")
         .and_then(serde_json::Value::as_str)
@@ -2117,6 +2121,7 @@ fn agent_mcp_capture_request(
         capture_kind,
         scope,
         page,
+        capture_time_seconds,
     })
 }
 
@@ -2133,6 +2138,23 @@ fn agent_mcp_page_argument(arguments: &serde_json::Value, tool: &str) -> Result<
         .ok_or_else(|| format!("{tool} argument page must be a non-negative integer"))?;
     usize::try_from(page)
         .map_err(|_| format!("{tool} argument page is too large for this platform"))
+}
+
+fn agent_mcp_capture_time_argument(
+    arguments: &serde_json::Value,
+    tool: &str,
+) -> Result<Option<f32>, String> {
+    let Some(value) = arguments.get("capture_time") else {
+        return Ok(None);
+    };
+    let seconds = serde_json::from_value::<f32>(value.clone())
+        .map_err(|_| format!("{tool} argument capture_time must be a number of seconds"))?;
+    if !seconds.is_finite() || seconds < 0.0 {
+        return Err(format!(
+            "{tool} argument capture_time must be a finite non-negative number of seconds"
+        ));
+    }
+    Ok(Some(seconds))
 }
 
 fn agent_mcp_capture_image_kind(value: &str) -> Result<AgentObserveImageKind, String> {
@@ -2204,6 +2226,8 @@ fn agent_mcp_observe_options(arguments: &serde_json::Value) -> Result<AgentObser
             .get("page")
             .map(|_| agent_mcp_page_argument(arguments, "arcweft.observe"))
             .transpose()?,
+        capture_time_seconds: agent_mcp_capture_time_argument(arguments, "arcweft.observe")?
+            .unwrap_or(60.0),
         resource: None,
         read_uri: None,
         mcp: false,
@@ -2311,7 +2335,14 @@ fn agent_observe_command(
     if let Some(uri) = &options.read_uri {
         let resource = agent_observe_cached_image_resource(&report, image_output.as_ref(), uri)
             .map_or_else(
-                || agent_observe_resource_by_uri_with_page(&report, uri, options.page),
+                || {
+                    agent_observe_resource_by_uri_with_page_and_time(
+                        &report,
+                        uri,
+                        options.page,
+                        options.capture_time_seconds,
+                    )
+                },
                 Ok,
             )?;
         if options.mcp {
@@ -2395,6 +2426,10 @@ fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), E
         eprintln!("error: --mcp-format requires --mcp");
         return Err(ExitCode::from(2));
     }
+    if !options.capture_time_seconds.is_finite() || options.capture_time_seconds < 0.0 {
+        eprintln!("error: --capture-time must be a finite non-negative number of seconds");
+        return Err(ExitCode::from(2));
+    }
     Ok(())
 }
 
@@ -2402,13 +2437,14 @@ fn agent_observe_resource_by_uri(
     report: &AgentObservationReport,
     uri: &str,
 ) -> Result<AgentResource, ExitCode> {
-    agent_observe_resource_by_uri_with_page(report, uri, None)
+    agent_observe_resource_by_uri_with_page_and_time(report, uri, None, 60.0)
 }
 
-fn agent_observe_resource_by_uri_with_page(
+fn agent_observe_resource_by_uri_with_page_and_time(
     report: &AgentObservationReport,
     uri: &str,
     page_override: Option<usize>,
+    capture_time_seconds: f32,
 ) -> Result<AgentResource, ExitCode> {
     if uri
         == format!(
@@ -2468,6 +2504,7 @@ fn agent_observe_resource_by_uri_with_page(
     };
     let request = AgentCaptureReadRequest {
         page: page_override.unwrap_or(request.page),
+        capture_time_seconds,
         ..request
     };
     agent_observe_capture_resource(report, &request)
@@ -2480,6 +2517,7 @@ struct AgentCaptureReadRequest {
     capture_kind: AgentObserveCaptureKind,
     scope: AgentCaptureScope,
     page: usize,
+    capture_time_seconds: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -2531,6 +2569,7 @@ fn agent_capture_request_from_uri(
         capture_kind,
         scope,
         page,
+        capture_time_seconds: 60.0,
     })
 }
 
@@ -2606,7 +2645,8 @@ fn agent_native_capture_image_with_session(
                 left,
                 top,
                 request.page,
-            ),
+            )
+            .with_time_seconds(request.capture_time_seconds),
         )
         .map_err(|error| {
             eprintln!("error: native capture failed: {error}");
@@ -2620,6 +2660,7 @@ fn agent_native_capture_image_with_session(
             top,
             objects: &report.objects,
             page_index: request.page,
+            capture_time_seconds: request.capture_time_seconds,
         },
         &request.scope,
         request.capture_kind,
@@ -2700,6 +2741,7 @@ struct AgentNativeCaptureContext<'a> {
     top: f32,
     objects: &'a [AgentObservedObject],
     page_index: usize,
+    capture_time_seconds: f32,
 }
 
 fn agent_native_scoped_capture(
@@ -2864,7 +2906,8 @@ fn agent_native_color_capture(
                 context.left,
                 context.top,
                 context.page_index,
-            ),
+            )
+            .with_time_seconds(context.capture_time_seconds),
             &regions,
         )
     } else {
@@ -2924,7 +2967,8 @@ fn agent_native_debug_capture(
                 context.left,
                 context.top,
                 context.page_index,
-            ),
+            )
+            .with_time_seconds(context.capture_time_seconds),
             &regions,
         )
     } else {
@@ -3887,6 +3931,7 @@ fn agent_capture_request_for_options(
         capture_kind,
         scope: agent_capture_scope_for_options(options),
         page: options.page.unwrap_or(0),
+        capture_time_seconds: options.capture_time_seconds,
     }
 }
 
@@ -8704,6 +8749,8 @@ struct AgentObserveOptions {
     object: Option<String>,
     #[arg(long)]
     page: Option<usize>,
+    #[arg(long = "capture-time", default_value_t = 60.0)]
+    capture_time_seconds: f32,
     #[arg(long, value_enum)]
     resource: Option<AgentObserveResourceKind>,
     #[arg(long)]
@@ -8841,6 +8888,7 @@ mod tests {
             top: 0.0,
             objects: &objects,
             page_index: 0,
+            capture_time_seconds: 60.0,
         };
 
         let capture = agent_native_masked_framebuffer_capture(&source, context, &selected).unwrap();
@@ -8885,6 +8933,7 @@ mod tests {
             top: 0.0,
             objects: &objects,
             page_index: 0,
+            capture_time_seconds: 60.0,
         };
 
         let object_id = agent_native_debug_capture(

@@ -120,6 +120,10 @@ real native framebuffer readback path. `arcw agent observe --image png` and MCP 
 capture path accepts `--page N` and MCP `page: N` for 0-based rendered rich-text
 pages, so LLM/debugger tools can capture text after `[p]`, line waits, or
 `[clear]` without opening the native window. Non-zero page selection is handled by the native renderer.
+It also accepts `--capture-time SECONDS` and MCP `capture_time` for
+visibility-only glyph effects such as typewriter reveal; the same resolved
+Agent geometry is reused while the native GlyphArea colors are updated for the
+requested capture time.
 Image resources include non-zero `page` metadata. Rich-text child objects also
 record their rendered page in `rich_text_ref.page`, and their `capture_refs`
 append `?page=N` for non-zero pages while also exposing `capture_refs[].page`
