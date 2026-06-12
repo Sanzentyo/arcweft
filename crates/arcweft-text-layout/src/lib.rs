@@ -9,8 +9,10 @@ use arcweft_render_text::{
     RichTextVerticalLatinMode, RichTextWritingMode,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::ops::Range;
 use thiserror::Error;
+use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 mod vertical_orientation;
@@ -396,7 +398,9 @@ fn layout_vertical_run(
             cursor.y = config.origin.y;
             continue;
         }
-        if cursor.y + config.line_advance > config.origin.y + config.size.height {
+        if cursor.y + config.line_advance > config.origin.y + config.size.height
+            && cluster.break_allowed_before
+        {
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
@@ -628,6 +632,7 @@ struct VerticalCluster {
     range: Range<usize>,
     text: String,
     orientation: GlyphOrientation,
+    break_allowed_before: bool,
 }
 
 const MAX_TEXT_COMBINE_DIGITS: usize = 4;
@@ -638,12 +643,14 @@ fn vertical_clusters(
 ) -> Vec<VerticalCluster> {
     let mut clusters = Vec::new();
     let graphemes: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
+    let break_offsets = line_break_offsets(text);
     let mut index = 0;
     while let Some((offset, grapheme)) = graphemes.get(index).copied() {
         if is_ascii_digit_grapheme(grapheme) {
             let mut end = offset + grapheme.len();
             let mut value = grapheme.to_owned();
             let mut digit_count = 1;
+            let break_allowed_before = break_offsets.contains(&offset);
             index += 1;
             while let Some((next_offset, next)) = graphemes.get(index).copied() {
                 if !is_ascii_digit_grapheme(next) || digit_count >= MAX_TEXT_COMBINE_DIGITS {
@@ -659,6 +666,7 @@ fn vertical_clusters(
                     range: offset..end,
                     text: value,
                     orientation: GlyphOrientation::TextCombineUpright,
+                    break_allowed_before,
                 });
                 continue;
             }
@@ -666,6 +674,7 @@ fn vertical_clusters(
                 range: offset..end,
                 text: value,
                 orientation: vertical_orientation(grapheme, vertical_latin),
+                break_allowed_before,
             });
             continue;
         }
@@ -674,9 +683,21 @@ fn vertical_clusters(
             range: offset..offset + grapheme.len(),
             text: grapheme.to_owned(),
             orientation: vertical_orientation(grapheme, vertical_latin),
+            break_allowed_before: break_offsets.contains(&offset),
         });
     }
     clusters
+}
+
+fn line_break_offsets(text: &str) -> HashSet<usize> {
+    linebreaks(text)
+        .filter_map(|(offset, opportunity)| match opportunity {
+            BreakOpportunity::Allowed | BreakOpportunity::Mandatory if offset < text.len() => {
+                Some(offset)
+            }
+            BreakOpportunity::Allowed | BreakOpportunity::Mandatory => None,
+        })
+        .collect()
 }
 
 fn is_ascii_digit_grapheme(grapheme: &str) -> bool {
@@ -995,6 +1016,33 @@ mod tests {
         assert_eq!(layout.glyphs[1].text, "地");
         assert!(layout.glyphs[1].origin.x < layout.glyphs[0].origin.x);
         assert_f32_eq(layout.glyphs[1].origin.y, layout.glyphs[0].origin.y);
+    }
+
+    #[test]
+    fn vertical_column_breaks_use_uax14_opportunities() {
+        let frame = frame_with_run(
+            "天地。人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, "。");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "closing punctuation may overhang the current column instead of violating kinsoku"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(
+            layout.glyphs[3].origin.x < layout.glyphs[2].origin.x,
+            "the next breakable cluster should start the next vertical_rl column"
+        );
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
     }
 
     #[test]

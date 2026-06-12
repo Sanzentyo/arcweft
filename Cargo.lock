@@ -544,6 +544,7 @@ dependencies = [
  "arcweft-render-text",
  "serde",
  "thiserror 2.0.18",
+ "unicode-linebreak",
  "unicode-segmentation",
 ]
 

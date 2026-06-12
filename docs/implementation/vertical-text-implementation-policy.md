@@ -92,6 +92,10 @@ the concrete choices to follow when turning that package into production code.
   `Vertical_Orientation` range table in `arcweft-text-layout`. `Tu` resolves to
   upright and `Tr` currently resolves to sideways fallback until vertical
   alternate shaping is implemented.
+- Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
+  initial break candidates. When a column overflows, the layout only moves the
+  next cluster to a new column if the cluster boundary is a break opportunity,
+  keeping closing punctuation out of column heads as an initial kinsoku rule.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. It applies
@@ -113,7 +117,7 @@ the concrete choices to follow when turning that package into production code.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
 - Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
-  UAX #14/JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
+  full JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
   alternates, full ruby base expansion/overhang/line-break feedback, and
   checked-in `imq` golden fixtures.
 
