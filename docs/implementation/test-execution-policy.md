@@ -80,6 +80,30 @@ Re-profiled after the local loop was found too slow:
 | `cargo test --workspace --quiet` | warm full workspace, Tier 2 ignored | 22.100s wall / `check.rs` 6.42s test body | passed, 13 ignored |
 | `cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | proposed smoke route | 13.870s wall / native body 1.37s | passed |
 
+Re-profiled after the full workspace command was still too expensive for the
+routine local loop:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | current `just test-fast` smoke route, warm build | 1.970s wall | passed |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | current `just test-cli-native` direct native observe group | 12.452s wall | passed, 1 ignored |
+| `cargo test -p arcweft-cli --test check --quiet` | current `just test-cli-check` CLI integration binary, Tier 2 ignored | 7.260s wall | passed, 13 ignored |
+| `cargo test --workspace --lib --tests --quiet` | workspace lib and integration tests, Tier 2 ignored, doc-tests excluded | 22.210s wall | passed, 13 ignored |
+| `cargo test --workspace --doc --quiet` | workspace doc-tests only | 117.769s wall | passed |
+| `cargo test --workspace --quiet` | workspace default after the doc-test run warmed its artifacts | 24.801s wall | passed, 13 ignored |
+
+This pass changes the policy entrypoint: `just test-workspace` now runs
+`cargo test --workspace --lib --tests --quiet` instead of the Cargo default.
+The Cargo default can include the expensive doc-test path depending on cache
+state, and therefore is not the routine local command. Use `just test-doc` for
+that path explicitly.
+
+Exact native observe tests are not the main bottleneck. In a warm loop, most
+single native observe tests finished with about 0.9s to 2.2s of test body time;
+the first exact run paid extra process/cache startup wall time. Keep native
+coverage focused, but do not move production-facing native geometry tests to
+Tier 2 merely because they touch the renderer.
+
 The crate-level profile also exposed one policy issue: `arcweft-test` only
 compiled when another workspace member happened to enable `serde/derive`.
 Crates that derive serde traits must declare `features = ["derive"]`
@@ -112,8 +136,9 @@ Representative exact tests:
 ## Local Execution Tiers
 
 Use tiered validation instead of running the full workspace test suite after
-every small edit. Default `cargo test --workspace` intentionally skips Tier 2
-tests marked with `#[ignore]`.
+every small edit. `cargo test --workspace` skips Tier 2 tests marked with
+`#[ignore]`, but it may still include expensive doc-test work. The routine
+workspace entrypoint is therefore `just test-workspace`.
 
 Tier 0 is for tight implementation loops:
 
@@ -158,16 +183,19 @@ just test-fast
 just test-cli-native
 just test-cli-check
 just test-workspace
+just test-doc
 ```
 
 `just test-fast` is now a smoke route, not a full workspace route. It covers
 the core/render-text/text-layout/native-player library path used by rich-text
 and native capture work. `just test-rich-text` adds the direct native
-`agent observe` slice. `just test-workspace` is the full workspace fast path
-with ignored Tier 2 tests excluded. `just test-cli-native` is the normal native
-rich-text/Agent observe slice. `just test-cli-check` is useful before a
-CLI-heavy cut point, but it is not required after every small parser, layout,
-or protocol edit.
+`agent observe` slice. `just test-workspace` is the normal workspace fast path:
+it runs lib and integration tests with ignored Tier 2 tests excluded, and it
+intentionally does not run doc-tests. `just test-doc` is the explicit doc-test
+path for Rust documentation examples and milestone validation. `just test-cli-native`
+is the normal native rich-text/Agent observe slice.
+`just test-cli-check` is useful before a CLI-heavy cut point, but it is not
+required after every small parser, layout, or protocol edit.
 
 Do not use broad filters such as `agent_observe` as a routine Tier 1 shortcut.
 That filter also selects slow resource-matrix coverage. Use the narrow exact
@@ -208,18 +236,22 @@ Operational budget:
   path.
 - Main push cut point: add `just test-workspace` unless the change is docs-only
   or otherwise demonstrably outside Rust behavior. Add `just test-cli-check`
-  when the CLI integration surface changed broadly.
+  when the CLI integration surface changed broadly. Add `just test-doc` only
+  when Rust documentation comments, doctest examples, or public API
+  documentation changed, or when preparing a milestone validation.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
 
 ## CI Direction
 
 MCP stdio, the broad Agent observe resource matrix, and exact visual golden
-coverage are marked `#[ignore]`, so `cargo test --workspace` is the normal fast
-test job rather than the exhaustive job. CI should keep fast crate tests and
-focused native renderer tests in the normal job, then run Tier 2 in an
-explicitly named slow job or scheduled job.
+coverage are marked `#[ignore]`. The normal fast test job should use
+`cargo test --workspace --lib --tests` or `just test-workspace`, not an
+unqualified `cargo test --workspace`, so cold doc-test work cannot unexpectedly
+dominate every push. CI should keep fast crate tests and focused native renderer
+tests in the normal job, run doc-tests as a separate named job, then run Tier 2
+in an explicitly named slow job or scheduled job.
 
 Local reports should state which tier was run and whether the slow MCP stdio,
-broad Agent observe resource-matrix, and exact visual-golden suites were
-intentionally skipped or completed.
+broad Agent observe resource-matrix, exact visual-golden suites, and doc-tests
+were intentionally skipped or completed.

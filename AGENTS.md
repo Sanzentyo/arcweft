@@ -76,9 +76,10 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Do not run full workspace tests after every small edit. Use `just test-fast`
   for the short core/render-text/text-layout/native-player smoke route,
   `just test-rich-text` or `just test-cli-native` for native rich-text/Agent
-  observe work, `just test-workspace` for the full ignored-Tier-2 workspace
+  observe work, `just test-workspace` for the normal workspace lib/integration
   pass at main push cut points, `just test-cli-check` for CLI-heavy cut points,
-  and `just test-tier2` only for explicit slow validation.
+  `just test-doc` for explicit doc-test validation, and `just test-tier2` only
+  for explicit slow validation.
 - Keep public API intentional.
 - Prefer `pub mod` boundaries for subsystem APIs and keep item visibility narrow inside those modules. Use root `pub use` only for small, deliberate facade surfaces.
 - Split large `lib.rs` / `main.rs` files by responsibility before they become architectural boundaries in practice. Prefer `module.rs` plus subdirectories over `mod.rs`.
