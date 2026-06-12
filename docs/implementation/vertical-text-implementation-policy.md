@@ -211,7 +211,10 @@ the concrete choices to follow when turning that package into production code.
   Native Agent coverage also checks hanging punctuation at a vertical column
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster
-  bboxes and not only in Sans I/O layout unit tests.
+  bboxes and not only in Sans I/O layout unit tests. Preset-specific native
+  Agent coverage compares `jlreq=loose` and `jlreq=normal` on the same repeated
+  leader-mark paragraph and asserts that the observed column geometry changes
+  with the selected strictness preset.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,

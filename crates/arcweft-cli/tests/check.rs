@@ -3194,6 +3194,72 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry() {
+    let loose = observe_native_jlreq_preset_fixture("loose", "preset-loose");
+    let normal = observe_native_jlreq_preset_fixture("normal", "preset-normal");
+    assert_native_rich_text_layer_image_has_content(&loose);
+    assert_native_rich_text_layer_image_has_content(&normal);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
+        "loose"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&normal)["jlreq_strictness"],
+        "normal"
+    );
+
+    let loose_fire = find_rich_text_cluster_object(&loose, "火", 21, 24);
+    let loose_first_leader = find_rich_text_cluster_object(&loose, "…", 24, 27);
+    let loose_second_leader = find_rich_text_cluster_object(&loose, "…", 27, 30);
+    let loose_person = find_rich_text_cluster_object(&loose, "人", 30, 33);
+    let normal_fire = find_rich_text_cluster_object(&normal, "火", 21, 24);
+    let normal_first_leader = find_rich_text_cluster_object(&normal, "…", 24, 27);
+    let normal_second_leader = find_rich_text_cluster_object(&normal, "…", 27, 30);
+    let normal_person = find_rich_text_cluster_object(&normal, "人", 30, 33);
+
+    assert_eq!(
+        loose_first_leader["bbox"]["x"], loose_second_leader["bbox"]["x"],
+        "loose still keeps repeated leaders in one observed column"
+    );
+    assert_eq!(
+        normal_first_leader["bbox"]["x"], normal_second_leader["bbox"]["x"],
+        "normal keeps repeated leaders in one observed column"
+    );
+    assert!(
+        agent_json_bbox_x(&normal_fire["bbox"]) > agent_json_bbox_x(&loose_fire["bbox"]),
+        "normal preset should move the leader group to an earlier vertical_rl column than loose"
+    );
+    assert!(
+        agent_json_bbox_x(&normal_first_leader["bbox"])
+            > agent_json_bbox_x(&loose_first_leader["bbox"]),
+        "normal preset should expose a different column for leader punctuation"
+    );
+    assert!(
+        agent_json_bbox_x(&normal_person["bbox"]) > agent_json_bbox_x(&loose_person["bbox"]),
+        "following text should inherit the preset-specific column plan"
+    );
+}
+
+fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-jlreq-{label}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.vertical_rl jlreq={strictness}]天地春夏秋冬月火……人[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp preset JLREQ source");
+    json
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
     let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
@@ -12366,6 +12432,21 @@ fn find_rich_text_ruby_object(report: &serde_json::Value, index: u64) -> &serde_
                 && object["rich_text_ref"]["index"].as_u64() == Some(index)
         })
         .unwrap_or_else(|| panic!("rich-text ruby `{index}` should be observed: {report}"))
+}
+
+fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json::Value {
+    let textbox = report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .unwrap_or_else(|| panic!("textbox object should be observed: {report}"));
+    let run = textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .expect("text runs are reported")
+        .first()
+        .unwrap_or_else(|| panic!("first text run should be observed: {report}"));
+    &run["presentation"]["layout"]
 }
 
 fn assert_rich_text_cluster_metadata(
