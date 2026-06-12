@@ -19,6 +19,7 @@ members = [
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-render-text",
+    "crates/arcweft-text-layout",
     "crates/arcweft-rust-abi",
     "crates/arcweft-rust-abi-build",
     "crates/arcweft-rust-abi-macros",

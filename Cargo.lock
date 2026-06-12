@@ -524,6 +524,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-text-layout"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-render-text",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-tooling"
 version = "0.1.0"
 dependencies = [
