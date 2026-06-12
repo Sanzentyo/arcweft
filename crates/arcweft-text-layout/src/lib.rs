@@ -496,13 +496,23 @@ fn layout_one_ruby(
     let ruby_bounds = if vertical {
         LayoutRect::new(
             vertical_ruby_track_x(base_bounds, writing_mode, config),
-            base_bounds.y + (base_bounds.height - ruby_extent).max(0.0) / 2.0,
+            ruby_annotation_start(
+                base_bounds.y,
+                base_bounds.height,
+                ruby_extent,
+                ruby_overhang_limit(config),
+            ),
             config.ruby_font_size,
             ruby_extent,
         )
     } else {
         LayoutRect::new(
-            base_bounds.x + (base_bounds.width - ruby_extent).max(0.0) / 2.0,
+            ruby_annotation_start(
+                base_bounds.x,
+                base_bounds.width,
+                ruby_extent,
+                ruby_overhang_limit(config),
+            ),
             (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
             ruby_extent,
             config.ruby_font_size,
@@ -521,6 +531,26 @@ fn layout_one_ruby(
 
 fn ruby_text_extent(ruby: &str, ruby_font_size: f32) -> f32 {
     usize_to_f32(ruby.chars().count().max(1)) * ruby_font_size
+}
+
+fn ruby_overhang_limit(config: TextLayoutConfig) -> f32 {
+    config.ruby_font_size * 0.5
+}
+
+fn ruby_annotation_start(
+    base_start: f32,
+    base_extent: f32,
+    ruby_extent: f32,
+    overhang: f32,
+) -> f32 {
+    let ideal = base_start + (base_extent - ruby_extent) * 0.5;
+    let min_start = base_start - overhang;
+    let max_start = base_start + base_extent + overhang - ruby_extent;
+    if min_start <= max_start {
+        ideal.max(min_start).min(max_start)
+    } else {
+        ideal
+    }
 }
 
 fn expand_horizontal_ruby_base(
@@ -609,9 +639,14 @@ fn resolve_horizontal_ruby_collision(
             bounds.x = previous.bounds.right() + GAP;
         }
     }
-    let max_right = config.origin.x + config.size.width;
+    let overhang = ruby_overhang_limit(config);
+    let min_left = config.origin.x - overhang;
+    let max_right = config.origin.x + config.size.width + overhang;
+    if bounds.x < min_left {
+        bounds.x = min_left;
+    }
     if bounds.right() > max_right {
-        bounds.x = (max_right - bounds.width).max(config.origin.x);
+        bounds.x = (max_right - bounds.width).max(min_left);
         bounds.y = (bounds.y - config.ruby_font_size - GAP).max(0.0);
     }
     bounds
@@ -634,9 +669,14 @@ fn resolve_vertical_ruby_collision(
             bounds.y = previous.bounds.bottom() + GAP;
         }
     }
-    let max_bottom = config.origin.y + config.size.height;
+    let overhang = ruby_overhang_limit(config);
+    let min_top = config.origin.y - overhang;
+    let max_bottom = config.origin.y + config.size.height + overhang;
+    if bounds.y < min_top {
+        bounds.y = min_top;
+    }
     if bounds.bottom() > max_bottom {
-        bounds.y = config.origin.y;
+        bounds.y = min_top;
         bounds.x += match writing_mode {
             RichTextWritingMode::VerticalRl => config.ruby_font_size + GAP,
             RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
@@ -1200,6 +1240,33 @@ mod tests {
             layout.ruby[0].ruby_bounds.width,
         );
         assert_f32_eq(layout.ruby[0].ruby_bounds.x, layout.ruby[0].base_bounds.x);
+    }
+
+    #[test]
+    fn horizontal_ruby_uses_limited_overhang_after_base_expansion() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ながいよみか");
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(60.0, 120.0),
+            ruby_font_size: 12.0,
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 1);
+        assert_f32_eq(layout.ruby[0].base_bounds.width, 60.0);
+        assert_f32_eq(
+            layout.ruby[0].base_bounds.x - layout.ruby[0].ruby_bounds.x,
+            config.ruby_font_size * 0.5,
+        );
+        assert_f32_eq(
+            layout.ruby[0].ruby_bounds.right() - layout.ruby[0].base_bounds.right(),
+            config.ruby_font_size * 0.5,
+        );
+        assert!(
+            layout.ruby[0].base_bounds.x - layout.ruby[0].ruby_bounds.x
+                <= config.ruby_font_size * 0.5
+        );
     }
 
     #[test]
