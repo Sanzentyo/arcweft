@@ -413,6 +413,7 @@ fn layout_vertical_run(
         }
     };
     let clusters = vertical_clusters(text, vertical_latin);
+    let column_plan = plan_vertical_columns(&clusters, context, *cursor);
     for (cluster_index, cluster) in clusters.iter().enumerate() {
         if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
@@ -422,29 +423,7 @@ fn layout_vertical_run(
         let start = context.range_start + cluster.range.start;
         let end = context.range_start + cluster.range.end;
         let range = RichTextRange::new(start, end);
-        let required_inline_extent = vertical_cluster_required_inline_extent(
-            range,
-            context.range_start,
-            &clusters,
-            context.ruby_annotations,
-            config,
-        );
-        if cursor.y + required_inline_extent > config.origin.y + config.size.height
-            && cursor.y > config.origin.y
-            && cluster.break_allowed_before
-            && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
-            && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, &clusters)
-        {
-            cursor.x += column_step;
-            cursor.y = config.origin.y;
-        }
-        if vertical_cluster_should_break_before_line_end_prohibited(
-            cluster_index,
-            &clusters,
-            required_inline_extent,
-            context,
-            *cursor,
-        ) {
+        if column_plan.breaks_before(cluster_index) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
@@ -465,6 +444,94 @@ fn layout_vertical_run(
         });
         cursor.y += advance;
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct VerticalColumnPlan {
+    break_before: Vec<bool>,
+}
+
+impl VerticalColumnPlan {
+    fn new(cluster_count: usize) -> Self {
+        Self {
+            break_before: vec![false; cluster_count],
+        }
+    }
+
+    fn set_break_before(&mut self, cluster_index: usize) {
+        if let Some(value) = self.break_before.get_mut(cluster_index) {
+            *value = true;
+        }
+    }
+
+    fn breaks_before(&self, cluster_index: usize) -> bool {
+        self.break_before
+            .get(cluster_index)
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+fn plan_vertical_columns(
+    clusters: &[VerticalCluster],
+    context: RunLayoutContext<'_>,
+    initial_cursor: LayoutCursor,
+) -> VerticalColumnPlan {
+    let mut plan = VerticalColumnPlan::new(clusters.len());
+    let mut cursor_y = initial_cursor.y;
+    for (cluster_index, cluster) in clusters.iter().enumerate() {
+        if is_vertical_line_break_cluster(&cluster.text) {
+            cursor_y = context.config.origin.y;
+            continue;
+        }
+        let range = RichTextRange::new(
+            context.range_start + cluster.range.start,
+            context.range_start + cluster.range.end,
+        );
+        let required_inline_extent = vertical_cluster_required_inline_extent(
+            range,
+            context.range_start,
+            clusters,
+            context.ruby_annotations,
+            context.config,
+        );
+        let should_break = vertical_cluster_should_break_before_overflow(
+            cluster_index,
+            clusters,
+            required_inline_extent,
+            context.config,
+            cursor_y,
+        ) || vertical_cluster_should_break_before_line_end_prohibited(
+            cluster_index,
+            clusters,
+            required_inline_extent,
+            context,
+            LayoutCursor::new(initial_cursor.x, cursor_y),
+        );
+        if should_break {
+            plan.set_break_before(cluster_index);
+            cursor_y = context.config.origin.y;
+        }
+        cursor_y += vertical_cluster_advance(&cluster.text, context.config);
+    }
+    plan
+}
+
+fn vertical_cluster_should_break_before_overflow(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+    required_inline_extent: f32,
+    config: TextLayoutConfig,
+    cursor_y: f32,
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    cursor_y + required_inline_extent > config.origin.y + config.size.height
+        && cursor_y > config.origin.y
+        && cluster.break_allowed_before
+        && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
+        && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, clusters)
 }
 
 fn vertical_cluster_origin_y(
@@ -1436,6 +1503,66 @@ mod tests {
             "the next breakable cluster should start the next vertical_rl column"
         );
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_plan_records_jlreq_break_decisions_before_placement() {
+        let frame = frame_with_run(
+            "天地。人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let clusters = vertical_clusters(&frame.text, RichTextVerticalLatinMode::Mixed);
+        let context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config,
+        };
+        let plan = plan_vertical_columns(
+            &clusters,
+            context,
+            LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                config.origin.y,
+            ),
+        );
+
+        assert_eq!(plan.break_before, vec![false, false, false, true]);
+    }
+
+    #[test]
+    fn vertical_column_plan_pushes_line_end_prohibited_opening_punctuation() {
+        let frame = frame_with_run(
+            "天（地",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let clusters = vertical_clusters(&frame.text, RichTextVerticalLatinMode::Mixed);
+        let context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config,
+        };
+        let plan = plan_vertical_columns(
+            &clusters,
+            context,
+            LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                config.origin.y,
+            ),
+        );
+
+        assert_eq!(plan.break_before, vec![false, true, false]);
     }
 
     #[test]

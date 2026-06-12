@@ -118,7 +118,11 @@ the concrete choices to follow when turning that package into production code.
   to half a body cell. When such punctuation must remain at the column end for
   kinsoku, the layout applies half-cell hanging by moving its glyph origin
   upward while keeping full cell bounds for capture/hit geometry from the same
-  rendered placement.
+  rendered placement. Break decisions for a vertical run are now collected into
+  a `VerticalColumnPlan` before glyph placement. The current plan builder still
+  uses greedy decisions, but the rendering placement path consumes the plan as a
+  separate artifact so class-pair cost and paragraph-DP breaking can replace the
+  planner without changing glyph/ruby/Agent geometry consumption.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -156,9 +160,9 @@ the concrete choices to follow when turning that package into production code.
   with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
-  and initial pair-adjustment table coverage, especially moving from the current
-  greedy column-breaking adjustments toward the long-term class-pair and
-  paragraph-DP policy.
+  initial pair-adjustment table coverage, and vertical column-plan boundary,
+  especially replacing the current greedy plan builder with the long-term
+  class-pair and paragraph-DP policy.
 
 ## Explicit Defaults
 
