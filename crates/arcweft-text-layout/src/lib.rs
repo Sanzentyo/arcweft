@@ -478,12 +478,170 @@ fn plan_vertical_columns(
     initial_cursor: LayoutCursor,
 ) -> VerticalColumnPlan {
     let mut plan = VerticalColumnPlan::new(clusters.len());
-    let mut cursor_y = initial_cursor.y;
+    let mut segment_start = 0;
+    let mut segment_initial_y = initial_cursor.y;
     for (cluster_index, cluster) in clusters.iter().enumerate() {
         if is_vertical_line_break_cluster(&cluster.text) {
-            cursor_y = context.config.origin.y;
-            continue;
+            plan_vertical_column_segment(
+                &mut plan,
+                clusters,
+                segment_start,
+                cluster_index,
+                context,
+                segment_initial_y,
+            );
+            segment_start = cluster_index + 1;
+            segment_initial_y = context.config.origin.y;
         }
+    }
+    plan_vertical_column_segment(
+        &mut plan,
+        clusters,
+        segment_start,
+        clusters.len(),
+        context,
+        segment_initial_y,
+    );
+    plan
+}
+
+#[derive(Clone, Copy, Debug)]
+struct VerticalColumnDpState {
+    cost: f32,
+    previous_break: usize,
+}
+
+fn plan_vertical_column_segment(
+    plan: &mut VerticalColumnPlan,
+    clusters: &[VerticalCluster],
+    segment_start: usize,
+    segment_end: usize,
+    context: RunLayoutContext<'_>,
+    initial_cursor_y: f32,
+) {
+    if segment_start >= segment_end {
+        return;
+    }
+
+    let segment_len = segment_end - segment_start;
+    let mut states = vec![None; segment_len + 1];
+    states[0] = Some(VerticalColumnDpState {
+        cost: 0.0,
+        previous_break: 0,
+    });
+
+    for relative_start in 0..segment_len {
+        let Some(start_state) = states[relative_start] else {
+            continue;
+        };
+        let column_start_y = if relative_start == 0 {
+            initial_cursor_y
+        } else {
+            context.config.origin.y
+        };
+        let mut relative_end = relative_start + 1;
+        while relative_end <= segment_len {
+            let absolute_start = segment_start + relative_start;
+            let absolute_end = segment_start + relative_end;
+            if let Some(column_cost) = vertical_column_segment_cost(
+                clusters,
+                absolute_start,
+                absolute_end,
+                segment_end,
+                context,
+                column_start_y,
+            ) {
+                let cost = start_state.cost + column_cost;
+                if vertical_column_dp_candidate_is_better(
+                    states[relative_end],
+                    cost,
+                    relative_start,
+                ) {
+                    states[relative_end] = Some(VerticalColumnDpState {
+                        cost,
+                        previous_break: relative_start,
+                    });
+                }
+            }
+            relative_end += 1;
+        }
+    }
+
+    let mut cursor = segment_len;
+    while cursor > 0 {
+        let Some(state) = states[cursor] else {
+            return;
+        };
+        if state.previous_break > 0 {
+            plan.set_break_before(segment_start + state.previous_break);
+        }
+        cursor = state.previous_break;
+    }
+}
+
+fn vertical_column_dp_candidate_is_better(
+    current: Option<VerticalColumnDpState>,
+    cost: f32,
+    previous_break: usize,
+) -> bool {
+    let Some(current) = current else {
+        return true;
+    };
+    cost < current.cost
+        || ((cost - current.cost).abs() <= f32::EPSILON && previous_break > current.previous_break)
+}
+
+fn vertical_column_segment_cost(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+    segment_end: usize,
+    context: RunLayoutContext<'_>,
+    column_start_y: f32,
+) -> Option<f32> {
+    if column_start >= column_end {
+        return None;
+    }
+    if column_end < segment_end && !vertical_cluster_can_start_column(column_end, clusters) {
+        return None;
+    }
+    if column_end < segment_end
+        && vertical_column_ends_with_line_end_prohibited(column_start, column_end, clusters)
+    {
+        return None;
+    }
+
+    let capacity = context.config.origin.y + context.config.size.height - column_start_y;
+    let used = vertical_column_segment_required_extent(clusters, column_start, column_end, context);
+    let overflow = (used - capacity).max(0.0);
+    let allowed_overhang = vertical_column_segment_overhang_allowance(
+        clusters,
+        column_start,
+        column_end,
+        context.config,
+    );
+    if column_end < segment_end && overflow > allowed_overhang + f32::EPSILON {
+        return None;
+    }
+
+    let remaining = (capacity - used).max(0.0);
+    let capacity = capacity.max(context.config.line_advance);
+    let badness = 100.0 * (remaining / capacity).powi(3);
+    let overflow_penalty =
+        ((overflow - allowed_overhang).max(0.0) / context.config.line_advance).powi(2) * 10_000.0;
+    let break_penalty = if column_end < segment_end { 5.0 } else { 0.0 };
+    Some(badness + overflow_penalty + break_penalty)
+}
+
+fn vertical_column_segment_required_extent(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+    context: RunLayoutContext<'_>,
+) -> f32 {
+    let mut cursor = 0.0f32;
+    let mut required = 0.0f32;
+    for cluster in &clusters[column_start..column_end] {
         let range = RichTextRange::new(
             context.range_start + cluster.range.start,
             context.range_start + cluster.range.end,
@@ -495,43 +653,52 @@ fn plan_vertical_columns(
             context.ruby_annotations,
             context.config,
         );
-        let should_break = vertical_cluster_should_break_before_overflow(
-            cluster_index,
-            clusters,
-            required_inline_extent,
-            context.config,
-            cursor_y,
-        ) || vertical_cluster_should_break_before_line_end_prohibited(
-            cluster_index,
-            clusters,
-            required_inline_extent,
-            context,
-            LayoutCursor::new(initial_cursor.x, cursor_y),
-        );
-        if should_break {
-            plan.set_break_before(cluster_index);
-            cursor_y = context.config.origin.y;
-        }
-        cursor_y += vertical_cluster_advance(&cluster.text, context.config);
+        required = required.max(cursor + required_inline_extent);
+        cursor += vertical_cluster_advance(&cluster.text, context.config);
     }
-    plan
+    required.max(cursor)
 }
 
-fn vertical_cluster_should_break_before_overflow(
-    cluster_index: usize,
+fn vertical_column_segment_overhang_allowance(
     clusters: &[VerticalCluster],
-    required_inline_extent: f32,
+    column_start: usize,
+    column_end: usize,
     config: TextLayoutConfig,
-    cursor_y: f32,
-) -> bool {
+) -> f32 {
+    let Some(last_cluster_index) = (column_start..column_end)
+        .rfind(|index| !is_vertical_line_break_cluster(&clusters[*index].text))
+    else {
+        return 0.0;
+    };
+    let last_cluster = &clusters[last_cluster_index];
+    if jlreq_punctuation::is_line_head_prohibited_cluster(&last_cluster.text)
+        || vertical_cluster_has_jlreq_separation_prohibited_before(last_cluster_index, clusters)
+    {
+        config.line_advance
+    } else {
+        0.0
+    }
+}
+
+fn vertical_cluster_can_start_column(cluster_index: usize, clusters: &[VerticalCluster]) -> bool {
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
-    cursor_y + required_inline_extent > config.origin.y + config.size.height
-        && cursor_y > config.origin.y
-        && cluster.break_allowed_before
+    cluster.break_allowed_before
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(cluster_index, clusters)
+}
+
+fn vertical_column_ends_with_line_end_prohibited(
+    column_start: usize,
+    column_end: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    clusters[column_start..column_end]
+        .iter()
+        .rev()
+        .find(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+        .is_some_and(|cluster| jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text))
 }
 
 fn vertical_cluster_origin_y(
@@ -587,43 +754,6 @@ fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
     } else {
         config.line_advance
     }
-}
-
-fn vertical_cluster_should_break_before_line_end_prohibited(
-    cluster_index: usize,
-    clusters: &[VerticalCluster],
-    required_inline_extent: f32,
-    context: RunLayoutContext<'_>,
-    cursor: LayoutCursor,
-) -> bool {
-    let Some(cluster) = clusters.get(cluster_index) else {
-        return false;
-    };
-    if cursor.y <= context.config.origin.y
-        || !cluster.break_allowed_before
-        || !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
-    {
-        return false;
-    }
-    let Some(next_cluster) = clusters[cluster_index + 1..]
-        .iter()
-        .find(|candidate| !is_vertical_line_break_cluster(&candidate.text))
-    else {
-        return false;
-    };
-    let next_range = RichTextRange::new(
-        context.range_start + next_cluster.range.start,
-        context.range_start + next_cluster.range.end,
-    );
-    let next_required_inline_extent = vertical_cluster_required_inline_extent(
-        next_range,
-        context.range_start,
-        clusters,
-        context.ruby_annotations,
-        context.config,
-    );
-    cursor.y + required_inline_extent + next_required_inline_extent
-        > context.config.origin.y + context.config.size.height
 }
 
 fn vertical_cluster_has_jlreq_separation_prohibited_before(
@@ -1563,6 +1693,39 @@ mod tests {
         );
 
         assert_eq!(plan.break_before, vec![false, true, false]);
+    }
+
+    #[test]
+    fn vertical_column_plan_balances_paragraph_with_dp_cost() {
+        let frame = frame_with_run(
+            "天地玄黄宇宙",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 168.0),
+            ..TextLayoutConfig::default()
+        };
+        let clusters = vertical_clusters(&frame.text, RichTextVerticalLatinMode::Mixed);
+        let context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config,
+        };
+        let plan = plan_vertical_columns(
+            &clusters,
+            context,
+            LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                config.origin.y,
+            ),
+        );
+
+        assert_eq!(
+            plan.break_before,
+            vec![false, false, false, true, false, false]
+        );
     }
 
     #[test]

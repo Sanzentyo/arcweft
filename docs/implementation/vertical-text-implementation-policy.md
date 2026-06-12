@@ -118,11 +118,15 @@ the concrete choices to follow when turning that package into production code.
   to half a body cell. When such punctuation must remain at the column end for
   kinsoku, the layout applies half-cell hanging by moving its glyph origin
   upward while keeping full cell bounds for capture/hit geometry from the same
-  rendered placement. Break decisions for a vertical run are now collected into
-  a `VerticalColumnPlan` before glyph placement. The current plan builder still
-  uses greedy decisions, but the rendering placement path consumes the plan as a
-  separate artifact so class-pair cost and paragraph-DP breaking can replace the
-  planner without changing glyph/ruby/Agent geometry consumption.
+  rendered placement. Break decisions for a vertical run are collected into a
+  `VerticalColumnPlan` before glyph placement. The plan builder now uses
+  paragraph-level dynamic programming across each explicit line-break-separated
+  segment. Candidate columns include ruby-required inline extent, JLREQ
+  line-head prohibition, line-end prohibition for opening punctuation, and
+  separation-prohibited punctuation pairs. The cost model preserves existing
+  fill-forward behavior for ties, treats accepted kinsoku overhang as allowed
+  overhang instead of bad overflow, and balances columns when paragraph badness
+  is materially lower.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -160,9 +164,9 @@ the concrete choices to follow when turning that package into production code.
   with `imq` when both Windows fonts and the `imq` binary are available.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
-  initial pair-adjustment table coverage, and vertical column-plan boundary,
-  especially replacing the current greedy plan builder with the long-term
-  class-pair and paragraph-DP policy.
+  initial pair-adjustment table coverage, and paragraph-DP column planner,
+  especially expanding the current hand-written class-pair rules into a fuller
+  generated JLREQ pair/cost table.
 
 ## Explicit Defaults
 
