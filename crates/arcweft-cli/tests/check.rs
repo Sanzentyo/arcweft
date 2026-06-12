@@ -3274,6 +3274,127 @@ fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry()
     );
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-jlreq-paragraph-column-geometry",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外……終[/][p]
+}
+",
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp JLREQ paragraph source");
+    assert_native_jlreq_paragraph_overview(&json);
+    assert_native_jlreq_paragraph_compression_and_iteration(&json);
+    assert_native_jlreq_paragraph_grouping_and_leaders(&json);
+}
+
+fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
+    assert_native_rich_text_layer_image_has_content(json);
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let run =
+        find_rich_text_run_object(json, "天地春夏秋冬月火、山々人「川」あっいおーえ中・外……終");
+    assert!(
+        run["bbox"]["width"].as_u64().unwrap() >= 300
+            && run["bbox"]["height"].as_u64().unwrap() >= 120,
+        "published-style JLREQ paragraph fixture should span multiple vertical columns: {run}"
+    );
+    assert!(
+        rich_text_cluster_column_count(json) >= 6,
+        "JLREQ paragraph fixture should expose a multi-column native plan: {json}"
+    );
+}
+
+fn assert_native_jlreq_paragraph_compression_and_iteration(json: &serde_json::Value) {
+    let fire = find_rich_text_cluster_object(json, "火", 21, 24);
+    let comma = find_rich_text_cluster_object(json, "、", 24, 27);
+    let mountain = find_rich_text_cluster_object(json, "山", 27, 30);
+    assert_vertical_cluster_after(fire, comma, "paragraph comma follows body text");
+    assert_eq!(
+        comma["bbox"]["x"], mountain["bbox"]["x"],
+        "text after a compressed comma should remain in the same planned column"
+    );
+    assert_eq!(
+        (agent_json_bbox_y(&mountain["bbox"]) - agent_json_bbox_y(&comma["bbox"])) * 2,
+        agent_json_bbox_y(&comma["bbox"]) - agent_json_bbox_y(&fire["bbox"]),
+        "paragraph comma compression should be visible in native cluster geometry"
+    );
+
+    let iteration = find_rich_text_cluster_object(json, "々", 30, 33);
+    let person = find_rich_text_cluster_object(json, "人", 33, 36);
+    assert_vertical_cluster_after(
+        mountain,
+        iteration,
+        "iteration mark stays attached in paragraph context",
+    );
+    assert!(
+        agent_json_bbox_x(&person["bbox"]) < agent_json_bbox_x(&iteration["bbox"]),
+        "text after an overhanging iteration mark should continue in the next vertical_rl column"
+    );
+}
+
+fn assert_native_jlreq_paragraph_grouping_and_leaders(json: &serde_json::Value) {
+    let open = find_rich_text_cluster_object(json, "「", 36, 39);
+    let river = find_rich_text_cluster_object(json, "川", 39, 42);
+    let close = find_rich_text_cluster_object(json, "」", 42, 45);
+    assert_vertical_cluster_after(
+        open,
+        river,
+        "paragraph bracket base follows opening bracket",
+    );
+    assert_vertical_cluster_after(
+        river,
+        close,
+        "paragraph closing bracket stays with its base",
+    );
+
+    let large_kana = find_rich_text_cluster_object(json, "あ", 45, 48);
+    let small_kana = find_rich_text_cluster_object(json, "っ", 48, 51);
+    let next_kana = find_rich_text_cluster_object(json, "い", 51, 54);
+    assert_vertical_cluster_after(
+        large_kana,
+        small_kana,
+        "small kana stays out of a column head in paragraph context",
+    );
+    assert_vertical_cluster_after(
+        small_kana,
+        next_kana,
+        "text after small kana continues in the same paragraph column",
+    );
+
+    let middle_dot = find_rich_text_cluster_object(json, "・", 66, 69);
+    let outside = find_rich_text_cluster_object(json, "外", 69, 72);
+    assert_eq!(
+        middle_dot["bbox"]["x"], outside["bbox"]["x"],
+        "text after a middle dot should remain in the same paragraph column"
+    );
+    assert!(
+        agent_json_bbox_y(&outside["bbox"]) > agent_json_bbox_y(&middle_dot["bbox"]),
+        "middle-dot compression should still advance paragraph text downward"
+    );
+
+    let first_leader = find_rich_text_cluster_object(json, "…", 72, 75);
+    let second_leader = find_rich_text_cluster_object(json, "…", 75, 78);
+    let ending = find_rich_text_cluster_object(json, "終", 78, 81);
+    assert_vertical_cluster_after(
+        first_leader,
+        second_leader,
+        "repeated leaders stay together in paragraph context",
+    );
+    assert!(
+        agent_json_bbox_x(&ending["bbox"]) < agent_json_bbox_x(&second_leader["bbox"]),
+        "paragraph text after overhanging leaders should continue in the next vertical_rl column"
+    );
+    assert_rich_text_object_has_mask_capture(first_leader, "paragraph leader cluster");
+}
+
 fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_json::Value {
     let path = temp_arcw(
         &format!("agent-observe-native-jlreq-{label}"),
@@ -12493,6 +12614,33 @@ fn assert_rich_text_cluster_metadata(
     let cluster = find_rich_text_cluster_object(report, text, range_start, range_end);
     assert_eq!(cluster["rich_text_ref"]["orientation"], orientation);
     assert_eq!(cluster["rich_text_ref"]["vertical_form"], vertical_form);
+}
+
+fn rich_text_cluster_column_count(report: &serde_json::Value) -> usize {
+    let mut columns = report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .filter(|object| object["role"] == "rich_text_cluster")
+        .map(|object| agent_json_bbox_x(&object["bbox"]))
+        .collect::<Vec<_>>();
+    columns.sort_unstable();
+    columns.dedup();
+    columns.len()
+}
+
+fn assert_rich_text_object_has_mask_capture(object: &serde_json::Value, context: &str) {
+    assert!(
+        object["capture_refs"]["captures"]
+            .as_array()
+            .expect("rich-text object captures are reported")
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba"))),
+        "{context} should expose native mask capture refs: {object}"
+    );
 }
 
 fn agent_json_bboxes_intersect(left: &serde_json::Value, right: &serde_json::Value) -> bool {

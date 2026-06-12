@@ -217,13 +217,17 @@ the concrete choices to follow when turning that package into production code.
   bboxes and not only in Sans I/O layout unit tests. Preset-specific native
   Agent coverage compares `jlreq=loose` and `jlreq=normal` on the same repeated
   leader-mark paragraph and asserts that the observed column geometry changes
-  with the selected strictness preset.
+  with the selected strictness preset. Broader paragraph-style native Agent
+  coverage now combines comma compression, iteration marks, bracket grouping,
+  small kana, middle dots, repeated leaders, and multi-column DP placement in
+  one `vertical_rl` fixture so the integrated JLREQ behavior is observable
+  beyond isolated punctuation-pair tests.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,
-  especially adding broader published JLREQ paragraph examples, preset-specific
-  visual goldens, and edge-case fixtures beyond the current punctuation-pair
-  native Agent coverage.
+  especially adding more published JLREQ paragraph examples, preset-specific
+  visual goldens, and edge-case fixtures beyond the current paragraph and
+  punctuation-pair native Agent coverage.
 
 ## Explicit Defaults
 
