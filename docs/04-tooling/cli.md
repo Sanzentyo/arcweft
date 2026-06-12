@@ -371,6 +371,9 @@ map a returned crop directly back to the display-map entry without parsing the
 object id. When native layout metrics are available, those child object bboxes
 are refined from the same glyph/ruby/cluster bounds used by native captures, so
 `crop_origin`, width, and height line up with the observed object metadata.
+Glyph-cluster refs additionally expose `orientation` and `vertical_form`, which
+let debugging tools see whether the native renderer requested sideways
+rotation, text-combine-upright placement, or a vertical alternate.
 `--read-uri URI` reads one `arcweft://` Agent resource URI from the current
 observation, including layer-local and object-local capture refs, and returns an
 `AgentResource` or MCP `resources/read` / tool-result output when paired with

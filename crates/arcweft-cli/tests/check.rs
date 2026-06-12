@@ -2839,6 +2839,29 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_cluster_orientation_metadata() {
+    let path = temp_arcw(
+        "agent-observe-native-vertical-cluster-metadata",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]A。ー12[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native vertical cluster metadata source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    assert_rich_text_cluster_metadata(&json, "A", 0, 1, "sideways_cw", "none");
+    assert_rich_text_cluster_metadata(&json, "。", 1, 4, "upright", "upright_alternate");
+    assert_rich_text_cluster_metadata(&json, "ー", 4, 7, "sideways_cw", "rotated_alternate");
+    assert_rich_text_cluster_metadata(&json, "12", 7, 9, "text_combine_upright", "none");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_expanded_jlreq_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-expanded-jlreq-pairs",
@@ -12213,6 +12236,19 @@ fn find_rich_text_cluster_object<'a>(
                 "rich-text cluster `{text}` {range_start}..{range_end} should be observed: {report}"
             )
         })
+}
+
+fn assert_rich_text_cluster_metadata(
+    report: &serde_json::Value,
+    text: &str,
+    range_start: u64,
+    range_end: u64,
+    orientation: &str,
+    vertical_form: &str,
+) {
+    let cluster = find_rich_text_cluster_object(report, text, range_start, range_end);
+    assert_eq!(cluster["rich_text_ref"]["orientation"], orientation);
+    assert_eq!(cluster["rich_text_ref"]["vertical_form"], vertical_form);
 }
 
 fn assert_vertical_cluster_after(

@@ -408,6 +408,10 @@ pub struct AgentRichTextElementRef {
     pub source: Option<RichTextTextSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ruby: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<AgentGlyphOrientation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vertical_form: Option<AgentGlyphVerticalForm>,
 }
 
 /// Rich-text display-map element kind observed as a debuggable object.
@@ -417,6 +421,24 @@ pub enum AgentRichTextElementKind {
     TextRun,
     Ruby,
     GlyphCluster,
+}
+
+/// Renderer-facing orientation chosen for one observed glyph cluster.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentGlyphOrientation {
+    Upright,
+    SidewaysCw,
+    TextCombineUpright,
+}
+
+/// Vertical alternate shaping request attached to one observed glyph cluster.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentGlyphVerticalForm {
+    None,
+    UprightAlternate,
+    RotatedAlternate,
 }
 
 /// Capture resources addressable for one observed object.
@@ -776,6 +798,8 @@ mod tests {
                     node_index: 0,
                     source: Some(RichTextTextSource::Text),
                     ruby: None,
+                    orientation: None,
+                    vertical_form: None,
                 }),
                 rich_text: test_line_display_frame(),
             }],

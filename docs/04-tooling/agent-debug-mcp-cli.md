@@ -232,8 +232,11 @@ rendered pages, `rich_text_ref.page` records the page and capture refs include a
 matching `?page=N` query plus `capture_refs[].page` metadata. Child object
 bboxes come from the native text layout metrics used by native image capture,
 so image crop origins and observed child bboxes describe the same glyph, ruby,
-and cluster geometry. If native metrics are unavailable, the child object is omitted
-instead of emitting an approximate bbox.
+and cluster geometry. Glyph-cluster refs also report renderer-facing
+`orientation` and `vertical_form` metadata so debuggers can distinguish sideways
+rotation, text-combine-upright clusters, and requested vertical alternates. If
+native metrics are unavailable, the child object is omitted instead of emitting
+an approximate bbox.
 The same `display_map` is also consumed by the native rich-text window path, so
 Agents can compare an object or layer capture against the exact resolved text
 ranges and style/ruby metadata that the player adapter uses.

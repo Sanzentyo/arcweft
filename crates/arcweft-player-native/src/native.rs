@@ -94,11 +94,55 @@ pub enum NativeFrameElement {
     },
 }
 
+/// Glyph orientation metadata attached to native glyph-cluster bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeGlyphOrientation {
+    Upright,
+    SidewaysCw,
+    TextCombineUpright,
+}
+
+impl From<GlyphOrientation> for NativeGlyphOrientation {
+    fn from(value: GlyphOrientation) -> Self {
+        match value {
+            GlyphOrientation::Upright => Self::Upright,
+            GlyphOrientation::SidewaysCw => Self::SidewaysCw,
+            GlyphOrientation::TextCombineUpright => Self::TextCombineUpright,
+        }
+    }
+}
+
+/// Vertical alternate shaping metadata attached to native glyph-cluster bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeGlyphVerticalForm {
+    None,
+    UprightAlternate,
+    RotatedAlternate,
+}
+
+impl From<GlyphVerticalForm> for NativeGlyphVerticalForm {
+    fn from(value: GlyphVerticalForm) -> Self {
+        match value {
+            GlyphVerticalForm::None => Self::None,
+            GlyphVerticalForm::UprightAlternate => Self::UprightAlternate,
+            GlyphVerticalForm::RotatedAlternate => Self::RotatedAlternate,
+        }
+    }
+}
+
+/// Glyph-cluster debug metadata returned alongside native element bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeGlyphClusterMetadata {
+    pub orientation: NativeGlyphOrientation,
+    pub vertical_form: NativeGlyphVerticalForm,
+}
+
 /// Pixel-space bounds for one native rich-text element.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeFrameElementBounds {
     pub element: NativeFrameElement,
     pub bbox: NativeFrameContentBBox,
+    pub glyph: Option<NativeGlyphClusterMetadata>,
 }
 
 /// Debug-image region rendered by the native adapter for Agent capture tools.
@@ -991,6 +1035,7 @@ fn native_element_bounds_from_layout(
             Some(NativeFrameElementBounds {
                 element: NativeFrameElement::TextRun { index },
                 bbox: native_bbox_from_layout_rect(run.bounds, width, height)?,
+                glyph: None,
             })
         })
         .collect::<Vec<_>>();
@@ -1010,6 +1055,10 @@ fn native_element_bounds_from_layout(
                         range_end,
                     },
                     bbox: native_bbox_from_layout_rect(glyph.bounds, width, height)?,
+                    glyph: Some(NativeGlyphClusterMetadata {
+                        orientation: glyph.orientation.into(),
+                        vertical_form: glyph.vertical_form.into(),
+                    }),
                 })
             }),
     );
@@ -1039,6 +1088,7 @@ fn native_element_bounds_from_layout(
                 Some(NativeFrameElementBounds {
                     element: NativeFrameElement::Ruby { index },
                     bbox: native_bbox_from_layout_rect(bounds, width, height)?,
+                    glyph: None,
                 })
             }),
     );

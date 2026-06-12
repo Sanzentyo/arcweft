@@ -91,13 +91,14 @@ the concrete choices to follow when turning that package into production code.
   vertical orientation is resolved through a generated Unicode 17.0.0 UAX #50
   `Vertical_Orientation` range table in `arcweft-text-layout`. `Tu` and `Tr`
   now produce `GlyphVerticalForm::{UprightAlternate,RotatedAlternate}` metadata
-  on `LaidOutGlyph`; native visual-plan/debug geometry preserves that request so
-  Agent observations can distinguish fallback rotation from missing vertical
-  alternate shaping. The native GlyphArea path uses that metadata to shape
-  affected clusters through cosmic-text with `vert` for `UprightAlternate` and
-  `vrtr` for `RotatedAlternate` before resolving glyphon cache keys, using the
-  active rich-text font family, weight, style, and size metrics instead of a
-  fixed renderer default.
+  on `LaidOutGlyph`; native visual-plan/debug geometry and Agent
+  `rich_text_cluster` refs preserve that request so observations can distinguish
+  fallback rotation from missing vertical alternate shaping. The native
+  GlyphArea path uses that metadata to shape affected clusters through
+  cosmic-text with `vert` for `UprightAlternate` and `vrtr` for
+  `RotatedAlternate` before resolving glyphon cache keys, using the active
+  rich-text font family, weight, style, and size metrics instead of a fixed
+  renderer default.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
@@ -188,9 +189,11 @@ the concrete choices to follow when turning that package into production code.
   `dialogue.rich_text` layer path so their authored `vertical_rl`/`vertical_lr`
   runs, source ranges, masks, and column-shaped bounds remain covered.
   `rich_text_cluster` child objects expose glyph-cluster source ranges and
-  object-local color/object-id/mask capture refs; the full-grammar sample test
-  follows a vertical cluster mask URI and asserts the raw capture contains
-  rendered pixels.
+  renderer-facing orientation/vertical-form metadata plus object-local
+  color/object-id/mask capture refs; the full-grammar sample test follows a
+  vertical cluster mask URI and asserts the raw capture contains rendered
+  pixels. Focused native Agent coverage checks sideways, upright-alternate,
+  rotated-alternate, and text-combine-upright cluster metadata.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture, and the CLI test compares a
   fresh native capture against it with `imq` when both Windows fonts and the

@@ -24,10 +24,10 @@ use arcweft_agent_mcp::{
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
-    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
-    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
+    AgentGlyphOrientation, AgentGlyphVerticalForm, AgentImageComposition, AgentImageContentBBox,
+    AgentImageCropOrigin, AgentImageKind, AgentImageRenderer, AgentImageResource, AgentImageScope,
+    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentObservationReport, AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
     AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
@@ -4107,7 +4107,10 @@ fn agent_rich_text_child_objects(
     step: usize,
     index: usize,
     textbox: &AgentObservedObject,
-    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Vec<AgentObservedObject> {
     let mut children = Vec::new();
     for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
@@ -4148,7 +4151,7 @@ fn agent_rich_text_child_objects(
 fn agent_native_rich_text_element_bboxes(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
-) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox> {
+) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentNativeRichTextElementBounds> {
     let (left, top) = agent_native_text_origin(textbox);
     let mut bboxes = BTreeMap::new();
     for page_index in 0.. {
@@ -4165,16 +4168,27 @@ fn agent_native_rich_text_element_bboxes(
             Err(_) => return BTreeMap::new(),
         };
         for bounds in bounds {
-            bboxes.entry(bounds.element).or_insert(AgentBBox {
-                space: AgentCoordinateSpace::Viewport,
-                x: bounds.bbox.x,
-                y: bounds.bbox.y,
-                width: bounds.bbox.width,
-                height: bounds.bbox.height,
-            });
+            bboxes
+                .entry(bounds.element)
+                .or_insert(AgentNativeRichTextElementBounds {
+                    bbox: AgentBBox {
+                        space: AgentCoordinateSpace::Viewport,
+                        x: bounds.bbox.x,
+                        y: bounds.bbox.y,
+                        width: bounds.bbox.width,
+                        height: bounds.bbox.height,
+                    },
+                    glyph: bounds.glyph,
+                });
         }
     }
     bboxes
+}
+
+#[derive(Clone, Debug)]
+struct AgentNativeRichTextElementBounds {
+    bbox: AgentBBox,
+    glyph: Option<arcweft_player_native::native::NativeGlyphClusterMetadata>,
 }
 
 fn agent_rich_text_run_object(
@@ -4183,7 +4197,10 @@ fn agent_rich_text_run_object(
     run_index: usize,
     textbox: &AgentObservedObject,
     run: &RichTextTextRun,
-    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Option<AgentObservedObject> {
     let text = textbox
         .rich_text
@@ -4194,7 +4211,7 @@ fn agent_rich_text_run_object(
     }
     let bbox = native_bounds
         .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
-        .cloned()?;
+        .map(|bounds| bounds.bbox.clone())?;
     let object_id = format!("object.dialogue.{step}.{index}.run.{run_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
     Some(agent_rich_text_child_object(
@@ -4213,6 +4230,8 @@ fn agent_rich_text_run_object(
                 node_index: run.node_index,
                 source: Some(run.source),
                 ruby: None,
+                orientation: None,
+                vertical_form: None,
             },
             page,
         },
@@ -4225,13 +4244,16 @@ fn agent_rich_text_ruby_object(
     ruby_index: usize,
     textbox: &AgentObservedObject,
     ruby: &RichTextRubyAnnotation,
-    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Option<AgentObservedObject> {
     let base_range = valid_rich_text_range(ruby.base_range, &textbox.rich_text.text)?;
     let base_text = textbox.rich_text.text.get(base_range)?;
     let bbox = native_bounds
         .get(&arcweft_player_native::native::NativeFrameElement::Ruby { index: ruby_index })
-        .cloned()?;
+        .map(|bounds| bounds.bbox.clone())?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
     Some(agent_rich_text_child_object(
@@ -4250,6 +4272,8 @@ fn agent_rich_text_ruby_object(
                 node_index: ruby.node_index,
                 source: None,
                 ruby: Some(ruby.ruby.clone()),
+                orientation: None,
+                vertical_form: None,
             },
             page,
         },
@@ -4260,11 +4284,14 @@ fn agent_rich_text_cluster_objects(
     step: usize,
     index: usize,
     textbox: &AgentObservedObject,
-    native_bounds: &BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentBBox>,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Vec<AgentObservedObject> {
     native_bounds
         .iter()
-        .filter_map(|(element, bbox)| {
+        .filter_map(|(element, bounds)| {
             let arcweft_player_native::native::NativeFrameElement::GlyphCluster {
                 index: cluster_index,
                 range_start,
@@ -4298,7 +4325,7 @@ fn agent_rich_text_cluster_objects(
                     object_id: &object_id,
                     role: "rich_text_cluster",
                     text: text.to_owned(),
-                    bbox,
+                    bbox: &bounds.bbox,
                     rich_text_ref: AgentRichTextElementRef {
                         kind: AgentRichTextElementKind::GlyphCluster,
                         index: cluster_index,
@@ -4307,12 +4334,50 @@ fn agent_rich_text_cluster_objects(
                         node_index: run.node_index,
                         source: Some(run.source),
                         ruby: None,
+                        orientation: bounds
+                            .glyph
+                            .map(|glyph| agent_glyph_orientation_from_native(glyph.orientation)),
+                        vertical_form: bounds.glyph.map(|glyph| {
+                            agent_glyph_vertical_form_from_native(glyph.vertical_form)
+                        }),
                     },
                     page,
                 },
             ))
         })
         .collect()
+}
+
+const fn agent_glyph_orientation_from_native(
+    value: arcweft_player_native::native::NativeGlyphOrientation,
+) -> AgentGlyphOrientation {
+    match value {
+        arcweft_player_native::native::NativeGlyphOrientation::Upright => {
+            AgentGlyphOrientation::Upright
+        }
+        arcweft_player_native::native::NativeGlyphOrientation::SidewaysCw => {
+            AgentGlyphOrientation::SidewaysCw
+        }
+        arcweft_player_native::native::NativeGlyphOrientation::TextCombineUpright => {
+            AgentGlyphOrientation::TextCombineUpright
+        }
+    }
+}
+
+const fn agent_glyph_vertical_form_from_native(
+    value: arcweft_player_native::native::NativeGlyphVerticalForm,
+) -> AgentGlyphVerticalForm {
+    match value {
+        arcweft_player_native::native::NativeGlyphVerticalForm::None => {
+            AgentGlyphVerticalForm::None
+        }
+        arcweft_player_native::native::NativeGlyphVerticalForm::UprightAlternate => {
+            AgentGlyphVerticalForm::UprightAlternate
+        }
+        arcweft_player_native::native::NativeGlyphVerticalForm::RotatedAlternate => {
+            AgentGlyphVerticalForm::RotatedAlternate
+        }
+    }
 }
 
 struct AgentRichTextChildObjectSpec<'a> {
