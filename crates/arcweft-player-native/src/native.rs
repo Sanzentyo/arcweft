@@ -3844,6 +3844,95 @@ mod tests {
     }
 
     #[test]
+    fn native_debug_capture_unions_overheight_ruby_segments_by_object_index() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.vertical.ruby.debug.split".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Layout {
+                        layout: RichTextLayout {
+                            writing_mode: RichTextWritingMode::VerticalLr,
+                            ..RichTextLayout::default()
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "天地".to_owned(),
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "あいうえおかきくけこ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page_layout = layout_page_range(
+            &frame,
+            0.."天地夢".len(),
+            native_text_layout_config(220, 120, 0.0, 0.0),
+        )
+        .expect("page layout resolves");
+        assert!(page_layout.layout.ruby.len() > 1);
+        let bounds = native_element_bounds_from_layout(&page_layout, 220, 120);
+        let ruby = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
+            .expect("ruby element has native bounds");
+        let ruby_geometry = ruby.ruby.expect("ruby geometry is reported");
+        assert!(
+            ruby_geometry.annotation_bbox.width > 14,
+            "over-height ruby bounds should union split annotation tracks"
+        );
+        let fallback_bbox = NativeFrameContentBBox {
+            x: 1,
+            y: 1,
+            width: 8,
+            height: 8,
+        };
+        let capture = capture_frame_debug_regions_at(
+            &frame,
+            220,
+            120,
+            0.0,
+            0.0,
+            &[NativeFrameDebugRegion {
+                element: Some(NativeFrameElement::Ruby { index: 0 }),
+                fallback_bbox,
+                color: [255, 255, 255, 255],
+            }],
+        )
+        .expect("over-height ruby debug capture resolves");
+
+        let content = capture
+            .content_bbox
+            .expect("over-height ruby debug capture has visible content");
+        assert_ne!(content, fallback_bbox);
+        assert!(content.x >= ruby.bbox.x);
+        assert!(content.y >= ruby.bbox.y);
+        assert!(content.x.saturating_add(content.width) <= ruby.bbox.x + ruby.bbox.width);
+        assert!(content.y.saturating_add(content.height) <= ruby.bbox.y + ruby.bbox.height);
+        assert!(
+            content.width > 14,
+            "over-height ruby debug content should include split annotation columns"
+        );
+        assert!(capture.content_pixels > 0);
+    }
+
+    #[test]
     fn native_text_style_metrics_follow_size_style() {
         let style = RichTextStyle::Size {
             points: Some(48),

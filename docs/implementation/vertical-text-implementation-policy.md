@@ -172,7 +172,10 @@ the concrete choices to follow when turning that package into production code.
   source ruby index; native rendering emits one ruby glyph area per segment and
   Agent/native element geometry unions the segments back to the authored ruby
   object while also exposing viewport-space base and annotation bboxes on the
-  ruby ref for debugging.
+  ruby ref for debugging. Native debug capture coverage also renders an
+  over-height vertical ruby object and checks that the captured content stays
+  inside the authored ruby object's union bbox while preserving the widened
+  annotation bbox from split tracks.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path. Native
   offscreen debug and isolated-color captures use the same GlyphArea path as
