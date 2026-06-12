@@ -3019,6 +3019,55 @@ fn agent_observe_native_renderer_reports_vertical_ruby_collision_geometry() {
     assert_native_vertical_ruby_collision_geometry("vertical_lr", false);
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_long_vertical_ruby_expansion_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-long-vertical-ruby-expansion",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native long vertical ruby source");
+    assert_native_rich_text_layer_image_has_content(&json);
+
+    let ruby = find_rich_text_ruby_object(&json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ながいながいよみ");
+    assert_rich_text_object_has_mask_capture(ruby, "long vertical ruby object");
+
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    let base_cluster = find_rich_text_cluster_object(&json, "夢", 18, 21);
+    assert!(
+        agent_json_bbox_height(base) > agent_json_bbox_height(&base_cluster["bbox"]) * 2,
+        "long vertical ruby should expand base allocation along inline progression: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_height(annotation) >= agent_json_bbox_height(base),
+        "long vertical ruby annotation should share the expanded inline extent: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_y(base) < agent_json_bbox_y(&base_cluster["bbox"]),
+        "expanded ruby base should be observable beyond the base glyph cell: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+        "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_x(&ruby["bbox"]) <= agent_json_bbox_x(base)
+            && agent_json_bbox_right(&ruby["bbox"]) >= agent_json_bbox_right(annotation)
+            && agent_json_bbox_y(&ruby["bbox"]) <= agent_json_bbox_y(base)
+            && agent_json_bbox_bottom(&ruby["bbox"]) >= agent_json_bbox_bottom(base),
+        "ruby object bbox should cover expanded base and annotation geometry: {ruby}"
+    );
+}
+
 fn assert_native_vertical_ruby_collision_geometry(writing_mode: &str, ruby_on_right: bool) {
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-ruby-collision"),
@@ -12827,6 +12876,10 @@ fn agent_json_bbox_x(bbox: &serde_json::Value) -> u64 {
 
 fn agent_json_bbox_y(bbox: &serde_json::Value) -> u64 {
     bbox["y"].as_u64().expect("bbox y is reported")
+}
+
+fn agent_json_bbox_height(bbox: &serde_json::Value) -> u64 {
+    bbox["height"].as_u64().expect("bbox height is reported")
 }
 
 fn agent_json_bbox_right(bbox: &serde_json::Value) -> u64 {

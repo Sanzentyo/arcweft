@@ -200,7 +200,11 @@ the concrete choices to follow when turning that package into production code.
   rotated-alternate, and text-combine-upright cluster metadata. It also checks
   adjacent `vertical_rl` and `vertical_lr` ruby annotations through separate
   `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
-  observable in Agent output.
+  observable in Agent output. Long `vertical_rl` ruby annotations are also
+  observed through the same native Agent path, asserting that the base bbox
+  expands along the vertical inline axis, the annotation remains on the correct
+  ruby track, and the authored ruby object's mask/crop geometry covers both
+  base and annotation bboxes.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
   JLREQ preset PNG goldens for the repeated-leader column-planning fixture. The
