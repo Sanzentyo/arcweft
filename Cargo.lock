@@ -402,6 +402,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-render-text",
  "arcweft-runtime-plan",
+ "arcweft-text-layout",
  "clap",
  "glyphon",
  "png",

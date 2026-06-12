@@ -4,7 +4,11 @@ use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
     RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
-    RichTextStyle, RichTextWritingMode, parse_decimal_milli,
+    RichTextStyle, parse_decimal_milli,
+};
+use arcweft_text_layout::{
+    GlyphOrientation, LaidOutText, LayoutPoint, LayoutRect, LayoutSize, TextLayoutConfig,
+    layout_frame,
 };
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
@@ -41,6 +45,8 @@ pub enum NativeWindowError {
     EmptyPages,
     #[error("readback failed: {0}")]
     Readback(String),
+    #[error("text layout failed: {0}")]
+    TextLayout(String),
 }
 
 /// Raw framebuffer capture produced by the native rich-text renderer.
@@ -632,40 +638,17 @@ pub fn measure_frame_elements_at_page(
     top: f32,
     page_index: usize,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
-    let origin = NativeTextOrigin { left, top };
     let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
-    let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
-        return Err(NativeWindowError::EmptyPages);
-    };
-    let mut font_system = FontSystem::new();
-    let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
-    prepare_window_text_buffers(
-        &mut font_system,
-        &mut text_buffer,
-        &page.rich_text,
-        width.max(1),
-        height.max(1),
-    );
-    let mut bounds = Vec::new();
-    bounds.extend(native_text_run_bounds(
+    let page_layout = layout_page_range(
         frame,
-        &page_range,
-        &page.rich_text,
-        &text_buffer,
-        origin,
+        page_range,
+        native_text_layout_config(width.max(1), height.max(1), left, top),
+    )?;
+    Ok(native_element_bounds_from_layout(
+        &page_layout,
         width.max(1),
         height.max(1),
-    ));
-    bounds.extend(native_ruby_bounds(
-        frame,
-        &page_range,
-        &page.rich_text,
-        &text_buffer,
-        origin,
-        width.max(1),
-        height.max(1),
-    ));
-    Ok(bounds)
+    ))
 }
 
 /// Builds a native-layout debug capture for object-id and mask capture modes.
@@ -752,77 +735,271 @@ fn visual_page_from_range(
     page_range: Range<usize>,
     time_seconds: f32,
 ) -> Option<NativeVisualPage> {
-    let text = frame.text.get(page_range.clone())?.to_owned();
-    if text.is_empty() {
+    let page_layout = layout_page_range(
+        frame,
+        page_range.clone(),
+        TextLayoutConfig {
+            origin: LayoutPoint::new(0.0, 0.0),
+            size: LayoutSize::new(720.0, 360.0),
+            ..TextLayoutConfig::default()
+        },
+    )
+    .ok()?;
+    if page_layout.frame.text.is_empty() {
         return None;
     }
-    let runs = frame
-        .display_map
-        .text_runs
-        .iter()
-        .enumerate()
-        .filter_map(|(index, run)| {
-            let range = intersect_display_range(run.range, &page_range)?;
-            Some(NativeVisualRun {
-                source_run_index: index,
-                range: range.clone(),
-                local_range: (range.start - page_range.start)..(range.end - page_range.start),
-                presentation: run.presentation.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
-    let glyphs = runs
-        .iter()
-        .flat_map(|run| placements_for_run(frame, run, time_seconds))
-        .collect();
+    let runs = native_visual_runs_from_layout(&page_layout, page_range.start);
+    let glyphs =
+        native_glyph_placements_from_layout(&page_layout, &runs, page_range.start, time_seconds);
     let shaders = runs
         .iter()
         .flat_map(|run| run.presentation.shaders.iter().map(resolve_shader_filter))
         .collect();
     Some(NativeVisualPage {
         page_index,
-        text,
+        text: page_layout.frame.text,
         runs,
         glyphs,
         shaders,
     })
 }
 
-fn placements_for_run(
+struct NativePageLayout {
+    frame: LineDisplayFrame,
+    layout: LaidOutText,
+    text_run_indices: Vec<usize>,
+    ruby_indices: Vec<usize>,
+}
+
+fn layout_page_range(
     frame: &LineDisplayFrame,
-    run: &NativeVisualRun,
+    page_range: Range<usize>,
+    config: TextLayoutConfig,
+) -> Result<NativePageLayout, NativeWindowError> {
+    let (page_frame, text_run_indices, ruby_indices) = page_local_layout_frame(frame, page_range)?;
+    let layout = layout_frame(&page_frame, config)
+        .map_err(|error| NativeWindowError::TextLayout(error.to_string()))?;
+    Ok(NativePageLayout {
+        frame: page_frame,
+        layout,
+        text_run_indices,
+        ruby_indices,
+    })
+}
+
+fn page_local_layout_frame(
+    frame: &LineDisplayFrame,
+    page_range: Range<usize>,
+) -> Result<(LineDisplayFrame, Vec<usize>, Vec<usize>), NativeWindowError> {
+    let text = frame
+        .text
+        .get(page_range.clone())
+        .ok_or(NativeWindowError::EmptyPages)?
+        .to_owned();
+    if text.is_empty() {
+        return Err(NativeWindowError::EmptyPages);
+    }
+
+    let mut text_run_indices = Vec::new();
+    let text_runs = frame
+        .display_map
+        .text_runs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, run)| {
+            let range = intersect_display_range(run.range, &page_range)?;
+            text_run_indices.push(index);
+            let mut run = run.clone();
+            run.range =
+                RichTextRange::new(range.start - page_range.start, range.end - page_range.start);
+            Some(run)
+        })
+        .collect();
+
+    let mut ruby_indices = Vec::new();
+    let ruby_annotations = frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, annotation)| {
+            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
+            if base_range.start < page_range.start || base_range.end > page_range.end {
+                return None;
+            }
+            ruby_indices.push(index);
+            let mut annotation = annotation.clone();
+            annotation.base_range = RichTextRange::new(
+                base_range.start - page_range.start,
+                base_range.end - page_range.start,
+            );
+            Some(annotation)
+        })
+        .collect();
+
+    Ok((
+        LineDisplayFrame {
+            line: frame.line.clone(),
+            callee: frame.callee.clone(),
+            text,
+            base_styles: frame.base_styles.clone(),
+            default_inline_failure_policy: frame.default_inline_failure_policy.clone(),
+            nodes: Vec::new(),
+            display_map: RichTextDisplayMap {
+                text_runs,
+                ruby_annotations,
+                controls: Vec::new(),
+                host_events: Vec::new(),
+            },
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        },
+        text_run_indices,
+        ruby_indices,
+    ))
+}
+
+fn native_visual_runs_from_layout(
+    page_layout: &NativePageLayout,
+    page_start: usize,
+) -> Vec<NativeVisualRun> {
+    page_layout
+        .layout
+        .runs
+        .iter()
+        .filter_map(|run| {
+            let source_run_index = *page_layout.text_run_indices.get(run.run_index)?;
+            Some(NativeVisualRun {
+                source_run_index,
+                range: (page_start + run.range.start)..(page_start + run.range.end),
+                local_range: run.range.start..run.range.end,
+                presentation: run.presentation.clone(),
+            })
+        })
+        .collect()
+}
+
+fn native_glyph_placements_from_layout(
+    page_layout: &NativePageLayout,
+    runs: &[NativeVisualRun],
+    page_start: usize,
     time_seconds: f32,
 ) -> Vec<NativeGlyphPlacement> {
-    let Some(text) = frame.text.get(run.range.clone()) else {
-        return Vec::new();
-    };
-    let glyph_count = text.chars().count().max(1);
-    text.char_indices()
-        .map(|(offset, ch)| {
-            let glyph_index = text[..offset].chars().count();
-            let start = run.range.start + offset;
-            let end = start + ch.len_utf8();
+    let mut run_counts = BTreeMap::<usize, usize>::new();
+    for glyph in &page_layout.layout.glyphs {
+        *run_counts.entry(glyph.run_index).or_default() += 1;
+    }
+
+    let mut next_glyph_indices = BTreeMap::<usize, usize>::new();
+    page_layout
+        .layout
+        .glyphs
+        .iter()
+        .filter_map(|glyph| {
+            let source_run_index = *page_layout.text_run_indices.get(glyph.run_index)?;
+            let glyph_index = next_glyph_indices.entry(glyph.run_index).or_default();
+            let range = (page_start + glyph.range.start)..(page_start + glyph.range.end);
             let mut placement = NativeGlyphPlacement {
-                run_index: run.source_run_index,
-                glyph_index,
-                range: start..end,
-                x: usize_to_f32_saturating(glyph_index) * 18.0,
-                y: 0.0,
-                rotate_degrees: 0.0,
+                run_index: source_run_index,
+                glyph_index: *glyph_index,
+                range,
+                x: glyph.origin.x,
+                y: glyph.origin.y,
+                rotate_degrees: glyph_orientation_degrees(glyph.orientation),
                 scale_x: 1.0,
                 scale_y: 1.0,
                 opacity: 1.0,
             };
+            *glyph_index += 1;
+            let run = runs
+                .iter()
+                .find(|run| run.source_run_index == source_run_index)?;
             apply_presentation_to_placement(
-                &frame.line.0,
+                &page_layout.frame.line.0,
                 run,
-                glyph_count,
+                *run_counts.get(&glyph.run_index).unwrap_or(&1),
                 time_seconds,
                 &mut placement,
             );
-            placement
+            Some(placement)
         })
         .collect()
+}
+
+fn native_element_bounds_from_layout(
+    page_layout: &NativePageLayout,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    let mut bounds = page_layout
+        .layout
+        .runs
+        .iter()
+        .filter_map(|run| {
+            let index = *page_layout.text_run_indices.get(run.run_index)?;
+            Some(NativeFrameElementBounds {
+                element: NativeFrameElement::TextRun { index },
+                bbox: native_bbox_from_layout_rect(run.bounds, width, height)?,
+            })
+        })
+        .collect::<Vec<_>>();
+    bounds.extend(page_layout.layout.ruby.iter().filter_map(|ruby| {
+        let index = *page_layout.ruby_indices.get(ruby.ruby_index)?;
+        let bounds = inflate_layout_rect_asymmetric(
+            ruby.base_bounds.union(ruby.ruby_bounds),
+            0.0,
+            128.0,
+            16.0,
+            16.0,
+        );
+        Some(NativeFrameElementBounds {
+            element: NativeFrameElement::Ruby { index },
+            bbox: native_bbox_from_layout_rect(bounds, width, height)?,
+        })
+    }));
+    bounds
+}
+
+fn native_text_layout_config(width: u32, height: u32, left: f32, top: f32) -> TextLayoutConfig {
+    TextLayoutConfig {
+        origin: LayoutPoint::new(left, top),
+        size: LayoutSize::new(
+            (surface_extent_f32(width) - left).max(1.0),
+            (surface_extent_f32(height) - top).max(1.0),
+        ),
+        ..TextLayoutConfig::default()
+    }
+}
+
+fn native_bbox_from_layout_rect(
+    rect: LayoutRect,
+    width: u32,
+    height: u32,
+) -> Option<NativeFrameContentBBox> {
+    native_float_bbox(rect.x, rect.y, rect.width, rect.height, width, height)
+}
+
+fn inflate_layout_rect_asymmetric(
+    rect: LayoutRect,
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+) -> LayoutRect {
+    LayoutRect::new(
+        rect.x - left,
+        rect.y - top,
+        rect.width + left + right,
+        rect.height + top + bottom,
+    )
+}
+
+const fn glyph_orientation_degrees(orientation: GlyphOrientation) -> f32 {
+    match orientation {
+        GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => 0.0,
+        GlyphOrientation::SidewaysCw => 90.0,
+    }
 }
 
 fn apply_presentation_to_placement(
@@ -838,17 +1015,6 @@ fn apply_presentation_to_placement(
         placement.rotate_degrees += transform.rotate.as_degrees_f32();
         placement.scale_x *= transform.scale.x.as_f32();
         placement.scale_y *= transform.scale.y.as_f32();
-    }
-    if let Some(layout) = &run.presentation.layout
-        && !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
-    {
-        let column_sign = if matches!(layout.writing_mode, RichTextWritingMode::VerticalRl) {
-            -1.0
-        } else {
-            1.0
-        };
-        placement.x = column_sign * 42.0;
-        placement.y += usize_to_f32_saturating(placement.glyph_index) * 42.0;
     }
     if let Some(opacity) = run.presentation.opacity {
         placement.opacity *= opacity.as_f32();
@@ -2031,148 +2197,6 @@ fn ruby_overlay_geometry(
     None
 }
 
-fn native_text_run_bounds(
-    frame: &LineDisplayFrame,
-    page_range: &Range<usize>,
-    rich_text: &WindowRichText,
-    text_buffer: &Buffer,
-    origin: NativeTextOrigin,
-    width: u32,
-    height: u32,
-) -> Vec<NativeFrameElementBounds> {
-    frame
-        .display_map
-        .text_runs
-        .iter()
-        .enumerate()
-        .filter_map(|(index, run)| {
-            let range = intersect_display_range(run.range, page_range)?;
-            let local_range = (range.start - page_range.start)..(range.end - page_range.start);
-            if rich_text.text.get(local_range.clone())?.trim().is_empty() {
-                return None;
-            }
-            let bbox =
-                text_range_bbox(text_buffer, rich_text, &local_range, origin, width, height)?;
-            Some(NativeFrameElementBounds {
-                element: NativeFrameElement::TextRun { index },
-                bbox,
-            })
-        })
-        .collect()
-}
-
-fn native_ruby_bounds(
-    frame: &LineDisplayFrame,
-    page_range: &Range<usize>,
-    rich_text: &WindowRichText,
-    text_buffer: &Buffer,
-    origin: NativeTextOrigin,
-    width: u32,
-    height: u32,
-) -> Vec<NativeFrameElementBounds> {
-    frame
-        .display_map
-        .ruby_annotations
-        .iter()
-        .enumerate()
-        .filter_map(|(index, annotation)| {
-            let base_range = valid_display_range(annotation.base_range, &frame.text)?;
-            if base_range.start < page_range.start || base_range.end > page_range.end {
-                return None;
-            }
-            let local_base =
-                (base_range.start - page_range.start)..(base_range.end - page_range.start);
-            let base_bbox =
-                text_range_bbox(text_buffer, rich_text, &local_base, origin, width, height)?;
-            let (base_left, ruby_top, base_width) =
-                ruby_overlay_geometry(text_buffer, rich_text, &local_base, origin).unwrap_or_else(
-                    || ruby_overlay_geometry_estimate(rich_text, &local_base, origin),
-                );
-            let ruby_width = native_text_width(
-                &annotation.ruby,
-                &native_ruby_style_from_styles(&annotation.styles),
-            );
-            let ruby_left = base_left + (base_width - ruby_width).max(0.0) / 2.0;
-            let ruby_bbox = native_float_bbox(
-                ruby_left,
-                ruby_top,
-                ruby_width.max(1.0),
-                20.0,
-                width,
-                height,
-            )?;
-            Some(NativeFrameElementBounds {
-                element: NativeFrameElement::Ruby { index },
-                bbox: union_native_bboxes(base_bbox, ruby_bbox),
-            })
-        })
-        .collect()
-}
-
-fn text_range_bbox(
-    text_buffer: &Buffer,
-    rich_text: &WindowRichText,
-    range: &Range<usize>,
-    origin: NativeTextOrigin,
-    width: u32,
-    height: u32,
-) -> Option<NativeFrameContentBBox> {
-    let line_starts = text_line_start_offsets(&rich_text.text);
-    let mut left: Option<f32> = None;
-    let mut right: Option<f32> = None;
-    let mut top: Option<f32> = None;
-    let mut bottom: Option<f32> = None;
-    for run in text_buffer.layout_runs() {
-        let line_start = *line_starts.get(run.line_i)?;
-        let line_end = line_starts
-            .get(run.line_i + 1)
-            .copied()
-            .unwrap_or(rich_text.text.len());
-        let start = range.start.max(line_start);
-        let end = range.end.min(line_end);
-        if start >= end {
-            continue;
-        }
-        let local_start = start - line_start;
-        let local_end = end - line_start;
-        let line_top = (origin.top + run.line_y - 32.0).max(0.0);
-        let line_bottom = line_top + 42.0;
-        for glyph in run.glyphs {
-            if glyph.end <= local_start || glyph.start >= local_end {
-                continue;
-            }
-            let glyph_left = origin.left + glyph.x;
-            let glyph_right = glyph_left + glyph.w.max(1.0);
-            left = Some(left.map_or(glyph_left, |value| value.min(glyph_left)));
-            right = Some(right.map_or(glyph_right, |value| value.max(glyph_right)));
-            top = Some(top.map_or(line_top, |value| value.min(line_top)));
-            bottom = Some(bottom.map_or(line_bottom, |value| value.max(line_bottom)));
-        }
-    }
-    native_float_bbox(
-        left?,
-        top?,
-        (right? - left?).max(1.0),
-        (bottom? - top?).max(1.0),
-        width,
-        height,
-    )
-}
-
-fn native_text_width(text: &str, style: &NativeTextStyle) -> f32 {
-    let mut font_system = FontSystem::new();
-    let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
-    buffer.set_size(&mut font_system, Some(4096.0), Some(64.0));
-    let attrs = style.attrs();
-    let spans = [(text, attrs.clone())];
-    buffer.set_rich_text(&mut font_system, spans, &attrs, Shaping::Advanced, None);
-    buffer.shape_until_scroll(&mut font_system, false);
-    buffer
-        .layout_runs()
-        .next()
-        .map_or(1.0, |run| run.line_w.max(1.0))
-}
-
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -2199,28 +2223,6 @@ fn native_float_bbox(
         width: width.min(viewport_width.saturating_sub(x)).max(1),
         height: height.min(viewport_height.saturating_sub(y)).max(1),
     })
-}
-
-fn union_native_bboxes(
-    first: NativeFrameContentBBox,
-    second: NativeFrameContentBBox,
-) -> NativeFrameContentBBox {
-    let x = first.x.min(second.x);
-    let y = first.y.min(second.y);
-    let right = first
-        .x
-        .saturating_add(first.width)
-        .max(second.x.saturating_add(second.width));
-    let bottom = first
-        .y
-        .saturating_add(first.height)
-        .max(second.y.saturating_add(second.height));
-    NativeFrameContentBBox {
-        x,
-        y,
-        width: right.saturating_sub(x).max(1),
-        height: bottom.saturating_sub(y).max(1),
-    }
 }
 
 fn text_line_start_offsets(text: &str) -> Vec<usize> {

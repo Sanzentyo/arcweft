@@ -13,6 +13,7 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-text-layout = { path = "../arcweft-text-layout" }
 
 clap = { workspace = true, features = ["derive"] }
 glyphon.workspace = true
