@@ -1,6 +1,8 @@
 //! Minimal native window renderer for rich-text player frames.
 
-use arcweft_glyphon::{GlyphonAreaOptions, glyph_area_from_layout};
+use arcweft_glyphon::{
+    GlyphonAreaOptions, OwnedGlyphArea, glyph_area_from_layout, glyph_area_from_shaped_buffer,
+};
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
@@ -2567,7 +2569,11 @@ impl NativeOffscreenTextRenderer {
                 |_index, glyph| cache_keys_for_layout_glyph(glyph.range, &cache_keys),
             )
             .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
-            let ruby_areas = ruby_text_areas(&self.ruby_buffers, target.width, target.height);
+            let ruby_glyph_areas =
+                ruby_glyph_areas(&self.ruby_buffers, target.width, target.height);
+            let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
+            glyph_areas.push(glyph_area.as_glyph_area());
+            glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
             self.text_renderer
                 .prepare_text_and_glyph_areas(
                     device,
@@ -2575,8 +2581,8 @@ impl NativeOffscreenTextRenderer {
                     &mut self.font_system,
                     &mut self.atlas,
                     &self.viewport,
-                    ruby_areas,
-                    [glyph_area.as_glyph_area()],
+                    std::iter::empty::<TextArea<'_>>(),
+                    glyph_areas,
                     &mut self.swash_cache,
                 )
                 .map_err(|error| NativeWindowError::Readback(error.to_string()))
@@ -2774,22 +2780,25 @@ fn window_text_areas<'a>(
     areas
 }
 
-fn ruby_text_areas(
+fn ruby_glyph_areas(
     ruby_buffers: &[WindowRubyBuffer],
     width: u32,
     height: u32,
-) -> Vec<TextArea<'_>> {
+) -> Vec<OwnedGlyphArea> {
     let bounds = native_text_bounds(width, height);
     ruby_buffers
         .iter()
-        .map(|ruby| TextArea {
-            buffer: &ruby.buffer,
-            left: ruby.left,
-            top: ruby.top,
-            scale: 1.0,
-            bounds,
-            default_color: Color::rgb(170, 190, 220),
-            custom_glyphs: &[],
+        .map(|ruby| {
+            glyph_area_from_shaped_buffer(
+                &ruby.buffer,
+                GlyphonAreaOptions {
+                    bounds,
+                    default_color: Color::rgb(170, 190, 220),
+                    left: ruby.left,
+                    top: ruby.top,
+                    ..GlyphonAreaOptions::default()
+                },
+            )
         })
         .collect()
 }
@@ -3026,11 +3035,14 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         ) else {
             return Err(());
         };
-        let ruby_areas = ruby_text_areas(
+        let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             state.surface_config.width,
             state.surface_config.height,
         );
+        let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
+        glyph_areas.push(glyph_area.as_glyph_area());
+        glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
         state
             .text_renderer
             .prepare_text_and_glyph_areas(
@@ -3039,8 +3051,8 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
                 &mut state.font_system,
                 &mut state.atlas,
                 &state.viewport,
-                ruby_areas,
-                [glyph_area.as_glyph_area()],
+                std::iter::empty::<TextArea<'_>>(),
+                glyph_areas,
                 &mut state.swash_cache,
             )
             .map_err(|_| ())
@@ -3087,8 +3099,7 @@ mod tests {
         LineDisplaySpec, RichTextDocument, RichTextLayout, RichTextWritingMode, RuntimeLineContext,
     };
 
-    #[test]
-    fn window_rich_text_uses_display_map_for_style_spans_and_ruby_hint() {
+    fn styled_ruby_test_frame() -> LineDisplayFrame {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.001".to_owned()),
             callee: "alice".to_owned(),
@@ -3126,7 +3137,12 @@ mod tests {
             .resolve_frame(&RuntimeLineContext::default())
             .expect("frame resolves");
         frame.nodes.clear();
+        frame
+    }
 
+    #[test]
+    fn window_rich_text_uses_display_map_for_style_spans_and_ruby_hint() {
+        let frame = styled_ruby_test_frame();
         let pages = WindowPage::from_frame(&frame);
         assert!(
             pages[0].layout_frame.is_some(),
@@ -3189,6 +3205,41 @@ mod tests {
             (measured.0 - estimated.0).abs() > 0.5 || (measured.2 - estimated.2).abs() > 0.5,
             "ruby overlay geometry should come from shaped glyph metrics"
         );
+
+        assert_ruby_glyph_areas_use_absolute_glypharea(
+            &mut font_system,
+            &buffer,
+            rich_text,
+            &pages,
+        );
+    }
+
+    fn assert_ruby_glyph_areas_use_absolute_glypharea(
+        font_system: &mut FontSystem,
+        text_buffer: &Buffer,
+        rich_text: &WindowRichText,
+        pages: &[WindowPage],
+    ) {
+        let layout = layout_frame(
+            pages[0].layout_frame.as_ref().expect("layout frame"),
+            native_text_layout_config(800, 600, 0.0, 0.0),
+        )
+        .expect("layout resolves");
+        let ruby_buffers = build_ruby_buffers(
+            font_system,
+            text_buffer,
+            rich_text,
+            Some(&layout),
+            800,
+            600,
+            NativeTextOrigin::default(),
+        );
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600);
+        assert_eq!(ruby_glyph_areas.len(), 1);
+        assert!(!ruby_glyph_areas[0].is_empty());
+        assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
+        assert!((ruby_glyph_areas[0].as_glyph_area().top - 0.0).abs() < f32::EPSILON);
+        assert!(ruby_glyph_areas[0].glyphs()[0].origin.x >= layout.ruby[0].ruby_bounds.x.floor());
     }
 
     #[test]

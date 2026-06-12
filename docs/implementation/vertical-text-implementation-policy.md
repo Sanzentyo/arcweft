@@ -92,8 +92,8 @@ the concrete choices to follow when turning that package into production code.
   kerning still belong in the layout/shaping policy.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
-  overlays remain on `TextArea` until ruby shaping is moved into the same
-  geometry stream.
+  annotations are shaped with glyphon buffers, then submitted as absolute
+  `GlyphArea` instances positioned from `LaidOutText` ruby geometry.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
 - Remaining work includes production `TextCombineUpright` shaping/compression,

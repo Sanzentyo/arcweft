@@ -2,7 +2,7 @@
 
 use arcweft_text_layout::{GlyphOrientation, LaidOutGlyph, LaidOutText};
 use glyphon::{
-    CacheKey, Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect,
+    Buffer, CacheKey, Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect,
     TextBounds, TextCluster, Vector,
 };
 use thiserror::Error;
@@ -137,6 +137,59 @@ pub fn glyph_area_from_layout(
     })
 }
 
+/// Adapts an already-shaped glyphon text buffer to a pre-laid `GlyphArea`.
+///
+/// This is used by renderer adapters for secondary text streams, such as ruby,
+/// whose placement is owned by Arcweft layout but whose glyph shaping still
+/// comes from glyphon/cosmic-text. The emitted glyph origins are absolute
+/// physical positions, matching glyphon's `TextArea` path cache-key generation.
+pub fn glyph_area_from_shaped_buffer(
+    buffer: &Buffer,
+    options: GlyphonAreaOptions,
+) -> OwnedGlyphArea {
+    let glyphs = buffer
+        .layout_runs()
+        .filter(|run| is_buffer_run_visible(run.line_top, run.line_height, options))
+        .flat_map(|run| {
+            run.glyphs.iter().map(move |glyph| {
+                let physical = glyph.physical((options.left, options.top), options.scale);
+                GlyphInstance {
+                    source: GlyphSource::Text {
+                        cache_key: physical.cache_key,
+                    },
+                    origin: Point::new(i32_to_f32(physical.x), i32_to_f32(physical.y)),
+                    advance: Vector::new(glyph.w * options.scale, 0.0),
+                    ink_bounds: Rect::new(0.0, 0.0, glyph.w * options.scale, run.line_height),
+                    transform: GlyphTransform::Identity,
+                    color: glyph.color_opt,
+                    metadata: glyph.metadata,
+                    cluster: Some(TextCluster {
+                        start: glyph.start,
+                        end: glyph.end,
+                        index: u32::try_from(glyph.start).unwrap_or(u32::MAX),
+                    }),
+                }
+            })
+        })
+        .collect();
+
+    OwnedGlyphArea {
+        glyphs,
+        left: 0.0,
+        top: 0.0,
+        scale: 1.0,
+        bounds: options.bounds,
+        default_color: options.default_color,
+        skipped_glyphs: 0,
+    }
+}
+
+fn is_buffer_run_visible(line_top: f32, line_height: f32, options: GlyphonAreaOptions) -> bool {
+    let start_y = options.top + (line_top * options.scale);
+    let end_y = start_y + (line_height * options.scale);
+    start_y <= i32_to_f32(options.bounds.bottom) && i32_to_f32(options.bounds.top) <= end_y
+}
+
 fn append_glyph_instances(
     instances: &mut Vec<GlyphInstance>,
     glyph_index: usize,
@@ -220,6 +273,14 @@ fn usize_to_f32(value: usize) -> f32 {
     f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
 
+fn i32_to_f32(value: i32) -> f32 {
+    f32::from(i16::try_from(value).unwrap_or(if value.is_negative() {
+        i16::MIN
+    } else {
+        i16::MAX
+    }))
+}
+
 const fn glyph_transform(orientation: GlyphOrientation) -> GlyphTransform {
     match orientation {
         GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => {
@@ -235,7 +296,10 @@ mod tests {
     use arcweft_text_layout::{
         LaidOutGlyph, LayoutPoint, LayoutRect, LayoutSize, TextLayoutConfig, layout_frame,
     };
-    use glyphon::{Weight, cosmic_text::CacheKeyFlags, fontdb};
+    use glyphon::{
+        Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, cosmic_text::CacheKeyFlags,
+        fontdb,
+    };
 
     fn fake_cache_key(glyph_id: u16) -> CacheKey {
         let (key, _, _) = CacheKey::new(
@@ -247,6 +311,10 @@ mod tests {
             CacheKeyFlags::empty(),
         );
         key
+    }
+
+    fn assert_f32_eq(left: f32, right: f32) {
+        assert!((left - right).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -371,6 +439,44 @@ mod tests {
             })
         );
         assert_eq!(area.glyphs()[0].metadata, area.glyphs()[1].metadata);
+    }
+
+    #[test]
+    fn shaped_buffer_maps_to_absolute_glyph_instances() {
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
+        buffer.set_size(&mut font_system, Some(400.0), Some(100.0));
+        let attrs = Attrs::new().family(Family::SansSerif);
+        buffer.set_rich_text(
+            &mut font_system,
+            [("ruby", attrs.clone())],
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        let area = glyph_area_from_shaped_buffer(
+            &buffer,
+            GlyphonAreaOptions {
+                left: 12.0,
+                top: 34.0,
+                bounds: TextBounds {
+                    left: 0,
+                    top: 0,
+                    right: 400,
+                    bottom: 200,
+                },
+                default_color: Color::rgb(170, 190, 220),
+                ..GlyphonAreaOptions::default()
+            },
+        );
+
+        assert!(!area.is_empty());
+        assert_f32_eq(area.as_glyph_area().left, 0.0);
+        assert_f32_eq(area.as_glyph_area().top, 0.0);
+        assert!(area.glyphs()[0].origin.x >= 12.0);
+        assert!(area.glyphs()[0].origin.y >= 34.0);
     }
 
     #[test]

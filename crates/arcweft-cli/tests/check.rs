@@ -2576,13 +2576,17 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["width"], 1280);
     assert_eq!(json["images"][0]["height"], 720);
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    let content_bbox = &json["images"][0]["content_bbox"];
+    let content_x = content_bbox["x"].as_u64().unwrap();
+    let content_y = content_bbox["y"].as_u64().unwrap();
+    let content_bottom = content_y + content_bbox["height"].as_u64().unwrap();
     assert!(
-        json["images"][0]["content_bbox"]["x"].as_u64().unwrap() >= 96,
+        content_x >= 96,
         "native Agent capture should align text with the observed textbox bbox"
     );
     assert!(
-        json["images"][0]["content_bbox"]["y"].as_u64().unwrap() >= 548,
-        "native Agent capture should align text with the observed textbox bbox"
+        (536..=672).contains(&content_y) && content_bottom <= 672,
+        "native Agent capture should include ruby above the base text without leaving the dialogue bbox"
     );
     assert_eq!(json["images"][0]["written"], "native.png");
 
