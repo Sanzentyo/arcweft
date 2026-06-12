@@ -95,7 +95,9 @@ the concrete choices to follow when turning that package into production code.
   Agent observations can distinguish fallback rotation from missing vertical
   alternate shaping. The native GlyphArea path uses that metadata to shape
   affected clusters through cosmic-text with `vert` for `UprightAlternate` and
-  `vrtr` for `RotatedAlternate` before resolving glyphon cache keys.
+  `vrtr` for `RotatedAlternate` before resolving glyphon cache keys, using the
+  active rich-text font family, weight, style, and size metrics instead of a
+  fixed renderer default.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,

@@ -1906,9 +1906,20 @@ impl NativeTextStyle {
             attrs = attrs.style(Style::Italic);
         }
         if let Some(size) = self.size {
-            attrs = attrs.metrics(Metrics::new(f32::from(size), f32::from(size) * 1.35));
+            attrs = attrs.metrics(Self::metrics_for_size(size));
         }
         attrs
+    }
+
+    fn metrics(&self) -> Metrics {
+        self.size.map_or(Metrics::new(30.0, 42.0), |size| {
+            Self::metrics_for_size(size)
+        })
+    }
+
+    fn metrics_for_size(size: u16) -> Metrics {
+        let font_size = f32::from(size);
+        Metrics::new(font_size, font_size * 1.35)
     }
 }
 
@@ -2962,7 +2973,7 @@ fn vertical_form_cache_keys(
     glyph: &arcweft_text_layout::LaidOutGlyph,
     style: &NativeTextStyle,
 ) -> Vec<ResolvedGlyph> {
-    let mut buffer = Buffer::new(font_system, Metrics::new(30.0, 42.0));
+    let mut buffer = Buffer::new(font_system, style.metrics());
     let attrs = style
         .attrs()
         .font_features(vertical_form_font_features(glyph.vertical_form));
@@ -3683,6 +3694,19 @@ mod tests {
     }
 
     #[test]
+    fn native_text_style_metrics_follow_size_style() {
+        let style = RichTextStyle::Size {
+            points: Some(48),
+            raw: "48".to_owned(),
+        };
+        let native = native_style_from_styles([&style]);
+        let metrics = native.metrics();
+
+        assert!((metrics.font_size - 48.0).abs() < f32::EPSILON);
+        assert!((metrics.line_height - 64.8).abs() <= 0.0001);
+    }
+
+    #[test]
     fn vertical_alternate_glyphs_use_feature_shaped_cache_keys() {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.vertical.features".to_owned()),
@@ -3692,7 +3716,10 @@ mod tests {
             voice: None,
             look: None,
             style: None,
-            base_styles: Vec::new(),
+            base_styles: vec![RichTextStyle::Size {
+                points: Some(48),
+                raw: "48".to_owned(),
+            }],
             default_inline_failure_policy: None,
             args: Vec::new(),
             content: RichTextDocument::new(vec![
@@ -3743,6 +3770,22 @@ mod tests {
 
         assert!(cache_keys.vertical_alternates.contains_key(&upright_index));
         assert!(cache_keys.vertical_alternates.contains_key(&rotated_index));
+        let upright_style =
+            native_style_for_display_range(&page.rich_text, layout.glyphs[upright_index].range);
+        assert!((upright_style.metrics().font_size - 48.0).abs() < f32::EPSILON);
+        let default_upright_keys = vertical_form_cache_keys(
+            &mut font_system,
+            &layout.glyphs[upright_index],
+            &NativeTextStyle::default(),
+        );
+        let sized_upright_keys = cache_keys
+            .vertical_alternates
+            .get(&upright_index)
+            .expect("sized upright alternate keys exist");
+        assert!(
+            sized_upright_keys[0].advance.x > default_upright_keys[0].advance.x,
+            "vertical alternate shaping should use the rich-text size style"
+        );
         assert_eq!(
             vertical_form_font_features(GlyphVerticalForm::UprightAlternate).features[0].tag,
             FeatureTag::new(b"vert")
