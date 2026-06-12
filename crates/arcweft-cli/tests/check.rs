@@ -3618,7 +3618,7 @@ fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外……終[/][p]
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終[/][p]
 }
 ",
     );
@@ -3635,8 +3635,10 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
     );
-    let run =
-        find_rich_text_run_object(json, "天地春夏秋冬月火、山々人「川」あっいおーえ中・外……終");
+    let run = find_rich_text_run_object(
+        json,
+        "天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終",
+    );
     assert!(
         run["bbox"]["width"].as_u64().unwrap() >= 300
             && run["bbox"]["height"].as_u64().unwrap() >= 120,
@@ -3718,7 +3720,7 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(json: &serde_json::Value) 
 
     let first_leader = find_rich_text_cluster_object(json, "…", 72, 75);
     let second_leader = find_rich_text_cluster_object(json, "…", 75, 78);
-    let ending = find_rich_text_cluster_object(json, "終", 78, 81);
+    let ending = find_rich_text_cluster_object(json, "終", 81, 84);
     assert_vertical_cluster_after(
         first_leader,
         second_leader,
@@ -3726,7 +3728,7 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(json: &serde_json::Value) 
     );
     assert!(
         agent_json_bbox_x(&ending["bbox"]) < agent_json_bbox_x(&second_leader["bbox"]),
-        "paragraph text after overhanging leaders should continue in the next vertical_rl column"
+        "paragraph text after a partially clipped overhanging leader chain should continue in the next vertical_rl column"
     );
     assert_rich_text_object_has_mask_capture(first_leader, "paragraph leader cluster");
 }

@@ -809,18 +809,42 @@ fn vertical_column_segment_overhang_allowance(
     else {
         return 0.0;
     };
-    let last_cluster = &clusters[last_cluster_index];
-    if jlreq_punctuation::is_line_head_prohibited_cluster(&last_cluster.text)
-        || vertical_cluster_has_jlreq_separation_prohibited_before(
-            last_cluster_index,
-            clusters,
-            config.jlreq_strictness,
-        )
-    {
-        config.line_advance
-    } else {
-        0.0
+
+    let mut suffix_start = last_cluster_index + 1;
+    for cluster_index in (column_start.saturating_add(1)..=last_cluster_index).rev() {
+        if vertical_cluster_requires_previous_in_column(cluster_index, clusters, config) {
+            suffix_start = cluster_index;
+        } else {
+            break;
+        }
     }
+    if suffix_start > last_cluster_index {
+        return 0.0;
+    }
+
+    clusters[suffix_start..=last_cluster_index]
+        .iter()
+        .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+        .map(|_| config.line_advance)
+        .sum()
+}
+
+fn vertical_cluster_requires_previous_in_column(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+    config: TextLayoutConfig,
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    if jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text) {
+        return true;
+    }
+    vertical_cluster_has_jlreq_separation_prohibited_before(
+        cluster_index,
+        clusters,
+        config.jlreq_strictness,
+    )
 }
 
 fn vertical_cluster_can_start_column(
@@ -2073,6 +2097,54 @@ mod tests {
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
         assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_jlreq_leader_chain_together_before_next_column() {
+        let frame = frame_with_run(
+            "天………人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let clusters = vertical_clusters(&frame.text, RichTextVerticalLatinMode::Mixed);
+        let context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config,
+        };
+        let plan = plan_vertical_columns(
+            &clusters,
+            context,
+            LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalRl, config),
+                config.origin.y,
+            ),
+        );
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(plan.break_before, vec![false, false, false, false, true]);
+        assert_eq!(layout.glyphs.len(), 5);
+        assert_eq!(layout.glyphs[1].text, "…");
+        assert_eq!(layout.glyphs[2].text, "…");
+        assert_eq!(layout.glyphs[3].text, "…");
+        assert_f32_eq(layout.glyphs[1].origin.x, layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.x, layout.glyphs[0].origin.x);
+        assert!(
+            layout.glyphs[3].bounds.bottom() > config.origin.y + config.size.height,
+            "the leader chain may overhang as one unbreakable trailing suffix"
+        );
+        assert_eq!(layout.glyphs[4].text, "人");
+        assert!(
+            layout.glyphs[4].origin.x < layout.glyphs[3].origin.x,
+            "ordinary text after the leader chain should start the next vertical_rl column"
+        );
+        assert_f32_eq(layout.glyphs[4].origin.y, config.origin.y);
     }
 
     #[test]
