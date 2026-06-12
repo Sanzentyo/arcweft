@@ -94,9 +94,10 @@ the concrete choices to follow when turning that package into production code.
   alternate shaping is implemented.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
-  cluster cell instead of collapsing the cluster to a single glyph. The current
-  slot distribution is a deterministic bridge; production compression and
-  kerning still belong in the layout/shaping policy.
+  cluster cell instead of collapsing the cluster to a single glyph. It applies
+  deterministic horizontal affine compression so 2-4 digit clusters fit inside
+  one vertical cell while preserving shared source-cluster metadata. Production
+  shaping metrics and kerning still belong in the layout/shaping policy.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
@@ -111,7 +112,7 @@ the concrete choices to follow when turning that package into production code.
   that compares repeated headless PNG captures for the same vertical fixture.
   Checked-in golden baselines remain future work once rendering baselines are
   stable across CI targets.
-- Remaining work includes production `TextCombineUpright` shaping/compression,
+- Remaining work includes production `TextCombineUpright` shaping metrics/kerning,
   UAX #14/JLREQ line-breaking policy, vertical shaping policy for `Tu`/`Tr`
   alternates, full ruby base expansion/overhang/line-break feedback, and
   checked-in `imq` golden fixtures.

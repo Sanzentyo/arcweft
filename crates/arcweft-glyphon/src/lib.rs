@@ -2,8 +2,8 @@
 
 use arcweft_text_layout::{GlyphOrientation, LaidOutGlyph, LaidOutText};
 use glyphon::{
-    Buffer, CacheKey, Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect,
-    TextBounds, TextCluster, Vector,
+    Affine2, Buffer, CacheKey, Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point,
+    Rect, TextBounds, TextCluster, Vector,
 };
 use thiserror::Error;
 
@@ -222,25 +222,50 @@ fn append_text_combine_instances(
     origin_offset: Vector,
 ) {
     let count = cache_keys.len().max(1);
-    let count_f32 = usize_to_f32(count);
-    let cell_width = glyph.bounds.width.max(1.0);
-    let slot_width = (cell_width / count_f32).max(1.0);
-    let ink_bounds = Rect::new(0.0, 0.0, slot_width, glyph.bounds.height);
-    let advance = Vector::new(slot_width, 0.0);
+    let placement = text_combine_placement(glyph, count);
     for (index, cache_key) in cache_keys.iter().copied().enumerate() {
         let origin = Point::new(
-            glyph.origin.x + slot_width * usize_to_f32(index),
-            glyph.origin.y,
+            placement.start_x + placement.advance.x * usize_to_f32(index),
+            placement.origin_y,
         );
-        instances.push(glyph_instance(
+        let mut instance = glyph_instance(
             glyph_index,
             glyph,
             cache_key,
             origin,
-            advance,
-            ink_bounds,
+            Vector::new(placement.advance.x, 0.0),
+            Rect::new(0.0, 0.0, placement.advance.x, placement.advance.y),
             origin_offset,
-        ));
+        );
+        instance.transform = placement.transform;
+        instances.push(instance);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TextCombinePlacement {
+    start_x: f32,
+    origin_y: f32,
+    advance: Vector,
+    transform: GlyphTransform,
+}
+
+fn text_combine_placement(glyph: &LaidOutGlyph, count: usize) -> TextCombinePlacement {
+    let count_f32 = usize_to_f32(count).max(1.0);
+    let cell_width = glyph.bounds.width.max(1.0);
+    let cell_height = glyph.bounds.height.max(1.0);
+    let em = cell_width.min(cell_height).max(1.0);
+    let nominal_digit_advance = (em * 0.55).max(1.0);
+    let uncompressed_width = nominal_digit_advance * count_f32;
+    let scale_x = (cell_width / uncompressed_width).min(1.0);
+    let compressed_advance = (nominal_digit_advance * scale_x).max(1.0);
+    let compressed_width = compressed_advance * count_f32;
+    let start_x = glyph.origin.x + (cell_width - compressed_width).max(0.0) * 0.5;
+    TextCombinePlacement {
+        start_x,
+        origin_y: glyph.origin.y,
+        advance: Vector::new(compressed_advance, cell_height),
+        transform: GlyphTransform::Affine(Affine2::new([scale_x, 0.0, 0.0, 1.0, 0.0, 0.0])),
     }
 }
 
@@ -314,7 +339,22 @@ mod tests {
     }
 
     fn assert_f32_eq(left: f32, right: f32) {
-        assert!((left - right).abs() < f32::EPSILON);
+        assert!(
+            (left - right).abs() <= 0.0001,
+            "expected {left} to equal {right}"
+        );
+    }
+
+    fn assert_affine_scale_x(transform: GlyphTransform, expected: f32) {
+        let GlyphTransform::Affine(affine) = transform else {
+            panic!("expected affine transform, got {transform:?}");
+        };
+        assert_f32_eq(affine.values[0], expected);
+        assert_f32_eq(affine.values[1], 0.0);
+        assert_f32_eq(affine.values[2], 0.0);
+        assert_f32_eq(affine.values[3], 1.0);
+        assert_f32_eq(affine.values[4], 0.0);
+        assert_f32_eq(affine.values[5], 0.0);
     }
 
     #[test]
@@ -401,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn text_combine_clusters_expand_to_multiple_glyph_instances() {
+    fn text_combine_clusters_expand_to_compressed_glyph_instances() {
         let layout = LaidOutText {
             glyphs: vec![LaidOutGlyph {
                 run_index: 0,
@@ -426,10 +466,12 @@ mod tests {
             .expect("area adapts");
 
         assert_eq!(area.len(), 2);
-        assert_eq!(area.glyphs()[0].transform, GlyphTransform::Identity);
-        assert_eq!(area.glyphs()[1].transform, GlyphTransform::Identity);
-        assert_eq!(area.glyphs()[0].origin, Point::new(100.0, 24.0));
-        assert_eq!(area.glyphs()[1].origin, Point::new(121.0, 24.0));
+        assert_affine_scale_x(area.glyphs()[0].transform, 42.0 / 46.2);
+        assert_eq!(area.glyphs()[1].transform, area.glyphs()[0].transform);
+        assert_f32_eq(area.glyphs()[0].origin.x, 100.0);
+        assert_f32_eq(area.glyphs()[0].origin.y, 24.0);
+        assert_f32_eq(area.glyphs()[1].origin.x, 121.0);
+        assert_f32_eq(area.glyphs()[1].origin.y, 24.0);
         assert_eq!(
             area.glyphs()[0].cluster,
             Some(TextCluster {
@@ -439,6 +481,51 @@ mod tests {
             })
         );
         assert_eq!(area.glyphs()[0].metadata, area.glyphs()[1].metadata);
+    }
+
+    #[test]
+    fn text_combine_four_digits_fit_inside_one_cell() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, 4),
+                text: "2026".to_owned(),
+                origin: LayoutPoint::new(100.0, 24.0),
+                advance: LayoutSize::new(0.0, 42.0),
+                bounds: LayoutRect::new(100.0, 24.0, 42.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
+                orientation: GlyphOrientation::TextCombineUpright,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area =
+            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
+                vec![
+                    fake_cache_key(2),
+                    fake_cache_key(0),
+                    fake_cache_key(2),
+                    fake_cache_key(6),
+                ]
+            })
+            .expect("area adapts");
+
+        assert_eq!(area.len(), 4);
+        for glyph in area.glyphs() {
+            assert_affine_scale_x(glyph.transform, 42.0 / 92.4);
+            assert_f32_eq(glyph.advance.x, 10.5);
+        }
+        assert_f32_eq(area.glyphs()[0].origin.x, 100.0);
+        assert_f32_eq(area.glyphs()[0].origin.y, 24.0);
+        assert_f32_eq(area.glyphs()[3].origin.x, 131.5);
+        assert_f32_eq(area.glyphs()[3].origin.y, 24.0);
+        assert!(
+            area.glyphs()[3].origin.x + area.glyphs()[3].advance.x <= 142.0,
+            "compressed text-combine should stay inside the 1em cell"
+        );
     }
 
     #[test]
