@@ -99,12 +99,13 @@ the concrete choices to follow when turning that package into production code.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
-  keeping closing punctuation and small kana out of column heads as an initial
-  kinsoku rule. The layout also applies an initial JLREQ line-end prohibition
-  for opening punctuation by moving the opening punctuation to the next column
-  when it would otherwise be stranded at the previous column end. Initial JLREQ
-  separation-prohibition handling keeps repeated dash/leader marks together and
-  keeps iteration marks with the previous cluster.
+  keeping closing punctuation, small kana, dash/prolonged-sound marks, and
+  middle dots out of column heads as an initial kinsoku rule. The layout also
+  applies an initial JLREQ line-end prohibition for opening punctuation by
+  moving the opening punctuation to the next column when it would otherwise be
+  stranded at the previous column end. Initial JLREQ separation-prohibition
+  handling keeps repeated dash/leader marks together and keeps iteration marks
+  with the previous cluster.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
@@ -140,9 +141,9 @@ the concrete choices to follow when turning that package into production code.
   contains a checked-in Windows native PNG golden for a vertical `Tu`/`Tr`
   alternate fixture, and the CLI test compares a fresh native capture against it
   with `imq` when both Windows fonts and the `imq` binary are available.
-- Remaining work includes broader JLREQ line-breaking classes beyond closing
-  punctuation/small-kana heads, opening punctuation tails, and initial
-  dash/leader/repeat-mark separation rules.
+- Remaining work includes JLREQ refinements beyond the current kinsoku and
+  separation class coverage, such as punctuation compression/hanging policy
+  tuning and eventual pair-table generation.
 
 ## Explicit Defaults
 

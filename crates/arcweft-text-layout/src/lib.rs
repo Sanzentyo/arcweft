@@ -1052,7 +1052,10 @@ fn is_jlreq_line_head_prohibited_cluster(grapheme: &str) -> bool {
 }
 
 const fn is_jlreq_line_head_prohibited_char(ch: char) -> bool {
-    is_jlreq_closing_punctuation_char(ch) || is_jlreq_small_kana_char(ch)
+    is_jlreq_closing_punctuation_char(ch)
+        || is_jlreq_small_kana_char(ch)
+        || is_jlreq_dash_char(ch)
+        || is_jlreq_middle_dot_char(ch)
 }
 
 fn is_jlreq_separation_prohibited_pair(left: &str, right: &str) -> bool {
@@ -1081,6 +1084,10 @@ const fn is_jlreq_dash_char(ch: char) -> bool {
 
 const fn is_jlreq_leader_char(ch: char) -> bool {
     matches!(ch, '\u{2025}' | '\u{2026}')
+}
+
+const fn is_jlreq_middle_dot_char(ch: char) -> bool {
+    matches!(ch, '\u{00b7}' | '\u{30fb}' | '\u{ff65}')
 }
 
 const fn is_jlreq_closing_punctuation_char(ch: char) -> bool {
@@ -1598,6 +1605,54 @@ mod tests {
         assert!(
             layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
             "the second dash should stay with the first instead of starting a new column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_prolonged_sound_mark_out_of_column_heads() {
+        let frame = frame_with_run(
+            "天地ー人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, "ー");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "prolonged sound marks should overhang instead of starting the next column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
+    fn vertical_column_keeps_middle_dot_out_of_column_heads() {
+        let frame = frame_with_run(
+            "天地・人",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, "・");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "middle dots should overhang instead of starting the next column"
         );
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
