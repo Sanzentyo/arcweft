@@ -571,7 +571,7 @@ fn layout_ruby(
         .ruby_annotations
         .iter()
         .enumerate()
-        .filter_map(|(ruby_index, annotation)| {
+        .flat_map(|(ruby_index, annotation)| {
             layout_one_ruby(ruby_index, annotation, glyphs, config)
         })
         .collect::<Vec<_>>();
@@ -584,13 +584,16 @@ fn layout_one_ruby(
     annotation: &RichTextRubyAnnotation,
     glyphs: &[LaidOutGlyph],
     config: TextLayoutConfig,
-) -> Option<LaidOutRuby> {
+) -> Vec<LaidOutRuby> {
     let base_bounds = union_bounds(
         glyphs
             .iter()
             .filter(|glyph| ranges_overlap(glyph.range, annotation.base_range))
             .map(|glyph| glyph.bounds),
-    )?;
+    );
+    let Some(base_bounds) = base_bounds else {
+        return Vec::new();
+    };
     let vertical = glyphs
         .iter()
         .find(|glyph| ranges_overlap(glyph.range, annotation.base_range))
@@ -607,40 +610,126 @@ fn layout_one_ruby(
     } else {
         expand_horizontal_ruby_base(base_bounds, ruby_extent, config)
     };
-    let ruby_bounds = if vertical {
-        LayoutRect::new(
-            vertical_ruby_track_x(base_bounds, writing_mode, config),
-            ruby_annotation_start(
-                base_bounds.y,
-                base_bounds.height,
+    if vertical && ruby_extent > config.size.height {
+        layout_overheight_vertical_ruby(ruby_index, annotation, base_bounds, writing_mode, config)
+    } else if vertical {
+        vec![laid_out_ruby_segment(
+            ruby_index,
+            annotation,
+            annotation.ruby.clone(),
+            base_bounds,
+            LayoutRect::new(
+                vertical_ruby_track_x(base_bounds, writing_mode, config),
+                ruby_annotation_start(
+                    base_bounds.y,
+                    base_bounds.height,
+                    ruby_extent,
+                    ruby_overhang_limit(config),
+                ),
+                config.ruby_font_size,
                 ruby_extent,
-                ruby_overhang_limit(config),
             ),
-            config.ruby_font_size,
-            ruby_extent,
-        )
+            writing_mode,
+        )]
     } else {
-        LayoutRect::new(
-            ruby_annotation_start(
-                base_bounds.x,
-                base_bounds.width,
+        vec![laid_out_ruby_segment(
+            ruby_index,
+            annotation,
+            annotation.ruby.clone(),
+            base_bounds,
+            LayoutRect::new(
+                ruby_annotation_start(
+                    base_bounds.x,
+                    base_bounds.width,
+                    ruby_extent,
+                    ruby_overhang_limit(config),
+                ),
+                (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
                 ruby_extent,
-                ruby_overhang_limit(config),
+                config.ruby_font_size,
             ),
-            (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
-            ruby_extent,
-            config.ruby_font_size,
-        )
-    };
-    Some(LaidOutRuby {
+            writing_mode,
+        )]
+    }
+}
+
+fn layout_overheight_vertical_ruby(
+    ruby_index: usize,
+    annotation: &RichTextRubyAnnotation,
+    base_bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+    config: TextLayoutConfig,
+) -> Vec<LaidOutRuby> {
+    let max_chars_per_segment = max_ruby_chars_per_vertical_segment(config);
+    let track_x = vertical_ruby_track_x(base_bounds, writing_mode, config);
+    split_ruby_text(&annotation.ruby, max_chars_per_segment)
+        .into_iter()
+        .enumerate()
+        .map(|(segment_index, ruby)| {
+            let ruby_extent = ruby_text_extent(&ruby, config.ruby_font_size);
+            laid_out_ruby_segment(
+                ruby_index,
+                annotation,
+                ruby,
+                base_bounds,
+                LayoutRect::new(
+                    track_x
+                        + vertical_ruby_continuation_step(writing_mode, config)
+                            * usize_to_f32(segment_index),
+                    config.origin.y,
+                    config.ruby_font_size,
+                    ruby_extent,
+                ),
+                writing_mode,
+            )
+        })
+        .collect()
+}
+
+fn laid_out_ruby_segment(
+    ruby_index: usize,
+    annotation: &RichTextRubyAnnotation,
+    ruby: String,
+    base_bounds: LayoutRect,
+    ruby_bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+) -> LaidOutRuby {
+    LaidOutRuby {
         ruby_index,
         base_range: annotation.base_range,
-        ruby: annotation.ruby.clone(),
+        ruby,
         base_bounds,
         ruby_bounds,
         writing_mode,
         presentation: annotation.presentation.clone(),
-    })
+    }
+}
+
+fn split_ruby_text(ruby: &str, max_chars_per_segment: usize) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut segment = String::new();
+    for ch in ruby.chars() {
+        if segment.chars().count() >= max_chars_per_segment {
+            segments.push(segment);
+            segment = String::new();
+        }
+        segment.push(ch);
+    }
+    if !segment.is_empty() {
+        segments.push(segment);
+    }
+    segments
+}
+
+fn max_ruby_chars_per_vertical_segment(config: TextLayoutConfig) -> usize {
+    let mut count = 1usize;
+    let mut extent = config.ruby_font_size.max(1.0);
+    let max_extent = config.size.height.max(extent);
+    while extent + config.ruby_font_size <= max_extent {
+        count += 1;
+        extent += config.ruby_font_size;
+    }
+    count
 }
 
 fn ruby_text_extent(ruby: &str, ruby_font_size: f32) -> f32 {
@@ -705,6 +794,19 @@ fn vertical_ruby_track_x(
         RichTextWritingMode::VerticalLr => base_bounds.x - config.ruby_font_size - gap,
         RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb => {
             base_bounds.right() + gap
+        }
+    }
+}
+
+fn vertical_ruby_continuation_step(
+    writing_mode: RichTextWritingMode,
+    config: TextLayoutConfig,
+) -> f32 {
+    const GAP: f32 = 2.0;
+    match writing_mode {
+        RichTextWritingMode::VerticalRl => config.ruby_font_size + GAP,
+        RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
+            -(config.ruby_font_size + GAP)
         }
     }
 }
@@ -1739,6 +1841,29 @@ mod tests {
             RichTextRange::new("天".len(), "天夢星".len())
         );
         assert_f32_eq(layout.ruby[0].base_bounds.x, layout.glyphs[1].bounds.x);
+    }
+
+    #[test]
+    fn overheight_vertical_ruby_splits_into_column_segments() {
+        let mut frame =
+            frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalRl));
+        push_ruby(&mut frame, 0, "夢".len(), "あいうえお");
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 42.0),
+            ruby_font_size: 14.0,
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 2);
+        assert_eq!(layout.ruby[0].ruby_index, layout.ruby[1].ruby_index);
+        assert_eq!(layout.ruby[0].ruby, "あいう");
+        assert_eq!(layout.ruby[1].ruby, "えお");
+        assert!(layout.ruby[0].ruby_bounds.height <= config.size.height);
+        assert!(layout.ruby[1].ruby_bounds.height <= config.size.height);
+        assert!(layout.ruby[1].ruby_bounds.x > layout.ruby[0].ruby_bounds.x);
+        assert_f32_eq(layout.ruby[0].ruby_bounds.y, config.origin.y);
+        assert_f32_eq(layout.ruby[1].ruby_bounds.y, config.origin.y);
     }
 
     fn push_ruby(frame: &mut LineDisplayFrame, start: usize, end: usize, ruby: &str) {

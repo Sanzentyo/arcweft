@@ -125,7 +125,11 @@ the concrete choices to follow when turning that package into production code.
   expanded inline allocation back into column breaking, so a long annotation or
   multi-cluster base moves to the next column instead of placing its expanded
   base past the column end. `vertical_rl` ruby uses the right annotation track
-  and `vertical_lr` ruby uses the left annotation track.
+  and `vertical_lr` ruby uses the left annotation track. Over-height vertical
+  ruby annotations split into multiple `LaidOutRuby` segments with the same
+  source ruby index; native rendering emits one ruby glyph area per segment and
+  Agent/native element geometry unions the segments back to the authored ruby
+  object.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
 - CLI regression coverage includes an `imq` native vertical capture parity check
@@ -137,8 +141,7 @@ the concrete choices to follow when turning that package into production code.
 - Remaining work includes broader JLREQ line-breaking classes beyond closing
   punctuation/small-kana heads, opening punctuation tails, and initial
   dash/leader/repeat-mark separation rules, proof against stable checked-in
-  font/capture baselines for `Tu`/`Tr` alternates, over-height ruby split policy
-  for annotations that cannot fit in one column, and checked-in `imq` golden
+  font/capture baselines for `Tu`/`Tr` alternates, and checked-in `imq` golden
   fixtures.
 
 ## Explicit Defaults
