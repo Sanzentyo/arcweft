@@ -197,8 +197,11 @@ the concrete choices to follow when turning that package into production code.
   color/object-id/mask capture refs; the full-grammar sample test follows a
   vertical cluster mask URI and asserts the raw capture contains rendered
   pixels. Focused native Agent coverage checks sideways, upright-alternate,
-  rotated-alternate, and text-combine-upright cluster metadata. It also checks
-  adjacent `vertical_rl` and `vertical_lr` ruby annotations through separate
+  rotated-alternate, and text-combine-upright cluster metadata. The
+  text-combine-upright path is also verified through a raw native mask crop so
+  compressed multi-glyph cells expose object-local readback from the same
+  GlyphArea geometry as the observed cluster bbox. It also checks adjacent
+  `vertical_rl` and `vertical_lr` ruby annotations through separate
   `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
   observable in Agent output. Long `vertical_rl` ruby annotations are also
   observed through the same native Agent path, asserting that the base bbox
