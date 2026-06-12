@@ -105,24 +105,26 @@ impl OwnedGlyphArea {
 pub fn glyph_area_from_layout(
     layout: &LaidOutText,
     options: GlyphonAreaOptions,
-    mut resolve_cache_key: impl FnMut(usize, &LaidOutGlyph) -> Option<CacheKey>,
+    mut resolve_cache_keys: impl FnMut(usize, &LaidOutGlyph) -> Vec<CacheKey>,
 ) -> Result<OwnedGlyphArea, GlyphonAdapterError> {
     let mut skipped_glyphs = 0;
     let mut glyphs = Vec::with_capacity(layout.glyphs.len());
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
-        let Some(cache_key) = resolve_cache_key(glyph_index, glyph) else {
+        let cache_keys = resolve_cache_keys(glyph_index, glyph);
+        if cache_keys.is_empty() {
             if options.skip_missing_glyphs {
                 skipped_glyphs += 1;
                 continue;
             }
             return Err(GlyphonAdapterError::MissingCacheKey { glyph_index });
-        };
-        glyphs.push(glyph_instance(
+        }
+        append_glyph_instances(
+            &mut glyphs,
             glyph_index,
             glyph,
-            cache_key,
+            &cache_keys,
             options.origin_offset,
-        ));
+        );
     }
     Ok(OwnedGlyphArea {
         glyphs,
@@ -135,20 +137,74 @@ pub fn glyph_area_from_layout(
     })
 }
 
+fn append_glyph_instances(
+    instances: &mut Vec<GlyphInstance>,
+    glyph_index: usize,
+    glyph: &LaidOutGlyph,
+    cache_keys: &[CacheKey],
+    origin_offset: Vector,
+) {
+    if glyph.orientation == GlyphOrientation::TextCombineUpright {
+        append_text_combine_instances(instances, glyph_index, glyph, cache_keys, origin_offset);
+        return;
+    }
+    if let Some(cache_key) = cache_keys.first().copied() {
+        instances.push(glyph_instance(
+            glyph_index,
+            glyph,
+            cache_key,
+            Point::new(glyph.origin.x, glyph.origin.y),
+            Vector::new(glyph.advance.width, glyph.advance.height),
+            Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
+            origin_offset,
+        ));
+    }
+}
+
+fn append_text_combine_instances(
+    instances: &mut Vec<GlyphInstance>,
+    glyph_index: usize,
+    glyph: &LaidOutGlyph,
+    cache_keys: &[CacheKey],
+    origin_offset: Vector,
+) {
+    let count = cache_keys.len().max(1);
+    let count_f32 = usize_to_f32(count);
+    let cell_width = glyph.bounds.width.max(1.0);
+    let slot_width = (cell_width / count_f32).max(1.0);
+    let ink_bounds = Rect::new(0.0, 0.0, slot_width, glyph.bounds.height);
+    let advance = Vector::new(slot_width, 0.0);
+    for (index, cache_key) in cache_keys.iter().copied().enumerate() {
+        let origin = Point::new(
+            glyph.origin.x + slot_width * usize_to_f32(index),
+            glyph.origin.y,
+        );
+        instances.push(glyph_instance(
+            glyph_index,
+            glyph,
+            cache_key,
+            origin,
+            advance,
+            ink_bounds,
+            origin_offset,
+        ));
+    }
+}
+
 fn glyph_instance(
     glyph_index: usize,
     glyph: &LaidOutGlyph,
     cache_key: CacheKey,
+    origin: Point,
+    advance: Vector,
+    ink_bounds: Rect,
     origin_offset: Vector,
 ) -> GlyphInstance {
     GlyphInstance {
         source: GlyphSource::Text { cache_key },
-        origin: Point::new(
-            glyph.origin.x + origin_offset.x,
-            glyph.origin.y + origin_offset.y,
-        ),
-        advance: Vector::new(glyph.advance.width, glyph.advance.height),
-        ink_bounds: Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
+        origin: Point::new(origin.x + origin_offset.x, origin.y + origin_offset.y),
+        advance,
+        ink_bounds,
         transform: glyph_transform(glyph.orientation),
         color: None,
         metadata: glyph_index,
@@ -158,6 +214,10 @@ fn glyph_instance(
             index: u32::try_from(glyph_index).unwrap_or(u32::MAX),
         }),
     }
+}
+
+fn usize_to_f32(value: usize) -> f32 {
+    f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
 
 const fn glyph_transform(orientation: GlyphOrientation) -> GlyphTransform {
@@ -223,7 +283,7 @@ mod tests {
 
         let area =
             glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |index, _glyph| {
-                Some(fake_cache_key(u16::try_from(index).unwrap_or(u16::MAX)))
+                vec![fake_cache_key(u16::try_from(index).unwrap_or(u16::MAX))]
             })
             .expect("area adapts");
 
@@ -265,11 +325,52 @@ mod tests {
                 origin_offset: Vector::new(2.0, 30.0),
                 ..GlyphonAreaOptions::default()
             },
-            |_index, _glyph| Some(fake_cache_key(1)),
+            |_index, _glyph| vec![fake_cache_key(1)],
         )
         .expect("area adapts");
 
         assert_eq!(area.glyphs()[0].origin, Point::new(12.0, 50.0));
+    }
+
+    #[test]
+    fn text_combine_clusters_expand_to_multiple_glyph_instances() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, 2),
+                text: "12".to_owned(),
+                origin: LayoutPoint::new(100.0, 24.0),
+                advance: LayoutSize::new(0.0, 42.0),
+                bounds: LayoutRect::new(100.0, 24.0, 42.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
+                orientation: GlyphOrientation::TextCombineUpright,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area =
+            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
+                vec![fake_cache_key(1), fake_cache_key(2)]
+            })
+            .expect("area adapts");
+
+        assert_eq!(area.len(), 2);
+        assert_eq!(area.glyphs()[0].transform, GlyphTransform::Identity);
+        assert_eq!(area.glyphs()[1].transform, GlyphTransform::Identity);
+        assert_eq!(area.glyphs()[0].origin, Point::new(100.0, 24.0));
+        assert_eq!(area.glyphs()[1].origin, Point::new(121.0, 24.0));
+        assert_eq!(
+            area.glyphs()[0].cluster,
+            Some(TextCluster {
+                start: 0,
+                end: 2,
+                index: 0
+            })
+        );
+        assert_eq!(area.glyphs()[0].metadata, area.glyphs()[1].metadata);
     }
 
     #[test]
@@ -300,9 +401,11 @@ mod tests {
         let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
 
         assert_eq!(
-            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
-                None
-            })
+            glyph_area_from_layout(
+                &layout,
+                GlyphonAreaOptions::default(),
+                |_index, _glyph| vec![]
+            )
             .expect_err("missing key errors"),
             GlyphonAdapterError::MissingCacheKey { glyph_index: 0 }
         );
@@ -313,7 +416,7 @@ mod tests {
                 skip_missing_glyphs: true,
                 ..GlyphonAreaOptions::default()
             },
-            |_index, _glyph| None,
+            |_index, _glyph| Vec::new(),
         )
         .expect("missing key skips");
         assert_eq!(area.skipped_glyphs(), 1);

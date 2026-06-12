@@ -2564,7 +2564,7 @@ impl NativeOffscreenTextRenderer {
                     skip_missing_glyphs: true,
                     ..GlyphonAreaOptions::default()
                 },
-                |_index, glyph| cache_key_for_layout_glyph(glyph.range, &cache_keys),
+                |_index, glyph| cache_keys_for_layout_glyph(glyph.range, &cache_keys),
             )
             .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
             let ruby_areas = ruby_text_areas(&self.ruby_buffers, target.width, target.height);
@@ -2822,13 +2822,16 @@ fn text_buffer_cache_keys(
         .collect()
 }
 
-fn cache_key_for_layout_glyph(
+fn cache_keys_for_layout_glyph(
     range: RichTextRange,
     cache_keys: &[(RichTextRange, CacheKey)],
-) -> Option<CacheKey> {
-    cache_keys.iter().find_map(|(candidate, cache_key)| {
-        (candidate.start < range.end && range.start < candidate.end).then_some(*cache_key)
-    })
+) -> Vec<CacheKey> {
+    cache_keys
+        .iter()
+        .filter_map(|(candidate, cache_key)| {
+            (candidate.start < range.end && range.start < candidate.end).then_some(*cache_key)
+        })
+        .collect()
 }
 
 fn padded_rgba_row_bytes(width: u32) -> u32 {
@@ -3019,7 +3022,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
                 skip_missing_glyphs: true,
                 ..GlyphonAreaOptions::default()
             },
-            |_index, glyph| cache_key_for_layout_glyph(glyph.range, &cache_keys),
+            |_index, glyph| cache_keys_for_layout_glyph(glyph.range, &cache_keys),
         ) else {
             return Err(());
         };

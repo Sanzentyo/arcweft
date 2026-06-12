@@ -85,15 +85,20 @@ the concrete choices to follow when turning that package into production code.
 - `arcweft-glyphon` converts `LaidOutText` into glyphon `GlyphArea` input. It
   owns renderer-coordinate adjustments such as glyph origin offsets; Sans I/O
   layout coordinates stay cell/bounds oriented.
+- `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
+  cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
+  cluster cell instead of collapsing the cluster to a single glyph. The current
+  slot distribution is a deterministic bridge; production compression and
+  kerning still belong in the layout/shaping policy.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   overlays remain on `TextArea` until ruby shaping is moved into the same
   geometry stream.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path.
-- Remaining work includes multi-glyph `TextCombineUpright`, real Unicode
-  segmentation/orientation, vertical shaping policy, ruby collision/layout
-  feedback, and `imq` regression comparison fixtures.
+- Remaining work includes production `TextCombineUpright` shaping/compression,
+  real Unicode segmentation/orientation, vertical shaping policy, ruby
+  collision/layout feedback, and `imq` regression comparison fixtures.
 
 ## Explicit Defaults
 
