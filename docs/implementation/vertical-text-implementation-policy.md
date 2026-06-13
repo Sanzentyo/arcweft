@@ -177,9 +177,9 @@ the concrete choices to follow when turning that package into production code.
   clusters in `vertical_rl` and `vertical_lr` through mask and object-id raw
   crops, verifying that all native GlyphArea instances emitted for the combined
   cell follow the layout glyph's visibility without changing Agent geometry.
-  MCP stdio coverage exercises the same
-  capture-time path for text-combine object mask/object-id captures and a ruby
-  object-id capture, checking hidden and visible raw RGBA blobs through
+  MCP stdio coverage exercises the same `vertical_rl`/`vertical_lr`
+  capture-time path for text-combine object mask/object-id captures and ruby
+  object-id captures, checking hidden and visible raw RGBA blobs through
   `arcweft.capture`. Ruby annotation buffers also carry the resolved
   presentation into their absolute GlyphArea instances, so `vertical_rl` and
   `vertical_lr` ruby object mask and object-id readback can hide and reveal the

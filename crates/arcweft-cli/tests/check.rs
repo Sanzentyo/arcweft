@@ -8817,207 +8817,198 @@ flow @flow.main main {
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_capture_time_controls_text_combine_mask_with_native_renderer() {
-    let path = temp_arcw(
-        "agent-mcp-native-typewriter-text-combine-capture-time",
-        r"
-character @character.alice Alice as alice {}
+    for writing_mode in ["vertical_rl", "vertical_lr"] {
+        let path = temp_arcw(
+            &format!("agent-mcp-native-{writing_mode}-typewriter-text-combine-capture-time"),
+            &format!(
+                r"
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
-}
-",
-    );
-    let object_id = "object.dialogue.0.0.cluster.0.0.4";
-    let requests = [
-        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.capture",
-                "arguments": {
-                    "source": path.display().to_string(),
-                    "format": "raw-rgba",
-                    "capture": "mask",
-                    "object": object_id,
-                    "capture_time": 0.0,
-                    "steps": 4,
-                    "max_ops": 64
-                }
-            }
-        }),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.capture",
-                "arguments": {
-                    "source": path.display().to_string(),
-                    "format": "raw-rgba",
-                    "capture": "mask",
-                    "object": object_id,
-                    "capture_time": 4.0,
-                    "steps": 4,
-                    "max_ops": 64
-                }
-            }
-        }),
-    ];
-    let output = run_agent_mcp_stdio(&requests);
-    fs::remove_file(&path).expect("remove temp native MCP text-combine source");
-    assert!(
-        output.status.success(),
-        "agent mcp native typewriter text-combine capture-time should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let responses = agent_mcp_responses(&output.stdout);
-    assert_eq!(responses.len(), 3);
+flow @flow.main main {{
+    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+}}
+"
+            ),
+        );
+        let object_id = "object.dialogue.0.0.cluster.0.0.4";
+        let requests = mcp_capture_time_requests(&path, "mask", object_id);
+        let output = run_agent_mcp_stdio(&requests);
+        fs::remove_file(&path).expect("remove temp native MCP text-combine source");
+        assert!(
+            output.status.success(),
+            "agent mcp native {writing_mode} typewriter text-combine capture-time should succeed, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let responses = agent_mcp_responses(&output.stdout);
+        assert_eq!(responses.len(), 3);
 
-    let hidden = mcp_content_metadata(
-        &responses[1]["result"]["content"][0],
-        "hidden text-combine mask metadata is JSON",
-    );
-    let visible = mcp_content_metadata(
-        &responses[2]["result"]["content"][0],
-        "visible text-combine mask metadata is JSON",
-    );
-    assert_eq!(hidden["image"]["kind"], "mask");
-    assert_eq!(visible["image"]["kind"], "mask");
-    assert_eq!(hidden["image"]["composition"], "mask_attachment");
-    assert_eq!(visible["image"]["composition"], "mask_attachment");
-    assert_eq!(hidden["image"]["scope"]["kind"], "object");
-    assert_eq!(hidden["image"]["scope"]["id"], object_id);
-    assert_eq!(visible["image"]["scope"]["id"], object_id);
-    assert_eq!(
-        hidden["image"]["crop_origin"],
-        visible["image"]["crop_origin"]
-    );
-    assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-    assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-    assert_eq!(hidden["image"]["content_pixels"], 0);
-    assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
+        let hidden = mcp_content_metadata(
+            &responses[1]["result"]["content"][0],
+            "hidden text-combine mask metadata is JSON",
+        );
+        let visible = mcp_content_metadata(
+            &responses[2]["result"]["content"][0],
+            "visible text-combine mask metadata is JSON",
+        );
+        assert_eq!(hidden["image"]["kind"], "mask");
+        assert_eq!(visible["image"]["kind"], "mask");
+        assert_eq!(hidden["image"]["composition"], "mask_attachment");
+        assert_eq!(visible["image"]["composition"], "mask_attachment");
+        assert_eq!(hidden["image"]["scope"]["kind"], "object");
+        assert_eq!(hidden["image"]["scope"]["id"], object_id);
+        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_eq!(
+            hidden["image"]["crop_origin"],
+            visible["image"]["crop_origin"]
+        );
+        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
+        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
+        assert_eq!(hidden["image"]["content_pixels"], 0);
+        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
 
-    let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-    let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-    assert_eq!(
-        opaque_pixel_count(&visible_bytes) as u64,
-        visible["image"]["content_pixels"].as_u64().unwrap()
-    );
+        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
+        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
+        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+        assert_eq!(
+            opaque_pixel_count(&visible_bytes) as u64,
+            visible["image"]["content_pixels"].as_u64().unwrap()
+        );
+    }
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_capture_time_controls_text_combine_object_id_with_native_renderer() {
-    let path = temp_arcw(
-        "agent-mcp-native-typewriter-text-combine-object-id-capture-time",
-        r"
-character @character.alice Alice as alice {}
+    for writing_mode in ["vertical_rl", "vertical_lr"] {
+        let path = temp_arcw(
+            &format!(
+                "agent-mcp-native-{writing_mode}-typewriter-text-combine-object-id-capture-time"
+            ),
+            &format!(
+                r"
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
-}
-",
-    );
-    let object_id = "object.dialogue.0.0.cluster.0.0.4";
-    let requests = [
-        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.capture",
-                "arguments": {
-                    "source": path.display().to_string(),
-                    "format": "raw-rgba",
-                    "capture": "object-id",
-                    "object": object_id,
-                    "capture_time": 0.0,
-                    "steps": 4,
-                    "max_ops": 64
-                }
-            }
-        }),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.capture",
-                "arguments": {
-                    "source": path.display().to_string(),
-                    "format": "raw-rgba",
-                    "capture": "object-id",
-                    "object": object_id,
-                    "capture_time": 4.0,
-                    "steps": 4,
-                    "max_ops": 64
-                }
-            }
-        }),
-    ];
-    let output = run_agent_mcp_stdio(&requests);
-    fs::remove_file(&path)
-        .expect("remove temp native MCP text-combine object-id capture-time source");
-    assert!(
-        output.status.success(),
-        "agent mcp native typewriter text-combine object-id capture-time should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let responses = agent_mcp_responses(&output.stdout);
-    assert_eq!(responses.len(), 3);
+flow @flow.main main {{
+    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+}}
+"
+            ),
+        );
+        let object_id = "object.dialogue.0.0.cluster.0.0.4";
+        let requests = mcp_capture_time_requests(&path, "object-id", object_id);
+        let output = run_agent_mcp_stdio(&requests);
+        fs::remove_file(&path)
+            .expect("remove temp native MCP text-combine object-id capture-time source");
+        assert!(
+            output.status.success(),
+            "agent mcp native {writing_mode} typewriter text-combine object-id capture-time should succeed, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let responses = agent_mcp_responses(&output.stdout);
+        assert_eq!(responses.len(), 3);
 
-    let hidden = mcp_content_metadata(
-        &responses[1]["result"]["content"][0],
-        "hidden text-combine object-id metadata is JSON",
-    );
-    let visible = mcp_content_metadata(
-        &responses[2]["result"]["content"][0],
-        "visible text-combine object-id metadata is JSON",
-    );
-    assert_eq!(hidden["image"]["kind"], "object_id");
-    assert_eq!(visible["image"]["kind"], "object_id");
-    assert_eq!(hidden["image"]["composition"], "object_id_attachment");
-    assert_eq!(visible["image"]["composition"], "object_id_attachment");
-    assert_eq!(hidden["image"]["scope"]["kind"], "object");
-    assert_eq!(hidden["image"]["scope"]["id"], object_id);
-    assert_eq!(visible["image"]["scope"]["id"], object_id);
-    assert_eq!(
-        hidden["image"]["crop_origin"],
-        visible["image"]["crop_origin"]
-    );
-    assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-    assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-    assert_eq!(hidden["image"]["content_pixels"], 0);
-    assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
+        let hidden = mcp_content_metadata(
+            &responses[1]["result"]["content"][0],
+            "hidden text-combine object-id metadata is JSON",
+        );
+        let visible = mcp_content_metadata(
+            &responses[2]["result"]["content"][0],
+            "visible text-combine object-id metadata is JSON",
+        );
+        assert_eq!(hidden["image"]["kind"], "object_id");
+        assert_eq!(visible["image"]["kind"], "object_id");
+        assert_eq!(hidden["image"]["composition"], "object_id_attachment");
+        assert_eq!(visible["image"]["composition"], "object_id_attachment");
+        assert_eq!(hidden["image"]["scope"]["kind"], "object");
+        assert_eq!(hidden["image"]["scope"]["id"], object_id);
+        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_eq!(
+            hidden["image"]["crop_origin"],
+            visible["image"]["crop_origin"]
+        );
+        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
+        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
+        assert_eq!(hidden["image"]["content_pixels"], 0);
+        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
 
-    let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-    let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-    assert_eq!(
-        opaque_pixel_count(&visible_bytes) as u64,
-        visible["image"]["content_pixels"].as_u64().unwrap()
-    );
+        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
+        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
+        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+        assert_eq!(
+            opaque_pixel_count(&visible_bytes) as u64,
+            visible["image"]["content_pixels"].as_u64().unwrap()
+        );
+    }
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_capture_time_controls_ruby_object_id_with_native_renderer() {
-    let path = temp_arcw(
-        "agent-mcp-native-typewriter-ruby-object-id-capture-time",
-        r"
-character @character.alice Alice as alice {}
+    for writing_mode in ["vertical_rl", "vertical_lr"] {
+        let path = temp_arcw(
+            &format!("agent-mcp-native-{writing_mode}-typewriter-ruby-object-id-capture-time"),
+            &format!(
+                r"
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+}}
+"
+            ),
+        );
+        let object_id = "object.dialogue.0.0.ruby.0";
+        let requests = mcp_capture_time_requests(&path, "object-id", object_id);
+        let output = run_agent_mcp_stdio(&requests);
+        fs::remove_file(&path).expect("remove temp native MCP ruby object-id capture-time source");
+        assert!(
+            output.status.success(),
+            "agent mcp native {writing_mode} typewriter ruby object-id capture-time should succeed, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let responses = agent_mcp_responses(&output.stdout);
+        assert_eq!(responses.len(), 3);
+
+        let hidden = mcp_content_metadata(
+            &responses[1]["result"]["content"][0],
+            "hidden ruby object-id metadata is JSON",
+        );
+        let visible = mcp_content_metadata(
+            &responses[2]["result"]["content"][0],
+            "visible ruby object-id metadata is JSON",
+        );
+        assert_eq!(hidden["image"]["kind"], "object_id");
+        assert_eq!(visible["image"]["kind"], "object_id");
+        assert_eq!(hidden["image"]["composition"], "object_id_attachment");
+        assert_eq!(visible["image"]["composition"], "object_id_attachment");
+        assert_eq!(hidden["image"]["scope"]["kind"], "object");
+        assert_eq!(hidden["image"]["scope"]["id"], object_id);
+        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_eq!(
+            hidden["image"]["crop_origin"],
+            visible["image"]["crop_origin"]
+        );
+        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
+        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
+        assert_eq!(hidden["image"]["content_pixels"], 0);
+        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
+
+        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
+        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
+        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+        assert_eq!(
+            opaque_pixel_count(&visible_bytes) as u64,
+            visible["image"]["content_pixels"].as_u64().unwrap()
+        );
+    }
 }
-",
-    );
-    let object_id = "object.dialogue.0.0.ruby.0";
-    let requests = [
+
+fn mcp_capture_time_requests(
+    path: &Path,
+    capture_kind: &str,
+    object_id: &str,
+) -> Vec<serde_json::Value> {
+    vec![
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -9028,7 +9019,7 @@ flow @flow.main main {
                 "arguments": {
                     "source": path.display().to_string(),
                     "format": "raw-rgba",
-                    "capture": "object-id",
+                    "capture": capture_kind,
                     "object": object_id,
                     "capture_time": 0.0,
                     "steps": 4,
@@ -9045,7 +9036,7 @@ flow @flow.main main {
                 "arguments": {
                     "source": path.display().to_string(),
                     "format": "raw-rgba",
-                    "capture": "object-id",
+                    "capture": capture_kind,
                     "object": object_id,
                     "capture_time": 4.0,
                     "steps": 4,
@@ -9053,48 +9044,7 @@ flow @flow.main main {
                 }
             }
         }),
-    ];
-    let output = run_agent_mcp_stdio(&requests);
-    fs::remove_file(&path).expect("remove temp native MCP ruby object-id capture-time source");
-    assert!(
-        output.status.success(),
-        "agent mcp native typewriter ruby object-id capture-time should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let responses = agent_mcp_responses(&output.stdout);
-    assert_eq!(responses.len(), 3);
-
-    let hidden = mcp_content_metadata(
-        &responses[1]["result"]["content"][0],
-        "hidden ruby object-id metadata is JSON",
-    );
-    let visible = mcp_content_metadata(
-        &responses[2]["result"]["content"][0],
-        "visible ruby object-id metadata is JSON",
-    );
-    assert_eq!(hidden["image"]["kind"], "object_id");
-    assert_eq!(visible["image"]["kind"], "object_id");
-    assert_eq!(hidden["image"]["composition"], "object_id_attachment");
-    assert_eq!(visible["image"]["composition"], "object_id_attachment");
-    assert_eq!(hidden["image"]["scope"]["kind"], "object");
-    assert_eq!(hidden["image"]["scope"]["id"], object_id);
-    assert_eq!(visible["image"]["scope"]["id"], object_id);
-    assert_eq!(
-        hidden["image"]["crop_origin"],
-        visible["image"]["crop_origin"]
-    );
-    assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-    assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-    assert_eq!(hidden["image"]["content_pixels"], 0);
-    assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
-
-    let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-    let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-    assert_eq!(
-        opaque_pixel_count(&visible_bytes) as u64,
-        visible["image"]["content_pixels"].as_u64().unwrap()
-    );
+    ]
 }
 
 fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value> {
