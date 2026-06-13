@@ -2323,6 +2323,48 @@ flow @flow.main main {
             .is_some_and(|data| !data.is_empty())
     );
 
+    let read_object_id_uri_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/object.object.dialogue.0.0.object-id.rgba")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reads object object-id resource URI");
+
+    assert!(
+        read_object_id_uri_output.status.success(),
+        "agent observe read-uri object-id should succeed, stderr: {}",
+        String::from_utf8_lossy(&read_object_id_uri_output.stderr)
+    );
+    let read_object_id_resource: serde_json::Value =
+        serde_json::from_slice(&read_object_id_uri_output.stdout)
+            .expect("read-uri object-id resource output is JSON");
+    assert_eq!(read_object_id_resource["kind"], "image");
+    assert_eq!(
+        read_object_id_resource["uri"],
+        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.object-id.rgba"
+    );
+    assert_eq!(
+        read_object_id_resource["mime_type"],
+        "application/octet-stream"
+    );
+    assert_eq!(
+        read_object_id_resource["body"]["body"]["encoding"],
+        "base64"
+    );
+    assert!(
+        read_object_id_resource["body"]["body"]["data"]
+            .as_str()
+            .is_some_and(|data| !data.is_empty())
+    );
+
     let mcp_read_object_image_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
