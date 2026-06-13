@@ -349,9 +349,10 @@ the concrete choices to follow when turning that package into production code.
   prohibitions in `vertical_lr`, keeping the JLREQ suffix behavior symmetric
   across both vertical writing modes before native Agent geometry consumes it.
   Native Agent raw-crop coverage also mirrors the small-kana, prolonged-sound,
-  iteration-mark, compact-bracket, and strict middle-dot `vertical_lr` paths
-  through mask and object-id attachments, tying the mirrored observed bboxes
-  and stable object colors back to rendered GlyphArea pixels.
+  iteration-mark, leader-mark, compact-bracket, and strict middle-dot
+  `vertical_lr` paths through mask and object-id attachments, tying the
+  mirrored observed bboxes and stable object colors back to rendered GlyphArea
+  pixels.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,

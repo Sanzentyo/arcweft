@@ -3319,25 +3319,39 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_jlreq_leader_mark_raw_crops() {
-    assert_native_jlreq_leader_mark_raw_crop("mask");
-    assert_native_jlreq_leader_mark_raw_crop("object-id");
+    assert_native_jlreq_leader_mark_raw_crop("vertical_rl", "mask");
+    assert_native_jlreq_leader_mark_raw_crop("vertical_rl", "object-id");
 }
 
-fn assert_native_jlreq_leader_mark_raw_crop(capture_kind: &str) {
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_mask_raw_crop() {
+    assert_native_jlreq_leader_mark_raw_crop("vertical_lr", "mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_object_id_raw_crop() {
+    assert_native_jlreq_leader_mark_raw_crop("vertical_lr", "object-id");
+}
+
+fn assert_native_jlreq_leader_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
     let path = temp_arcw(
-        &format!("agent-observe-native-jlreq-leader-mark-{capture_kind}"),
-        r"
-character @character.alice Alice as alice {}
+        &format!("agent-observe-native-{writing_mode}-jlreq-leader-mark-{capture_kind}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火…人[/][p]
-}
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬月火…人[/][p]
+}}
 ",
+        ),
     );
     let dir = temp_dir(&format!(
-        "agent-observe-native-jlreq-leader-mark-{capture_kind}"
+        "agent-observe-native-{writing_mode}-jlreq-leader-mark-{capture_kind}"
     ));
-    let raw_path = dir.join(format!("native-jlreq-leader-mark-{capture_kind}.rgba"));
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-jlreq-leader-mark-{capture_kind}.rgba"
+    ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
