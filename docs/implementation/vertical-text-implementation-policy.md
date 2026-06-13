@@ -255,13 +255,14 @@ the concrete choices to follow when turning that package into production code.
   test. It also checks adjacent
   `vertical_rl` and `vertical_lr` ruby annotations through separate
   `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
-  observable in Agent output, and captures a `vertical_lr` ruby object as a raw
-  native mask crop to verify that the rendered ruby/base pixels stay inside the
-  observed base/annotation geometry. Long `vertical_rl` ruby annotations are also
-  observed through the same native Agent path, asserting that the base bbox
-  expands along the vertical inline axis, the annotation remains on the correct
-  ruby track, and the authored ruby object's mask/crop geometry covers both
-  base and annotation bboxes. Long ruby base-expansion Agent coverage now runs
+  observable in Agent output, and captures a `vertical_lr` ruby object as raw
+  native mask and object-id crops to verify that rendered ruby/base pixels and
+  stable object color stay inside the observed base/annotation geometry. Long
+  `vertical_rl` ruby annotations are also observed through the same native Agent
+  path, asserting that the base bbox expands along the vertical inline axis, the
+  annotation remains on the correct ruby track, and the authored ruby object's
+  mask/crop geometry covers both base and annotation bboxes. Long ruby
+  base-expansion Agent coverage now runs
   in both `vertical_rl` and `vertical_lr`, checking that the expanded base and
   side-specific annotation track are observable through native ruby refs in each
   writing mode; the same long ruby object is also captured as raw native masks

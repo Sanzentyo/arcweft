@@ -5505,8 +5505,18 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_vertical_lr_ruby_mask_raw_crop() {
+    assert_native_vertical_lr_ruby_raw_crop("mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_ruby_object_id_raw_crop() {
+    assert_native_vertical_lr_ruby_raw_crop("object-id");
+}
+
+fn assert_native_vertical_lr_ruby_raw_crop(capture_kind: &str) {
+    let fixture_name = format!("agent-observe-native-vertical-lr-ruby-{capture_kind}");
     let path = temp_arcw(
-        "agent-observe-native-vertical-lr-ruby-mask",
+        &fixture_name,
         r"
 character @character.alice Alice as alice {}
 
@@ -5515,8 +5525,8 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-vertical-lr-ruby-mask");
-    let raw_path = dir.join("native-vertical-lr-ruby-mask.rgba");
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!("native-vertical-lr-ruby-{capture_kind}.rgba"));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -5526,7 +5536,7 @@ flow @flow.main main {
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
-        .arg("mask")
+        .arg(capture_kind)
         .arg("--object")
         .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
@@ -5538,26 +5548,61 @@ flow @flow.main main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe writes native vertical_lr ruby mask raw crop");
+        .expect("arcw agent observe writes native vertical_lr ruby raw crop");
 
     assert!(
         output.status.success(),
-        "native vertical_lr ruby mask crop should succeed, stderr: {}",
+        "native vertical_lr ruby {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .expect("native vertical_lr ruby mask report is JSON");
-    assert_eq!(json["images"][0]["kind"], "mask");
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native vertical_lr ruby report is JSON");
+    match capture_kind {
+        "mask" => {
+            assert_eq!(json["images"][0]["kind"], "mask");
+            assert_eq!(json["images"][0]["composition"], "mask_attachment");
+        }
+        "object-id" => {
+            assert_eq!(json["images"][0]["kind"], "object_id");
+            assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+        }
+        other => panic!("unsupported vertical_lr ruby capture kind: {other}"),
+    }
     assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
-    assert_eq!(json["images"][0]["composition"], "mask_attachment");
 
-    let ruby = find_rich_text_ruby_object(&json, 0);
-    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    let ruby = assert_native_vertical_lr_ruby_geometry(&json);
     assert_eq!(json["images"][0]["crop_origin"]["x"], ruby["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], ruby["bbox"]["y"]);
     assert_eq!(json["images"][0]["width"], ruby["bbox"]["width"]);
     assert_eq!(json["images"][0]["height"], ruby["bbox"]["height"]);
 
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(ruby),
+            content_pixels,
+            "vertical_lr ruby object-id crop",
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native vertical_lr ruby mask raw crop");
+        let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp native vertical_lr ruby source");
+    fs::remove_dir_all(&dir).expect("remove temp native vertical_lr ruby dir");
+}
+
+fn assert_native_vertical_lr_ruby_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    let ruby = find_rich_text_ruby_object(json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
     let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     assert!(
@@ -5571,20 +5616,7 @@ flow @flow.main main {
                 <= agent_json_bbox_right(base),
         "vertical_lr ruby mask content should stay within the ruby base/annotation union: {ruby}"
     );
-
-    let width = json["images"][0]["width"].as_u64().unwrap();
-    let height = json["images"][0]["height"].as_u64().unwrap();
-    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
-    assert!(content_pixels > 0);
-    assert!(content_pixels < width * height);
-    let bytes = fs::read(&raw_path).expect("read native vertical_lr ruby mask raw crop");
-    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
-    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
-    assert_eq!(opaque as u64, content_pixels);
-    assert!(transparent > 0);
-
-    fs::remove_file(&path).expect("remove temp native vertical_lr ruby mask source");
-    fs::remove_dir_all(&dir).expect("remove temp native vertical_lr ruby mask dir");
+    ruby
 }
 
 #[test]
