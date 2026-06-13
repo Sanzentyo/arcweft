@@ -155,12 +155,13 @@ the concrete choices to follow when turning that package into production code.
   ruby annotations keep glyphon/cosmic-text shaping for cache keys, but their
   glyph instances are stacked top-to-bottom from the `LaidOutRuby::ruby_bounds`
   cell width and vertical advance so rendered ruby tracks match Agent geometry.
-  Unit coverage now also fixes the window page-construction path for a
-  `vertical_lr` page that combines side-track ruby and a 4-digit
-  text-combine-upright cluster, proving the page-local layout source can be
-  adapted into the same body and ruby GlyphAreas used by the actual window
-  renderer. Native object-scope raw mask and object-id captures for a textbox
-  are verified against glyph alpha rather than the full textbox rectangle, so
+  Unit coverage now also fixes the window page-construction path for
+  `vertical_rl` and `vertical_lr` pages that combine side-track ruby and a
+  4-digit text-combine-upright cluster, proving the page-local layout source
+  can be adapted into the same body and ruby GlyphAreas used by the actual
+  window renderer. Native object-scope raw mask and object-id captures for a
+  textbox are verified against glyph alpha rather than the full textbox
+  rectangle, so
   Agent observe readback exposes rendered glyph geometry for both attachment
   kinds; CLI and MCP resource readback paths also read stored raw object-id URIs
   back as base64 bytes, and MCP resource templates advertise layer/object
