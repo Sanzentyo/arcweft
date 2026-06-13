@@ -3859,7 +3859,6 @@ mod tests {
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
         )
         .expect("window layout source adapts to glyph area");
-        assert_eq!(glyph_area.skipped_glyphs(), 0);
         assert_eq!(
             glyph_area
                 .glyphs()

@@ -33,8 +33,6 @@ pub struct GlyphonAreaOptions {
     pub bounds: TextBounds,
     /// Default glyph color.
     pub default_color: Color,
-    /// Whether missing cache keys should skip glyphs instead of erroring.
-    pub skip_missing_glyphs: bool,
 }
 
 impl Default for GlyphonAreaOptions {
@@ -46,7 +44,6 @@ impl Default for GlyphonAreaOptions {
             origin_offset: Vector::new(0.0, 0.0),
             bounds: TextBounds::default(),
             default_color: Color::rgb(245, 245, 245),
-            skip_missing_glyphs: false,
         }
     }
 }
@@ -60,7 +57,6 @@ pub struct OwnedGlyphArea {
     scale: f32,
     bounds: TextBounds,
     default_color: Color,
-    skipped_glyphs: usize,
 }
 
 impl OwnedGlyphArea {
@@ -104,11 +100,6 @@ impl OwnedGlyphArea {
         self.default_color = color;
     }
 
-    /// Number of laid-out glyphs skipped because cache keys were unavailable.
-    pub const fn skipped_glyphs(&self) -> usize {
-        self.skipped_glyphs
-    }
-
     /// Number of adapted glyph instances.
     pub fn len(&self) -> usize {
         self.glyphs.len()
@@ -139,15 +130,10 @@ pub fn glyph_area_from_layout(
     options: GlyphonAreaOptions,
     mut resolve_glyphs: impl FnMut(usize, &LaidOutGlyph) -> Vec<ResolvedGlyph>,
 ) -> Result<OwnedGlyphArea, GlyphonAdapterError> {
-    let mut skipped_glyphs = 0;
     let mut glyphs = Vec::with_capacity(layout.glyphs.len());
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
         let resolved = resolve_glyphs(glyph_index, glyph);
         if resolved.is_empty() {
-            if options.skip_missing_glyphs {
-                skipped_glyphs += 1;
-                continue;
-            }
             return Err(GlyphonAdapterError::MissingCacheKey { glyph_index });
         }
         append_glyph_instances(
@@ -165,7 +151,6 @@ pub fn glyph_area_from_layout(
         scale: options.scale,
         bounds: options.bounds,
         default_color: options.default_color,
-        skipped_glyphs,
     })
 }
 
@@ -212,7 +197,6 @@ pub fn glyph_area_from_shaped_buffer(
         scale: 1.0,
         bounds: options.bounds,
         default_color: options.default_color,
-        skipped_glyphs: 0,
     }
 }
 
@@ -268,7 +252,6 @@ pub fn vertical_glyph_area_from_shaped_buffer(
         scale: 1.0,
         bounds: options.bounds,
         default_color: options.default_color,
-        skipped_glyphs: 0,
     }
 }
 
@@ -758,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_cache_key_can_skip_or_error() {
+    fn missing_cache_key_always_errors() {
         let frame = arcweft_render_text::LineDisplayFrame {
             line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
             callee: "alice.say".to_owned(),
@@ -793,17 +776,5 @@ mod tests {
             .expect_err("missing key errors"),
             GlyphonAdapterError::MissingCacheKey { glyph_index: 0 }
         );
-
-        let area = glyph_area_from_layout(
-            &layout,
-            GlyphonAreaOptions {
-                skip_missing_glyphs: true,
-                ..GlyphonAreaOptions::default()
-            },
-            |_index, _glyph| Vec::new(),
-        )
-        .expect("missing key skips");
-        assert_eq!(area.skipped_glyphs(), 1);
-        assert!(area.is_empty());
     }
 }
