@@ -4093,26 +4093,39 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_strict_jlreq_middle_dot_raw_crops() {
-    assert_native_strict_jlreq_middle_dot_raw_crop("mask");
-    assert_native_strict_jlreq_middle_dot_raw_crop("object-id");
+    assert_native_strict_jlreq_middle_dot_raw_crop("vertical_rl", "mask");
+    assert_native_strict_jlreq_middle_dot_raw_crop("vertical_rl", "object-id");
 }
 
-fn assert_native_strict_jlreq_middle_dot_raw_crop(capture_kind: &str) {
-    let path = temp_arcw(
-        &format!("agent-observe-native-strict-jlreq-middle-dot-{capture_kind}"),
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_mask_raw_crop() {
+    assert_native_strict_jlreq_middle_dot_raw_crop("vertical_lr", "mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_object_id_raw_crop() {
+    assert_native_strict_jlreq_middle_dot_raw_crop("vertical_lr", "object-id");
+}
+
+fn assert_native_strict_jlreq_middle_dot_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let source = format!(
         r"
-character @character.alice Alice as alice {}
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl jlreq=strict]天地春夏秋冬月火中・外[/][p]
-}
-",
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬月火中・外[/][p]
+}}
+"
+    );
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-strict-jlreq-middle-dot-{capture_kind}"),
+        &source,
     );
     let dir = temp_dir(&format!(
-        "agent-observe-native-strict-jlreq-middle-dot-{capture_kind}"
+        "agent-observe-native-{writing_mode}-strict-jlreq-middle-dot-{capture_kind}"
     ));
     let raw_path = dir.join(format!(
-        "native-strict-jlreq-middle-dot-{capture_kind}.rgba"
+        "native-{writing_mode}-strict-jlreq-middle-dot-{capture_kind}.rgba"
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -4139,7 +4152,7 @@ flow @flow.main main {
 
     assert!(
         output.status.success(),
-        "native strict JLREQ middle-dot {capture_kind} crop should succeed, stderr: {}",
+        "native {writing_mode} strict JLREQ middle-dot {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -4177,7 +4190,7 @@ flow @flow.main main {
             &raw_path,
             agent_object_id_color_from_json(middle_dot),
             content_pixels,
-            "strict JLREQ middle-dot object-id crop",
+            &format!("{writing_mode} strict JLREQ middle-dot object-id crop"),
         );
     } else {
         let bytes = fs::read(&raw_path).expect("read native strict JLREQ middle-dot mask crop");
