@@ -303,9 +303,10 @@ the concrete choices to follow when turning that package into production code.
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster
   bboxes and not only in Sans I/O layout unit tests. The compressed punctuation
-  path is also exercised through a raw native mask crop for `、`, verifying that
-  half-cell advance geometry and the rendered upright-alternate glyph pixels
-  remain tied to the same cluster bbox. It also checks that
+  path is also exercised through raw native mask and object-id crops for `、`,
+  verifying that half-cell advance geometry, stable object color, and the
+  rendered upright-alternate glyph pixels remain tied to the same cluster bbox.
+  It also checks that
   line-end-prohibited opening punctuation moves to the next vertical column,
   matching the JLREQ 3.1.7/3.1.8 treatment of characters not starting or ending
   lines; that moved opening-punctuation cluster is also covered by a raw native

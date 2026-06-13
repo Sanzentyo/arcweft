@@ -6383,6 +6383,90 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_jlreq_compressed_punctuation_object_id_raw_crop() {
+    let path = temp_arcw(
+        "agent-observe-native-jlreq-compressed-punctuation-object-id",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天、。人[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-jlreq-compressed-punctuation-object-id");
+    let raw_path = dir.join("native-jlreq-compressed-punctuation-object-id.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("object-id")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.1.3.6")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ punctuation object-id raw crop");
+
+    assert!(
+        output.status.success(),
+        "native JLREQ punctuation object-id crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native JLREQ punctuation object-id report is JSON");
+    assert_eq!(json["images"][0]["kind"], "object_id");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+
+    let comma = find_rich_text_cluster_object(&json, "、", 3, 6);
+    let period = find_rich_text_cluster_object(&json, "。", 6, 9);
+    let person = find_rich_text_cluster_object(&json, "人", 9, 12);
+    assert_eq!(comma["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
+    assert_eq!(json["images"][0]["crop_origin"]["x"], comma["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], comma["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], comma["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], comma["bbox"]["height"]);
+    assert_eq!(
+        agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]),
+        21,
+        "compressed comma should advance by half a body cell"
+    );
+    assert_eq!(
+        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&period["bbox"]),
+        21,
+        "following text should consume the space left by punctuation compression"
+    );
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    assert_raw_object_id_tint(
+        &raw_path,
+        agent_object_id_color_from_json(comma),
+        content_pixels,
+        "JLREQ compressed punctuation object-id crop",
+    );
+
+    fs::remove_file(&path).expect("remove temp native JLREQ punctuation object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native JLREQ punctuation object-id dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_jlreq_opening_punctuation_mask_raw_crop() {
     let path = temp_arcw(
         "agent-observe-native-jlreq-opening-punctuation-mask",
