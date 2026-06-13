@@ -1911,6 +1911,118 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_combines_published_jlreq_line_composition_classes() {
+        // W3C JLREQ 3.1 groups these as line-head/line-end and
+        // separation-prohibited punctuation classes; keep them together in one
+        // paragraph plan instead of only proving isolated two-cluster cases.
+        let text = "天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 168.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            assert!(
+                vertical_layout_column_count(&layout) >= 7,
+                "{writing_mode:?} JLREQ paragraph should require a multi-column plan: {layout:?}"
+            );
+
+            let fire = nth_laid_out_glyph(&layout, "火", 0);
+            let comma = nth_laid_out_glyph(&layout, "、", 0);
+            let mountain = nth_laid_out_glyph(&layout, "山", 0);
+            assert_vertical_layout_after(fire, comma, "comma should follow body text");
+            assert_f32_eq(comma.advance.height, config.line_advance * 0.5);
+            assert_next_vertical_layout_column(
+                comma,
+                mountain,
+                next_column_moves_right,
+                "text after a column-end comma should continue in the next paragraph column",
+            );
+
+            let iteration = nth_laid_out_glyph(&layout, "々", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                mountain,
+                iteration,
+                "iteration mark should stay with the previous cluster in paragraph context",
+            );
+            assert_vertical_layout_after(
+                iteration,
+                person,
+                "text after an iteration mark should continue in the same paragraph column when it fits",
+            );
+
+            let open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            let close = nth_laid_out_glyph(&layout, "」", 0);
+            assert_vertical_layout_after(
+                open,
+                river,
+                "opening bracket should not strand its base text",
+            );
+            assert_vertical_layout_after(
+                river,
+                close,
+                "closing bracket should stay with its base text",
+            );
+
+            let large_kana = nth_laid_out_glyph(&layout, "あ", 0);
+            let small_kana = nth_laid_out_glyph(&layout, "っ", 0);
+            let next_kana = nth_laid_out_glyph(&layout, "い", 0);
+            assert_vertical_layout_after(
+                large_kana,
+                small_kana,
+                "small kana should stay out of a paragraph column head",
+            );
+            assert_next_vertical_layout_column(
+                small_kana,
+                next_kana,
+                next_column_moves_right,
+                "text after an overhanging small kana should continue in the next paragraph column",
+            );
+
+            let middle_dot = nth_laid_out_glyph(&layout, "・", 0);
+            let outside = nth_laid_out_glyph(&layout, "外", 0);
+            assert_same_vertical_layout_column(
+                middle_dot,
+                outside,
+                "middle-dot compression should keep following paragraph text in the same column",
+            );
+            assert!(outside.origin.y > middle_dot.origin.y);
+
+            let first_leader = nth_laid_out_glyph(&layout, "…", 0);
+            let second_leader = nth_laid_out_glyph(&layout, "…", 1);
+            let third_leader = nth_laid_out_glyph(&layout, "…", 2);
+            let ending = nth_laid_out_glyph(&layout, "終", 0);
+            assert_vertical_layout_after(
+                first_leader,
+                second_leader,
+                "repeated leaders should stay together in paragraph context",
+            );
+            assert_vertical_layout_after(
+                second_leader,
+                third_leader,
+                "the full leader chain should stay together in paragraph context",
+            );
+            assert!(
+                third_leader.bounds.bottom() > config.origin.y + config.size.height,
+                "leader chain should overhang as one paragraph suffix: {third_leader:?}"
+            );
+            assert_next_vertical_layout_column(
+                third_leader,
+                ending,
+                next_column_moves_right,
+                "text after an overhanging leader chain should continue in the next paragraph column",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_column_plan_reads_generated_pair_break_penalty() {
         let clusters = vertical_clusters("天地。「人", RichTextVerticalLatinMode::Mixed);
         let penalty = vertical_column_pair_break_penalty(&clusters, 0, 3, JlreqStrictness::Normal);
@@ -2640,6 +2752,71 @@ mod tests {
                 styles: Vec::new(),
                 presentation: RichTextPresentation::default(),
             });
+    }
+
+    fn nth_laid_out_glyph<'layout>(
+        layout: &'layout LaidOutText,
+        text: &str,
+        occurrence: usize,
+    ) -> &'layout LaidOutGlyph {
+        layout
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.text == text)
+            .nth(occurrence)
+            .unwrap_or_else(|| panic!("missing laid-out glyph {text:?} occurrence {occurrence}"))
+    }
+
+    fn vertical_layout_column_count(layout: &LaidOutText) -> usize {
+        layout
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.origin.x.to_bits())
+            .collect::<HashSet<_>>()
+            .len()
+    }
+
+    fn assert_same_vertical_layout_column(
+        previous: &LaidOutGlyph,
+        current: &LaidOutGlyph,
+        message: &str,
+    ) {
+        assert_f32_eq(previous.origin.x, current.origin.x);
+        assert!(
+            current.origin.y > previous.origin.y,
+            "{message}: expected {current:?} to advance after {previous:?}"
+        );
+    }
+
+    fn assert_vertical_layout_after(
+        previous: &LaidOutGlyph,
+        current: &LaidOutGlyph,
+        message: &str,
+    ) {
+        assert_same_vertical_layout_column(previous, current, message);
+    }
+
+    fn assert_next_vertical_layout_column(
+        previous: &LaidOutGlyph,
+        current: &LaidOutGlyph,
+        next_column_moves_right: bool,
+        message: &str,
+    ) {
+        if next_column_moves_right {
+            assert!(
+                current.origin.x > previous.origin.x,
+                "{message}: expected {current:?} to move right after {previous:?}"
+            );
+        } else {
+            assert!(
+                current.origin.x < previous.origin.x,
+                "{message}: expected {current:?} to move left after {previous:?}"
+            );
+        }
+        assert!(
+            current.origin.y < previous.origin.y,
+            "{message}: expected {current:?} to restart above {previous:?}"
+        );
     }
 
     fn assert_f32_eq(actual: f32, expected: f32) {
