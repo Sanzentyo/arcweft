@@ -296,7 +296,9 @@ the concrete choices to follow when turning that package into production code.
   mask and object-id crops, tying the mark-with-previous-cluster geometry to
   rendered GlyphArea pixels. Compact bracket-pair placement is also captured as
   raw native mask and object-id crops, tying rotated alternate bracket glyph
-  pixels to the no-break pair geometry.
+  pixels to the no-break pair geometry. Leader-mark placement is also captured
+  as raw native mask and object-id crops, tying its no-break same-column
+  geometry to rendered GlyphArea pixels.
   Native Agent coverage also checks hanging punctuation at a vertical column
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster
