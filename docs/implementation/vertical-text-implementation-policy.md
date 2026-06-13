@@ -285,6 +285,9 @@ the concrete choices to follow when turning that package into production code.
   and strict middle-dot pairs in vertical text, matching the published JLREQ
   line-composition treatment of punctuation classes and unbreakable character
   sequences (`https://www.w3.org/TR/2008/WD-jlreq-20081015/`, section 3.1).
+  The strict middle-dot pair is also captured as raw native mask and object-id
+  crops, tying the observed no-break pair geometry and stable object color back
+  to rendered GlyphArea pixels.
   Native Agent coverage also checks hanging punctuation at a vertical column
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster

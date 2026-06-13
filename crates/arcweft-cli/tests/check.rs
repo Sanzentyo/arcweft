@@ -3404,6 +3404,129 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_strict_jlreq_middle_dot_raw_crops() {
+    assert_native_strict_jlreq_middle_dot_raw_crop("mask");
+    assert_native_strict_jlreq_middle_dot_raw_crop("object-id");
+}
+
+fn assert_native_strict_jlreq_middle_dot_raw_crop(capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-strict-jlreq-middle-dot-{capture_kind}"),
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=strict]天地春夏秋冬月火中・外[/][p]
+}
+",
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-strict-jlreq-middle-dot-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!(
+        "native-strict-jlreq-middle-dot-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.9.27.30")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native strict JLREQ middle-dot raw crop");
+
+    assert!(
+        output.status.success(),
+        "native strict JLREQ middle-dot {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native strict JLREQ middle-dot report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let middle_dot = assert_native_strict_jlreq_middle_dot_geometry(&json);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        middle_dot["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        middle_dot["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], middle_dot["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], middle_dot["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(middle_dot),
+            content_pixels,
+            "strict JLREQ middle-dot object-id crop",
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native strict JLREQ middle-dot mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp strict JLREQ middle-dot source");
+    fs::remove_dir_all(&dir).expect("remove temp strict JLREQ middle-dot dir");
+}
+
+fn assert_native_strict_jlreq_middle_dot_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "strict"
+    );
+    let inside = find_rich_text_cluster_object(json, "中", 24, 27);
+    let middle_dot = find_rich_text_cluster_object(json, "・", 27, 30);
+    let outside = find_rich_text_cluster_object(json, "外", 30, 33);
+    assert_eq!(middle_dot["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(middle_dot["rich_text_ref"]["vertical_form"], "none");
+    assert_vertical_cluster_after(
+        inside,
+        middle_dot,
+        "strict middle-dot pair should stay in the same native-layout column",
+    );
+    assert_vertical_cluster_after(
+        middle_dot,
+        outside,
+        "text after strict middle dot should remain in the same observed column",
+    );
+    middle_dot
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging() {
     let hanging_path = temp_arcw(
         "agent-observe-native-jlreq-hanging-punctuation",
