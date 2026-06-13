@@ -292,7 +292,9 @@ the concrete choices to follow when turning that package into production code.
   alternate GlyphArea pixels to the no-break mark-with-previous-cluster
   geometry. Small-kana no-break placement is also captured as raw native mask
   and object-id crops, tying upright-alternate glyph pixels to the observed
-  same-column geometry.
+  same-column geometry. Iteration-mark placement is also captured as raw native
+  mask and object-id crops, tying the mark-with-previous-cluster geometry to
+  rendered GlyphArea pixels.
   Native Agent coverage also checks hanging punctuation at a vertical column
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster
