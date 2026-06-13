@@ -6625,8 +6625,18 @@ fn assert_native_jlreq_opening_punctuation_geometry<'a>(
 
 #[test]
 fn agent_observe_native_renderer_writes_vertical_lr_jlreq_hanging_punctuation_mask_raw_crop() {
+    assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop("mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_hanging_punctuation_object_id_raw_crop() {
+    assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop("object-id");
+}
+
+fn assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop(capture_kind: &str) {
+    let fixture_name = format!("agent-observe-native-vertical-lr-jlreq-hanging-{capture_kind}");
     let path = temp_arcw(
-        "agent-observe-native-vertical-lr-jlreq-hanging-punctuation-mask",
+        &fixture_name,
         r"
 character @character.alice Alice as alice {}
 
@@ -6635,8 +6645,10 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-vertical-lr-jlreq-hanging-punctuation-mask");
-    let raw_path = dir.join("native-vertical-lr-jlreq-hanging-punctuation-mask.rgba");
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-vertical-lr-jlreq-hanging-punctuation-{capture_kind}.rgba"
+    ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -6646,7 +6658,7 @@ flow @flow.main main {
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
-        .arg("mask")
+        .arg(capture_kind)
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.2.6.9")
         .arg("--out")
@@ -6658,28 +6670,67 @@ flow @flow.main main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe writes native vertical_lr JLREQ hanging mask raw crop");
+        .expect("arcw agent observe writes native vertical_lr JLREQ hanging raw crop");
 
     assert!(
         output.status.success(),
-        "native vertical_lr JLREQ hanging mask crop should succeed, stderr: {}",
+        "native vertical_lr JLREQ hanging {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .expect("native vertical_lr JLREQ hanging mask report is JSON");
-    assert_eq!(json["images"][0]["kind"], "mask");
+        .expect("native vertical_lr JLREQ hanging report is JSON");
+    match capture_kind {
+        "mask" => {
+            assert_eq!(json["images"][0]["kind"], "mask");
+            assert_eq!(json["images"][0]["composition"], "mask_attachment");
+        }
+        "object-id" => {
+            assert_eq!(json["images"][0]["kind"], "object_id");
+            assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+        }
+        other => panic!("unsupported vertical_lr JLREQ hanging capture kind: {other}"),
+    }
     assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
-    assert_eq!(json["images"][0]["composition"], "mask_attachment");
 
-    let earth = find_rich_text_cluster_object(&json, "地", 3, 6);
-    let comma = find_rich_text_cluster_object(&json, "、", 6, 9);
-    let next_person = find_rich_text_cluster_object(&json, "人", 9, 12);
-    assert_eq!(comma["rich_text_ref"]["orientation"], "upright");
-    assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
+    let comma = assert_native_vertical_lr_jlreq_hanging_punctuation_geometry(&json);
     assert_eq!(json["images"][0]["crop_origin"]["x"], comma["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], comma["bbox"]["y"]);
     assert_eq!(json["images"][0]["width"], comma["bbox"]["width"]);
     assert_eq!(json["images"][0]["height"], comma["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(comma),
+            content_pixels,
+            "vertical_lr JLREQ hanging punctuation object-id crop",
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native vertical_lr JLREQ hanging mask raw crop");
+        let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp native vertical_lr JLREQ hanging source");
+    fs::remove_dir_all(&dir).expect("remove temp native vertical_lr JLREQ hanging dir");
+}
+
+fn assert_native_vertical_lr_jlreq_hanging_punctuation_geometry(
+    json: &serde_json::Value,
+) -> &serde_json::Value {
+    let earth = find_rich_text_cluster_object(json, "地", 3, 6);
+    let comma = find_rich_text_cluster_object(json, "、", 6, 9);
+    let next_person = find_rich_text_cluster_object(json, "人", 9, 12);
+    assert_eq!(comma["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
     assert_eq!(
         earth["bbox"]["x"], comma["bbox"]["x"],
         "vertical_lr hanging punctuation should remain in the previous column"
@@ -6693,20 +6744,7 @@ flow @flow.main main {
             && agent_json_bbox_y(&next_person["bbox"]) < agent_json_bbox_y(&comma["bbox"]),
         "text after vertical_lr hanging punctuation should start the next column"
     );
-
-    let width = json["images"][0]["width"].as_u64().unwrap();
-    let height = json["images"][0]["height"].as_u64().unwrap();
-    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
-    assert!(content_pixels > 0);
-    assert!(content_pixels < width * height);
-    let bytes = fs::read(&raw_path).expect("read native vertical_lr JLREQ hanging mask raw crop");
-    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
-    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
-    assert_eq!(opaque as u64, content_pixels);
-    assert!(transparent > 0);
-
-    fs::remove_file(&path).expect("remove temp native vertical_lr JLREQ hanging mask source");
-    fs::remove_dir_all(&dir).expect("remove temp native vertical_lr JLREQ hanging mask dir");
+    comma
 }
 
 fn observe_native_typewriter_cluster_mask_at(
