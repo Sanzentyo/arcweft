@@ -4817,6 +4817,12 @@ fn agent_observe_native_renderer_writes_long_vertical_ruby_mask_raw_crop() {
     assert_native_long_vertical_ruby_mask_raw_crop("vertical_lr", false);
 }
 
+#[test]
+fn agent_observe_native_renderer_writes_long_vertical_ruby_object_id_raw_crop() {
+    assert_native_long_vertical_ruby_object_id_raw_crop("vertical_rl", true);
+    assert_native_long_vertical_ruby_object_id_raw_crop("vertical_lr", false);
+}
+
 fn assert_native_long_vertical_ruby_mask_raw_crop(writing_mode: &str, ruby_on_right: bool) {
     let path = temp_arcw(
         &format!("agent-observe-native-long-{writing_mode}-ruby-mask"),
@@ -4918,6 +4924,150 @@ flow @flow.main main {{
 
     fs::remove_file(&path).expect("remove temp native long vertical ruby mask source");
     fs::remove_dir_all(&dir).expect("remove temp native long vertical ruby mask dir");
+}
+
+fn assert_native_long_vertical_ruby_object_id_raw_crop(writing_mode: &str, ruby_on_right: bool) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-long-{writing_mode}-ruby-object-id"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-long-{writing_mode}-ruby-object-id"
+    ));
+    let raw_path = dir.join(format!("native-long-{writing_mode}-ruby-object-id.rgba"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("object-id")
+        .arg("--object")
+        .arg("object.dialogue.0.0.ruby.0")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native long vertical ruby object-id raw crop");
+
+    assert!(
+        output.status.success(),
+        "native long {writing_mode} ruby object-id crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native long vertical ruby object-id report is JSON");
+    assert_eq!(json["images"][0]["kind"], "object_id");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+
+    let ruby = find_rich_text_ruby_object(&json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ながいながいよみ");
+    assert_eq!(json["images"][0]["crop_origin"]["x"], ruby["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], ruby["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], ruby["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], ruby["bbox"]["height"]);
+
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    let base_cluster = find_rich_text_cluster_object(&json, "夢", 18, 21);
+    assert!(
+        agent_json_bbox_height(base) > agent_json_bbox_height(&base_cluster["bbox"]) * 2,
+        "long {writing_mode} ruby object-id should observe expanded base geometry: {ruby}"
+    );
+    if ruby_on_right {
+        assert!(
+            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            "vertical_lr long ruby annotation should be on the left side of the base: {ruby}"
+        );
+    }
+    assert!(
+        agent_json_bbox_x(&json["images"][0]["content_viewport_bbox"])
+            >= agent_json_bbox_x(&ruby["bbox"])
+            && agent_json_bbox_right(&json["images"][0]["content_viewport_bbox"])
+                <= agent_json_bbox_right(&ruby["bbox"])
+            && agent_json_bbox_y(&json["images"][0]["content_viewport_bbox"])
+                >= agent_json_bbox_y(&ruby["bbox"])
+            && agent_json_bbox_bottom(&json["images"][0]["content_viewport_bbox"])
+                <= agent_json_bbox_bottom(&ruby["bbox"]),
+        "long {writing_mode} ruby object-id content should stay inside the expanded ruby object bbox: {ruby}"
+    );
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+
+    let expected = agent_object_id_color_from_json(ruby);
+    assert_raw_object_id_tint(
+        &raw_path,
+        expected,
+        content_pixels,
+        &format!("{writing_mode} long ruby object-id crop"),
+    );
+
+    fs::remove_file(&path).expect("remove temp native long vertical ruby object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native long vertical ruby object-id dir");
+}
+
+fn agent_object_id_color_from_json(object: &serde_json::Value) -> [u8; 4] {
+    let color = &object["capture_refs"]["object_id_color"];
+    [
+        u8::try_from(color["red"].as_u64().expect("object-id red"))
+            .expect("object-id red fits in u8"),
+        u8::try_from(color["green"].as_u64().expect("object-id green"))
+            .expect("object-id green fits in u8"),
+        u8::try_from(color["blue"].as_u64().expect("object-id blue"))
+            .expect("object-id blue fits in u8"),
+        u8::try_from(color["alpha"].as_u64().expect("object-id alpha"))
+            .expect("object-id alpha fits in u8"),
+    ]
+}
+
+fn assert_raw_object_id_tint(
+    raw_path: &Path,
+    expected: [u8; 4],
+    content_pixels: u64,
+    context: &str,
+) {
+    let bytes = fs::read(raw_path).expect("read native long vertical ruby object-id raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let tinted_color = bytes
+        .chunks_exact(4)
+        .filter(|pixel| {
+            pixel[3] >= 128
+                && pixel[0].abs_diff(expected[0]) <= 24
+                && pixel[1].abs_diff(expected[1]) <= 24
+                && pixel[2].abs_diff(expected[2]) <= 24
+        })
+        .count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(
+        tinted_color > 0,
+        "{context} should contain the observed object color tint"
+    );
 }
 
 #[test]
