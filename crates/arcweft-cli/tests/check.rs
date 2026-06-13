@@ -3364,6 +3364,12 @@ fn agent_observe_native_renderer_writes_jlreq_prolonged_sound_raw_crops() {
     assert_native_jlreq_prolonged_sound_raw_crop("object-id");
 }
 
+#[test]
+fn agent_observe_native_renderer_writes_jlreq_small_kana_raw_crops() {
+    assert_native_jlreq_small_kana_raw_crop("mask");
+    assert_native_jlreq_small_kana_raw_crop("object-id");
+}
+
 fn assert_native_jlreq_prolonged_sound_raw_crop(capture_kind: &str) {
     let path = temp_arcw(
         &format!("agent-observe-native-jlreq-prolonged-sound-{capture_kind}"),
@@ -3459,6 +3465,98 @@ flow @flow.main main {
     fs::remove_dir_all(&dir).expect("remove temp JLREQ prolonged-sound dir");
 }
 
+fn assert_native_jlreq_small_kana_raw_crop(capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-jlreq-small-kana-{capture_kind}"),
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+}
+",
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-jlreq-small-kana-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!("native-jlreq-small-kana-{capture_kind}.rgba"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.13.39.42")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ small-kana raw crop");
+
+    assert!(
+        output.status.success(),
+        "native JLREQ small-kana {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native JLREQ small-kana report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let small_kana = assert_native_jlreq_small_kana_geometry(&json);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        small_kana["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        small_kana["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], small_kana["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], small_kana["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(small_kana),
+            content_pixels,
+            "JLREQ small-kana object-id crop",
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native JLREQ small-kana mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp JLREQ small-kana source");
+    fs::remove_dir_all(&dir).expect("remove temp JLREQ small-kana dir");
+}
+
 fn assert_native_jlreq_prolonged_sound_geometry(json: &serde_json::Value) -> &serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
@@ -3486,6 +3584,32 @@ fn assert_native_jlreq_prolonged_sound_geometry(json: &serde_json::Value) -> &se
         "text after prolonged sound mark should continue in the same column",
     );
     prolonged_sound
+}
+
+fn assert_native_jlreq_small_kana_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let large_kana = find_rich_text_cluster_object(json, "あ", 36, 39);
+    let small_kana = find_rich_text_cluster_object(json, "っ", 39, 42);
+    let next_kana = find_rich_text_cluster_object(json, "い", 42, 45);
+    assert_eq!(small_kana["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(
+        small_kana["rich_text_ref"]["vertical_form"],
+        "upright_alternate"
+    );
+    assert_vertical_cluster_after(
+        large_kana,
+        small_kana,
+        "small kana should stay out of a column head",
+    );
+    assert_vertical_cluster_after(
+        small_kana,
+        next_kana,
+        "text after small kana should continue in the same column",
+    );
+    small_kana
 }
 
 #[test]

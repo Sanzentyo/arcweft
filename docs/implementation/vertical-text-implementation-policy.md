@@ -290,7 +290,9 @@ the concrete choices to follow when turning that package into production code.
   to rendered GlyphArea pixels. The normal-preset prolonged-sound mark path is
   likewise captured as raw native mask and object-id crops, tying rotated
   alternate GlyphArea pixels to the no-break mark-with-previous-cluster
-  geometry.
+  geometry. Small-kana no-break placement is also captured as raw native mask
+  and object-id crops, tying upright-alternate glyph pixels to the observed
+  same-column geometry.
   Native Agent coverage also checks hanging punctuation at a vertical column
   end and half-cell punctuation compression for adjacent Japanese punctuation,
   so those JLREQ placement decisions are visible in observed glyph-cluster
