@@ -3549,8 +3549,18 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_object_id_r
 
 #[test]
 fn agent_observe_native_renderer_writes_jlreq_iteration_mark_raw_crops() {
-    assert_native_jlreq_iteration_mark_raw_crop("mask");
-    assert_native_jlreq_iteration_mark_raw_crop("object-id");
+    assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "mask");
+    assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "object-id");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_iteration_mark_mask_raw_crop() {
+    assert_native_jlreq_iteration_mark_raw_crop("vertical_lr", "mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_iteration_mark_object_id_raw_crop() {
+    assert_native_jlreq_iteration_mark_raw_crop("vertical_lr", "object-id");
 }
 
 #[test]
@@ -3756,21 +3766,26 @@ flow @flow.main main {{
     fs::remove_dir_all(&dir).expect("remove temp JLREQ small-kana dir");
 }
 
-fn assert_native_jlreq_iteration_mark_raw_crop(capture_kind: &str) {
-    let path = temp_arcw(
-        &format!("agent-observe-native-jlreq-iteration-mark-{capture_kind}"),
+fn assert_native_jlreq_iteration_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let source = format!(
         r"
-character @character.alice Alice as alice {}
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
-}
-",
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+}}
+"
+    );
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-jlreq-iteration-mark-{capture_kind}"),
+        &source,
     );
     let dir = temp_dir(&format!(
-        "agent-observe-native-jlreq-iteration-mark-{capture_kind}"
+        "agent-observe-native-{writing_mode}-jlreq-iteration-mark-{capture_kind}"
     ));
-    let raw_path = dir.join(format!("native-jlreq-iteration-mark-{capture_kind}.rgba"));
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-jlreq-iteration-mark-{capture_kind}.rgba"
+    ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -3796,7 +3811,7 @@ flow @flow.main main {
 
     assert!(
         output.status.success(),
-        "native JLREQ iteration-mark {capture_kind} crop should succeed, stderr: {}",
+        "native {writing_mode} JLREQ iteration-mark {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
@@ -3834,7 +3849,7 @@ flow @flow.main main {
             &raw_path,
             agent_object_id_color_from_json(iteration),
             content_pixels,
-            "JLREQ iteration-mark object-id crop",
+            &format!("{writing_mode} JLREQ iteration-mark object-id crop"),
         );
     } else {
         let bytes = fs::read(&raw_path).expect("read native JLREQ iteration-mark mask crop");
