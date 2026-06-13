@@ -344,8 +344,10 @@ the concrete choices to follow when turning that package into production code.
   trailing separation-prohibited suffix requires more than one body cell of
   allowed overhang before ordinary text can continue in the next column.
   Mirrored `vertical_lr` coverage checks the same overhanging leader-chain rule
-  with rightward column progression, keeping the JLREQ suffix behavior
-  symmetric across both vertical writing modes.
+  with rightward column progression. Sans I/O layout coverage also mirrors
+  small-kana, prolonged-sound mark, middle-dot, and iteration-mark column-head
+  prohibitions in `vertical_lr`, keeping the JLREQ suffix behavior symmetric
+  across both vertical writing modes before native Agent geometry consumes it.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,

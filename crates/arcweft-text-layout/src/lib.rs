@@ -2293,6 +2293,49 @@ mod tests {
     }
 
     #[test]
+    fn vertical_lr_column_keeps_small_kana_out_of_column_heads() {
+        assert_vertical_lr_no_column_head_mark("天地ぁ人", "ぁ");
+    }
+
+    #[test]
+    fn vertical_lr_column_keeps_prolonged_sound_mark_out_of_column_heads() {
+        assert_vertical_lr_no_column_head_mark("天地ー人", "ー");
+    }
+
+    #[test]
+    fn vertical_lr_column_keeps_middle_dot_out_of_column_heads() {
+        assert_vertical_lr_no_column_head_mark("天地・人", "・");
+    }
+
+    #[test]
+    fn vertical_lr_column_keeps_jlreq_iteration_marks_with_previous_cluster() {
+        assert_vertical_lr_no_column_head_mark("天地々人", "々");
+    }
+
+    fn assert_vertical_lr_no_column_head_mark(text: &str, mark: &str) {
+        let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalLr));
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[2].text, mark);
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "{mark} should overhang the current vertical_lr column instead of starting the next column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(
+            layout.glyphs[3].origin.x > layout.glyphs[2].origin.x,
+            "the next ordinary cluster should start the next vertical_lr column"
+        );
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
     fn vertical_column_breaks_before_jlreq_line_end_prohibited_opening_punctuation() {
         let frame = frame_with_run(
             "天（地",
