@@ -261,7 +261,9 @@ the concrete choices to follow when turning that package into production code.
   base and annotation bboxes. Long ruby base-expansion Agent coverage now runs
   in both `vertical_rl` and `vertical_lr`, checking that the expanded base and
   side-specific annotation track are observable through native ruby refs in each
-  writing mode.
+  writing mode; the same long ruby object is also captured as raw native masks
+  in both writing modes, tying the expanded ruby object bbox back to rendered
+  GlyphArea pixels.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
   JLREQ preset PNG goldens for the repeated-leader column-planning fixture, and
