@@ -7589,7 +7589,22 @@ fn agent_mcp_stdio_lists_resource_templates_before_observe() {
                 .is_some_and(|uri| uri.contains("layer.{layer_id}.mask.{extension}"))
     }));
     assert!(templates.iter().any(|template| {
+        template["name"] == "layer-object-id-capture"
+            && template["uriTemplate"]
+                .as_str()
+                .is_some_and(|uri| uri.contains("layer.{layer_id}.object-id.{extension}"))
+    }));
+    assert!(templates.iter().any(|template| {
         template["name"] == "object-color-capture"
+            && template["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("rich-text child objects"))
+    }));
+    assert!(templates.iter().any(|template| {
+        template["name"] == "object-object-id-capture"
+            && template["uriTemplate"]
+                .as_str()
+                .is_some_and(|uri| uri.contains("object.{object_id}.object-id.{extension}"))
             && template["description"]
                 .as_str()
                 .is_some_and(|description| description.contains("rich-text child objects"))

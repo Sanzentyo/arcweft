@@ -697,10 +697,30 @@ mod tests {
                     .is_some_and(|description| description.contains("png or rgba"))
         }));
         assert!(templates.resource_templates.iter().any(|template| {
+            template.name == "layer-object-id-capture"
+                && template
+                    .uri_template
+                    .contains("layer.{layer_id}.object-id.{extension}")
+                && template
+                    .description
+                    .as_deref()
+                    .is_some_and(|description| description.contains("png or rgba"))
+        }));
+        assert!(templates.resource_templates.iter().any(|template| {
             template.name == "object-color-capture"
                 && template
                     .uri_template
                     .contains("object.{object_id}.{extension}")
+                && template
+                    .description
+                    .as_deref()
+                    .is_some_and(|description| description.contains("rich-text child objects"))
+        }));
+        assert!(templates.resource_templates.iter().any(|template| {
+            template.name == "object-object-id-capture"
+                && template
+                    .uri_template
+                    .contains("object.{object_id}.object-id.{extension}")
                 && template
                     .description
                     .as_deref()

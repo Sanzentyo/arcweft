@@ -163,7 +163,8 @@ the concrete choices to follow when turning that package into production code.
   are verified against glyph alpha rather than the full textbox rectangle, so
   Agent observe readback exposes rendered glyph geometry for both attachment
   kinds; CLI and MCP resource readback paths also read stored raw object-id URIs
-  back as base64 bytes.
+  back as base64 bytes, and MCP resource templates advertise layer/object
+  object-id URI patterns for png and raw RGBA captures.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain
   stable while captures can vary glyph visibility by capture time. CLI
