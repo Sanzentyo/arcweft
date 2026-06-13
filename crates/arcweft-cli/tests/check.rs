@@ -7261,19 +7261,42 @@ flow @flow.main main {{
 
 #[test]
 fn agent_observe_native_typewriter_ruby_capture_time_controls_base_and_annotation() {
-    let path = temp_arcw(
-        "agent-observe-native-typewriter-ruby-capture-time",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
-}
-",
+    assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
+        "vertical_rl",
+        "typewriter-ruby",
+        true,
     );
-    let dir = temp_dir("agent-observe-native-typewriter-ruby-capture-time");
-    let hidden_path = dir.join("native-typewriter-ruby-hidden-mask.rgba");
-    let visible_path = dir.join("native-typewriter-ruby-visible-mask.rgba");
+}
+
+#[test]
+fn agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_base_and_annotation() {
+    assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
+        "vertical_lr",
+        "vertical-lr-typewriter-ruby",
+        false,
+    );
+}
+
+fn assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
+    writing_mode: &str,
+    label: &str,
+    ruby_annotation_on_right: bool,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{label}-capture-time"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&format!("agent-observe-native-{label}-capture-time"));
+    let hidden_path = dir.join(format!("native-{label}-hidden-mask.rgba"));
+    let visible_path = dir.join(format!("native-{label}-visible-mask.rgba"));
 
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
@@ -7287,7 +7310,11 @@ flow @flow.main main {
         "object.dialogue.0.0.ruby.0",
         "4",
     );
-    assert_native_typewriter_ruby_capture_time_geometry(&hidden, &visible);
+    assert_native_typewriter_ruby_capture_time_geometry(
+        &hidden,
+        &visible,
+        ruby_annotation_on_right,
+    );
     assert_eq!(hidden["images"][0]["content_pixels"], 0);
     assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
 
@@ -7303,19 +7330,44 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_typewriter_ruby_capture_time_controls_object_id() {
-    let path = temp_arcw(
-        "agent-observe-native-typewriter-ruby-object-id-capture-time",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
-}
-",
+    assert_native_typewriter_ruby_capture_time_controls_object_id(
+        "vertical_rl",
+        "typewriter-ruby",
+        true,
     );
-    let dir = temp_dir("agent-observe-native-typewriter-ruby-object-id-capture-time");
-    let hidden_path = dir.join("native-typewriter-ruby-hidden-object-id.rgba");
-    let visible_path = dir.join("native-typewriter-ruby-visible-object-id.rgba");
+}
+
+#[test]
+fn agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_object_id() {
+    assert_native_typewriter_ruby_capture_time_controls_object_id(
+        "vertical_lr",
+        "vertical-lr-typewriter-ruby",
+        false,
+    );
+}
+
+fn assert_native_typewriter_ruby_capture_time_controls_object_id(
+    writing_mode: &str,
+    label: &str,
+    ruby_annotation_on_right: bool,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{label}-object-id-capture-time"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-{label}-object-id-capture-time"
+    ));
+    let hidden_path = dir.join(format!("native-{label}-hidden-object-id.rgba"));
+    let visible_path = dir.join(format!("native-{label}-visible-object-id.rgba"));
 
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
@@ -7331,7 +7383,11 @@ flow @flow.main main {
         "4",
         "object-id",
     );
-    let visible_ruby = assert_native_typewriter_ruby_capture_time_geometry(&hidden, &visible);
+    let visible_ruby = assert_native_typewriter_ruby_capture_time_geometry(
+        &hidden,
+        &visible,
+        ruby_annotation_on_right,
+    );
     assert_eq!(hidden["images"][0]["content_pixels"], 0);
     let visible_pixels = visible["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(visible_pixels > 0);
@@ -7351,6 +7407,7 @@ flow @flow.main main {
 fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
     hidden: &serde_json::Value,
     visible: &'a serde_json::Value,
+    ruby_annotation_on_right: bool,
 ) -> &'a serde_json::Value {
     let hidden_ruby = find_rich_text_ruby_object(hidden, 0);
     let visible_ruby = find_rich_text_ruby_object(visible, 0);
@@ -7372,6 +7429,20 @@ fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
         hidden["images"][0]["height"],
         visible["images"][0]["height"]
     );
+    let base = &visible_ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &visible_ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    if ruby_annotation_on_right {
+        assert!(
+            agent_json_bbox_x(annotation) >= agent_json_bbox_x(base) + agent_json_bbox_width(base),
+            "vertical_rl typewriter ruby annotation should stay on the right side of the base: {visible_ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_x(annotation) + agent_json_bbox_width(annotation)
+                <= agent_json_bbox_x(base),
+            "vertical_lr typewriter ruby annotation should stay on the left side of the base: {visible_ruby}"
+        );
+    }
     visible_ruby
 }
 

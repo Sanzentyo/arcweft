@@ -181,9 +181,10 @@ the concrete choices to follow when turning that package into production code.
   capture-time path for text-combine object mask/object-id captures and a ruby
   object-id capture, checking hidden and visible raw RGBA blobs through
   `arcweft.capture`. Ruby annotation buffers also carry the resolved
-  presentation into their absolute GlyphArea instances, so ruby object mask and
-  object-id readback can hide and reveal the annotation at capture time without
-  changing the observed base/annotation bboxes.
+  presentation into their absolute GlyphArea instances, so `vertical_rl` and
+  `vertical_lr` ruby object mask and object-id readback can hide and reveal the
+  annotation at capture time without changing the observed base/annotation
+  bboxes or annotation-side placement.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Vertical layout reserves the inline-side annotation track before placing the
