@@ -245,7 +245,10 @@ the concrete choices to follow when turning that package into production code.
   text-combine-upright path is also verified through raw native mask and
   object-id crops so compressed multi-glyph cells expose object-local readback
   from the same GlyphArea geometry and stable object color as the observed
-  cluster bbox. It also checks adjacent
+  cluster bbox. Mirrored `vertical_lr` coverage also captures a text-combine
+  mask as raw RGBA, tying the observed `text_combine_upright` bbox and rendered
+  GlyphArea pixels together alongside the existing rightward column-progression
+  geometry test. It also checks adjacent
   `vertical_rl` and `vertical_lr` ruby annotations through separate
   `ruby_base_bbox` / `ruby_annotation_bbox` metadata so collision separation is
   observable in Agent output, and captures a `vertical_lr` ruby object as a raw
