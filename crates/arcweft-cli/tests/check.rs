@@ -3050,15 +3050,22 @@ fn agent_observe_native_renderer_reports_vertical_ruby_collision_geometry() {
 
 #[test]
 fn agent_observe_native_renderer_reports_long_vertical_ruby_expansion_geometry() {
-    let path = temp_arcw(
-        "agent-observe-native-long-vertical-ruby-expansion",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+    assert_native_long_vertical_ruby_expansion_geometry("vertical_rl", true);
+    assert_native_long_vertical_ruby_expansion_geometry("vertical_lr", false);
 }
-",
+
+fn assert_native_long_vertical_ruby_expansion_geometry(writing_mode: &str, ruby_on_right: bool) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-long-{writing_mode}-ruby-expansion"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+}}
+"
+        ),
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -3084,10 +3091,17 @@ flow @flow.main main {
         agent_json_bbox_y(base) < agent_json_bbox_y(&base_cluster["bbox"]),
         "expanded ruby base should be observable beyond the base glyph cell: {ruby}"
     );
-    assert!(
-        agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
-        "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
-    );
+    if ruby_on_right {
+        assert!(
+            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            "vertical_lr long ruby annotation should be on the left side of the base: {ruby}"
+        );
+    }
     assert!(
         agent_json_bbox_x(&ruby["bbox"]) <= agent_json_bbox_x(base)
             && agent_json_bbox_right(&ruby["bbox"]) >= agent_json_bbox_right(annotation)
