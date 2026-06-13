@@ -7351,6 +7351,74 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_rich_text_layer_object_id_attachment() {
+    let path = temp_arcw(
+        "agent-observe-native-rich-text-layer-object-id",
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    let player = "Aoi"
+    alice: Hello #[player] |[夢](ゆめ)[r]
+}
+"#,
+    );
+    let dir = temp_dir("agent-observe-native-rich-text-layer-object-id");
+    let raw_path = dir.join("native-rich-text-layer-object-id.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("object-id")
+        .arg("--layer")
+        .arg("dialogue.rich_text")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native rich-text layer object-id raw crop");
+
+    assert!(
+        output.status.success(),
+        "native rich-text layer object-id crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native rich-text layer object-id report is JSON");
+    assert_eq!(json["images"][0]["kind"], "object_id");
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["scope"]["kind"], "layer");
+    assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
+    assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+    assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
+    assert!(json["images"][0]["width"].as_u64().unwrap() < 1088);
+    assert!(json["images"][0]["height"].as_u64().unwrap() < 124);
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    let bytes = fs::read(&raw_path).expect("read native rich-text layer object-id raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(transparent > 0);
+
+    fs::remove_file(&path).expect("remove temp native rich-text layer object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native rich-text layer object-id dir");
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
     let path = temp_arcw(
