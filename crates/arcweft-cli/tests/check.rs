@@ -4999,18 +4999,32 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_text_combine_object_id_raw_crop() {
-    let path = temp_arcw(
-        "agent-observe-native-text-combine-object-id",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl]A 2026 B[/][p]
+    assert_native_text_combine_object_id_raw_crop("vertical_rl", "text-combine-object-id");
 }
-",
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_text_combine_object_id_raw_crop() {
+    assert_native_text_combine_object_id_raw_crop(
+        "vertical_lr",
+        "vertical-lr-text-combine-object-id",
     );
-    let dir = temp_dir("agent-observe-native-text-combine-object-id");
-    let raw_path = dir.join("native-text-combine-object-id.rgba");
+}
+
+fn assert_native_text_combine_object_id_raw_crop(writing_mode: &str, label: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{label}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]A 2026 B[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&format!("agent-observe-native-{label}"));
+    let raw_path = dir.join(format!("native-{label}.rgba"));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -5036,7 +5050,7 @@ flow @flow.main main {
 
     assert!(
         output.status.success(),
-        "native text-combine object-id crop should succeed, stderr: {}",
+        "native {writing_mode} text-combine object-id crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -5087,7 +5101,7 @@ flow @flow.main main {
     assert_eq!(opaque as u64, content_pixels);
     assert!(
         exact_color > 0,
-        "text-combine object-id crop should contain the observed object color"
+        "{writing_mode} text-combine object-id crop should contain the observed object color"
     );
 
     fs::remove_file(&path).expect("remove temp native text-combine object-id source");
