@@ -198,7 +198,10 @@ the concrete choices to follow when turning that package into production code.
   ruby ref for debugging. Native debug capture coverage also renders an
   over-height vertical ruby object and checks that the captured content stays
   inside the authored ruby object's union bbox while preserving the widened
-  annotation bbox from split tracks.
+  annotation bbox from split tracks. CLI Agent raw-crop coverage mirrors that
+  path for both `vertical_rl` and `vertical_lr` through mask and object-id
+  attachments, proving the authored ruby object bbox, split annotation tracks,
+  and rendered GlyphArea pixels stay tied to the same geometry.
 - Debug/object/color capture geometry is measured from `LaidOutText`; pixel
   readback remains only a verification and capture output path. Native
   offscreen debug and isolated-color captures use the same GlyphArea path as
