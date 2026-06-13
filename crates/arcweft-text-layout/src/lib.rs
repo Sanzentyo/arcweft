@@ -2148,6 +2148,54 @@ mod tests {
     }
 
     #[test]
+    fn vertical_lr_column_keeps_jlreq_leader_chain_together_before_next_column() {
+        let frame = frame_with_run(
+            "天………人",
+            vertical_presentation(RichTextWritingMode::VerticalLr),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let clusters = vertical_clusters(&frame.text, RichTextVerticalLatinMode::Mixed);
+        let context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config,
+        };
+        let plan = plan_vertical_columns(
+            &clusters,
+            context,
+            LayoutCursor::new(
+                vertical_column_start(RichTextWritingMode::VerticalLr, config),
+                config.origin.y,
+            ),
+        );
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(plan.break_before, vec![false, false, false, false, true]);
+        assert_eq!(layout.glyphs.len(), 5);
+        assert_eq!(layout.glyphs[1].text, "…");
+        assert_eq!(layout.glyphs[2].text, "…");
+        assert_eq!(layout.glyphs[3].text, "…");
+        assert_f32_eq(layout.glyphs[1].origin.x, layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[0].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.x, layout.glyphs[0].origin.x);
+        assert!(
+            layout.glyphs[3].bounds.bottom() > config.origin.y + config.size.height,
+            "the vertical_lr leader chain may overhang as one unbreakable trailing suffix"
+        );
+        assert_eq!(layout.glyphs[4].text, "人");
+        assert!(
+            layout.glyphs[4].origin.x > layout.glyphs[3].origin.x,
+            "ordinary text after the leader chain should start the next vertical_lr column"
+        );
+        assert_f32_eq(layout.glyphs[4].origin.y, config.origin.y);
+    }
+
+    #[test]
     fn vertical_column_keeps_jlreq_dashes_together() {
         let frame = frame_with_run(
             "天――人",

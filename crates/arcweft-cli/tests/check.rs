@@ -3560,6 +3560,41 @@ flow @flow.main main {
             && agent_json_bbox_y(&next_person["bbox"]) < agent_json_bbox_y(&comma["bbox"]),
         "text after vertical_lr hanging punctuation should start the next column"
     );
+
+    let leader_path = temp_arcw(
+        "agent-observe-native-vertical-lr-jlreq-leader-chain",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr jlreq=normal]天地………終[/][p]
+}
+",
+    );
+    let leader = observe_native_rich_text_layer_report(&leader_path);
+    fs::remove_file(&leader_path).expect("remove temp vertical_lr JLREQ leader source");
+    assert_native_rich_text_layer_image_has_content(&leader);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&leader)["jlreq_strictness"],
+        "normal"
+    );
+    let first_leader = find_rich_text_cluster_object(&leader, "…", 6, 9);
+    let second_leader = find_rich_text_cluster_object(&leader, "…", 9, 12);
+    let ending = find_rich_text_cluster_object(&leader, "終", 15, 18);
+    assert_vertical_cluster_after(
+        first_leader,
+        second_leader,
+        "vertical_lr repeated leaders stay together in one trailing suffix",
+    );
+    assert!(
+        agent_json_bbox_x(&ending["bbox"]) > agent_json_bbox_x(&second_leader["bbox"]),
+        "vertical_lr text after a partially clipped overhanging leader chain should continue in the next column"
+    );
+    assert!(
+        agent_json_bbox_y(&ending["bbox"]) < agent_json_bbox_y(&second_leader["bbox"]),
+        "vertical_lr text after a leader chain should restart near the column top"
+    );
 }
 
 #[test]
