@@ -3359,6 +3359,136 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_jlreq_prolonged_sound_raw_crops() {
+    assert_native_jlreq_prolonged_sound_raw_crop("mask");
+    assert_native_jlreq_prolonged_sound_raw_crop("object-id");
+}
+
+fn assert_native_jlreq_prolonged_sound_raw_crop(capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-jlreq-prolonged-sound-{capture_kind}"),
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+}
+",
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-jlreq-prolonged-sound-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!("native-jlreq-prolonged-sound-{capture_kind}.rgba"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.16.48.51")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ prolonged-sound raw crop");
+
+    assert!(
+        output.status.success(),
+        "native JLREQ prolonged-sound {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native JLREQ prolonged-sound report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let prolonged_sound = assert_native_jlreq_prolonged_sound_geometry(&json);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        prolonged_sound["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        prolonged_sound["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], prolonged_sound["bbox"]["width"]);
+    assert_eq!(
+        json["images"][0]["height"],
+        prolonged_sound["bbox"]["height"]
+    );
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(prolonged_sound),
+            content_pixels,
+            "JLREQ prolonged-sound object-id crop",
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native JLREQ prolonged-sound mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp JLREQ prolonged-sound source");
+    fs::remove_dir_all(&dir).expect("remove temp JLREQ prolonged-sound dir");
+}
+
+fn assert_native_jlreq_prolonged_sound_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let vowel = find_rich_text_cluster_object(json, "お", 45, 48);
+    let prolonged_sound = find_rich_text_cluster_object(json, "ー", 48, 51);
+    let after_dash = find_rich_text_cluster_object(json, "え", 51, 54);
+    assert_eq!(
+        prolonged_sound["rich_text_ref"]["orientation"],
+        "sideways_cw"
+    );
+    assert_eq!(
+        prolonged_sound["rich_text_ref"]["vertical_form"],
+        "rotated_alternate"
+    );
+    assert_vertical_cluster_after(
+        vowel,
+        prolonged_sound,
+        "prolonged sound mark should stay with the previous cluster",
+    );
+    assert_vertical_cluster_after(
+        prolonged_sound,
+        after_dash,
+        "text after prolonged sound mark should continue in the same column",
+    );
+    prolonged_sound
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_middle_dot_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-strict-jlreq-middle-dot-pair",
