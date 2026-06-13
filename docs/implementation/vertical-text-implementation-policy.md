@@ -166,7 +166,8 @@ the concrete choices to follow when turning that package into production code.
   `--capture-time` and MCP `capture_time` pass that time into full-frame,
   layer/object color, object-id, and mask readback; native Agent coverage checks
   that a vertical typewriter cluster keeps the same observed bbox while hidden
-  and visible raw mask captures differ only in rendered alpha content. The same
+  and visible raw mask/object-id captures differ only in rendered alpha content.
+  The same
   capture-time path is also covered for a `text-combine-upright` digit cluster
   through mask and object-id raw crops, verifying that all native GlyphArea
   instances emitted for the combined cell follow the layout glyph's visibility
