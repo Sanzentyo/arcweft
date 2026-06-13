@@ -7090,19 +7090,39 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_typewriter_text_combine_capture_time_controls_all_glyphs() {
-    let path = temp_arcw(
-        "agent-observe-native-typewriter-text-combine-capture-time",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
-}
-",
+    assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
+        "vertical_rl",
+        "typewriter-text-combine",
     );
-    let dir = temp_dir("agent-observe-native-typewriter-text-combine-capture-time");
-    let hidden_path = dir.join("native-typewriter-text-combine-hidden-mask.rgba");
-    let visible_path = dir.join("native-typewriter-text-combine-visible-mask.rgba");
+}
+
+#[test]
+fn agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_all_glyphs() {
+    assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
+        "vertical_lr",
+        "vertical-lr-typewriter-text-combine",
+    );
+}
+
+fn assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
+    writing_mode: &str,
+    label: &str,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{label}-capture-time"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&format!("agent-observe-native-{label}-capture-time"));
+    let hidden_path = dir.join(format!("native-{label}-hidden-mask.rgba"));
+    let visible_path = dir.join(format!("native-{label}-visible-mask.rgba"));
 
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
@@ -7153,19 +7173,41 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_typewriter_text_combine_capture_time_controls_object_id() {
-    let path = temp_arcw(
-        "agent-observe-native-typewriter-text-combine-object-id-capture-time",
-        r"
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
-}
-",
+    assert_native_typewriter_text_combine_capture_time_controls_object_id(
+        "vertical_rl",
+        "typewriter-text-combine",
     );
-    let dir = temp_dir("agent-observe-native-typewriter-text-combine-object-id-capture-time");
-    let hidden_path = dir.join("native-typewriter-text-combine-hidden-object-id.rgba");
-    let visible_path = dir.join("native-typewriter-text-combine-visible-object-id.rgba");
+}
+
+#[test]
+fn agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_object_id() {
+    assert_native_typewriter_text_combine_capture_time_controls_object_id(
+        "vertical_lr",
+        "vertical-lr-typewriter-text-combine",
+    );
+}
+
+fn assert_native_typewriter_text_combine_capture_time_controls_object_id(
+    writing_mode: &str,
+    label: &str,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{label}-object-id-capture-time"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-{label}-object-id-capture-time"
+    ));
+    let hidden_path = dir.join(format!("native-{label}-hidden-object-id.rgba"));
+    let visible_path = dir.join(format!("native-{label}-visible-object-id.rgba"));
 
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
