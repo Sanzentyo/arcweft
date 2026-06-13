@@ -2644,8 +2644,8 @@ fn agent_observe_native_vertical_capture_matches_imq_reference() {
         return;
     }
 
-    let path = temp_arcw(
-        "agent-observe-native-vertical-imq",
+    assert_repeated_native_capture_matches_imq_reference(
+        "vertical-rl-mixed",
         r"
 character @character.alice Alice as alice {}
 
@@ -2654,14 +2654,28 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-vertical-imq");
-    let reference_path = dir.join("vertical-reference.png");
-    let candidate_path = dir.join("vertical-candidate.png");
+    assert_repeated_native_capture_matches_imq_reference(
+        "vertical-lr-ruby-text-combine",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr]縦 |[夢](ゆめ)[r] 2026 ABC。[/][p]
+}
+",
+    );
+}
+
+fn assert_repeated_native_capture_matches_imq_reference(label: &str, source: &str) {
+    let path = temp_arcw(&format!("agent-observe-native-{label}-imq"), source);
+    let dir = temp_dir(&format!("agent-observe-native-{label}-imq"));
+    let reference_path = dir.join(format!("{label}-reference.png"));
+    let candidate_path = dir.join(format!("{label}-candidate.png"));
 
     let reference_json = capture_native_png_report(&path, &reference_path);
     let candidate_json = capture_native_png_report(&path, &candidate_path);
-    assert_native_capture_has_content(&reference_json, "vertical-reference.png");
-    assert_native_capture_has_content(&candidate_json, "vertical-candidate.png");
+    assert_native_capture_has_content(&reference_json, &format!("{label}-reference.png"));
+    assert_native_capture_has_content(&candidate_json, &format!("{label}-candidate.png"));
 
     let imq_output = Command::new("imq")
         .arg("image")
@@ -2673,25 +2687,40 @@ flow @flow.main main {
         .expect("imq compares native vertical captures");
     assert!(
         imq_output.status.success(),
-        "imq comparison should succeed, stderr: {}",
+        "{label} imq comparison should succeed, stderr: {}",
         String::from_utf8_lossy(&imq_output.stderr)
     );
     let imq_json: serde_json::Value =
         serde_json::from_slice(&imq_output.stdout).expect("imq output is JSON");
     assert_eq!(imq_json["dimensions"]["width"], 1280);
     assert_eq!(imq_json["dimensions"]["height"], 720);
-    assert_metric_close(metric_score(&imq_json, "mse"), 0.0, 0.0, "mse");
-    assert_metric_close(metric_score(&imq_json, "mae"), 0.0, 0.0, "mae");
-    assert_metric_close(metric_score(&imq_json, "maxae"), 0.0, 0.0, "maxae");
+    assert_metric_close(
+        metric_score(&imq_json, "mse"),
+        0.0,
+        0.0,
+        &format!("{label} mse"),
+    );
+    assert_metric_close(
+        metric_score(&imq_json, "mae"),
+        0.0,
+        0.0,
+        &format!("{label} mae"),
+    );
+    assert_metric_close(
+        metric_score(&imq_json, "maxae"),
+        0.0,
+        0.0,
+        &format!("{label} maxae"),
+    );
     assert!(
         metric_score(&imq_json, "ssim") >= 0.999_999,
-        "ssim should report identical native captures: {imq_json}"
+        "{label} ssim should report identical native captures: {imq_json}"
     );
     assert_metric_close(
         metric_detail(&imq_json, "psnr", "mse"),
         0.0,
         0.0,
-        "psnr.mse",
+        &format!("{label} psnr.mse"),
     );
 
     fs::remove_file(&path).expect("remove temp native vertical source");

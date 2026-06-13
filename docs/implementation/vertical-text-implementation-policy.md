@@ -236,9 +236,10 @@ the concrete choices to follow when turning that package into production code.
   ruby positions; if neither layout nor shaped base glyph geometry exists, the
   ruby buffer is omitted instead of emitting a compatibility placement.
 - CLI regression coverage includes an `imq` native vertical capture parity check
-  that compares repeated headless PNG captures for the same `vertical_rl`
-  fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with
-  ruby and a 4-digit text-combine run, asserting that the observed
+  that compares repeated headless PNG captures for `vertical_rl` mixed text and
+  `vertical_lr` ruby/text-combine fixtures. Fast native Agent coverage also
+  exercises a `vertical_lr` fixture with ruby and a 4-digit text-combine run,
+  asserting that the observed
   layer/run/ruby and text-combine cluster geometry is produced by the native
   renderer. Focused native Agent coverage also compares the same text in
   `vertical_rl` and `vertical_lr`, asserting that column progression moves left
