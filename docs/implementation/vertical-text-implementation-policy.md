@@ -225,11 +225,14 @@ the concrete choices to follow when turning that package into production code.
   preparation treats missing
   renderer cache keys as errors instead of silently skipping layout glyphs, so a
   broken shaping/cache-key mapping fails capture preparation rather than
-  producing partial debug imagery. Legacy horizontal TextArea rendering may
-  still place ruby from shaped glyph geometry when no `LaidOutText` is
-  available, but it no longer fabricates estimated ruby positions; if neither
-  layout nor shaped base glyph geometry exists, the ruby buffer is omitted
-  instead of emitting a compatibility placement.
+  producing partial debug imagery. GlyphArea `GlyphSource::Custom` instances
+  are also routed through glyphon's custom-glyph rasterizer instead of being
+  discarded, so future inline objects, markers, or debug overlays submitted as
+  pre-laid glyphs use the same capture/render path as text glyphs. Legacy
+  horizontal TextArea rendering may still place ruby from shaped glyph geometry
+  when no `LaidOutText` is available, but it no longer fabricates estimated
+  ruby positions; if neither layout nor shaped base glyph geometry exists, the
+  ruby buffer is omitted instead of emitting a compatibility placement.
 - CLI regression coverage includes an `imq` native vertical capture parity check
   that compares repeated headless PNG captures for the same `vertical_rl`
   fixture. Fast native Agent coverage also exercises a `vertical_lr` fixture with

@@ -1,6 +1,6 @@
 use crate::{
     custom_glyph::CustomGlyphCacheKey, ColorMode, ContentType, FontSystem, GlyphArea, GlyphDetails,
-    GlyphSource, GlyphToRender, GlyphTransform, GpuCacheStatus, PrepareError,
+    GlyphInstance, GlyphSource, GlyphToRender, GlyphTransform, GpuCacheStatus, PrepareError,
     RasterizeCustomGlyphRequest, RasterizedCustomGlyph, RenderError, State, SwashCache,
     SwashContent, TextArea, TextAtlas, Viewport,
 };
@@ -107,6 +107,35 @@ impl TextRenderer {
         glyph_areas: impl IntoIterator<Item = GlyphArea<'b>>,
         cache: &mut SwashCache,
     ) -> Result<(), PrepareError> {
+        self.prepare_text_and_glyph_areas_with_custom(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            text_areas,
+            glyph_areas,
+            cache,
+            |_| None,
+        )
+    }
+
+    /// Prepares provided text areas and pre-laid glyph areas for rendering,
+    /// including renderer-specific custom glyphs from either source.
+    pub fn prepare_text_and_glyph_areas_with_custom<'a, 'b>(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        font_system: &mut FontSystem,
+        atlas: &mut TextAtlas,
+        viewport: &Viewport,
+        text_areas: impl IntoIterator<Item = TextArea<'a>>,
+        glyph_areas: impl IntoIterator<Item = GlyphArea<'b>>,
+        cache: &mut SwashCache,
+        mut rasterize_custom_glyph: impl FnMut(
+            RasterizeCustomGlyphRequest,
+        ) -> Option<RasterizedCustomGlyph>,
+    ) -> Result<(), PrepareError> {
         self.prepare_with_depth_and_custom(
             device,
             queue,
@@ -116,7 +145,7 @@ impl TextRenderer {
             text_areas,
             cache,
             zero_depth,
-            |_| None,
+            &mut rasterize_custom_glyph,
         )?;
 
         let state = State { device, queue };
@@ -132,6 +161,7 @@ impl TextRenderer {
             viewport.resolution(),
             glyph_areas,
             zero_depth,
+            &mut rasterize_custom_glyph,
         )?;
         self.upload_vertices(device, queue);
         Ok(())
@@ -362,7 +392,34 @@ impl TextRenderer {
         glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
         cache: &mut SwashCache,
     ) -> Result<(), PrepareError> {
-        self.prepare_glyph_areas_with_depth(
+        self.prepare_glyph_areas_with_custom(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            glyph_areas,
+            cache,
+            |_| None,
+        )
+    }
+
+    /// Prepares all of the provided pre-laid glyph areas for rendering,
+    /// including renderer-specific custom glyphs.
+    pub fn prepare_glyph_areas_with_custom<'a>(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        font_system: &mut FontSystem,
+        atlas: &mut TextAtlas,
+        viewport: &Viewport,
+        glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
+        cache: &mut SwashCache,
+        rasterize_custom_glyph: impl FnMut(
+            RasterizeCustomGlyphRequest,
+        ) -> Option<RasterizedCustomGlyph>,
+    ) -> Result<(), PrepareError> {
+        self.prepare_glyph_areas_with_depth_and_custom(
             device,
             queue,
             font_system,
@@ -371,6 +428,7 @@ impl TextRenderer {
             glyph_areas,
             cache,
             zero_depth,
+            rasterize_custom_glyph,
         )
     }
 
@@ -384,7 +442,36 @@ impl TextRenderer {
         viewport: &Viewport,
         glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
         cache: &mut SwashCache,
+        metadata_to_depth: impl FnMut(usize) -> f32,
+    ) -> Result<(), PrepareError> {
+        self.prepare_glyph_areas_with_depth_and_custom(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            glyph_areas,
+            cache,
+            metadata_to_depth,
+            |_| None,
+        )
+    }
+
+    /// Prepares all of the provided pre-laid glyph areas for rendering with
+    /// depth metadata and renderer-specific custom glyphs.
+    pub fn prepare_glyph_areas_with_depth_and_custom<'a>(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        font_system: &mut FontSystem,
+        atlas: &mut TextAtlas,
+        viewport: &Viewport,
+        glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
+        cache: &mut SwashCache,
         mut metadata_to_depth: impl FnMut(usize) -> f32,
+        mut rasterize_custom_glyph: impl FnMut(
+            RasterizeCustomGlyphRequest,
+        ) -> Option<RasterizedCustomGlyph>,
     ) -> Result<(), PrepareError> {
         self.glyph_vertices.clear();
 
@@ -401,6 +488,7 @@ impl TextRenderer {
             viewport.resolution(),
             glyph_areas,
             &mut metadata_to_depth,
+            &mut rasterize_custom_glyph,
         )?;
 
         self.upload_vertices(device, queue);
@@ -546,6 +634,9 @@ fn append_glyph_areas<'a>(
     resolution: crate::Resolution,
     glyph_areas: impl IntoIterator<Item = GlyphArea<'a>>,
     mut metadata_to_depth: impl FnMut(usize) -> f32,
+    mut rasterize_custom_glyph: impl FnMut(
+        RasterizeCustomGlyphRequest,
+    ) -> Option<RasterizedCustomGlyph>,
 ) -> Result<(), PrepareError> {
     for glyph_area in glyph_areas {
         let bounds = GlyphBounds {
@@ -560,54 +651,136 @@ fn append_glyph_areas<'a>(
         };
 
         for glyph in glyph_area.glyphs {
-            let GlyphSource::Text { cache_key } = glyph.source else {
-                continue;
-            };
             let x = glyph_area.left + (glyph.origin.x * glyph_area.scale);
             let y = glyph_area.top + (glyph.origin.y * glyph_area.scale);
             let color = glyph.color.unwrap_or(glyph_area.default_color);
 
-            if let Some(glyph_to_render) = prepare_glyph(
-                state,
-                system,
-                GlyphMetadata {
-                    x: x.round() as i32,
-                    y: y.round() as i32,
-                    line_y: 0.0,
-                    scale_factor: glyph_area.scale,
-                    color,
-                    metadata: glyph.metadata,
-                    cache_key: GlyphonCacheKey::Text(cache_key),
-                    transform: glyph.transform,
-                },
-                bounds,
-                |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
-                    let image = system
-                        .cache
-                        .get_image_uncached(system.font_system, cache_key)?;
+            match glyph.source {
+                GlyphSource::Text { cache_key } => {
+                    if let Some(glyph_to_render) = prepare_glyph(
+                        state,
+                        system,
+                        GlyphMetadata {
+                            x: x.round() as i32,
+                            y: y.round() as i32,
+                            line_y: 0.0,
+                            scale_factor: glyph_area.scale,
+                            color,
+                            metadata: glyph.metadata,
+                            cache_key: GlyphonCacheKey::Text(cache_key),
+                            transform: glyph.transform,
+                        },
+                        bounds,
+                        |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
+                            let image = system
+                                .cache
+                                .get_image_uncached(system.font_system, cache_key)?;
 
-                    let content_type = match image.content {
-                        SwashContent::Color => ContentType::Color,
-                        SwashContent::Mask | SwashContent::SubpixelMask => ContentType::Mask,
+                            let content_type = match image.content {
+                                SwashContent::Color => ContentType::Color,
+                                SwashContent::Mask | SwashContent::SubpixelMask => {
+                                    ContentType::Mask
+                                }
+                            };
+
+                            Some(GetGlyphImageResult {
+                                content_type,
+                                top: image.placement.top as i16,
+                                left: image.placement.left as i16,
+                                width: image.placement.width as u16,
+                                height: image.placement.height as u16,
+                                data: image.data,
+                            })
+                        },
+                        &mut metadata_to_depth,
+                        &mut rasterize_custom_glyph,
+                    )? {
+                        glyph_vertices.push(glyph_to_render);
+                    }
+                }
+                GlyphSource::Custom { id } => {
+                    let Some(metrics) = custom_glyph_area_metrics(&glyph_area, glyph, id, color)
+                    else {
+                        continue;
                     };
-
-                    Some(GetGlyphImageResult {
-                        content_type,
-                        top: image.placement.top as i16,
-                        left: image.placement.left as i16,
-                        width: image.placement.width as u16,
-                        height: image.placement.height as u16,
-                        data: image.data,
-                    })
-                },
-                &mut metadata_to_depth,
-                |_| None,
-            )? {
-                glyph_vertices.push(glyph_to_render);
+                    if let Some(glyph_to_render) = prepare_glyph(
+                        state,
+                        system,
+                        metrics.metadata,
+                        bounds,
+                        |_system, rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
+                            let output = (rasterize_custom_glyph)(metrics.request)?;
+                            output.validate(&metrics.request, None);
+                            Some(GetGlyphImageResult {
+                                content_type: output.content_type,
+                                top: 0,
+                                left: 0,
+                                width: metrics.request.width,
+                                height: metrics.request.height,
+                                data: output.data,
+                            })
+                        },
+                        &mut metadata_to_depth,
+                        &mut rasterize_custom_glyph,
+                    )? {
+                        glyph_vertices.push(glyph_to_render);
+                    }
+                }
             }
         }
     }
     Ok(())
+}
+
+struct CustomGlyphAreaMetrics {
+    metadata: GlyphMetadata,
+    request: RasterizeCustomGlyphRequest,
+}
+
+fn custom_glyph_area_metrics(
+    glyph_area: &GlyphArea<'_>,
+    glyph: &GlyphInstance,
+    id: crate::CustomGlyphId,
+    color: Color,
+) -> Option<CustomGlyphAreaMetrics> {
+    let width = (glyph.ink_bounds.width() * glyph_area.scale).round() as u16;
+    let height = (glyph.ink_bounds.height() * glyph_area.scale).round() as u16;
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let x = glyph_area.left + ((glyph.origin.x + glyph.ink_bounds.left) * glyph_area.scale);
+    let y = glyph_area.top + ((glyph.origin.y + glyph.ink_bounds.top) * glyph_area.scale);
+    let (x, x_bin) = SubpixelBin::new(x);
+    let (y, y_bin) = SubpixelBin::new(y);
+    let request = RasterizeCustomGlyphRequest {
+        id,
+        width,
+        height,
+        x_bin,
+        y_bin,
+        scale: glyph_area.scale,
+    };
+
+    Some(CustomGlyphAreaMetrics {
+        metadata: GlyphMetadata {
+            x,
+            y,
+            line_y: 0.0,
+            scale_factor: glyph_area.scale,
+            color,
+            metadata: glyph.metadata,
+            cache_key: GlyphonCacheKey::Custom(CustomGlyphCacheKey {
+                glyph_id: id,
+                width,
+                height,
+                x_bin,
+                y_bin,
+            }),
+            transform: glyph.transform,
+        },
+        request,
+    })
 }
 
 fn prepare_glyph<R>(
@@ -875,7 +1048,14 @@ fn transformed_corner(
 
 #[cfg(test)]
 mod tests {
-    use super::{Bounds, GlyphBounds, clip_bounds_for_shader, transformed_quad_intersects_bounds};
+    use super::{
+        Bounds, GlyphBounds, GlyphonCacheKey, clip_bounds_for_shader, custom_glyph_area_metrics,
+        transformed_quad_intersects_bounds,
+    };
+    use crate::{
+        Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect, TextBounds,
+        Vector,
+    };
 
     #[test]
     fn transformed_quad_intersection_uses_transformed_bounds() {
@@ -910,5 +1090,73 @@ mod tests {
         };
 
         assert_eq!(clip_bounds_for_shader(bounds), [3.0, 5.0, 57.0, 89.0]);
+    }
+
+    #[test]
+    fn glyph_area_custom_source_uses_ink_bounds_for_raster_request() {
+        let area = GlyphArea {
+            glyphs: &[],
+            left: 3.0,
+            top: 5.0,
+            scale: 2.0,
+            bounds: TextBounds::default(),
+            default_color: Color::rgb(245, 245, 245),
+        };
+        let glyph = GlyphInstance {
+            source: GlyphSource::Custom { id: 7 },
+            origin: Point::new(10.0, 8.0),
+            advance: Vector::new(4.0, 6.0),
+            ink_bounds: Rect::new(2.0, 1.0, 6.0, 7.0),
+            transform: GlyphTransform::Rotate90Cw,
+            color: None,
+            metadata: 42,
+            cluster: None,
+        };
+        let color = Color::rgb(12, 34, 56);
+
+        let metrics = custom_glyph_area_metrics(&area, &glyph, 7, color).expect("custom metrics");
+
+        assert_eq!(metrics.metadata.x, 27);
+        assert_eq!(metrics.metadata.y, 23);
+        assert_eq!(metrics.metadata.color, color);
+        assert_eq!(metrics.metadata.metadata, 42);
+        assert_eq!(metrics.metadata.transform, GlyphTransform::Rotate90Cw);
+        assert_eq!(metrics.request.id, 7);
+        assert_eq!(metrics.request.width, 8);
+        assert_eq!(metrics.request.height, 12);
+        assert_eq!(metrics.request.scale, 2.0);
+
+        let GlyphonCacheKey::Custom(cache_key) = metrics.metadata.cache_key else {
+            panic!("expected custom cache key");
+        };
+        assert_eq!(cache_key.glyph_id, metrics.request.id);
+        assert_eq!(cache_key.width, metrics.request.width);
+        assert_eq!(cache_key.height, metrics.request.height);
+        assert_eq!(cache_key.x_bin, metrics.request.x_bin);
+        assert_eq!(cache_key.y_bin, metrics.request.y_bin);
+    }
+
+    #[test]
+    fn glyph_area_custom_source_skips_empty_ink_bounds() {
+        let area = GlyphArea {
+            glyphs: &[],
+            left: 0.0,
+            top: 0.0,
+            scale: 1.0,
+            bounds: TextBounds::default(),
+            default_color: Color::rgb(245, 245, 245),
+        };
+        let glyph = GlyphInstance {
+            source: GlyphSource::Custom { id: 7 },
+            origin: Point::new(10.0, 8.0),
+            advance: Vector::new(0.0, 0.0),
+            ink_bounds: Rect::new(2.0, 1.0, 2.0, 7.0),
+            transform: GlyphTransform::Identity,
+            color: None,
+            metadata: 42,
+            cluster: None,
+        };
+
+        assert!(custom_glyph_area_metrics(&area, &glyph, 7, area.default_color).is_none());
     }
 }
