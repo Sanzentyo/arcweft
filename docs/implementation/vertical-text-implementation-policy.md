@@ -162,7 +162,7 @@ the concrete choices to follow when turning that package into production code.
   renderer. Native object-scope raw mask and object-id captures for a textbox
   are verified against glyph alpha rather than the full textbox rectangle, so
   Agent observe readback exposes rendered glyph geometry for both attachment
-  kinds; the resource readback path also reads the stored raw object-id URI
+  kinds; CLI and MCP resource readback paths also read stored raw object-id URIs
   back as base64 bytes.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain

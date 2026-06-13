@@ -7597,7 +7597,7 @@ fn agent_mcp_stdio_lists_resource_templates_before_observe() {
 }
 
 fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value]) {
-    assert_eq!(responses.len(), 10);
+    assert_eq!(responses.len(), 12);
     assert_eq!(
         responses[0]["result"]["serverInfo"]["name"],
         "arcweft-agent"
@@ -7657,6 +7657,8 @@ fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value])
     assert_mcp_session_info_after_capture(&responses[7]);
     assert_raw_resource_read_content(&responses[8], &responses[6]);
     assert_png_resource_read_content(&responses[9]);
+    assert_mcp_raw_object_id_capture_content(&responses[10]);
+    assert_raw_object_id_resource_read_content(&responses[11], &responses[10]);
 }
 
 fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
@@ -7812,6 +7814,65 @@ fn assert_raw_resource_read_content(
         u64::try_from(bytes.len()).unwrap(),
         expected_len,
         "resources/read should return the latest raw capture bytes for this URI"
+    );
+    assert!(bytes.chunks_exact(4).any(|pixel| pixel[3] > 0));
+}
+
+fn assert_mcp_raw_object_id_capture_content(response: &serde_json::Value) {
+    assert_eq!(response["result"]["content"][0]["type"], "text");
+    let metadata = mcp_content_metadata(
+        &response["result"]["content"][0],
+        "raw object-id capture metadata is JSON",
+    );
+    assert_eq!(
+        metadata["uri"],
+        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
+    );
+    assert_eq!(metadata["image"]["kind"], "object_id");
+    assert_eq!(metadata["image"]["composition"], "object_id_attachment");
+    assert_eq!(metadata["image"]["pixel_format"], "rgba8_unorm");
+    assert_eq!(
+        metadata["image"]["row_stride_bytes"],
+        metadata["image"]["width"].as_u64().unwrap() * 4
+    );
+    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
+    assert!(
+        response["result"]["content"][1]["resource"]["blob"]
+            .as_str()
+            .is_some_and(|blob| !blob.is_empty())
+    );
+    assert_eq!(
+        response["result"]["content"][1]["resource"]["mimeType"],
+        "application/octet-stream"
+    );
+}
+
+fn assert_raw_object_id_resource_read_content(
+    response: &serde_json::Value,
+    source_capture_response: &serde_json::Value,
+) {
+    let metadata = mcp_content_metadata(
+        &source_capture_response["result"]["content"][0],
+        "raw object-id source capture metadata is JSON",
+    );
+    let expected_len = metadata["image"]["row_stride_bytes"].as_u64().unwrap()
+        * metadata["image"]["height"].as_u64().unwrap();
+    let content = &response["result"]["contents"][0];
+    assert_eq!(content["mimeType"], "application/octet-stream");
+    assert_eq!(
+        content["uri"],
+        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
+    );
+    let blob = content["blob"]
+        .as_str()
+        .expect("raw object-id resource has a blob");
+    let bytes = general_purpose::STANDARD
+        .decode(blob)
+        .expect("raw object-id resource blob is base64");
+    assert_eq!(
+        u64::try_from(bytes.len()).unwrap(),
+        expected_len,
+        "resources/read should return the latest raw object-id capture bytes for this URI"
     );
     assert!(bytes.chunks_exact(4).any(|pixel| pixel[3] > 0));
 }
@@ -8821,8 +8882,8 @@ flow @flow.main main {
     );
 }
 
-fn agent_mcp_rich_text_requests(path: &std::path::Path) -> [serde_json::Value; 10] {
-    [
+fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value> {
+    let mut requests = vec![
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
         serde_json::json!({
@@ -8887,6 +8948,13 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> [serde_json::Value; 1
                 "arguments": {}
             }
         }),
+    ];
+    requests.extend(agent_mcp_rich_text_readback_requests());
+    requests
+}
+
+fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
+    [
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 9,
@@ -8901,6 +8969,25 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> [serde_json::Value; 1
             "method": "resources/read",
             "params": {
                 "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png"
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.capture",
+                "arguments": {
+                    "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "resources/read",
+            "params": {
+                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
             }
         }),
     ]
