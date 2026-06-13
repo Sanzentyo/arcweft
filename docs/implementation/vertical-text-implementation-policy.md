@@ -171,11 +171,11 @@ the concrete choices to follow when turning that package into production code.
   verifying that all native GlyphArea instances emitted for the combined cell
   follow the layout glyph's visibility without changing Agent geometry. MCP
   stdio coverage exercises the same capture-time path for a text-combine object
-  mask capture, checking hidden and visible raw RGBA blobs through
-  `arcweft.capture`. Ruby annotation buffers also carry the resolved
-  presentation into their absolute GlyphArea instances, so ruby object mask and
-  object-id readback can hide and reveal the annotation at capture time without
-  changing the observed base/annotation bboxes.
+  mask capture and a ruby object-id capture, checking hidden and visible raw
+  RGBA blobs through `arcweft.capture`. Ruby annotation buffers also carry the
+  resolved presentation into their absolute GlyphArea instances, so ruby object
+  mask and object-id readback can hide and reveal the annotation at capture time
+  without changing the observed base/annotation bboxes.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Vertical layout reserves the inline-side annotation track before placing the
