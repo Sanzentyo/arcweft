@@ -159,7 +159,10 @@ the concrete choices to follow when turning that package into production code.
   `vertical_lr` page that combines side-track ruby and a 4-digit
   text-combine-upright cluster, proving the page-local layout source can be
   adapted into the same body and ruby GlyphAreas used by the actual window
-  renderer.
+  renderer. Native object-scope raw mask and object-id captures for a textbox
+  are verified against glyph alpha rather than the full textbox rectangle, so
+  Agent observe readback exposes rendered glyph geometry for both attachment
+  kinds.
 - Typewriter reveal is applied after layout as glyph color alpha in the GlyphArea
   path. It does not recompute `LaidOutText`, so line and column breaks remain
   stable while captures can vary glyph visibility by capture time. CLI

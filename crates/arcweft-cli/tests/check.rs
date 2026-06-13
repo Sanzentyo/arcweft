@@ -7273,6 +7273,74 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_textbox_object_id_as_glyph_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-textbox-object-id",
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    let player = "Aoi"
+    alice: Hello #[player] |[夢](ゆめ)[r]
+}
+"#,
+    );
+    let dir = temp_dir("agent-observe-native-textbox-object-id");
+    let raw_path = dir.join("native-textbox-object-id.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("object-id")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native textbox object-id raw crop");
+
+    assert!(
+        output.status.success(),
+        "native textbox object-id crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native textbox object-id report is JSON");
+    assert_eq!(json["images"][0]["kind"], "object_id");
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["scope"]["kind"], "object");
+    assert_eq!(json["images"][0]["scope"]["id"], "object.dialogue.0.0");
+    assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+    assert_eq!(json["images"][0]["width"], 1088);
+    assert_eq!(json["images"][0]["height"], 124);
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(
+        content_pixels < 1088 * 124,
+        "native textbox object-id should expose glyph geometry instead of filling the whole bbox"
+    );
+    let bytes = fs::read(&raw_path).expect("read native textbox object-id raw crop");
+    let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+    let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+    assert_eq!(opaque as u64, content_pixels);
+    assert!(transparent > 0);
+
+    fs::remove_file(&path).expect("remove temp native textbox object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native textbox object-id dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_mask_attachment() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-layer-mask",
