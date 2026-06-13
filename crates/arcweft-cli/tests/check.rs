@@ -3376,6 +3376,12 @@ fn agent_observe_native_renderer_writes_jlreq_iteration_mark_raw_crops() {
     assert_native_jlreq_iteration_mark_raw_crop("object-id");
 }
 
+#[test]
+fn agent_observe_native_renderer_writes_jlreq_compact_bracket_raw_crops() {
+    assert_native_jlreq_compact_bracket_raw_crop("mask");
+    assert_native_jlreq_compact_bracket_raw_crop("object-id");
+}
+
 fn assert_native_jlreq_prolonged_sound_raw_crop(capture_kind: &str) {
     let path = temp_arcw(
         &format!("agent-observe-native-jlreq-prolonged-sound-{capture_kind}"),
@@ -3655,6 +3661,92 @@ flow @flow.main main {
     fs::remove_dir_all(&dir).expect("remove temp JLREQ iteration-mark dir");
 }
 
+fn assert_native_jlreq_compact_bracket_raw_crop(capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-jlreq-compact-bracket-{capture_kind}"),
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+}
+",
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-jlreq-compact-bracket-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!("native-jlreq-compact-bracket-{capture_kind}.rgba"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.10.30.33")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ compact-bracket raw crop");
+
+    assert!(
+        output.status.success(),
+        "native JLREQ compact-bracket {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native JLREQ compact-bracket report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let close = assert_native_jlreq_compact_bracket_geometry(&json);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], close["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], close["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], close["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], close["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(close),
+            content_pixels,
+            "JLREQ compact-bracket object-id crop",
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native JLREQ compact-bracket mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp JLREQ compact-bracket source");
+    fs::remove_dir_all(&dir).expect("remove temp JLREQ compact-bracket dir");
+}
+
 fn assert_native_jlreq_prolonged_sound_geometry(json: &serde_json::Value) -> &serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
@@ -3731,6 +3823,25 @@ fn assert_native_jlreq_iteration_mark_geometry(json: &serde_json::Value) -> &ser
         "text after iteration mark should continue in the same column",
     );
     iteration
+}
+
+fn assert_native_jlreq_compact_bracket_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let open = find_rich_text_cluster_object(json, "「", 27, 30);
+    let close = find_rich_text_cluster_object(json, "」", 30, 33);
+    let river = find_rich_text_cluster_object(json, "川", 33, 36);
+    assert_eq!(close["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(close["rich_text_ref"]["vertical_form"], "rotated_alternate");
+    assert_vertical_cluster_after(open, close, "compact bracket pair should stay together");
+    assert_vertical_cluster_after(
+        close,
+        river,
+        "text after compact bracket pair should stay in the same column",
+    );
+    close
 }
 
 #[test]
