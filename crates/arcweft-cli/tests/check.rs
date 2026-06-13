@@ -6965,6 +6965,72 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_typewriter_text_combine_capture_time_controls_object_id() {
+    let path = temp_arcw(
+        "agent-observe-native-typewriter-text-combine-object-id-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-typewriter-text-combine-object-id-capture-time");
+    let hidden_path = dir.join("native-typewriter-text-combine-hidden-object-id.rgba");
+    let visible_path = dir.join("native-typewriter-text-combine-visible-object-id.rgba");
+
+    let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
+        &path,
+        &hidden_path,
+        "object.dialogue.0.0.cluster.0.0.4",
+        "0",
+        "object-id",
+    );
+    let (visible, _visible_bytes) = observe_native_typewriter_cluster_raw_at(
+        &path,
+        &visible_path,
+        "object.dialogue.0.0.cluster.0.0.4",
+        "4",
+        "object-id",
+    );
+    let hidden_cluster = find_rich_text_cluster_object(&hidden, "2026", 0, 4);
+    let visible_cluster = find_rich_text_cluster_object(&visible, "2026", 0, 4);
+    assert_eq!(
+        hidden_cluster["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(
+        visible_cluster["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
+    assert_eq!(
+        hidden["images"][0]["crop_origin"],
+        visible["images"][0]["crop_origin"]
+    );
+    assert_eq!(hidden["images"][0]["width"], visible["images"][0]["width"]);
+    assert_eq!(
+        hidden["images"][0]["height"],
+        visible["images"][0]["height"]
+    );
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    let visible_pixels = visible["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(visible_pixels > 0);
+
+    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+    assert_raw_object_id_tint(
+        &visible_path,
+        agent_object_id_color_from_json(visible_cluster),
+        visible_pixels,
+        "typewriter text-combine object-id capture-time crop",
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter text-combine object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter text-combine object-id dir");
+}
+
+#[test]
 fn agent_observe_native_typewriter_ruby_capture_time_controls_base_and_annotation() {
     let path = temp_arcw(
         "agent-observe-native-typewriter-ruby-capture-time",
