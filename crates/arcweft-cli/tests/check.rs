@@ -3674,8 +3674,27 @@ flow @flow.main main {
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp JLREQ paragraph source");
     assert_native_jlreq_paragraph_overview(&json);
-    assert_native_jlreq_paragraph_compression_and_iteration(&json);
-    assert_native_jlreq_paragraph_grouping_and_leaders(&json);
+    assert_native_jlreq_paragraph_compression_and_iteration(&json, false);
+    assert_native_jlreq_paragraph_grouping_and_leaders(&json, false);
+}
+
+#[test]
+fn agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geometry() {
+    let path = temp_arcw(
+        "agent-observe-native-vertical-lr-jlreq-paragraph-column-geometry",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_lr jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終[/][p]
+}
+",
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp vertical_lr JLREQ paragraph source");
+    assert_native_jlreq_paragraph_overview(&json);
+    assert_native_jlreq_paragraph_compression_and_iteration(&json, true);
+    assert_native_jlreq_paragraph_grouping_and_leaders(&json, true);
 }
 
 fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
@@ -3699,7 +3718,10 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
     );
 }
 
-fn assert_native_jlreq_paragraph_compression_and_iteration(json: &serde_json::Value) {
+fn assert_native_jlreq_paragraph_compression_and_iteration(
+    json: &serde_json::Value,
+    next_column_moves_right: bool,
+) {
     let fire = find_rich_text_cluster_object(json, "火", 21, 24);
     let comma = find_rich_text_cluster_object(json, "、", 24, 27);
     let mountain = find_rich_text_cluster_object(json, "山", 27, 30);
@@ -3721,13 +3743,18 @@ fn assert_native_jlreq_paragraph_compression_and_iteration(json: &serde_json::Va
         iteration,
         "iteration mark stays attached in paragraph context",
     );
-    assert!(
-        agent_json_bbox_x(&person["bbox"]) < agent_json_bbox_x(&iteration["bbox"]),
-        "text after an overhanging iteration mark should continue in the next vertical_rl column"
+    assert_next_paragraph_column(
+        iteration,
+        person,
+        next_column_moves_right,
+        "text after an overhanging iteration mark should continue in the next paragraph column",
     );
 }
 
-fn assert_native_jlreq_paragraph_grouping_and_leaders(json: &serde_json::Value) {
+fn assert_native_jlreq_paragraph_grouping_and_leaders(
+    json: &serde_json::Value,
+    next_column_moves_right: bool,
+) {
     let open = find_rich_text_cluster_object(json, "「", 36, 39);
     let river = find_rich_text_cluster_object(json, "川", 39, 42);
     let close = find_rich_text_cluster_object(json, "」", 42, 45);
@@ -3775,11 +3802,36 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(json: &serde_json::Value) 
         second_leader,
         "repeated leaders stay together in paragraph context",
     );
-    assert!(
-        agent_json_bbox_x(&ending["bbox"]) < agent_json_bbox_x(&second_leader["bbox"]),
-        "paragraph text after a partially clipped overhanging leader chain should continue in the next vertical_rl column"
+    assert_next_paragraph_column(
+        second_leader,
+        ending,
+        next_column_moves_right,
+        "paragraph text after a partially clipped overhanging leader chain should continue in the next column",
     );
     assert_rich_text_object_has_mask_capture(first_leader, "paragraph leader cluster");
+}
+
+fn assert_next_paragraph_column(
+    previous: &serde_json::Value,
+    next: &serde_json::Value,
+    next_column_moves_right: bool,
+    context: &str,
+) {
+    if next_column_moves_right {
+        assert!(
+            agent_json_bbox_x(&next["bbox"]) > agent_json_bbox_x(&previous["bbox"]),
+            "{context}: next column should advance rightward"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_x(&next["bbox"]) < agent_json_bbox_x(&previous["bbox"]),
+            "{context}: next column should advance leftward"
+        );
+    }
+    assert!(
+        agent_json_bbox_y(&next["bbox"]) < agent_json_bbox_y(&previous["bbox"]),
+        "{context}: next column should restart near the column top"
+    );
 }
 
 fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_json::Value {

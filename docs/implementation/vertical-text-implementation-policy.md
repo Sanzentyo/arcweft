@@ -308,14 +308,15 @@ the concrete choices to follow when turning that package into production code.
   observed column geometry changes with the selected strictness preset. Broader
   paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, middle dots, repeated leaders,
-  an overhanging leader chain, and multi-column DP placement in one
-  `vertical_rl` fixture so the integrated JLREQ behavior is observable beyond
-  isolated punctuation-pair tests. The Sans I/O planner also covers a longer
-  leader chain whose trailing separation-prohibited suffix requires more than
-  one body cell of allowed overhang before ordinary text can continue in the
-  next column. Mirrored `vertical_lr` coverage checks the same overhanging
-  leader-chain rule with rightward column progression, keeping the JLREQ suffix
-  behavior symmetric across both vertical writing modes.
+  an overhanging leader chain, and multi-column DP placement in mirrored
+  `vertical_rl` and `vertical_lr` fixtures so the integrated JLREQ behavior is
+  observable beyond isolated punctuation-pair tests in both column-progression
+  directions. The Sans I/O planner also covers a longer leader chain whose
+  trailing separation-prohibited suffix requires more than one body cell of
+  allowed overhang before ordinary text can continue in the next column.
+  Mirrored `vertical_lr` coverage checks the same overhanging leader-chain rule
+  with rightward column progression, keeping the JLREQ suffix behavior
+  symmetric across both vertical writing modes.
 - Remaining work includes JLREQ refinements beyond the current kinsoku,
   separation, punctuation-compression, half-cell hanging, generated range table,
   generated strictness-aware pair/cost table, and paragraph-DP column planner,
