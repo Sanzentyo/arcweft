@@ -6785,6 +6785,16 @@ fn observe_native_typewriter_cluster_mask_at(
     object_id: &str,
     capture_time: &str,
 ) -> (serde_json::Value, Vec<u8>) {
+    observe_native_typewriter_cluster_raw_at(source_path, raw_path, object_id, capture_time, "mask")
+}
+
+fn observe_native_typewriter_cluster_raw_at(
+    source_path: &Path,
+    raw_path: &Path,
+    object_id: &str,
+    capture_time: &str,
+    capture_kind: &str,
+) -> (serde_json::Value, Vec<u8>) {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -6793,7 +6803,7 @@ fn observe_native_typewriter_cluster_mask_at(
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
-        .arg("mask")
+        .arg(capture_kind)
         .arg("--object")
         .arg(object_id)
         .arg("--capture-time")
@@ -6807,16 +6817,28 @@ fn observe_native_typewriter_cluster_mask_at(
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe writes native typewriter mask crop");
+        .expect("arcw agent observe writes native typewriter raw crop");
 
     assert!(
         output.status.success(),
-        "native typewriter mask crop should succeed, stderr: {}",
+        "native typewriter {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let json =
-        serde_json::from_slice(&output.stdout).expect("native typewriter mask report is JSON");
-    let bytes = fs::read(raw_path).expect("read native typewriter mask raw crop");
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native typewriter raw report is JSON");
+    match capture_kind {
+        "mask" => {
+            assert_eq!(json["images"][0]["kind"], "mask");
+            assert_eq!(json["images"][0]["composition"], "mask_attachment");
+        }
+        "object-id" => {
+            assert_eq!(json["images"][0]["kind"], "object_id");
+            assert_eq!(json["images"][0]["composition"], "object_id_attachment");
+        }
+        other => panic!("unsupported native typewriter capture kind: {other}"),
+    }
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    let bytes = fs::read(raw_path).expect("read native typewriter raw crop");
     (json, bytes)
 }
 
@@ -6970,8 +6992,73 @@ flow @flow.main main {
         "object.dialogue.0.0.ruby.0",
         "4",
     );
-    let hidden_ruby = find_rich_text_ruby_object(&hidden, 0);
-    let visible_ruby = find_rich_text_ruby_object(&visible, 0);
+    assert_native_typewriter_ruby_capture_time_geometry(&hidden, &visible);
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+    assert_eq!(
+        opaque_pixel_count(&visible_bytes) as u64,
+        visible["images"][0]["content_pixels"].as_u64().unwrap()
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter ruby source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter ruby dir");
+}
+
+#[test]
+fn agent_observe_native_typewriter_ruby_capture_time_controls_object_id() {
+    let path = temp_arcw(
+        "agent-observe-native-typewriter-ruby-object-id-capture-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-typewriter-ruby-object-id-capture-time");
+    let hidden_path = dir.join("native-typewriter-ruby-hidden-object-id.rgba");
+    let visible_path = dir.join("native-typewriter-ruby-visible-object-id.rgba");
+
+    let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
+        &path,
+        &hidden_path,
+        "object.dialogue.0.0.ruby.0",
+        "0",
+        "object-id",
+    );
+    let (visible, _visible_bytes) = observe_native_typewriter_cluster_raw_at(
+        &path,
+        &visible_path,
+        "object.dialogue.0.0.ruby.0",
+        "4",
+        "object-id",
+    );
+    let visible_ruby = assert_native_typewriter_ruby_capture_time_geometry(&hidden, &visible);
+    assert_eq!(hidden["images"][0]["content_pixels"], 0);
+    let visible_pixels = visible["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(visible_pixels > 0);
+
+    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
+    assert_raw_object_id_tint(
+        &visible_path,
+        agent_object_id_color_from_json(visible_ruby),
+        visible_pixels,
+        "typewriter ruby object-id capture-time crop",
+    );
+
+    fs::remove_file(&path).expect("remove temp native typewriter ruby object-id source");
+    fs::remove_dir_all(&dir).expect("remove temp native typewriter ruby object-id dir");
+}
+
+fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
+    hidden: &serde_json::Value,
+    visible: &'a serde_json::Value,
+) -> &'a serde_json::Value {
+    let hidden_ruby = find_rich_text_ruby_object(hidden, 0);
+    let visible_ruby = find_rich_text_ruby_object(visible, 0);
     assert_eq!(hidden_ruby["bbox"], visible_ruby["bbox"]);
     assert_eq!(
         hidden_ruby["rich_text_ref"]["ruby_base_bbox"],
@@ -6990,17 +7077,7 @@ flow @flow.main main {
         hidden["images"][0]["height"],
         visible["images"][0]["height"]
     );
-    assert_eq!(hidden["images"][0]["content_pixels"], 0);
-    assert!(visible["images"][0]["content_pixels"].as_u64().unwrap() > 0);
-
-    assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-    assert_eq!(
-        opaque_pixel_count(&visible_bytes) as u64,
-        visible["images"][0]["content_pixels"].as_u64().unwrap()
-    );
-
-    fs::remove_file(&path).expect("remove temp native typewriter ruby source");
-    fs::remove_dir_all(&dir).expect("remove temp native typewriter ruby dir");
+    visible_ruby
 }
 
 #[test]
