@@ -5860,34 +5860,28 @@ mod tests {
 
     #[test]
     fn vertical_column_keeps_prolonged_sound_mark_out_of_column_heads() {
-        let frame = frame_with_run(
-            "天地ー人",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
-        let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 84.0),
-            ..TextLayoutConfig::default()
-        };
-        let layout = layout_frame(&frame, config).expect("layout succeeds");
-
-        assert_eq!(layout.glyphs.len(), 4);
-        assert_eq!(layout.glyphs[2].text, "ー");
-        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
-        assert!(
-            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-            "prolonged sound marks should overhang instead of starting the next column"
-        );
-        assert_eq!(layout.glyphs[3].text, "人");
-        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
-        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+        for (text, mark) in [("天地ー人", "ー"), ("天地ｰ人", "ｰ")] {
+            assert_vertical_rl_no_column_head_mark(
+                text,
+                mark,
+                "prolonged sound marks should overhang instead of starting the next column",
+            );
+        }
     }
 
     #[test]
     fn vertical_column_keeps_middle_dot_out_of_column_heads() {
-        let frame = frame_with_run(
-            "天地・人",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
+        for (text, mark) in [("天地・人", "・"), ("天地･人", "･")] {
+            assert_vertical_rl_no_column_head_mark(
+                text,
+                mark,
+                "middle dots should overhang instead of starting the next column",
+            );
+        }
+    }
+
+    fn assert_vertical_rl_no_column_head_mark(text: &str, mark: &str, message: &str) {
+        let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalRl));
         let config = TextLayoutConfig {
             size: LayoutSize::new(160.0, 84.0),
             ..TextLayoutConfig::default()
@@ -5895,11 +5889,11 @@ mod tests {
         let layout = layout_frame(&frame, config).expect("layout succeeds");
 
         assert_eq!(layout.glyphs.len(), 4);
-        assert_eq!(layout.glyphs[2].text, "・");
+        assert_eq!(layout.glyphs[2].text, mark);
         assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
         assert!(
             layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-            "middle dots should overhang instead of starting the next column"
+            "{message}"
         );
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
@@ -5938,11 +5932,13 @@ mod tests {
     #[test]
     fn vertical_lr_column_keeps_prolonged_sound_mark_out_of_column_heads() {
         assert_vertical_lr_no_column_head_mark("天地ー人", "ー");
+        assert_vertical_lr_no_column_head_mark("天地ｰ人", "ｰ");
     }
 
     #[test]
     fn vertical_lr_column_keeps_middle_dot_out_of_column_heads() {
         assert_vertical_lr_no_column_head_mark("天地・人", "・");
+        assert_vertical_lr_no_column_head_mark("天地･人", "･");
     }
 
     #[test]

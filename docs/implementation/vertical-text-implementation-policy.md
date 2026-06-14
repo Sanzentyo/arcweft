@@ -401,7 +401,11 @@ the concrete choices to follow when turning that package into production code.
   to rendered GlyphArea pixels. The normal-preset prolonged-sound mark path is
   likewise captured as raw native mask and object-id crops, tying rotated
   alternate GlyphArea pixels to the no-break mark-with-previous-cluster
-  geometry. Repeated dash-mark placement is also captured as raw native mask
+  geometry. Halfwidth middle dot `･` and prolonged-sound mark `ｰ` variants are
+  covered through their rotated UAX #50 `vertical_form=none` path in both
+  vertical writing modes, with native raw mask/object-id crops tying those
+  suffix marks back to rendered GlyphArea pixels. Repeated dash-mark placement
+  is also captured as raw native mask
   and object-id crops, tying the no-break repeated-dash suffix and its stable
   object color to rendered sideways GlyphArea pixels in both vertical writing
   directions. Small-kana no-break placement is also captured as raw native mask

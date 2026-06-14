@@ -4645,6 +4645,45 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_prolonged_sound_object
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_halfwidth_middle_dot_and_prolonged_sound_geometry() {
+    for (mark, label, description) in [
+        ("･", "halfwidth-middle-dot", "halfwidth middle dot"),
+        (
+            "ｰ",
+            "halfwidth-prolonged-sound",
+            "halfwidth prolonged-sound mark",
+        ),
+    ] {
+        assert_native_halfwidth_suffix_mark_geometry("vertical_rl", mark, label, description);
+        assert_native_halfwidth_suffix_mark_geometry("vertical_lr", mark, label, description);
+    }
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_halfwidth_middle_dot_and_prolonged_sound_raw_crops() {
+    for (mark, label, description) in [
+        ("･", "halfwidth-middle-dot", "halfwidth middle dot"),
+        (
+            "ｰ",
+            "halfwidth-prolonged-sound",
+            "halfwidth prolonged-sound mark",
+        ),
+    ] {
+        for writing_mode in ["vertical_rl", "vertical_lr"] {
+            for capture_kind in ["mask", "object-id"] {
+                assert_native_halfwidth_suffix_mark_raw_crop(
+                    writing_mode,
+                    mark,
+                    label,
+                    description,
+                    capture_kind,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_jlreq_small_kana_raw_crops() {
     assert_native_jlreq_small_kana_raw_crop("vertical_rl", "mask");
     assert_native_jlreq_small_kana_raw_crop("vertical_rl", "object-id");
@@ -5496,6 +5535,168 @@ fn assert_native_halfwidth_corner_bracket_object<'report>(
         "text after halfwidth corner bracket pair should continue in the same column",
     );
     close
+}
+
+fn assert_native_halfwidth_suffix_mark_geometry(
+    writing_mode: &str,
+    mark: &str,
+    label: &str,
+    description: &str,
+) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-{label}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地{mark}人[/][p]
+}}
+",
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp halfwidth suffix-mark source");
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_native_halfwidth_suffix_mark_object(&json, writing_mode, mark, description);
+}
+
+fn assert_native_halfwidth_suffix_mark_raw_crop(
+    writing_mode: &str,
+    mark: &str,
+    label: &str,
+    description: &str,
+    capture_kind: &str,
+) {
+    let fixture_name = format!("agent-observe-native-{writing_mode}-{label}-{capture_kind}");
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地{mark}人[/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!("native-{writing_mode}-{label}-{capture_kind}.rgba"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.6.9")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native halfwidth suffix-mark raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} {description} {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native halfwidth suffix-mark report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let mark_object =
+        assert_native_halfwidth_suffix_mark_object(&json, writing_mode, mark, description);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        mark_object["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        mark_object["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], mark_object["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], mark_object["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(mark_object),
+            content_pixels,
+            &format!("{writing_mode} {description} object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native halfwidth suffix-mark mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp native halfwidth suffix-mark source");
+    fs::remove_dir_all(&dir).expect("remove temp native halfwidth suffix-mark dir");
+}
+
+fn assert_native_halfwidth_suffix_mark_object<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    mark: &str,
+    description: &str,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["writing_mode"],
+        writing_mode
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let earth = find_rich_text_cluster_object(json, "地", 3, 6);
+    let mark_object = find_rich_text_cluster_object(json, mark, 6, 9);
+    let person = find_rich_text_cluster_object(json, "人", 9, 12);
+    assert_eq!(mark_object["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(mark_object["rich_text_ref"]["vertical_form"], "none");
+    assert_vertical_cluster_after(
+        earth,
+        mark_object,
+        &format!("{description} should stay after the previous cluster"),
+    );
+    if mark_object["bbox"]["x"] == person["bbox"]["x"] {
+        assert!(
+            agent_json_bbox_y(&person["bbox"]) > agent_json_bbox_y(&mark_object["bbox"]),
+            "text after halfwidth suffix mark should advance within the same observed column"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_y(&person["bbox"]) < agent_json_bbox_y(&mark_object["bbox"]),
+            "text after halfwidth suffix mark should restart near the column top"
+        );
+    }
+    mark_object
 }
 
 #[test]
