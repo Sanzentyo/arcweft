@@ -5945,6 +5945,80 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_separator_raw_cr
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry() {
+    assert_native_published_jlreq_numeric_abbreviation_geometry("vertical_rl", false);
+    assert_native_published_jlreq_numeric_abbreviation_geometry("vertical_lr", true);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw_crops() {
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "$",
+        "prefix",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "$",
+        "prefix",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "$",
+        "prefix",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "$",
+        "prefix",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "%",
+        "suffix",
+        "object.dialogue.0.0.cluster.2.5.6",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "%",
+        "suffix",
+        "object.dialogue.0.0.cluster.2.5.6",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "%",
+        "suffix",
+        "object.dialogue.0.0.cluster.2.5.6",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "%",
+        "suffix",
+        "object.dialogue.0.0.cluster.2.5.6",
+        "object-id",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_reference_mark_geometry() {
     assert_native_published_jlreq_reference_mark_geometry("vertical_rl");
     assert_native_published_jlreq_reference_mark_geometry("vertical_lr");
@@ -6722,6 +6796,249 @@ fn assert_native_published_jlreq_numeric_separator_objects<'report>(
         &format!("{writing_mode} published JLREQ numeric separator comma"),
     );
     comma
+}
+
+fn assert_native_published_jlreq_numeric_abbreviation_geometry(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let prefix = observe_native_published_jlreq_numeric_abbreviation_fixture(writing_mode, "$");
+    assert_native_rich_text_layer_image_has_content(&prefix);
+    assert_eq!(
+        first_text_run_presentation_layout(&prefix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_prefix_objects(
+        &prefix,
+        writing_mode,
+        next_column_moves_right,
+    );
+
+    let suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(writing_mode, "%");
+    assert_native_rich_text_layer_image_has_content(&suffix);
+    assert_eq!(
+        first_text_run_presentation_layout(&suffix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_suffix_objects(
+        &suffix,
+        writing_mode,
+        next_column_moves_right,
+    );
+}
+
+fn observe_native_published_jlreq_numeric_abbreviation_fixture(
+    writing_mode: &str,
+    mark: &str,
+) -> serde_json::Value {
+    let text = if mark == "$" {
+        "天$123人"
+    } else {
+        "天50%人"
+    };
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{mark}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
+    json
+}
+
+fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    mark: &str,
+    label: &str,
+    object_id: &str,
+    capture_kind: &str,
+) {
+    let text = if mark == "$" {
+        "天$123人"
+    } else {
+        "天50%人"
+    };
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ numeric abbreviation raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ numeric abbreviation {label} {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ numeric abbreviation report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let target = if mark == "$" {
+        assert_native_published_jlreq_numeric_prefix_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    } else {
+        assert_native_published_jlreq_numeric_suffix_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    };
+    assert_eq!(json["images"][0]["crop_origin"]["x"], target["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], target["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], target["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(target),
+            content_pixels,
+            &format!("{writing_mode} published JLREQ numeric abbreviation {label} object-id crop"),
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native published JLREQ numeric abbreviation crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric abbreviation dir");
+}
+
+fn assert_native_published_jlreq_numeric_prefix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let prefix = find_rich_text_cluster_object(json, "$", 3, 4);
+    let digits = find_rich_text_cluster_object(json, "123", 4, 7);
+    let next_body = find_rich_text_cluster_object(json, "人", 7, 10);
+    assert_vertical_cluster_after(
+        body,
+        prefix,
+        "published JLREQ numeric prefix abbreviation should start after body text",
+    );
+    assert_vertical_cluster_after(
+        prefix,
+        digits,
+        "published JLREQ digits should stay with the numeric prefix abbreviation",
+    );
+    assert_next_paragraph_column(
+        digits,
+        next_body,
+        next_column_moves_right,
+        "body text after the prefixed European numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        prefix,
+        &format!("{writing_mode} published JLREQ numeric prefix abbreviation"),
+    );
+    prefix
+}
+
+fn assert_native_published_jlreq_numeric_suffix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let digits = find_rich_text_cluster_object(json, "50", 3, 5);
+    let suffix = find_rich_text_cluster_object(json, "%", 5, 6);
+    let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    assert_vertical_cluster_after(
+        body,
+        digits,
+        "published JLREQ postfixed European numeral should start after body text",
+    );
+    assert_vertical_cluster_after(
+        digits,
+        suffix,
+        "published JLREQ numeric suffix abbreviation should stay with the preceding digits",
+    );
+    assert_next_paragraph_column(
+        suffix,
+        next_body,
+        next_column_moves_right,
+        "body text after the postfixed European numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        suffix,
+        &format!("{writing_mode} published JLREQ numeric suffix abbreviation"),
+    );
+    suffix
 }
 
 fn assert_native_published_jlreq_reference_mark_geometry(writing_mode: &str) {

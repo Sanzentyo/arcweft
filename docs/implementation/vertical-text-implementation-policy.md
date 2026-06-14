@@ -451,6 +451,11 @@ the concrete choices to follow when turning that package into production code.
   `12 345`, across text-combine chunking. Native Agent raw mask/object-id crops
   verify that the comma separator object in `1,234` is read back from rendered
   GlyphArea pixels.
+  Prefixed and postfixed abbreviations from the same JLREQ section are covered
+  as well: Sans I/O layout keeps `$1234` and `50%` unbroken across
+  text-combine chunking, while native Agent geometry/raw mask/object-id crops
+  verify that both the `$` prefix object and `%` suffix object are read back
+  from rendered GlyphArea pixels.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main

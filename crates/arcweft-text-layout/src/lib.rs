@@ -992,9 +992,13 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
         && is_ascii_digit_cluster_text(&cluster.text);
     let requires_ascii_number_separator_sequence =
         ascii_number_separator_sequence_requires_previous(cluster_index, clusters);
+    let requires_numeric_abbreviation_sequence =
+        numeric_abbreviation_sequence_requires_previous(cluster_index, clusters);
     !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
-        && (requires_ascii_digit_sequence || requires_ascii_number_separator_sequence)
+        && (requires_ascii_digit_sequence
+            || requires_ascii_number_separator_sequence
+            || requires_numeric_abbreviation_sequence)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -1037,6 +1041,34 @@ fn is_ascii_number_separator_cluster_text(text: &str) -> bool {
     matches!(text, "," | "." | " ")
 }
 
+fn numeric_abbreviation_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    if is_numeric_suffix_abbreviation_cluster_text(&cluster.text) {
+        return cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_ascii_digit_cluster_text(&previous.text));
+    }
+    is_ascii_digit_cluster_text(&cluster.text)
+        && cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_numeric_prefix_abbreviation_cluster_text(&previous.text))
+}
+
+fn is_numeric_prefix_abbreviation_cluster_text(text: &str) -> bool {
+    matches!(text, "$" | "¥" | "￥")
+}
+
+fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
+    matches!(text, "%" | "％" | "‰")
+}
+
 fn vertical_cluster_can_start_column(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -1050,6 +1082,7 @@ fn vertical_cluster_can_start_column(
     can_break_before
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
+        && !numeric_abbreviation_sequence_requires_previous(cluster_index, clusters)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -2164,6 +2197,68 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a European numeral with a space separator should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_numeric_abbreviations_unbroken() {
+        // W3C JLREQ 3.1.10 keeps prefixed abbreviations such as "$" with the
+        // following numeral, and postfixed abbreviations such as "%" with the
+        // preceding numeral.
+        let text = "天$1234人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let prefix = nth_laid_out_glyph(&layout, "$", 0);
+            let digits = nth_laid_out_glyph(&layout, "1234", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                prefix,
+                digits,
+                "digits after numeric prefix abbreviation should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                digits,
+                next_body,
+                next_column_moves_right,
+                "body text after a prefixed European numeral should continue in the next column",
+            );
+        }
+
+        let text = "天50%人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let digits = nth_laid_out_glyph(&layout, "50", 0);
+            let suffix = nth_laid_out_glyph(&layout, "%", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                digits,
+                suffix,
+                "numeric suffix abbreviation should stay with the preceding digits",
+            );
+            assert_next_vertical_layout_column(
+                suffix,
+                next_body,
+                next_column_moves_right,
+                "body text after a postfixed European numeral should continue in the next column",
             );
         }
     }
