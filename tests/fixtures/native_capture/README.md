@@ -12,6 +12,11 @@ This directory contains intentionally checked-in native-renderer image fixtures.
 - `vertical_lr_ruby_text_combine_golden.arcw` exercises `vertical_lr` rich text
   with a ruby annotation, a hard line break, sideways Latin, upright punctuation,
   and a 4-digit text-combine-upright cluster.
+- `vertical_goal_clear_smoke.arcw` is an all-in-one Agent/native smoke source
+  covering `vertical_rl`, `vertical_lr`, ruby on both physical sides,
+  text-combine-upright digits, sideways Latin, and capture-time controlled
+  typewriter visibility. Its PNG and raw crops are generated in tests rather
+  than checked in as stable goldens.
 - `vertical_tutr_golden.png` is the Windows native `arcw agent observe`
   framebuffer golden generated from that source with the `MS Mincho` font.
   The JLREQ preset and `vertical_lr` ruby/text-combine PNGs are generated the
@@ -30,7 +35,10 @@ The CLI test compares fresh candidate captures against the checked-in PNGs with
 `imq` when both Windows and the `imq` binary are available. A non-ignored CLI
 fixture-integrity test also checks that the checked-in sources keep the intended
 vertical coverage, that every PNG remains a 1280x720 Agent capture, and that the
-loose/normal preset PNGs are distinct. Tier2 `imq` visual regression uses
-bounded full-reference MSE/MAE drift rather than exact-zero pixel parity because
-the native text path can produce tiny antialiasing differences across otherwise
-valid Windows renderer/font environments.
+loose/normal preset PNGs are distinct. The goal-clear smoke fixture is validated
+by non-ignored CLI tests that generate a temporary native PNG and color, mask,
+and object-id raw crops from the same text-combine/typewriter object. Tier2
+`imq` visual regression uses bounded full-reference MSE/MAE drift rather than
+exact-zero pixel parity because the native text path can produce tiny
+antialiasing differences across otherwise valid Windows renderer/font
+environments.

@@ -76,6 +76,12 @@ the concrete choices to follow when turning that package into production code.
 - Native headless captures for vertical fixtures are compared with `imq` or an
   equivalent full-reference image metric in CI artifacts. Do not commit generated
   image outputs unless they are stable fixtures intentionally added for tests.
+- `tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw` is the
+  integrated non-golden smoke fixture for this goal: non-ignored CLI tests render
+  it through the native Agent path, assert `vertical_rl` and `vertical_lr`
+  cluster geometry, ruby base/annotation hit regions, text-combine orientation,
+  and color/mask/object-id raw crops, including capture-time controlled
+  typewriter visibility.
 
 ## Current Implementation Notes
 
@@ -235,6 +241,12 @@ the concrete choices to follow when turning that package into production code.
   `vertical_lr` ruby object mask and object-id readback can hide and reveal the
   annotation at capture time without changing the observed base/annotation
   bboxes or annotation-side placement.
+  The integrated `vertical_goal_clear_smoke.arcw` fixture ties these paths
+  together in one source: the native Agent PNG establishes rendered content,
+  Agent JSON proves both writing directions, ruby objects, sideways Latin, and
+  text-combine cluster metadata, and raw color/mask/object-id crops from the
+  `vertical_lr` typewriter text-combine object prove capture-time visibility
+  without changing the observed bbox.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Vertical layout reserves the inline-side annotation track before placing the

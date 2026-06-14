@@ -2764,6 +2764,20 @@ fn native_checked_in_visual_golden_fixtures_are_well_formed() {
         vertical_lr_ruby_text_combine_source.contains("2026"),
         "vertical_lr ruby/text-combine golden source should exercise text-combine digits"
     );
+    let vertical_goal_clear_smoke_source =
+        include_str!("../../../tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw");
+    for fragment in [
+        "[.vertical_rl jlreq=strict]",
+        "[.vertical_lr jlreq=strict]",
+        "|[輩](はい)",
+        "|[夢](ゆめ)",
+        "[.typewriter cps=1]2026[/]",
+    ] {
+        assert!(
+            vertical_goal_clear_smoke_source.contains(fragment),
+            "vertical goal-clear smoke fixture should contain `{fragment}`"
+        );
+    }
 
     let tutr = include_bytes!("../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
     let loose = include_bytes!(
@@ -3046,6 +3060,93 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
     );
     assert!(ruby["bbox"]["width"].as_u64().unwrap() > 0);
     assert!(ruby["bbox"]["height"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn agent_observe_native_renderer_reports_vertical_goal_clear_smoke_geometry() {
+    let source_path = vertical_goal_clear_smoke_fixture_path();
+    let dir = temp_dir("agent-observe-native-vertical-goal-clear-smoke-geometry");
+    let png_path = dir.join("vertical-goal-clear-smoke.png");
+
+    let json = capture_native_png_report(&source_path, &png_path);
+    assert_native_capture_has_content(&json, "vertical-goal-clear-smoke.png");
+    assert_eq!(
+        png_dimensions(&fs::read(&png_path).expect("read vertical goal-clear smoke png")),
+        Some((1280, 720))
+    );
+    assert_native_vertical_goal_clear_smoke_report(&json);
+
+    fs::remove_dir_all(&dir).expect("remove temp vertical goal-clear smoke geometry dir");
+}
+
+fn vertical_goal_clear_smoke_fixture_path() -> PathBuf {
+    workspace_root().join("tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw")
+}
+
+fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
+    let image = &json["images"][0];
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["composition"], "framebuffer");
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+
+    assert_rich_text_cluster_metadata(json, "吾", 0, 3, "upright", "none");
+    assert_rich_text_cluster_metadata(json, "2026", 9, 13, "text_combine_upright", "none");
+    assert_rich_text_cluster_metadata(json, "A", 13, 14, "sideways_cw", "none");
+    assert_rich_text_cluster_metadata(json, "縦", 29, 32, "upright", "none");
+    assert_rich_text_cluster_metadata(json, "2026", 38, 42, "text_combine_upright", "none");
+    assert_rich_text_cluster_metadata(json, "X", 42, 43, "sideways_cw", "none");
+
+    let rl_start = find_rich_text_cluster_object(json, "吾", 0, 3);
+    let rl_text_combine = find_rich_text_cluster_object(json, "2026", 9, 13);
+    let lr_start = find_rich_text_cluster_object(json, "縦", 29, 32);
+    let lr_text_combine = find_rich_text_cluster_object(json, "2026", 38, 42);
+    let lr_after_text_combine = find_rich_text_cluster_object(json, "X", 42, 43);
+    assert_rich_text_hit_region_matches_bbox(rl_text_combine, "glyph_cluster", 9, 13);
+    assert_rich_text_hit_region_matches_bbox(lr_text_combine, "glyph_cluster", 38, 42);
+    assert_rich_text_object_has_mask_capture(lr_text_combine, "vertical goal-clear text-combine");
+    assert!(
+        agent_json_bbox_x(&rl_text_combine["bbox"]) < agent_json_bbox_x(&rl_start["bbox"]),
+        "vertical_rl progression should move later column content left: {rl_text_combine}"
+    );
+    assert!(
+        agent_json_bbox_x(&lr_after_text_combine["bbox"]) > agent_json_bbox_x(&lr_start["bbox"]),
+        "vertical_lr progression should move later column content right: {lr_after_text_combine}"
+    );
+
+    let rl_ruby = find_rich_text_ruby_object(json, 0);
+    assert_eq!(rl_ruby["rich_text_ref"]["ruby"], "はい");
+    assert_rich_text_hit_region_matches_bbox(rl_ruby, "ruby_object", 3, 6);
+    assert_rich_text_hit_region_matches_ref_bbox(rl_ruby, "ruby_base", "ruby_base_bbox", 3, 6);
+    assert_rich_text_hit_region_matches_ref_bbox(
+        rl_ruby,
+        "ruby_annotation",
+        "ruby_annotation_bbox",
+        3,
+        6,
+    );
+    assert!(
+        agent_json_bbox_x(&rl_ruby["rich_text_ref"]["ruby_annotation_bbox"])
+            > agent_json_bbox_x(&rl_ruby["rich_text_ref"]["ruby_base_bbox"]),
+        "vertical_rl ruby annotation should be on the right side of its base: {rl_ruby}"
+    );
+
+    let lr_ruby = find_rich_text_ruby_object(json, 1);
+    assert_eq!(lr_ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_rich_text_hit_region_matches_bbox(lr_ruby, "ruby_object", 32, 35);
+    assert_rich_text_hit_region_matches_ref_bbox(lr_ruby, "ruby_base", "ruby_base_bbox", 32, 35);
+    assert_rich_text_hit_region_matches_ref_bbox(
+        lr_ruby,
+        "ruby_annotation",
+        "ruby_annotation_bbox",
+        32,
+        35,
+    );
+    assert!(
+        agent_json_bbox_x(&lr_ruby["rich_text_ref"]["ruby_annotation_bbox"])
+            < agent_json_bbox_x(&lr_ruby["rich_text_ref"]["ruby_base_bbox"]),
+        "vertical_lr ruby annotation should be on the left side of its base: {lr_ruby}"
+    );
 }
 
 #[test]
@@ -19024,6 +19125,134 @@ fn observe_native_typewriter_cluster_raw_at(
 
 fn opaque_pixel_count(bytes: &[u8]) -> usize {
     bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count()
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
+    let source_path = vertical_goal_clear_smoke_fixture_path();
+    let dir = temp_dir("agent-observe-native-vertical-goal-clear-smoke-raw-crops");
+    let object_id = "object.dialogue.0.0.cluster.19.38.42";
+
+    let hidden_mask_path = dir.join("vertical-goal-clear-hidden-mask.rgba");
+    let visible_mask_path = dir.join("vertical-goal-clear-visible-mask.rgba");
+    let (hidden_mask, hidden_mask_bytes) = observe_native_goal_clear_object_raw_at(
+        &source_path,
+        &hidden_mask_path,
+        object_id,
+        "mask",
+        "0",
+    );
+    let (visible_mask, visible_mask_bytes) = observe_native_goal_clear_object_raw_at(
+        &source_path,
+        &visible_mask_path,
+        object_id,
+        "mask",
+        "60",
+    );
+    let hidden_cluster = find_rich_text_cluster_object(&hidden_mask, "2026", 38, 42);
+    let visible_cluster = find_rich_text_cluster_object(&visible_mask, "2026", 38, 42);
+    assert_eq!(
+        hidden_cluster["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
+    assert_eq!(
+        hidden_mask["images"][0]["crop_origin"],
+        visible_mask["images"][0]["crop_origin"]
+    );
+    assert_eq!(hidden_mask["images"][0]["content_pixels"], 0);
+    assert!(
+        visible_mask["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(opaque_pixel_count(&hidden_mask_bytes), 0);
+    assert_eq!(
+        opaque_pixel_count(&visible_mask_bytes) as u64,
+        visible_mask["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+    );
+
+    for capture_kind in ["color", "object-id"] {
+        let raw_path = dir.join(format!("vertical-goal-clear-visible-{capture_kind}.rgba"));
+        let (json, bytes) = observe_native_goal_clear_object_raw_at(
+            &source_path,
+            &raw_path,
+            object_id,
+            capture_kind,
+            "60",
+        );
+        let cluster = find_rich_text_cluster_object(&json, "2026", 38, 42);
+        assert_eq!(json["images"][0]["width"], cluster["bbox"]["width"]);
+        assert_eq!(json["images"][0]["height"], cluster["bbox"]["height"]);
+        assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+        assert_eq!(
+            opaque_pixel_count(&bytes) as u64,
+            json["images"][0]["content_pixels"].as_u64().unwrap()
+        );
+        if capture_kind == "object-id" {
+            assert_raw_object_id_tint(
+                &raw_path,
+                agent_object_id_color_from_json(cluster),
+                json["images"][0]["content_pixels"].as_u64().unwrap(),
+                "vertical goal-clear text-combine object-id crop",
+            );
+        }
+    }
+
+    fs::remove_dir_all(&dir).expect("remove temp vertical goal-clear raw crop dir");
+}
+
+fn observe_native_goal_clear_object_raw_at(
+    source_path: &Path,
+    raw_path: &Path,
+    object_id: &str,
+    capture_kind: &str,
+    capture_time: &str,
+) -> (serde_json::Value, Vec<u8>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg(object_id)
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes vertical goal-clear raw crop");
+
+    assert!(
+        output.status.success(),
+        "vertical goal-clear {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("vertical goal-clear raw report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    match capture_kind {
+        "color" => assert_eq!(json["images"][0]["composition"], "isolated_regions"),
+        "mask" => assert_eq!(json["images"][0]["composition"], "mask_attachment"),
+        "object-id" => assert_eq!(json["images"][0]["composition"], "object_id_attachment"),
+        other => panic!("unsupported vertical goal-clear capture kind: {other}"),
+    }
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    let bytes = fs::read(raw_path).expect("read vertical goal-clear raw crop");
+    (json, bytes)
 }
 
 #[test]
