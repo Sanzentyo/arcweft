@@ -3761,6 +3761,75 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_numeric_unit_inside_class_mix() {
+        for (text, first_unit, second_unit, description) in [
+            (
+                "天地春夏秋冬3kg人。「川」あっいおーえ―中・外………終",
+                "k",
+                "g",
+                "numeric Latin unit",
+            ),
+            (
+                "天地春夏秋冬3μm人。「川」あっいおーえ―中・外………終",
+                "μ",
+                "m",
+                "numeric Greek+Latin unit",
+            ),
+        ] {
+            for writing_mode in [
+                RichTextWritingMode::VerticalRl,
+                RichTextWritingMode::VerticalLr,
+            ] {
+                let frame = frame_with_run(text, vertical_presentation(writing_mode));
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(210.0, 210.0),
+                    jlreq_strictness: JlreqStrictness::Strict,
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
+                assert!(
+                    vertical_layout_column_count(&layout) >= 4,
+                    "{writing_mode:?} published JLREQ paragraph with a {description} should require a multi-column plan: {layout:?}"
+                );
+
+                let digit = nth_laid_out_glyph(&layout, "3", 0);
+                let first_unit = nth_laid_out_glyph(&layout, first_unit, 0);
+                let second_unit = nth_laid_out_glyph(&layout, second_unit, 0);
+                assert_vertical_layout_after(
+                    digit,
+                    first_unit,
+                    "numeric unit symbol should stay attached to the preceding digit inside a paragraph class mix",
+                );
+                assert_vertical_layout_after(
+                    first_unit,
+                    second_unit,
+                    "unit symbol tail should stay attached inside a paragraph class mix",
+                );
+
+                let person = nth_laid_out_glyph(&layout, "人", 0);
+                let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+                let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+                let river = nth_laid_out_glyph(&layout, "川", 0);
+                assert_vertical_layout_after(
+                    person,
+                    strict_full_stop,
+                    "strict paragraph class mix should still keep closing punctuation after a numeric unit",
+                );
+                assert_vertical_layout_after(
+                    strict_full_stop,
+                    strict_open,
+                    "strict paragraph class mix should still keep adjacent closing/opening punctuation after a numeric unit",
+                );
+                assert_vertical_layout_after(
+                    strict_open,
+                    river,
+                    "strict opening punctuation should still stay with its base after a numeric unit",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_numeric_separator_inside_class_mix() {
         let text = "天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終";
         for writing_mode in [
