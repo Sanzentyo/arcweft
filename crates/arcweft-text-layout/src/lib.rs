@@ -3317,6 +3317,8 @@ mod tests {
             for (opening_mark, closing_mark, description) in [
                 ("︵", "︶", "vertical presentation parenthesis"),
                 ("︷", "︸", "vertical presentation curly bracket"),
+                ("︹", "︺", "vertical presentation tortoise shell bracket"),
+                ("︻", "︼", "vertical presentation lenticular bracket"),
                 ("﹇", "﹈", "vertical presentation square bracket"),
             ] {
                 let frame = frame_with_run(

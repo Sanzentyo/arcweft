@@ -4907,6 +4907,18 @@ fn agent_observe_native_renderer_reports_vertical_presentation_curly_and_square_
             "vertical presentation curly bracket",
         ),
         (
+            "︹",
+            "︺",
+            "vertical-presentation-tortoise-shell-bracket",
+            "vertical presentation tortoise shell bracket",
+        ),
+        (
+            "︻",
+            "︼",
+            "vertical-presentation-lenticular-bracket",
+            "vertical presentation lenticular bracket",
+        ),
+        (
             "﹇",
             "﹈",
             "vertical-presentation-square-bracket",
@@ -4938,6 +4950,18 @@ fn agent_observe_native_renderer_writes_vertical_presentation_curly_and_square_b
             "︸",
             "vertical-presentation-curly-bracket",
             "vertical presentation curly bracket",
+        ),
+        (
+            "︹",
+            "︺",
+            "vertical-presentation-tortoise-shell-bracket",
+            "vertical presentation tortoise shell bracket",
+        ),
+        (
+            "︻",
+            "︼",
+            "vertical-presentation-lenticular-bracket",
+            "vertical presentation lenticular bracket",
         ),
         (
             "﹇",

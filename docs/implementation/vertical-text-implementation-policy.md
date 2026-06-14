@@ -457,8 +457,8 @@ the concrete choices to follow when turning that package into production code.
   and native Agent fixtures for both `vertical_rl` and `vertical_lr`, with raw
   mask/object-id crops tying the observed suffix geometry and rendered upright
   GlyphArea pixels back to the same Agent object. Vertical presentation-form
-  compact bracket coverage also exercises `︵︶`, `︷︸`, and `﹇﹈` as upright
-  `vertical_form=none` clusters: Sans I/O layout fixes the small-column
+  compact bracket coverage also exercises `︵︶`, `︷︸`, `︹︺`, `︻︼`, and
+  `﹇﹈` as upright `vertical_form=none` clusters: Sans I/O layout fixes the small-column
   overhang/no-break behavior, while native Agent fixtures in both vertical
   writing modes capture the rendered closing objects as raw mask and object-id
   crops from the same observed GlyphArea geometry. Halfwidth
