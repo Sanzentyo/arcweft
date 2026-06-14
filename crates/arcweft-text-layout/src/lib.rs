@@ -6,7 +6,7 @@
 
 use arcweft_render_text::{
     LineDisplayFrame, RichTextJlreqStrictness, RichTextPresentation, RichTextRange,
-    RichTextRubyAnnotation, RichTextVerticalLatinMode, RichTextWritingMode,
+    RichTextRubyAnnotation, RichTextTextSource, RichTextVerticalLatinMode, RichTextWritingMode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -306,6 +306,7 @@ pub fn layout_frame(
                 let context = RunLayoutContext {
                     run_index,
                     range_start: range.start,
+                    source: run.source,
                     presentation: &run.presentation,
                     ruby_annotations: &frame.display_map.ruby_annotations,
                     config: run_config,
@@ -626,6 +627,54 @@ fn plan_vertical_column_segment(
         return;
     }
 
+    let continued = solve_vertical_column_segment(
+        clusters,
+        segment_start,
+        segment_end,
+        context,
+        initial_cursor_y,
+    );
+    let restarted = (vertical_run_can_restart_at_boundary(context.source)
+        && initial_cursor_y > context.config.origin.y + f32::EPSILON)
+        .then(|| {
+            solve_vertical_column_segment(
+                clusters,
+                segment_start,
+                segment_end,
+                context,
+                context.config.origin.y,
+            )
+            .map(|mut candidate| {
+                candidate.cost += 25.0;
+                candidate.break_offsets.push(0);
+                candidate
+            })
+        })
+        .flatten();
+    let candidate = match (continued, restarted) {
+        (Some(continued), Some(restarted)) if restarted.cost < continued.cost => restarted,
+        (Some(continued), _) => continued,
+        (None, Some(restarted)) => restarted,
+        (None, None) => return,
+    };
+    for offset in candidate.break_offsets {
+        plan.set_break_before(segment_start + offset);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct VerticalColumnSegmentPlan {
+    cost: f32,
+    break_offsets: Vec<usize>,
+}
+
+fn solve_vertical_column_segment(
+    clusters: &[VerticalCluster],
+    segment_start: usize,
+    segment_end: usize,
+    context: RunLayoutContext<'_>,
+    initial_cursor_y: f32,
+) -> Option<VerticalColumnSegmentPlan> {
     let segment_len = segment_end - segment_start;
     let mut states = vec![None; segment_len + 1];
     states[0] = Some(VerticalColumnDpState {
@@ -671,15 +720,19 @@ fn plan_vertical_column_segment(
     }
 
     let mut cursor = segment_len;
+    let mut break_offsets = Vec::new();
     while cursor > 0 {
-        let Some(state) = states[cursor] else {
-            return;
-        };
+        let state = states[cursor]?;
         if state.previous_break > 0 {
-            plan.set_break_before(segment_start + state.previous_break);
+            break_offsets.push(state.previous_break);
         }
         cursor = state.previous_break;
     }
+    break_offsets.reverse();
+    Some(VerticalColumnSegmentPlan {
+        cost: states[segment_len]?.cost,
+        break_offsets,
+    })
 }
 
 fn vertical_column_dp_candidate_is_better(
@@ -897,9 +950,20 @@ fn vertical_cluster_origin_y(
 struct RunLayoutContext<'a> {
     run_index: usize,
     range_start: usize,
+    source: RichTextTextSource,
     presentation: &'a RichTextPresentation,
     ruby_annotations: &'a [RichTextRubyAnnotation],
     config: TextLayoutConfig,
+}
+
+fn vertical_run_can_restart_at_boundary(source: RichTextTextSource) -> bool {
+    matches!(
+        source,
+        RichTextTextSource::Text
+            | RichTextTextSource::Interpolation
+            | RichTextTextSource::InterpolationFallback
+            | RichTextTextSource::ControlRaw
+    )
 }
 
 fn vertical_cluster_required_inline_extent(
@@ -1831,6 +1895,7 @@ mod tests {
         let context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config,
@@ -1861,6 +1926,7 @@ mod tests {
         let context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config,
@@ -1930,6 +1996,7 @@ mod tests {
         let context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config,
@@ -2125,6 +2192,103 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_strict_pair_after_ruby_text_combine() {
+        let text = "夢2026。「人山川海";
+        let dream_start = 0;
+        let dream_end = "夢".len();
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let mut frame = frame_with_run(text, vertical_presentation(writing_mode));
+            push_ruby(&mut frame, dream_start, dream_end, "ゆめ");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(260.0, 147.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+
+            let strict = layout_frame(&frame, config).expect("strict layout succeeds");
+            assert_eq!(strict.ruby.len(), 1);
+            let text_combine = nth_laid_out_glyph(&strict, "2026", 0);
+            let strict_full_stop = nth_laid_out_glyph(&strict, "。", 0);
+            let strict_open = nth_laid_out_glyph(&strict, "「", 0);
+            let person = nth_laid_out_glyph(&strict, "人", 0);
+            assert_eq!(text_combine.range, RichTextRange::new(3, 7));
+            assert_eq!(
+                text_combine.orientation,
+                GlyphOrientation::TextCombineUpright
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict ruby/text-combine paragraph keeps adjacent closing/opening punctuation together",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                person,
+                "strict opening punctuation should not strand its following base after text-combine",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_can_restart_after_ruby_run_before_text_combine() {
+        let text = "夢2026。「人山川海";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let presentation = vertical_presentation(writing_mode);
+            let mut frame = frame_with_run(text, presentation.clone());
+            frame.display_map.text_runs = vec![
+                RichTextTextRun {
+                    range: RichTextRange::new(0, "夢".len()),
+                    source: RichTextTextSource::RubyBase,
+                    node_index: 0,
+                    styles: Vec::new(),
+                    presentation: presentation.clone(),
+                },
+                RichTextTextRun {
+                    range: RichTextRange::new("夢".len(), text.len()),
+                    source: RichTextTextSource::Text,
+                    node_index: 1,
+                    styles: Vec::new(),
+                    presentation,
+                },
+            ];
+            push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(260.0, 147.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let text_combine = nth_laid_out_glyph(&layout, "2026", 0);
+            let full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let opening = nth_laid_out_glyph(&layout, "「", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+
+            assert_eq!(
+                text_combine.orientation,
+                GlyphOrientation::TextCombineUpright
+            );
+            assert_f32_eq(text_combine.origin.y, config.origin.y);
+            assert_vertical_layout_after(
+                full_stop,
+                opening,
+                "strict run-start restart should keep closing/opening punctuation together",
+            );
+            assert_vertical_layout_after(
+                opening,
+                person,
+                "strict run-start restart should keep opening punctuation with its base",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_hard_line_break_resets_strict_jlreq_paragraph_segment() {
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
@@ -2213,6 +2377,7 @@ mod tests {
         let loose_context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config: loose_config,
@@ -2278,6 +2443,7 @@ mod tests {
         let loose_context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config: loose_config,
@@ -2644,6 +2810,7 @@ mod tests {
         let context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config,
@@ -2692,6 +2859,7 @@ mod tests {
         let context = RunLayoutContext {
             run_index: 0,
             range_start: 0,
+            source: RichTextTextSource::Text,
             presentation: &frame.display_map.text_runs[0].presentation,
             ruby_annotations: &frame.display_map.ruby_annotations,
             config,

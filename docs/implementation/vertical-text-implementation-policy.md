@@ -418,6 +418,14 @@ the concrete choices to follow when turning that package into production code.
   also captured as raw native mask and object-id crops in both writing
   directions, tying the paragraph-level strictness decision back to rendered
   rotated-alternate GlyphArea pixels and stable object colors.
+  Strict paragraph planning also admits a new-column restart at a vertical run
+  boundary when a ruby base splits the authored text runs: this lets a
+  following text-combine cluster start a fresh column when that is cheaper than
+  forcing a later strict closing/opening punctuation break. Sans I/O coverage
+  fixes this for ruby-base/text runs, and native Agent fixtures cover the same
+  ruby + `2026` text-combine + strict punctuation paragraph in both
+  `vertical_rl` and `vertical_lr`, including raw mask/object-id crops for the
+  text-combine object.
   Explicit hard line breaks split the paragraph-DP problem into separate
   vertical segments: a strict closing/opening punctuation pair across `[r]` does
   not attach back to the previous segment, and native Agent fixtures cover the

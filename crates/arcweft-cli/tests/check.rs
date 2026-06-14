@@ -5895,6 +5895,20 @@ fn agent_observe_native_renderer_writes_strict_jlreq_paragraph_class_mix_raw_cro
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_strict_jlreq_ruby_text_combine_geometry() {
+    assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_rl", true);
+    assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_lr", false);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_strict_jlreq_ruby_text_combine_raw_crops() {
+    assert_native_strict_jlreq_ruby_text_combine_raw_crop("vertical_rl", "mask");
+    assert_native_strict_jlreq_ruby_text_combine_raw_crop("vertical_rl", "object-id");
+    assert_native_strict_jlreq_ruby_text_combine_raw_crop("vertical_lr", "mask");
+    assert_native_strict_jlreq_ruby_text_combine_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_hard_break_segment_geometry() {
     assert_native_strict_jlreq_hard_break_segment_geometry("vertical_rl", false);
     assert_native_strict_jlreq_hard_break_segment_geometry("vertical_lr", true);
@@ -6119,6 +6133,185 @@ fn assert_native_strict_jlreq_paragraph_class_mix_attached_opening(
         "rotated_alternate"
     );
     opening
+}
+
+fn assert_native_strict_jlreq_ruby_text_combine_geometry(writing_mode: &str, ruby_on_right: bool) {
+    let json = observe_native_strict_jlreq_ruby_text_combine_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["jlreq_strictness"],
+        "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_strict_jlreq_ruby_text_combine_objects(&json, ruby_on_right);
+}
+
+fn observe_native_strict_jlreq_ruby_text_combine_fixture(writing_mode: &str) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-strict-jlreq-ruby-text-combine"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]|[夢](ゆめ)2026。「人山川海[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp strict JLREQ ruby/text-combine source");
+    json
+}
+
+fn assert_native_strict_jlreq_ruby_text_combine_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-strict-jlreq-ruby-text-combine-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]|[夢](ゆめ)2026。「人山川海[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-strict-jlreq-ruby-text-combine-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.1.3.7")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native strict JLREQ ruby/text-combine raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} strict JLREQ ruby/text-combine {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native strict JLREQ ruby/text-combine report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let text_combine =
+        assert_native_strict_jlreq_ruby_text_combine_objects(&json, writing_mode == "vertical_rl");
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        text_combine["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        text_combine["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], text_combine["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], text_combine["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(text_combine),
+            content_pixels,
+            &format!("{writing_mode} strict JLREQ ruby/text-combine object-id crop"),
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native strict JLREQ ruby/text-combine mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp strict JLREQ ruby/text-combine source");
+    fs::remove_dir_all(&dir).expect("remove temp strict JLREQ ruby/text-combine dir");
+}
+
+fn assert_native_strict_jlreq_ruby_text_combine_objects(
+    json: &serde_json::Value,
+    ruby_on_right: bool,
+) -> &serde_json::Value {
+    let ruby = find_rich_text_ruby_object(json, 0);
+    assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_rich_text_object_has_mask_capture(ruby, "strict JLREQ ruby/text-combine ruby object");
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    if ruby_on_right {
+        assert!(
+            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            "vertical_rl strict JLREQ ruby annotation should stay on the right side: {ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            "vertical_lr strict JLREQ ruby annotation should stay on the left side: {ruby}"
+        );
+    }
+
+    let text_combine = find_rich_text_cluster_object(json, "2026", 3, 7);
+    assert_eq!(
+        text_combine["rich_text_ref"]["orientation"],
+        "text_combine_upright"
+    );
+    assert_eq!(text_combine["rich_text_ref"]["vertical_form"], "none");
+    assert_rich_text_object_has_mask_capture(
+        text_combine,
+        "strict JLREQ paragraph text-combine object",
+    );
+
+    let full_stop = find_rich_text_cluster_object(json, "。", 7, 10);
+    let opening = find_rich_text_cluster_object(json, "「", 10, 13);
+    let person = find_rich_text_cluster_object(json, "人", 13, 16);
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict ruby/text-combine paragraph keeps adjacent closing/opening punctuation together",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        person,
+        "strict ruby/text-combine opening punctuation keeps its following base",
+    );
+    text_combine
 }
 
 fn assert_native_strict_jlreq_hard_break_segment_geometry(
