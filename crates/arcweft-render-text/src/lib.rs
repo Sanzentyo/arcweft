@@ -771,7 +771,14 @@ pub fn canonical_style_name(name: &str) -> &str {
     match name {
         "" | "/" => "/",
         "i" | "italic" | "oblique" | "slant" | "style" => "style",
-        "vertical" | "vertical_rl" | "vertical_lr" | "horizontal_tb" | "layout" => "layout",
+        "vertical"
+        | "vertical_rl"
+        | "vertical_lr"
+        | "horizontal_tb"
+        | "ruby_over"
+        | "ruby_under"
+        | "ruby_inter_character"
+        | "layout" => "layout",
         "offset" | "pos" | "rotate" | "scale" | "transform" => "transform",
         "shader" | "effect" | "fx" => "effect",
         other => other,
@@ -788,7 +795,7 @@ pub fn presentation_from_styles<'a>(
             match style {
                 RichTextStyle::Em { .. } | RichTextStyle::Italic { .. } => out.italic = true,
                 RichTextStyle::Oblique { angle, .. } => out.oblique = Some(*angle),
-                RichTextStyle::Layout { layout } => out.layout = Some(layout.clone()),
+                RichTextStyle::Layout { layout } => merge_layout_presentation(&mut out, layout),
                 RichTextStyle::Transform { transform } => {
                     out.transform = Some(transform.clone());
                 }
@@ -803,6 +810,32 @@ pub fn presentation_from_styles<'a>(
             }
             out
         })
+}
+
+fn merge_layout_presentation(out: &mut RichTextPresentation, layout: &RichTextLayout) {
+    let mut merged = out.layout.clone().unwrap_or_default();
+    if !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
+        || out.layout.is_none()
+        || matches!(layout.ruby_position, RichTextRubyPosition::Auto)
+    {
+        merged.writing_mode = layout.writing_mode;
+    }
+    if !matches!(layout.direction, RichTextInlineDirection::Auto) {
+        merged.direction = layout.direction;
+    }
+    if !matches!(layout.vertical_latin, RichTextVerticalLatinMode::Mixed) {
+        merged.vertical_latin = layout.vertical_latin;
+    }
+    if !matches!(layout.ruby_position, RichTextRubyPosition::Auto) {
+        merged.ruby_position = layout.ruby_position;
+    }
+    if !matches!(layout.jlreq_strictness, RichTextJlreqStrictness::Auto) {
+        merged.jlreq_strictness = layout.jlreq_strictness;
+    }
+    if layout.column_gap != RichTextLayout::default().column_gap {
+        merged.column_gap = layout.column_gap;
+    }
+    out.layout = Some(merged);
 }
 
 fn fallback_text(expr: &str, fallback_source: &str, fallback: &InlineFallback) -> Option<String> {

@@ -206,8 +206,10 @@ the concrete choices to follow when turning that package into production code.
   Vertical layout reserves the inline-side annotation track before placing the
   first column, shifting `vertical_rl` base columns left and `vertical_lr` base
   columns right only when ruby annotations in that writing mode need the side
-  track. This keeps short edge-adjacent ruby annotations inside the layout box
-  without changing the side-of-base semantics.
+  track. `ruby_position=auto`/`over` uses the right annotation track for
+  `vertical_rl` and the left annotation track for `vertical_lr`; `ruby_under`
+  flips those physical sides. This keeps short edge-adjacent ruby annotations
+  inside the layout box without changing the side-of-base semantics.
   Long ruby annotations first expand the base allocation along the writing
   mode's inline axis, then use a bounded overhang allowance before same-track
   collision separation keeps adjacent horizontal and vertical annotations from
@@ -315,6 +317,10 @@ the concrete choices to follow when turning that package into production code.
   writing mode; the same long ruby object is also captured as raw native masks
   and object-id attachments in both writing modes, tying the expanded ruby
   object bbox, stable object color, and rendered GlyphArea pixels together.
+  Native Agent fixtures also cover `.ruby_under` in both vertical writing
+  directions, including raw mask/object-id crops for the ruby object, so
+  over/under placement is observable from the same geometry and rendered
+  GlyphArea pixels.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
   JLREQ preset PNG goldens for the repeated-leader column-planning fixture, and

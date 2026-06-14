@@ -6,7 +6,8 @@
 
 use arcweft_render_text::{
     LineDisplayFrame, RichTextJlreqStrictness, RichTextPresentation, RichTextRange,
-    RichTextRubyAnnotation, RichTextTextSource, RichTextVerticalLatinMode, RichTextWritingMode,
+    RichTextRubyAnnotation, RichTextRubyPosition, RichTextTextSource, RichTextVerticalLatinMode,
+    RichTextWritingMode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -1424,7 +1425,7 @@ fn layout_one_ruby(
             annotation.ruby.clone(),
             base_bounds,
             LayoutRect::new(
-                vertical_ruby_track_x(base_bounds, writing_mode, config),
+                vertical_ruby_track_x(base_bounds, writing_mode, annotation, config),
                 ruby_annotation_start(
                     base_bounds.y,
                     base_bounds.height,
@@ -1449,7 +1450,7 @@ fn layout_one_ruby(
                     ruby_extent,
                     ruby_overhang_limit(config),
                 ),
-                (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
+                horizontal_ruby_track_y(base_bounds, annotation, config),
                 ruby_extent,
                 config.ruby_font_size,
             ),
@@ -1466,7 +1467,7 @@ fn layout_overheight_vertical_ruby(
     config: TextLayoutConfig,
 ) -> Vec<LaidOutRuby> {
     let max_chars_per_segment = max_ruby_chars_per_vertical_segment(config);
-    let track_x = vertical_ruby_track_x(base_bounds, writing_mode, config);
+    let track_x = vertical_ruby_track_x(base_bounds, writing_mode, annotation, config);
     split_ruby_text(&annotation.ruby, max_chars_per_segment)
         .into_iter()
         .enumerate()
@@ -1592,15 +1593,42 @@ fn expand_vertical_ruby_base(
 fn vertical_ruby_track_x(
     base_bounds: LayoutRect,
     writing_mode: RichTextWritingMode,
+    annotation: &RichTextRubyAnnotation,
     config: TextLayoutConfig,
 ) -> f32 {
     let gap = config.ruby_font_size * 0.25;
-    match writing_mode {
-        RichTextWritingMode::VerticalLr => base_bounds.x - config.ruby_font_size - gap,
-        RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb => {
+    match (writing_mode, ruby_position(annotation)) {
+        (RichTextWritingMode::VerticalRl, RichTextRubyPosition::Under)
+        | (
+            RichTextWritingMode::VerticalLr,
+            RichTextRubyPosition::Auto
+            | RichTextRubyPosition::Over
+            | RichTextRubyPosition::InterCharacter,
+        ) => base_bounds.x - config.ruby_font_size - gap,
+        (RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb, _)
+        | (RichTextWritingMode::VerticalLr, RichTextRubyPosition::Under) => {
             base_bounds.right() + gap
         }
     }
+}
+
+fn horizontal_ruby_track_y(
+    base_bounds: LayoutRect,
+    annotation: &RichTextRubyAnnotation,
+    config: TextLayoutConfig,
+) -> f32 {
+    match ruby_position(annotation) {
+        RichTextRubyPosition::Under => base_bounds.bottom() + config.ruby_font_size * 0.2,
+        _ => (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
+    }
+}
+
+fn ruby_position(annotation: &RichTextRubyAnnotation) -> RichTextRubyPosition {
+    annotation
+        .presentation
+        .layout
+        .as_ref()
+        .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position)
 }
 
 fn vertical_ruby_continuation_step(
@@ -4082,6 +4110,38 @@ mod tests {
             layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
             "vertical_lr ruby annotation should be placed on the left side of the base"
         );
+    }
+
+    #[test]
+    fn vertical_ruby_under_flips_annotation_track() {
+        for (writing_mode, under_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let mut frame = frame_with_run("夢", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+            frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+                writing_mode,
+                ruby_position: RichTextRubyPosition::Under,
+                ..RichTextLayout::default()
+            });
+            let layout =
+                layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+            let base = layout.ruby[0].base_bounds;
+            let annotation = layout.ruby[0].ruby_bounds;
+            if under_moves_right {
+                assert!(
+                    annotation.x >= base.right(),
+                    "{writing_mode:?} ruby_under should place annotation on the right side of the base"
+                );
+            } else {
+                assert!(
+                    annotation.right() <= base.x,
+                    "{writing_mode:?} ruby_under should place annotation on the left side of the base"
+                );
+            }
+        }
     }
 
     #[test]

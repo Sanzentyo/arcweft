@@ -631,7 +631,14 @@ fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
 fn canonical_end_tag(name: &str) -> &str {
     match name {
         "style" | "italic" | "i" | "oblique" | "slant" => "style",
-        "layout" | "vertical" | "vertical_rl" | "vertical_lr" | "horizontal_tb" => "layout",
+        "layout"
+        | "vertical"
+        | "vertical_rl"
+        | "vertical_lr"
+        | "horizontal_tb"
+        | "ruby_over"
+        | "ruby_under"
+        | "ruby_inter_character" => "layout",
         "transform" | "offset" | "pos" | "rotate" | "scale" | "skew" => "transform",
         "effect" | "fx" | "shader" => "effect",
         other => other,
@@ -1259,6 +1266,47 @@ flow @flow.main main {
 
         assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
         assert_eq!(layout.jlreq_strictness, RichTextJlreqStrictness::Strict);
+    }
+
+    #[test]
+    fn inferred_layout_selector_lowers_ruby_under_position() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.ruby_under]|[夢](ゆめ)[/][p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.003".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let ruby = frame
+            .display_map
+            .ruby_annotations
+            .first()
+            .expect("ruby annotation");
+        let layout = ruby.presentation.layout.as_ref().expect("ruby layout");
+
+        assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
+        assert_eq!(layout.ruby_position, RichTextRubyPosition::Under);
     }
 
     #[test]
