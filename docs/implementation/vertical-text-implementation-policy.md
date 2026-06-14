@@ -523,7 +523,10 @@ the concrete choices to follow when turning that package into production code.
   formulas such as `α₂β` and `α²β` attached as one formula-like object in vertical text,
   and native Agent raw mask/object-id crops verify that the following base `O`
   in `天H₂O人` and `β` in `天α₂β人` / `天α²β人` read back from rendered
-  GlyphArea pixels in both vertical writing directions.
+  GlyphArea pixels in both vertical writing directions. `H₂O` is also embedded
+  in a longer strict paragraph class mix, with native raw crops for `O`, proving
+  the subscript object and later ordinary closing/opening punctuation share one
+  paragraph-DP plan.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
