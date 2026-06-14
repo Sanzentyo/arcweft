@@ -9778,8 +9778,7 @@ fn assert_native_published_jlreq_subscript_object_objects<'report>(
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
     let base = find_rich_text_cluster_object(json, case.base, case.base_range.0, case.base_range.1);
-    let subscript =
-        find_rich_text_cluster_object(json, "₂", case.subscript_range.0, case.subscript_range.1);
+    let mark = find_rich_text_cluster_object(json, case.mark, case.mark_range.0, case.mark_range.1);
     let following_base = find_rich_text_cluster_object(
         json,
         case.following_base,
@@ -9790,27 +9789,27 @@ fn assert_native_published_jlreq_subscript_object_objects<'report>(
     assert_vertical_cluster_after(
         body,
         base,
-        "published JLREQ subscript object should start after body text",
+        "published JLREQ sub/superscript object should start after body text",
     );
     assert_vertical_cluster_after(
         base,
-        subscript,
-        "published JLREQ subscript should stay with the preceding base character",
+        mark,
+        "published JLREQ sub/superscript mark should stay with the preceding base character",
     );
     assert_vertical_cluster_after(
-        subscript,
+        mark,
         following_base,
-        "published JLREQ following base should stay attached to the subscript object",
+        "published JLREQ following base should stay attached to the sub/superscript object",
     );
     assert_next_paragraph_column(
         following_base,
         next_body,
         next_column_moves_right,
-        "body text after the subscript object should continue in the next column",
+        "body text after the sub/superscript object should continue in the next column",
     );
     assert_rich_text_object_has_mask_capture(
         following_base,
-        &format!("{writing_mode} published JLREQ subscript object following base"),
+        &format!("{writing_mode} published JLREQ sub/superscript object following base"),
     );
     following_base
 }
@@ -9821,21 +9820,23 @@ struct NativeSubscriptObjectCase {
     text: &'static str,
     base: &'static str,
     base_range: (u64, u64),
-    subscript_range: (u64, u64),
+    mark: &'static str,
+    mark_range: (u64, u64),
     following_base: &'static str,
     following_base_range: (u64, u64),
     object_id: &'static str,
     next_range: (u64, u64),
 }
 
-const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObjectCase; 2] {
+const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObjectCase; 3] {
     [
         NativeSubscriptObjectCase {
             label: "ascii",
             text: "天H₂O人",
             base: "H",
             base_range: (3, 4),
-            subscript_range: (4, 7),
+            mark: "₂",
+            mark_range: (4, 7),
             following_base: "O",
             following_base_range: (7, 8),
             object_id: "object.dialogue.0.0.cluster.3.7.8",
@@ -9846,11 +9847,24 @@ const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObje
             text: "天α₂β人",
             base: "α",
             base_range: (3, 5),
-            subscript_range: (5, 8),
+            mark: "₂",
+            mark_range: (5, 8),
             following_base: "β",
             following_base_range: (8, 10),
             object_id: "object.dialogue.0.0.cluster.3.8.10",
             next_range: (10, 13),
+        },
+        NativeSubscriptObjectCase {
+            label: "greek-superscript",
+            text: "天α²β人",
+            base: "α",
+            base_range: (3, 5),
+            mark: "²",
+            mark_range: (5, 7),
+            following_base: "β",
+            following_base_range: (7, 9),
+            object_id: "object.dialogue.0.0.cluster.3.7.9",
+            next_range: (9, 12),
         },
     ]
 }

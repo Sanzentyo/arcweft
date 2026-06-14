@@ -3137,86 +3137,50 @@ mod tests {
     fn vertical_paragraph_plan_keeps_published_jlreq_subscript_object_unbroken() {
         // W3C JLREQ 3.1.10 treats subscripts and superscripts with adjacent
         // base characters as one object, distinct from reference marks.
-        let text = "天H₂O人";
-        for (writing_mode, next_column_moves_right) in [
-            (RichTextWritingMode::VerticalRl, false),
-            (RichTextWritingMode::VerticalLr, true),
+        for (text, base_text, mark_text, following_base_text) in [
+            ("天H₂O人", "H", "₂", "O"),
+            ("天α₂β人", "α", "₂", "β"),
+            ("天α²β人", "α", "²", "β"),
         ] {
-            let frame = frame_with_run(text, vertical_presentation(writing_mode));
-            let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 84.0),
-                ..TextLayoutConfig::default()
-            };
-            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            for (writing_mode, next_column_moves_right) in [
+                (RichTextWritingMode::VerticalRl, false),
+                (RichTextWritingMode::VerticalLr, true),
+            ] {
+                let frame = frame_with_run(text, vertical_presentation(writing_mode));
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(210.0, 84.0),
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-            let body = nth_laid_out_glyph(&layout, "天", 0);
-            let base = nth_laid_out_glyph(&layout, "H", 0);
-            let subscript = nth_laid_out_glyph(&layout, "₂", 0);
-            let following_base = nth_laid_out_glyph(&layout, "O", 0);
-            let next_body = nth_laid_out_glyph(&layout, "人", 0);
-            assert_vertical_layout_column_restart(
-                body,
-                base,
-                next_column_moves_right,
-                "published JLREQ subscript object should start after body text",
-            );
-            assert_vertical_layout_after(
-                base,
-                subscript,
-                "subscript should stay attached to the preceding base character",
-            );
-            assert_vertical_layout_after(
-                subscript,
-                following_base,
-                "following base character should stay attached to the subscript object",
-            );
-            assert_next_vertical_layout_column(
-                following_base,
-                next_body,
-                next_column_moves_right,
-                "body text after the subscript object should continue in the next column",
-            );
-        }
-
-        let text = "天α₂β人";
-        for (writing_mode, next_column_moves_right) in [
-            (RichTextWritingMode::VerticalRl, false),
-            (RichTextWritingMode::VerticalLr, true),
-        ] {
-            let frame = frame_with_run(text, vertical_presentation(writing_mode));
-            let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 84.0),
-                ..TextLayoutConfig::default()
-            };
-            let layout = layout_frame(&frame, config).expect("layout succeeds");
-
-            let body = nth_laid_out_glyph(&layout, "天", 0);
-            let base = nth_laid_out_glyph(&layout, "α", 0);
-            let subscript = nth_laid_out_glyph(&layout, "₂", 0);
-            let following_base = nth_laid_out_glyph(&layout, "β", 0);
-            let next_body = nth_laid_out_glyph(&layout, "人", 0);
-            assert_vertical_layout_column_restart(
-                body,
-                base,
-                next_column_moves_right,
-                "Greek subscript object should start after body text",
-            );
-            assert_vertical_layout_after(
-                base,
-                subscript,
-                "subscript should stay attached to the preceding Greek base character",
-            );
-            assert_vertical_layout_after(
-                subscript,
-                following_base,
-                "following Greek base character should stay attached to the subscript object",
-            );
-            assert_next_vertical_layout_column(
-                following_base,
-                next_body,
-                next_column_moves_right,
-                "body text after the Greek subscript object should continue in the next column",
-            );
+                let body = nth_laid_out_glyph(&layout, "天", 0);
+                let base = nth_laid_out_glyph(&layout, base_text, 0);
+                let mark = nth_laid_out_glyph(&layout, mark_text, 0);
+                let following_base = nth_laid_out_glyph(&layout, following_base_text, 0);
+                let next_body = nth_laid_out_glyph(&layout, "人", 0);
+                assert_vertical_layout_column_restart(
+                    body,
+                    base,
+                    next_column_moves_right,
+                    "published JLREQ sub/superscript object should start after body text",
+                );
+                assert_vertical_layout_after(
+                    base,
+                    mark,
+                    "sub/superscript should stay attached to the preceding base character",
+                );
+                assert_vertical_layout_after(
+                    mark,
+                    following_base,
+                    "following base character should stay attached to the sub/superscript object",
+                );
+                assert_next_vertical_layout_column(
+                    following_base,
+                    next_body,
+                    next_column_moves_right,
+                    "body text after the sub/superscript object should continue in the next column",
+                );
+            }
         }
     }
 
