@@ -195,11 +195,16 @@ the concrete choices to follow when turning that package into production code.
   Long ruby annotations first expand the base allocation along the writing
   mode's inline axis, then use a bounded overhang allowance before same-track
   collision separation keeps adjacent horizontal and vertical annotations from
-  occupying the same annotation track. Vertical ruby base starts feed their
-  expanded inline allocation back into column breaking, so a long annotation or
-  multi-cluster base moves to the next column instead of placing its expanded
-  base past the column end. `vertical_rl` ruby uses the right annotation track
-  and `vertical_lr` ruby uses the left annotation track. Over-height vertical
+  occupying the same annotation track. Sans I/O layout tests now mirror vertical
+  ruby collision separation in both `vertical_rl` and `vertical_lr`, including
+  typewriter-controlled ruby-base spans where visibility effects must not
+  perturb ruby geometry. Vertical ruby base starts feed their expanded inline
+  allocation back into column breaking, so a long annotation or multi-cluster
+  base moves to the next column instead of placing its expanded base past the
+  column end; those feedback rules are fixed for leftward `vertical_rl` columns
+  and rightward `vertical_lr` columns before native rendering consumes the
+  layout. `vertical_rl` ruby uses the right annotation track and `vertical_lr`
+  ruby uses the left annotation track. Over-height vertical
   ruby annotations split into multiple `LaidOutRuby` segments with the same
   source ruby index; Sans I/O layout coverage now fixes the split text,
   per-segment height cap, shared ruby index, and continuation-track direction

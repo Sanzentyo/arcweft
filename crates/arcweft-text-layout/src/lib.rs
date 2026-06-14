@@ -2605,26 +2605,29 @@ mod tests {
 
     #[test]
     fn vertical_ruby_collision_shifts_adjacent_annotations_inline() {
-        let mut frame = frame_with_run(
-            "夢星",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
-        push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
-        push_ruby(&mut frame, "夢".len(), "夢星".len(), "ながいよみ");
-        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let mut frame = frame_with_run("夢星", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
+            push_ruby(&mut frame, "夢".len(), "夢星".len(), "ながいよみ");
+            let layout =
+                layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
 
-        assert_eq!(layout.ruby.len(), 2);
-        assert_eq!(layout.ruby[0].writing_mode, RichTextWritingMode::VerticalRl);
-        assert!(
-            !layout.ruby[0]
-                .ruby_bounds
-                .intersects(layout.ruby[1].ruby_bounds)
-        );
-        assert!(
-            layout.ruby[1].ruby_bounds.y >= layout.ruby[0].ruby_bounds.bottom(),
-            "second vertical ruby should move below the first annotation"
-        );
-        assert_f32_eq(layout.ruby[1].ruby_bounds.x, layout.ruby[0].ruby_bounds.x);
+            assert_eq!(layout.ruby.len(), 2);
+            assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+            assert!(
+                !layout.ruby[0]
+                    .ruby_bounds
+                    .intersects(layout.ruby[1].ruby_bounds)
+            );
+            assert!(
+                layout.ruby[1].ruby_bounds.y >= layout.ruby[0].ruby_bounds.bottom(),
+                "second {writing_mode:?} ruby should move below the first annotation"
+            );
+            assert_f32_eq(layout.ruby[1].ruby_bounds.x, layout.ruby[0].ruby_bounds.x);
+        }
     }
 
     #[test]
@@ -2679,87 +2682,101 @@ mod tests {
 
     #[test]
     fn vertical_ruby_layout_survives_typewriter_visibility_effect() {
-        let mut presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
-        presentation.effects.push(RichTextEffectDescriptor {
-            id: "typewriter".to_owned(),
-            params: BTreeMap::from([(
-                "cps".to_owned(),
-                RichTextParam::Milli { value: Milli::ONE },
-            )]),
-            target: RichTextEffectTarget::Run,
-            phase: RichTextEffectPhase::GlyphMask,
-            state_scope: RichTextStateScope::Run,
-        });
-        let mut frame = frame_with_run("夢", presentation);
-        frame.display_map.text_runs[0].source = RichTextTextSource::RubyBase;
-        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let mut presentation = vertical_presentation(writing_mode);
+            presentation.effects.push(RichTextEffectDescriptor {
+                id: "typewriter".to_owned(),
+                params: BTreeMap::from([(
+                    "cps".to_owned(),
+                    RichTextParam::Milli { value: Milli::ONE },
+                )]),
+                target: RichTextEffectTarget::Run,
+                phase: RichTextEffectPhase::GlyphMask,
+                state_scope: RichTextStateScope::Run,
+            });
+            let mut frame = frame_with_run("夢", presentation);
+            frame.display_map.text_runs[0].source = RichTextTextSource::RubyBase;
+            push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
 
-        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+            let layout =
+                layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
 
-        assert_eq!(layout.glyphs.len(), 1);
-        assert_eq!(layout.ruby.len(), 1);
-        assert_eq!(layout.ruby[0].base_range, RichTextRange::new(0, "夢".len()));
-        assert_eq!(layout.ruby[0].writing_mode, RichTextWritingMode::VerticalRl);
+            assert_eq!(layout.glyphs.len(), 1);
+            assert_eq!(layout.ruby.len(), 1);
+            assert_eq!(layout.ruby[0].base_range, RichTextRange::new(0, "夢".len()));
+            assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+        }
     }
 
     #[test]
     fn vertical_ruby_base_expansion_feeds_back_into_column_breaks() {
-        let mut frame = frame_with_run(
-            "天夢",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
-        push_ruby(&mut frame, "天".len(), "天夢".len(), "ながいよみ");
-        let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 84.0),
-            ..TextLayoutConfig::default()
-        };
-        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let mut frame = frame_with_run("天夢", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, "天".len(), "天夢".len(), "ながいよみ");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-        assert_eq!(layout.glyphs.len(), 2);
-        assert_eq!(layout.glyphs[0].text, "天");
-        assert_eq!(layout.glyphs[1].text, "夢");
-        assert!(
-            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
-            "long ruby base allocation should force the annotated cluster to the next column"
-        );
-        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
-        assert_eq!(layout.ruby.len(), 1);
-        assert_f32_eq(layout.ruby[0].base_bounds.y, config.origin.y);
-        assert!(
-            layout.ruby[0].base_bounds.bottom() <= config.origin.y + config.size.height,
-            "expanded ruby base should fit inside the column after feedback"
-        );
+            assert_eq!(layout.glyphs.len(), 2);
+            assert_eq!(layout.glyphs[0].text, "天");
+            assert_eq!(layout.glyphs[1].text, "夢");
+            assert_vertical_layout_column_restart(
+                &layout.glyphs[0],
+                &layout.glyphs[1],
+                next_column_moves_right,
+                "long ruby base allocation should force the annotated cluster to the next column",
+            );
+            assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+            assert_eq!(layout.ruby.len(), 1);
+            assert_f32_eq(layout.ruby[0].base_bounds.y, config.origin.y);
+            assert!(
+                layout.ruby[0].base_bounds.bottom() <= config.origin.y + config.size.height,
+                "expanded {writing_mode:?} ruby base should fit inside the column after feedback"
+            );
+        }
     }
 
     #[test]
     fn vertical_ruby_multi_cluster_base_breaks_before_the_base_start() {
-        let mut frame = frame_with_run(
-            "天夢星",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
-        push_ruby(&mut frame, "天".len(), "天夢星".len(), "ゆめ");
-        let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 84.0),
-            ..TextLayoutConfig::default()
-        };
-        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let mut frame = frame_with_run("天夢星", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, "天".len(), "天夢星".len(), "ゆめ");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-        assert_eq!(layout.glyphs.len(), 3);
-        assert_eq!(layout.glyphs[1].text, "夢");
-        assert_eq!(layout.glyphs[2].text, "星");
-        assert!(
-            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
-            "multi-cluster ruby base should move as a unit before it is split by overflow"
-        );
-        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
-        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
-        assert!(layout.glyphs[2].origin.y > layout.glyphs[1].origin.y);
-        assert_eq!(layout.ruby.len(), 1);
-        assert_eq!(
-            layout.ruby[0].base_range,
-            RichTextRange::new("天".len(), "天夢星".len())
-        );
-        assert_f32_eq(layout.ruby[0].base_bounds.x, layout.glyphs[1].bounds.x);
+            assert_eq!(layout.glyphs.len(), 3);
+            assert_eq!(layout.glyphs[1].text, "夢");
+            assert_eq!(layout.glyphs[2].text, "星");
+            assert_vertical_layout_column_restart(
+                &layout.glyphs[0],
+                &layout.glyphs[1],
+                next_column_moves_right,
+                "multi-cluster ruby base should move as a unit before it is split by overflow",
+            );
+            assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+            assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+            assert!(layout.glyphs[2].origin.y > layout.glyphs[1].origin.y);
+            assert_eq!(layout.ruby.len(), 1);
+            assert_eq!(
+                layout.ruby[0].base_range,
+                RichTextRange::new("天".len(), "天夢星".len())
+            );
+            assert_f32_eq(layout.ruby[0].base_bounds.x, layout.glyphs[1].bounds.x);
+        }
     }
 
     #[test]
@@ -2870,6 +2887,25 @@ mod tests {
             current.origin.y < previous.origin.y,
             "{message}: expected {current:?} to restart above {previous:?}"
         );
+    }
+
+    fn assert_vertical_layout_column_restart(
+        previous: &LaidOutGlyph,
+        current: &LaidOutGlyph,
+        next_column_moves_right: bool,
+        message: &str,
+    ) {
+        if next_column_moves_right {
+            assert!(
+                current.origin.x > previous.origin.x,
+                "{message}: expected {current:?} to move right after {previous:?}"
+            );
+        } else {
+            assert!(
+                current.origin.x < previous.origin.x,
+                "{message}: expected {current:?} to move left after {previous:?}"
+            );
+        }
     }
 
     fn assert_f32_eq(actual: f32, expected: f32) {
