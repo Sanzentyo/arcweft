@@ -203,7 +203,13 @@ the concrete choices to follow when turning that package into production code.
   `vertical_rl` and `vertical_lr` pages that combine side-track ruby and a
   4-digit text-combine-upright cluster, proving the page-local layout source
   can be adapted into the same body and ruby GlyphAreas used by the actual
-  window renderer. Native object-scope raw mask and object-id captures for a
+  window renderer. Display-map page boundaries treat ruby bases as atomic:
+  if a `[page]`, `[l]`, or `[clear]` control would place a page break inside a
+  ruby base range, native page construction and Agent page metadata move the
+  break to the ruby base end so the page-local layout does not omit the ruby
+  annotation. Native and CLI unit coverage fix the same artificial split-base
+  display map and require both page range calculations to produce the same
+  non-splitting ranges. Native object-scope raw mask and object-id captures for a
   textbox are verified against glyph alpha rather than the full textbox
   rectangle, so
   Agent observe readback exposes rendered glyph geometry for both attachment

@@ -1533,6 +1533,7 @@ fn display_map_page_ranges(frame: &LineDisplayFrame) -> Vec<Range<usize>> {
             )
         })
         .map(|marker| display_map_offset_before_node(frame, marker.node_index))
+        .map(|offset| display_map_offset_after_atomic_ruby_base(frame, offset))
         .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
         .collect::<Vec<_>>();
     break_offsets.sort_unstable();
@@ -1548,6 +1549,22 @@ fn display_map_page_ranges(frame: &LineDisplayFrame) -> Vec<Range<usize>> {
     }
     ranges.push(start..frame.text.len());
     ranges
+}
+
+fn display_map_offset_after_atomic_ruby_base(frame: &LineDisplayFrame, offset: usize) -> usize {
+    let mut adjusted = offset;
+    loop {
+        let Some(range) = frame
+            .display_map
+            .ruby_annotations
+            .iter()
+            .filter_map(|annotation| valid_display_range(annotation.base_range, &frame.text))
+            .find(|range| range.start < adjusted && adjusted < range.end)
+        else {
+            return adjusted;
+        };
+        adjusted = range.end;
+    }
 }
 
 fn display_map_non_empty_page_range_at(
@@ -5127,6 +5144,60 @@ mod tests {
                 .iter()
                 .all(|span| span.style.family == NativeFontFamily::Serif)
         }));
+    }
+
+    #[test]
+    fn display_map_page_ranges_do_not_split_ruby_base_ranges() {
+        let frame = LineDisplayFrame {
+            line: RuntimeLineId("say.test.page.ruby.atomic".to_owned()),
+            callee: "alice".to_owned(),
+            text: "ABCDE".to_owned(),
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            nodes: Vec::new(),
+            display_map: arcweft_render_text::RichTextDisplayMap {
+                text_runs: vec![
+                    arcweft_render_text::RichTextTextRun {
+                        range: RichTextRange::new(0, 2),
+                        source: arcweft_render_text::RichTextTextSource::Text,
+                        node_index: 0,
+                        styles: Vec::new(),
+                        presentation: RichTextPresentation::default(),
+                    },
+                    arcweft_render_text::RichTextTextRun {
+                        range: RichTextRange::new(2, 5),
+                        source: arcweft_render_text::RichTextTextSource::Text,
+                        node_index: 2,
+                        styles: Vec::new(),
+                        presentation: RichTextPresentation::default(),
+                    },
+                ],
+                ruby_annotations: vec![arcweft_render_text::RichTextRubyAnnotation {
+                    base_range: RichTextRange::new(1, 4),
+                    ruby: "ruby".to_owned(),
+                    node_index: 1,
+                    styles: Vec::new(),
+                    presentation: RichTextPresentation::default(),
+                }],
+                controls: vec![arcweft_render_text::RichTextControlMarker {
+                    node_index: 2,
+                    control: RichTextControl::Page,
+                    range: None,
+                }],
+                host_events: Vec::new(),
+            },
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        };
+
+        assert_eq!(display_map_page_ranges(&frame), vec![0..4, 4..5]);
+        let pages = WindowPage::from_frame(&frame);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].rich_text.text, "ABCD");
+        assert_eq!(pages[0].rich_text.ruby_annotations.len(), 1);
+        assert_eq!(pages[0].rich_text.ruby_annotations[0].base_range, 1..4);
+        assert!(pages[1].rich_text.ruby_annotations.is_empty());
     }
 
     #[test]

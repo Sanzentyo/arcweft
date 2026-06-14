@@ -4602,6 +4602,7 @@ fn agent_rich_text_page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<
             )
         })
         .map(|marker| agent_display_map_offset_before_node(frame, marker.node_index))
+        .map(|offset| agent_display_map_offset_after_atomic_ruby_base(frame, offset))
         .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
         .collect::<Vec<_>>();
     break_offsets.sort_unstable();
@@ -4617,6 +4618,25 @@ fn agent_rich_text_page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<
     }
     ranges.push(start..frame.text.len());
     ranges
+}
+
+fn agent_display_map_offset_after_atomic_ruby_base(
+    frame: &LineDisplayFrame,
+    offset: usize,
+) -> usize {
+    let mut adjusted = offset;
+    loop {
+        let Some(range) = frame
+            .display_map
+            .ruby_annotations
+            .iter()
+            .filter_map(|annotation| valid_rich_text_range(annotation.base_range, &frame.text))
+            .find(|range| range.start < adjusted && adjusted < range.end)
+        else {
+            return adjusted;
+        };
+        adjusted = range.end;
+    }
 }
 
 fn agent_display_map_offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
@@ -8913,6 +8933,62 @@ mod tests {
         };
         spec.resolve_frame(&RuntimeLineContext::default())
             .expect("test frame resolves")
+    }
+
+    fn test_ruby_split_page_boundary_frame() -> LineDisplayFrame {
+        LineDisplayFrame {
+            line: arcweft_core::plan::RuntimeLineId("line.page.ruby.atomic".to_owned()),
+            callee: "test".to_owned(),
+            text: "ABCDE".to_owned(),
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            nodes: Vec::new(),
+            display_map: arcweft_render_text::RichTextDisplayMap {
+                text_runs: vec![
+                    RichTextTextRun {
+                        range: RichTextRange::new(0, 2),
+                        source: RichTextTextSource::Text,
+                        node_index: 0,
+                        styles: Vec::new(),
+                        presentation: arcweft_render_text::RichTextPresentation::default(),
+                    },
+                    RichTextTextRun {
+                        range: RichTextRange::new(2, 5),
+                        source: RichTextTextSource::Text,
+                        node_index: 2,
+                        styles: Vec::new(),
+                        presentation: arcweft_render_text::RichTextPresentation::default(),
+                    },
+                ],
+                ruby_annotations: vec![RichTextRubyAnnotation {
+                    base_range: RichTextRange::new(1, 4),
+                    ruby: "ruby".to_owned(),
+                    node_index: 1,
+                    styles: Vec::new(),
+                    presentation: arcweft_render_text::RichTextPresentation::default(),
+                }],
+                controls: vec![arcweft_render_text::RichTextControlMarker {
+                    node_index: 2,
+                    control: RichTextControl::Page,
+                    range: None,
+                }],
+                host_events: Vec::new(),
+            },
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn agent_page_ranges_do_not_split_ruby_base_ranges() {
+        let frame = test_ruby_split_page_boundary_frame();
+
+        assert_eq!(agent_rich_text_page_ranges(&frame), vec![0..4, 4..5]);
+        assert_eq!(
+            agent_rich_text_page_for_range(&frame, RichTextRange::new(1, 4)),
+            0
+        );
     }
 
     fn test_observed_object(
