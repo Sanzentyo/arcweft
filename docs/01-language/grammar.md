@@ -280,6 +280,30 @@ choice @.first outside a scope -> @choice.opening.first
 DialogueDefaultsDecl :=
     Visibility? 'dialogue' 'defaults' (EntityRef | RelativeId)? Block
 
+Dialogue defaults declare a defaults profile. `pub dialogue defaults
+@dialogue.defaults` is the conventional exported project-wide profile; other
+profiles are selected explicitly by project/build configuration or tooling and
+are not merged merely because they are visible. Product/test lowering must
+diagnose multiple visible defaults profiles when no active profile can be
+chosen unambiguously.
+
+Inside the block, structured RichText typography is written as a nested
+assignment block:
+
+```text
+dialogue defaults {
+  rich_text {
+    text   { font = Expr, size = Expr, color = Expr, ... }
+    layout { writing_mode = Expr, jlreq = Expr, vertical_latin = Expr, ... }
+    ruby   { position = Expr, size = Expr, gap = Expr, overhang = Expr, ... }
+  }
+}
+```
+
+Structured defaults deep-merge by field through the dialogue cascade. Scalar
+fields use nearest-wins semantics; collections require explicit collection
+operators such as `=` or `+=`.
+
 HookDecl   :=
     Visibility 'hook' EntityRef
     HookTarget

@@ -36,6 +36,53 @@ alice.say()[
 - selection
 - vertical writing roadmap
 
+### RichText style defaults
+
+RichText typography is configured as structured style data, not as a flat list
+of dialogue-only knobs. Dialogue, choices, UI labels, logs, and HUD text can all
+consume the same model.
+
+```arcw
+rich_text {
+    text {
+        font = "Yu Gothic"
+        size = 30px
+        color = rgb("#f5f5f5")
+    }
+
+    layout {
+        writing_mode = horizontal_tb
+        jlreq = normal
+        vertical_latin = mixed
+        wrap = textbox
+        overflow = page
+    }
+
+    ruby {
+        position = over
+        size = 14px
+        gap = 2px
+        overhang = 7px
+        collision_gap = 2px
+    }
+}
+```
+
+Dialogue defaults, textbox themes, character `dialogue_style`, speaker presets,
+line options, and inline spans all contribute to the same effective RichText
+style. Records deep-merge by field. The nearest explicit field wins, while
+unspecified sibling fields continue to inherit from lower-priority defaults.
+
+Ruby-specific fields mean:
+
+| Field | Meaning |
+|---|---|
+| `position` | Default ruby track: `over`, `under`, `inter_character`, or `auto` |
+| `size` | Annotation font size |
+| `gap` | Distance between base text and annotation track |
+| `overhang` | Maximum annotation overhang allowed beyond the base allocation |
+| `collision_gap` | Separation between adjacent ruby annotations or continuation tracks |
+
 ## Content functions
 
 ```arcw

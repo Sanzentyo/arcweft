@@ -144,6 +144,17 @@ Layout selectors accept `jlreq=loose|normal|strict` to choose the vertical
 Japanese punctuation-pair planning preset for that span. Omitting it keeps the
 host textbox/default layout preset.
 
+Ruby-position selectors also accept local typography overrides:
+
+```arcw
+alice: [.ruby_over ruby_size=11px ruby_gap=1px ruby_overhang=4px ruby_collision_gap=3px]|[夢](ゆめ)[/][p]
+```
+
+These attributes override the effective `rich_text { ruby { ... } }` defaults
+only for the enclosed span. The inline names are prefixed with `ruby_` because
+dialogue tag attributes are flat. Defaults use the structured form
+`rich_text { ruby { size = ... gap = ... } }`.
+
 ---
 
 ## Wait and newline tags
@@ -234,6 +245,22 @@ alice.say()[
 ```
 
 All forms normalize into the same `Content::Ruby { base, ruby }` fragment.
+
+Ruby typography is resolved from the active RichText cascade before layout:
+
+```text
+inline [.ruby_over ruby_size=... ruby_gap=...]
+  -> line / speaker preset rich_text.ruby
+  -> character dialogue_style.rich_text.ruby
+  -> dialogue window theme rich_text.ruby
+  -> selected dialogue defaults rich_text.ruby
+  -> engine defaults
+```
+
+The ruby content syntax chooses the base and annotation text. Typography such
+as position, annotation size, base gap, overhang, and collision separation comes
+from the active `rich_text.ruby` style unless an inline ruby selector overrides
+it.
 
 Localization import validates ruby fragments:
 

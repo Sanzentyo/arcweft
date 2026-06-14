@@ -398,6 +398,152 @@ alice.say(color=rgb("#ff8080"))[
 
 ---
 
+## Dialogue defaults resolution
+
+`dialogue defaults` declares a named defaults profile for dialogue lines. It is
+not an implicit source-order macro and `pub` does not make the profile apply by
+itself. `pub` only makes the defaults profile visible to project manifests,
+other modules, tooling, and build profiles.
+
+The conventional project-wide profile is:
+
+```arcw
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.0
+    reveal = typewriter(speed=normal)
+}
+```
+
+Resolution is:
+
+1. A project or build profile may explicitly select a defaults profile by ID.
+2. If none is selected, `@dialogue.defaults` is the canonical implicit profile
+   when it is visible from the entry module.
+3. If `@dialogue.defaults` is absent and exactly one visible `dialogue defaults`
+   declaration exists for the entry module, that profile may be used by dev
+   tooling.
+4. If multiple visible profiles exist and none is selected, product/test
+   lowering reports an ambiguity diagnostic instead of merging them by source
+   order.
+
+Additional defaults profiles are inert until selected:
+
+```arcw
+pub dialogue defaults @dialogue.defaults.debug {
+    window = @textbox.system
+    reveal = instant
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    window = @textbox.phone_message
+    rich_text {
+        text { size = 24px }
+        ruby { size = 11px gap = 1px }
+    }
+}
+```
+
+A selected defaults profile is the base of the dialogue cascade:
+
+```text
+inline rich-text span
+  -> line options
+  -> speaker preset options
+  -> character dialogue_style
+  -> dialogue window theme
+  -> selected dialogue defaults
+  -> engine defaults
+```
+
+Scalar fields use nearest-wins semantics. Structured style records such as
+`rich_text`, `rich_text.text`, `rich_text.layout`, and `rich_text.ruby` deep
+merge by field, so a character can override only ruby size while inheriting the
+global ruby gap. Lists and hook collections must use explicit operators:
+`=` replaces the collection, `+=` appends, and future removal operators must be
+spelled explicitly rather than inferred.
+
+`dialogue defaults` should carry dialogue policy, not arbitrary renderer state.
+Window choice, reveal behavior, voice policy, hooks, localization policy, and
+RichText typography are appropriate. Per-scene state, temporary line-plan
+variables, and stage handles belong in flows, speaker presets, or line plans.
+
+---
+
+## RichText typography defaults
+
+RichText defaults are grouped under `rich_text` instead of flattening every
+text parameter into `dialogue defaults`. This keeps ruby, vertical writing,
+font choice, wrapping, effects, and future typography parameters in one
+namespace that can also be reused by choices, UI text, logs, and HUD text.
+
+```arcw
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.0
+
+    rich_text {
+        text {
+            font = "Yu Gothic"
+            size = 30px
+            color = rgb("#f5f5f5")
+        }
+
+        layout {
+            writing_mode = horizontal_tb
+            jlreq = normal
+            vertical_latin = mixed
+            wrap = textbox
+            overflow = page
+        }
+
+        ruby {
+            position = over
+            size = 14px
+            gap = 2px
+            overhang = 7px
+            collision_gap = 2px
+        }
+    }
+}
+```
+
+Character defaults use the same structure and override only the fields they
+mention:
+
+```arcw
+pub character @character.alice Alice {
+    dialogue_style {
+        rich_text {
+            text { color = rgb("#f7d7ff") }
+            ruby { size = 13px gap = 1px }
+        }
+    }
+}
+```
+
+Line and speaker preset options may pass the same data as a typed value:
+
+```arcw
+let phone_alice = alice(
+    window = @textbox.phone_message,
+    rich_text = rich_text_style(
+        text = text_style(size=24px),
+        ruby = ruby_style(size=11px, gap=1px),
+    ),
+)
+```
+
+Inline rich-text selectors remain the most local override:
+
+```arcw
+alice: [.ruby_over ruby_size=11px ruby_gap=1px]|[夢](ゆめ)[/][p]
+```
+
+The inline spelling uses `ruby_size` and `ruby_gap` because tag attributes share
+one flat namespace. Defaults use `rich_text { ruby { size = ... } }` because the
+record path already disambiguates the field.
+
+---
+
 ## Built-in read/unread style hooks
 
 Common visual-novel patterns are built in.
