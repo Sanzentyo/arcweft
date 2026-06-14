@@ -494,7 +494,10 @@ the concrete choices to follow when turning that package into production code.
   sequence: Sans I/O layout keeps `本⁽¹⁾。` attached through the brackets,
   digit, and following full stop, and native Agent raw mask/object-id crops
   verify that the closing bracket and following full stop objects in `本⁽¹⁾。人`
-  are read back from rendered GlyphArea pixels.
+  are read back from rendered GlyphArea pixels. The parenthesized form is also
+  embedded in a longer strict paragraph class mix, with native raw crops for its
+  following full stop, so bracketed reference marks and later ordinary
+  closing/opening punctuation are proven in one paragraph-DP plan.
   Latin/Greek unit symbols and Western words from the same JLREQ section are
   also represented in the paragraph planner: Sans I/O layout keeps `kg`,
   Greek+Latin SI units such as `μm`, `Web`, accented Latin words such as
