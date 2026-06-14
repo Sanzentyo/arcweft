@@ -485,10 +485,11 @@ the concrete choices to follow when turning that package into production code.
   verify that the closing bracket object in `本⁽¹⁾人` is read back from rendered
   GlyphArea pixels.
   Latin unit symbols and Western words from the same JLREQ section are also
-  represented in the paragraph planner: Sans I/O layout keeps `kg`, `Web`, and
-  word-internal hyphen sequences such as `Web-Test` unbroken, and native Agent
-  raw mask/object-id crops verify that the final `g` object in `天kg人` and the
-  hyphen object in `天A-B人` are read back from rendered GlyphArea pixels.
+  represented in the paragraph planner: Sans I/O layout keeps `kg`, `Web`,
+  accented Latin words such as `café`, and word-internal hyphen sequences such
+  as `Web-Test` unbroken, and native Agent raw mask/object-id crops verify that
+  the final `g` object in `天kg人`, the hyphen object in `天A-B人`, and the
+  accented `é` object in `天té人` are read back from rendered GlyphArea pixels.
   Subscript/superscript object sequences from the same section are represented
   separately from reference marks: Sans I/O layout keeps `H₂O` attached as one
   formula-like object in vertical text, and native Agent raw mask/object-id

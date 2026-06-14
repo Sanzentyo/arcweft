@@ -1130,26 +1130,47 @@ fn latin_word_sequence_requires_previous(
         .and_then(|previous_index| clusters.get(previous_index));
     let next = clusters.get(cluster_index + 1);
     if is_latin_word_joiner_cluster_text(&cluster.text) {
-        return previous.is_some_and(|previous| is_ascii_alphabetic_cluster_text(&previous.text))
-            && next.is_some_and(|next| is_ascii_alphabetic_cluster_text(&next.text));
+        return previous.is_some_and(|previous| is_latin_alphabetic_cluster_text(&previous.text))
+            && next.is_some_and(|next| is_latin_alphabetic_cluster_text(&next.text));
     }
-    if !is_ascii_alphabetic_cluster_text(&cluster.text) {
+    if !is_latin_alphabetic_cluster_text(&cluster.text) {
         return false;
     }
     previous.is_some_and(|previous| {
-        (!cluster.break_allowed_before && is_ascii_alphabetic_cluster_text(&previous.text))
+        (!cluster.break_allowed_before && is_latin_alphabetic_cluster_text(&previous.text))
             || (is_latin_word_joiner_cluster_text(&previous.text)
                 && cluster_index
                     .checked_sub(2)
                     .and_then(|before_joiner_index| clusters.get(before_joiner_index))
                     .is_some_and(|before_joiner| {
-                        is_ascii_alphabetic_cluster_text(&before_joiner.text)
+                        is_latin_alphabetic_cluster_text(&before_joiner.text)
                     }))
     })
 }
 
-fn is_ascii_alphabetic_cluster_text(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphabetic())
+fn is_latin_alphabetic_cluster_text(text: &str) -> bool {
+    let mut has_latin = false;
+    for ch in text.chars() {
+        if is_latin_alphabetic_char(ch) {
+            has_latin = true;
+        } else if !(is_combining_mark(ch) || is_variation_selector(ch)) {
+            return false;
+        }
+    }
+    has_latin
+}
+
+const fn is_latin_alphabetic_char(ch: char) -> bool {
+    matches!(
+        ch,
+        'A'..='Z'
+            | 'a'..='z'
+            | '\u{00c0}'..='\u{00ff}'
+            | '\u{0100}'..='\u{024f}'
+            | '\u{1e00}'..='\u{1eff}'
+            | '\u{ff21}'..='\u{ff3a}'
+            | '\u{ff41}'..='\u{ff5a}'
+    )
 }
 
 fn is_latin_word_joiner_cluster_text(text: &str) -> bool {
@@ -2753,7 +2774,10 @@ mod tests {
                 "body text after a Western word should continue in the next column",
             );
         }
+    }
 
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_hyphenated_western_words_unbroken() {
         let text = "天Web-Test人";
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
@@ -2794,6 +2818,45 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a hyphenated Western word should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_accented_latin_words_unbroken() {
+        let text = "天café人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let first = nth_laid_out_glyph(&layout, "c", 0);
+            let before_accent = nth_laid_out_glyph(&layout, "f", 0);
+            let accented = nth_laid_out_glyph(&layout, "é", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                first,
+                next_column_moves_right,
+                "accented Latin word should start as one Western word after body text",
+            );
+            assert_vertical_layout_after(
+                before_accent,
+                accented,
+                "accented Latin grapheme should stay attached to preceding Latin letters",
+            );
+            assert_next_vertical_layout_column(
+                accented,
+                next_body,
+                next_column_moves_right,
+                "body text after an accented Latin word should continue in the next column",
             );
         }
     }

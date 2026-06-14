@@ -6517,6 +6517,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry() {
+    assert_native_published_jlreq_accented_latin_word_geometry("vertical_rl");
+    assert_native_published_jlreq_accented_latin_word_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops() {
+    assert_native_published_jlreq_accented_latin_word_raw_crop("vertical_rl", "mask");
+    assert_native_published_jlreq_accented_latin_word_raw_crop("vertical_rl", "object-id");
+    assert_native_published_jlreq_accented_latin_word_raw_crop("vertical_lr", "mask");
+    assert_native_published_jlreq_accented_latin_word_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_subscript_object_geometry() {
     assert_native_published_jlreq_subscript_object_geometry("vertical_rl", false);
     assert_native_published_jlreq_subscript_object_geometry("vertical_lr", true);
@@ -8372,6 +8386,165 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         &format!("{writing_mode} published JLREQ hyphenated Western word hyphen"),
     );
     hyphen
+}
+
+fn assert_native_published_jlreq_accented_latin_word_geometry(writing_mode: &str) {
+    let json = observe_native_published_jlreq_accented_latin_word_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_accented_latin_word_objects(&json, writing_mode);
+}
+
+fn observe_native_published_jlreq_accented_latin_word_fixture(
+    writing_mode: &str,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天té人[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
+    json
+}
+
+fn assert_native_published_jlreq_accented_latin_word_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天té人[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-accented-latin-word-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.4.6")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ accented Latin word raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ accented Latin word {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ accented Latin word report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let accented = assert_native_published_jlreq_accented_latin_word_objects(&json, writing_mode);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], accented["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], accented["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], accented["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], accented["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(accented),
+            content_pixels,
+            &format!("{writing_mode} published JLREQ accented Latin word object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native published JLREQ accented Latin crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ accented Latin word dir");
+}
+
+fn assert_native_published_jlreq_accented_latin_word_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let first = find_rich_text_cluster_object(json, "t", 3, 4);
+    let accented = find_rich_text_cluster_object(json, "é", 4, 6);
+    let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    assert_vertical_cluster_after(
+        body,
+        first,
+        "published JLREQ accented Latin word should start after body text",
+    );
+    assert_vertical_cluster_after(
+        first,
+        accented,
+        "published JLREQ accented Latin grapheme should stay with preceding Latin letters",
+    );
+    assert_next_paragraph_column(
+        accented,
+        next_body,
+        writing_mode == "vertical_lr",
+        "body text after the accented Latin word should continue after the word",
+    );
+    assert_rich_text_object_has_mask_capture(
+        accented,
+        &format!("{writing_mode} published JLREQ accented Latin grapheme"),
+    );
+    accented
 }
 
 fn assert_native_published_jlreq_subscript_object_geometry(
