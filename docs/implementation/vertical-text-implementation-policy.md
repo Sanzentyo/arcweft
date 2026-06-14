@@ -498,7 +498,12 @@ the concrete choices to follow when turning that package into production code.
   `b` object in the plain Western word `天Web人`, the final
   `m` object in `天μm人` and `天3μm人`, the hyphen object in `天Web-Test人`, the
   apostrophe objects in `天O'K人` and `天O’K人`, and the accented `é` object in
-  `天café人` are read back from rendered GlyphArea pixels.
+  `天café人` are read back from rendered GlyphArea pixels. The hyphenated
+  Western-word case is also embedded in a longer published-style paragraph
+  class mix (`天地春夏秋冬Web-Test人。「川」...`) so Sans I/O layout and native
+  Agent raw crops prove the no-break Western sequence still shares the same
+  paragraph-DP plan as strict punctuation, brackets, small kana, dash marks,
+  middle dots, and leaders.
   Subscript/superscript object sequences from the same section are represented
   separately from reference marks: Sans I/O layout keeps `H₂O` and Greek-base
   formulas such as `α₂β` and `α²β` attached as one formula-like object in vertical text,

@@ -3548,6 +3548,91 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_hyphenated_word_inside_class_mix() {
+        let text = "天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} published JLREQ paragraph with a hyphenated Western word should require a multi-column plan: {layout:?}"
+            );
+
+            let first = nth_laid_out_glyph(&layout, "W", 0);
+            let second = nth_laid_out_glyph(&layout, "e", 0);
+            let before_hyphen = nth_laid_out_glyph(&layout, "b", 0);
+            let hyphen = nth_laid_out_glyph(&layout, "-", 0);
+            let after_hyphen = nth_laid_out_glyph(&layout, "T", 0);
+            let after_hyphen_second = nth_laid_out_glyph(&layout, "e", 1);
+            let after_hyphen_third = nth_laid_out_glyph(&layout, "s", 0);
+            let last = nth_laid_out_glyph(&layout, "t", 0);
+            assert_vertical_layout_after(
+                first,
+                second,
+                "hyphenated Western word should keep its leading letters together inside a paragraph",
+            );
+            assert_vertical_layout_after(
+                second,
+                before_hyphen,
+                "hyphenated Western word should keep letters before the hyphen together inside a paragraph",
+            );
+            assert_vertical_layout_after(
+                before_hyphen,
+                hyphen,
+                "word-internal hyphen should stay attached inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                hyphen,
+                after_hyphen,
+                "letters after a word-internal hyphen should stay attached inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                after_hyphen,
+                after_hyphen_second,
+                "letters after a word-internal hyphen should stay together inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                after_hyphen_second,
+                after_hyphen_third,
+                "letters after a word-internal hyphen should stay together inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                after_hyphen_third,
+                last,
+                "final letter after a word-internal hyphen should stay attached inside a paragraph class mix",
+            );
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after its base after a Western word",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a Western word",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a Western word",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_strict_pair_after_ruby_text_combine() {
         let text = "夢2026。「人山川海";
         let dream_start = 0;
