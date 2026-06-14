@@ -105,7 +105,10 @@ the concrete choices to follow when turning that package into production code.
   writing directions. The emoji ZWJ path is also embedded in a longer strict
   paragraph class mix, with native raw crops for the full ZWJ grapheme object,
   proving UAX #29 emoji clusters and later strict punctuation share one
-  paragraph-DP and rendered GlyphArea path.
+  paragraph-DP and rendered GlyphArea path. Decomposed kana graphemes are
+  covered the same way, with a strict paragraph-mix fixture and raw crops for
+  `か + U+3099`, proving combining-mark kana clusters use the same layout and
+  rendered GlyphArea geometry path.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
