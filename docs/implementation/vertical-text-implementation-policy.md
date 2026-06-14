@@ -183,7 +183,15 @@ the concrete choices to follow when turning that package into production code.
   text-combine glyph keeps the same layout-glyph metadata, source range, origin
   offset, and affine compression, including a `vertical_lr` layout source where
   Agent object/mask readback depends on the expanded glyphs still identifying as
-  one authored cluster.
+  one authored cluster. Ordinary non-text-combine layout glyphs may also resolve
+  to multiple renderer glyphs, such as variation-selector, keycap, regional
+  indicator, and combining-mark clusters. `ResolvedGlyph` carries each shaped
+  glyph's advance and cluster-relative offset, and the adapter emits every
+  resolved key with shared layout-glyph metadata/source range instead of
+  silently truncating the cluster. Shaped-buffer coordinate conversion keeps the
+  renderer's `i32` physical positions as direct `f32` glyph origins, so large
+  absolute native/ruby glyph positions do not saturate through `i16` during
+  `GlyphArea` preparation.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute

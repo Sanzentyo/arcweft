@@ -123,6 +123,8 @@ pub struct ResolvedGlyph {
     pub cache_key: CacheKey,
     /// Shaped advance before Arcweft vertical/text-combine transforms.
     pub advance: Vector,
+    /// Shaped origin offset inside the Arcweft source cluster.
+    pub offset: Vector,
 }
 
 /// Adapts Arcweft layout geometry to a glyphon `GlyphArea`.
@@ -176,11 +178,13 @@ pub fn glyph_area_from_shaped_buffer(
         .flat_map(|run| {
             run.glyphs.iter().map(move |glyph| {
                 let physical = glyph.physical((options.left, options.top), options.scale);
+                #[allow(clippy::cast_precision_loss)]
+                let origin = Point::new(physical.x as f32, physical.y as f32);
                 GlyphInstance {
                     source: GlyphSource::Text {
                         cache_key: physical.cache_key,
                     },
-                    origin: Point::new(i32_to_f32(physical.x), i32_to_f32(physical.y)),
+                    origin,
                     advance: Vector::new(glyph.w * options.scale, 0.0),
                     ink_bounds: Rect::new(0.0, 0.0, glyph.w * options.scale, run.line_height),
                     transform: GlyphTransform::Identity,
@@ -266,7 +270,11 @@ pub fn vertical_glyph_area_from_shaped_buffer(
 fn is_buffer_run_visible(line_top: f32, line_height: f32, options: GlyphonAreaOptions) -> bool {
     let start_y = options.top + (line_top * options.scale);
     let end_y = start_y + (line_height * options.scale);
-    start_y <= i32_to_f32(options.bounds.bottom) && i32_to_f32(options.bounds.top) <= end_y
+    #[allow(clippy::cast_precision_loss)]
+    let bounds_top = options.bounds.top as f32;
+    #[allow(clippy::cast_precision_loss)]
+    let bounds_bottom = options.bounds.bottom as f32;
+    start_y <= bounds_bottom && bounds_top <= end_y
 }
 
 fn append_glyph_instances(
@@ -280,14 +288,36 @@ fn append_glyph_instances(
         append_text_combine_instances(instances, glyph_index, glyph, resolved, origin_offset);
         return;
     }
-    if let Some(resolved) = resolved.first().copied() {
+    let is_multi_glyph_cluster = resolved.len() > 1;
+    for resolved in resolved.iter().copied() {
+        let origin = Point::new(
+            glyph.origin.x + resolved.offset.x,
+            glyph.origin.y + resolved.offset.y,
+        );
+        let (advance, ink_bounds) = if is_multi_glyph_cluster {
+            let ink_width = resolved
+                .advance
+                .x
+                .abs()
+                .max(1.0)
+                .min(glyph.bounds.width.max(1.0));
+            (
+                resolved.advance,
+                Rect::new(0.0, 0.0, ink_width, glyph.bounds.height.max(1.0)),
+            )
+        } else {
+            (
+                Vector::new(glyph.advance.width, glyph.advance.height),
+                Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
+            )
+        };
         instances.push(glyph_instance(
             glyph_index,
             glyph,
             resolved.cache_key,
-            Point::new(glyph.origin.x, glyph.origin.y),
-            Vector::new(glyph.advance.width, glyph.advance.height),
-            Rect::new(0.0, 0.0, glyph.bounds.width, glyph.bounds.height),
+            origin,
+            advance,
+            ink_bounds,
             origin_offset,
         ));
     }
@@ -378,14 +408,6 @@ fn glyph_instance(
     }
 }
 
-fn i32_to_f32(value: i32) -> f32 {
-    f32::from(i16::try_from(value).unwrap_or(if value.is_negative() {
-        i16::MIN
-    } else {
-        i16::MAX
-    }))
-}
-
 fn usize_to_f32(value: usize) -> f32 {
     f32::from(u16::try_from(value).unwrap_or(u16::MAX))
 }
@@ -427,6 +449,20 @@ mod tests {
         ResolvedGlyph {
             cache_key: fake_cache_key(glyph_id),
             advance: Vector::new(advance_x, 0.0),
+            offset: Vector::new(0.0, 0.0),
+        }
+    }
+
+    fn fake_resolved_glyph_with_offset(
+        glyph_id: u16,
+        advance_x: f32,
+        offset_x: f32,
+        offset_y: f32,
+    ) -> ResolvedGlyph {
+        ResolvedGlyph {
+            cache_key: fake_cache_key(glyph_id),
+            advance: Vector::new(advance_x, 0.0),
+            offset: Vector::new(offset_x, offset_y),
         }
     }
 
@@ -536,6 +572,51 @@ mod tests {
         .expect("area adapts");
 
         assert_eq!(area.glyphs()[0].origin, Point::new(12.0, 50.0));
+    }
+
+    #[test]
+    fn non_text_combine_cluster_emits_multiple_resolved_glyphs_with_offsets() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, "e\u{301}".len()),
+                text: "e\u{301}".to_owned(),
+                origin: LayoutPoint::new(10.0, 20.0),
+                advance: LayoutSize::new(0.0, 42.0),
+                bounds: LayoutRect::new(10.0, 20.0, 42.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
+                orientation: GlyphOrientation::Upright,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area =
+            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
+                vec![
+                    fake_resolved_glyph_with_offset(1, 10.0, 0.0, 0.0),
+                    fake_resolved_glyph_with_offset(2, 8.0, 9.0, 1.0),
+                ]
+            })
+            .expect("non-text-combine multi-glyph clusters adapt without truncation");
+
+        assert_eq!(area.len(), 2);
+        assert_eq!(area.glyphs()[0].origin, Point::new(10.0, 20.0));
+        assert_eq!(area.glyphs()[1].origin, Point::new(19.0, 21.0));
+        assert_eq!(area.glyphs()[0].metadata, area.glyphs()[1].metadata);
+        assert_eq!(area.glyphs()[0].transform, GlyphTransform::Identity);
+        assert_eq!(area.glyphs()[1].transform, GlyphTransform::Identity);
+        assert_eq!(
+            area.glyphs()[1].cluster,
+            Some(TextCluster {
+                start: 0,
+                end: "e\u{301}".len(),
+                index: 0
+            })
+        );
     }
 
     #[test]
@@ -759,6 +840,41 @@ mod tests {
         assert_f32_eq(area.as_glyph_area().top, 0.0);
         assert!(area.glyphs()[0].origin.x >= 12.0);
         assert!(area.glyphs()[0].origin.y >= 34.0);
+    }
+
+    #[test]
+    fn shaped_buffer_maps_large_absolute_positions_without_i16_saturating() {
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
+        buffer.set_size(&mut font_system, Some(400.0), Some(100.0));
+        let attrs = Attrs::new().family(Family::SansSerif);
+        buffer.set_rich_text(
+            &mut font_system,
+            [("large", attrs.clone())],
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        let area = glyph_area_from_shaped_buffer(
+            &buffer,
+            GlyphonAreaOptions {
+                left: 40_000.0,
+                top: 40_000.0,
+                bounds: TextBounds {
+                    left: 0,
+                    top: 0,
+                    right: 50_000,
+                    bottom: 50_000,
+                },
+                ..GlyphonAreaOptions::default()
+            },
+        );
+
+        assert!(!area.is_empty());
+        assert!(area.glyphs()[0].origin.x >= 40_000.0);
+        assert!(area.glyphs()[0].origin.y >= 40_000.0);
     }
 
     #[test]

@@ -3104,12 +3104,15 @@ fn text_buffer_cache_keys(
             run.glyphs.iter().filter_map(move |glyph| {
                 let start = line_start.saturating_add(glyph.start);
                 let end = line_start.saturating_add(glyph.end);
-                let cache_key = glyph.physical((0.0, 0.0), 1.0).cache_key;
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                #[allow(clippy::cast_precision_loss)]
+                let offset = Vector::new(physical.x as f32, physical.y as f32);
                 (start < end).then_some((
                     RichTextRange::new(start, end),
                     ResolvedGlyph {
-                        cache_key,
+                        cache_key: physical.cache_key,
                         advance: Vector::new(glyph.w, 0.0),
+                        offset,
                     },
                 ))
             })
@@ -3148,10 +3151,13 @@ fn text_buffer_cache_keys_for_text(buffer: &Buffer) -> Vec<ResolvedGlyph> {
         .layout_runs()
         .flat_map(|run| {
             run.glyphs.iter().map(|glyph| {
-                let cache_key = glyph.physical((0.0, 0.0), 1.0).cache_key;
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                #[allow(clippy::cast_precision_loss)]
+                let offset = Vector::new(physical.x as f32, physical.y as f32);
                 ResolvedGlyph {
-                    cache_key,
+                    cache_key: physical.cache_key,
                     advance: Vector::new(glyph.w, 0.0),
+                    offset,
                 }
             })
         })
@@ -3178,15 +3184,32 @@ fn cache_keys_for_layout_glyph(
     cache_keys: &LayoutGlyphCacheKeys,
 ) -> Vec<ResolvedGlyph> {
     if let Some(cache_keys) = cache_keys.vertical_alternates.get(&glyph_index) {
-        return cache_keys.clone();
+        return normalize_resolved_glyph_offsets(cache_keys.iter().copied());
     }
-    cache_keys
-        .shaped
-        .iter()
-        .filter_map(|(candidate, resolved)| {
+    normalize_resolved_glyph_offsets(cache_keys.shaped.iter().filter_map(
+        |(candidate, resolved)| {
             (candidate.start < range.end && range.start < candidate.end).then_some(*resolved)
-        })
-        .collect()
+        },
+    ))
+}
+
+fn normalize_resolved_glyph_offsets(
+    resolved: impl IntoIterator<Item = ResolvedGlyph>,
+) -> Vec<ResolvedGlyph> {
+    let mut resolved = resolved.into_iter().collect::<Vec<_>>();
+    let Some(anchor_x) = resolved.iter().map(|glyph| glyph.offset.x).reduce(f32::min) else {
+        return resolved;
+    };
+    let anchor_y = resolved
+        .iter()
+        .map(|glyph| glyph.offset.y)
+        .reduce(f32::min)
+        .unwrap_or(0.0);
+    for glyph in &mut resolved {
+        glyph.offset.x -= anchor_x;
+        glyph.offset.y -= anchor_y;
+    }
+    resolved
 }
 
 fn padded_rgba_row_bytes(width: u32) -> u32 {
