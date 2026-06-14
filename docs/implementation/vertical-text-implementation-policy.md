@@ -545,7 +545,10 @@ the concrete choices to follow when turning that package into production code.
   plan. The accented Latin word `café` is also embedded in that longer strict
   paragraph mix, with native raw crops for `é`, proving non-ASCII Latin
   grapheme byte ranges travel through the same paragraph-DP and rendered
-  GlyphArea path. Numeric unit sequences (`3kg` and `3μm`) now have the same
+  GlyphArea path. The decomposed accented form `café` is covered the same way,
+  with native raw crops for the `e + U+0301` grapheme, so UAX #29 combining-mark
+  clusters also travel through one paragraph-DP and rendered GlyphArea path.
+  Numeric unit sequences (`3kg` and `3μm`) now have the same
   longer strict paragraph-mix coverage, with native raw crops for the final unit
   symbol, so digit-led unit attachment and later strict punctuation are proven
   through one paragraph-DP and rendered GlyphArea path.

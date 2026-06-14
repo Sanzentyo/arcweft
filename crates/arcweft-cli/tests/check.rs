@@ -6314,6 +6314,34 @@ fn agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_clas
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_decomposed_accented_latin_word_class_mix_geometry()
+ {
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crops()
+ {
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crop(
+        "vertical_rl",
+        "mask",
+    );
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crop(
+        "vertical_rl",
+        "object-id",
+    );
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crop(
+        "vertical_lr",
+        "mask",
+    );
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crop(
+        "vertical_lr",
+        "object-id",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_unit_symbol_class_mix_geometry() {
     assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_rl");
     assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_lr");
@@ -8198,6 +8226,199 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_objects<'report>(
         accented,
         &format!("{writing_mode} published JLREQ accented Latin word class-mix accented grapheme"),
     );
+    accented
+}
+
+fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_geometry(
+    writing_mode: &str,
+) {
+    let json = observe_native_published_jlreq_decomposed_accented_latin_word_class_mix_fixture(
+        writing_mode,
+    );
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["jlreq_strictness"],
+        "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_objects(
+        &json,
+        writing_mode,
+    );
+}
+
+fn observe_native_published_jlreq_decomposed_accented_latin_word_class_mix_fixture(
+    writing_mode: &str,
+) -> serde_json::Value {
+    let text = "天地春夏秋冬cafe\u{301}人。「川」あっいおーえ―中・外………終";
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix"
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ decomposed accented Latin word class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix-{capture_kind}"
+    );
+    let text = "天地春夏秋冬cafe\u{301}人。「川」あっいおーえ―中・外………終";
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.9.21.24")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect(
+            "arcw agent observe writes native published JLREQ decomposed accented Latin word class-mix raw crop",
+        );
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ decomposed accented Latin word class-mix {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ decomposed accented Latin word class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let accented = assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_objects(
+        &json,
+        writing_mode,
+    );
+    assert_native_published_jlreq_accented_latin_word_class_mix_crop_pixels(
+        &json,
+        accented,
+        &raw_path,
+        writing_mode,
+        capture_kind,
+    );
+
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ decomposed accented Latin word class-mix source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp published JLREQ decomposed accented Latin word class-mix dir");
+}
+
+fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    let first = find_rich_text_cluster_object(json, "c", 18, 19);
+    let second = find_rich_text_cluster_object(json, "a", 19, 20);
+    let before_accent = find_rich_text_cluster_object(json, "f", 20, 21);
+    let accented = find_rich_text_cluster_object(json, "e\u{301}", 21, 24);
+    assert_vertical_cluster_after(
+        first,
+        second,
+        "published JLREQ decomposed accented Latin word class mix keeps leading letters together",
+    );
+    assert_vertical_cluster_after(
+        second,
+        before_accent,
+        "published JLREQ decomposed accented Latin word class mix keeps letters before accent together",
+    );
+    assert_vertical_cluster_after(
+        before_accent,
+        accented,
+        "published JLREQ decomposed accented Latin word class mix keeps accented grapheme attached",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", 24, 27);
+    let full_stop = find_rich_text_cluster_object(json, "。", 27, 30);
+    let opening = find_rich_text_cluster_object(json, "「", 30, 33);
+    let river = find_rich_text_cluster_object(json, "川", 33, 36);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after a decomposed accented Latin word",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after a decomposed accented Latin word",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after a decomposed accented Latin word",
+    );
+    assert_rich_text_object_has_mask_capture(
+        accented,
+        &format!(
+            "{writing_mode} published JLREQ decomposed accented Latin word class-mix accented grapheme"
+        ),
+    );
+    assert_eq!(accented["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(accented["rich_text_ref"]["range"]["start"], 21);
+    assert_eq!(accented["rich_text_ref"]["range"]["end"], 24);
     accented
 }
 
