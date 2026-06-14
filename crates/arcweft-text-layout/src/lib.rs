@@ -2217,6 +2217,37 @@ mod tests {
     }
 
     #[test]
+    fn vertical_fullwidth_question_mark_hangs_as_closing_punctuation() {
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run("天地？人", vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let question = nth_laid_out_glyph(&layout, "？", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+
+            assert_eq!(question.text, "？");
+            assert_f32_eq(question.advance.height, config.line_advance * 0.5);
+            assert_f32_eq(question.origin.x, layout.glyphs[1].origin.x);
+            assert!(
+                question.bounds.bottom() > config.origin.y + config.size.height,
+                "fullwidth question mark should hang past the {writing_mode:?} column end"
+            );
+            assert_next_vertical_layout_column(
+                question,
+                person,
+                next_column_moves_right,
+                "ordinary text after fullwidth question mark should start the next column",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_punctuation_compression_keeps_following_text_in_column() {
         let frame = frame_with_run(
             "天、。人",

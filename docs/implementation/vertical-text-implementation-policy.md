@@ -354,7 +354,11 @@ the concrete choices to follow when turning that package into production code.
   `vertical_rl`. The `vertical_lr` moved opening-punctuation and hanging
   punctuation clusters are captured as raw native mask and object-id crops,
   tying the mirrored Agent bboxes, stable object colors, and crop origins back
-  to rendered GlyphArea pixels. Preset-specific native Agent coverage compares
+  to rendered GlyphArea pixels. Fullwidth closing punctuation coverage now
+  includes `？` in Sans I/O layout and native Agent fixtures for both
+  `vertical_rl` and `vertical_lr`, with raw mask/object-id crops tying its
+  half-cell hanging bbox and stable object color back to rendered GlyphArea
+  pixels. Preset-specific native Agent coverage compares
   `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset. Broader
