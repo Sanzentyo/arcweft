@@ -813,6 +813,13 @@ fn vertical_column_segment_cost(
         column_end,
         context.config,
     );
+    let overhang_uses_linebreak_continuation =
+        vertical_column_segment_overhang_uses_linebreak_continuation(
+            clusters,
+            column_start,
+            column_end,
+            context.config,
+        );
     if column_end < segment_end && overflow > allowed_overhang + f32::EPSILON {
         return None;
     }
@@ -822,6 +829,11 @@ fn vertical_column_segment_cost(
     let badness = 100.0 * (remaining / capacity).powi(3);
     let overflow_penalty =
         ((overflow - allowed_overhang).max(0.0) / context.config.line_advance).powi(2) * 10_000.0;
+    let allowed_overhang_penalty = if overhang_uses_linebreak_continuation {
+        (overflow.min(allowed_overhang) / context.config.line_advance).powi(2) * 50.0
+    } else {
+        0.0
+    };
     let break_penalty = if column_end < segment_end {
         5.0 + vertical_column_pair_break_penalty(
             clusters,
@@ -832,7 +844,7 @@ fn vertical_column_segment_cost(
     } else {
         0.0
     };
-    Some(badness + overflow_penalty + break_penalty)
+    Some(badness + overflow_penalty + allowed_overhang_penalty + break_penalty)
 }
 
 fn vertical_column_pair_break_penalty(
@@ -917,6 +929,29 @@ fn vertical_column_segment_overhang_allowance(
         .sum()
 }
 
+fn vertical_column_segment_overhang_uses_linebreak_continuation(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+    config: TextLayoutConfig,
+) -> bool {
+    let Some(last_cluster_index) = (column_start..column_end)
+        .rfind(|index| !is_vertical_line_break_cluster(&clusters[*index].text))
+    else {
+        return false;
+    };
+
+    for cluster_index in (column_start.saturating_add(1)..=last_cluster_index).rev() {
+        if !vertical_cluster_requires_previous_in_column(cluster_index, clusters, config) {
+            return false;
+        }
+        if vertical_cluster_requires_previous_by_linebreak_only(cluster_index, clusters, config) {
+            return true;
+        }
+    }
+    false
+}
+
 fn vertical_cluster_requires_previous_in_column(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -925,6 +960,9 @@ fn vertical_cluster_requires_previous_in_column(
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
+    if vertical_cluster_requires_previous_by_linebreak_only(cluster_index, clusters, config) {
+        return true;
+    }
     if jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text) {
         return true;
     }
@@ -935,6 +973,36 @@ fn vertical_cluster_requires_previous_in_column(
     )
 }
 
+fn vertical_cluster_requires_previous_by_linebreak_only(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+    config: TextLayoutConfig,
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    let Some(previous) = cluster_index
+        .checked_sub(1)
+        .and_then(|previous_index| clusters.get(previous_index))
+    else {
+        return false;
+    };
+    !cluster.break_allowed_before
+        && !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
+        && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
+        && is_ascii_digit_cluster_text(&previous.text)
+        && is_ascii_digit_cluster_text(&cluster.text)
+        && !vertical_cluster_has_jlreq_separation_prohibited_before(
+            cluster_index,
+            clusters,
+            config.jlreq_strictness,
+        )
+}
+
+fn is_ascii_digit_cluster_text(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn vertical_cluster_can_start_column(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -943,7 +1011,9 @@ fn vertical_cluster_can_start_column(
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
-    cluster.break_allowed_before
+    let can_break_before = cluster.break_allowed_before
+        || jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text);
+    can_break_before
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
@@ -1895,6 +1965,74 @@ mod tests {
         assert_eq!(layout.glyphs[1].text, "5");
         assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::SidewaysCw);
         assert_eq!(layout.glyphs[0].vertical_form, GlyphVerticalForm::None);
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_european_numeral_sequence_unbroken() {
+        // W3C JLREQ 3.1.10 treats European numeral sequences as unbreakable
+        // because each digit position contributes to the represented value.
+        // Arcweft's vertical text-combine policy splits long numeral runs into
+        // multiple layout clusters, so the column planner must still treat the
+        // whole numeral sequence as one no-break suffix.
+        let text = "天202650267人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 126.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let first_digits = nth_laid_out_glyph(&layout, "2026", 0);
+            let second_digits = nth_laid_out_glyph(&layout, "5026", 0);
+            let final_digit = nth_laid_out_glyph(&layout, "7", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_eq!(
+                first_digits.orientation,
+                GlyphOrientation::TextCombineUpright
+            );
+            assert_eq!(
+                second_digits.orientation,
+                GlyphOrientation::TextCombineUpright
+            );
+            assert_eq!(final_digit.orientation, GlyphOrientation::SidewaysCw);
+            if next_column_moves_right {
+                assert!(
+                    first_digits.origin.x > body.origin.x,
+                    "overlong European numeral sequence should move right as a unit after body text: {first_digits:?}"
+                );
+            } else {
+                assert!(
+                    first_digits.origin.x < body.origin.x,
+                    "overlong European numeral sequence should move left as a unit after body text: {first_digits:?}"
+                );
+            }
+            assert_f32_eq(first_digits.origin.y, config.origin.y);
+            assert_vertical_layout_after(
+                first_digits,
+                second_digits,
+                "text-combine chunk should stay with the previous numeral chunk",
+            );
+            assert_vertical_layout_after(
+                second_digits,
+                final_digit,
+                "remaining digit should stay with the text-combine numeral chunks",
+            );
+            assert_f32_eq(
+                final_digit.bounds.bottom(),
+                config.origin.y + config.size.height,
+            );
+            assert_next_vertical_layout_column(
+                final_digit,
+                next_body,
+                next_column_moves_right,
+                "body text after an overhanging European numeral sequence should continue in the next column",
+            );
+        }
     }
 
     #[test]

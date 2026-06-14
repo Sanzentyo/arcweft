@@ -437,6 +437,14 @@ the concrete choices to follow when turning that package into production code.
   not attach back to the previous segment, and native Agent fixtures cover the
   hard-break opening cluster plus raw mask/object-id crops in both
   `vertical_rl` and `vertical_lr`.
+  Published JLREQ 3.1.10 European numeral sequencing is covered for long
+  vertical digit runs that Arcweft splits into multiple text-combine clusters:
+  adjacent ASCII digit clusters that remain no-break after text-combine
+  grouping are treated as same-column suffixes in the paragraph planner,
+  accepted digit-suffix overhang has a soft cost instead of being free, and
+  native Agent geometry/raw mask/object-id fixtures verify that `2026502671234`
+  restarts as one column unit when it can fit better there and that the final
+  digit still reads back from rendered GlyphArea pixels.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
