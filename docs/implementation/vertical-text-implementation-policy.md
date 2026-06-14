@@ -483,12 +483,13 @@ the concrete choices to follow when turning that package into production code.
   paragraph class mix, with native raw crops for the final `C`, proving the
   abbreviation sequence and later ordinary closing/opening punctuation share one
   paragraph-DP plan. The prefixed form `$123` is also embedded in that longer
-  strict paragraph class mix, with native raw crops for `$`, so prefix
-  abbreviations and later ordinary closing/opening punctuation are verified in
-  one paragraph-DP plan instead of only through isolated short fixtures. The
-  postfixed form `50%` is covered the same way, with native raw crops for `%`,
-  so both sides of numeric abbreviation attachment are proven in mixed strict
-  paragraph planning. Ideographic numeral forms `$五` and `五%` are also
+  strict paragraph class mix, with native raw crops for `$`; the cent-prefixed
+  form `¢123` is covered the same way with native raw crops for `¢`. Prefix
+  abbreviations and later ordinary closing/opening punctuation are therefore
+  verified in one paragraph-DP plan instead of only through isolated short
+  fixtures. The postfixed form `50%` is covered the same way, with native raw
+  crops for `%`, so both sides of numeric abbreviation attachment are proven in
+  mixed strict paragraph planning. Ideographic numeral forms `$五` and `五%` are also
   embedded in the same longer strict paragraph mix, with native raw crops for
   their abbreviation marks, so Arabic digit text-combine and ideographic
   numeral attachment both travel through the rendered GlyphArea path.
