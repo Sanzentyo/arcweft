@@ -3387,6 +3387,45 @@ mod tests {
     }
 
     #[test]
+    fn vertical_column_keeps_small_parenthesis_pair_together() {
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run("天﹙﹚人", vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let opening = nth_laid_out_glyph(&layout, "﹙", 0);
+            let closing = nth_laid_out_glyph(&layout, "﹚", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+
+            assert_vertical_layout_after(
+                &layout.glyphs[0],
+                opening,
+                "small opening parenthesis should sit after the previous cluster",
+            );
+            assert_vertical_layout_after(
+                opening,
+                closing,
+                "small parenthesis pair should stay together",
+            );
+            assert!(
+                closing.bounds.bottom() > config.origin.y + config.size.height,
+                "small parenthesis pair may overhang as one suffix"
+            );
+            assert_next_vertical_layout_column(
+                closing,
+                person,
+                next_column_moves_right,
+                "ordinary text after small parenthesis pair should start the next column",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_column_plan_balances_paragraph_with_dp_cost() {
         let frame = frame_with_run(
             "天地玄黄宇宙",
