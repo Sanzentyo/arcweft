@@ -6132,6 +6132,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_parenthesized_reference_
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_latin_unit_geometry() {
+    assert_native_published_jlreq_latin_unit_geometry("vertical_rl", false);
+    assert_native_published_jlreq_latin_unit_geometry("vertical_lr", true);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_latin_unit_raw_crops() {
+    assert_native_published_jlreq_latin_unit_raw_crop("vertical_rl", false, "mask");
+    assert_native_published_jlreq_latin_unit_raw_crop("vertical_rl", false, "object-id");
+    assert_native_published_jlreq_latin_unit_raw_crop("vertical_lr", true, "mask");
+    assert_native_published_jlreq_latin_unit_raw_crop("vertical_lr", true, "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_ruby_text_combine_geometry() {
     assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_rl", true);
     assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_lr", false);
@@ -7627,6 +7641,171 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_objects<'report>(
         &format!("{writing_mode} published JLREQ parenthesized reference mark closing"),
     );
     close
+}
+
+fn assert_native_published_jlreq_latin_unit_geometry(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let json = observe_native_published_jlreq_latin_unit_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_latin_unit_objects(&json, writing_mode, next_column_moves_right);
+}
+
+fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天kg人[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ Latin unit source");
+    json
+}
+
+fn assert_native_published_jlreq_latin_unit_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+) {
+    let fixture_name =
+        format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit-{capture_kind}");
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天kg人[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-latin-unit-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.4.5")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ Latin unit raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ Latin unit {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ Latin unit report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let unit_end = assert_native_published_jlreq_latin_unit_objects(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+    );
+    assert_eq!(json["images"][0]["crop_origin"]["x"], unit_end["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], unit_end["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], unit_end["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], unit_end["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(unit_end),
+            content_pixels,
+            &format!("{writing_mode} published JLREQ Latin unit object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native published JLREQ Latin unit crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp published JLREQ Latin unit source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ Latin unit dir");
+}
+
+fn assert_native_published_jlreq_latin_unit_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let unit_start = find_rich_text_cluster_object(json, "k", 3, 4);
+    let unit_end = find_rich_text_cluster_object(json, "g", 4, 5);
+    let next_body = find_rich_text_cluster_object(json, "人", 5, 8);
+    assert_vertical_cluster_after(
+        body,
+        unit_start,
+        "published JLREQ Latin unit should start after body text",
+    );
+    assert_vertical_cluster_after(
+        unit_start,
+        unit_end,
+        "published JLREQ Latin unit letters should stay together",
+    );
+    assert_next_paragraph_column(
+        unit_end,
+        next_body,
+        next_column_moves_right,
+        "body text after the Latin unit symbol should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        unit_end,
+        &format!("{writing_mode} published JLREQ Latin unit final letter"),
+    );
+    unit_end
 }
 
 fn assert_native_strict_jlreq_ruby_text_combine_geometry(writing_mode: &str, ruby_on_right: bool) {

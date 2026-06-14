@@ -468,6 +468,11 @@ the concrete choices to follow when turning that package into production code.
   digit, and following full stop, and native Agent raw mask/object-id crops
   verify that the closing bracket object in `本⁽¹⁾人` is read back from rendered
   GlyphArea pixels.
+  Latin unit symbols and non-hyphenated Western words from the same JLREQ
+  section are also represented in the paragraph planner: Sans I/O layout keeps
+  `kg` and `Web` letter sequences unbroken, and native Agent raw mask/object-id
+  crops verify that the final `g` object in `天kg人` is read back from rendered
+  GlyphArea pixels.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent

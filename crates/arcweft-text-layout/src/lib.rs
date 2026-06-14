@@ -997,11 +997,14 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
         ascii_number_separator_sequence_requires_previous(cluster_index, clusters);
     let requires_numeric_abbreviation_sequence =
         numeric_abbreviation_sequence_requires_previous(cluster_index, clusters);
+    let requires_latin_word_sequence =
+        latin_word_sequence_requires_previous(cluster_index, clusters);
     !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && (requires_ascii_digit_sequence
             || requires_ascii_number_separator_sequence
-            || requires_numeric_abbreviation_sequence)
+            || requires_numeric_abbreviation_sequence
+            || requires_latin_word_sequence)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -1103,6 +1106,25 @@ fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
     matches!(text, "%" | "％" | "‰")
 }
 
+fn latin_word_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    !cluster.break_allowed_before
+        && is_ascii_alphabetic_cluster_text(&cluster.text)
+        && cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_ascii_alphabetic_cluster_text(&previous.text))
+}
+
+fn is_ascii_alphabetic_cluster_text(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphabetic())
+}
+
 fn reference_mark_sequence_requires_previous(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -1148,6 +1170,7 @@ fn vertical_cluster_can_start_column(
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
         && !numeric_abbreviation_sequence_requires_previous(cluster_index, clusters)
+        && !latin_word_sequence_requires_previous(cluster_index, clusters)
         && !reference_mark_sequence_requires_previous(cluster_index, clusters)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
@@ -2483,6 +2506,73 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after the parenthesized reference mark should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_latin_units_and_words_unbroken() {
+        // W3C JLREQ 3.1.10 keeps Latin unit symbols and non-hyphenated
+        // Western words unbroken inside the sequence of letters.
+        let text = "天kg人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let unit_start = nth_laid_out_glyph(&layout, "k", 0);
+            let unit_end = nth_laid_out_glyph(&layout, "g", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                unit_start,
+                unit_end,
+                "letters inside a Latin unit symbol should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                unit_end,
+                next_body,
+                next_column_moves_right,
+                "body text after a Latin unit symbol should continue in the next column",
+            );
+        }
+
+        let text = "天Web人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let first = nth_laid_out_glyph(&layout, "W", 0);
+            let second = nth_laid_out_glyph(&layout, "e", 0);
+            let third = nth_laid_out_glyph(&layout, "b", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                first,
+                second,
+                "letters inside a non-hyphenated Western word should stay attached",
+            );
+            assert_vertical_layout_after(
+                second,
+                third,
+                "last letter inside a non-hyphenated Western word should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                third,
+                next_body,
+                next_column_moves_right,
+                "body text after a Western word should continue in the next column",
             );
         }
     }
