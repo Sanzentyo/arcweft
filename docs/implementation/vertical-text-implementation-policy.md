@@ -115,6 +115,10 @@ the concrete choices to follow when turning that package into production code.
   covered in strict paragraph mix through raw mask/object-id crops, proving
   skin-tone modifier clusters keep one source range and one rendered GlyphArea
   object while later strict punctuation uses the same paragraph-DP plan.
+  Regional-indicator flag pairs such as `🇯🇵` are also covered as one UAX #29
+  grapheme in strict paragraph mix, with native raw mask/object-id crops tying
+  the paired source range, upright orientation metadata, and rendered
+  GlyphArea object to the same later strict punctuation plan.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
