@@ -451,7 +451,10 @@ the concrete choices to follow when turning that package into production code.
   exercises `︵︶` as upright `vertical_form=none` clusters: Sans I/O layout
   fixes the small-column overhang/no-break behavior, while native Agent fixtures
   in both vertical writing modes capture the rendered `︶` object as raw mask
-  and object-id crops from the same observed GlyphArea geometry. Broader
+  and object-id crops from the same observed GlyphArea geometry. Halfwidth
+  corner brackets `｢｣` are covered as the same generated compact bracket pair
+  through their rotated UAX #50 path, with native raw mask/object-id crops in
+  both vertical writing modes for the closing bracket object. Broader
   paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, dash marks, middle dots,
   repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
