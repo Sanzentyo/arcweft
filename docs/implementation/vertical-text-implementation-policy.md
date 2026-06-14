@@ -479,10 +479,11 @@ the concrete choices to follow when turning that package into production code.
   geometry/raw mask/object-id crops verify that the `$` and `¢` prefix objects
   plus `%`, `℃`, and both `°` and the final `C` in `25°C` are read back from
   rendered GlyphArea pixels for Arabic and ideographic numerals. The
-  decomposed temperature unit `25°C` is also embedded in a longer strict
-  paragraph class mix, with native raw crops for the final `C`, proving the
-  abbreviation sequence and later ordinary closing/opening punctuation share one
-  paragraph-DP plan. The prefixed form `$123` is also embedded in that longer
+  temperature suffix `25℃` and decomposed temperature unit `25°C` are also
+  embedded in a longer strict paragraph class mix, with native raw crops for
+  `℃` and the final `C`, proving the abbreviation sequence and later ordinary
+  closing/opening punctuation share one paragraph-DP plan. The prefixed form
+  `$123` is also embedded in that longer
   strict paragraph class mix, with native raw crops for `$`; the cent-prefixed
   form `¢123` is covered the same way with native raw crops for `¢`. Prefix
   abbreviations and later ordinary closing/opening punctuation are therefore
