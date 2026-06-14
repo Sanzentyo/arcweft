@@ -8624,32 +8624,41 @@ fn assert_native_published_jlreq_apostrophe_western_word_geometry(
     writing_mode: &str,
     next_column_moves_right: bool,
 ) {
-    let json = observe_native_published_jlreq_apostrophe_western_word_fixture(writing_mode);
-    assert_native_rich_text_layer_image_has_content(&json);
-    assert_eq!(
-        first_text_run_presentation_layout(&json)["writing_mode"],
-        writing_mode
-    );
-    assert_native_published_jlreq_apostrophe_western_word_objects(
-        &json,
-        writing_mode,
-        next_column_moves_right,
-    );
+    for case in native_published_jlreq_apostrophe_western_word_cases() {
+        let json =
+            observe_native_published_jlreq_apostrophe_western_word_fixture(writing_mode, case);
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_apostrophe_western_word_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+            case,
+        );
+    }
 }
 
 fn observe_native_published_jlreq_apostrophe_western_word_fixture(
     writing_mode: &str,
+    case: NativeApostropheWesternWordCase,
 ) -> serde_json::Value {
     let path = temp_arcw(
-        &format!("agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word"),
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-{}",
+            case.label
+        ),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天O'K人[/][p]
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
-"
+",
+            case.text
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -8662,8 +8671,25 @@ fn assert_native_published_jlreq_apostrophe_western_word_raw_crop(
     next_column_moves_right: bool,
     capture_kind: &str,
 ) {
+    for case in native_published_jlreq_apostrophe_western_word_cases() {
+        assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
+            writing_mode,
+            next_column_moves_right,
+            capture_kind,
+            case,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+    case: NativeApostropheWesternWordCase,
+) {
     let fixture_name = format!(
-        "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-{capture_kind}"
+        "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-{}-{capture_kind}",
+        case.label
     );
     let path = temp_arcw(
         &fixture_name,
@@ -8672,14 +8698,16 @@ fn assert_native_published_jlreq_apostrophe_western_word_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天O'K人[/][p]
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
-"
+",
+            case.text
         ),
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
-        "native-{writing_mode}-published-jlreq-apostrophe-western-word-{capture_kind}.rgba"
+        "native-{writing_mode}-published-jlreq-apostrophe-western-word-{}-{capture_kind}.rgba",
+        case.label
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -8692,7 +8720,7 @@ flow @flow.main main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.4.5")
+        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -8728,6 +8756,7 @@ flow @flow.main main {{
         &json,
         writing_mode,
         next_column_moves_right,
+        case,
     );
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
@@ -8769,6 +8798,7 @@ fn assert_native_published_jlreq_apostrophe_western_word_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
     next_column_moves_right: bool,
+    case: NativeApostropheWesternWordCase,
 ) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
@@ -8776,9 +8806,15 @@ fn assert_native_published_jlreq_apostrophe_western_word_objects<'report>(
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
     let first = find_rich_text_cluster_object(json, "O", 3, 4);
-    let apostrophe = find_rich_text_cluster_object(json, "'", 4, 5);
-    let after_apostrophe = find_rich_text_cluster_object(json, "K", 5, 6);
-    let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    let apostrophe = find_rich_text_cluster_object(
+        json,
+        case.apostrophe,
+        case.apostrophe_start,
+        case.apostrophe_end,
+    );
+    let after_apostrophe =
+        find_rich_text_cluster_object(json, "K", case.after_start, case.after_end);
+    let next_body = find_rich_text_cluster_object(json, "人", case.next_start, case.next_end);
     assert_vertical_cluster_after(
         body,
         first,
@@ -8805,6 +8841,50 @@ fn assert_native_published_jlreq_apostrophe_western_word_objects<'report>(
         &format!("{writing_mode} published JLREQ apostrophe Western word apostrophe"),
     );
     apostrophe
+}
+
+#[derive(Clone, Copy)]
+struct NativeApostropheWesternWordCase {
+    label: &'static str,
+    text: &'static str,
+    apostrophe: &'static str,
+    object_id: &'static str,
+    apostrophe_start: u64,
+    apostrophe_end: u64,
+    after_start: u64,
+    after_end: u64,
+    next_start: u64,
+    next_end: u64,
+}
+
+const fn native_published_jlreq_apostrophe_western_word_cases()
+-> [NativeApostropheWesternWordCase; 2] {
+    [
+        NativeApostropheWesternWordCase {
+            label: "ascii",
+            text: "天O'K人",
+            apostrophe: "'",
+            object_id: "object.dialogue.0.0.cluster.2.4.5",
+            apostrophe_start: 4,
+            apostrophe_end: 5,
+            after_start: 5,
+            after_end: 6,
+            next_start: 6,
+            next_end: 9,
+        },
+        NativeApostropheWesternWordCase {
+            label: "typographic",
+            text: "天O’K人",
+            apostrophe: "’",
+            object_id: "object.dialogue.0.0.cluster.2.4.7",
+            apostrophe_start: 4,
+            apostrophe_end: 7,
+            after_start: 7,
+            after_end: 8,
+            next_start: 8,
+            next_end: 11,
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_accented_latin_word_geometry(writing_mode: &str) {
