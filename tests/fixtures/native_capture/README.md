@@ -42,4 +42,6 @@ object-id raw crops from the vertical ruby objects on both physical sides.
 Tier2 `imq` visual regression uses bounded full-reference MSE/MAE drift rather
 than exact-zero pixel parity because the native text path can produce tiny
 antialiasing differences across otherwise valid Windows renderer/font
-environments.
+environments. For a milestone or CI handoff that needs publishable evidence, run
+`just native-visual-artifacts`; it writes fresh candidate PNGs, observe JSON, and
+`imq` JSON reports to `target/arcweft-native-capture-artifacts/`.

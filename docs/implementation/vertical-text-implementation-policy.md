@@ -388,6 +388,11 @@ the concrete choices to follow when turning that package into production code.
   and 4-digit text-combine-upright rendering. The
   CLI test compares fresh native captures against those PNGs with bounded `imq`
   MSE/MAE drift when both Windows fonts and the `imq` binary are available. The
+  `just native-visual-artifacts` target writes the same fresh native PNGs,
+  `arcw agent observe` JSON, and `imq` JSON reports under
+  `target/arcweft-native-capture-artifacts/` so CI or milestone handoff jobs can
+  publish the visual comparison evidence without checking generated images into
+  the repository. The
   normal CLI test path also validates the checked-in fixture structure, PNG
   dimensions, and loose vs normal preset image distinctness without requiring
   renderer-exact pixel parity, so broken visual fixtures are caught before the

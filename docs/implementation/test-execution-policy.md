@@ -268,6 +268,7 @@ The equivalent Justfile targets are:
 just test-slow-mcp
 just test-slow-agent-observe
 just test-visual-golden
+just native-visual-artifacts
 just verify-vendor-glyphon
 just test-tier2
 just verify-full
@@ -299,6 +300,11 @@ Operational budget:
   adapter-facing GlyphArea contract changed.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
+- Milestone native visual handoff: run `just native-visual-artifacts` on a
+  Windows machine with `imq` available and publish
+  `target/arcweft-native-capture-artifacts/` as the CI/job artifact. That target
+  writes fresh native PNG candidates, `arcw agent observe` JSON, and `imq` JSON
+  metric reports for every checked-in native visual golden.
 
 ## CI Direction
 
