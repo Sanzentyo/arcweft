@@ -4685,36 +4685,20 @@ fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry()
 
 #[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_closing_opening_column_plan() {
-    let loose = observe_native_jlreq_closing_opening_fixture("loose");
-    let strict = observe_native_jlreq_closing_opening_fixture("strict");
-    assert_native_rich_text_layer_image_has_content(&loose);
-    assert_native_rich_text_layer_image_has_content(&strict);
-
-    assert_eq!(
-        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
-        "loose"
-    );
-    assert_eq!(
-        first_text_run_presentation_layout(&strict)["jlreq_strictness"],
-        "strict"
-    );
-
-    let loose_full_stop = find_rich_text_cluster_object(&loose, "。", 6, 9);
-    let loose_open = find_rich_text_cluster_object(&loose, "「", 9, 12);
-    assert_next_paragraph_column(
-        loose_full_stop,
-        loose_open,
-        false,
-        "loose native paragraph plan may break between adjacent closing/opening punctuation",
-    );
-
-    assert_native_strict_jlreq_closing_opening_geometry(&strict);
+    assert_native_jlreq_closing_opening_column_plan("vertical_rl", false);
+    assert_native_jlreq_closing_opening_column_plan("vertical_lr", true);
 }
 
 #[test]
 fn agent_observe_native_renderer_writes_strict_jlreq_closing_opening_raw_crops() {
-    assert_native_strict_jlreq_closing_opening_raw_crop("mask");
-    assert_native_strict_jlreq_closing_opening_raw_crop("object-id");
+    assert_native_strict_jlreq_closing_opening_raw_crop("vertical_rl", "mask");
+    assert_native_strict_jlreq_closing_opening_raw_crop("vertical_rl", "object-id");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_closing_opening_raw_crops() {
+    assert_native_strict_jlreq_closing_opening_raw_crop("vertical_lr", "mask");
+    assert_native_strict_jlreq_closing_opening_raw_crop("vertical_lr", "object-id");
 }
 
 #[test]
@@ -4925,15 +4909,48 @@ flow @flow.main main {{
     json
 }
 
-fn observe_native_jlreq_closing_opening_fixture(strictness: &str) -> serde_json::Value {
+fn assert_native_jlreq_closing_opening_column_plan(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let loose = observe_native_jlreq_closing_opening_fixture(writing_mode, "loose");
+    let strict = observe_native_jlreq_closing_opening_fixture(writing_mode, "strict");
+    assert_native_rich_text_layer_image_has_content(&loose);
+    assert_native_rich_text_layer_image_has_content(&strict);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
+        "loose"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&strict)["jlreq_strictness"],
+        "strict"
+    );
+
+    let loose_full_stop = find_rich_text_cluster_object(&loose, "。", 6, 9);
+    let loose_open = find_rich_text_cluster_object(&loose, "「", 9, 12);
+    assert_next_paragraph_column(
+        loose_full_stop,
+        loose_open,
+        next_column_moves_right,
+        "loose native paragraph plan may break between adjacent closing/opening punctuation",
+    );
+
+    assert_native_strict_jlreq_closing_opening_geometry(&strict, writing_mode);
+}
+
+fn observe_native_jlreq_closing_opening_fixture(
+    writing_mode: &str,
+    strictness: &str,
+) -> serde_json::Value {
     let path = temp_arcw(
-        &format!("agent-observe-native-jlreq-closing-opening-{strictness}"),
+        &format!("agent-observe-native-{writing_mode}-jlreq-closing-opening-{strictness}"),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.vertical_rl jlreq={strictness}]天地。「人山川海[/][p]
+    alice: [.{writing_mode} jlreq={strictness}]天地。「人山川海[/][p]
 }}
 "
         ),
@@ -4943,22 +4960,24 @@ flow @flow.main main {{
     json
 }
 
-fn assert_native_strict_jlreq_closing_opening_raw_crop(capture_kind: &str) {
+fn assert_native_strict_jlreq_closing_opening_raw_crop(writing_mode: &str, capture_kind: &str) {
     let path = temp_arcw(
-        &format!("agent-observe-native-strict-jlreq-closing-opening-{capture_kind}"),
-        r"
-character @character.alice Alice as alice {}
+        &format!("agent-observe-native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
 
-flow @flow.main main {
-    alice: [.vertical_rl jlreq=strict]天地。「人山川海[/][p]
-}
-",
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]天地。「人山川海[/][p]
+}}
+"
+        ),
     );
     let dir = temp_dir(&format!(
-        "agent-observe-native-strict-jlreq-closing-opening-{capture_kind}"
+        "agent-observe-native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}"
     ));
     let raw_path = dir.join(format!(
-        "native-strict-jlreq-closing-opening-{capture_kind}.rgba"
+        "native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}.rgba"
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -4985,7 +5004,7 @@ flow @flow.main main {
 
     assert!(
         output.status.success(),
-        "native strict JLREQ closing/opening {capture_kind} crop should succeed, stderr: {}",
+        "native {writing_mode} strict JLREQ closing/opening {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
@@ -5001,7 +5020,7 @@ flow @flow.main main {
         }
     );
 
-    let opening = assert_native_strict_jlreq_closing_opening_geometry(&json);
+    let opening = assert_native_strict_jlreq_closing_opening_geometry(&json, writing_mode);
     assert_eq!(json["images"][0]["crop_origin"]["x"], opening["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], opening["bbox"]["y"]);
     assert_eq!(json["images"][0]["width"], opening["bbox"]["width"]);
@@ -5017,7 +5036,7 @@ flow @flow.main main {
             &raw_path,
             agent_object_id_color_from_json(opening),
             content_pixels,
-            "strict JLREQ closing/opening object-id crop",
+            &format!("{writing_mode} strict JLREQ closing/opening object-id crop"),
         );
     } else {
         let bytes =
@@ -5032,12 +5051,17 @@ flow @flow.main main {
     fs::remove_dir_all(&dir).expect("remove temp strict JLREQ closing/opening dir");
 }
 
-fn assert_native_strict_jlreq_closing_opening_geometry(
-    json: &serde_json::Value,
-) -> &serde_json::Value {
+fn assert_native_strict_jlreq_closing_opening_geometry<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(json)["writing_mode"],
+        writing_mode
     );
     let full_stop = find_rich_text_cluster_object(json, "。", 6, 9);
     let opening = find_rich_text_cluster_object(json, "「", 9, 12);
