@@ -282,12 +282,15 @@ the concrete choices to follow when turning that package into production code.
   report, so the acceptance path is not limited to cropped layer images.
   `rich_text_cluster` child objects expose glyph-cluster source ranges and
   renderer-facing orientation/vertical-form metadata plus object-local
-  color/object-id/mask capture refs; the full-grammar sample test follows a
-  vertical cluster mask URI and asserts the raw capture contains rendered
-  pixels. The full-grammar sample now also follows a `vertical_lr` cluster's
-  raw mask and object-id URIs back through `--read-uri`, proving both vertical
-  writing modes in the authored sample expose object-scoped native readback from
-  the same cluster geometry. Focused native Agent coverage checks sideways,
+  color/object-id/mask capture refs; `rich_text_ref.hit_regions` exposes
+  text-run, glyph-cluster, ruby-object, ruby-base, and ruby-annotation
+  hit-test rectangles from the same native `LaidOutText` geometry used for
+  bboxes and capture crops. The full-grammar sample test follows a vertical
+  cluster mask URI and asserts the raw capture contains rendered pixels. The
+  full-grammar sample now also follows a `vertical_lr` cluster's raw mask and
+  object-id URIs back through `--read-uri`, proving both vertical writing modes
+  in the authored sample expose object-scoped native readback from the same
+  cluster geometry. Focused native Agent coverage checks sideways,
   upright-alternate, rotated-alternate, and text-combine-upright cluster metadata. The
   text-combine-upright path is also verified through raw native mask and
   object-id crops so compressed multi-glyph cells expose object-local readback

@@ -24,10 +24,11 @@ use arcweft_agent_mcp::{
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
-    AgentGlyphOrientation, AgentGlyphVerticalForm, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageKind, AgentImageRenderer, AgentImageResource, AgentImageScope,
-    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
-    AgentObservationReport, AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
+    AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
+    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
+    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
+    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
+    AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
     AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
@@ -4281,6 +4282,11 @@ fn agent_rich_text_run_object(
                 vertical_form: None,
                 ruby_base_bbox: None,
                 ruby_annotation_bbox: None,
+                hit_regions: vec![agent_hit_region(
+                    AgentHitRegionKind::TextRun,
+                    &bbox,
+                    run.range,
+                )],
             },
             page,
         },
@@ -4305,6 +4311,7 @@ fn agent_rich_text_ruby_object(
         .cloned()?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
+    let hit_regions = agent_ruby_hit_regions(&bbox, ruby.base_range);
     Some(agent_rich_text_child_object(
         step,
         textbox,
@@ -4325,6 +4332,7 @@ fn agent_rich_text_ruby_object(
                 vertical_form: None,
                 ruby_base_bbox: bbox.ruby.as_ref().map(|ruby| ruby.base_bbox.clone()),
                 ruby_annotation_bbox: bbox.ruby.as_ref().map(|ruby| ruby.annotation_bbox.clone()),
+                hit_regions,
             },
             page,
         },
@@ -4393,6 +4401,11 @@ fn agent_rich_text_cluster_objects(
                         }),
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        hit_regions: vec![agent_hit_region(
+                            AgentHitRegionKind::GlyphCluster,
+                            &bounds.bbox,
+                            range,
+                        )],
                     },
                     page,
                 },
@@ -4411,6 +4424,42 @@ fn agent_bbox_from_native(
         width: bbox.width,
         height: bbox.height,
     }
+}
+
+fn agent_hit_region(
+    kind: AgentHitRegionKind,
+    bbox: &AgentBBox,
+    range: RichTextRange,
+) -> AgentHitRegion {
+    AgentHitRegion {
+        kind,
+        bbox: bbox.clone(),
+        range,
+    }
+}
+
+fn agent_ruby_hit_regions(
+    bounds: &AgentNativeRichTextElementBounds,
+    range: RichTextRange,
+) -> Vec<AgentHitRegion> {
+    let mut regions = vec![agent_hit_region(
+        AgentHitRegionKind::RubyObject,
+        &bounds.bbox,
+        range,
+    )];
+    if let Some(ruby) = &bounds.ruby {
+        regions.push(agent_hit_region(
+            AgentHitRegionKind::RubyBase,
+            &ruby.base_bbox,
+            range,
+        ));
+        regions.push(agent_hit_region(
+            AgentHitRegionKind::RubyAnnotation,
+            &ruby.annotation_bbox,
+            range,
+        ));
+    }
+    regions
 }
 
 fn agent_ruby_geometry_from_native(

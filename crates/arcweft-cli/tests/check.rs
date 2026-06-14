@@ -2996,6 +2996,7 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
         .find(|object| object["role"] == "rich_text_run" && object["text"] == " 2026 ABC。")
         .expect("vertical text-combine run object is observed");
     assert_eq!(digit_run["rich_text_ref"]["source"], "text");
+    assert_rich_text_hit_region_matches_bbox(digit_run, "text_run", 8, 20);
     assert!(
         digit_run["bbox"]["height"].as_u64().unwrap()
             > digit_run["bbox"]["width"].as_u64().unwrap(),
@@ -3003,6 +3004,7 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
     );
     let text_combine = find_rich_text_cluster_object(json, "2026", 9, 13);
     assert_eq!(text_combine["rich_text_ref"]["kind"], "glyph_cluster");
+    assert_rich_text_hit_region_matches_bbox(text_combine, "glyph_cluster", 9, 13);
     let next_latin = find_rich_text_cluster_object(json, "A", 14, 15);
     assert!(
         text_combine["bbox"]["width"].as_u64().unwrap()
@@ -3033,6 +3035,15 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
         .expect("vertical ruby child object is observed");
     assert_eq!(ruby["rich_text_ref"]["kind"], "ruby");
     assert_eq!(ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_rich_text_hit_region_matches_bbox(ruby, "ruby_object", 4, 7);
+    assert_rich_text_hit_region_matches_ref_bbox(ruby, "ruby_base", "ruby_base_bbox", 4, 7);
+    assert_rich_text_hit_region_matches_ref_bbox(
+        ruby,
+        "ruby_annotation",
+        "ruby_annotation_bbox",
+        4,
+        7,
+    );
     assert!(ruby["bbox"]["width"].as_u64().unwrap() > 0);
     assert!(ruby["bbox"]["height"].as_u64().unwrap() > 0);
 }
@@ -20234,6 +20245,53 @@ fn assert_rich_text_cluster_metadata(
     let cluster = find_rich_text_cluster_object(report, text, range_start, range_end);
     assert_eq!(cluster["rich_text_ref"]["orientation"], orientation);
     assert_eq!(cluster["rich_text_ref"]["vertical_form"], vertical_form);
+}
+
+fn assert_rich_text_hit_region_matches_bbox(
+    object: &serde_json::Value,
+    kind: &str,
+    range_start: u64,
+    range_end: u64,
+) {
+    let region = rich_text_hit_region(object, kind, range_start, range_end);
+    assert_eq!(
+        region["bbox"], object["bbox"],
+        "{kind} hit region should match the observed object bbox: {object}"
+    );
+}
+
+fn assert_rich_text_hit_region_matches_ref_bbox(
+    object: &serde_json::Value,
+    kind: &str,
+    ref_bbox_key: &str,
+    range_start: u64,
+    range_end: u64,
+) {
+    let region = rich_text_hit_region(object, kind, range_start, range_end);
+    assert_eq!(
+        region["bbox"], object["rich_text_ref"][ref_bbox_key],
+        "{kind} hit region should match {ref_bbox_key}: {object}"
+    );
+}
+
+fn rich_text_hit_region<'a>(
+    object: &'a serde_json::Value,
+    kind: &str,
+    range_start: u64,
+    range_end: u64,
+) -> &'a serde_json::Value {
+    object["rich_text_ref"]["hit_regions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("rich-text object should expose hit_regions: {object}"))
+        .iter()
+        .find(|region| {
+            region["kind"] == kind
+                && region["range"]["start"].as_u64() == Some(range_start)
+                && region["range"]["end"].as_u64() == Some(range_end)
+        })
+        .unwrap_or_else(|| {
+            panic!("rich-text object should expose {kind} hit region {range_start}..{range_end}: {object}")
+        })
 }
 
 fn rich_text_cluster_column_count(report: &serde_json::Value) -> usize {

@@ -416,6 +416,8 @@ pub struct AgentRichTextElementRef {
     pub ruby_base_bbox: Option<AgentBBox>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ruby_annotation_bbox: Option<AgentBBox>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hit_regions: Vec<AgentHitRegion>,
 }
 
 /// Rich-text display-map element kind observed as a debuggable object.
@@ -425,6 +427,25 @@ pub enum AgentRichTextElementKind {
     TextRun,
     Ruby,
     GlyphCluster,
+}
+
+/// Hit-test region for one observed rich-text element.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentHitRegion {
+    pub kind: AgentHitRegionKind,
+    pub bbox: AgentBBox,
+    pub range: RichTextRange,
+}
+
+/// Semantic role for a rich-text hit-test region.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentHitRegionKind {
+    TextRun,
+    GlyphCluster,
+    RubyObject,
+    RubyBase,
+    RubyAnnotation,
 }
 
 /// Renderer-facing orientation chosen for one observed glyph cluster.
@@ -791,22 +812,10 @@ mod tests {
                 role: "textbox".to_owned(),
                 visible: true,
                 polygon: bbox.polygon(),
-                bbox,
+                bbox: bbox.clone(),
                 capture_refs: test_capture_refs(),
                 text: Some("Hello".to_owned()),
-                rich_text_ref: Some(AgentRichTextElementRef {
-                    kind: AgentRichTextElementKind::TextRun,
-                    index: 0,
-                    page: 0,
-                    range: RichTextRange::new(0, 5),
-                    node_index: 0,
-                    source: Some(RichTextTextSource::Text),
-                    ruby: None,
-                    orientation: None,
-                    vertical_form: None,
-                    ruby_base_bbox: None,
-                    ruby_annotation_bbox: None,
-                }),
+                rich_text_ref: Some(test_rich_text_ref(&bbox)),
                 rich_text: test_line_display_frame(),
             }],
             actions: vec![AgentActionTarget {
@@ -838,6 +847,27 @@ mod tests {
             task_requests: 0,
             final_status: "done Return(\"ok\")".to_owned(),
             overlay_svg: None,
+        }
+    }
+
+    fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
+        AgentRichTextElementRef {
+            kind: AgentRichTextElementKind::TextRun,
+            index: 0,
+            page: 0,
+            range: RichTextRange::new(0, 5),
+            node_index: 0,
+            source: Some(RichTextTextSource::Text),
+            ruby: None,
+            orientation: None,
+            vertical_form: None,
+            ruby_base_bbox: None,
+            ruby_annotation_bbox: None,
+            hit_regions: vec![AgentHitRegion {
+                kind: AgentHitRegionKind::TextRun,
+                bbox: bbox.clone(),
+                range: RichTextRange::new(0, 5),
+            }],
         }
     }
 
@@ -881,6 +911,15 @@ mod tests {
         );
         assert_eq!(json["objects"][0]["rich_text_ref"]["kind"], "text_run");
         assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
+        assert_eq!(
+            json["objects"][0]["rich_text_ref"]["hit_regions"][0]["kind"],
+            "text_run"
+        );
+        assert_eq!(
+            serde_json::to_value(AgentHitRegionKind::RubyAnnotation)
+                .expect("hit-region kind serializes"),
+            "ruby_annotation"
+        );
         assert_eq!(json["actions"][0]["action"], "advance_text");
         assert_eq!(json["actions"][0]["kind"], "semantic");
         assert_eq!(json["diagnostics"][0]["severity"], "info");
