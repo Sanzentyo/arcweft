@@ -397,7 +397,11 @@ the concrete choices to follow when turning that package into production code.
   strict opening-punctuation cluster is also captured through raw native mask
   and object-id crops in both `vertical_rl` and `vertical_lr` so the mirrored
   observed bboxes, stable object colors, and rendered rotated-alternate
-  GlyphArea pixels stay tied to the same Agent object.
+  GlyphArea pixels stay tied to the same Agent object. Strict
+  middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
+  layout compares loose and strict paragraph plans for `・「`, and native Agent
+  fixtures verify the strict same-column pair plus raw mask/object-id crops for
+  the attached opening-punctuation object in both vertical writing directions.
   Native Agent raw-crop coverage also mirrors the small-kana,
   prolonged-sound, dash-mark, iteration-mark, leader-mark, compact-bracket, and
   strict middle-dot

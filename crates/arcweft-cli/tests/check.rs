@@ -4628,6 +4628,12 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_strict_jlreq_middle_dot_opening_pair_geometry() {
+    assert_native_jlreq_middle_dot_opening_pair_plan("vertical_rl", false);
+    assert_native_jlreq_middle_dot_opening_pair_plan("vertical_lr", true);
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_strict_jlreq_middle_dot_raw_crops() {
     assert_native_strict_jlreq_middle_dot_raw_crop("vertical_rl", "mask");
     assert_native_strict_jlreq_middle_dot_raw_crop("vertical_rl", "object-id");
@@ -4641,6 +4647,169 @@ fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_mask
 #[test]
 fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_object_id_raw_crop() {
     assert_native_strict_jlreq_middle_dot_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_strict_jlreq_middle_dot_opening_raw_crops() {
+    assert_native_strict_jlreq_middle_dot_opening_raw_crop("vertical_rl", false, "mask");
+    assert_native_strict_jlreq_middle_dot_opening_raw_crop("vertical_rl", false, "object-id");
+    assert_native_strict_jlreq_middle_dot_opening_raw_crop("vertical_lr", true, "mask");
+    assert_native_strict_jlreq_middle_dot_opening_raw_crop("vertical_lr", true, "object-id");
+}
+
+fn assert_native_jlreq_middle_dot_opening_pair_plan(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let loose = observe_native_jlreq_middle_dot_opening_fixture(writing_mode, "loose");
+    let strict = observe_native_jlreq_middle_dot_opening_fixture(writing_mode, "strict");
+    assert_native_rich_text_layer_image_has_content(&loose);
+    assert_native_rich_text_layer_image_has_content(&strict);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
+        "loose"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&strict)["jlreq_strictness"],
+        "strict"
+    );
+
+    let loose_middle_dot = find_rich_text_cluster_object(&loose, "・", 6, 9);
+    let loose_open = find_rich_text_cluster_object(&loose, "「", 9, 12);
+    assert_next_paragraph_column(
+        loose_middle_dot,
+        loose_open,
+        next_column_moves_right,
+        "loose native paragraph plan may break between middle dot and opening punctuation",
+    );
+
+    assert_native_strict_jlreq_middle_dot_opening_geometry(
+        &strict,
+        writing_mode,
+        next_column_moves_right,
+    );
+}
+
+fn observe_native_jlreq_middle_dot_opening_fixture(
+    writing_mode: &str,
+    strictness: &str,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-jlreq-middle-dot-opening-{strictness}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq={strictness}]天地・「人山川海[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp middle-dot/opening JLREQ source");
+    json
+}
+
+fn assert_native_strict_jlreq_middle_dot_opening_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-strict-jlreq-middle-dot-opening-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]天地・「人山川海[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-strict-jlreq-middle-dot-opening-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.3.9.12")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native strict JLREQ middle-dot/opening raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} strict JLREQ middle-dot/opening {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native strict JLREQ middle-dot/opening report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let open = assert_native_strict_jlreq_middle_dot_opening_geometry(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+    );
+    assert_eq!(json["images"][0]["crop_origin"]["x"], open["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], open["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], open["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], open["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(open),
+            content_pixels,
+            &format!("{writing_mode} strict JLREQ middle-dot/opening object-id crop"),
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native strict JLREQ middle-dot/opening mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp strict JLREQ middle-dot/opening source");
+    fs::remove_dir_all(&dir).expect("remove temp strict JLREQ middle-dot/opening dir");
 }
 
 fn assert_native_strict_jlreq_middle_dot_raw_crop(writing_mode: &str, capture_kind: &str) {
@@ -4761,6 +4930,52 @@ fn assert_native_strict_jlreq_middle_dot_geometry(json: &serde_json::Value) -> &
         "text after strict middle dot should remain in the same observed column",
     );
     middle_dot
+}
+
+fn assert_native_strict_jlreq_middle_dot_opening_geometry<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["writing_mode"],
+        writing_mode
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "strict"
+    );
+    let earth = find_rich_text_cluster_object(json, "地", 3, 6);
+    let middle_dot = find_rich_text_cluster_object(json, "・", 6, 9);
+    let open = find_rich_text_cluster_object(json, "「", 9, 12);
+    let person = find_rich_text_cluster_object(json, "人", 12, 15);
+    let mountain = find_rich_text_cluster_object(json, "山", 15, 18);
+    assert_eq!(middle_dot["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(middle_dot["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(open["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(open["rich_text_ref"]["vertical_form"], "rotated_alternate");
+    assert_vertical_cluster_after(
+        earth,
+        middle_dot,
+        "strict middle-dot/opening fixture should keep middle dot after body text",
+    );
+    assert_vertical_cluster_after(
+        middle_dot,
+        open,
+        "strict middle-dot/opening pair should stay in the same native-layout column",
+    );
+    assert_vertical_cluster_after(
+        open,
+        person,
+        "text after strict middle-dot/opening pair should remain in the same observed column",
+    );
+    assert_next_paragraph_column(
+        person,
+        mountain,
+        next_column_moves_right,
+        "strict middle-dot/opening paragraph should continue in the next column after the attached base",
+    );
+    open
 }
 
 #[test]

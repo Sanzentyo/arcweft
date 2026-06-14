@@ -2168,6 +2168,71 @@ mod tests {
     }
 
     #[test]
+    fn vertical_column_plan_applies_middle_dot_opening_strict_pair_to_paragraph_dp() {
+        let text = "天地・「人山川海";
+        let presentation = vertical_presentation(RichTextWritingMode::VerticalRl);
+        let frame = frame_with_run(text, presentation);
+        let clusters = vertical_clusters(text, RichTextVerticalLatinMode::Mixed);
+        let loose_config = TextLayoutConfig {
+            size: LayoutSize::new(260.0, 147.0),
+            jlreq_strictness: JlreqStrictness::Loose,
+            ..TextLayoutConfig::default()
+        };
+        let strict_config = TextLayoutConfig {
+            jlreq_strictness: JlreqStrictness::Strict,
+            ..loose_config
+        };
+        let loose_context = RunLayoutContext {
+            run_index: 0,
+            range_start: 0,
+            presentation: &frame.display_map.text_runs[0].presentation,
+            ruby_annotations: &frame.display_map.ruby_annotations,
+            config: loose_config,
+        };
+        let strict_context = RunLayoutContext {
+            config: strict_config,
+            ..loose_context
+        };
+        let start = LayoutCursor::new(
+            vertical_column_start(RichTextWritingMode::VerticalRl, loose_config),
+            loose_config.origin.y,
+        );
+
+        let loose_plan = plan_vertical_columns(&clusters, loose_context, start);
+        let strict_plan = plan_vertical_columns(&clusters, strict_context, start);
+
+        assert_eq!(
+            loose_plan.break_before,
+            vec![false, false, false, true, false, false, true, false],
+            "loose composition may break between a middle dot and opening punctuation"
+        );
+        assert_eq!(
+            strict_plan.break_before,
+            vec![false, true, false, false, false, true, false, false],
+            "strict composition should choose a different paragraph plan to keep the middle-dot/opening pair together"
+        );
+
+        let loose_layout = layout_frame(&frame, loose_config).expect("loose layout succeeds");
+        let loose_middle_dot = nth_laid_out_glyph(&loose_layout, "・", 0);
+        let loose_open = nth_laid_out_glyph(&loose_layout, "「", 0);
+        assert_next_vertical_layout_column(
+            loose_middle_dot,
+            loose_open,
+            false,
+            "loose layout should expose the middle-dot/opening weak break in geometry",
+        );
+
+        let strict_layout = layout_frame(&frame, strict_config).expect("strict layout succeeds");
+        let strict_middle_dot = nth_laid_out_glyph(&strict_layout, "・", 0);
+        let strict_open = nth_laid_out_glyph(&strict_layout, "「", 0);
+        assert_vertical_layout_after(
+            strict_middle_dot,
+            strict_open,
+            "strict layout should keep middle-dot/opening punctuation in one column",
+        );
+    }
+
+    #[test]
     fn vertical_column_pair_break_penalty_reads_expanded_jlreq_pairs() {
         let leader_clusters = vertical_clusters("天…人", RichTextVerticalLatinMode::Mixed);
         assert_f32_eq(
@@ -2182,6 +2247,36 @@ mod tests {
         let middle_dot_clusters = vertical_clusters("天・人", RichTextVerticalLatinMode::Mixed);
         assert_f32_eq(
             vertical_column_pair_break_penalty(&middle_dot_clusters, 0, 1, JlreqStrictness::Strict),
+            1000.0,
+        );
+
+        let middle_dot_open_clusters =
+            vertical_clusters("天・「人", RichTextVerticalLatinMode::Mixed);
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(
+                &middle_dot_open_clusters,
+                0,
+                2,
+                JlreqStrictness::Loose,
+            ),
+            0.0,
+        );
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(
+                &middle_dot_open_clusters,
+                0,
+                2,
+                JlreqStrictness::Normal,
+            ),
+            15.0,
+        );
+        assert_f32_eq(
+            vertical_column_pair_break_penalty(
+                &middle_dot_open_clusters,
+                0,
+                2,
+                JlreqStrictness::Strict,
+            ),
             1000.0,
         );
 
