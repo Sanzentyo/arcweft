@@ -76,6 +76,9 @@ the concrete choices to follow when turning that package into production code.
 - Native headless captures for vertical fixtures are compared with `imq` or an
   equivalent full-reference image metric in CI artifacts. Do not commit generated
   image outputs unless they are stable fixtures intentionally added for tests.
+- The vendored glyphon fork is outside the Cargo workspace test graph; milestone
+  validation must run `just verify-vendor-glyphon` to check the manifest-path
+  fork, its GlyphArea unit tests, and its lib/test clippy gate.
 - `tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw` is the
   integrated non-golden smoke fixture for this goal: non-ignored CLI tests render
   it through the native Agent path, assert `vertical_rl` and `vertical_lr`

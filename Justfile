@@ -57,6 +57,17 @@ test-slow-mcp:
 test-visual-golden:
     @cargo test -p arcweft-cli --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
 
+check-vendor-glyphon:
+    @cargo check --manifest-path vendor\glyphon\Cargo.toml
+
+clippy-vendor-glyphon:
+    @cargo clippy --manifest-path vendor\glyphon\Cargo.toml --lib --tests -- -D warnings -A clippy::too_many_arguments
+
+test-vendor-glyphon:
+    @cargo test --manifest-path vendor\glyphon\Cargo.toml --lib
+
+verify-vendor-glyphon: check-vendor-glyphon clippy-vendor-glyphon test-vendor-glyphon
+
 test-slow-agent-observe:
     @cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
 
@@ -81,7 +92,7 @@ scan-removed-dsl:
 
 verify: fmt-check check-jlreq-punctuation clippy test-workspace scan-absolute-paths scan-removed-dsl
 
-verify-full: verify test-doc test-tier2
+verify-full: verify test-doc verify-vendor-glyphon test-tier2
 
 toolchain-profile-pure-jit-benches repeat="3" warmup="1":
     @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat {{repeat}} --warmup {{warmup}} --json

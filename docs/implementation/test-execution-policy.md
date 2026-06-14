@@ -92,6 +92,15 @@ routine local loop:
 | `cargo test --workspace --doc --quiet` | workspace doc-tests only | 117.769s wall | passed |
 | `cargo test --workspace --quiet` | workspace default after the doc-test run warmed its artifacts | 24.801s wall | passed, 13 ignored |
 
+Re-profiled after the vendored glyphon fork became part of the vertical text
+acceptance evidence:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo check --manifest-path vendor/glyphon/Cargo.toml` | vendored glyphon fork outside the workspace | 42.09s cold | passed |
+| `cargo test --manifest-path vendor/glyphon/Cargo.toml --lib` | vendored glyphon lib tests for GlyphArea transforms, clipping, custom glyphs, and color alpha | 47.42s cold / 0.00s test body | passed |
+| `cargo clippy --manifest-path vendor/glyphon/Cargo.toml --lib --tests -- -D warnings -A clippy::too_many_arguments` | vendored glyphon lib/test lint gate, allowing the upstream public API shape | 2.38s warm | passed |
+
 This pass changes the policy entrypoint: `just test-workspace` now runs
 `cargo test --workspace --lib --tests --quiet` instead of the Cargo default.
 The Cargo default can include the expensive doc-test path depending on cache
@@ -197,6 +206,21 @@ is the normal native rich-text/Agent observe slice.
 `just test-cli-check` is useful before a CLI-heavy cut point, but it is not
 required after every small parser, layout, or protocol edit.
 
+`vendor/glyphon` is patched into the workspace but remains an external manifest,
+so ordinary `cargo check --workspace`, workspace clippy, and
+`just test-workspace` do not directly test the fork. When a change touches
+`vendor/glyphon`, `arcweft-glyphon`, GlyphArea submission, shader clipping,
+custom glyph rasterization, or the final vertical-text milestone evidence, run:
+
+```bash
+just verify-vendor-glyphon
+```
+
+That target runs manifest-path `cargo check`, lib tests, and a lib/test clippy
+gate with `-D warnings`. It allows `clippy::too_many_arguments` because the
+upstream glyphon renderer API already uses long prepare signatures and Arcweft
+should not reshape that public API merely to satisfy a style lint.
+
 Do not use broad filters such as `agent_observe` as a routine Tier 1 shortcut.
 That filter also selects slow resource-matrix coverage. Use the narrow exact
 test or prefix for the behavior being changed.
@@ -218,6 +242,7 @@ The equivalent Justfile targets are:
 just test-slow-mcp
 just test-slow-agent-observe
 just test-visual-golden
+just verify-vendor-glyphon
 just test-tier2
 just verify-full
 ```
@@ -242,6 +267,8 @@ Operational budget:
   `just test-cli-check` when the CLI integration surface changed broadly. Add
   `just test-doc` only when Rust documentation comments, doctest examples, or
   public API documentation changed, or when preparing a milestone validation.
+  Add `just verify-vendor-glyphon` when the vendored glyphon fork or its
+  adapter-facing GlyphArea contract changed.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
 
