@@ -380,7 +380,10 @@ the concrete choices to follow when turning that package into production code.
   proving that strictness-aware weak-break penalties affect actual column
   choices, not only table lookup: `jlreq=loose` may break between adjacent
   closing and opening punctuation, while `jlreq=strict` chooses a different
-  paragraph plan that keeps the punctuation pair in one rendered column.
+  paragraph plan that keeps the punctuation pair in one rendered column; the
+  strict opening-punctuation cluster is also captured through raw native mask
+  and object-id crops so the observed bbox, stable object color, and rendered
+  rotated-alternate GlyphArea pixels stay tied to the same Agent object.
   Native Agent raw-crop coverage also mirrors the small-kana,
   prolonged-sound, dash-mark, iteration-mark, leader-mark, compact-bracket, and
   strict middle-dot

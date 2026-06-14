@@ -4708,13 +4708,13 @@ fn agent_observe_native_renderer_reports_strict_jlreq_closing_opening_column_pla
         "loose native paragraph plan may break between adjacent closing/opening punctuation",
     );
 
-    let strict_full_stop = find_rich_text_cluster_object(&strict, "。", 6, 9);
-    let strict_open = find_rich_text_cluster_object(&strict, "「", 9, 12);
-    assert_vertical_cluster_after(
-        strict_full_stop,
-        strict_open,
-        "strict native paragraph plan should keep adjacent closing/opening punctuation together",
-    );
+    assert_native_strict_jlreq_closing_opening_geometry(&strict);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_strict_jlreq_closing_opening_raw_crops() {
+    assert_native_strict_jlreq_closing_opening_raw_crop("mask");
+    assert_native_strict_jlreq_closing_opening_raw_crop("object-id");
 }
 
 #[test]
@@ -4941,6 +4941,117 @@ flow @flow.main main {{
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp closing/opening JLREQ source");
     json
+}
+
+fn assert_native_strict_jlreq_closing_opening_raw_crop(capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-strict-jlreq-closing-opening-{capture_kind}"),
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl jlreq=strict]天地。「人山川海[/][p]
+}
+",
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-strict-jlreq-closing-opening-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!(
+        "native-strict-jlreq-closing-opening-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.3.9.12")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native strict JLREQ closing/opening raw crop");
+
+    assert!(
+        output.status.success(),
+        "native strict JLREQ closing/opening {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native strict JLREQ report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let opening = assert_native_strict_jlreq_closing_opening_geometry(&json);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], opening["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], opening["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], opening["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], opening["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(opening),
+            content_pixels,
+            "strict JLREQ closing/opening object-id crop",
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native strict JLREQ closing/opening mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp strict JLREQ closing/opening source");
+    fs::remove_dir_all(&dir).expect("remove temp strict JLREQ closing/opening dir");
+}
+
+fn assert_native_strict_jlreq_closing_opening_geometry(
+    json: &serde_json::Value,
+) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "strict"
+    );
+    let full_stop = find_rich_text_cluster_object(json, "。", 6, 9);
+    let opening = find_rich_text_cluster_object(json, "「", 9, 12);
+    assert_eq!(opening["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(
+        opening["rich_text_ref"]["vertical_form"],
+        "rotated_alternate"
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict native paragraph plan should keep adjacent closing/opening punctuation together",
+    );
+    opening
 }
 
 #[test]
