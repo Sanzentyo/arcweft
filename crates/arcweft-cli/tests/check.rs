@@ -4731,6 +4731,24 @@ fn agent_observe_native_renderer_writes_halfwidth_small_kana_raw_crops() {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_katakana_phonetic_extension_small_kana_geometry() {
+    assert_native_katakana_phonetic_extension_small_kana_geometry("vertical_rl");
+    assert_native_katakana_phonetic_extension_small_kana_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_katakana_phonetic_extension_small_kana_raw_crops() {
+    for writing_mode in ["vertical_rl", "vertical_lr"] {
+        for capture_kind in ["mask", "object-id"] {
+            assert_native_katakana_phonetic_extension_small_kana_raw_crop(
+                writing_mode,
+                capture_kind,
+            );
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_jlreq_iteration_mark_raw_crops() {
     assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "mask");
     assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "object-id");
@@ -5728,6 +5746,158 @@ fn assert_native_halfwidth_suffix_mark_object<'report>(
         );
     }
     mark_object
+}
+
+fn assert_native_katakana_phonetic_extension_small_kana_geometry(writing_mode: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-katakana-phonetic-extension-small-kana"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地ㇰ人[/][p]
+}}
+",
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp katakana phonetic extension small-kana source");
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_native_katakana_phonetic_extension_small_kana_object(&json, writing_mode);
+}
+
+fn assert_native_katakana_phonetic_extension_small_kana_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-katakana-phonetic-extension-small-kana-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地ㇰ人[/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-katakana-phonetic-extension-small-kana-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.6.9")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native katakana phonetic extension small-kana raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} katakana phonetic extension small-kana {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native katakana phonetic extension small-kana report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let mark = assert_native_katakana_phonetic_extension_small_kana_object(&json, writing_mode);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], mark["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], mark["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], mark["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], mark["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(mark),
+            content_pixels,
+            &format!("{writing_mode} katakana phonetic extension small-kana object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path)
+            .expect("read native katakana phonetic extension small-kana mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path)
+        .expect("remove temp native katakana phonetic extension small-kana source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp native katakana phonetic extension small-kana dir");
+}
+
+fn assert_native_katakana_phonetic_extension_small_kana_object<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["writing_mode"],
+        writing_mode
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let earth = find_rich_text_cluster_object(json, "地", 3, 6);
+    let mark = find_rich_text_cluster_object(json, "ㇰ", 6, 9);
+    let person = find_rich_text_cluster_object(json, "人", 9, 12);
+    assert_eq!(mark["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(mark["rich_text_ref"]["vertical_form"], "upright_alternate");
+    assert_vertical_cluster_after(
+        earth,
+        mark,
+        "katakana phonetic extension small kana should stay after the previous cluster",
+    );
+    if mark["bbox"]["x"] == person["bbox"]["x"] {
+        assert!(
+            agent_json_bbox_y(&person["bbox"]) > agent_json_bbox_y(&mark["bbox"]),
+            "text after katakana phonetic extension small kana should advance within the same observed column"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_y(&person["bbox"]) < agent_json_bbox_y(&mark["bbox"]),
+            "text after katakana phonetic extension small kana should restart near the column top"
+        );
+    }
+    mark
 }
 
 #[test]

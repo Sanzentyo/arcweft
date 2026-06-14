@@ -5627,7 +5627,8 @@ mod tests {
 
     #[test]
     fn vertical_column_keeps_small_kana_out_of_column_heads() {
-        for (text, mark) in [("天地ぁ人", "ぁ"), ("天地ｯ人", "ｯ")] {
+        for (text, mark) in [("天地ぁ人", "ぁ"), ("天地ｯ人", "ｯ"), ("天地ㇰ人", "ㇰ")]
+        {
             assert_vertical_rl_no_column_head_mark(
                 text,
                 mark,
@@ -5915,6 +5916,7 @@ mod tests {
     fn vertical_lr_column_keeps_small_kana_out_of_column_heads() {
         assert_vertical_lr_no_column_head_mark("天地ぁ人", "ぁ");
         assert_vertical_lr_no_column_head_mark("天地ｯ人", "ｯ");
+        assert_vertical_lr_no_column_head_mark("天地ㇰ人", "ㇰ");
     }
 
     #[test]
