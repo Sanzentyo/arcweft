@@ -3314,36 +3314,45 @@ mod tests {
             (RichTextWritingMode::VerticalRl, false),
             (RichTextWritingMode::VerticalLr, true),
         ] {
-            let frame = frame_with_run("天︵︶人", vertical_presentation(writing_mode));
-            let config = TextLayoutConfig {
-                size: LayoutSize::new(160.0, 84.0),
-                ..TextLayoutConfig::default()
-            };
-            let layout = layout_frame(&frame, config).expect("layout succeeds");
-            let opening = nth_laid_out_glyph(&layout, "︵", 0);
-            let closing = nth_laid_out_glyph(&layout, "︶", 0);
-            let person = nth_laid_out_glyph(&layout, "人", 0);
+            for (opening_mark, closing_mark, description) in [
+                ("︵", "︶", "vertical presentation parenthesis"),
+                ("︷", "︸", "vertical presentation curly bracket"),
+                ("﹇", "﹈", "vertical presentation square bracket"),
+            ] {
+                let frame = frame_with_run(
+                    &format!("天{opening_mark}{closing_mark}人"),
+                    vertical_presentation(writing_mode),
+                );
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(160.0, 84.0),
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
+                let opening = nth_laid_out_glyph(&layout, opening_mark, 0);
+                let closing = nth_laid_out_glyph(&layout, closing_mark, 0);
+                let person = nth_laid_out_glyph(&layout, "人", 0);
 
-            assert_vertical_layout_after(
-                &layout.glyphs[0],
-                opening,
-                "vertical presentation opening bracket should sit after the previous cluster",
-            );
-            assert_vertical_layout_after(
-                opening,
-                closing,
-                "vertical presentation compact bracket pair should stay together",
-            );
-            assert!(
-                closing.bounds.bottom() > config.origin.y + config.size.height,
-                "vertical presentation compact bracket pair may overhang as one suffix"
-            );
-            assert_next_vertical_layout_column(
-                closing,
-                person,
-                next_column_moves_right,
-                "ordinary text after vertical presentation compact bracket pair should start the next column",
-            );
+                assert_vertical_layout_after(
+                    &layout.glyphs[0],
+                    opening,
+                    &format!("{description} opening mark should sit after the previous cluster"),
+                );
+                assert_vertical_layout_after(
+                    opening,
+                    closing,
+                    &format!("{description} pair should stay together"),
+                );
+                assert!(
+                    closing.bounds.bottom() > config.origin.y + config.size.height,
+                    "{description} pair may overhang as one suffix"
+                );
+                assert_next_vertical_layout_column(
+                    closing,
+                    person,
+                    next_column_moves_right,
+                    &format!("ordinary text after {description} pair should start the next column"),
+                );
+            }
         }
     }
 

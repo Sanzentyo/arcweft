@@ -4898,6 +4898,70 @@ fn agent_observe_native_renderer_writes_vertical_presentation_compact_bracket_ra
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_vertical_presentation_curly_and_square_bracket_geometry() {
+    for (open, close, label, description) in [
+        (
+            "︷",
+            "︸",
+            "vertical-presentation-curly-bracket",
+            "vertical presentation curly bracket",
+        ),
+        (
+            "﹇",
+            "﹈",
+            "vertical-presentation-square-bracket",
+            "vertical presentation square bracket",
+        ),
+    ] {
+        assert_native_vertical_presentation_bracket_geometry(
+            "vertical_rl",
+            open,
+            close,
+            label,
+            description,
+        );
+        assert_native_vertical_presentation_bracket_geometry(
+            "vertical_lr",
+            open,
+            close,
+            label,
+            description,
+        );
+    }
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_presentation_curly_and_square_bracket_raw_crops() {
+    for (open, close, label, description) in [
+        (
+            "︷",
+            "︸",
+            "vertical-presentation-curly-bracket",
+            "vertical presentation curly bracket",
+        ),
+        (
+            "﹇",
+            "﹈",
+            "vertical-presentation-square-bracket",
+            "vertical presentation square bracket",
+        ),
+    ] {
+        for writing_mode in ["vertical_rl", "vertical_lr"] {
+            for capture_kind in ["mask", "object-id"] {
+                assert_native_vertical_presentation_bracket_raw_crop(
+                    writing_mode,
+                    open,
+                    close,
+                    label,
+                    description,
+                    capture_kind,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_halfwidth_corner_bracket_geometry() {
     assert_native_halfwidth_corner_bracket_geometry("vertical_rl");
     assert_native_halfwidth_corner_bracket_geometry("vertical_lr");
@@ -5450,14 +5514,44 @@ fn assert_native_jlreq_compact_bracket_geometry(json: &serde_json::Value) -> &se
 }
 
 fn assert_native_vertical_presentation_compact_bracket_geometry(writing_mode: &str) {
+    assert_native_vertical_presentation_bracket_geometry(
+        writing_mode,
+        "︵",
+        "︶",
+        "vertical-presentation-compact-bracket",
+        "vertical presentation compact bracket",
+    );
+}
+
+fn assert_native_vertical_presentation_compact_bracket_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    assert_native_vertical_presentation_bracket_raw_crop(
+        writing_mode,
+        "︵",
+        "︶",
+        "vertical-presentation-compact-bracket",
+        "vertical presentation compact bracket",
+        capture_kind,
+    );
+}
+
+fn assert_native_vertical_presentation_bracket_geometry(
+    writing_mode: &str,
+    open: &str,
+    close: &str,
+    label: &str,
+    description: &str,
+) {
     let path = temp_arcw(
-        &format!("agent-observe-native-{writing_mode}-vertical-presentation-compact-bracket"),
+        &format!("agent-observe-native-{writing_mode}-{label}"),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天︵︶人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
 }}
 ",
         ),
@@ -5465,16 +5559,24 @@ flow @flow.main main {{
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp vertical presentation compact bracket source");
     assert_native_rich_text_layer_image_has_content(&json);
-    assert_native_vertical_presentation_compact_bracket_object(&json, writing_mode);
+    assert_native_vertical_presentation_bracket_object(
+        &json,
+        writing_mode,
+        open,
+        close,
+        description,
+    );
 }
 
-fn assert_native_vertical_presentation_compact_bracket_raw_crop(
+fn assert_native_vertical_presentation_bracket_raw_crop(
     writing_mode: &str,
+    open: &str,
+    close: &str,
+    label: &str,
+    description: &str,
     capture_kind: &str,
 ) {
-    let fixture_name = format!(
-        "agent-observe-native-{writing_mode}-vertical-presentation-compact-bracket-{capture_kind}"
-    );
+    let fixture_name = format!("agent-observe-native-{writing_mode}-{label}-{capture_kind}");
     let path = temp_arcw(
         &fixture_name,
         &format!(
@@ -5482,15 +5584,13 @@ fn assert_native_vertical_presentation_compact_bracket_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天︵︶人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
 }}
 ",
         ),
     );
     let dir = temp_dir(&fixture_name);
-    let raw_path = dir.join(format!(
-        "native-{writing_mode}-vertical-presentation-compact-bracket-{capture_kind}.rgba"
-    ));
+    let raw_path = dir.join(format!("native-{writing_mode}-{label}-{capture_kind}.rgba"));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -5516,7 +5616,7 @@ flow @flow.main main {{
 
     assert!(
         output.status.success(),
-        "native {writing_mode} vertical presentation compact-bracket {capture_kind} crop should succeed, stderr: {}",
+        "native {writing_mode} {description} {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -5532,11 +5632,23 @@ flow @flow.main main {{
         }
     );
 
-    let close = assert_native_vertical_presentation_compact_bracket_object(&json, writing_mode);
-    assert_eq!(json["images"][0]["crop_origin"]["x"], close["bbox"]["x"]);
-    assert_eq!(json["images"][0]["crop_origin"]["y"], close["bbox"]["y"]);
-    assert_eq!(json["images"][0]["width"], close["bbox"]["width"]);
-    assert_eq!(json["images"][0]["height"], close["bbox"]["height"]);
+    let close_object = assert_native_vertical_presentation_bracket_object(
+        &json,
+        writing_mode,
+        open,
+        close,
+        description,
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        close_object["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        close_object["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], close_object["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], close_object["bbox"]["height"]);
 
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -5546,9 +5658,9 @@ flow @flow.main main {{
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             &raw_path,
-            agent_object_id_color_from_json(close),
+            agent_object_id_color_from_json(close_object),
             content_pixels,
-            &format!("{writing_mode} vertical presentation compact-bracket object-id crop"),
+            &format!("{writing_mode} {description} object-id crop"),
         );
     } else {
         let bytes = fs::read(&raw_path)
@@ -5564,9 +5676,12 @@ flow @flow.main main {{
     fs::remove_dir_all(&dir).expect("remove temp native vertical presentation compact bracket dir");
 }
 
-fn assert_native_vertical_presentation_compact_bracket_object<'report>(
+fn assert_native_vertical_presentation_bracket_object<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
+    open: &str,
+    close: &str,
+    description: &str,
 ) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["writing_mode"],
@@ -5577,27 +5692,27 @@ fn assert_native_vertical_presentation_compact_bracket_object<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let open = find_rich_text_cluster_object(json, "︵", 3, 6);
-    let close = find_rich_text_cluster_object(json, "︶", 6, 9);
+    let open_object = find_rich_text_cluster_object(json, open, 3, 6);
+    let close_object = find_rich_text_cluster_object(json, close, 6, 9);
     let person = find_rich_text_cluster_object(json, "人", 9, 12);
-    assert_eq!(close["rich_text_ref"]["orientation"], "upright");
-    assert_eq!(close["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(close_object["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(close_object["rich_text_ref"]["vertical_form"], "none");
     assert_vertical_cluster_after(
         body,
-        open,
-        "vertical presentation opening bracket should sit after body text",
+        open_object,
+        &format!("{description} opening mark should sit after body text"),
     );
     assert_vertical_cluster_after(
-        open,
-        close,
-        "vertical presentation compact bracket pair should stay together",
+        open_object,
+        close_object,
+        &format!("{description} pair should stay together"),
     );
     assert_vertical_cluster_after(
-        close,
+        close_object,
         person,
-        "text after vertical presentation compact bracket pair should continue in the same column",
+        &format!("text after {description} pair should continue in the same column"),
     );
-    close
+    close_object
 }
 
 fn assert_native_halfwidth_corner_bracket_geometry(writing_mode: &str) {
