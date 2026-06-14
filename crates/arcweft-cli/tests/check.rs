@@ -6258,6 +6258,28 @@ fn agent_observe_native_renderer_writes_published_jlreq_western_word_class_mix_r
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_apostrophe_western_word_class_mix_geometry()
+ {
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_apostrophe_western_word_class_mix_raw_crops()
+ {
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_raw_crop("vertical_rl", "mask");
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_raw_crop(
+        "vertical_rl",
+        "object-id",
+    );
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_raw_crop("vertical_lr", "mask");
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_raw_crop(
+        "vertical_lr",
+        "object-id",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_numeric_separator_class_mix_geometry() {
     assert_native_published_jlreq_numeric_separator_class_mix_geometry("vertical_rl");
     assert_native_published_jlreq_numeric_separator_class_mix_geometry("vertical_lr");
@@ -7406,6 +7428,315 @@ fn assert_native_published_jlreq_western_word_class_mix_objects<'report>(
     );
     assert_eq!(hyphen["rich_text_ref"]["orientation"], "sideways_cw");
     hyphen
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_class_mix_geometry(writing_mode: &str) {
+    for case in native_published_jlreq_apostrophe_western_word_class_mix_cases() {
+        let json = observe_native_published_jlreq_apostrophe_western_word_class_mix_fixture(
+            writing_mode,
+            case,
+        );
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["jlreq_strictness"],
+            "strict"
+        );
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_apostrophe_western_word_class_mix_objects(
+            &json,
+            writing_mode,
+            case,
+        );
+    }
+}
+
+fn observe_native_published_jlreq_apostrophe_western_word_class_mix_fixture(
+    writing_mode: &str,
+    case: NativeApostropheWesternWordClassMixCase,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-class-mix-{}",
+            case.label
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ apostrophe Western word class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_class_mix_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    for case in native_published_jlreq_apostrophe_western_word_class_mix_cases() {
+        assert_native_published_jlreq_apostrophe_western_word_class_mix_case_raw_crop(
+            writing_mode,
+            capture_kind,
+            case,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_class_mix_case_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+    case: NativeApostropheWesternWordClassMixCase,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-apostrophe-western-word-class-mix-{}-{capture_kind}",
+        case.label
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-apostrophe-western-word-class-mix-{}-{capture_kind}.rgba",
+        case.label
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg(case.object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect(
+            "arcw agent observe writes native published JLREQ apostrophe Western word class-mix raw crop",
+        );
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ apostrophe Western word class-mix {} {capture_kind} crop should succeed, stderr: {}",
+        case.label,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ apostrophe Western word class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let apostrophe = assert_native_published_jlreq_apostrophe_western_word_class_mix_objects(
+        &json,
+        writing_mode,
+        case,
+    );
+    assert_native_published_jlreq_apostrophe_western_word_class_mix_crop_pixels(
+        &json,
+        apostrophe,
+        &raw_path,
+        writing_mode,
+        capture_kind,
+    );
+
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ apostrophe Western word class-mix source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp published JLREQ apostrophe Western word class-mix dir");
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_class_mix_crop_pixels(
+    json: &serde_json::Value,
+    apostrophe: &serde_json::Value,
+    raw_path: &Path,
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        apostrophe["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        apostrophe["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], apostrophe["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], apostrophe["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            raw_path,
+            agent_object_id_color_from_json(apostrophe),
+            content_pixels,
+            &format!(
+                "{writing_mode} published JLREQ apostrophe Western word class-mix object-id crop"
+            ),
+        );
+    } else {
+        let bytes = fs::read(raw_path)
+            .expect("read native published JLREQ apostrophe Western word class-mix crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+}
+
+fn assert_native_published_jlreq_apostrophe_western_word_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    case: NativeApostropheWesternWordClassMixCase,
+) -> &'report serde_json::Value {
+    let first = find_rich_text_cluster_object(json, "O", 18, 19);
+    let apostrophe = find_rich_text_cluster_object(
+        json,
+        case.apostrophe,
+        case.apostrophe_start,
+        case.apostrophe_end,
+    );
+    let after_apostrophe =
+        find_rich_text_cluster_object(json, "K", case.after_start, case.after_end);
+    assert_vertical_cluster_after(
+        first,
+        apostrophe,
+        "published JLREQ apostrophe Western word class mix keeps apostrophe with preceding letter",
+    );
+    assert_vertical_cluster_after(
+        apostrophe,
+        after_apostrophe,
+        "published JLREQ apostrophe Western word class mix keeps following letter attached",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", case.person_start, case.person_end);
+    let full_stop = find_rich_text_cluster_object(json, "。", case.person_end, case.full_stop_end);
+    let opening = find_rich_text_cluster_object(json, "「", case.full_stop_end, case.opening_end);
+    let river = find_rich_text_cluster_object(json, "川", case.opening_end, case.river_end);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after an apostrophe Western word",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after an apostrophe Western word",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after an apostrophe Western word",
+    );
+    assert_rich_text_object_has_mask_capture(
+        apostrophe,
+        &format!(
+            "{writing_mode} published JLREQ apostrophe Western word class-mix {} apostrophe",
+            case.label
+        ),
+    );
+    apostrophe
+}
+
+#[derive(Clone, Copy)]
+struct NativeApostropheWesternWordClassMixCase {
+    label: &'static str,
+    text: &'static str,
+    apostrophe: &'static str,
+    object_id: &'static str,
+    apostrophe_start: u64,
+    apostrophe_end: u64,
+    after_start: u64,
+    after_end: u64,
+    person_start: u64,
+    person_end: u64,
+    full_stop_end: u64,
+    opening_end: u64,
+    river_end: u64,
+}
+
+const fn native_published_jlreq_apostrophe_western_word_class_mix_cases()
+-> [NativeApostropheWesternWordClassMixCase; 2] {
+    [
+        NativeApostropheWesternWordClassMixCase {
+            label: "ascii",
+            text: "天地春夏秋冬O'K人。「川」あっいおーえ―中・外………終",
+            apostrophe: "'",
+            object_id: "object.dialogue.0.0.cluster.7.19.20",
+            apostrophe_start: 19,
+            apostrophe_end: 20,
+            after_start: 20,
+            after_end: 21,
+            person_start: 21,
+            person_end: 24,
+            full_stop_end: 27,
+            opening_end: 30,
+            river_end: 33,
+        },
+        NativeApostropheWesternWordClassMixCase {
+            label: "typographic",
+            text: "天地春夏秋冬O’K人。「川」あっいおーえ―中・外………終",
+            apostrophe: "’",
+            object_id: "object.dialogue.0.0.cluster.7.19.22",
+            apostrophe_start: 19,
+            apostrophe_end: 22,
+            after_start: 22,
+            after_end: 23,
+            person_start: 23,
+            person_end: 26,
+            full_stop_end: 29,
+            opening_end: 32,
+            river_end: 35,
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_numeric_separator_class_mix_geometry(writing_mode: &str) {

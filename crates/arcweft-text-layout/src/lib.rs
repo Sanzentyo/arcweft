@@ -3633,6 +3633,73 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_apostrophe_word_inside_class_mix() {
+        for (text, joiner, description) in [
+            (
+                "天地春夏秋冬O'K人。「川」あっいおーえ―中・外………終",
+                "'",
+                "ASCII apostrophe Western word",
+            ),
+            (
+                "天地春夏秋冬O’K人。「川」あっいおーえ―中・外………終",
+                "’",
+                "typographic apostrophe Western word",
+            ),
+        ] {
+            for writing_mode in [
+                RichTextWritingMode::VerticalRl,
+                RichTextWritingMode::VerticalLr,
+            ] {
+                let frame = frame_with_run(text, vertical_presentation(writing_mode));
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(210.0, 210.0),
+                    jlreq_strictness: JlreqStrictness::Strict,
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
+                assert!(
+                    vertical_layout_column_count(&layout) >= 4,
+                    "{writing_mode:?} published JLREQ paragraph with an {description} should require a multi-column plan: {layout:?}"
+                );
+
+                let first = nth_laid_out_glyph(&layout, "O", 0);
+                let apostrophe = nth_laid_out_glyph(&layout, joiner, 0);
+                let after_apostrophe = nth_laid_out_glyph(&layout, "K", 0);
+                assert_vertical_layout_after(
+                    first,
+                    apostrophe,
+                    "word-internal apostrophe should stay attached to the preceding letter inside a paragraph class mix",
+                );
+                assert_vertical_layout_after(
+                    apostrophe,
+                    after_apostrophe,
+                    "letter after a word-internal apostrophe should stay attached inside a paragraph class mix",
+                );
+
+                let person = nth_laid_out_glyph(&layout, "人", 0);
+                let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+                let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+                let river = nth_laid_out_glyph(&layout, "川", 0);
+                assert_vertical_layout_after(
+                    person,
+                    strict_full_stop,
+                    "strict paragraph class mix should still keep closing punctuation after an apostrophe Western word",
+                );
+                assert_vertical_layout_after(
+                    strict_full_stop,
+                    strict_open,
+                    "strict paragraph class mix should still keep adjacent closing/opening punctuation after an apostrophe Western word",
+                );
+                assert_vertical_layout_after(
+                    strict_open,
+                    river,
+                    "strict opening punctuation should still stay with its base after an apostrophe Western word",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_numeric_separator_inside_class_mix() {
         let text = "天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終";
         for writing_mode in [
