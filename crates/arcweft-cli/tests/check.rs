@@ -7410,7 +7410,7 @@ flow @flow.main main {{
         }
     );
 
-    let separator = assert_native_published_jlreq_numeric_separator_objects(
+    let crop_target = assert_native_published_jlreq_numeric_separator_objects(
         &json,
         writing_mode,
         next_column_moves_right,
@@ -7418,14 +7418,14 @@ flow @flow.main main {{
     );
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
-        separator["bbox"]["x"]
+        crop_target["bbox"]["x"]
     );
     assert_eq!(
         json["images"][0]["crop_origin"]["y"],
-        separator["bbox"]["y"]
+        crop_target["bbox"]["y"]
     );
-    assert_eq!(json["images"][0]["width"], separator["bbox"]["width"]);
-    assert_eq!(json["images"][0]["height"], separator["bbox"]["height"]);
+    assert_eq!(json["images"][0]["width"], crop_target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], crop_target["bbox"]["height"]);
 
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -7435,11 +7435,11 @@ flow @flow.main main {{
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             &raw_path,
-            agent_object_id_color_from_json(separator),
+            agent_object_id_color_from_json(crop_target),
             content_pixels,
             &format!(
-                "{writing_mode} published JLREQ {} numeric separator object-id crop",
-                case.description
+                "{writing_mode} published JLREQ {} numeric separator {} object-id crop",
+                case.description, case.crop_description
             ),
         );
     } else {
@@ -7474,40 +7474,68 @@ fn assert_native_published_jlreq_numeric_separator_objects<'report>(
         case.preceding_range.0,
         case.preceding_range.1,
     );
-    let separator = find_rich_text_cluster_object(
-        json,
-        case.separator,
-        case.separator_range.0,
-        case.separator_range.1,
-    );
+    let separator = case.separator_is_observed.then(|| {
+        find_rich_text_cluster_object(
+            json,
+            case.separator,
+            case.separator_range.0,
+            case.separator_range.1,
+        )
+    });
     let following_digits = find_rich_text_cluster_object(
         json,
         case.following_digits,
         case.following_range.0,
         case.following_range.1,
     );
+    let crop_target =
+        find_rich_text_cluster_object(json, case.crop_text, case.crop_range.0, case.crop_range.1);
     let next_body = find_rich_text_cluster_object(json, "人", case.next_range.0, case.next_range.1);
     assert_vertical_cluster_after(
         body,
         leading_digits,
         "published JLREQ European numeral with separators should start after body text",
     );
-    assert_vertical_cluster_after(
-        preceding_digits,
-        separator,
-        &format!(
-            "published JLREQ {} separator should stay with the preceding digit chunk",
+    if let Some(separator) = separator {
+        assert_vertical_cluster_after(
+            preceding_digits,
+            separator,
+            &format!(
+                "published JLREQ {} separator should stay with the preceding digit chunk",
+                case.description
+            ),
+        );
+        assert_vertical_cluster_after(
+            separator,
+            following_digits,
+            &format!(
+                "published JLREQ digits after a {} separator should stay attached",
+                case.description
+            ),
+        );
+        assert_rich_text_object_has_mask_capture(
+            separator,
+            &format!(
+                "{writing_mode} published JLREQ numeric separator {}",
+                case.description
+            ),
+        );
+    } else {
+        assert_vertical_cluster_after(
+            preceding_digits,
+            following_digits,
+            &format!(
+                "published JLREQ digits after a {} separator should stay attached",
+                case.description
+            ),
+        );
+        assert!(
+            agent_json_bbox_y(&following_digits["bbox"])
+                > agent_json_bbox_bottom(&preceding_digits["bbox"]),
+            "published JLREQ {} separator should leave a visible layout gap between digit chunks",
             case.description
-        ),
-    );
-    assert_vertical_cluster_after(
-        separator,
-        following_digits,
-        &format!(
-            "published JLREQ digits after a {} separator should stay attached",
-            case.description
-        ),
-    );
+        );
+    }
     assert_next_paragraph_column(
         following_digits,
         next_body,
@@ -7515,13 +7543,13 @@ fn assert_native_published_jlreq_numeric_separator_objects<'report>(
         "body text after the published JLREQ European numeral with separators should continue in the next column",
     );
     assert_rich_text_object_has_mask_capture(
-        separator,
+        crop_target,
         &format!(
-            "{writing_mode} published JLREQ numeric separator {}",
+            "{writing_mode} published JLREQ numeric separator {} crop target",
             case.description
         ),
     );
-    separator
+    crop_target
 }
 
 #[derive(Clone, Copy)]
@@ -7534,14 +7562,18 @@ struct NativeNumericSeparatorCase {
     preceding_range: (u64, u64),
     separator: &'static str,
     separator_range: (u64, u64),
+    separator_is_observed: bool,
     following_digits: &'static str,
     following_range: (u64, u64),
+    crop_text: &'static str,
+    crop_range: (u64, u64),
     object_id: &'static str,
     next_range: (u64, u64),
     description: &'static str,
+    crop_description: &'static str,
 }
 
-const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSeparatorCase; 2] {
+const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSeparatorCase; 3] {
     [
         NativeNumericSeparatorCase {
             label: "comma",
@@ -7552,11 +7584,15 @@ const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSepar
             preceding_range: (3, 4),
             separator: ",",
             separator_range: (4, 5),
+            separator_is_observed: true,
             following_digits: "234",
             following_range: (5, 8),
+            crop_text: ",",
+            crop_range: (4, 5),
             object_id: "object.dialogue.0.0.cluster.2.4.5",
             next_range: (8, 11),
             description: "comma",
+            crop_description: "separator",
         },
         NativeNumericSeparatorCase {
             label: "decimal-point",
@@ -7567,11 +7603,34 @@ const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSepar
             preceding_range: (3, 4),
             separator: ".",
             separator_range: (4, 5),
+            separator_is_observed: true,
             following_digits: "23",
             following_range: (5, 7),
+            crop_text: ".",
+            crop_range: (4, 5),
             object_id: "object.dialogue.0.0.cluster.2.4.5",
             next_range: (7, 10),
             description: "decimal point",
+            crop_description: "separator",
+        },
+        NativeNumericSeparatorCase {
+            label: "space-place",
+            text: "天12 345人",
+            leading_digits: "12",
+            leading_digits_end: 5,
+            preceding_digits: "12",
+            preceding_range: (3, 5),
+            separator: " ",
+            separator_range: (5, 6),
+            separator_is_observed: false,
+            following_digits: "345",
+            following_range: (6, 9),
+            crop_text: "345",
+            crop_range: (6, 9),
+            object_id: "object.dialogue.0.0.cluster.3.6.9",
+            next_range: (9, 12),
+            description: "space place",
+            crop_description: "following digit chunk",
         },
     ]
 }

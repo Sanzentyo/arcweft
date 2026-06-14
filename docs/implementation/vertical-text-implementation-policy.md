@@ -466,7 +466,9 @@ the concrete choices to follow when turning that package into production code.
   digit clusters in `1,234.56`, and keeps space place separators attached in
   `12 345`, across text-combine chunking. Native Agent raw mask/object-id crops
   verify that the comma separator object in `1,234` and the decimal point in
-  `1.23` are read back from rendered GlyphArea pixels.
+  `1.23` are read back from rendered GlyphArea pixels; the space place
+  separator in `12 345` is verified through Agent geometry plus raw crops of
+  the attached following digit chunk.
   Prefixed and postfixed abbreviations from the same JLREQ section are covered
   as well: Sans I/O layout keeps `$1234`, `¢1234`, `50%`, `25℃`, decomposed
   temperature units such as `25°C`, `$五`, and `五%` unbroken across
