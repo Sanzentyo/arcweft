@@ -7,14 +7,18 @@ work landed and was re-measured while tuning the test policy.
 ## Profiling Snapshot
 
 The slow path is not ordinary Rust unit testing or native rendering itself. The
-slow paths are:
+current slow path is the broad
+`agent_observe_writes_layer_png_and_object_raw_images` CLI resource matrix,
+which launches `arcw agent observe` many times in one test to cover
+png/raw/object-id/mask/read-uri/MCP output shapes.
 
-- MCP stdio end-to-end capture tests, which start `arcw agent mcp`
-  subprocesses and exercise native image capture/resource reads through
-  JSON-RPC.
-- The broad `agent_observe_writes_layer_png_and_object_raw_images` CLI resource
-  matrix, which launches `arcw agent observe` many times in one test to cover
-  png/raw/object-id/mask/read-uri/MCP output shapes.
+MCP stdio end-to-end capture tests used to be another slow path because
+`resources/list` eagerly rendered every layer/object capture resource. MCP now
+lists capture refs lazily and renders only when `resources/read` or
+`arcweft.capture` requests a specific image. Keep the MCP suite in Tier 2
+because it still starts `arcw agent mcp` subprocesses and exercises native
+image capture/resource reads through JSON-RPC, but it is no longer a
+multi-minute local command.
 
 Exact PNG/imq golden checks are fast enough, but they are environment-sensitive
 because local font/rasterization differences can produce small non-zero image
@@ -101,6 +105,29 @@ acceptance evidence:
 | `cargo test --manifest-path vendor/glyphon/Cargo.toml --lib` | vendored glyphon lib tests for GlyphArea transforms, clipping, custom glyphs, and color alpha | 47.42s cold / 0.00s test body | passed |
 | `cargo clippy --manifest-path vendor/glyphon/Cargo.toml --lib --tests -- -D warnings -A clippy::too_many_arguments` | vendored glyphon lib/test lint gate, allowing the upstream public API shape | 2.38s warm | passed |
 
+Re-profiled after MCP resource listing was changed from eager capture
+generation to lazy capture-ref descriptors:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test -p arcweft-cli --test check agent_mcp_stdio_observes_and_reads_rich_text_child_image -- --ignored --nocapture --exact` | observe, resources/list, capture, and resource readback through one MCP stdio session | 21.244s wall including rebuild / 3.43s test body | passed |
+| `just test-slow-mcp` | 14 ignored MCP stdio native capture/resource tests | 20.2s wall / 18.38s test body | passed |
+
+Release-profile testing was checked for the long native/JLREQ integration path:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry -- --nocapture --exact` | one published JLREQ native geometry test, debug warm | 14.330s wall / 13.37s test body | passed |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry --release -- --nocapture --exact` | same exact test, release warm | 10.960s wall / 10.18s test body | passed |
+| `cargo test -p arcweft-cli --test check --release --quiet` | full CLI integration binary, release warm after initial release build | 147.968s wall / 147.02s test body | passed, 16 ignored |
+
+Release mode helps CPU-heavy native integration tests, but the measured win was
+only about 16-24% while the first release build cost 2m44s locally. Do not make
+release-profile tests the default local policy. Use them only when repeated
+long-running native matrix runs are unavoidable; otherwise split broad
+integration matrices into focused Tier 1 coverage plus explicit Tier 2
+validation.
+
 This pass changes the policy entrypoint: `just test-workspace` now runs
 `cargo test --workspace --lib --tests --quiet` instead of the Cargo default.
 The Cargo default can include the expensive doc-test path depending on cache
@@ -134,12 +161,11 @@ Representative exact tests:
 
 | Test | Time |
 | --- | ---: |
-| `agent_mcp_stdio_lists_resource_templates_before_observe` | 22.559s including initial compile; test body 1.19s |
+| `agent_mcp_stdio_lists_resource_templates_before_observe` | 1.212s including harness startup; test body 0.05s |
 | `agent_observe_native_renderer_writes_framebuffer_png` | 2.038s |
 | `agent_observe_native_renderer_writes_rich_text_layer_png_crop` | 1.663s |
-| `agent_mcp_stdio_captures_source_with_native_renderer` | 28.907s |
-| `agent_mcp_stdio_captures_source_layer_with_native_renderer` | 54.179s |
-| `agent_mcp_stdio_captures_source_ruby_object_id_with_native_renderer` | 29.122s |
+| `agent_mcp_stdio_observes_and_reads_rich_text_child_image` | 3.43s test body after lazy MCP resource listing |
+| `just test-slow-mcp` | 18.38s test body for all 14 ignored MCP stdio tests |
 | `agent_observe_native_vertical_capture_matches_imq_reference` | 2.802s |
 
 ## Local Execution Tiers
@@ -247,10 +273,12 @@ just test-tier2
 just verify-full
 ```
 
-Because Tier 2 currently takes several minutes on Windows when the MCP stdio
-suite is included, and because the visual golden is environment-sensitive, do
+Because Tier 2 still includes subprocess/GPU-facing MCP coverage, the broad
+Agent observe resource matrix, and an environment-sensitive visual golden, do
 not run it automatically for every small mainline cut point unless the changed
-code is in that risk area.
+code is in that risk area. The MCP stdio part alone is now short enough to run
+as the default validation for Agent MCP protocol, resource URI, capture
+resource lifetime, and native readback changes.
 
 Operational budget:
 
@@ -281,8 +309,10 @@ coverage are marked `#[ignore]`. The normal fast test job should use
 every push and JLREQ generated table drift is still caught. CI should keep fast
 crate tests, `just check-jlreq-punctuation`, and focused native renderer tests
 in the normal job, run doc-tests as a separate named job, then run Tier 2 in an
-explicitly named slow job or scheduled job.
+explicitly named slow job or scheduled job. MCP stdio can also be promoted into
+a named Agent/MCP validation job when that surface changes, because it no
+longer dominates the slow lane by itself.
 
-Local reports should state which tier was run and whether the slow MCP stdio,
+Local reports should state which tier was run and whether MCP stdio,
 broad Agent observe resource-matrix, exact visual-golden suites, and doc-tests
 were intentionally skipped or completed.

@@ -26,10 +26,11 @@ use arcweft_agent_protocol::{
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
     AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
     AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
-    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentResource, AgentRgbaColor,
-    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentImageMetadata, AgentImageRenderer, AgentImageResource, AgentImageScope,
+    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentObservationReport, AgentObservedLayer, AgentObservedObject, AgentResource,
+    AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef,
+    AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
@@ -1910,7 +1911,7 @@ fn agent_mcp_run_observation(
     .map_err(|error| error.to_string())?;
     let image_output = agent_observe_image_output(&mut report, &options)
         .map_err(|_| "failed to build MCP observe image output".to_owned())?;
-    let resources = agent_observe_all_resources(&report, image_output.as_ref())
+    let resources = agent_observe_list_resources(&report, image_output.as_ref())
         .map_err(|_| "failed to build MCP observe resources".to_owned())?;
     Ok((report, image_output, resources))
 }
@@ -1938,7 +1939,7 @@ fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResourc
     let Some(report) = &state.report else {
         return Ok(Vec::new());
     };
-    let mut resources = agent_observe_all_resources(report, state.image_output.as_ref())?;
+    let mut resources = agent_observe_list_resources(report, state.image_output.as_ref())?;
     for capture in &state.capture_resources {
         resources.retain(|resource| resource.uri != capture.uri);
         resources.push(capture.clone());
@@ -1984,6 +1985,7 @@ fn agent_mcp_call_capture(
         )?;
         state.report = Some(report);
         state.image_output = image_output;
+        state.capture_resources.clear();
     }
     let Some(report) = state.report.clone() else {
         return Err(
@@ -3529,29 +3531,7 @@ fn agent_observe_all_resources(
     report: &AgentObservationReport,
     image_output: Option<&AgentImageOutput>,
 ) -> Result<Vec<AgentResource>, ExitCode> {
-    let mut resources = vec![
-        report
-            .observation_resource()
-            .map_err(|error| agent_json_error(&error))?,
-        report
-            .objects_resource()
-            .map_err(|error| agent_json_error(&error))?,
-        report
-            .logs_resource()
-            .map_err(|error| agent_json_error(&error))?,
-        report
-            .signals_resource()
-            .map_err(|error| agent_json_error(&error))?,
-        report
-            .audio_resource()
-            .map_err(|error| agent_json_error(&error))?,
-    ];
-    if let Some(overlay) = report.overlay_svg_resource() {
-        resources.push(overlay);
-    }
-    if let Some(image) = agent_observe_image_resource(report, image_output) {
-        resources.push(image);
-    }
+    let mut resources = agent_observe_base_resources(report, image_output)?;
     let mut known = resources
         .iter()
         .map(|resource| resource.uri.clone())
@@ -3579,6 +3559,155 @@ fn agent_observe_all_resources(
         }
     }
     Ok(resources)
+}
+
+fn agent_observe_list_resources(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+) -> Result<Vec<AgentResource>, ExitCode> {
+    let mut resources = agent_observe_base_resources(report, image_output)?;
+    let mut known = resources
+        .iter()
+        .map(|resource| resource.uri.clone())
+        .collect::<BTreeSet<_>>();
+    for layer in &report.layers {
+        for capture in &layer.capture_refs.captures {
+            if known.insert(capture.uri.clone()) {
+                resources.push(agent_layer_capture_ref_resource(report, layer, capture));
+            }
+        }
+    }
+    for object in &report.objects {
+        for capture in &object.capture_refs.captures {
+            if known.insert(capture.uri.clone()) {
+                resources.push(agent_object_capture_ref_resource(report, object, capture));
+            }
+        }
+    }
+    Ok(resources)
+}
+
+fn agent_observe_base_resources(
+    report: &AgentObservationReport,
+    image_output: Option<&AgentImageOutput>,
+) -> Result<Vec<AgentResource>, ExitCode> {
+    let mut resources = vec![
+        report
+            .observation_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .objects_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .logs_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .signals_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .audio_resource()
+            .map_err(|error| agent_json_error(&error))?,
+    ];
+    if let Some(overlay) = report.overlay_svg_resource() {
+        resources.push(overlay);
+    }
+    if let Some(image) = agent_observe_image_resource(report, image_output) {
+        resources.push(image);
+    }
+    Ok(resources)
+}
+
+fn agent_layer_capture_ref_resource(
+    report: &AgentObservationReport,
+    layer: &AgentObservedLayer,
+    capture: &AgentLayerCaptureRef,
+) -> AgentResource {
+    agent_capture_ref_resource(
+        report,
+        AgentCaptureRefResourceSpec {
+            uri: &capture.uri,
+            mime_type: &capture.mime_type,
+            kind: capture.kind,
+            scope: AgentImageScope::Layer {
+                id: layer.id.clone(),
+            },
+            page: capture.page,
+            width: capture.width,
+            height: capture.height,
+        },
+    )
+}
+
+fn agent_object_capture_ref_resource(
+    report: &AgentObservationReport,
+    object: &AgentObservedObject,
+    capture: &AgentObjectCaptureRef,
+) -> AgentResource {
+    agent_capture_ref_resource(
+        report,
+        AgentCaptureRefResourceSpec {
+            uri: &capture.uri,
+            mime_type: &capture.mime_type,
+            kind: capture.kind,
+            scope: AgentImageScope::Object {
+                id: object.id.clone(),
+            },
+            page: capture.page,
+            width: capture.width,
+            height: capture.height,
+        },
+    )
+}
+
+struct AgentCaptureRefResourceSpec<'a> {
+    uri: &'a str,
+    mime_type: &'a str,
+    kind: AgentImageKind,
+    scope: AgentImageScope,
+    page: usize,
+    width: u32,
+    height: u32,
+}
+
+fn agent_capture_ref_resource(
+    report: &AgentObservationReport,
+    spec: AgentCaptureRefResourceSpec<'_>,
+) -> AgentResource {
+    AgentResource {
+        uri: spec.uri.to_owned(),
+        kind: arcweft_agent_protocol::AgentResourceKind::Image,
+        mime_type: spec.mime_type.to_owned(),
+        hash: report.render_hash.clone(),
+        image: Some(AgentImageMetadata {
+            kind: spec.kind,
+            renderer: AgentImageRenderer::Native,
+            scope: spec.scope,
+            composition: agent_capture_ref_composition(spec.kind),
+            page: spec.page,
+            width: spec.width,
+            height: spec.height,
+            crop_origin: None,
+            pixel_format: (spec.mime_type == "application/octet-stream")
+                .then(|| "rgba8_unorm".to_owned()),
+            row_stride_bytes: (spec.mime_type == "application/octet-stream")
+                .then(|| spec.width.saturating_mul(4)),
+            content_bbox: None,
+            content_viewport_bbox: None,
+            content_pixels: None,
+        }),
+        body: AgentResourceBody::Text(String::new()),
+    }
+}
+
+const fn agent_capture_ref_composition(kind: AgentImageKind) -> AgentImageComposition {
+    match kind {
+        AgentImageKind::Color => AgentImageComposition::FramebufferCrop,
+        AgentImageKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
+        AgentImageKind::Mask => AgentImageComposition::MaskAttachment,
+        AgentImageKind::Overlay | AgentImageKind::OverlaySvg => {
+            AgentImageComposition::OverlayVector
+        }
+    }
 }
 
 fn agent_observe_image_resource(
