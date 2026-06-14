@@ -498,7 +498,7 @@ the concrete choices to follow when turning that package into production code.
   `b` object in the plain Western word `天Web人`, the final
   `m` object in `天μm人` and `天3μm人`, the hyphen object in `天Web-Test人`, the
   apostrophe objects in `天O'K人` and `天O’K人`, and the accented `é` object in
-  `天té人` are read back from rendered GlyphArea pixels.
+  `天café人` are read back from rendered GlyphArea pixels.
   Subscript/superscript object sequences from the same section are represented
   separately from reference marks: Sans I/O layout keeps `H₂O` and Greek-base
   formulas such as `α₂β` and `α²β` attached as one formula-like object in vertical text,

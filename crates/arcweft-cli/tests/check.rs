@@ -9802,12 +9802,14 @@ fn observe_native_published_jlreq_accented_latin_word_fixture(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天té人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天café人[/][p]
 }}
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 720, 170,
+    );
     fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
     json
 }
@@ -9826,7 +9828,7 @@ fn assert_native_published_jlreq_accented_latin_word_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天té人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天café人[/][p]
 }}
 "
         ),
@@ -9845,8 +9847,10 @@ flow @flow.main main {{
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
+        .arg("--textbox-height")
+        .arg("170")
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.4.6")
+        .arg("object.dialogue.0.0.cluster.4.6.8")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -9915,9 +9919,11 @@ fn assert_native_published_jlreq_accented_latin_word_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let first = find_rich_text_cluster_object(json, "t", 3, 4);
-    let accented = find_rich_text_cluster_object(json, "é", 4, 6);
-    let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    let first = find_rich_text_cluster_object(json, "c", 3, 4);
+    let second = find_rich_text_cluster_object(json, "a", 4, 5);
+    let before_accent = find_rich_text_cluster_object(json, "f", 5, 6);
+    let accented = find_rich_text_cluster_object(json, "é", 6, 8);
+    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
     assert_vertical_cluster_after(
         body,
         first,
@@ -9925,6 +9931,16 @@ fn assert_native_published_jlreq_accented_latin_word_objects<'report>(
     );
     assert_vertical_cluster_after(
         first,
+        second,
+        "published JLREQ accented Latin word letters should stay together",
+    );
+    assert_vertical_cluster_after(
+        second,
+        before_accent,
+        "published JLREQ accented Latin word letters should stay together",
+    );
+    assert_vertical_cluster_after(
+        before_accent,
         accented,
         "published JLREQ accented Latin grapheme should stay with preceding Latin letters",
     );
