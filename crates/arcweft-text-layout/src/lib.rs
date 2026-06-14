@@ -3829,6 +3829,61 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_decomposed_temperature_inside_class_mix() {
+        let text = "天地春夏秋冬25°C人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} published JLREQ paragraph with decomposed temperature unit should require a multi-column plan: {layout:?}"
+            );
+
+            let digits = nth_laid_out_glyph(&layout, "25", 0);
+            let degree = nth_laid_out_glyph(&layout, "°", 0);
+            let unit = nth_laid_out_glyph(&layout, "C", 0);
+            assert_vertical_layout_after(
+                digits,
+                degree,
+                "degree suffix abbreviation should stay with preceding digits inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                degree,
+                unit,
+                "Latin temperature unit tail should stay with the degree suffix inside a paragraph class mix",
+            );
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a decomposed temperature unit",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a decomposed temperature unit",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a decomposed temperature unit",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_strict_pair_after_ruby_text_combine() {
         let text = "夢2026。「人山川海";
         let dream_start = 0;

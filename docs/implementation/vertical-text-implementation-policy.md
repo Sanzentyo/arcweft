@@ -478,7 +478,11 @@ the concrete choices to follow when turning that package into production code.
   text-combine chunking and ideographic numeral clusters, while native Agent
   geometry/raw mask/object-id crops verify that the `$` and `¢` prefix objects
   plus `%`, `℃`, and both `°` and the final `C` in `25°C` are read back from
-  rendered GlyphArea pixels for Arabic and ideographic numerals.
+  rendered GlyphArea pixels for Arabic and ideographic numerals. The
+  decomposed temperature unit `25°C` is also embedded in a longer strict
+  paragraph class mix, with native raw crops for the final `C`, proving the
+  abbreviation sequence and later ordinary closing/opening punctuation share one
+  paragraph-DP plan.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main
