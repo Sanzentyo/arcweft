@@ -3920,93 +3920,107 @@ mod tests {
 
     #[test]
     fn overheight_vertical_ruby_segments_render_as_multiple_glyph_areas() {
-        let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.test.vertical.ruby.split".to_owned()),
-            callee: "alice".to_owned(),
-            text_key: None,
-            window: None,
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            default_inline_failure_policy: None,
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![
-                RichTextNode::StyleStart {
-                    style: RichTextStyle::Layout {
-                        layout: RichTextLayout {
-                            writing_mode: RichTextWritingMode::VerticalRl,
-                            ..RichTextLayout::default()
+        for (writing_mode, continuation_moves_right) in [
+            (RichTextWritingMode::VerticalRl, true),
+            (RichTextWritingMode::VerticalLr, false),
+        ] {
+            let spec = LineDisplaySpec {
+                line: RuntimeLineId(format!("say.test.vertical.ruby.split.{writing_mode:?}")),
+                callee: "alice".to_owned(),
+                text_key: None,
+                window: None,
+                voice: None,
+                look: None,
+                style: None,
+                base_styles: Vec::new(),
+                default_inline_failure_policy: None,
+                args: Vec::new(),
+                content: RichTextDocument::new(vec![
+                    RichTextNode::StyleStart {
+                        style: RichTextStyle::Layout {
+                            layout: RichTextLayout {
+                                writing_mode,
+                                ..RichTextLayout::default()
+                            },
                         },
                     },
+                    RichTextNode::Ruby {
+                        base: "夢".to_owned(),
+                        ruby: "あいうえお".to_owned(),
+                    },
+                    RichTextNode::StyleEnd {
+                        name: "/".to_owned(),
+                    },
+                ]),
+            };
+            let frame = spec
+                .resolve_frame(&RuntimeLineContext::default())
+                .expect("frame resolves");
+            let page = WindowPage::from_frame(&frame)
+                .into_iter()
+                .next()
+                .expect("page exists");
+            let layout = layout_frame(
+                page.layout_frame.as_ref().expect("layout frame"),
+                TextLayoutConfig {
+                    size: LayoutSize::new(160.0, 42.0),
+                    ruby_font_size: 14.0,
+                    ..native_text_layout_config(800, 600, 0.0, 0.0)
                 },
-                RichTextNode::Ruby {
-                    base: "夢".to_owned(),
-                    ruby: "あいうえお".to_owned(),
-                },
-                RichTextNode::StyleEnd {
-                    name: "/".to_owned(),
-                },
-            ]),
-        };
-        let frame = spec
-            .resolve_frame(&RuntimeLineContext::default())
-            .expect("frame resolves");
-        let page = WindowPage::from_frame(&frame)
-            .into_iter()
-            .next()
-            .expect("page exists");
-        let layout = layout_frame(
-            page.layout_frame.as_ref().expect("layout frame"),
-            TextLayoutConfig {
-                size: LayoutSize::new(160.0, 42.0),
-                ruby_font_size: 14.0,
-                ..native_text_layout_config(800, 600, 0.0, 0.0)
-            },
-        )
-        .expect("layout resolves");
-        assert_eq!(layout.ruby.len(), 2);
-
-        let mut font_system = FontSystem::new();
-        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
-        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
-        let ruby_buffers = build_ruby_buffers(
-            &mut font_system,
-            &buffer,
-            &page.rich_text,
-            Some(&layout),
-            800,
-            600,
-            NativeTextOrigin::default(),
-        );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
-
-        assert!(ruby_buffers[1].left > ruby_buffers[0].left);
-        let RubyGlyphPlacement::Vertical {
-            cell_width,
-            vertical_advance,
-        } = ruby_buffers[0].placement
-        else {
-            panic!("vertical layout ruby should use vertical glyph placement");
-        };
-        assert!((cell_width - layout.ruby[0].ruby_bounds.width).abs() < f32::EPSILON);
-        assert!((vertical_advance - layout.ruby[0].ruby_bounds.height / 3.0).abs() < 0.0001);
-        assert_eq!(ruby_glyph_areas.len(), 2);
-        assert!(!ruby_glyph_areas[0].is_empty());
-        assert!(!ruby_glyph_areas[1].is_empty());
-        assert!(
-            ruby_glyph_areas[0].glyphs()[1].origin.y > ruby_glyph_areas[0].glyphs()[0].origin.y,
-            "vertical ruby glyphs should advance downward inside each segment"
-        );
-        assert!(
-            (ruby_glyph_areas[0].glyphs()[1].origin.x - ruby_glyph_areas[0].glyphs()[0].origin.x)
-                .abs()
-                <= layout.ruby[0].ruby_bounds.width,
-            "vertical ruby glyphs should remain in the same annotation track"
-        );
-        assert!(
-            ruby_glyph_areas[1].glyphs()[0].origin.x > ruby_glyph_areas[0].glyphs()[0].origin.x
-        );
+            )
+            .expect("layout resolves");
+            assert_eq!(layout.ruby.len(), 2);
+            let mut font_system = FontSystem::new();
+            let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+            prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+            let ruby_buffers = build_ruby_buffers(
+                &mut font_system,
+                &buffer,
+                &page.rich_text,
+                Some(&layout),
+                800,
+                600,
+                NativeTextOrigin::default(),
+            );
+            let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
+            if continuation_moves_right {
+                assert!(ruby_buffers[1].left > ruby_buffers[0].left);
+            } else {
+                assert!(ruby_buffers[1].left < ruby_buffers[0].left);
+            }
+            let RubyGlyphPlacement::Vertical {
+                cell_width: w,
+                vertical_advance: advance,
+            } = ruby_buffers[0].placement
+            else {
+                panic!("vertical layout ruby should use vertical glyph placement");
+            };
+            assert!((w - layout.ruby[0].ruby_bounds.width).abs() < f32::EPSILON);
+            assert!((advance - layout.ruby[0].ruby_bounds.height / 3.0).abs() < 0.0001);
+            assert_eq!(ruby_glyph_areas.len(), 2);
+            assert!(
+                ruby_glyph_areas[0].glyphs()[1].origin.y > ruby_glyph_areas[0].glyphs()[0].origin.y,
+                "vertical ruby glyphs should advance downward inside each segment"
+            );
+            assert!(
+                (ruby_glyph_areas[0].glyphs()[1].origin.x
+                    - ruby_glyph_areas[0].glyphs()[0].origin.x)
+                    .abs()
+                    <= layout.ruby[0].ruby_bounds.width,
+                "vertical ruby glyphs should remain in the same annotation track"
+            );
+            if continuation_moves_right {
+                assert!(
+                    ruby_glyph_areas[1].glyphs()[0].origin.x
+                        > ruby_glyph_areas[0].glyphs()[0].origin.x
+                );
+            } else {
+                assert!(
+                    ruby_glyph_areas[1].glyphs()[0].origin.x
+                        < ruby_glyph_areas[0].glyphs()[0].origin.x
+                );
+            }
+        }
     }
 
     #[test]
@@ -4103,61 +4117,68 @@ mod tests {
 
     #[test]
     fn native_bounds_union_overheight_ruby_segments_by_object_index() {
-        let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.test.vertical.ruby.bounds.split".to_owned()),
-            callee: "alice".to_owned(),
-            text_key: None,
-            window: None,
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            default_inline_failure_policy: None,
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![
-                RichTextNode::StyleStart {
-                    style: RichTextStyle::Layout {
-                        layout: RichTextLayout {
-                            writing_mode: RichTextWritingMode::VerticalRl,
-                            ..RichTextLayout::default()
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let spec = LineDisplaySpec {
+                line: RuntimeLineId(format!(
+                    "say.test.vertical.ruby.bounds.split.{writing_mode:?}"
+                )),
+                callee: "alice".to_owned(),
+                text_key: None,
+                window: None,
+                voice: None,
+                look: None,
+                style: None,
+                base_styles: Vec::new(),
+                default_inline_failure_policy: None,
+                args: Vec::new(),
+                content: RichTextDocument::new(vec![
+                    RichTextNode::StyleStart {
+                        style: RichTextStyle::Layout {
+                            layout: RichTextLayout {
+                                writing_mode,
+                                ..RichTextLayout::default()
+                            },
                         },
                     },
+                    RichTextNode::Ruby {
+                        base: "夢".to_owned(),
+                        ruby: "あいうえおかきくけこ".to_owned(),
+                    },
+                    RichTextNode::StyleEnd {
+                        name: "/".to_owned(),
+                    },
+                ]),
+            };
+            let frame = spec
+                .resolve_frame(&RuntimeLineContext::default())
+                .expect("frame resolves");
+            let layout = layout_page_range(
+                &frame,
+                0.."夢".len(),
+                TextLayoutConfig {
+                    size: LayoutSize::new(160.0, 90.0),
+                    ruby_font_size: 14.0,
+                    ..native_text_layout_config(160, 90, 0.0, 0.0)
                 },
-                RichTextNode::Ruby {
-                    base: "夢".to_owned(),
-                    ruby: "あいうえおかきくけこ".to_owned(),
-                },
-                RichTextNode::StyleEnd {
-                    name: "/".to_owned(),
-                },
-            ]),
-        };
-        let frame = spec
-            .resolve_frame(&RuntimeLineContext::default())
-            .expect("frame resolves");
-        let layout = layout_page_range(
-            &frame,
-            0.."夢".len(),
-            TextLayoutConfig {
-                size: LayoutSize::new(160.0, 90.0),
-                ruby_font_size: 14.0,
-                ..native_text_layout_config(160, 90, 0.0, 0.0)
-            },
-        )
-        .expect("page layout resolves");
-        assert!(layout.layout.ruby.len() > 1);
+            )
+            .expect("page layout resolves");
+            assert!(layout.layout.ruby.len() > 1);
 
-        let bounds = native_element_bounds_from_layout(&layout, 220, 120);
-        let ruby_bounds = bounds
-            .iter()
-            .filter(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
-            .collect::<Vec<_>>();
+            let bounds = native_element_bounds_from_layout(&layout, 220, 120);
+            let ruby_bounds = bounds
+                .iter()
+                .filter(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
+                .collect::<Vec<_>>();
 
-        assert_eq!(ruby_bounds.len(), 1);
-        assert!(
-            ruby_bounds[0].bbox.width > 40,
-            "ruby object bounds should union split annotation columns"
-        );
+            assert_eq!(ruby_bounds.len(), 1);
+            assert!(
+                ruby_bounds[0].bbox.width > 40,
+                "{writing_mode:?} ruby object bounds should union split annotation columns"
+            );
+        }
     }
 
     #[test]

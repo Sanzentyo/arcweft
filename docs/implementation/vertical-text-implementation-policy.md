@@ -209,10 +209,12 @@ the concrete choices to follow when turning that package into production code.
   source ruby index; Sans I/O layout coverage now fixes the split text,
   per-segment height cap, shared ruby index, and continuation-track direction
   for both `vertical_rl` and `vertical_lr`. Native rendering emits one ruby
-  glyph area per segment and Agent/native element geometry unions the segments
-  back to the authored ruby object while also exposing viewport-space base and
-  annotation bboxes on the ruby ref for debugging. Native debug capture coverage
-  also renders an
+  glyph area per segment; adapter-level tests now verify both vertical writing
+  directions produce multiple ruby GlyphAreas and union split annotation columns
+  into one authored ruby object. Agent/native element geometry unions the
+  segments back to the authored ruby object while also exposing viewport-space
+  base and annotation bboxes on the ruby ref for debugging. Native debug capture
+  coverage also renders an
   over-height vertical ruby object and checks that the captured content stays
   inside the authored ruby object's union bbox while preserving the widened
   annotation bbox from split tracks. CLI Agent raw-crop coverage mirrors that
