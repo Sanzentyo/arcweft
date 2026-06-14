@@ -6300,7 +6300,7 @@ fn agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_ge
 }
 
 #[test]
-fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw_crops() {
+fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviation_raw_crops() {
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
         "vertical_rl",
         false,
@@ -6365,6 +6365,10 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw
         "object.dialogue.0.0.cluster.1.3.5",
         "object-id",
     );
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviation_raw_crops() {
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
         "vertical_rl",
         false,
@@ -6395,6 +6399,38 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw
         "%",
         "suffix",
         "object.dialogue.0.0.cluster.2.5.6",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "℃",
+        "temperature-suffix",
+        "object.dialogue.0.0.cluster.2.5.8",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "℃",
+        "temperature-suffix",
+        "object.dialogue.0.0.cluster.2.5.8",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "℃",
+        "temperature-suffix",
+        "object.dialogue.0.0.cluster.2.5.8",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "℃",
+        "temperature-suffix",
+        "object.dialogue.0.0.cluster.2.5.8",
         "object-id",
     );
 }
@@ -7409,6 +7445,20 @@ fn assert_native_published_jlreq_numeric_abbreviation_geometry(
         writing_mode,
         next_column_moves_right,
     );
+    let temperature_suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(
+        writing_mode,
+        "temperature-suffix",
+    );
+    assert_native_rich_text_layer_image_has_content(&temperature_suffix);
+    assert_eq!(
+        first_text_run_presentation_layout(&temperature_suffix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_temperature_suffix_objects(
+        &temperature_suffix,
+        writing_mode,
+        next_column_moves_right,
+    );
     let ideographic_suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(
         writing_mode,
         "suffix-ideographic",
@@ -7518,39 +7568,13 @@ flow @flow.main main {{
         }
     );
 
-    let target = if mark == "$" {
-        if label == "prefix-ideographic" {
-            assert_native_published_jlreq_numeric_ideographic_prefix_objects(
-                &json,
-                writing_mode,
-                next_column_moves_right,
-            )
-        } else {
-            assert_native_published_jlreq_numeric_prefix_objects(
-                &json,
-                writing_mode,
-                next_column_moves_right,
-            )
-        }
-    } else if label == "cent-prefix" {
-        assert_native_published_jlreq_numeric_cent_prefix_objects(
-            &json,
-            writing_mode,
-            next_column_moves_right,
-        )
-    } else if label == "suffix-ideographic" {
-        assert_native_published_jlreq_numeric_ideographic_suffix_objects(
-            &json,
-            writing_mode,
-            next_column_moves_right,
-        )
-    } else {
-        assert_native_published_jlreq_numeric_suffix_objects(
-            &json,
-            writing_mode,
-            next_column_moves_right,
-        )
-    };
+    let target = assert_native_published_jlreq_numeric_abbreviation_target(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+        mark,
+        label,
+    );
     assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
         &json,
         target,
@@ -7562,6 +7586,54 @@ flow @flow.main main {{
 
     fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
     fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric abbreviation dir");
+}
+
+fn assert_native_published_jlreq_numeric_abbreviation_target<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    mark: &str,
+    label: &str,
+) -> &'report serde_json::Value {
+    if mark == "$" {
+        if label == "prefix-ideographic" {
+            assert_native_published_jlreq_numeric_ideographic_prefix_objects(
+                json,
+                writing_mode,
+                next_column_moves_right,
+            )
+        } else {
+            assert_native_published_jlreq_numeric_prefix_objects(
+                json,
+                writing_mode,
+                next_column_moves_right,
+            )
+        }
+    } else if label == "cent-prefix" {
+        assert_native_published_jlreq_numeric_cent_prefix_objects(
+            json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    } else if label == "temperature-suffix" {
+        assert_native_published_jlreq_numeric_temperature_suffix_objects(
+            json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    } else if label == "suffix-ideographic" {
+        assert_native_published_jlreq_numeric_ideographic_suffix_objects(
+            json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    } else {
+        assert_native_published_jlreq_numeric_suffix_objects(
+            json,
+            writing_mode,
+            next_column_moves_right,
+        )
+    }
 }
 
 fn assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
@@ -7604,6 +7676,7 @@ fn native_published_jlreq_numeric_abbreviation_text(label: &str) -> &'static str
         "$" | "prefix" => "天$123人",
         "cent-prefix" => "天¢123人",
         "%" | "suffix" => "天50%人",
+        "temperature-suffix" => "天25℃人",
         "prefix-ideographic" => "天$五人",
         "suffix-ideographic" => "天五%人",
         _ => panic!("unknown native published JLREQ numeric abbreviation label {label}"),
@@ -7750,6 +7823,42 @@ fn assert_native_published_jlreq_numeric_suffix_objects<'report>(
     assert_rich_text_object_has_mask_capture(
         suffix,
         &format!("{writing_mode} published JLREQ numeric suffix abbreviation"),
+    );
+    suffix
+}
+
+fn assert_native_published_jlreq_numeric_temperature_suffix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let digits = find_rich_text_cluster_object(json, "25", 3, 5);
+    let suffix = find_rich_text_cluster_object(json, "℃", 5, 8);
+    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
+    assert_vertical_cluster_after(
+        body,
+        digits,
+        "published JLREQ temperature-suffixed numeral should start after body text",
+    );
+    assert_vertical_cluster_after(
+        digits,
+        suffix,
+        "published JLREQ temperature suffix abbreviation should stay with the preceding digits",
+    );
+    assert_next_paragraph_column(
+        suffix,
+        next_body,
+        next_column_moves_right,
+        "body text after the temperature-suffixed European numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        suffix,
+        &format!("{writing_mode} published JLREQ temperature suffix abbreviation"),
     );
     suffix
 }

@@ -1115,7 +1115,7 @@ fn is_numeric_prefix_abbreviation_cluster_text(text: &str) -> bool {
 }
 
 fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
-    matches!(text, "%" | "％" | "‰")
+    matches!(text, "%" | "％" | "‰" | "°" | "′" | "″" | "℃")
 }
 
 fn latin_word_sequence_requires_previous(
@@ -2553,7 +2553,12 @@ mod tests {
                 "body text after a cent-prefixed European numeral should continue in the next column",
             );
         }
+    }
 
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_postfixed_abbreviations_unbroken() {
+        // W3C JLREQ 3.1.10 keeps postfixed abbreviations such as "%" and
+        // temperature units with the preceding numeral.
         let text = "天50%人";
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
@@ -2579,6 +2584,34 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a postfixed European numeral should continue in the next column",
+            );
+        }
+
+        let text = "天25℃人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let digits = nth_laid_out_glyph(&layout, "25", 0);
+            let suffix = nth_laid_out_glyph(&layout, "℃", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                digits,
+                suffix,
+                "temperature suffix abbreviation should stay with the preceding digits",
+            );
+            assert_next_vertical_layout_column(
+                suffix,
+                next_body,
+                next_column_moves_right,
+                "body text after a temperature-suffixed European numeral should continue in the next column",
             );
         }
     }
