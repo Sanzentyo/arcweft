@@ -482,7 +482,10 @@ the concrete choices to follow when turning that package into production code.
   decomposed temperature unit `25°C` is also embedded in a longer strict
   paragraph class mix, with native raw crops for the final `C`, proving the
   abbreviation sequence and later ordinary closing/opening punctuation share one
-  paragraph-DP plan.
+  paragraph-DP plan. The prefixed form `$123` is also embedded in that longer
+  strict paragraph class mix, with native raw crops for `$`, so prefix
+  abbreviations and later ordinary closing/opening punctuation are verified in
+  one paragraph-DP plan instead of only through isolated short fixtures.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main
