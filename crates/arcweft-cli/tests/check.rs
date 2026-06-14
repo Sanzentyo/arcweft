@@ -6019,6 +6019,75 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbreviation_raw_crops()
+{
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "$",
+        "prefix-ideographic",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "$",
+        "prefix-ideographic",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "$",
+        "prefix-ideographic",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "$",
+        "prefix-ideographic",
+        "object.dialogue.0.0.cluster.1.3.4",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "%",
+        "suffix-ideographic",
+        "object.dialogue.0.0.cluster.2.6.7",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "%",
+        "suffix-ideographic",
+        "object.dialogue.0.0.cluster.2.6.7",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "%",
+        "suffix-ideographic",
+        "object.dialogue.0.0.cluster.2.6.7",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "%",
+        "suffix-ideographic",
+        "object.dialogue.0.0.cluster.2.6.7",
+        "object-id",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_reference_mark_geometry() {
     assert_native_published_jlreq_reference_mark_geometry("vertical_rl");
     assert_native_published_jlreq_reference_mark_geometry("vertical_lr");
@@ -6813,6 +6882,20 @@ fn assert_native_published_jlreq_numeric_abbreviation_geometry(
         writing_mode,
         next_column_moves_right,
     );
+    let ideographic_prefix = observe_native_published_jlreq_numeric_abbreviation_fixture(
+        writing_mode,
+        "prefix-ideographic",
+    );
+    assert_native_rich_text_layer_image_has_content(&ideographic_prefix);
+    assert_eq!(
+        first_text_run_presentation_layout(&ideographic_prefix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_ideographic_prefix_objects(
+        &ideographic_prefix,
+        writing_mode,
+        next_column_moves_right,
+    );
 
     let suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(writing_mode, "%");
     assert_native_rich_text_layer_image_has_content(&suffix);
@@ -6825,19 +6908,31 @@ fn assert_native_published_jlreq_numeric_abbreviation_geometry(
         writing_mode,
         next_column_moves_right,
     );
+    let ideographic_suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(
+        writing_mode,
+        "suffix-ideographic",
+    );
+    assert_native_rich_text_layer_image_has_content(&ideographic_suffix);
+    assert_eq!(
+        first_text_run_presentation_layout(&ideographic_suffix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_ideographic_suffix_objects(
+        &ideographic_suffix,
+        writing_mode,
+        next_column_moves_right,
+    );
 }
 
 fn observe_native_published_jlreq_numeric_abbreviation_fixture(
     writing_mode: &str,
-    mark: &str,
+    label: &str,
 ) -> serde_json::Value {
-    let text = if mark == "$" {
-        "天$123人"
-    } else {
-        "天50%人"
-    };
+    let text = native_published_jlreq_numeric_abbreviation_text(label);
     let path = temp_arcw(
-        &format!("agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{mark}"),
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}"
+        ),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
@@ -6861,11 +6956,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
     object_id: &str,
     capture_kind: &str,
 ) {
-    let text = if mark == "$" {
-        "天$123人"
-    } else {
-        "天50%人"
-    };
+    let text = native_published_jlreq_numeric_abbreviation_text(label);
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}"
     );
@@ -6927,7 +7018,21 @@ flow @flow.main main {{
     );
 
     let target = if mark == "$" {
-        assert_native_published_jlreq_numeric_prefix_objects(
+        if label == "prefix-ideographic" {
+            assert_native_published_jlreq_numeric_ideographic_prefix_objects(
+                &json,
+                writing_mode,
+                next_column_moves_right,
+            )
+        } else {
+            assert_native_published_jlreq_numeric_prefix_objects(
+                &json,
+                writing_mode,
+                next_column_moves_right,
+            )
+        }
+    } else if label == "suffix-ideographic" {
+        assert_native_published_jlreq_numeric_ideographic_suffix_objects(
             &json,
             writing_mode,
             next_column_moves_right,
@@ -6939,6 +7044,27 @@ flow @flow.main main {{
             next_column_moves_right,
         )
     };
+    assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
+        &json,
+        target,
+        &raw_path,
+        writing_mode,
+        label,
+        capture_kind,
+    );
+
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric abbreviation dir");
+}
+
+fn assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
+    json: &serde_json::Value,
+    target: &serde_json::Value,
+    raw_path: &Path,
+    writing_mode: &str,
+    label: &str,
+    capture_kind: &str,
+) {
     assert_eq!(json["images"][0]["crop_origin"]["x"], target["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], target["bbox"]["y"]);
     assert_eq!(json["images"][0]["width"], target["bbox"]["width"]);
@@ -6951,22 +7077,29 @@ flow @flow.main main {{
     assert!(content_pixels < width * height);
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
-            &raw_path,
+            raw_path,
             agent_object_id_color_from_json(target),
             content_pixels,
             &format!("{writing_mode} published JLREQ numeric abbreviation {label} object-id crop"),
         );
     } else {
         let bytes =
-            fs::read(&raw_path).expect("read native published JLREQ numeric abbreviation crop");
+            fs::read(raw_path).expect("read native published JLREQ numeric abbreviation crop");
         let opaque = opaque_pixel_count(&bytes);
         let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
         assert_eq!(opaque as u64, content_pixels);
         assert!(transparent > 0);
     }
+}
 
-    fs::remove_file(&path).expect("remove temp published JLREQ numeric abbreviation source");
-    fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric abbreviation dir");
+fn native_published_jlreq_numeric_abbreviation_text(label: &str) -> &'static str {
+    match label {
+        "$" | "prefix" => "天$123人",
+        "%" | "suffix" => "天50%人",
+        "prefix-ideographic" => "天$五人",
+        "suffix-ideographic" => "天五%人",
+        _ => panic!("unknown native published JLREQ numeric abbreviation label {label}"),
+    }
 }
 
 fn assert_native_published_jlreq_numeric_prefix_objects<'report>(
@@ -7005,6 +7138,42 @@ fn assert_native_published_jlreq_numeric_prefix_objects<'report>(
     prefix
 }
 
+fn assert_native_published_jlreq_numeric_ideographic_prefix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let prefix = find_rich_text_cluster_object(json, "$", 3, 4);
+    let ideographic_numeral = find_rich_text_cluster_object(json, "五", 4, 7);
+    let next_body = find_rich_text_cluster_object(json, "人", 7, 10);
+    assert_vertical_cluster_after(
+        body,
+        prefix,
+        "published JLREQ numeric prefix abbreviation should start after body text",
+    );
+    assert_vertical_cluster_after(
+        prefix,
+        ideographic_numeral,
+        "published JLREQ ideographic numeral should stay with the numeric prefix abbreviation",
+    );
+    assert_next_paragraph_column(
+        ideographic_numeral,
+        next_body,
+        next_column_moves_right,
+        "body text after the prefixed ideographic numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        prefix,
+        &format!("{writing_mode} published JLREQ numeric ideographic prefix abbreviation"),
+    );
+    prefix
+}
+
 fn assert_native_published_jlreq_numeric_suffix_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
@@ -7037,6 +7206,42 @@ fn assert_native_published_jlreq_numeric_suffix_objects<'report>(
     assert_rich_text_object_has_mask_capture(
         suffix,
         &format!("{writing_mode} published JLREQ numeric suffix abbreviation"),
+    );
+    suffix
+}
+
+fn assert_native_published_jlreq_numeric_ideographic_suffix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let ideographic_numeral = find_rich_text_cluster_object(json, "五", 3, 6);
+    let suffix = find_rich_text_cluster_object(json, "%", 6, 7);
+    let next_body = find_rich_text_cluster_object(json, "人", 7, 10);
+    assert_vertical_cluster_after(
+        body,
+        ideographic_numeral,
+        "published JLREQ postfixed ideographic numeral should start after body text",
+    );
+    assert_vertical_cluster_after(
+        ideographic_numeral,
+        suffix,
+        "published JLREQ numeric suffix abbreviation should stay with the preceding ideographic numeral",
+    );
+    assert_next_paragraph_column(
+        suffix,
+        next_body,
+        next_column_moves_right,
+        "body text after the postfixed ideographic numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        suffix,
+        &format!("{writing_mode} published JLREQ numeric ideographic suffix abbreviation"),
     );
     suffix
 }

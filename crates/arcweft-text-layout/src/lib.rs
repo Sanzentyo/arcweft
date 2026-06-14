@@ -1052,13 +1052,44 @@ fn numeric_abbreviation_sequence_requires_previous(
         return cluster_index
             .checked_sub(1)
             .and_then(|previous_index| clusters.get(previous_index))
-            .is_some_and(|previous| is_ascii_digit_cluster_text(&previous.text));
+            .is_some_and(|previous| is_jlreq_numeric_cluster_text(&previous.text));
     }
-    is_ascii_digit_cluster_text(&cluster.text)
+    is_jlreq_numeric_cluster_text(&cluster.text)
         && cluster_index
             .checked_sub(1)
             .and_then(|previous_index| clusters.get(previous_index))
             .is_some_and(|previous| is_numeric_prefix_abbreviation_cluster_text(&previous.text))
+}
+
+fn is_jlreq_numeric_cluster_text(text: &str) -> bool {
+    is_ascii_digit_cluster_text(text) || is_ideographic_numeral_cluster_text(text)
+}
+
+fn is_ideographic_numeral_cluster_text(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(ch) = chars.next() else {
+        return false;
+    };
+    chars.next().is_none()
+        && matches!(
+            ch,
+            '〇' | '零'
+                | '一'
+                | '二'
+                | '三'
+                | '四'
+                | '五'
+                | '六'
+                | '七'
+                | '八'
+                | '九'
+                | '十'
+                | '百'
+                | '千'
+                | '万'
+                | '億'
+                | '兆'
+        )
 }
 
 fn is_numeric_prefix_abbreviation_cluster_text(text: &str) -> bool {
@@ -2259,6 +2290,67 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a postfixed European numeral should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_ideographic_numeric_abbreviations_unbroken() {
+        // W3C JLREQ 3.1.10 applies the same prefixed/postfixed abbreviation
+        // rule to ideographic numerals.
+        let text = "天$五人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let prefix = nth_laid_out_glyph(&layout, "$", 0);
+            let ideographic_numeral = nth_laid_out_glyph(&layout, "五", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                prefix,
+                ideographic_numeral,
+                "ideographic numeral after numeric prefix abbreviation should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                ideographic_numeral,
+                next_body,
+                next_column_moves_right,
+                "body text after a prefixed ideographic numeral should continue in the next column",
+            );
+        }
+
+        let text = "天五%人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let ideographic_numeral = nth_laid_out_glyph(&layout, "五", 0);
+            let suffix = nth_laid_out_glyph(&layout, "%", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                ideographic_numeral,
+                suffix,
+                "numeric suffix abbreviation should stay with the preceding ideographic numeral",
+            );
+            assert_next_vertical_layout_column(
+                suffix,
+                next_body,
+                next_column_moves_right,
+                "body text after a postfixed ideographic numeral should continue in the next column",
             );
         }
     }
