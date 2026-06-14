@@ -1111,7 +1111,7 @@ fn is_ideographic_numeral_cluster_text(text: &str) -> bool {
 }
 
 fn is_numeric_prefix_abbreviation_cluster_text(text: &str) -> bool {
-    matches!(text, "$" | "¥" | "￥")
+    matches!(text, "$" | "¢" | "¥" | "￥")
 }
 
 fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
@@ -2523,6 +2523,34 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a prefixed European numeral should continue in the next column",
+            );
+        }
+
+        let text = "天¢1234人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let prefix = nth_laid_out_glyph(&layout, "¢", 0);
+            let digits = nth_laid_out_glyph(&layout, "1234", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                prefix,
+                digits,
+                "digits after cent sign prefix abbreviation should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                digits,
+                next_body,
+                next_column_moves_right,
+                "body text after a cent-prefixed European numeral should continue in the next column",
             );
         }
 

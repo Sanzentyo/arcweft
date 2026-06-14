@@ -6336,6 +6336,38 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_abbreviation_raw
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
         "vertical_rl",
         false,
+        "¢",
+        "cent-prefix",
+        "object.dialogue.0.0.cluster.1.3.5",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "¢",
+        "cent-prefix",
+        "object.dialogue.0.0.cluster.1.3.5",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "¢",
+        "cent-prefix",
+        "object.dialogue.0.0.cluster.1.3.5",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "¢",
+        "cent-prefix",
+        "object.dialogue.0.0.cluster.1.3.5",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
         "%",
         "suffix",
         "object.dialogue.0.0.cluster.2.5.6",
@@ -7339,6 +7371,18 @@ fn assert_native_published_jlreq_numeric_abbreviation_geometry(
         writing_mode,
         next_column_moves_right,
     );
+    let cent_prefix =
+        observe_native_published_jlreq_numeric_abbreviation_fixture(writing_mode, "cent-prefix");
+    assert_native_rich_text_layer_image_has_content(&cent_prefix);
+    assert_eq!(
+        first_text_run_presentation_layout(&cent_prefix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_cent_prefix_objects(
+        &cent_prefix,
+        writing_mode,
+        next_column_moves_right,
+    );
     let ideographic_prefix = observe_native_published_jlreq_numeric_abbreviation_fixture(
         writing_mode,
         "prefix-ideographic",
@@ -7488,6 +7532,12 @@ flow @flow.main main {{
                 next_column_moves_right,
             )
         }
+    } else if label == "cent-prefix" {
+        assert_native_published_jlreq_numeric_cent_prefix_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+        )
     } else if label == "suffix-ideographic" {
         assert_native_published_jlreq_numeric_ideographic_suffix_objects(
             &json,
@@ -7552,6 +7602,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
 fn native_published_jlreq_numeric_abbreviation_text(label: &str) -> &'static str {
     match label {
         "$" | "prefix" => "天$123人",
+        "cent-prefix" => "天¢123人",
         "%" | "suffix" => "天50%人",
         "prefix-ideographic" => "天$五人",
         "suffix-ideographic" => "天五%人",
@@ -7591,6 +7642,42 @@ fn assert_native_published_jlreq_numeric_prefix_objects<'report>(
     assert_rich_text_object_has_mask_capture(
         prefix,
         &format!("{writing_mode} published JLREQ numeric prefix abbreviation"),
+    );
+    prefix
+}
+
+fn assert_native_published_jlreq_numeric_cent_prefix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let prefix = find_rich_text_cluster_object(json, "¢", 3, 5);
+    let digits = find_rich_text_cluster_object(json, "123", 5, 8);
+    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
+    assert_vertical_cluster_after(
+        body,
+        prefix,
+        "published JLREQ cent prefix abbreviation should start after body text",
+    );
+    assert_vertical_cluster_after(
+        prefix,
+        digits,
+        "published JLREQ digits should stay with the cent prefix abbreviation",
+    );
+    assert_next_paragraph_column(
+        digits,
+        next_body,
+        next_column_moves_right,
+        "body text after the cent-prefixed European numeral should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        prefix,
+        &format!("{writing_mode} published JLREQ cent prefix abbreviation"),
     );
     prefix
 }
