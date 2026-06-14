@@ -150,6 +150,9 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
                     "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." },
+                    "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels." },
+                    "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels." },
+                    "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels for layout-sensitive rich-text debugging." },
                     "steps": { "type": "integer", "minimum": 1 },
                     "max_ops": { "type": "integer", "minimum": 1 }
                 },
@@ -186,7 +189,10 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." }
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." },
+                    "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels when source is supplied." },
+                    "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels when source is supplied." },
+                    "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels when source is supplied." }
                 }
             }),
         },
@@ -791,6 +797,12 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_eq!(properties["viewport_width"]["type"], "integer");
+        assert_eq!(properties["viewport_width"]["minimum"], 1);
+        assert_eq!(properties["viewport_height"]["type"], "integer");
+        assert_eq!(properties["viewport_height"]["minimum"], 1);
+        assert_eq!(properties["textbox_height"]["type"], "integer");
+        assert_eq!(properties["textbox_height"]["minimum"], 1);
 
         let capture = tools
             .iter()
@@ -807,5 +819,11 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_eq!(properties["viewport_width"]["type"], "integer");
+        assert_eq!(properties["viewport_width"]["minimum"], 1);
+        assert_eq!(properties["viewport_height"]["type"], "integer");
+        assert_eq!(properties["viewport_height"]["minimum"], 1);
+        assert_eq!(properties["textbox_height"]["type"], "integer");
+        assert_eq!(properties["textbox_height"]["minimum"], 1);
     }
 }

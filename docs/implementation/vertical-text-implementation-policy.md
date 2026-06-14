@@ -496,7 +496,7 @@ the concrete choices to follow when turning that package into production code.
   sequences such as `3kg` / `3μm` unbroken, and native Agent raw mask/object-id
   crops verify that the final `g` object in `天kg人` and `天3kg人`, the final
   `b` object in the plain Western word `天Web人`, the final
-  `m` object in `天μm人` and `天3μm人`, the hyphen object in `天A-B人`, the
+  `m` object in `天μm人` and `天3μm人`, the hyphen object in `天Web-Test人`, the
   apostrophe objects in `天O'K人` and `天O’K人`, and the accented `é` object in
   `天té人` are read back from rendered GlyphArea pixels.
   Subscript/superscript object sequences from the same section are represented

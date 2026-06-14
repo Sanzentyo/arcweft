@@ -9325,12 +9325,14 @@ fn observe_native_published_jlreq_hyphenated_western_word_fixture(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天A-B人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天Web-Test人[/][p]
 }}
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
     fs::remove_file(&path).expect("remove temp published JLREQ hyphenated Western word source");
     json
 }
@@ -9350,7 +9352,7 @@ fn assert_native_published_jlreq_hyphenated_western_word_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天A-B人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天Web-Test人[/][p]
 }}
 "
         ),
@@ -9369,8 +9371,12 @@ flow @flow.main main {{
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.4.5")
+        .arg("object.dialogue.0.0.cluster.4.6.7")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -9447,10 +9453,15 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let first = find_rich_text_cluster_object(json, "A", 3, 4);
-    let hyphen = find_rich_text_cluster_object(json, "-", 4, 5);
-    let after_hyphen = find_rich_text_cluster_object(json, "B", 5, 6);
-    let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
+    let first = find_rich_text_cluster_object(json, "W", 3, 4);
+    let second = find_rich_text_cluster_object(json, "e", 4, 5);
+    let before_hyphen = find_rich_text_cluster_object(json, "b", 5, 6);
+    let hyphen = find_rich_text_cluster_object(json, "-", 6, 7);
+    let after_hyphen = find_rich_text_cluster_object(json, "T", 7, 8);
+    let after_hyphen_second = find_rich_text_cluster_object(json, "e", 8, 9);
+    let after_hyphen_third = find_rich_text_cluster_object(json, "s", 9, 10);
+    let last = find_rich_text_cluster_object(json, "t", 10, 11);
+    let next_body = find_rich_text_cluster_object(json, "人", 11, 14);
     assert_vertical_cluster_after(
         body,
         first,
@@ -9458,6 +9469,16 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
     );
     assert_vertical_cluster_after(
         first,
+        second,
+        "published JLREQ hyphenated Western word first letters should stay together",
+    );
+    assert_vertical_cluster_after(
+        second,
+        before_hyphen,
+        "published JLREQ hyphenated Western word letters before hyphen should stay together",
+    );
+    assert_vertical_cluster_after(
+        before_hyphen,
         hyphen,
         "published JLREQ word-internal hyphen should stay with preceding letters",
     );
@@ -9466,8 +9487,23 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         after_hyphen,
         "published JLREQ letters after a word-internal hyphen should stay attached",
     );
-    assert_next_paragraph_column(
+    assert_vertical_cluster_after(
         after_hyphen,
+        after_hyphen_second,
+        "published JLREQ letters after a word-internal hyphen should stay together",
+    );
+    assert_vertical_cluster_after(
+        after_hyphen_second,
+        after_hyphen_third,
+        "published JLREQ letters after a word-internal hyphen should stay together",
+    );
+    assert_vertical_cluster_after(
+        after_hyphen_third,
+        last,
+        "published JLREQ letters after a word-internal hyphen should stay together",
+    );
+    assert_next_paragraph_column(
+        last,
         next_body,
         next_column_moves_right,
         "body text after the hyphenated Western word should continue in the next column",
@@ -22456,7 +22492,22 @@ fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json:
 }
 
 fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+    observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        source_path,
+        1280,
+        720,
+        0,
+    )
+}
+
+fn observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+    source_path: &Path,
+    viewport_width: u32,
+    viewport_height: u32,
+    textbox_height: u32,
+) -> serde_json::Value {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
         .arg("agent")
         .arg("observe")
         .arg(source_path)
@@ -22465,6 +22516,16 @@ fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Valu
         .arg("png")
         .arg("--layer")
         .arg("dialogue.rich_text")
+        .arg("--viewport-width")
+        .arg(viewport_width.to_string())
+        .arg("--viewport-height")
+        .arg(viewport_height.to_string());
+    if textbox_height > 0 {
+        command
+            .arg("--textbox-height")
+            .arg(textbox_height.to_string());
+    }
+    let output = command
         .arg("--page")
         .arg("0")
         .arg("--mode")

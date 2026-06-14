@@ -298,14 +298,18 @@ changing backend.
 
 ## Agent Observation
 
-`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
+`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
 is the first Agent Debug Bus CLI slice. `arcw agent mcp` exposes the same
 observation and resource-read path as a minimal line-delimited JSON-RPC stdio
 MCP server for local Agent debugging. The stdio server supports
 `resources/templates/list` before observation, so a client can discover the
 stable `arcweft://` URI families for observation JSON, object JSON,
 viewport/layer/object PNG captures, and raw RGBA captures without knowing the
-current frame yet.
+current frame yet. `--viewport-width` and `--viewport-height` set the observed
+screen size used by Agent geometry and native PNG/raw framebuffer capture.
+`--textbox-height` optionally overrides the observed dialogue textbox height,
+which is useful for layout-sensitive rich-text debugging such as long vertical
+words, ruby collision checks, and page/crop reproduction.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

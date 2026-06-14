@@ -120,6 +120,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
+const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
+const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
+
 #[derive(Debug, Parser)]
 #[command(name = "arcw", about = "Arcweft language and runtime tooling")]
 struct Cli {
@@ -2205,6 +2208,11 @@ fn agent_mcp_observe_options(arguments: &serde_json::Value) -> Result<AgentObser
         mode: CliRuntimeStepMode::Drain,
         max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(64),
         values: Vec::new(),
+        viewport_width: agent_mcp_u32_argument(arguments, "viewport_width", "arcweft.observe")?
+            .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
+        viewport_height: agent_mcp_u32_argument(arguments, "viewport_height", "arcweft.observe")?
+            .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
+        textbox_height: agent_mcp_u32_argument(arguments, "textbox_height", "arcweft.observe")?,
         image: arguments
             .get("image")
             .and_then(serde_json::Value::as_str)
@@ -2243,6 +2251,22 @@ fn agent_mcp_usize_argument(arguments: &serde_json::Value, name: &str) -> Option
         .get(name)
         .and_then(serde_json::Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+}
+
+fn agent_mcp_u32_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+    tool: &str,
+) -> Result<Option<u32>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    let value = value
+        .as_u64()
+        .ok_or_else(|| format!("{tool} argument {name} must be a positive integer"))?;
+    u32::try_from(value)
+        .map(Some)
+        .map_err(|_| format!("{tool} argument {name} is too large"))
 }
 
 fn agent_mcp_image_kind(value: &str) -> Result<AgentObserveImageKind, String> {
@@ -2390,6 +2414,14 @@ fn agent_observe_command(
 fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), ExitCode> {
     if options.steps == 0 {
         eprintln!("error: --steps must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    if options.viewport_width == 0 || options.viewport_height == 0 {
+        eprintln!("error: --viewport-width and --viewport-height must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    if options.textbox_height == Some(0) {
+        eprintln!("error: --textbox-height must be greater than zero");
         return Err(ExitCode::from(2));
     }
     if options.layer.is_some() && options.object.is_some() {
@@ -3587,8 +3619,8 @@ fn run_agent_observation(
     source_path: &Path,
 ) -> Result<AgentObservationReport, arcweft_host_adapter::HostAdapterError> {
     let viewport = AgentViewport {
-        width: 1280,
-        height: 720,
+        width: options.viewport_width,
+        height: options.viewport_height,
         scale: 1.0,
     };
     let mut host = host_config
@@ -3638,7 +3670,8 @@ fn run_agent_observation(
                             .iter()
                             .filter(|object| object.role == "textbox")
                             .count();
-                        let textbox = agent_textbox_object(step_index, index, frame, &viewport);
+                        let textbox =
+                            agent_textbox_object(step_index, index, frame, &viewport, options);
                         let native_bounds =
                             agent_native_rich_text_element_bboxes(&textbox, &viewport);
                         let children = agent_rich_text_child_objects(
@@ -4115,12 +4148,18 @@ fn agent_textbox_object(
     index: usize,
     frame: LineDisplayFrame,
     viewport: &AgentViewport,
+    options: &AgentObserveOptions,
 ) -> AgentObservedObject {
     let width = viewport.width.saturating_sub(192);
     let lines = u32::try_from(frame.text.lines().count().max(1)).unwrap_or(u32::MAX);
-    let height = (96 + lines * 28).min(220);
     let object_slot = u32::try_from(index % 4).unwrap_or(0);
     let bottom_margin = 48 + object_slot * 10;
+    let default_height = (96 + lines * 28).min(220);
+    let height = options
+        .textbox_height
+        .unwrap_or(default_height)
+        .min(viewport.height.saturating_sub(bottom_margin))
+        .max(1);
     let y = viewport
         .height
         .saturating_sub(height)
@@ -8788,6 +8827,12 @@ struct AgentObserveOptions {
     max_ops: usize,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
+    #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
+    viewport_width: u32,
+    #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
+    viewport_height: u32,
+    #[arg(long = "textbox-height")]
+    textbox_height: Option<u32>,
     #[arg(long, value_enum)]
     image: Option<AgentObserveImageKind>,
     #[arg(long, value_enum)]

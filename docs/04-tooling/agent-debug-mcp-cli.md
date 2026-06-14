@@ -45,7 +45,10 @@ composition, metadata, and image bytes that each capture tool call produced.
 `arcweft.observe` and `arcweft.capture` both accept `capture_time` as a
 non-negative seconds value for native visibility-only glyph effects such as
 typewriter reveal. The time affects rendered glyph alpha in PNG/raw captures
-without changing the observed Agent geometry.
+without changing the observed Agent geometry. They also accept
+`viewport_width` and `viewport_height` to reproduce non-default screen sizes;
+when a source is observed, `textbox_height` can enlarge the observed dialogue
+textbox for layout-sensitive rich-text debugging without changing source text.
 `arcweft.session.info` returns the latest frame identifiers, resources, images,
 observed layers, observed objects, resource templates, and latest capture
 metadata so a debugger can recover current capture options, object ids, and
