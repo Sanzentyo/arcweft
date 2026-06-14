@@ -530,7 +530,11 @@ the concrete choices to follow when turning that package into production code.
   class mix (`天地春夏秋冬Web-Test人。「川」...`) so Sans I/O layout and native
   Agent raw crops prove the no-break Western sequence still shares the same
   paragraph-DP plan as strict punctuation, brackets, small kana, dash marks,
-  middle dots, and leaders. ASCII and typographic apostrophe Western-word cases
+  middle dots, and leaders. Latin and Greek+Latin unit symbols (`kg` and `μm`)
+  are covered in the same longer strict paragraph mix, with native raw crops for
+  the final unit symbol, so non-numeric unit symbol attachment and later strict
+  punctuation are proven through one paragraph-DP and rendered GlyphArea path.
+  ASCII and typographic apostrophe Western-word cases
   (`O'K` and `O’K`) are now embedded in the same longer strict paragraph mix,
   with native raw crops for the apostrophe objects, so word-internal punctuation
   and later ordinary closing/opening punctuation are proven in one paragraph-DP

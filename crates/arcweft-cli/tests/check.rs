@@ -6300,6 +6300,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_clas
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_unit_symbol_class_mix_geometry() {
+    assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_unit_symbol_class_mix_raw_crops() {
+    assert_native_published_jlreq_unit_symbol_class_mix_raw_crop("vertical_rl", "mask");
+    assert_native_published_jlreq_unit_symbol_class_mix_raw_crop("vertical_rl", "object-id");
+    assert_native_published_jlreq_unit_symbol_class_mix_raw_crop("vertical_lr", "mask");
+    assert_native_published_jlreq_unit_symbol_class_mix_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_numeric_unit_class_mix_geometry() {
     assert_native_published_jlreq_numeric_unit_class_mix_geometry("vertical_rl");
     assert_native_published_jlreq_numeric_unit_class_mix_geometry("vertical_lr");
@@ -7982,6 +7996,283 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_objects<'report>(
         &format!("{writing_mode} published JLREQ accented Latin word class-mix accented grapheme"),
     );
     accented
+}
+
+fn assert_native_published_jlreq_unit_symbol_class_mix_geometry(writing_mode: &str) {
+    for case in native_published_jlreq_unit_symbol_class_mix_cases() {
+        let json = observe_native_published_jlreq_unit_symbol_class_mix_fixture(writing_mode, case);
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["jlreq_strictness"],
+            "strict"
+        );
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_unit_symbol_class_mix_objects(&json, writing_mode, case);
+    }
+}
+
+fn observe_native_published_jlreq_unit_symbol_class_mix_fixture(
+    writing_mode: &str,
+    case: NativeUnitSymbolClassMixCase,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-unit-symbol-class-mix-{}",
+            case.label
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path).expect("remove temp published JLREQ unit symbol class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_unit_symbol_class_mix_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    for case in native_published_jlreq_unit_symbol_class_mix_cases() {
+        assert_native_published_jlreq_unit_symbol_class_mix_case_raw_crop(
+            writing_mode,
+            capture_kind,
+            case,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_unit_symbol_class_mix_case_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+    case: NativeUnitSymbolClassMixCase,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-unit-symbol-class-mix-{}-{capture_kind}",
+        case.label
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-unit-symbol-class-mix-{}-{capture_kind}.rgba",
+        case.label
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg(case.object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ unit symbol class-mix raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ unit symbol class-mix {} {capture_kind} crop should succeed, stderr: {}",
+        case.label,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ unit symbol class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let unit_end =
+        assert_native_published_jlreq_unit_symbol_class_mix_objects(&json, writing_mode, case);
+    assert_native_published_jlreq_unit_symbol_class_mix_crop_pixels(
+        &json,
+        unit_end,
+        &raw_path,
+        writing_mode,
+        capture_kind,
+        case,
+    );
+
+    fs::remove_file(&path).expect("remove temp published JLREQ unit symbol class-mix source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ unit symbol class-mix dir");
+}
+
+fn assert_native_published_jlreq_unit_symbol_class_mix_crop_pixels(
+    json: &serde_json::Value,
+    target: &serde_json::Value,
+    raw_path: &Path,
+    writing_mode: &str,
+    capture_kind: &str,
+    case: NativeUnitSymbolClassMixCase,
+) {
+    assert_eq!(json["images"][0]["crop_origin"]["x"], target["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], target["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], target["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            raw_path,
+            agent_object_id_color_from_json(target),
+            content_pixels,
+            &format!(
+                "{writing_mode} published JLREQ unit symbol class-mix {} object-id crop",
+                case.label
+            ),
+        );
+    } else {
+        let bytes =
+            fs::read(raw_path).expect("read native published JLREQ unit symbol class-mix crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+}
+
+fn assert_native_published_jlreq_unit_symbol_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    case: NativeUnitSymbolClassMixCase,
+) -> &'report serde_json::Value {
+    let first_unit = find_rich_text_cluster_object(json, case.first_unit, 18, case.first_unit_end);
+    let second_unit = find_rich_text_cluster_object(
+        json,
+        case.second_unit,
+        case.first_unit_end,
+        case.second_unit_end,
+    );
+    assert_vertical_cluster_after(
+        first_unit,
+        second_unit,
+        "published JLREQ unit symbol class mix keeps unit tail attached",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", case.second_unit_end, case.person_end);
+    let full_stop = find_rich_text_cluster_object(json, "。", case.person_end, case.full_stop_end);
+    let opening = find_rich_text_cluster_object(json, "「", case.full_stop_end, case.opening_end);
+    let river = find_rich_text_cluster_object(json, "川", case.opening_end, case.river_end);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after a unit symbol",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after a unit symbol",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after a unit symbol",
+    );
+    assert_rich_text_object_has_mask_capture(
+        second_unit,
+        &format!(
+            "{writing_mode} published JLREQ unit symbol class-mix {}",
+            case.label
+        ),
+    );
+    second_unit
+}
+
+#[derive(Clone, Copy)]
+struct NativeUnitSymbolClassMixCase {
+    label: &'static str,
+    text: &'static str,
+    first_unit: &'static str,
+    second_unit: &'static str,
+    object_id: &'static str,
+    first_unit_end: u64,
+    second_unit_end: u64,
+    person_end: u64,
+    full_stop_end: u64,
+    opening_end: u64,
+    river_end: u64,
+}
+
+const fn native_published_jlreq_unit_symbol_class_mix_cases() -> [NativeUnitSymbolClassMixCase; 2] {
+    [
+        NativeUnitSymbolClassMixCase {
+            label: "latin",
+            text: "天地春夏秋冬kg人。「川」あっいおーえ―中・外………終",
+            first_unit: "k",
+            second_unit: "g",
+            object_id: "object.dialogue.0.0.cluster.7.19.20",
+            first_unit_end: 19,
+            second_unit_end: 20,
+            person_end: 23,
+            full_stop_end: 26,
+            opening_end: 29,
+            river_end: 32,
+        },
+        NativeUnitSymbolClassMixCase {
+            label: "greek-latin",
+            text: "天地春夏秋冬μm人。「川」あっいおーえ―中・外………終",
+            first_unit: "μ",
+            second_unit: "m",
+            object_id: "object.dialogue.0.0.cluster.7.20.21",
+            first_unit_end: 20,
+            second_unit_end: 21,
+            person_end: 24,
+            full_stop_end: 27,
+            opening_end: 30,
+            river_end: 33,
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_numeric_unit_class_mix_geometry(writing_mode: &str) {
