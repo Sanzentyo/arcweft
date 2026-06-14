@@ -6384,6 +6384,20 @@ fn agent_observe_native_renderer_writes_variation_selector_strict_class_mix_raw_
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_emoji_modifier_strict_class_mix_geometry() {
+    assert_native_emoji_modifier_strict_class_mix_geometry("vertical_rl");
+    assert_native_emoji_modifier_strict_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_emoji_modifier_strict_class_mix_raw_crops() {
+    assert_native_emoji_modifier_strict_class_mix_raw_crop("vertical_rl", "mask");
+    assert_native_emoji_modifier_strict_class_mix_raw_crop("vertical_rl", "object-id");
+    assert_native_emoji_modifier_strict_class_mix_raw_crop("vertical_lr", "mask");
+    assert_native_emoji_modifier_strict_class_mix_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_unit_symbol_class_mix_geometry() {
     assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_rl");
     assert_native_published_jlreq_unit_symbol_class_mix_geometry("vertical_lr");
@@ -8979,6 +8993,176 @@ fn assert_native_variation_selector_strict_class_mix_objects<'report>(
         &format!("{writing_mode} variation selector strict class-mix cluster"),
     );
     variant
+}
+
+fn assert_native_emoji_modifier_strict_class_mix_geometry(writing_mode: &str) {
+    let json = observe_native_emoji_modifier_strict_class_mix_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["jlreq_strictness"],
+        "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_emoji_modifier_strict_class_mix_objects(&json, writing_mode);
+}
+
+fn observe_native_emoji_modifier_strict_class_mix_fixture(writing_mode: &str) -> serde_json::Value {
+    let text = "天地春夏秋冬👍🏽人。「川」あっいおーえ―中・外………終";
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-emoji-modifier-strict-class-mix"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path).expect("remove temp emoji modifier strict class-mix source");
+    json
+}
+
+fn assert_native_emoji_modifier_strict_class_mix_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-emoji-modifier-strict-class-mix-{capture_kind}"
+    );
+    let text = "天地春夏秋冬👍🏽人。「川」あっいおーえ―中・外………終";
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-emoji-modifier-strict-class-mix-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.6.18.26")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native emoji modifier strict class-mix raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} emoji modifier strict class-mix {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native emoji modifier strict class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let emoji = assert_native_emoji_modifier_strict_class_mix_objects(&json, writing_mode);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], emoji["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], emoji["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], emoji["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], emoji["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(emoji),
+            content_pixels,
+            &format!("{writing_mode} emoji modifier strict class-mix object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native emoji modifier strict class-mix crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp emoji modifier strict class-mix source");
+    fs::remove_dir_all(&dir).expect("remove temp emoji modifier strict class-mix dir");
+}
+
+fn assert_native_emoji_modifier_strict_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    let emoji = find_rich_text_cluster_object(json, "👍🏽", 18, 26);
+    assert_eq!(emoji["rich_text_ref"]["kind"], "glyph_cluster");
+    assert_eq!(emoji["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(emoji["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(emoji["rich_text_ref"]["range"]["start"], 18);
+    assert_eq!(emoji["rich_text_ref"]["range"]["end"], 26);
+
+    let person = find_rich_text_cluster_object(json, "人", 26, 29);
+    let full_stop = find_rich_text_cluster_object(json, "。", 29, 32);
+    let opening = find_rich_text_cluster_object(json, "「", 32, 35);
+    let river = find_rich_text_cluster_object(json, "川", 35, 38);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after an emoji modifier grapheme",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after an emoji modifier grapheme",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after an emoji modifier grapheme",
+    );
+    assert_rich_text_object_has_mask_capture(
+        emoji,
+        &format!("{writing_mode} emoji modifier strict class-mix cluster"),
+    );
+    emoji
 }
 
 fn assert_native_published_jlreq_unit_symbol_class_mix_geometry(writing_mode: &str) {

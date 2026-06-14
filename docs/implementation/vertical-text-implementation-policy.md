@@ -111,7 +111,10 @@ the concrete choices to follow when turning that package into production code.
   rendered GlyphArea geometry path. Variation-selector graphemes are also
   covered in strict paragraph mix through `漢 + U+FE00`, proving variation
   selectors are ignored for orientation lookup without splitting source ranges
-  or capture geometry.
+  or capture geometry. Emoji modifier graphemes such as `👍🏽` are likewise
+  covered in strict paragraph mix through raw mask/object-id crops, proving
+  skin-tone modifier clusters keep one source range and one rendered GlyphArea
+  object while later strict punctuation uses the same paragraph-DP plan.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
