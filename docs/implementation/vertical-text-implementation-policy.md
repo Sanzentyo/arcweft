@@ -485,7 +485,10 @@ the concrete choices to follow when turning that package into production code.
   paragraph-DP plan. The prefixed form `$123` is also embedded in that longer
   strict paragraph class mix, with native raw crops for `$`, so prefix
   abbreviations and later ordinary closing/opening punctuation are verified in
-  one paragraph-DP plan instead of only through isolated short fixtures.
+  one paragraph-DP plan instead of only through isolated short fixtures. The
+  postfixed form `50%` is covered the same way, with native raw crops for `%`,
+  so both sides of numeric abbreviation attachment are proven in mixed strict
+  paragraph planning.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main
