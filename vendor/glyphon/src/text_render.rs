@@ -270,6 +270,7 @@ impl TextRenderer {
                         metadata: glyph.metadata,
                         cache_key,
                         transform: GlyphTransform::Identity,
+                        forced_content_type: None,
                     },
                     bounds,
                     |_system, rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
@@ -342,6 +343,7 @@ impl TextRenderer {
                             cache_key: GlyphonCacheKey::Text(physical_glyph.cache_key),
                             scale_factor: text_area.scale,
                             transform: GlyphTransform::Identity,
+                            forced_content_type: None,
                         },
                         bounds,
                         |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
@@ -598,6 +600,17 @@ struct GetGlyphImageResult {
     data: Vec<u8>,
 }
 
+fn glyph_image_data_for_content(
+    data: Vec<u8>,
+    content_type: ContentType,
+    force_alpha_mask: bool,
+) -> Vec<u8> {
+    if !force_alpha_mask || content_type == ContentType::Mask {
+        return data;
+    }
+    data.chunks_exact(4).map(|pixel| pixel[3]).collect()
+}
+
 struct GlyphMetadata {
     x: i32,
     y: i32,
@@ -607,6 +620,7 @@ struct GlyphMetadata {
     metadata: usize,
     cache_key: GlyphonCacheKey,
     transform: GlyphTransform,
+    forced_content_type: Option<ContentType>,
 }
 
 #[derive(Clone, Copy)]
@@ -669,6 +683,9 @@ fn append_glyph_areas<'a>(
                             metadata: glyph.metadata,
                             cache_key: GlyphonCacheKey::Text(cache_key),
                             transform: glyph.transform,
+                            forced_content_type: glyph_area
+                                .force_alpha_mask
+                                .then_some(ContentType::Mask),
                         },
                         bounds,
                         |system, _rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
@@ -676,11 +693,16 @@ fn append_glyph_areas<'a>(
                                 .cache
                                 .get_image_uncached(system.font_system, cache_key)?;
 
-                            let content_type = match image.content {
+                            let image_content_type = match image.content {
                                 SwashContent::Color => ContentType::Color,
                                 SwashContent::Mask | SwashContent::SubpixelMask => {
                                     ContentType::Mask
                                 }
+                            };
+                            let content_type = if glyph_area.force_alpha_mask {
+                                ContentType::Mask
+                            } else {
+                                image_content_type
                             };
 
                             Some(GetGlyphImageResult {
@@ -689,7 +711,11 @@ fn append_glyph_areas<'a>(
                                 left: image.placement.left as i16,
                                 width: image.placement.width as u16,
                                 height: image.placement.height as u16,
-                                data: image.data,
+                                data: glyph_image_data_for_content(
+                                    image.data,
+                                    image_content_type,
+                                    glyph_area.force_alpha_mask,
+                                ),
                             })
                         },
                         &mut metadata_to_depth,
@@ -711,13 +737,22 @@ fn append_glyph_areas<'a>(
                         |_system, rasterize_custom_glyph| -> Option<GetGlyphImageResult> {
                             let output = (rasterize_custom_glyph)(metrics.request)?;
                             output.validate(&metrics.request, None);
+                            let content_type = if glyph_area.force_alpha_mask {
+                                ContentType::Mask
+                            } else {
+                                output.content_type
+                            };
                             Some(GetGlyphImageResult {
-                                content_type: output.content_type,
+                                content_type,
                                 top: 0,
                                 left: 0,
                                 width: metrics.request.width,
                                 height: metrics.request.height,
-                                data: output.data,
+                                data: glyph_image_data_for_content(
+                                    output.data,
+                                    output.content_type,
+                                    glyph_area.force_alpha_mask,
+                                ),
                             })
                         },
                         &mut metadata_to_depth,
@@ -778,6 +813,7 @@ fn custom_glyph_area_metrics(
                 y_bin,
             }),
             transform: glyph.transform,
+            forced_content_type: glyph_area.force_alpha_mask.then_some(ContentType::Mask),
         },
         request,
     })
@@ -795,27 +831,33 @@ fn prepare_glyph<R>(
 where
     R: FnMut(RasterizeCustomGlyphRequest) -> Option<RasterizedCustomGlyph>,
 {
-    let details =
-        if let Some(details) = system.atlas.mask_atlas.glyph_cache.get(&metadata.cache_key) {
-            system
-                .atlas
-                .mask_atlas
-                .glyphs_in_use
-                .insert(metadata.cache_key);
-            details
-        } else if let Some(details) = system
+    let cached_content_type = if metadata.forced_content_type != Some(ContentType::Color)
+        && system
+            .atlas
+            .mask_atlas
+            .glyph_cache
+            .contains(&metadata.cache_key)
+    {
+        Some(ContentType::Mask)
+    } else if metadata.forced_content_type != Some(ContentType::Mask)
+        && system
             .atlas
             .color_atlas
             .glyph_cache
+            .contains(&metadata.cache_key)
+    {
+        Some(ContentType::Color)
+    } else {
+        None
+    };
+    let details = if let Some(content_type) = cached_content_type {
+        let inner = system.atlas.inner_for_content_mut(content_type);
+        inner.glyphs_in_use.insert(metadata.cache_key);
+        inner
+            .glyph_cache
             .get(&metadata.cache_key)
-        {
-            system
-                .atlas
-                .color_atlas
-                .glyphs_in_use
-                .insert(metadata.cache_key);
-            details
-        } else {
+            .expect("cached glyph details exist")
+    } else {
             let Some(image) = (get_glyph_image)(system, &mut rasterize_custom_glyph) else {
                 return Ok(None);
             };
@@ -1050,11 +1092,11 @@ fn transformed_corner(
 mod tests {
     use super::{
         Bounds, GlyphBounds, GlyphonCacheKey, clip_bounds_for_shader, custom_glyph_area_metrics,
-        transformed_quad_intersects_bounds,
+        glyph_image_data_for_content, transformed_quad_intersects_bounds,
     };
     use crate::{
-        Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect, TextBounds,
-        Vector,
+        Color, ContentType, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect,
+        TextBounds, Vector,
     };
 
     #[test]
@@ -1093,6 +1135,20 @@ mod tests {
     }
 
     #[test]
+    fn forced_alpha_mask_uses_color_glyph_alpha_channel() {
+        let data = vec![10, 20, 30, 0, 40, 50, 60, 128, 70, 80, 90, 255];
+
+        assert_eq!(
+            glyph_image_data_for_content(data.clone(), ContentType::Color, true),
+            vec![0, 128, 255]
+        );
+        assert_eq!(
+            glyph_image_data_for_content(data.clone(), ContentType::Color, false),
+            data
+        );
+    }
+
+    #[test]
     fn glyph_area_custom_source_uses_ink_bounds_for_raster_request() {
         let area = GlyphArea {
             glyphs: &[],
@@ -1101,6 +1157,7 @@ mod tests {
             scale: 2.0,
             bounds: TextBounds::default(),
             default_color: Color::rgb(245, 245, 245),
+            force_alpha_mask: false,
         };
         let glyph = GlyphInstance {
             source: GlyphSource::Custom { id: 7 },
@@ -1145,6 +1202,7 @@ mod tests {
             scale: 1.0,
             bounds: TextBounds::default(),
             default_color: Color::rgb(245, 245, 245),
+            force_alpha_mask: false,
         };
         let glyph = GlyphInstance {
             source: GlyphSource::Custom { id: 7 },

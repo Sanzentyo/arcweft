@@ -33,6 +33,8 @@ pub struct GlyphonAreaOptions {
     pub bounds: TextBounds,
     /// Default glyph color.
     pub default_color: Color,
+    /// Rasterize color glyph images as alpha masks tinted by glyph color.
+    pub force_alpha_mask: bool,
 }
 
 impl Default for GlyphonAreaOptions {
@@ -44,6 +46,7 @@ impl Default for GlyphonAreaOptions {
             origin_offset: Vector::new(0.0, 0.0),
             bounds: TextBounds::default(),
             default_color: Color::rgb(245, 245, 245),
+            force_alpha_mask: false,
         }
     }
 }
@@ -57,6 +60,7 @@ pub struct OwnedGlyphArea {
     scale: f32,
     bounds: TextBounds,
     default_color: Color,
+    force_alpha_mask: bool,
 }
 
 impl OwnedGlyphArea {
@@ -69,6 +73,7 @@ impl OwnedGlyphArea {
             scale: self.scale,
             bounds: self.bounds,
             default_color: self.default_color,
+            force_alpha_mask: self.force_alpha_mask,
         }
     }
 
@@ -151,6 +156,7 @@ pub fn glyph_area_from_layout(
         scale: options.scale,
         bounds: options.bounds,
         default_color: options.default_color,
+        force_alpha_mask: options.force_alpha_mask,
     })
 }
 
@@ -197,6 +203,7 @@ pub fn glyph_area_from_shaped_buffer(
         scale: 1.0,
         bounds: options.bounds,
         default_color: options.default_color,
+        force_alpha_mask: options.force_alpha_mask,
     }
 }
 
@@ -252,6 +259,7 @@ pub fn vertical_glyph_area_from_shaped_buffer(
         scale: 1.0,
         bounds: options.bounds,
         default_color: options.default_color,
+        force_alpha_mask: options.force_alpha_mask,
     }
 }
 

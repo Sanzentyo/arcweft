@@ -3127,6 +3127,20 @@ fn agent_observe_native_renderer_writes_vertical_grapheme_cluster_raw_crops() {
     assert_native_vertical_grapheme_cluster_raw_crop("vertical_lr", "object-id");
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_vertical_zwj_cluster_metadata() {
+    assert_native_vertical_zwj_cluster_metadata("vertical_rl");
+    assert_native_vertical_zwj_cluster_metadata("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_zwj_cluster_raw_crops() {
+    assert_native_vertical_zwj_cluster_raw_crop("vertical_rl", "mask");
+    assert_native_vertical_zwj_cluster_raw_crop("vertical_rl", "object-id");
+    assert_native_vertical_zwj_cluster_raw_crop("vertical_lr", "mask");
+    assert_native_vertical_zwj_cluster_raw_crop("vertical_lr", "object-id");
+}
+
 fn assert_native_vertical_grapheme_cluster_metadata(writing_mode: &str) {
     let json = observe_native_vertical_grapheme_cluster(writing_mode);
     assert_native_rich_text_layer_image_has_content(&json);
@@ -3266,6 +3280,144 @@ fn assert_native_vertical_grapheme_cluster_geometry(
     assert_eq!(kana["rich_text_ref"]["range"]["end"], 6);
     assert_rich_text_object_has_mask_capture(kana, "decomposed kana grapheme cluster");
     kana
+}
+
+fn assert_native_vertical_zwj_cluster_metadata(writing_mode: &str) {
+    let json = observe_native_vertical_zwj_cluster(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+
+    let cluster = assert_native_vertical_zwj_cluster_geometry(&json);
+    let latin = find_rich_text_cluster_object(&json, "A", 11, 12);
+    assert_eq!(latin["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_vertical_cluster_after(
+        cluster,
+        latin,
+        "Latin cluster should follow the ZWJ grapheme in the same column",
+    );
+}
+
+fn observe_native_vertical_zwj_cluster(writing_mode: &str) -> serde_json::Value {
+    let text = "👩‍💻A";
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-zwj-cluster"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp native ZWJ-cluster source");
+    json
+}
+
+fn assert_native_vertical_zwj_cluster_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let fixture_name = format!("agent-observe-native-{writing_mode}-zwj-cluster-{capture_kind}");
+    let text = "👩‍💻A";
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-zwj-cluster-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.0.0.11")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native ZWJ-cluster raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} ZWJ-cluster {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native ZWJ-cluster report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let cluster = assert_native_vertical_zwj_cluster_geometry(&json);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], cluster["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], cluster["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], cluster["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], cluster["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(cluster),
+            content_pixels,
+            &format!("{writing_mode} ZWJ-cluster object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native ZWJ-cluster mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp native ZWJ-cluster source");
+    fs::remove_dir_all(&dir).expect("remove temp native ZWJ-cluster dir");
+}
+
+fn assert_native_vertical_zwj_cluster_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    let cluster = find_rich_text_cluster_object(json, "👩‍💻", 0, 11);
+    assert_eq!(cluster["rich_text_ref"]["kind"], "glyph_cluster");
+    assert_eq!(cluster["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(cluster["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(cluster["rich_text_ref"]["range"]["start"], 0);
+    assert_eq!(cluster["rich_text_ref"]["range"]["end"], 11);
+    assert_rich_text_object_has_mask_capture(cluster, "ZWJ grapheme cluster");
+    cluster
 }
 
 #[test]

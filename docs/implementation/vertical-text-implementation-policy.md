@@ -99,9 +99,10 @@ the concrete choices to follow when turning that package into production code.
   `RotatedAlternate` before resolving glyphon cache keys, using the active
   rich-text font family, weight, style, and size metrics instead of a fixed
   renderer default.
-  Native Agent coverage also observes a decomposed kana grapheme as one
-  `rich_text_cluster` with the full source byte range and reads that object back
-  through raw mask/object-id crops in both vertical writing directions.
+  Native Agent coverage also observes decomposed-kana and emoji ZWJ graphemes as
+  single `rich_text_cluster` objects with their full source byte ranges and
+  reads those objects back through raw mask/object-id crops in both vertical
+  writing directions.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,

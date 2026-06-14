@@ -275,6 +275,8 @@ pub struct GlyphArea<'a> {
     pub bounds: TextBounds,
     /// Default color of the glyph area.
     pub default_color: Color,
+    /// Rasterize color glyph images as alpha masks tinted by glyph color.
+    pub force_alpha_mask: bool,
 }
 
 /// A text area containing text to be rendered along with its overflow behavior.

@@ -528,6 +528,7 @@ impl NativeOffscreenCaptureSession {
                 height,
                 origin,
                 time_seconds,
+                force_alpha_mask: false,
             },
             wgpu::Color::BLACK,
         )?;
@@ -575,6 +576,7 @@ impl NativeOffscreenCaptureSession {
                 height,
                 origin,
                 time_seconds: viewport.time_seconds,
+                force_alpha_mask: true,
             },
             wgpu::Color {
                 r: 0.0,
@@ -621,6 +623,7 @@ impl NativeOffscreenCaptureSession {
                 height,
                 origin,
                 time_seconds: viewport.time_seconds,
+                force_alpha_mask: false,
             },
             wgpu::Color {
                 r: 0.0,
@@ -2707,6 +2710,7 @@ struct NativeRenderTarget {
     height: u32,
     origin: NativeTextOrigin,
     time_seconds: f32,
+    force_alpha_mask: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2786,6 +2790,7 @@ impl NativeOffscreenTextRenderer {
             GlyphonAreaOptions {
                 bounds,
                 origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                force_alpha_mask: target.force_alpha_mask,
                 ..GlyphonAreaOptions::default()
             },
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
@@ -2802,6 +2807,7 @@ impl NativeOffscreenTextRenderer {
             target.width,
             target.height,
             target.time_seconds,
+            target.force_alpha_mask,
         );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -2997,6 +3003,7 @@ fn ruby_glyph_areas(
     width: u32,
     height: u32,
     time_seconds: f32,
+    force_alpha_mask: bool,
 ) -> Vec<OwnedGlyphArea> {
     let bounds = native_text_bounds(width, height);
     ruby_buffers
@@ -3005,14 +3012,14 @@ fn ruby_glyph_areas(
             let mut area = match ruby.placement {
                 RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
                     &ruby.buffer,
-                    ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+                    ruby_glyph_area_options(bounds, ruby.left, ruby.top, force_alpha_mask),
                 ),
                 RubyGlyphPlacement::Vertical {
                     cell_width,
                     vertical_advance,
                 } => vertical_glyph_area_from_shaped_buffer(
                     &ruby.buffer,
-                    ruby_glyph_area_options(bounds, ruby.left, ruby.top),
+                    ruby_glyph_area_options(bounds, ruby.left, ruby.top, force_alpha_mask),
                     cell_width,
                     vertical_advance,
                 ),
@@ -3030,12 +3037,18 @@ fn ruby_glyph_areas(
         .collect()
 }
 
-fn ruby_glyph_area_options(bounds: TextBounds, left: f32, top: f32) -> GlyphonAreaOptions {
+fn ruby_glyph_area_options(
+    bounds: TextBounds,
+    left: f32,
+    top: f32,
+    force_alpha_mask: bool,
+) -> GlyphonAreaOptions {
     GlyphonAreaOptions {
         bounds,
         default_color: Color::rgb(170, 190, 220),
         left,
         top,
+        force_alpha_mask,
         ..GlyphonAreaOptions::default()
     }
 }
@@ -3477,6 +3490,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             state.surface_config.width,
             state.surface_config.height,
             60.0,
+            false,
         );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -3735,7 +3749,7 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
         assert_eq!(ruby_glyph_areas.len(), 1);
         assert!(!ruby_glyph_areas[0].is_empty());
         assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
@@ -3907,7 +3921,7 @@ mod tests {
                 }
                 RichTextWritingMode::HorizontalTb => unreachable!("test uses vertical modes"),
             }
-            let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
+            let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
             assert_eq!(ruby_glyph_areas.len(), 1);
             assert!(
                 ruby_glyph_areas[0]
@@ -3990,7 +4004,7 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0);
+        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
         assert_ruby_continuation_track(&ruby_buffers, continuation_moves_right);
         assert_vertical_ruby_glyph_placement(&ruby_buffers[0].placement, &layout);
         assert_eq!(ruby_glyph_areas.len(), 2);
@@ -4120,8 +4134,8 @@ mod tests {
             NativeTextOrigin::default(),
         );
 
-        let hidden = ruby_glyph_areas(&ruby_buffers, 800, 600, 0.0);
-        let visible = ruby_glyph_areas(&ruby_buffers, 800, 600, 4.0);
+        let hidden = ruby_glyph_areas(&ruby_buffers, 800, 600, 0.0, false);
+        let visible = ruby_glyph_areas(&ruby_buffers, 800, 600, 4.0, false);
 
         assert!(!hidden.is_empty());
         assert!(
