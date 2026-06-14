@@ -249,7 +249,9 @@ the concrete choices to follow when turning that package into production code.
   Agent JSON proves both writing directions, ruby objects, sideways Latin, and
   text-combine cluster metadata, and raw color/mask/object-id crops from the
   `vertical_lr` typewriter text-combine object prove capture-time visibility
-  without changing the observed bbox.
+  without changing the observed bbox. The same smoke fixture also captures
+  `vertical_rl` and `vertical_lr` ruby objects as raw mask/object-id crops,
+  tying each side-specific ruby track to rendered GlyphArea pixels.
 - Ruby geometry applies deterministic same-track collision separation in
   `arcweft-text-layout` before native rendering and Agent bounds consume it.
   Vertical layout reserves the inline-side annotation track before placing the

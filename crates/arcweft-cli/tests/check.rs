@@ -3116,6 +3116,7 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
 
     let rl_ruby = find_rich_text_ruby_object(json, 0);
     assert_eq!(rl_ruby["rich_text_ref"]["ruby"], "はい");
+    assert_rich_text_object_has_mask_capture(rl_ruby, "vertical goal-clear vertical_rl ruby");
     assert_rich_text_hit_region_matches_bbox(rl_ruby, "ruby_object", 3, 6);
     assert_rich_text_hit_region_matches_ref_bbox(rl_ruby, "ruby_base", "ruby_base_bbox", 3, 6);
     assert_rich_text_hit_region_matches_ref_bbox(
@@ -3133,6 +3134,7 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
 
     let lr_ruby = find_rich_text_ruby_object(json, 1);
     assert_eq!(lr_ruby["rich_text_ref"]["ruby"], "ゆめ");
+    assert_rich_text_object_has_mask_capture(lr_ruby, "vertical goal-clear vertical_lr ruby");
     assert_rich_text_hit_region_matches_bbox(lr_ruby, "ruby_object", 32, 35);
     assert_rich_text_hit_region_matches_ref_bbox(lr_ruby, "ruby_base", "ruby_base_bbox", 32, 35);
     assert_rich_text_hit_region_matches_ref_bbox(
@@ -20483,7 +20485,92 @@ fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
         }
     }
 
+    assert_vertical_goal_clear_ruby_raw_crops(&source_path, &dir);
+
     fs::remove_dir_all(&dir).expect("remove temp vertical goal-clear raw crop dir");
+}
+
+fn assert_vertical_goal_clear_ruby_raw_crops(source_path: &Path, dir: &Path) {
+    for (ruby_index, object_id, description) in [
+        (
+            0,
+            "object.dialogue.0.0.ruby.0",
+            "vertical goal-clear vertical_rl ruby",
+        ),
+        (
+            1,
+            "object.dialogue.0.0.ruby.1",
+            "vertical goal-clear vertical_lr ruby",
+        ),
+    ] {
+        for capture_kind in ["mask", "object-id"] {
+            let raw_path = dir.join(format!(
+                "vertical-goal-clear-ruby-{ruby_index}-{capture_kind}.rgba"
+            ));
+            let (json, bytes) = observe_native_goal_clear_object_raw_at(
+                source_path,
+                &raw_path,
+                object_id,
+                capture_kind,
+                "60",
+            );
+            assert_vertical_goal_clear_ruby_raw_crop(
+                &json,
+                &bytes,
+                &raw_path,
+                ruby_index,
+                capture_kind,
+                description,
+            );
+        }
+    }
+}
+
+fn assert_vertical_goal_clear_ruby_raw_crop(
+    json: &serde_json::Value,
+    bytes: &[u8],
+    raw_path: &Path,
+    ruby_index: u64,
+    capture_kind: &str,
+    description: &str,
+) {
+    let ruby = find_rich_text_ruby_object(json, ruby_index);
+    assert_eq!(json["images"][0]["width"], ruby["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], ruby["bbox"]["height"]);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], ruby["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], ruby["bbox"]["y"]);
+
+    let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+    if ruby_index == 0 {
+        assert!(
+            agent_json_bbox_x(annotation) > agent_json_bbox_x(base),
+            "{description} annotation should stay on the right side of its base: {ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_x(annotation) < agent_json_bbox_x(base),
+            "{description} annotation should stay on the left side of its base: {ruby}"
+        );
+    }
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    assert_eq!(opaque_pixel_count(bytes) as u64, content_pixels);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            raw_path,
+            agent_object_id_color_from_json(ruby),
+            content_pixels,
+            &format!("{description} object-id crop"),
+        );
+    } else {
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert!(transparent > 0);
+    }
 }
 
 fn observe_native_goal_clear_object_raw_at(

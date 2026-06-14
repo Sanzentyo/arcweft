@@ -36,9 +36,10 @@ The CLI test compares fresh candidate captures against the checked-in PNGs with
 fixture-integrity test also checks that the checked-in sources keep the intended
 vertical coverage, that every PNG remains a 1280x720 Agent capture, and that the
 loose/normal preset PNGs are distinct. The goal-clear smoke fixture is validated
-by non-ignored CLI tests that generate a temporary native PNG and color, mask,
-and object-id raw crops from the same text-combine/typewriter object. Tier2
-`imq` visual regression uses bounded full-reference MSE/MAE drift rather than
-exact-zero pixel parity because the native text path can produce tiny
+by non-ignored CLI tests that generate a temporary native PNG; color, mask, and
+object-id raw crops from the same text-combine/typewriter object; and mask /
+object-id raw crops from the vertical ruby objects on both physical sides.
+Tier2 `imq` visual regression uses bounded full-reference MSE/MAE drift rather
+than exact-zero pixel parity because the native text path can produce tiny
 antialiasing differences across otherwise valid Windows renderer/font
 environments.
