@@ -3700,6 +3700,67 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_reference_mark_inside_class_mix() {
+        let text = "天地春夏秋冬本¹²。人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} published JLREQ paragraph with reference marks should require a multi-column plan: {layout:?}"
+            );
+
+            let body = nth_laid_out_glyph(&layout, "本", 0);
+            let first_mark = nth_laid_out_glyph(&layout, "¹", 0);
+            let second_mark = nth_laid_out_glyph(&layout, "²", 0);
+            let reference_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            assert_vertical_layout_after(
+                body,
+                first_mark,
+                "reference mark should stay with the preceding main-text cluster inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                first_mark,
+                second_mark,
+                "reference mark digits should stay together inside a paragraph class mix",
+            );
+            assert_f32_eq(second_mark.origin.x, reference_full_stop.origin.x);
+            assert!(
+                reference_full_stop.bounds.bottom() > second_mark.origin.y,
+                "full stop after a reference mark should stay attached inside a paragraph class mix: {reference_full_stop:?}"
+            );
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 1);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a reference mark sequence",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a reference mark sequence",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a reference mark sequence",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_strict_pair_after_ruby_text_combine() {
         let text = "夢2026。「人山川海";
         let dream_start = 0;

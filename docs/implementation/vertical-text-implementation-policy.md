@@ -485,7 +485,11 @@ the concrete choices to follow when turning that package into production code.
   text, keeps multi-character reference marks together, and keeps a following
   full stop attached, while native Agent geometry/raw mask/object-id fixtures
   verify that the second reference digit and following full stop in `本¹²。人`
-  are observed from the same rendered GlyphArea geometry.
+  are observed from the same rendered GlyphArea geometry. The same reference
+  mark sequence is also embedded in a longer strict paragraph class mix so the
+  reference-mark full stop stays attached while the later ordinary
+  closing/opening punctuation pair is still planned by strict paragraph-DP, with
+  native raw crops for the reference-mark full stop.
   Superscript parenthesized reference marks are covered as the same no-break
   sequence: Sans I/O layout keeps `本⁽¹⁾。` attached through the brackets,
   digit, and following full stop, and native Agent raw mask/object-id crops
