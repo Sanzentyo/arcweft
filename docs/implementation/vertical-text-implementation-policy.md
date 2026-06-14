@@ -366,7 +366,11 @@ the concrete choices to follow when turning that package into production code.
   leader class in Sans I/O layout and native Agent fixtures for both
   `vertical_rl` and `vertical_lr`, with raw mask/object-id crops tying the
   observed suffix geometry and rendered upright GlyphArea pixels back to the
-  same Agent object. Broader
+  same Agent object. Vertical presentation-form compact bracket coverage also
+  exercises `︵︶` as upright `vertical_form=none` clusters: Sans I/O layout
+  fixes the small-column overhang/no-break behavior, while native Agent fixtures
+  in both vertical writing modes capture the rendered `︶` object as raw mask
+  and object-id crops from the same observed GlyphArea geometry. Broader
   paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, dash marks, middle dots,
   repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
