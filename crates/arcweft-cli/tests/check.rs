@@ -6369,102 +6369,39 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
 
 #[test]
 fn agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviation_raw_crops() {
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "%",
-        "suffix",
-        "object.dialogue.0.0.cluster.2.5.6",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "%",
-        "suffix",
-        "object.dialogue.0.0.cluster.2.5.6",
-        "object-id",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "%",
-        "suffix",
-        "object.dialogue.0.0.cluster.2.5.6",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "%",
-        "suffix",
-        "object.dialogue.0.0.cluster.2.5.6",
-        "object-id",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "℃",
-        "temperature-suffix",
-        "object.dialogue.0.0.cluster.2.5.8",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "℃",
-        "temperature-suffix",
-        "object.dialogue.0.0.cluster.2.5.8",
-        "object-id",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "℃",
-        "temperature-suffix",
-        "object.dialogue.0.0.cluster.2.5.8",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "℃",
-        "temperature-suffix",
-        "object.dialogue.0.0.cluster.2.5.8",
-        "object-id",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "C",
-        "temperature-suffix-decomposed",
-        "object.dialogue.0.0.cluster.3.7.8",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_rl",
-        false,
-        "C",
-        "temperature-suffix-decomposed",
-        "object.dialogue.0.0.cluster.3.7.8",
-        "object-id",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "C",
-        "temperature-suffix-decomposed",
-        "object.dialogue.0.0.cluster.3.7.8",
-        "mask",
-    );
-    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
-        "vertical_lr",
-        true,
-        "C",
-        "temperature-suffix-decomposed",
-        "object.dialogue.0.0.cluster.3.7.8",
-        "object-id",
-    );
+    for (mark, label, object_id) in [
+        ("%", "suffix", "object.dialogue.0.0.cluster.2.5.6"),
+        (
+            "℃",
+            "temperature-suffix",
+            "object.dialogue.0.0.cluster.2.5.8",
+        ),
+        (
+            "°",
+            "temperature-suffix-decomposed",
+            "object.dialogue.0.0.cluster.2.5.7",
+        ),
+        (
+            "C",
+            "temperature-suffix-decomposed",
+            "object.dialogue.0.0.cluster.3.7.8",
+        ),
+    ] {
+        for (writing_mode, next_column_moves_right) in
+            [("vertical_rl", false), ("vertical_lr", true)]
+        {
+            for capture_kind in ["mask", "object-id"] {
+                assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+                    writing_mode,
+                    next_column_moves_right,
+                    mark,
+                    label,
+                    object_id,
+                    capture_kind,
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -7879,10 +7816,11 @@ fn assert_native_published_jlreq_numeric_abbreviation_target<'report>(
             next_column_moves_right,
         )
     } else if label == "temperature-suffix-decomposed" {
-        assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects(
+        assert_native_published_jlreq_numeric_decomposed_temperature_suffix_target(
             json,
             writing_mode,
             next_column_moves_right,
+            mark,
         )
     } else if label == "suffix-ideographic" {
         assert_native_published_jlreq_numeric_ideographic_suffix_objects(
@@ -8132,6 +8070,20 @@ fn assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects<'
     writing_mode: &str,
     next_column_moves_right: bool,
 ) -> &'report serde_json::Value {
+    assert_native_published_jlreq_numeric_decomposed_temperature_suffix_target(
+        json,
+        writing_mode,
+        next_column_moves_right,
+        "C",
+    )
+}
+
+fn assert_native_published_jlreq_numeric_decomposed_temperature_suffix_target<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    mark: &str,
+) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
@@ -8163,10 +8115,18 @@ fn assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects<'
         "body text after the decomposed temperature unit should continue in the next column",
     );
     assert_rich_text_object_has_mask_capture(
+        degree,
+        &format!("{writing_mode} published JLREQ decomposed temperature degree suffix"),
+    );
+    assert_rich_text_object_has_mask_capture(
         unit,
         &format!("{writing_mode} published JLREQ decomposed temperature unit tail"),
     );
-    unit
+    match mark {
+        "°" => degree,
+        "C" => unit,
+        other => panic!("unsupported decomposed temperature suffix crop target: {other}"),
+    }
 }
 
 fn assert_native_published_jlreq_numeric_ideographic_suffix_objects<'report>(

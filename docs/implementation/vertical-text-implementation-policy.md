@@ -474,8 +474,8 @@ the concrete choices to follow when turning that package into production code.
   temperature units such as `25°C`, `$五`, and `五%` unbroken across
   text-combine chunking and ideographic numeral clusters, while native Agent
   geometry/raw mask/object-id crops verify that the `$` and `¢` prefix objects
-  plus `%`, `℃`, and the final `C` in `25°C` are read back from rendered
-  GlyphArea pixels for Arabic and ideographic numerals.
+  plus `%`, `℃`, and both `°` and the final `C` in `25°C` are read back from
+  rendered GlyphArea pixels for Arabic and ideographic numerals.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main
