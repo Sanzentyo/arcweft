@@ -1008,6 +1008,8 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
         numeric_abbreviation_sequence_requires_previous(cluster_index, clusters);
     let requires_latin_word_sequence =
         latin_word_sequence_requires_previous(cluster_index, clusters);
+    let requires_numeric_unit_symbol_sequence =
+        numeric_unit_symbol_sequence_requires_previous(cluster_index, clusters);
     let requires_sub_superscript_object_sequence =
         sub_superscript_object_sequence_requires_previous(cluster_index, clusters);
     !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
@@ -1016,6 +1018,7 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
             || requires_ascii_number_separator_sequence
             || requires_numeric_abbreviation_sequence
             || requires_latin_word_sequence
+            || requires_numeric_unit_symbol_sequence
             || requires_sub_superscript_object_sequence)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
@@ -1141,6 +1144,20 @@ fn postfixed_abbreviation_unit_tail_requires_previous(
 
 fn is_postfixed_abbreviation_unit_leader(text: &str) -> bool {
     matches!(text, "°" | "′" | "″")
+}
+
+fn numeric_unit_symbol_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    is_latin_or_greek_alphabetic_cluster_text(&cluster.text)
+        && cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_jlreq_numeric_cluster_text(&previous.text))
 }
 
 fn latin_word_sequence_requires_previous(
@@ -3067,6 +3084,52 @@ mod tests {
                 next_column_moves_right,
                 "body text after a Greek+Latin SI unit symbol should continue in the next column",
             );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_numeric_unit_symbols_unbroken() {
+        for (text, first_unit, second_unit) in [("天3kg人", "k", "g"), ("天3μm人", "μ", "m")]
+        {
+            for (writing_mode, next_column_moves_right) in [
+                (RichTextWritingMode::VerticalRl, false),
+                (RichTextWritingMode::VerticalLr, true),
+            ] {
+                let frame = frame_with_run(text, vertical_presentation(writing_mode));
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(210.0, 84.0),
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+                let body = nth_laid_out_glyph(&layout, "天", 0);
+                let digits = nth_laid_out_glyph(&layout, "3", 0);
+                let unit_start = nth_laid_out_glyph(&layout, first_unit, 0);
+                let unit_end = nth_laid_out_glyph(&layout, second_unit, 0);
+                let next_body = nth_laid_out_glyph(&layout, "人", 0);
+                assert_vertical_layout_column_restart(
+                    body,
+                    digits,
+                    next_column_moves_right,
+                    "numeric unit symbol should restart as one unit after body text",
+                );
+                assert_vertical_layout_after(
+                    digits,
+                    unit_start,
+                    "unit symbol should stay attached to the preceding digit",
+                );
+                assert_vertical_layout_after(
+                    unit_start,
+                    unit_end,
+                    "letters inside a numeric unit symbol should stay attached",
+                );
+                assert_next_vertical_layout_column(
+                    unit_end,
+                    next_body,
+                    next_column_moves_right,
+                    "body text after a numeric unit symbol should continue in the next column",
+                );
+            }
         }
     }
 

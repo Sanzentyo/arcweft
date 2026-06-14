@@ -6595,6 +6595,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_latin_unit_raw_crops() {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry() {
+    assert_native_published_jlreq_numeric_unit_geometry("vertical_rl", false);
+    assert_native_published_jlreq_numeric_unit_geometry("vertical_lr", true);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops() {
+    assert_native_published_jlreq_numeric_unit_raw_crop("vertical_rl", false, "mask");
+    assert_native_published_jlreq_numeric_unit_raw_crop("vertical_rl", false, "object-id");
+    assert_native_published_jlreq_numeric_unit_raw_crop("vertical_lr", true, "mask");
+    assert_native_published_jlreq_numeric_unit_raw_crop("vertical_lr", true, "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry() {
     assert_native_published_jlreq_hyphenated_western_word_geometry("vertical_rl", false);
     assert_native_published_jlreq_hyphenated_western_word_geometry("vertical_lr", true);
@@ -8532,6 +8546,282 @@ fn assert_native_published_jlreq_latin_unit_objects<'report>(
         &format!("{writing_mode} published JLREQ Latin unit final letter"),
     );
     unit_end
+}
+
+fn assert_native_published_jlreq_numeric_unit_geometry(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    for case in native_published_jlreq_numeric_unit_cases() {
+        let json = observe_native_published_jlreq_numeric_unit_fixture(writing_mode, case);
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_numeric_unit_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+            case,
+        );
+    }
+}
+
+fn observe_native_published_jlreq_numeric_unit_fixture(
+    writing_mode: &str,
+    case: NativeNumericUnitCase,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-{}",
+            case.label
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric unit source");
+    json
+}
+
+fn assert_native_published_jlreq_numeric_unit_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+) {
+    for case in native_published_jlreq_numeric_unit_cases() {
+        assert_native_published_jlreq_numeric_unit_case_raw_crop(
+            writing_mode,
+            next_column_moves_right,
+            capture_kind,
+            case,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_numeric_unit_case_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+    case: NativeNumericUnitCase,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-{}-{capture_kind}",
+        case.label
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
+}}
+",
+            case.text
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-numeric-unit-{}-{capture_kind}.rgba",
+        case.label
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg(case.object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ numeric unit raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ numeric unit {} {capture_kind} crop should succeed, stderr: {}",
+        case.label,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ numeric unit report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let unit_end = assert_native_published_jlreq_numeric_unit_objects(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+        case,
+    );
+    assert_native_published_jlreq_numeric_unit_crop_pixels(
+        &json,
+        unit_end,
+        &raw_path,
+        writing_mode,
+        capture_kind,
+        case,
+    );
+
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric unit source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric unit dir");
+}
+
+fn assert_native_published_jlreq_numeric_unit_crop_pixels(
+    json: &serde_json::Value,
+    target: &serde_json::Value,
+    raw_path: &Path,
+    writing_mode: &str,
+    capture_kind: &str,
+    case: NativeNumericUnitCase,
+) {
+    assert_eq!(json["images"][0]["crop_origin"]["x"], target["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], target["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], target["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            raw_path,
+            agent_object_id_color_from_json(target),
+            content_pixels,
+            &format!(
+                "{writing_mode} published JLREQ numeric unit {} object-id crop",
+                case.label
+            ),
+        );
+    } else {
+        let bytes = fs::read(raw_path).expect("read native published JLREQ numeric unit crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+}
+
+fn assert_native_published_jlreq_numeric_unit_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    case: NativeNumericUnitCase,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let digits = find_rich_text_cluster_object(json, "3", 3, 4);
+    let unit_start = find_rich_text_cluster_object(
+        json,
+        case.unit_start,
+        case.unit_start_range.0,
+        case.unit_start_range.1,
+    );
+    let unit_end = find_rich_text_cluster_object(
+        json,
+        case.unit_end,
+        case.unit_end_range.0,
+        case.unit_end_range.1,
+    );
+    let next_body = find_rich_text_cluster_object(json, "人", case.next_range.0, case.next_range.1);
+    assert_vertical_cluster_after(
+        body,
+        digits,
+        "published JLREQ numeric unit should start after body text",
+    );
+    assert_vertical_cluster_after(
+        digits,
+        unit_start,
+        "published JLREQ unit symbol should stay with the preceding digit",
+    );
+    assert_vertical_cluster_after(
+        unit_start,
+        unit_end,
+        "published JLREQ numeric unit letters should stay together",
+    );
+    assert_next_paragraph_column(
+        unit_end,
+        next_body,
+        next_column_moves_right,
+        "body text after the numeric unit symbol should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        unit_end,
+        &format!("{writing_mode} published JLREQ numeric unit final letter"),
+    );
+    unit_end
+}
+
+#[derive(Clone, Copy)]
+struct NativeNumericUnitCase {
+    label: &'static str,
+    text: &'static str,
+    unit_start: &'static str,
+    unit_start_range: (u64, u64),
+    unit_end: &'static str,
+    unit_end_range: (u64, u64),
+    object_id: &'static str,
+    next_range: (u64, u64),
+}
+
+const fn native_published_jlreq_numeric_unit_cases() -> [NativeNumericUnitCase; 2] {
+    [
+        NativeNumericUnitCase {
+            label: "latin",
+            text: "天3kg人",
+            unit_start: "k",
+            unit_start_range: (4, 5),
+            unit_end: "g",
+            unit_end_range: (5, 6),
+            object_id: "object.dialogue.0.0.cluster.3.5.6",
+            next_range: (6, 9),
+        },
+        NativeNumericUnitCase {
+            label: "greek-latin",
+            text: "天3μm人",
+            unit_start: "μ",
+            unit_start_range: (4, 6),
+            unit_end: "m",
+            unit_end_range: (6, 7),
+            object_id: "object.dialogue.0.0.cluster.3.6.7",
+            next_range: (7, 10),
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_hyphenated_western_word_geometry(
