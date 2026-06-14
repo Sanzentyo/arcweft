@@ -3548,6 +3548,61 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_plain_western_word_inside_class_mix() {
+        let text = "天地春夏秋冬Web人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} published JLREQ paragraph with a plain Western word should require a multi-column plan: {layout:?}"
+            );
+
+            let first = nth_laid_out_glyph(&layout, "W", 0);
+            let second = nth_laid_out_glyph(&layout, "e", 0);
+            let last = nth_laid_out_glyph(&layout, "b", 0);
+            assert_vertical_layout_after(
+                first,
+                second,
+                "plain Western word should keep leading letters together inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                second,
+                last,
+                "plain Western word should keep its final letter attached inside a paragraph class mix",
+            );
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a plain Western word",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a plain Western word",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a plain Western word",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_hyphenated_word_inside_class_mix() {
         let text = "天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終";
         for writing_mode in [

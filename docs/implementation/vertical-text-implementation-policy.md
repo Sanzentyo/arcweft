@@ -525,8 +525,12 @@ the concrete choices to follow when turning that package into production code.
   `b` object in the plain Western word `天Web人`, the final
   `m` object in `天μm人` and `天3μm人`, the hyphen object in `天Web-Test人`, the
   apostrophe objects in `天O'K人` and `天O’K人`, and the accented `é` object in
-  `天café人` are read back from rendered GlyphArea pixels. The hyphenated
-  Western-word case is also embedded in a longer published-style paragraph
+  `天café人` are read back from rendered GlyphArea pixels. The plain Western
+  word `Web` is now embedded in a longer published-style paragraph class mix,
+  with native raw crops for the final `b`, proving ordinary sideways Latin word
+  attachment and later strict punctuation share one paragraph-DP and rendered
+  GlyphArea path. The hyphenated Western-word case is also embedded in a longer
+  published-style paragraph
   class mix (`天地春夏秋冬Web-Test人。「川」...`) so Sans I/O layout and native
   Agent raw crops prove the no-break Western sequence still shares the same
   paragraph-DP plan as strict punctuation, brackets, small kana, dash marks,
