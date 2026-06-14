@@ -363,11 +363,13 @@ fn text_layout_config_for_presentation(
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct TextLayoutState {
     horizontal: LayoutCursor,
     vertical_rl: LayoutCursor,
     vertical_lr: LayoutCursor,
+    vertical_rl_previous_cluster: Option<String>,
+    vertical_lr_previous_cluster: Option<String>,
 }
 
 impl TextLayoutState {
@@ -384,6 +386,8 @@ impl TextLayoutState {
                     + ruby_track.vertical_lr,
                 config.origin.y,
             ),
+            vertical_rl_previous_cluster: None,
+            vertical_lr_previous_cluster: None,
         }
     }
 }
@@ -509,6 +513,13 @@ fn layout_vertical_run(
 ) {
     let config = context.config;
     let column_step = vertical_column_step(writing_mode, context.presentation, config);
+    let previous_cluster = match writing_mode {
+        RichTextWritingMode::VerticalRl => state.vertical_rl_previous_cluster.clone(),
+        RichTextWritingMode::VerticalLr => state.vertical_lr_previous_cluster.clone(),
+        RichTextWritingMode::HorizontalTb => {
+            unreachable!("horizontal runs use layout_horizontal_run")
+        }
+    };
     let cursor = match writing_mode {
         RichTextWritingMode::VerticalRl => &mut state.vertical_rl,
         RichTextWritingMode::VerticalLr => &mut state.vertical_lr,
@@ -517,11 +528,14 @@ fn layout_vertical_run(
         }
     };
     let clusters = vertical_clusters(text, vertical_latin);
-    let column_plan = plan_vertical_columns(&clusters, context, *cursor);
+    let column_plan =
+        plan_vertical_columns(&clusters, context, *cursor, previous_cluster.as_deref());
+    let mut next_previous_cluster = previous_cluster;
     for (cluster_index, cluster) in clusters.iter().enumerate() {
         if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
+            next_previous_cluster = None;
             continue;
         }
         let start = context.range_start + cluster.range.start;
@@ -547,6 +561,18 @@ fn layout_vertical_run(
             presentation: context.presentation.clone(),
         });
         cursor.y += advance;
+        next_previous_cluster = Some(cluster.text.clone());
+    }
+    match writing_mode {
+        RichTextWritingMode::VerticalRl => {
+            state.vertical_rl_previous_cluster = next_previous_cluster;
+        }
+        RichTextWritingMode::VerticalLr => {
+            state.vertical_lr_previous_cluster = next_previous_cluster;
+        }
+        RichTextWritingMode::HorizontalTb => {
+            unreachable!("horizontal runs use layout_horizontal_run")
+        }
     }
 }
 
@@ -580,6 +606,7 @@ fn plan_vertical_columns(
     clusters: &[VerticalCluster],
     context: RunLayoutContext<'_>,
     initial_cursor: LayoutCursor,
+    previous_cluster_text: Option<&str>,
 ) -> VerticalColumnPlan {
     let mut plan = VerticalColumnPlan::new(clusters.len());
     let mut segment_start = 0;
@@ -593,6 +620,7 @@ fn plan_vertical_columns(
                 cluster_index,
                 context,
                 segment_initial_y,
+                previous_cluster_text,
             );
             segment_start = cluster_index + 1;
             segment_initial_y = context.config.origin.y;
@@ -605,6 +633,7 @@ fn plan_vertical_columns(
         clusters.len(),
         context,
         segment_initial_y,
+        previous_cluster_text,
     );
     plan
 }
@@ -622,6 +651,7 @@ fn plan_vertical_column_segment(
     segment_end: usize,
     context: RunLayoutContext<'_>,
     initial_cursor_y: f32,
+    previous_cluster_text: Option<&str>,
 ) {
     if segment_start >= segment_end {
         return;
@@ -634,8 +664,13 @@ fn plan_vertical_column_segment(
         context,
         initial_cursor_y,
     );
-    let restarted = (vertical_run_can_restart_at_boundary(context.source)
-        && initial_cursor_y > context.config.origin.y + f32::EPSILON)
+    let restarted = (vertical_run_can_restart_at_boundary(
+        context.source,
+        clusters,
+        segment_start,
+        context.config.jlreq_strictness,
+        previous_cluster_text,
+    ) && initial_cursor_y > context.config.origin.y + f32::EPSILON)
         .then(|| {
             solve_vertical_column_segment(
                 clusters,
@@ -956,14 +991,45 @@ struct RunLayoutContext<'a> {
     config: TextLayoutConfig,
 }
 
-fn vertical_run_can_restart_at_boundary(source: RichTextTextSource) -> bool {
-    matches!(
+fn vertical_run_can_restart_at_boundary(
+    source: RichTextTextSource,
+    clusters: &[VerticalCluster],
+    segment_start: usize,
+    strictness: JlreqStrictness,
+    previous_cluster_text: Option<&str>,
+) -> bool {
+    if !matches!(
         source,
         RichTextTextSource::Text
             | RichTextTextSource::Interpolation
             | RichTextTextSource::InterpolationFallback
             | RichTextTextSource::ControlRaw
-    )
+    ) {
+        return false;
+    }
+    if segment_start > 0 {
+        return true;
+    }
+    let Some(first_cluster) = clusters[segment_start..]
+        .iter()
+        .find(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+    else {
+        return true;
+    };
+    if jlreq_punctuation::is_line_head_prohibited_cluster(&first_cluster.text) {
+        return false;
+    }
+    if let Some(previous) = previous_cluster_text {
+        let rule = jlreq_punctuation::pair_adjustment_for_clusters(
+            previous,
+            &first_cluster.text,
+            strictness,
+        );
+        if rule.keep_together || rule.break_penalty > 0 {
+            return false;
+        }
+    }
+    true
 }
 
 fn vertical_cluster_required_inline_extent(
@@ -1907,6 +1973,7 @@ mod tests {
                 vertical_column_start(RichTextWritingMode::VerticalRl, config),
                 config.origin.y,
             ),
+            None,
         );
 
         assert_eq!(plan.break_before, vec![false, false, false, true]);
@@ -1938,6 +2005,7 @@ mod tests {
                 vertical_column_start(RichTextWritingMode::VerticalRl, config),
                 config.origin.y,
             ),
+            None,
         );
 
         assert_eq!(plan.break_before, vec![false, true, false]);
@@ -2008,6 +2076,7 @@ mod tests {
                 vertical_column_start(RichTextWritingMode::VerticalRl, config),
                 config.origin.y,
             ),
+            None,
         );
 
         assert_eq!(
@@ -2289,6 +2358,38 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_strict_pair_across_text_run_boundary() {
+        let text = "天地。「人山川海";
+        let split_at = "天地。".len();
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_split_runs(text, split_at, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(260.0, 147.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let opening = nth_laid_out_glyph(&layout, "「", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                full_stop,
+                opening,
+                "strict closing/opening punctuation should stay together across text run boundary",
+            );
+            assert_vertical_layout_after(
+                opening,
+                person,
+                "strict opening punctuation should keep its base across text run boundary",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_hard_line_break_resets_strict_jlreq_paragraph_segment() {
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
@@ -2391,8 +2492,8 @@ mod tests {
             loose_config.origin.y,
         );
 
-        let loose_plan = plan_vertical_columns(&clusters, loose_context, start);
-        let strict_plan = plan_vertical_columns(&clusters, strict_context, start);
+        let loose_plan = plan_vertical_columns(&clusters, loose_context, start, None);
+        let strict_plan = plan_vertical_columns(&clusters, strict_context, start, None);
 
         assert_eq!(
             loose_plan.break_before,
@@ -2457,8 +2558,8 @@ mod tests {
             loose_config.origin.y,
         );
 
-        let loose_plan = plan_vertical_columns(&clusters, loose_context, start);
-        let strict_plan = plan_vertical_columns(&clusters, strict_context, start);
+        let loose_plan = plan_vertical_columns(&clusters, loose_context, start, None);
+        let strict_plan = plan_vertical_columns(&clusters, strict_context, start, None);
 
         assert_eq!(
             loose_plan.break_before,
@@ -2822,6 +2923,7 @@ mod tests {
                 vertical_column_start(RichTextWritingMode::VerticalRl, config),
                 config.origin.y,
             ),
+            None,
         );
         let layout = layout_frame(&frame, config).expect("layout succeeds");
 
@@ -2871,6 +2973,7 @@ mod tests {
                 vertical_column_start(RichTextWritingMode::VerticalLr, config),
                 config.origin.y,
             ),
+            None,
         );
         let layout = layout_frame(&frame, config).expect("layout succeeds");
 

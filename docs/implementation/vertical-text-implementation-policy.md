@@ -146,7 +146,13 @@ the concrete choices to follow when turning that package into production code.
   generated pair break penalties. The cost model preserves existing
   fill-forward behavior for ties, treats accepted kinsoku overhang as allowed
   overhang instead of bad overflow, and balances columns when paragraph badness
-  is materially lower.
+  is materially lower. Style/effect-induced text-run splits remain part of the
+  same vertical paragraph context: the planner carries the previous visible
+  cluster across adjacent vertical runs, suppresses run-boundary restarts when
+  the first cluster is line-head prohibited or has a generated JLREQ pair
+  keep/penalty with the previous cluster, and native Agent fixtures verify a
+  strict color-span split at `。/「` through geometry plus raw mask/object-id
+  crops in both vertical writing directions.
 - `TextCombineUpright` layout clusters may resolve to multiple shaped glyphon
   cache keys. The adapter emits one `GlyphInstance` per resolved key inside the
   cluster cell instead of collapsing the cluster to a single glyph. The resolver
