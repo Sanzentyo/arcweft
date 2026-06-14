@@ -8194,8 +8194,23 @@ flow @flow.main main {{
 }
 
 fn assert_native_published_jlreq_reference_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
+    for target in native_published_jlreq_reference_mark_targets() {
+        assert_native_published_jlreq_reference_mark_target_raw_crop(
+            writing_mode,
+            capture_kind,
+            target,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_reference_mark_target_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+    target: NativeReferenceMarkTarget,
+) {
     let fixture_name = format!(
-        "agent-observe-native-{writing_mode}-published-jlreq-reference-mark-{capture_kind}"
+        "agent-observe-native-{writing_mode}-published-jlreq-reference-mark-{}-{capture_kind}",
+        target.label
     );
     let path = temp_arcw(
         &fixture_name,
@@ -8211,7 +8226,8 @@ flow @flow.main main {{
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
-        "native-{writing_mode}-published-jlreq-reference-mark-{capture_kind}.rgba"
+        "native-{writing_mode}-published-jlreq-reference-mark-{}-{capture_kind}.rgba",
+        target.label
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -8224,7 +8240,7 @@ flow @flow.main main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.5.7")
+        .arg(target.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -8254,17 +8270,18 @@ flow @flow.main main {{
         }
     );
 
-    let second_mark = assert_native_published_jlreq_reference_mark_objects(&json, writing_mode);
+    let crop_target =
+        assert_native_published_jlreq_reference_mark_target(&json, writing_mode, target);
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
-        second_mark["bbox"]["x"]
+        crop_target["bbox"]["x"]
     );
     assert_eq!(
         json["images"][0]["crop_origin"]["y"],
-        second_mark["bbox"]["y"]
+        crop_target["bbox"]["y"]
     );
-    assert_eq!(json["images"][0]["width"], second_mark["bbox"]["width"]);
-    assert_eq!(json["images"][0]["height"], second_mark["bbox"]["height"]);
+    assert_eq!(json["images"][0]["width"], crop_target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], crop_target["bbox"]["height"]);
 
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -8274,9 +8291,12 @@ flow @flow.main main {{
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             &raw_path,
-            agent_object_id_color_from_json(second_mark),
+            agent_object_id_color_from_json(crop_target),
             content_pixels,
-            &format!("{writing_mode} published JLREQ reference mark object-id crop"),
+            &format!(
+                "{writing_mode} published JLREQ reference mark {} object-id crop",
+                target.description
+            ),
         );
     } else {
         let bytes = fs::read(&raw_path).expect("read native published JLREQ reference mark crop");
@@ -8294,6 +8314,15 @@ fn assert_native_published_jlreq_reference_mark_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
 ) -> &'report serde_json::Value {
+    let full_stop = native_published_jlreq_reference_mark_targets()[1];
+    assert_native_published_jlreq_reference_mark_target(json, writing_mode, full_stop)
+}
+
+fn assert_native_published_jlreq_reference_mark_target<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    target: NativeReferenceMarkTarget,
+) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
@@ -8302,6 +8331,8 @@ fn assert_native_published_jlreq_reference_mark_objects<'report>(
     let first_mark = find_rich_text_cluster_object(json, "¹", 3, 5);
     let second_mark = find_rich_text_cluster_object(json, "²", 5, 7);
     let full_stop = find_rich_text_cluster_object(json, "。", 7, 10);
+    let crop_target =
+        find_rich_text_cluster_object(json, target.text, target.range.0, target.range.1);
     let next_body = find_rich_text_cluster_object(json, "人", 10, 13);
     assert_vertical_cluster_after(
         body,
@@ -8332,7 +8363,39 @@ fn assert_native_published_jlreq_reference_mark_objects<'report>(
         second_mark,
         &format!("{writing_mode} published JLREQ reference mark second digit"),
     );
-    second_mark
+    assert_rich_text_object_has_mask_capture(
+        full_stop,
+        &format!("{writing_mode} published JLREQ reference mark full stop"),
+    );
+    crop_target
+}
+
+#[derive(Clone, Copy)]
+struct NativeReferenceMarkTarget {
+    label: &'static str,
+    text: &'static str,
+    range: (u64, u64),
+    object_id: &'static str,
+    description: &'static str,
+}
+
+const fn native_published_jlreq_reference_mark_targets() -> [NativeReferenceMarkTarget; 2] {
+    [
+        NativeReferenceMarkTarget {
+            label: "second-mark",
+            text: "²",
+            range: (5, 7),
+            object_id: "object.dialogue.0.0.cluster.2.5.7",
+            description: "second digit",
+        },
+        NativeReferenceMarkTarget {
+            label: "full-stop",
+            text: "。",
+            range: (7, 10),
+            object_id: "object.dialogue.0.0.cluster.3.7.10",
+            description: "full stop",
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_parenthesized_reference_mark_geometry(
