@@ -2063,6 +2063,67 @@ mod tests {
         }
     }
 
+    #[test]
+    fn vertical_paragraph_plan_keeps_strict_closing_opening_pair_inside_class_mix() {
+        let text = "天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let loose_config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 147.0),
+                jlreq_strictness: JlreqStrictness::Loose,
+                ..TextLayoutConfig::default()
+            };
+            let strict_config = TextLayoutConfig {
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..loose_config
+            };
+
+            let loose = layout_frame(&frame, loose_config).expect("loose layout succeeds");
+            let loose_full_stop = nth_laid_out_glyph(&loose, "。", 0);
+            let loose_open = nth_laid_out_glyph(&loose, "「", 0);
+            assert_next_vertical_layout_column(
+                loose_full_stop,
+                loose_open,
+                next_column_moves_right,
+                "loose paragraph class mix may break between closing and opening punctuation",
+            );
+
+            let strict = layout_frame(&frame, strict_config).expect("strict layout succeeds");
+            assert!(
+                vertical_layout_column_count(&strict) >= 7,
+                "{writing_mode:?} strict JLREQ paragraph should still require a multi-column plan: {strict:?}"
+            );
+            let person = nth_laid_out_glyph(&strict, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&strict, "。", 0);
+            let strict_open = nth_laid_out_glyph(&strict, "「", 0);
+            let river = nth_laid_out_glyph(&strict, "川", 0);
+            let close = nth_laid_out_glyph(&strict, "」", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should keep closing punctuation after its base",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should keep adjacent closing/opening punctuation together",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should not strand its following base",
+            );
+            assert_vertical_layout_after(
+                river,
+                close,
+                "strict paragraph class mix should keep closing bracket with its base",
+            );
+        }
+    }
+
     fn assert_vertical_paragraph_dash_suffix(layout: &LaidOutText, next_column_moves_right: bool) {
         let syllable = nth_laid_out_glyph(layout, "え", 0);
         let dash = nth_laid_out_glyph(layout, "―", 0);

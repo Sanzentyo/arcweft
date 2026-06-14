@@ -5573,6 +5573,99 @@ flow @flow.main main {
     assert_native_jlreq_paragraph_grouping_and_leaders(&json, true);
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_strict_jlreq_paragraph_class_mix_geometry() {
+    assert_native_strict_jlreq_paragraph_class_mix_geometry("vertical_rl", false);
+    assert_native_strict_jlreq_paragraph_class_mix_geometry("vertical_lr", true);
+}
+
+fn assert_native_strict_jlreq_paragraph_class_mix_geometry(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let loose = observe_native_jlreq_paragraph_class_mix_fixture(writing_mode, "loose");
+    let strict = observe_native_jlreq_paragraph_class_mix_fixture(writing_mode, "strict");
+    assert_native_rich_text_layer_image_has_content(&loose);
+    assert_native_rich_text_layer_image_has_content(&strict);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
+        "loose"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&strict)["jlreq_strictness"],
+        "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&strict)["writing_mode"],
+        writing_mode
+    );
+
+    let loose_full_stop = find_rich_text_cluster_object(&loose, "。", 36, 39);
+    let loose_open = find_rich_text_cluster_object(&loose, "「", 39, 42);
+    assert_next_paragraph_column(
+        loose_full_stop,
+        loose_open,
+        next_column_moves_right,
+        "loose published-style paragraph may break between closing and opening punctuation",
+    );
+
+    let person = find_rich_text_cluster_object(&strict, "人", 33, 36);
+    let strict_full_stop = find_rich_text_cluster_object(&strict, "。", 36, 39);
+    let strict_open = find_rich_text_cluster_object(&strict, "「", 39, 42);
+    let river = find_rich_text_cluster_object(&strict, "川", 42, 45);
+    let close = find_rich_text_cluster_object(&strict, "」", 45, 48);
+    assert_vertical_cluster_after(
+        person,
+        strict_full_stop,
+        "strict paragraph class mix keeps closing punctuation after its base",
+    );
+    assert_vertical_cluster_after(
+        strict_full_stop,
+        strict_open,
+        "strict paragraph class mix keeps adjacent closing/opening punctuation together",
+    );
+    assert_vertical_cluster_after(
+        strict_open,
+        river,
+        "strict paragraph class mix keeps opening punctuation with its base",
+    );
+    assert_vertical_cluster_after(
+        river,
+        close,
+        "strict paragraph class mix keeps closing bracket with its base",
+    );
+    assert_eq!(
+        strict_open["rich_text_ref"]["vertical_form"],
+        "rotated_alternate"
+    );
+    assert_rich_text_object_has_mask_capture(
+        strict_open,
+        "strict paragraph class-mix opening cluster",
+    );
+}
+
+fn observe_native_jlreq_paragraph_class_mix_fixture(
+    writing_mode: &str,
+    strictness: &str,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-jlreq-paragraph-class-mix-{strictness}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq={strictness}]天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp JLREQ paragraph class-mix source");
+    json
+}
+
 fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
     assert_native_rich_text_layer_image_has_content(json);
     assert_eq!(

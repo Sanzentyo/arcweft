@@ -404,6 +404,13 @@ the concrete choices to follow when turning that package into production code.
   and object-id crops in both `vertical_rl` and `vertical_lr` so the mirrored
   observed bboxes, stable object colors, and rendered rotated-alternate
   GlyphArea pixels stay tied to the same Agent object. Strict
+  closing/opening behavior is also covered inside a longer published-style
+  paragraph class mix that includes comma compression, iteration marks,
+  brackets, small kana, dash marks, middle dots, and leaders; Sans I/O layout
+  and native Agent fixtures compare `jlreq=loose` with `jlreq=strict` in both
+  `vertical_rl` and `vertical_lr`, proving the strict pair changes the
+  paragraph-level plan without dropping the surrounding class interactions.
+  Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
   fixtures verify the strict same-column pair plus raw mask/object-id crops for
