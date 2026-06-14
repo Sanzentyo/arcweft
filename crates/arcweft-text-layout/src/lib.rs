@@ -960,6 +960,9 @@ fn vertical_cluster_requires_previous_in_column(
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
+    if reference_mark_sequence_requires_previous(cluster_index, clusters) {
+        return true;
+    }
     if vertical_cluster_requires_previous_by_linebreak_only(cluster_index, clusters, config) {
         return true;
     }
@@ -1100,6 +1103,37 @@ fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
     matches!(text, "%" | "％" | "‰")
 }
 
+fn reference_mark_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    let Some(previous) = cluster_index
+        .checked_sub(1)
+        .and_then(|previous_index| clusters.get(previous_index))
+    else {
+        return false;
+    };
+    if is_reference_mark_part_cluster_text(&cluster.text) {
+        return true;
+    }
+    is_reference_mark_following_full_stop_cluster_text(&cluster.text)
+        && is_reference_mark_part_cluster_text(&previous.text)
+}
+
+fn is_reference_mark_part_cluster_text(text: &str) -> bool {
+    matches!(
+        text,
+        "¹" | "²" | "³" | "⁰" | "⁴" | "⁵" | "⁶" | "⁷" | "⁸" | "⁹" | "⁽" | "⁾"
+    )
+}
+
+fn is_reference_mark_following_full_stop_cluster_text(text: &str) -> bool {
+    matches!(text, "。" | "．" | ".")
+}
+
 fn vertical_cluster_can_start_column(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -1114,6 +1148,7 @@ fn vertical_cluster_can_start_column(
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
         && !numeric_abbreviation_sequence_requires_previous(cluster_index, clusters)
+        && !reference_mark_sequence_requires_previous(cluster_index, clusters)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -2397,6 +2432,57 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after the reference mark sequence should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_parenthesized_reference_mark_unbroken() {
+        // W3C JLREQ 3.1.10 also treats opening/closing brackets inside a
+        // reference mark as part of the same no-break reference sequence.
+        let text = "本⁽¹⁾。人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "本", 0);
+            let open = nth_laid_out_glyph(&layout, "⁽", 0);
+            let mark = nth_laid_out_glyph(&layout, "¹", 0);
+            let close = nth_laid_out_glyph(&layout, "⁾", 0);
+            let full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                body,
+                open,
+                "reference mark opening bracket should stay with the preceding main-text cluster",
+            );
+            assert_vertical_layout_after(
+                open,
+                mark,
+                "reference mark digit should stay with the opening bracket",
+            );
+            assert_f32_eq(mark.origin.x, close.origin.x);
+            assert!(
+                close.bounds.bottom() > mark.origin.y,
+                "reference mark closing bracket should stay attached to the reference digit column: {close:?}"
+            );
+            assert_f32_eq(close.origin.x, full_stop.origin.x);
+            assert!(
+                full_stop.bounds.bottom() > close.origin.y,
+                "full stop after a parenthesized reference mark should stay attached: {full_stop:?}"
+            );
+            assert_next_vertical_layout_column(
+                full_stop,
+                next_body,
+                next_column_moves_right,
+                "body text after the parenthesized reference mark should continue in the next column",
             );
         }
     }

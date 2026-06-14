@@ -463,6 +463,11 @@ the concrete choices to follow when turning that package into production code.
   text, keeps multi-character reference marks together, and keeps a following
   full stop attached, while native Agent geometry/raw mask/object-id fixtures
   verify that `本¹²。人` is observed from the same rendered GlyphArea geometry.
+  Superscript parenthesized reference marks are covered as the same no-break
+  sequence: Sans I/O layout keeps `本⁽¹⁾。` attached through the brackets,
+  digit, and following full stop, and native Agent raw mask/object-id crops
+  verify that the closing bracket object in `本⁽¹⁾人` is read back from rendered
+  GlyphArea pixels.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
