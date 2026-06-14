@@ -5017,7 +5017,7 @@ flow @flow.main main {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.vertical_rl]天、。人[/][p]
+    alice: [.vertical_rl]天、。・人[/][p]
 }
 ",
     );
@@ -5028,10 +5028,12 @@ flow @flow.main main {
     let first = find_rich_text_cluster_object(&compression, "天", 0, 3);
     let comma = find_rich_text_cluster_object(&compression, "、", 3, 6);
     let period = find_rich_text_cluster_object(&compression, "。", 6, 9);
-    let person = find_rich_text_cluster_object(&compression, "人", 9, 12);
+    let middle_dot = find_rich_text_cluster_object(&compression, "・", 9, 12);
+    let person = find_rich_text_cluster_object(&compression, "人", 12, 15);
     assert_eq!(first["bbox"]["x"], comma["bbox"]["x"]);
     assert_eq!(comma["bbox"]["x"], period["bbox"]["x"]);
-    assert_eq!(period["bbox"]["x"], person["bbox"]["x"]);
+    assert_eq!(period["bbox"]["x"], middle_dot["bbox"]["x"]);
+    assert_eq!(middle_dot["bbox"]["x"], person["bbox"]["x"]);
     let body_advance = agent_json_bbox_y(&comma["bbox"]) - agent_json_bbox_y(&first["bbox"]);
     let compressed_advance = agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]);
     assert_eq!(
@@ -5040,7 +5042,12 @@ flow @flow.main main {
         "compressed punctuation should advance by half a body cell"
     );
     assert_eq!(
-        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&period["bbox"]),
+        agent_json_bbox_y(&middle_dot["bbox"]) - agent_json_bbox_y(&period["bbox"]),
+        compressed_advance,
+        "middle dot should continue the compressed punctuation chain"
+    );
+    assert_eq!(
+        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&middle_dot["bbox"]),
         compressed_advance,
         "following text should consume the space left by punctuation compression"
     );
@@ -7690,7 +7697,7 @@ fn assert_native_jlreq_compressed_punctuation_raw_crop(writing_mode: &str, captu
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode}]天、。人[/][p]
+    alice: [.{writing_mode}]天、。・人[/][p]
 }}
 "
         ),
@@ -7740,25 +7747,11 @@ flow @flow.main main {{
         }
     );
 
-    let comma = find_rich_text_cluster_object(&json, "、", 3, 6);
-    let period = find_rich_text_cluster_object(&json, "。", 6, 9);
-    let person = find_rich_text_cluster_object(&json, "人", 9, 12);
-    assert_eq!(comma["rich_text_ref"]["orientation"], "upright");
-    assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
+    let comma = assert_native_jlreq_compressed_punctuation_chain(&json);
     assert_eq!(json["images"][0]["crop_origin"]["x"], comma["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], comma["bbox"]["y"]);
     assert_eq!(json["images"][0]["width"], comma["bbox"]["width"]);
     assert_eq!(json["images"][0]["height"], comma["bbox"]["height"]);
-    assert_eq!(
-        agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]),
-        21,
-        "compressed comma should advance by half a body cell"
-    );
-    assert_eq!(
-        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&period["bbox"]),
-        21,
-        "following text should consume the space left by punctuation compression"
-    );
 
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -7782,6 +7775,35 @@ flow @flow.main main {{
 
     fs::remove_file(&path).expect("remove temp native JLREQ punctuation source");
     fs::remove_dir_all(&dir).expect("remove temp native JLREQ punctuation dir");
+}
+
+fn assert_native_jlreq_compressed_punctuation_chain(
+    json: &serde_json::Value,
+) -> &serde_json::Value {
+    let comma = find_rich_text_cluster_object(json, "、", 3, 6);
+    let period = find_rich_text_cluster_object(json, "。", 6, 9);
+    let middle_dot = find_rich_text_cluster_object(json, "・", 9, 12);
+    let person = find_rich_text_cluster_object(json, "人", 12, 15);
+    assert_eq!(comma["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
+    assert_eq!(middle_dot["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(middle_dot["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(
+        agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]),
+        21,
+        "compressed comma should advance by half a body cell"
+    );
+    assert_eq!(
+        agent_json_bbox_y(&middle_dot["bbox"]) - agent_json_bbox_y(&period["bbox"]),
+        21,
+        "middle dot should continue the compressed punctuation chain"
+    );
+    assert_eq!(
+        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&middle_dot["bbox"]),
+        21,
+        "following text should consume the space left by punctuation compression"
+    );
+    comma
 }
 
 #[test]

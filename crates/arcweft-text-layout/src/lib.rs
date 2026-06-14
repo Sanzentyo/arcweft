@@ -2417,6 +2417,44 @@ mod tests {
     }
 
     #[test]
+    fn vertical_consecutive_punctuation_compression_uses_half_cell_advances() {
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run("天、。・人", vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 168.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let comma = nth_laid_out_glyph(&layout, "、", 0);
+            let period = nth_laid_out_glyph(&layout, "。", 0);
+            let middle_dot = nth_laid_out_glyph(&layout, "・", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+
+            assert_same_vertical_layout_column(
+                body,
+                person,
+                "consecutive compressed punctuation should leave the following text in the same column",
+            );
+            for punctuation in [comma, period, middle_dot] {
+                assert_f32_eq(punctuation.advance.height, config.line_advance * 0.5);
+                assert_f32_eq(punctuation.bounds.height, config.line_advance);
+            }
+            assert_vertical_layout_after(body, comma, "comma should follow body text");
+            assert_vertical_layout_after(comma, period, "full stop should follow comma");
+            assert_vertical_layout_after(period, middle_dot, "middle dot should follow full stop");
+            assert_vertical_layout_after(
+                middle_dot,
+                person,
+                "body text should follow the compressed punctuation chain",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_column_keeps_small_kana_out_of_column_heads() {
         let frame = frame_with_run(
             "天地ぁ人",
