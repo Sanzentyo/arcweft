@@ -661,6 +661,61 @@ mod tests {
     }
 
     #[test]
+    fn text_combine_expanded_glyphs_preserve_offset_and_cluster_metadata() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(5, 9),
+                text: "2026".to_owned(),
+                origin: LayoutPoint::new(100.0, 24.0),
+                advance: LayoutSize::new(0.0, 42.0),
+                bounds: LayoutRect::new(100.0, 24.0, 42.0, 42.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalLr,
+                orientation: GlyphOrientation::TextCombineUpright,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                origin_offset: Vector::new(7.0, 11.0),
+                ..GlyphonAreaOptions::default()
+            },
+            |_index, _glyph| {
+                vec![
+                    fake_resolved_glyph(2, 15.0),
+                    fake_resolved_glyph(0, 13.0),
+                    fake_resolved_glyph(2, 15.0),
+                    fake_resolved_glyph(6, 17.0),
+                ]
+            },
+        )
+        .expect("area adapts");
+
+        assert_eq!(area.len(), 4);
+        assert!(area.glyphs().iter().all(|glyph| glyph.metadata == 0));
+        assert!(area.glyphs().iter().all(|glyph| {
+            glyph.cluster
+                == Some(TextCluster {
+                    start: 5,
+                    end: 9,
+                    index: 0,
+                })
+        }));
+        for glyph in area.glyphs() {
+            assert_affine_scale_x(glyph.transform, 42.0 / 60.0);
+            assert_f32_eq(glyph.origin.y, 35.0);
+        }
+        assert_f32_eq(area.glyphs()[0].origin.x, 107.0);
+        assert_f32_eq(area.glyphs()[3].origin.x, 137.1);
+    }
+
+    #[test]
     fn shaped_buffer_maps_to_absolute_glyph_instances() {
         let mut font_system = FontSystem::new();
         let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));

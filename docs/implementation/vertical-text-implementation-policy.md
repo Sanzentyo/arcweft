@@ -147,7 +147,11 @@ the concrete choices to follow when turning that package into production code.
   carries shaped glyph advances with those cache keys, and the adapter uses their
   summed advance to apply deterministic horizontal affine compression so 2-4
   digit clusters fit inside one vertical cell while preserving shared
-  source-cluster metadata.
+  source-cluster metadata. Adapter unit coverage verifies every expanded
+  text-combine glyph keeps the same layout-glyph metadata, source range, origin
+  offset, and affine compression, including a `vertical_lr` layout source where
+  Agent object/mask readback depends on the expanded glyphs still identifying as
+  one authored cluster.
 - The native window path and native headless full-frame capture path render body
   text through `GlyphArea` when a display-map layout source is available. Ruby
   annotations are shaped with glyphon buffers, then submitted as absolute
