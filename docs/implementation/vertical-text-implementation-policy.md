@@ -465,8 +465,9 @@ the concrete choices to follow when turning that package into production code.
   corner brackets `｢｣` are covered as the same generated compact bracket pair
   through their rotated UAX #50 path, with native raw mask/object-id crops in
   both vertical writing modes for the closing bracket object. Small parentheses
-  `﹙﹚` are covered the same way through their transformed-rotated
-  `vertical_form=rotated_alternate` path. Broader
+  `﹙﹚`, small curly brackets `﹛﹜`, and small tortoise shell brackets `﹝﹞`
+  are covered the same way through their transformed-rotated
+  `vertical_form=rotated_alternate` paths. Broader
   paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, dash marks, middle dots,
   repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
