@@ -6350,6 +6350,28 @@ fn agent_observe_native_renderer_writes_published_jlreq_subscript_object_class_m
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_greek_subscript_object_class_mix_geometry()
+{
+    assert_native_published_jlreq_greek_subscript_object_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_greek_subscript_object_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_greek_subscript_object_class_mix_raw_crops()
+{
+    assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop("vertical_rl", "mask");
+    assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop(
+        "vertical_rl",
+        "object-id",
+    );
+    assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop("vertical_lr", "mask");
+    assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop(
+        "vertical_lr",
+        "object-id",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_style_split_geometry() {
     assert_native_strict_jlreq_style_split_geometry("vertical_rl");
     assert_native_strict_jlreq_style_split_geometry("vertical_lr");
@@ -8237,6 +8259,178 @@ fn assert_native_published_jlreq_subscript_object_class_mix_objects<'report>(
     assert_rich_text_object_has_mask_capture(
         following_base,
         &format!("{writing_mode} published JLREQ subscript object class-mix following base"),
+    );
+    following_base
+}
+
+fn assert_native_published_jlreq_greek_subscript_object_class_mix_geometry(writing_mode: &str) {
+    let json =
+        observe_native_published_jlreq_greek_subscript_object_class_mix_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["jlreq_strictness"],
+        "strict"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_greek_subscript_object_class_mix_objects(&json, writing_mode);
+}
+
+fn observe_native_published_jlreq_greek_subscript_object_class_mix_fixture(
+    writing_mode: &str,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix"
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ Greek subscript object class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop(
+    writing_mode: &str,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.8.23.25")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect(
+            "arcw agent observe writes native published JLREQ Greek subscript object class-mix raw crop",
+        );
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ Greek subscript object class-mix {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ Greek subscript object class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let following_base =
+        assert_native_published_jlreq_greek_subscript_object_class_mix_objects(&json, writing_mode);
+    assert_native_published_jlreq_subscript_object_class_mix_crop_pixels(
+        &json,
+        following_base,
+        &raw_path,
+        writing_mode,
+        capture_kind,
+    );
+
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ Greek subscript object class-mix source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp published JLREQ Greek subscript object class-mix dir");
+}
+
+fn assert_native_published_jlreq_greek_subscript_object_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    let base = find_rich_text_cluster_object(json, "α", 18, 20);
+    let mark = find_rich_text_cluster_object(json, "₂", 20, 23);
+    let following_base = find_rich_text_cluster_object(json, "β", 23, 25);
+    assert_vertical_cluster_after(
+        base,
+        mark,
+        "published JLREQ Greek subscript object class mix keeps mark with preceding base",
+    );
+    assert_vertical_cluster_after(
+        mark,
+        following_base,
+        "published JLREQ Greek subscript object class mix keeps following base attached",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", 25, 28);
+    let strict_full_stop = find_rich_text_cluster_object(json, "。", 28, 31);
+    let opening = find_rich_text_cluster_object(json, "「", 31, 34);
+    let river = find_rich_text_cluster_object(json, "川", 34, 37);
+    assert_vertical_cluster_after(
+        person,
+        strict_full_stop,
+        "strict paragraph class mix still keeps closing punctuation after a Greek subscript object",
+    );
+    assert_vertical_cluster_after(
+        strict_full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after a Greek subscript object",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after a Greek subscript object",
+    );
+    assert_rich_text_object_has_mask_capture(
+        following_base,
+        &format!("{writing_mode} published JLREQ Greek subscript object class-mix following base"),
     );
     following_base
 }

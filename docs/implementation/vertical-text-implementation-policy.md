@@ -526,7 +526,9 @@ the concrete choices to follow when turning that package into production code.
   GlyphArea pixels in both vertical writing directions. `H₂O` is also embedded
   in a longer strict paragraph class mix, with native raw crops for `O`, proving
   the subscript object and later ordinary closing/opening punctuation share one
-  paragraph-DP plan.
+  paragraph-DP plan. The Greek `α₂β` formula now has the same strict paragraph
+  class-mix coverage and native raw crops for `β`, covering non-ASCII formula
+  bases and byte ranges in the rendered GlyphArea path.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
