@@ -528,7 +528,8 @@ the concrete choices to follow when turning that package into production code.
   the subscript object and later ordinary closing/opening punctuation share one
   paragraph-DP plan. The Greek `α₂β` formula now has the same strict paragraph
   class-mix coverage and native raw crops for `β`, covering non-ASCII formula
-  bases and byte ranges in the rendered GlyphArea path.
+  bases and byte ranges in the rendered GlyphArea path. The Greek superscript
+  form `α²β` is covered the same way, including native raw crops for `β`.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent

@@ -3994,6 +3994,61 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_greek_superscript_object_inside_class_mix() {
+        let text = "天地春夏秋冬α²β人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} published JLREQ paragraph with Greek superscript object should require a multi-column plan: {layout:?}"
+            );
+
+            let base = nth_laid_out_glyph(&layout, "α", 0);
+            let mark = nth_laid_out_glyph(&layout, "²", 0);
+            let following_base = nth_laid_out_glyph(&layout, "β", 0);
+            assert_vertical_layout_after(
+                base,
+                mark,
+                "Greek superscript should stay with the preceding base inside a paragraph class mix",
+            );
+            assert_vertical_layout_after(
+                mark,
+                following_base,
+                "Greek following base should stay attached to the superscript object inside a paragraph class mix",
+            );
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a Greek superscript object",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a Greek superscript object",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a Greek superscript object",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_strict_pair_after_ruby_text_combine() {
         let text = "夢2026。「人山川海";
         let dream_start = 0;
