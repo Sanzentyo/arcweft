@@ -445,6 +445,12 @@ the concrete choices to follow when turning that package into production code.
   native Agent geometry/raw mask/object-id fixtures verify that `2026502671234`
   restarts as one column unit when it can fit better there and that the final
   digit still reads back from rendered GlyphArea pixels.
+  The same published rule is also covered for European numerals with decimal
+  and place separators: Sans I/O layout keeps `,` and `.` attached to adjacent
+  digit clusters in `1,234.56`, and keeps space place separators attached in
+  `12 345`, across text-combine chunking. Native Agent raw mask/object-id crops
+  verify that the comma separator object in `1,234` is read back from rendered
+  GlyphArea pixels.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main

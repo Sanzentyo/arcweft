@@ -5931,6 +5931,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_european_numeral_sequenc
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_numeric_separator_geometry() {
+    assert_native_published_jlreq_numeric_separator_geometry("vertical_rl", false);
+    assert_native_published_jlreq_numeric_separator_geometry("vertical_lr", true);
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_numeric_separator_raw_crops() {
+    assert_native_published_jlreq_numeric_separator_raw_crop("vertical_rl", false, "mask");
+    assert_native_published_jlreq_numeric_separator_raw_crop("vertical_rl", false, "object-id");
+    assert_native_published_jlreq_numeric_separator_raw_crop("vertical_lr", true, "mask");
+    assert_native_published_jlreq_numeric_separator_raw_crop("vertical_lr", true, "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_reference_mark_geometry() {
     assert_native_published_jlreq_reference_mark_geometry("vertical_rl");
     assert_native_published_jlreq_reference_mark_geometry("vertical_lr");
@@ -6529,6 +6543,185 @@ fn assert_native_published_jlreq_european_numeral_sequence_objects<'report>(
         &format!("{writing_mode} published JLREQ European numeral final digit"),
     );
     final_digit
+}
+
+fn assert_native_published_jlreq_numeric_separator_geometry(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) {
+    let json = observe_native_published_jlreq_numeric_separator_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_separator_objects(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+    );
+}
+
+fn observe_native_published_jlreq_numeric_separator_fixture(
+    writing_mode: &str,
+) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-published-jlreq-numeric-separator"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天1,234人[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric separator source");
+    json
+}
+
+fn assert_native_published_jlreq_numeric_separator_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天1,234人[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-numeric-separator-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.4.5")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ numeric separator raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ numeric separator {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ numeric separator report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let comma = assert_native_published_jlreq_numeric_separator_objects(
+        &json,
+        writing_mode,
+        next_column_moves_right,
+    );
+    assert_eq!(json["images"][0]["crop_origin"]["x"], comma["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], comma["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], comma["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], comma["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(comma),
+            content_pixels,
+            &format!("{writing_mode} published JLREQ numeric separator object-id crop"),
+        );
+    } else {
+        let bytes =
+            fs::read(&raw_path).expect("read native published JLREQ numeric separator crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp published JLREQ numeric separator source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ numeric separator dir");
+}
+
+fn assert_native_published_jlreq_numeric_separator_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let first_digit = find_rich_text_cluster_object(json, "1", 3, 4);
+    let comma = find_rich_text_cluster_object(json, ",", 4, 5);
+    let middle_digits = find_rich_text_cluster_object(json, "234", 5, 8);
+    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
+    assert_vertical_cluster_after(
+        body,
+        first_digit,
+        "published JLREQ European numeral with separators should start after body text",
+    );
+    assert_vertical_cluster_after(
+        first_digit,
+        comma,
+        "published JLREQ comma place separator should stay with the preceding digit",
+    );
+    assert_vertical_cluster_after(
+        comma,
+        middle_digits,
+        "published JLREQ digits after a comma place separator should stay attached",
+    );
+    assert_next_paragraph_column(
+        middle_digits,
+        next_body,
+        next_column_moves_right,
+        "body text after the published JLREQ European numeral with separators should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        comma,
+        &format!("{writing_mode} published JLREQ numeric separator comma"),
+    );
+    comma
 }
 
 fn assert_native_published_jlreq_reference_mark_geometry(writing_mode: &str) {

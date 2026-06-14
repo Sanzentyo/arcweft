@@ -987,11 +987,14 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
     else {
         return false;
     };
-    !cluster.break_allowed_before
-        && !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
-        && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
+    let requires_ascii_digit_sequence = !cluster.break_allowed_before
         && is_ascii_digit_cluster_text(&previous.text)
-        && is_ascii_digit_cluster_text(&cluster.text)
+        && is_ascii_digit_cluster_text(&cluster.text);
+    let requires_ascii_number_separator_sequence =
+        ascii_number_separator_sequence_requires_previous(cluster_index, clusters);
+    !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
+        && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
+        && (requires_ascii_digit_sequence || requires_ascii_number_separator_sequence)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -1001,6 +1004,37 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
 
 fn is_ascii_digit_cluster_text(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn ascii_number_separator_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    if is_ascii_number_separator_cluster_text(&cluster.text) {
+        return cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_ascii_digit_cluster_text(&previous.text))
+            && clusters
+                .get(cluster_index + 1)
+                .is_some_and(|next| is_ascii_digit_cluster_text(&next.text));
+    }
+    is_ascii_digit_cluster_text(&cluster.text)
+        && cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_ascii_number_separator_cluster_text(&previous.text))
+        && cluster_index
+            .checked_sub(2)
+            .and_then(|before_separator_index| clusters.get(before_separator_index))
+            .is_some_and(|before_separator| is_ascii_digit_cluster_text(&before_separator.text))
+}
+
+fn is_ascii_number_separator_cluster_text(text: &str) -> bool {
+    matches!(text, "," | "." | " ")
 }
 
 fn vertical_cluster_can_start_column(
@@ -1015,6 +1049,7 @@ fn vertical_cluster_can_start_column(
         || jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text);
     can_break_before
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
+        && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -2031,6 +2066,104 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after an overhanging European numeral sequence should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_numeric_separators_unbroken() {
+        // W3C JLREQ 3.1.10 also keeps decimal points and place separators
+        // inside European numerals unbreakable on both sides.
+        let text = "天1,234.56人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 126.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let first_digit = nth_laid_out_glyph(&layout, "1", 0);
+            let comma = nth_laid_out_glyph(&layout, ",", 0);
+            let middle_digits = nth_laid_out_glyph(&layout, "234", 0);
+            let decimal_point = nth_laid_out_glyph(&layout, ".", 0);
+            let final_digits = nth_laid_out_glyph(&layout, "56", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            if next_column_moves_right {
+                assert!(
+                    first_digit.origin.x > body.origin.x,
+                    "European numeral with separators should move right as a unit after body text: {first_digit:?}"
+                );
+            } else {
+                assert!(
+                    first_digit.origin.x < body.origin.x,
+                    "European numeral with separators should move left as a unit after body text: {first_digit:?}"
+                );
+            }
+            assert_f32_eq(first_digit.origin.y, config.origin.y);
+            assert_vertical_layout_after(
+                first_digit,
+                comma,
+                "comma place separator should stay with the preceding digit",
+            );
+            assert_vertical_layout_after(
+                comma,
+                middle_digits,
+                "digits after comma place separator should stay attached",
+            );
+            assert_vertical_layout_after(
+                middle_digits,
+                decimal_point,
+                "decimal point should stay with the preceding digit chunk",
+            );
+            assert_vertical_layout_after(
+                decimal_point,
+                final_digits,
+                "digits after decimal point should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                final_digits,
+                next_body,
+                next_column_moves_right,
+                "body text after an overhanging European numeral with separators should continue in the next column",
+            );
+        }
+
+        let text = "天12 345人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 126.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let leading_digits = nth_laid_out_glyph(&layout, "12", 0);
+            let space = nth_laid_out_glyph(&layout, " ", 0);
+            let trailing_digits = nth_laid_out_glyph(&layout, "345", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                leading_digits,
+                space,
+                "space place separator should stay with the preceding digit chunk",
+            );
+            assert_vertical_layout_after(
+                space,
+                trailing_digits,
+                "digits after space place separator should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                trailing_digits,
+                next_body,
+                next_column_moves_right,
+                "body text after a European numeral with a space separator should continue in the next column",
             );
         }
     }
