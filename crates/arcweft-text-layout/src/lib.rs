@@ -5483,6 +5483,8 @@ mod tests {
     fn vertical_fullwidth_and_halfwidth_closing_punctuation_hangs() {
         for (mark, label) in [
             ("？", "fullwidth question mark"),
+            ("：", "fullwidth colon"),
+            ("；", "fullwidth semicolon"),
             ("｡", "halfwidth full stop"),
         ] {
             for (writing_mode, next_column_moves_right) in [

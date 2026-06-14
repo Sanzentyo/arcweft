@@ -5829,6 +5829,29 @@ fn agent_observe_native_renderer_reports_fullwidth_question_mark_hanging_punctua
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_fullwidth_colon_semicolon_hanging_punctuation() {
+    for (mark, label, description) in [
+        ("：", "fullwidth-colon", "fullwidth colon"),
+        ("；", "fullwidth-semicolon", "fullwidth semicolon"),
+    ] {
+        assert_native_closing_punctuation_hanging_geometry(
+            "vertical_rl",
+            false,
+            mark,
+            label,
+            description,
+        );
+        assert_native_closing_punctuation_hanging_geometry(
+            "vertical_lr",
+            true,
+            mark,
+            label,
+            description,
+        );
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_halfwidth_full_stop_hanging_punctuation() {
     assert_native_closing_punctuation_hanging_geometry(
         "vertical_rl",
@@ -5880,6 +5903,29 @@ fn agent_observe_native_renderer_writes_fullwidth_question_mark_raw_crops() {
         "fullwidth question mark",
         "object-id",
     );
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_fullwidth_colon_semicolon_raw_crops() {
+    for (mark, label, description) in [
+        ("：", "fullwidth-colon", "fullwidth colon"),
+        ("；", "fullwidth-semicolon", "fullwidth semicolon"),
+    ] {
+        for (writing_mode, next_column_moves_right) in
+            [("vertical_rl", false), ("vertical_lr", true)]
+        {
+            for capture_kind in ["mask", "object-id"] {
+                assert_native_closing_punctuation_raw_crop(
+                    writing_mode,
+                    next_column_moves_right,
+                    mark,
+                    label,
+                    description,
+                    capture_kind,
+                );
+            }
+        }
+    }
 }
 
 #[test]
