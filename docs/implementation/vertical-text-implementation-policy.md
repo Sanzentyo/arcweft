@@ -274,8 +274,11 @@ the concrete choices to follow when turning that package into production code.
   renderer-facing orientation/vertical-form metadata plus object-local
   color/object-id/mask capture refs; the full-grammar sample test follows a
   vertical cluster mask URI and asserts the raw capture contains rendered
-  pixels. Focused native Agent coverage checks sideways, upright-alternate,
-  rotated-alternate, and text-combine-upright cluster metadata. The
+  pixels. The full-grammar sample now also follows a `vertical_lr` cluster's
+  raw mask and object-id URIs back through `--read-uri`, proving both vertical
+  writing modes in the authored sample expose object-scoped native readback from
+  the same cluster geometry. Focused native Agent coverage checks sideways,
+  upright-alternate, rotated-alternate, and text-combine-upright cluster metadata. The
   text-combine-upright path is also verified through raw native mask and
   object-id crops so compressed multi-glyph cells expose object-local readback
   from the same GlyphArea geometry and stable object color as the observed

@@ -6021,7 +6021,14 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
             > vertical_lr["bbox"]["width"].as_u64().unwrap(),
         "short vertical_lr sample run should be visibly vertical: {vertical_lr}"
     );
-    let first_vertical_lr_cluster = find_rich_text_cluster_object(&json, "縦", 66, 69);
+    assert_full_grammar_sample_vertical_lr_cluster_readback(&source_path, &json);
+}
+
+fn assert_full_grammar_sample_vertical_lr_cluster_readback(
+    source_path: &Path,
+    json: &serde_json::Value,
+) {
+    let first_vertical_lr_cluster = find_rich_text_cluster_object(json, "縦", 66, 69);
     assert_eq!(
         first_vertical_lr_cluster["rich_text_ref"]["kind"],
         "glyph_cluster"
@@ -6029,6 +6036,30 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     assert_eq!(first_vertical_lr_cluster["rich_text_ref"]["source"], "text");
     assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 42);
     assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 42);
+    let first_vertical_lr_cluster_mask_uri = rich_text_object_capture_uri(
+        first_vertical_lr_cluster,
+        "mask",
+        "application/octet-stream",
+    );
+    assert_agent_read_uri_object_image_has_content(
+        source_path,
+        first_vertical_lr_cluster_mask_uri,
+        first_vertical_lr_cluster["id"].as_str().unwrap(),
+        42,
+        42,
+    );
+    let first_vertical_lr_cluster_object_id_uri = rich_text_object_capture_uri(
+        first_vertical_lr_cluster,
+        "object_id",
+        "application/octet-stream",
+    );
+    assert_agent_read_uri_object_image_has_content(
+        source_path,
+        first_vertical_lr_cluster_object_id_uri,
+        first_vertical_lr_cluster["id"].as_str().unwrap(),
+        42,
+        42,
+    );
 }
 
 #[test]
