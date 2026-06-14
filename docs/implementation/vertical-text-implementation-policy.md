@@ -341,7 +341,10 @@ the concrete choices to follow when turning that package into production code.
   bboxes and not only in Sans I/O layout unit tests. The compressed punctuation
   path is also exercised through raw native mask and object-id crops for `、`,
   verifying that half-cell advance geometry, stable object color, and the
-  rendered upright-alternate glyph pixels remain tied to the same cluster bbox.
+  rendered upright-alternate glyph pixels remain tied to the same cluster bbox;
+  the same compressed `、。` sequence is now mirrored in `vertical_lr` raw
+  mask/object-id crops so punctuation compression readback is covered in both
+  column-progression directions.
   It also checks that
   line-end-prohibited opening punctuation moves to the next vertical column,
   matching the JLREQ 3.1.7/3.1.8 treatment of characters not starting or ending
