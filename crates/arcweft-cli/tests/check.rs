@@ -4919,6 +4919,30 @@ fn agent_observe_native_renderer_reports_vertical_presentation_curly_and_square_
             "vertical presentation lenticular bracket",
         ),
         (
+            "︽",
+            "︾",
+            "vertical-presentation-double-angle-bracket",
+            "vertical presentation double angle bracket",
+        ),
+        (
+            "︿",
+            "﹀",
+            "vertical-presentation-angle-bracket",
+            "vertical presentation angle bracket",
+        ),
+        (
+            "﹁",
+            "﹂",
+            "vertical-presentation-corner-bracket",
+            "vertical presentation corner bracket",
+        ),
+        (
+            "﹃",
+            "﹄",
+            "vertical-presentation-white-corner-bracket",
+            "vertical presentation white corner bracket",
+        ),
+        (
             "﹇",
             "﹈",
             "vertical-presentation-square-bracket",
@@ -4962,6 +4986,30 @@ fn agent_observe_native_renderer_writes_vertical_presentation_curly_and_square_b
             "︼",
             "vertical-presentation-lenticular-bracket",
             "vertical presentation lenticular bracket",
+        ),
+        (
+            "︽",
+            "︾",
+            "vertical-presentation-double-angle-bracket",
+            "vertical presentation double angle bracket",
+        ),
+        (
+            "︿",
+            "﹀",
+            "vertical-presentation-angle-bracket",
+            "vertical presentation angle bracket",
+        ),
+        (
+            "﹁",
+            "﹂",
+            "vertical-presentation-corner-bracket",
+            "vertical presentation corner bracket",
+        ),
+        (
+            "﹃",
+            "﹄",
+            "vertical-presentation-white-corner-bracket",
+            "vertical presentation white corner bracket",
         ),
         (
             "﹇",

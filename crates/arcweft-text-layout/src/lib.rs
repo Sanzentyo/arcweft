@@ -3319,6 +3319,10 @@ mod tests {
                 ("︷", "︸", "vertical presentation curly bracket"),
                 ("︹", "︺", "vertical presentation tortoise shell bracket"),
                 ("︻", "︼", "vertical presentation lenticular bracket"),
+                ("︽", "︾", "vertical presentation double angle bracket"),
+                ("︿", "﹀", "vertical presentation angle bracket"),
+                ("﹁", "﹂", "vertical presentation corner bracket"),
+                ("﹃", "﹄", "vertical presentation white corner bracket"),
                 ("﹇", "﹈", "vertical presentation square bracket"),
             ] {
                 let frame = frame_with_run(
