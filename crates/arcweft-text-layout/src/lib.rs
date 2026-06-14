@@ -1130,43 +1130,47 @@ fn latin_word_sequence_requires_previous(
         .and_then(|previous_index| clusters.get(previous_index));
     let next = clusters.get(cluster_index + 1);
     if is_latin_word_joiner_cluster_text(&cluster.text) {
-        return previous.is_some_and(|previous| is_latin_alphabetic_cluster_text(&previous.text))
-            && next.is_some_and(|next| is_latin_alphabetic_cluster_text(&next.text));
+        return previous
+            .is_some_and(|previous| is_latin_or_greek_alphabetic_cluster_text(&previous.text))
+            && next.is_some_and(|next| is_latin_or_greek_alphabetic_cluster_text(&next.text));
     }
-    if !is_latin_alphabetic_cluster_text(&cluster.text) {
+    if !is_latin_or_greek_alphabetic_cluster_text(&cluster.text) {
         return false;
     }
     previous.is_some_and(|previous| {
-        (!cluster.break_allowed_before && is_latin_alphabetic_cluster_text(&previous.text))
+        (!cluster.break_allowed_before && is_latin_or_greek_alphabetic_cluster_text(&previous.text))
             || (is_latin_word_joiner_cluster_text(&previous.text)
                 && cluster_index
                     .checked_sub(2)
                     .and_then(|before_joiner_index| clusters.get(before_joiner_index))
                     .is_some_and(|before_joiner| {
-                        is_latin_alphabetic_cluster_text(&before_joiner.text)
+                        is_latin_or_greek_alphabetic_cluster_text(&before_joiner.text)
                     }))
     })
 }
 
-fn is_latin_alphabetic_cluster_text(text: &str) -> bool {
-    let mut has_latin = false;
+fn is_latin_or_greek_alphabetic_cluster_text(text: &str) -> bool {
+    let mut has_script_letter = false;
     for ch in text.chars() {
-        if is_latin_alphabetic_char(ch) {
-            has_latin = true;
+        if is_latin_or_greek_alphabetic_char(ch) {
+            has_script_letter = true;
         } else if !(is_combining_mark(ch) || is_variation_selector(ch)) {
             return false;
         }
     }
-    has_latin
+    has_script_letter
 }
 
-const fn is_latin_alphabetic_char(ch: char) -> bool {
+const fn is_latin_or_greek_alphabetic_char(ch: char) -> bool {
     matches!(
         ch,
         'A'..='Z'
             | 'a'..='z'
+            | '\u{00b5}'
             | '\u{00c0}'..='\u{00ff}'
             | '\u{0100}'..='\u{024f}'
+            | '\u{0370}'..='\u{03ff}'
+            | '\u{1f00}'..='\u{1fff}'
             | '\u{1e00}'..='\u{1eff}'
             | '\u{ff21}'..='\u{ff3a}'
             | '\u{ff41}'..='\u{ff5a}'
@@ -2857,6 +2861,46 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after an accented Latin word should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_greek_latin_unit_symbols_unbroken() {
+        // W3C JLREQ 3.9 classifies unit symbols as combinations of Latin and
+        // Greek script characters used for SI units.
+        let text = "天μm人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let greek_unit = nth_laid_out_glyph(&layout, "μ", 0);
+            let latin_unit = nth_laid_out_glyph(&layout, "m", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                greek_unit,
+                next_column_moves_right,
+                "Greek+Latin SI unit symbol should start as one unit after body text",
+            );
+            assert_vertical_layout_after(
+                greek_unit,
+                latin_unit,
+                "Latin unit suffix should stay attached to the preceding Greek unit symbol",
+            );
+            assert_next_vertical_layout_column(
+                latin_unit,
+                next_body,
+                next_column_moves_right,
+                "body text after a Greek+Latin SI unit symbol should continue in the next column",
             );
         }
     }
