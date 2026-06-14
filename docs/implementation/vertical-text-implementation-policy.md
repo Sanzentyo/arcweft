@@ -473,22 +473,24 @@ the concrete choices to follow when turning that package into production code.
   while the same paragraph-DP plan still enforces the following strict
   closing/opening punctuation pair, with native raw crops for the decimal point.
   Prefixed and postfixed abbreviations from the same JLREQ section are covered
-  as well: Sans I/O layout keeps `$1234`, `¢1234`, `50%`, `25℃`, decomposed
-  temperature units such as `25°C`, `$五`, and `五%` unbroken across
-  text-combine chunking and ideographic numeral clusters, while native Agent
-  geometry/raw mask/object-id crops verify that the `$` and `¢` prefix objects
-  plus `%`, `℃`, and both `°` and the final `C` in `25°C` are read back from
-  rendered GlyphArea pixels for Arabic and ideographic numerals. The
+  as well: Sans I/O layout keeps `$1234`, `¢1234`, `¥123`, `￥123`, `50%`,
+  `25℃`, decomposed temperature units such as `25°C`, `$五`, and `五%`
+  unbroken across text-combine chunking and ideographic numeral clusters, while
+  native Agent geometry/raw mask/object-id crops verify that the `$`, `¢`, `¥`,
+  and `￥` prefix objects plus `%`, `℃`, and both `°` and the final `C` in
+  `25°C` are read back from rendered GlyphArea pixels for Arabic and
+  ideographic numerals. The
   temperature suffix `25℃` and decomposed temperature unit `25°C` are also
   embedded in a longer strict paragraph class mix, with native raw crops for
   `℃` and the final `C`, proving the abbreviation sequence and later ordinary
   closing/opening punctuation share one paragraph-DP plan. The prefixed form
   `$123` is also embedded in that longer
   strict paragraph class mix, with native raw crops for `$`; the cent-prefixed
-  form `¢123` is covered the same way with native raw crops for `¢`. Prefix
-  abbreviations and later ordinary closing/opening punctuation are therefore
-  verified in one paragraph-DP plan instead of only through isolated short
-  fixtures. The postfixed form `50%` is covered the same way, with native raw
+  form `¢123` and yen-prefixed forms `¥123` / `￥123` are covered the same way
+  with native raw crops for their prefix marks. Prefix abbreviations and later
+  ordinary closing/opening punctuation are therefore verified in one
+  paragraph-DP plan instead of only through isolated short fixtures. The
+  postfixed form `50%` is covered the same way, with native raw
   crops for `%`, so both sides of numeric abbreviation attachment are proven in
   mixed strict paragraph planning. Ideographic numeral forms `$五` and `五%` are also
   embedded in the same longer strict paragraph mix, with native raw crops for

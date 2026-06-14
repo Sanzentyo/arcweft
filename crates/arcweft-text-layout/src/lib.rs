@@ -3798,6 +3798,67 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_yen_prefixed_abbreviation_inside_class_mix() {
+        for (text, prefix, description) in [
+            (
+                "天地春夏秋冬¥123人。「川」あっいおーえ―中・外………終",
+                "¥",
+                "yen-prefixed abbreviation",
+            ),
+            (
+                "天地春夏秋冬￥123人。「川」あっいおーえ―中・外………終",
+                "￥",
+                "fullwidth yen-prefixed abbreviation",
+            ),
+        ] {
+            for writing_mode in [
+                RichTextWritingMode::VerticalRl,
+                RichTextWritingMode::VerticalLr,
+            ] {
+                let frame = frame_with_run(text, vertical_presentation(writing_mode));
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(210.0, 210.0),
+                    jlreq_strictness: JlreqStrictness::Strict,
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
+                assert!(
+                    vertical_layout_column_count(&layout) >= 4,
+                    "{writing_mode:?} published JLREQ paragraph with a {description} should require a multi-column plan: {layout:?}"
+                );
+
+                let prefix = nth_laid_out_glyph(&layout, prefix, 0);
+                let digits = nth_laid_out_glyph(&layout, "123", 0);
+                assert_vertical_layout_after(
+                    prefix,
+                    digits,
+                    "yen-prefixed abbreviation should stay attached to following digits inside a paragraph class mix",
+                );
+
+                let person = nth_laid_out_glyph(&layout, "人", 0);
+                let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+                let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+                let river = nth_laid_out_glyph(&layout, "川", 0);
+                assert_vertical_layout_after(
+                    person,
+                    strict_full_stop,
+                    "strict paragraph class mix should still keep closing punctuation after a yen-prefixed abbreviation",
+                );
+                assert_vertical_layout_after(
+                    strict_full_stop,
+                    strict_open,
+                    "strict paragraph class mix should still keep adjacent closing/opening punctuation after a yen-prefixed abbreviation",
+                );
+                assert_vertical_layout_after(
+                    strict_open,
+                    river,
+                    "strict opening punctuation should still stay with its base after a yen-prefixed abbreviation",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_postfixed_abbreviation_inside_class_mix() {
         let text = "天地春夏秋冬50%人。「川」あっいおーえ―中・外………終";
         for writing_mode in [

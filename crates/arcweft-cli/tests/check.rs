@@ -6322,6 +6322,40 @@ fn agent_observe_native_renderer_writes_published_jlreq_cent_prefixed_abbreviati
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_yen_prefixed_abbreviation_class_mix_geometry()
+ {
+    assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crops()
+ {
+    for label in ["yen-prefix", "fullwidth-yen-prefix"] {
+        assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
+            "vertical_rl",
+            label,
+            "mask",
+        );
+        assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
+            "vertical_rl",
+            label,
+            "object-id",
+        );
+        assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
+            "vertical_lr",
+            label,
+            "mask",
+        );
+        assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
+            "vertical_lr",
+            label,
+            "object-id",
+        );
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_postfixed_abbreviation_class_mix_geometry()
 {
     assert_native_published_jlreq_postfixed_abbreviation_class_mix_geometry("vertical_rl");
@@ -7915,6 +7949,214 @@ fn assert_native_published_jlreq_cent_prefixed_abbreviation_class_mix_objects<'r
         &format!("{writing_mode} published JLREQ cent-prefixed abbreviation class-mix prefix"),
     );
     assert_eq!(prefix["rich_text_ref"]["orientation"], "sideways_cw");
+    prefix
+}
+
+fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_geometry(writing_mode: &str) {
+    for label in ["yen-prefix", "fullwidth-yen-prefix"] {
+        let json = observe_native_published_jlreq_yen_prefixed_abbreviation_class_mix_fixture(
+            writing_mode,
+            label,
+        );
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["jlreq_strictness"],
+            "strict"
+        );
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_objects(
+            &json,
+            writing_mode,
+            label,
+        );
+    }
+}
+
+fn observe_native_published_jlreq_yen_prefixed_abbreviation_class_mix_fixture(
+    writing_mode: &str,
+    label: &str,
+) -> serde_json::Value {
+    let text = native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label);
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
+    writing_mode: &str,
+    label: &str,
+    capture_kind: &str,
+) {
+    let text = native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label);
+    let object_id = native_published_jlreq_yen_prefixed_abbreviation_class_mix_object_id(label);
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect(
+            "arcw agent observe writes native published JLREQ yen-prefixed abbreviation class-mix raw crop",
+        );
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ {label} abbreviation class-mix {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ yen-prefixed abbreviation class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let prefix = assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_objects(
+        &json,
+        writing_mode,
+        label,
+    );
+    assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
+        &json,
+        prefix,
+        &raw_path,
+        writing_mode,
+        label,
+        capture_kind,
+    );
+
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix dir");
+}
+
+fn native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label: &str) -> &'static str {
+    match label {
+        "yen-prefix" => "天地春夏秋冬¥123人。「川」あっいおーえ―中・外………終",
+        "fullwidth-yen-prefix" => "天地春夏秋冬￥123人。「川」あっいおーえ―中・外………終",
+        _ => panic!("unknown native published JLREQ yen-prefixed abbreviation label {label}"),
+    }
+}
+
+fn native_published_jlreq_yen_prefixed_abbreviation_class_mix_object_id(
+    label: &str,
+) -> &'static str {
+    match label {
+        "yen-prefix" => "object.dialogue.0.0.cluster.6.18.20",
+        "fullwidth-yen-prefix" => "object.dialogue.0.0.cluster.6.18.21",
+        _ => panic!("unknown native published JLREQ yen-prefixed abbreviation label {label}"),
+    }
+}
+
+fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    label: &str,
+) -> &'report serde_json::Value {
+    let (prefix_text, prefix_end, digits_end, person_end, full_stop_end, opening_end, river_end) =
+        if label == "yen-prefix" {
+            ("¥", 20, 23, 26, 29, 32, 35)
+        } else {
+            ("￥", 21, 24, 27, 30, 33, 36)
+        };
+    let prefix = find_rich_text_cluster_object(json, prefix_text, 18, prefix_end);
+    let digits = find_rich_text_cluster_object(json, "123", prefix_end, digits_end);
+    assert_vertical_cluster_after(
+        prefix,
+        digits,
+        "published JLREQ yen-prefixed abbreviation class mix keeps digits with prefix",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", digits_end, person_end);
+    let full_stop = find_rich_text_cluster_object(json, "。", person_end, full_stop_end);
+    let opening = find_rich_text_cluster_object(json, "「", full_stop_end, opening_end);
+    let river = find_rich_text_cluster_object(json, "川", opening_end, river_end);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after a yen-prefixed abbreviation",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after a yen-prefixed abbreviation",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after a yen-prefixed abbreviation",
+    );
+    assert_rich_text_object_has_mask_capture(
+        prefix,
+        &format!("{writing_mode} published JLREQ {label} class-mix prefix"),
+    );
     prefix
 }
 
