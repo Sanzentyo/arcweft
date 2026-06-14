@@ -1072,6 +1072,9 @@ fn numeric_abbreviation_sequence_requires_previous(
             .and_then(|previous_index| clusters.get(previous_index))
             .is_some_and(|previous| is_jlreq_numeric_cluster_text(&previous.text));
     }
+    if postfixed_abbreviation_unit_tail_requires_previous(cluster_index, clusters) {
+        return true;
+    }
     is_jlreq_numeric_cluster_text(&cluster.text)
         && cluster_index
             .checked_sub(1)
@@ -1116,6 +1119,28 @@ fn is_numeric_prefix_abbreviation_cluster_text(text: &str) -> bool {
 
 fn is_numeric_suffix_abbreviation_cluster_text(text: &str) -> bool {
     matches!(text, "%" | "％" | "‰" | "°" | "′" | "″" | "℃")
+}
+
+fn postfixed_abbreviation_unit_tail_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    is_latin_or_greek_alphabetic_cluster_text(&cluster.text)
+        && cluster_index
+            .checked_sub(1)
+            .and_then(|previous_index| clusters.get(previous_index))
+            .is_some_and(|previous| is_postfixed_abbreviation_unit_leader(&previous.text))
+        && cluster_index
+            .checked_sub(2)
+            .and_then(|numeric_index| clusters.get(numeric_index))
+            .is_some_and(|numeric| is_jlreq_numeric_cluster_text(&numeric.text))
+}
+
+fn is_postfixed_abbreviation_unit_leader(text: &str) -> bool {
+    matches!(text, "°" | "′" | "″")
 }
 
 fn latin_word_sequence_requires_previous(
@@ -2612,6 +2637,40 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a temperature-suffixed European numeral should continue in the next column",
+            );
+        }
+
+        let text = "天25°C人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let digits = nth_laid_out_glyph(&layout, "25", 0);
+            let degree = nth_laid_out_glyph(&layout, "°", 0);
+            let unit = nth_laid_out_glyph(&layout, "C", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                digits,
+                degree,
+                "degree suffix abbreviation should stay with the preceding digits",
+            );
+            assert_vertical_layout_after(
+                degree,
+                unit,
+                "Latin temperature unit tail should stay with the degree suffix",
+            );
+            assert_next_vertical_layout_column(
+                unit,
+                next_body,
+                next_column_moves_right,
+                "body text after a decomposed temperature unit should continue in the next column",
             );
         }
     }

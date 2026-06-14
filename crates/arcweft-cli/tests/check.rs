@@ -6433,6 +6433,38 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviat
         "object.dialogue.0.0.cluster.2.5.8",
         "object-id",
     );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "C",
+        "temperature-suffix-decomposed",
+        "object.dialogue.0.0.cluster.3.7.8",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_rl",
+        false,
+        "C",
+        "temperature-suffix-decomposed",
+        "object.dialogue.0.0.cluster.3.7.8",
+        "object-id",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "C",
+        "temperature-suffix-decomposed",
+        "object.dialogue.0.0.cluster.3.7.8",
+        "mask",
+    );
+    assert_native_published_jlreq_numeric_abbreviation_raw_crop(
+        "vertical_lr",
+        true,
+        "C",
+        "temperature-suffix-decomposed",
+        "object.dialogue.0.0.cluster.3.7.8",
+        "object-id",
+    );
 }
 
 #[test]
@@ -7481,6 +7513,20 @@ fn assert_native_published_jlreq_numeric_abbreviation_geometry(
         writing_mode,
         next_column_moves_right,
     );
+    let decomposed_temperature_suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(
+        writing_mode,
+        "temperature-suffix-decomposed",
+    );
+    assert_native_rich_text_layer_image_has_content(&decomposed_temperature_suffix);
+    assert_eq!(
+        first_text_run_presentation_layout(&decomposed_temperature_suffix)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects(
+        &decomposed_temperature_suffix,
+        writing_mode,
+        next_column_moves_right,
+    );
     let ideographic_suffix = observe_native_published_jlreq_numeric_abbreviation_fixture(
         writing_mode,
         "suffix-ideographic",
@@ -7643,6 +7689,12 @@ fn assert_native_published_jlreq_numeric_abbreviation_target<'report>(
             writing_mode,
             next_column_moves_right,
         )
+    } else if label == "temperature-suffix-decomposed" {
+        assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects(
+            json,
+            writing_mode,
+            next_column_moves_right,
+        )
     } else if label == "suffix-ideographic" {
         assert_native_published_jlreq_numeric_ideographic_suffix_objects(
             json,
@@ -7699,6 +7751,7 @@ fn native_published_jlreq_numeric_abbreviation_text(label: &str) -> &'static str
         "cent-prefix" => "天¢123人",
         "%" | "suffix" => "天50%人",
         "temperature-suffix" => "天25℃人",
+        "temperature-suffix-decomposed" => "天25°C人",
         "prefix-ideographic" => "天$五人",
         "suffix-ideographic" => "天五%人",
         _ => panic!("unknown native published JLREQ numeric abbreviation label {label}"),
@@ -7883,6 +7936,48 @@ fn assert_native_published_jlreq_numeric_temperature_suffix_objects<'report>(
         &format!("{writing_mode} published JLREQ temperature suffix abbreviation"),
     );
     suffix
+}
+
+fn assert_native_published_jlreq_numeric_decomposed_temperature_suffix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "天", 0, 3);
+    let digits = find_rich_text_cluster_object(json, "25", 3, 5);
+    let degree = find_rich_text_cluster_object(json, "°", 5, 7);
+    let unit = find_rich_text_cluster_object(json, "C", 7, 8);
+    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
+    assert_vertical_cluster_after(
+        body,
+        digits,
+        "published JLREQ decomposed temperature unit should start after body text",
+    );
+    assert_vertical_cluster_after(
+        digits,
+        degree,
+        "published JLREQ degree suffix should stay with the preceding digits",
+    );
+    assert_vertical_cluster_after(
+        degree,
+        unit,
+        "published JLREQ Latin temperature unit should stay with the degree suffix",
+    );
+    assert_next_paragraph_column(
+        unit,
+        next_body,
+        next_column_moves_right,
+        "body text after the decomposed temperature unit should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        unit,
+        &format!("{writing_mode} published JLREQ decomposed temperature unit tail"),
+    );
+    unit
 }
 
 fn assert_native_published_jlreq_numeric_ideographic_suffix_objects<'report>(
