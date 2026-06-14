@@ -999,12 +999,15 @@ fn vertical_cluster_requires_previous_by_linebreak_only(
         numeric_abbreviation_sequence_requires_previous(cluster_index, clusters);
     let requires_latin_word_sequence =
         latin_word_sequence_requires_previous(cluster_index, clusters);
+    let requires_sub_superscript_object_sequence =
+        sub_superscript_object_sequence_requires_previous(cluster_index, clusters);
     !jlreq_punctuation::is_line_end_prohibited_cluster(&cluster.text)
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && (requires_ascii_digit_sequence
             || requires_ascii_number_separator_sequence
             || requires_numeric_abbreviation_sequence
-            || requires_latin_word_sequence)
+            || requires_latin_word_sequence
+            || requires_sub_superscript_object_sequence)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
             clusters,
@@ -1125,6 +1128,40 @@ fn is_ascii_alphabetic_cluster_text(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphabetic())
 }
 
+fn sub_superscript_object_sequence_requires_previous(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    let Some(cluster) = clusters.get(cluster_index) else {
+        return false;
+    };
+    let Some(previous) = cluster_index
+        .checked_sub(1)
+        .and_then(|previous_index| clusters.get(previous_index))
+    else {
+        return false;
+    };
+    (is_sub_superscript_cluster_text(&cluster.text)
+        && (is_sub_superscript_base_cluster_text(&previous.text)
+            || is_sub_superscript_cluster_text(&previous.text)))
+        || (is_sub_superscript_base_cluster_text(&cluster.text)
+            && is_sub_superscript_cluster_text(&previous.text))
+}
+
+fn is_sub_superscript_base_cluster_text(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+fn is_sub_superscript_cluster_text(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(ch) = chars.next() else {
+        return false;
+    };
+    chars.next().is_none()
+        && (matches!(ch, '\u{00b2}' | '\u{00b3}' | '\u{00b9}')
+            || matches!(ch, '\u{2070}'..='\u{209f}'))
+}
+
 fn reference_mark_sequence_requires_previous(
     cluster_index: usize,
     clusters: &[VerticalCluster],
@@ -1171,6 +1208,7 @@ fn vertical_cluster_can_start_column(
         && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
         && !numeric_abbreviation_sequence_requires_previous(cluster_index, clusters)
         && !latin_word_sequence_requires_previous(cluster_index, clusters)
+        && !sub_superscript_object_sequence_requires_previous(cluster_index, clusters)
         && !reference_mark_sequence_requires_previous(cluster_index, clusters)
         && !vertical_cluster_has_jlreq_separation_prohibited_before(
             cluster_index,
@@ -2573,6 +2611,52 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a Western word should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_subscript_object_unbroken() {
+        // W3C JLREQ 3.1.10 treats subscripts and superscripts with adjacent
+        // base characters as one object, distinct from reference marks.
+        let text = "天H₂O人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let base = nth_laid_out_glyph(&layout, "H", 0);
+            let subscript = nth_laid_out_glyph(&layout, "₂", 0);
+            let following_base = nth_laid_out_glyph(&layout, "O", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                base,
+                next_column_moves_right,
+                "published JLREQ subscript object should start after body text",
+            );
+            assert_vertical_layout_after(
+                base,
+                subscript,
+                "subscript should stay attached to the preceding base character",
+            );
+            assert_vertical_layout_after(
+                subscript,
+                following_base,
+                "following base character should stay attached to the subscript object",
+            );
+            assert_next_vertical_layout_column(
+                following_base,
+                next_body,
+                next_column_moves_right,
+                "body text after the subscript object should continue in the next column",
             );
         }
     }

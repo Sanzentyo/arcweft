@@ -473,6 +473,11 @@ the concrete choices to follow when turning that package into production code.
   `kg` and `Web` letter sequences unbroken, and native Agent raw mask/object-id
   crops verify that the final `g` object in `天kg人` is read back from rendered
   GlyphArea pixels.
+  Subscript/superscript object sequences from the same section are represented
+  separately from reference marks: Sans I/O layout keeps `H₂O` attached as one
+  formula-like object in vertical text, and native Agent raw mask/object-id
+  crops verify that the following base `O` in `天H₂O人` reads back from rendered
+  GlyphArea pixels in both vertical writing directions.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
