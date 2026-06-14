@@ -3362,6 +3362,22 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_object_id_
     assert_native_jlreq_leader_mark_raw_crop("vertical_lr", "object-id");
 }
 
+#[test]
+fn agent_observe_native_renderer_writes_jlreq_dash_mark_raw_crops() {
+    assert_native_jlreq_dash_mark_raw_crop("vertical_rl", "mask");
+    assert_native_jlreq_dash_mark_raw_crop("vertical_rl", "object-id");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_dash_mark_mask_raw_crop() {
+    assert_native_jlreq_dash_mark_raw_crop("vertical_lr", "mask");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_lr_jlreq_dash_mark_object_id_raw_crop() {
+    assert_native_jlreq_dash_mark_raw_crop("vertical_lr", "object-id");
+}
+
 fn assert_native_jlreq_leader_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-leader-mark-{capture_kind}"),
@@ -3473,6 +3489,132 @@ fn assert_native_jlreq_leader_mark_geometry(json: &serde_json::Value) -> &serde_
         "text after leader mark should continue in the same column",
     );
     leader
+}
+
+fn assert_native_jlreq_dash_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-jlreq-dash-mark-{capture_kind}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬月火――人[/][p]
+}}
+",
+        ),
+    );
+    let dir = temp_dir(&format!(
+        "agent-observe-native-{writing_mode}-jlreq-dash-mark-{capture_kind}"
+    ));
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-jlreq-dash-mark-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.9.27.30")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native JLREQ dash-mark raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} JLREQ dash-mark {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native JLREQ dash-mark report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let second_dash = assert_native_jlreq_dash_mark_geometry(&json);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        second_dash["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        second_dash["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], second_dash["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], second_dash["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(second_dash),
+            content_pixels,
+            &format!("{writing_mode} JLREQ dash-mark object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native JLREQ dash-mark mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp JLREQ dash-mark source");
+    fs::remove_dir_all(&dir).expect("remove temp JLREQ dash-mark dir");
+}
+
+fn assert_native_jlreq_dash_mark_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let fire = find_rich_text_cluster_object(json, "火", 21, 24);
+    let first_dash = find_rich_text_cluster_object(json, "―", 24, 27);
+    let second_dash = find_rich_text_cluster_object(json, "―", 27, 30);
+    let person = find_rich_text_cluster_object(json, "人", 30, 33);
+    assert_eq!(second_dash["rich_text_ref"]["orientation"], "sideways_cw");
+    assert_eq!(second_dash["rich_text_ref"]["vertical_form"], "none");
+    assert_vertical_cluster_after(
+        fire,
+        first_dash,
+        "dash mark should stay with the previous cluster",
+    );
+    assert_vertical_cluster_after(
+        first_dash,
+        second_dash,
+        "repeated dash marks should stay together",
+    );
+    assert_next_paragraph_column(
+        second_dash,
+        person,
+        first_text_run_presentation_layout(json)["writing_mode"] == "vertical_lr",
+        "text after repeated dash marks should continue in the next column",
+    );
+    second_dash
 }
 
 #[test]

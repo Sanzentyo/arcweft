@@ -297,16 +297,20 @@ the concrete choices to follow when turning that package into production code.
   Tier2 `imq` job is run.
   The expanded JLREQ pair profile is also exercised through native Agent
   fixtures that observe `dialogue.rich_text` cluster geometry for leader marks,
-  compact bracket pairs, small kana, prolonged-sound marks, iteration marks,
-  and strict middle-dot pairs in vertical text, matching the published JLREQ
-  line-composition treatment of punctuation classes and unbreakable character
-  sequences (`https://www.w3.org/TR/2008/WD-jlreq-20081015/`, section 3.1).
+  compact bracket pairs, small kana, prolonged-sound marks, dash marks,
+  iteration marks, and strict middle-dot pairs in vertical text, matching the
+  published JLREQ line-composition treatment of punctuation classes and
+  unbreakable character sequences
+  (`https://www.w3.org/TR/2008/WD-jlreq-20081015/`, section 3.1).
   The strict middle-dot pair is also captured as raw native mask and object-id
   crops, tying the observed no-break pair geometry and stable object color back
   to rendered GlyphArea pixels. The normal-preset prolonged-sound mark path is
   likewise captured as raw native mask and object-id crops, tying rotated
   alternate GlyphArea pixels to the no-break mark-with-previous-cluster
-  geometry. Small-kana no-break placement is also captured as raw native mask
+  geometry. Repeated dash-mark placement is also captured as raw native mask
+  and object-id crops, tying the no-break repeated-dash suffix and its stable
+  object color to rendered sideways GlyphArea pixels in both vertical writing
+  directions. Small-kana no-break placement is also captured as raw native mask
   and object-id crops, tying upright-alternate glyph pixels to the observed
   same-column geometry. Iteration-mark placement is also captured as raw native
   mask and object-id crops, tying the mark-with-previous-cluster geometry to
@@ -352,11 +356,12 @@ the concrete choices to follow when turning that package into production code.
   allowed overhang before ordinary text can continue in the next column.
   Mirrored `vertical_lr` coverage checks the same overhanging leader-chain rule
   with rightward column progression. Sans I/O layout coverage also mirrors
-  small-kana, prolonged-sound mark, middle-dot, and iteration-mark column-head
-  prohibitions in `vertical_lr`, keeping the JLREQ suffix behavior symmetric
-  across both vertical writing modes before native Agent geometry consumes it.
-  Native Agent raw-crop coverage also mirrors the small-kana, prolonged-sound,
-  iteration-mark, leader-mark, compact-bracket, and strict middle-dot
+  small-kana, prolonged-sound mark, dash-mark, middle-dot, and iteration-mark
+  column-head prohibitions in `vertical_lr`, keeping the JLREQ suffix behavior
+  symmetric across both vertical writing modes before native Agent geometry
+  consumes it. Native Agent raw-crop coverage also mirrors the small-kana,
+  prolonged-sound, dash-mark, iteration-mark, leader-mark, compact-bracket, and
+  strict middle-dot
   `vertical_lr` paths through mask and object-id attachments, tying the
   mirrored observed bboxes and stable object colors back to rendered GlyphArea
   pixels.

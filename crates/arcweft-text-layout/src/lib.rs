@@ -2333,6 +2333,31 @@ mod tests {
     }
 
     #[test]
+    fn vertical_lr_column_keeps_jlreq_dashes_together() {
+        let frame = frame_with_run(
+            "天――人",
+            vertical_presentation(RichTextWritingMode::VerticalLr),
+        );
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(160.0, 84.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[1].text, "―");
+        assert_eq!(layout.glyphs[2].text, "―");
+        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+        assert!(
+            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+            "the second vertical_lr dash should stay with the first instead of starting a new column"
+        );
+        assert_eq!(layout.glyphs[3].text, "人");
+        assert!(layout.glyphs[3].origin.x > layout.glyphs[2].origin.x);
+        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
+    }
+
+    #[test]
     fn vertical_column_keeps_prolonged_sound_mark_out_of_column_heads() {
         let frame = frame_with_run(
             "天地ー人",
