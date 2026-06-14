@@ -102,7 +102,10 @@ the concrete choices to follow when turning that package into production code.
   Native Agent coverage also observes decomposed-kana and emoji ZWJ graphemes as
   single `rich_text_cluster` objects with their full source byte ranges and
   reads those objects back through raw mask/object-id crops in both vertical
-  writing directions.
+  writing directions. The emoji ZWJ path is also embedded in a longer strict
+  paragraph class mix, with native raw crops for the full ZWJ grapheme object,
+  proving UAX #29 emoji clusters and later strict punctuation share one
+  paragraph-DP and rendered GlyphArea path.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
