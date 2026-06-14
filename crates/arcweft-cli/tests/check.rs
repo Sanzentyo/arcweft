@@ -4684,6 +4684,40 @@ fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry()
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_strict_jlreq_closing_opening_column_plan() {
+    let loose = observe_native_jlreq_closing_opening_fixture("loose");
+    let strict = observe_native_jlreq_closing_opening_fixture("strict");
+    assert_native_rich_text_layer_image_has_content(&loose);
+    assert_native_rich_text_layer_image_has_content(&strict);
+
+    assert_eq!(
+        first_text_run_presentation_layout(&loose)["jlreq_strictness"],
+        "loose"
+    );
+    assert_eq!(
+        first_text_run_presentation_layout(&strict)["jlreq_strictness"],
+        "strict"
+    );
+
+    let loose_full_stop = find_rich_text_cluster_object(&loose, "。", 6, 9);
+    let loose_open = find_rich_text_cluster_object(&loose, "「", 9, 12);
+    assert_next_paragraph_column(
+        loose_full_stop,
+        loose_open,
+        false,
+        "loose native paragraph plan may break between adjacent closing/opening punctuation",
+    );
+
+    let strict_full_stop = find_rich_text_cluster_object(&strict, "。", 6, 9);
+    let strict_open = find_rich_text_cluster_object(&strict, "「", 9, 12);
+    assert_vertical_cluster_after(
+        strict_full_stop,
+        strict_open,
+        "strict native paragraph plan should keep adjacent closing/opening punctuation together",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
     let path = temp_arcw(
         "agent-observe-native-jlreq-paragraph-column-geometry",
@@ -4888,6 +4922,24 @@ flow @flow.main main {{
     );
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp preset JLREQ source");
+    json
+}
+
+fn observe_native_jlreq_closing_opening_fixture(strictness: &str) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-jlreq-closing-opening-{strictness}"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.vertical_rl jlreq={strictness}]天地。「人山川海[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp closing/opening JLREQ source");
     json
 }
 

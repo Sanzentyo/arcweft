@@ -376,12 +376,12 @@ the concrete choices to follow when turning that package into production code.
   small-kana, prolonged-sound mark, dash-mark, middle-dot, and iteration-mark
   column-head prohibitions in `vertical_lr`, keeping the JLREQ suffix behavior
   symmetric across both vertical writing modes before native Agent geometry
-  consumes it. The paragraph DP also has Sans I/O coverage proving that
-  strictness-aware weak-break penalties affect actual column choices, not only
-  table lookup: `jlreq=loose` may break between adjacent closing and opening
-  punctuation, while `jlreq=strict` chooses a different paragraph plan that
-  keeps the punctuation pair in one rendered column. Native Agent raw-crop
-  coverage also mirrors the small-kana,
+  consumes it. The paragraph DP also has Sans I/O and native Agent coverage
+  proving that strictness-aware weak-break penalties affect actual column
+  choices, not only table lookup: `jlreq=loose` may break between adjacent
+  closing and opening punctuation, while `jlreq=strict` chooses a different
+  paragraph plan that keeps the punctuation pair in one rendered column.
+  Native Agent raw-crop coverage also mirrors the small-kana,
   prolonged-sound, dash-mark, iteration-mark, leader-mark, compact-bracket, and
   strict middle-dot
   `vertical_lr` paths through mask and object-id attachments, tying the
