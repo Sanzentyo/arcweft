@@ -452,11 +452,12 @@ the concrete choices to follow when turning that package into production code.
   compares `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset.
-  Vertical presentation-form leader coverage also exercises `︙` as a generated
-  leader class in Sans I/O layout and native Agent fixtures for both
-  `vertical_rl` and `vertical_lr`, with raw mask/object-id crops tying the
-  observed suffix geometry and rendered upright GlyphArea pixels back to the
-  same Agent object. Vertical presentation-form compact bracket coverage also
+  Vertical presentation-form leader coverage also exercises `︙` and the FE30
+  vertical two-dot leader `︰` as generated leader classes in Sans I/O layout
+  and native Agent fixtures for both `vertical_rl` and `vertical_lr`, with raw
+  mask/object-id crops tying the observed suffix geometry and rendered upright
+  GlyphArea pixels back to the same Agent object. Vertical presentation-form
+  compact bracket coverage also
   exercises `︵︶` as upright `vertical_form=none` clusters: Sans I/O layout
   fixes the small-column overhang/no-break behavior, while native Agent fixtures
   in both vertical writing modes capture the rendered `︶` object as raw mask

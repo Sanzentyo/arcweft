@@ -5691,28 +5691,33 @@ mod tests {
             (RichTextWritingMode::VerticalRl, false),
             (RichTextWritingMode::VerticalLr, true),
         ] {
-            let frame = frame_with_run("天︙︙人", vertical_presentation(writing_mode));
-            let config = TextLayoutConfig {
-                size: LayoutSize::new(160.0, 84.0),
-                ..TextLayoutConfig::default()
-            };
-            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            for leader in ["︙", "︰"] {
+                let frame = frame_with_run(
+                    &format!("天{leader}{leader}人"),
+                    vertical_presentation(writing_mode),
+                );
+                let config = TextLayoutConfig {
+                    size: LayoutSize::new(160.0, 84.0),
+                    ..TextLayoutConfig::default()
+                };
+                let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-            assert_eq!(layout.glyphs.len(), 4);
-            assert_eq!(layout.glyphs[1].text, "︙");
-            assert_eq!(layout.glyphs[2].text, "︙");
-            assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
-            assert!(
-                layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-                "second vertical presentation leader should stay with the first"
-            );
-            assert_eq!(layout.glyphs[3].text, "人");
-            assert_next_vertical_layout_column(
-                &layout.glyphs[2],
-                &layout.glyphs[3],
-                next_column_moves_right,
-                "ordinary text after vertical presentation leaders should start the next column",
-            );
+                assert_eq!(layout.glyphs.len(), 4);
+                assert_eq!(layout.glyphs[1].text, leader);
+                assert_eq!(layout.glyphs[2].text, leader);
+                assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
+                assert!(
+                    layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
+                    "second vertical presentation leader should stay with the first"
+                );
+                assert_eq!(layout.glyphs[3].text, "人");
+                assert_next_vertical_layout_column(
+                    &layout.glyphs[2],
+                    &layout.glyphs[3],
+                    next_column_moves_right,
+                    "ordinary text after vertical presentation leaders should start the next column",
+                );
+            }
         }
     }
 

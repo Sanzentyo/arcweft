@@ -4121,16 +4121,110 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_object_id_
 
 #[test]
 fn agent_observe_native_renderer_reports_vertical_presentation_leader_chain_geometry() {
-    assert_native_vertical_presentation_leader_chain_geometry("vertical_rl", false);
-    assert_native_vertical_presentation_leader_chain_geometry("vertical_lr", true);
+    assert_native_vertical_presentation_leader_chain_geometry(
+        "vertical_rl",
+        false,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+    );
+    assert_native_vertical_presentation_leader_chain_geometry(
+        "vertical_lr",
+        true,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+    );
 }
 
 #[test]
 fn agent_observe_native_renderer_writes_vertical_presentation_leader_raw_crops() {
-    assert_native_vertical_presentation_leader_raw_crop("vertical_rl", false, "mask");
-    assert_native_vertical_presentation_leader_raw_crop("vertical_rl", false, "object-id");
-    assert_native_vertical_presentation_leader_raw_crop("vertical_lr", true, "mask");
-    assert_native_vertical_presentation_leader_raw_crop("vertical_lr", true, "object-id");
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_rl",
+        false,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+        "mask",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_rl",
+        false,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+        "object-id",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_lr",
+        true,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+        "mask",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_lr",
+        true,
+        "︙",
+        "vertical-presentation-leader",
+        "vertical presentation leader",
+        "object-id",
+    );
+}
+
+#[test]
+fn agent_observe_native_renderer_reports_vertical_two_dot_leader_chain_geometry() {
+    assert_native_vertical_presentation_leader_chain_geometry(
+        "vertical_rl",
+        false,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+    );
+    assert_native_vertical_presentation_leader_chain_geometry(
+        "vertical_lr",
+        true,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+    );
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_vertical_two_dot_leader_raw_crops() {
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_rl",
+        false,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+        "mask",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_rl",
+        false,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+        "object-id",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_lr",
+        true,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+        "mask",
+    );
+    assert_native_vertical_presentation_leader_raw_crop(
+        "vertical_lr",
+        true,
+        "︰",
+        "vertical-two-dot-leader",
+        "vertical two-dot leader",
+        "object-id",
+    );
 }
 
 #[test]
@@ -4265,15 +4359,18 @@ fn assert_native_jlreq_leader_mark_geometry(json: &serde_json::Value) -> &serde_
 fn assert_native_vertical_presentation_leader_chain_geometry(
     writing_mode: &str,
     next_column_moves_right: bool,
+    leader: &str,
+    label: &str,
+    description: &str,
 ) {
     let path = temp_arcw(
-        &format!("agent-observe-native-{writing_mode}-vertical-presentation-leader-chain"),
+        &format!("agent-observe-native-{writing_mode}-{label}-chain"),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天︙︙人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天{leader}{leader}人[/][p]
 }}
 ",
         ),
@@ -4285,16 +4382,20 @@ flow @flow.main main {{
         &json,
         writing_mode,
         next_column_moves_right,
+        leader,
+        description,
     );
 }
 
 fn assert_native_vertical_presentation_leader_raw_crop(
     writing_mode: &str,
     next_column_moves_right: bool,
+    leader: &str,
+    label: &str,
+    description: &str,
     capture_kind: &str,
 ) {
-    let fixture_name =
-        format!("agent-observe-native-{writing_mode}-vertical-presentation-leader-{capture_kind}");
+    let fixture_name = format!("agent-observe-native-{writing_mode}-{label}-{capture_kind}");
     let path = temp_arcw(
         &fixture_name,
         &format!(
@@ -4302,15 +4403,13 @@ fn assert_native_vertical_presentation_leader_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天︙︙人[/][p]
+    alice: [.{writing_mode} jlreq=normal]天{leader}{leader}人[/][p]
 }}
 ",
         ),
     );
     let dir = temp_dir(&fixture_name);
-    let raw_path = dir.join(format!(
-        "native-{writing_mode}-vertical-presentation-leader-{capture_kind}.rgba"
-    ));
+    let raw_path = dir.join(format!("native-{writing_mode}-{label}-{capture_kind}.rgba"));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -4336,7 +4435,7 @@ flow @flow.main main {{
 
     assert!(
         output.status.success(),
-        "native {writing_mode} vertical presentation leader {capture_kind} crop should succeed, stderr: {}",
+        "native {writing_mode} {description} {capture_kind} crop should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -4356,6 +4455,8 @@ flow @flow.main main {{
         &json,
         writing_mode,
         next_column_moves_right,
+        leader,
+        description,
     );
     assert_eq!(json["images"][0]["crop_origin"]["x"], leader["bbox"]["x"]);
     assert_eq!(json["images"][0]["crop_origin"]["y"], leader["bbox"]["y"]);
@@ -4372,7 +4473,7 @@ flow @flow.main main {{
             &raw_path,
             agent_object_id_color_from_json(leader),
             content_pixels,
-            &format!("{writing_mode} vertical presentation leader object-id crop"),
+            &format!("{writing_mode} {description} object-id crop"),
         );
     } else {
         let bytes =
@@ -4391,6 +4492,8 @@ fn assert_native_vertical_presentation_leader_geometry<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
     next_column_moves_right: bool,
+    leader: &str,
+    description: &str,
 ) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["writing_mode"],
@@ -4400,15 +4503,15 @@ fn assert_native_vertical_presentation_leader_geometry<'report>(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
     );
-    let first_leader = find_rich_text_cluster_object(json, "︙", 3, 6);
-    let second_leader = find_rich_text_cluster_object(json, "︙", 6, 9);
+    let first_leader = find_rich_text_cluster_object(json, leader, 3, 6);
+    let second_leader = find_rich_text_cluster_object(json, leader, 6, 9);
     let person = find_rich_text_cluster_object(json, "人", 9, 12);
     assert_eq!(second_leader["rich_text_ref"]["orientation"], "upright");
     assert_eq!(second_leader["rich_text_ref"]["vertical_form"], "none");
     assert_vertical_cluster_after(
         first_leader,
         second_leader,
-        "vertical presentation leaders should stay together",
+        &format!("{description}s should stay together"),
     );
     assert_next_paragraph_column(
         second_leader,
