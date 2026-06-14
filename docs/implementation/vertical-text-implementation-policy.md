@@ -118,7 +118,11 @@ the concrete choices to follow when turning that package into production code.
   Regional-indicator flag pairs such as `🇯🇵` are also covered as one UAX #29
   grapheme in strict paragraph mix, with native raw mask/object-id crops tying
   the paired source range, upright orientation metadata, and rendered
-  GlyphArea object to the same later strict punctuation plan.
+  GlyphArea object to the same later strict punctuation plan. Keycap emoji
+  sequences such as `1️⃣` are treated as emoji graphemes instead of sideways
+  ASCII digits, with strict paragraph-mix layout and native raw crops proving
+  the paired variation-selector/enclosing-keycap source range stays upright in
+  the same rendered GlyphArea path.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,

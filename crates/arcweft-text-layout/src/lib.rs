@@ -2080,6 +2080,9 @@ fn vertical_form(grapheme: &str, vertical_latin: RichTextVerticalLatinMode) -> G
 }
 
 fn unicode_vertical_orientation_for_grapheme(grapheme: &str) -> UnicodeVerticalOrientation {
+    if is_keycap_grapheme(grapheme) {
+        return UnicodeVerticalOrientation::Upright;
+    }
     grapheme
         .chars()
         .find(|ch| !is_grapheme_modifier_or_join_control(*ch))
@@ -2088,6 +2091,13 @@ fn unicode_vertical_orientation_for_grapheme(grapheme: &str) -> UnicodeVerticalO
             UnicodeVerticalOrientation::Rotated,
             unicode_vertical_orientation,
         )
+}
+
+fn is_keycap_grapheme(grapheme: &str) -> bool {
+    let Some(head) = grapheme.chars().next() else {
+        return false;
+    };
+    matches!(head, '#' | '*' | '0'..='9') && grapheme.chars().any(|ch| ch == '\u{20e3}')
 }
 
 const fn is_grapheme_modifier_or_join_control(ch: char) -> bool {
@@ -4101,6 +4111,52 @@ mod tests {
                 strict_open,
                 river,
                 "strict opening punctuation should still stay with its base after a regional-indicator grapheme",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_keycap_grapheme_inside_strict_class_mix() {
+        let text = "天地春夏秋冬1️⃣人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} strict paragraph with a keycap grapheme should require a multi-column plan: {layout:?}"
+            );
+
+            let keycap = nth_laid_out_glyph(&layout, "1️⃣", 0);
+            assert_eq!(keycap.range, RichTextRange::new(18, 25));
+            assert_eq!(keycap.orientation, GlyphOrientation::Upright);
+            assert_eq!(keycap.vertical_form, GlyphVerticalForm::None);
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a keycap grapheme",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a keycap grapheme",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a keycap grapheme",
             );
         }
     }
