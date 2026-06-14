@@ -488,7 +488,10 @@ the concrete choices to follow when turning that package into production code.
   one paragraph-DP plan instead of only through isolated short fixtures. The
   postfixed form `50%` is covered the same way, with native raw crops for `%`,
   so both sides of numeric abbreviation attachment are proven in mixed strict
-  paragraph planning.
+  paragraph planning. Ideographic numeral forms `$五` and `五%` are also
+  embedded in the same longer strict paragraph mix, with native raw crops for
+  their abbreviation marks, so Arabic digit text-combine and ideographic
+  numeral attachment both travel through the rendered GlyphArea path.
   Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
   JLREQ punctuation data classifies superscript reference digits as
   `ReferenceMark`, the pair table keeps a reference mark with preceding main

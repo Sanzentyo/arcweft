@@ -6316,6 +6316,40 @@ fn agent_observe_native_renderer_writes_published_jlreq_postfixed_abbreviation_c
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_ideographic_abbreviation_class_mix_geometry()
+ {
+    assert_native_published_jlreq_ideographic_abbreviation_class_mix_geometry("vertical_rl");
+    assert_native_published_jlreq_ideographic_abbreviation_class_mix_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_ideographic_abbreviation_class_mix_raw_crops()
+ {
+    for label in ["prefix-ideographic", "suffix-ideographic"] {
+        assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
+            "vertical_rl",
+            label,
+            "mask",
+        );
+        assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
+            "vertical_rl",
+            label,
+            "object-id",
+        );
+        assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
+            "vertical_lr",
+            label,
+            "mask",
+        );
+        assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
+            "vertical_lr",
+            label,
+            "object-id",
+        );
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_published_jlreq_reference_mark_class_mix_geometry() {
     assert_native_published_jlreq_reference_mark_class_mix_geometry("vertical_rl");
     assert_native_published_jlreq_reference_mark_class_mix_geometry("vertical_lr");
@@ -7838,6 +7872,215 @@ fn assert_native_published_jlreq_postfixed_abbreviation_class_mix_objects<'repor
     );
     assert_eq!(suffix["rich_text_ref"]["orientation"], "sideways_cw");
     suffix
+}
+
+fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_geometry(writing_mode: &str) {
+    for label in ["prefix-ideographic", "suffix-ideographic"] {
+        let json = observe_native_published_jlreq_ideographic_abbreviation_class_mix_fixture(
+            writing_mode,
+            label,
+        );
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["jlreq_strictness"],
+            "strict"
+        );
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_ideographic_abbreviation_class_mix_objects(
+            &json,
+            writing_mode,
+            label,
+        );
+    }
+}
+
+fn observe_native_published_jlreq_ideographic_abbreviation_class_mix_fixture(
+    writing_mode: &str,
+    label: &str,
+) -> serde_json::Value {
+    let text = native_published_jlreq_ideographic_abbreviation_class_mix_text(label);
+    let path = temp_arcw(
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
+        ),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+        &path, 1280, 900, 320,
+    );
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ ideographic abbreviation class-mix source");
+    json
+}
+
+fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
+    writing_mode: &str,
+    label: &str,
+    capture_kind: &str,
+) {
+    let text = native_published_jlreq_ideographic_abbreviation_class_mix_text(label);
+    let object_id = native_published_jlreq_ideographic_abbreviation_class_mix_object_id(label);
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--viewport-width")
+        .arg("1280")
+        .arg("--viewport-height")
+        .arg("900")
+        .arg("--textbox-height")
+        .arg("320")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect(
+            "arcw agent observe writes native published JLREQ ideographic abbreviation class-mix raw crop",
+        );
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ {label} abbreviation class-mix {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ ideographic abbreviation class-mix report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let target = assert_native_published_jlreq_ideographic_abbreviation_class_mix_objects(
+        &json,
+        writing_mode,
+        label,
+    );
+    assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
+        &json,
+        target,
+        &raw_path,
+        writing_mode,
+        label,
+        capture_kind,
+    );
+
+    fs::remove_file(&path)
+        .expect("remove temp published JLREQ ideographic abbreviation class-mix source");
+    fs::remove_dir_all(&dir)
+        .expect("remove temp published JLREQ ideographic abbreviation class-mix dir");
+}
+
+fn native_published_jlreq_ideographic_abbreviation_class_mix_text(label: &str) -> &'static str {
+    match label {
+        "prefix-ideographic" => "天地春夏秋冬$五人。「川」あっいおーえ―中・外………終",
+        "suffix-ideographic" => "天地春夏秋冬五%人。「川」あっいおーえ―中・外………終",
+        _ => panic!("unknown native published JLREQ ideographic abbreviation label {label}"),
+    }
+}
+
+fn native_published_jlreq_ideographic_abbreviation_class_mix_object_id(
+    label: &str,
+) -> &'static str {
+    match label {
+        "prefix-ideographic" => "object.dialogue.0.0.cluster.6.18.19",
+        "suffix-ideographic" => "object.dialogue.0.0.cluster.7.21.22",
+        _ => panic!("unknown native published JLREQ ideographic abbreviation label {label}"),
+    }
+}
+
+fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    label: &str,
+) -> &'report serde_json::Value {
+    let (leading, trailing, target) = if label == "prefix-ideographic" {
+        let prefix = find_rich_text_cluster_object(json, "$", 18, 19);
+        let ideographic_numeral = find_rich_text_cluster_object(json, "五", 19, 22);
+        (prefix, ideographic_numeral, prefix)
+    } else {
+        let ideographic_numeral = find_rich_text_cluster_object(json, "五", 18, 21);
+        let suffix = find_rich_text_cluster_object(json, "%", 21, 22);
+        (ideographic_numeral, suffix, suffix)
+    };
+    assert_vertical_cluster_after(
+        leading,
+        trailing,
+        "published JLREQ ideographic abbreviation class mix keeps mark and ideographic numeral attached",
+    );
+
+    let person = find_rich_text_cluster_object(json, "人", 22, 25);
+    let full_stop = find_rich_text_cluster_object(json, "。", 25, 28);
+    let opening = find_rich_text_cluster_object(json, "「", 28, 31);
+    let river = find_rich_text_cluster_object(json, "川", 31, 34);
+    assert_vertical_cluster_after(
+        person,
+        full_stop,
+        "strict paragraph class mix still keeps closing punctuation after an ideographic abbreviation",
+    );
+    assert_vertical_cluster_after(
+        full_stop,
+        opening,
+        "strict paragraph class mix still keeps adjacent closing/opening punctuation after an ideographic abbreviation",
+    );
+    assert_vertical_cluster_after(
+        opening,
+        river,
+        "strict paragraph class mix still keeps opening punctuation with its base after an ideographic abbreviation",
+    );
+    assert_rich_text_object_has_mask_capture(
+        target,
+        &format!("{writing_mode} published JLREQ {label} class-mix target"),
+    );
+    target
 }
 
 fn assert_native_published_jlreq_reference_mark_class_mix_geometry(writing_mode: &str) {
