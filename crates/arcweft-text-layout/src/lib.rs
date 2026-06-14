@@ -406,6 +406,12 @@ fn vertical_ruby_track_reservation(
     frame.display_map.ruby_annotations.iter().fold(
         VerticalRubyTrackReservation::default(),
         |mut reservation, annotation| {
+            if matches!(
+                ruby_position(annotation),
+                RichTextRubyPosition::InterCharacter
+            ) {
+                return reservation;
+            }
             let track_width = vertical_ruby_track_reservation_width(annotation, config);
             match ruby_annotation_writing_mode(frame, annotation, config) {
                 RichTextWritingMode::VerticalRl => {
@@ -562,6 +568,7 @@ fn layout_vertical_run(
             presentation: context.presentation.clone(),
         });
         cursor.y += advance;
+        cursor.y += vertical_inter_character_ruby_extent_after(range, context);
         next_previous_cluster = Some(cluster.text.clone());
     }
     match writing_mode {
@@ -895,6 +902,7 @@ fn vertical_column_segment_required_extent(
         );
         required = required.max(cursor + required_inline_extent);
         cursor += vertical_cluster_advance(&cluster.text, context.config);
+        cursor += vertical_inter_character_ruby_extent_after(range, context);
     }
     required.max(cursor)
 }
@@ -1309,6 +1317,12 @@ fn vertical_cluster_required_inline_extent(
         .iter()
         .filter(|annotation| annotation.base_range.start == range.start)
         .filter(|annotation| ranges_overlap(annotation.base_range, range))
+        .filter(|annotation| {
+            !matches!(
+                ruby_position(annotation),
+                RichTextRubyPosition::InterCharacter
+            )
+        })
         .map(|annotation| {
             let base_cluster_extent =
                 vertical_ruby_base_cluster_count(annotation.base_range, range_start, clusters)
@@ -1317,6 +1331,25 @@ fn vertical_cluster_required_inline_extent(
         })
         .fold(config.line_advance, f32::max)
         .min(config.size.height)
+}
+
+fn vertical_inter_character_ruby_extent_after(
+    range: RichTextRange,
+    context: RunLayoutContext<'_>,
+) -> f32 {
+    context
+        .ruby_annotations
+        .iter()
+        .filter(|annotation| annotation.base_range.start == range.start)
+        .filter(|annotation| ranges_overlap(annotation.base_range, range))
+        .filter(|annotation| {
+            matches!(
+                ruby_position(annotation),
+                RichTextRubyPosition::InterCharacter
+            )
+        })
+        .map(|annotation| ruby_text_extent(&annotation.ruby, context.config.ruby_font_size))
+        .sum()
 }
 
 fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
@@ -1412,11 +1445,25 @@ fn layout_one_ruby(
         });
     let ruby_extent = ruby_text_extent(&annotation.ruby, config.ruby_font_size);
     let base_bounds = if vertical {
-        expand_vertical_ruby_base(base_bounds, ruby_extent, config)
+        if matches!(
+            ruby_position(annotation),
+            RichTextRubyPosition::InterCharacter
+        ) {
+            base_bounds
+        } else {
+            expand_vertical_ruby_base(base_bounds, ruby_extent, config)
+        }
     } else {
         expand_horizontal_ruby_base(base_bounds, ruby_extent, config)
     };
-    if vertical && ruby_extent > config.size.height {
+    if vertical
+        && matches!(
+            ruby_position(annotation),
+            RichTextRubyPosition::InterCharacter
+        )
+    {
+        layout_vertical_inter_character_ruby(ruby_index, annotation, base_bounds, glyphs, config)
+    } else if vertical && ruby_extent > config.size.height {
         layout_overheight_vertical_ruby(ruby_index, annotation, base_bounds, writing_mode, config)
     } else if vertical {
         vec![laid_out_ruby_segment(
@@ -1457,6 +1504,42 @@ fn layout_one_ruby(
             writing_mode,
         )]
     }
+}
+
+fn layout_vertical_inter_character_ruby(
+    ruby_index: usize,
+    annotation: &RichTextRubyAnnotation,
+    base_bounds: LayoutRect,
+    glyphs: &[LaidOutGlyph],
+    config: TextLayoutConfig,
+) -> Vec<LaidOutRuby> {
+    let Some(first_base) = glyphs
+        .iter()
+        .filter(|glyph| ranges_overlap(glyph.range, annotation.base_range))
+        .min_by(|left, right| {
+            left.origin
+                .y
+                .partial_cmp(&right.origin.y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    else {
+        return Vec::new();
+    };
+    let ruby_extent = ruby_text_extent(&annotation.ruby, config.ruby_font_size);
+    let ruby_bounds = LayoutRect::new(
+        base_bounds.x,
+        first_base.bounds.bottom(),
+        base_bounds.width,
+        ruby_extent,
+    );
+    vec![laid_out_ruby_segment(
+        ruby_index,
+        annotation,
+        annotation.ruby.clone(),
+        base_bounds,
+        ruby_bounds,
+        first_base.writing_mode,
+    )]
 }
 
 fn layout_overheight_vertical_ruby(
@@ -1646,6 +1729,16 @@ fn vertical_ruby_continuation_step(
 fn resolve_ruby_collisions(ruby: &mut [LaidOutRuby], config: TextLayoutConfig) {
     let mut placed = Vec::new();
     for annotation in ruby {
+        if matches!(
+            annotation
+                .presentation
+                .layout
+                .as_ref()
+                .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position),
+            RichTextRubyPosition::InterCharacter
+        ) {
+            continue;
+        }
         let resolved = match annotation.writing_mode {
             RichTextWritingMode::HorizontalTb => {
                 resolve_horizontal_ruby_collision(annotation.ruby_bounds, &placed, config)
@@ -4142,6 +4235,73 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn vertical_inter_character_ruby_inserts_annotation_between_base_clusters() {
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let mut frame = frame_with_run("夢星", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢星".len(), "ゆめ");
+            frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+                writing_mode,
+                ruby_position: RichTextRubyPosition::InterCharacter,
+                ..RichTextLayout::default()
+            });
+            let config = TextLayoutConfig::default();
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            assert_eq!(layout.glyphs.len(), 2);
+            assert_eq!(layout.ruby.len(), 1);
+            assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+            assert_f32_eq(layout.ruby[0].ruby_bounds.x, layout.glyphs[0].bounds.x);
+            assert_f32_eq(
+                layout.ruby[0].ruby_bounds.y,
+                layout.glyphs[0].bounds.bottom(),
+            );
+            assert_f32_eq(
+                layout.ruby[0].ruby_bounds.height,
+                config.ruby_font_size * 2.0,
+            );
+            assert!(
+                layout.glyphs[1].bounds.y >= layout.ruby[0].ruby_bounds.bottom(),
+                "{writing_mode:?} inter-character ruby should push the following base cluster after the annotation"
+            );
+            assert_f32_eq(layout.glyphs[1].origin.x, layout.glyphs[0].origin.x);
+        }
+    }
+
+    #[test]
+    fn vertical_inter_character_ruby_does_not_reserve_side_track() {
+        let mut side_track =
+            frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalRl));
+        push_ruby(&mut side_track, 0, "夢".len(), "ゆめ");
+        let side_track_layout =
+            layout_frame(&side_track, TextLayoutConfig::default()).expect("layout succeeds");
+
+        let mut inter_character =
+            frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalRl));
+        push_ruby(&mut inter_character, 0, "夢".len(), "ゆめ");
+        inter_character.display_map.ruby_annotations[0]
+            .presentation
+            .layout = Some(RichTextLayout {
+            writing_mode: RichTextWritingMode::VerticalRl,
+            ruby_position: RichTextRubyPosition::InterCharacter,
+            ..RichTextLayout::default()
+        });
+        let inter_character_layout =
+            layout_frame(&inter_character, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert!(
+            inter_character_layout.glyphs[0].origin.x > side_track_layout.glyphs[0].origin.x,
+            "inter-character ruby should keep the body column at the normal start instead of reserving an external side track"
+        );
+        assert_f32_eq(
+            inter_character_layout.ruby[0].ruby_bounds.x,
+            inter_character_layout.glyphs[0].bounds.x,
+        );
     }
 
     #[test]

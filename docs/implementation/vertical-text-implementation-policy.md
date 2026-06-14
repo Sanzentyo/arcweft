@@ -210,6 +210,13 @@ the concrete choices to follow when turning that package into production code.
   `vertical_rl` and the left annotation track for `vertical_lr`; `ruby_under`
   flips those physical sides. This keeps short edge-adjacent ruby annotations
   inside the layout box without changing the side-of-base semantics.
+  `ruby_inter_character` is not treated as another side-track variant:
+  `arcweft-text-layout` reserves inline advance after the annotated base start,
+  places the ruby annotation in that in-column slot, leaves the body column at
+  its normal start, and pushes following base clusters after the annotation.
+  The native renderer consumes the same `LaidOutRuby` geometry for its ruby
+  GlyphArea, while Agent observe exposes the resulting base/annotation bboxes
+  and raw mask/object-id crops for both `vertical_rl` and `vertical_lr`.
   Long ruby annotations first expand the base allocation along the writing
   mode's inline axis, then use a bounded overhang allowance before same-track
   collision separation keeps adjacent horizontal and vertical annotations from
