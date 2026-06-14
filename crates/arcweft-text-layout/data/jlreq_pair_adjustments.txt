@@ -10,6 +10,9 @@
 # under the selected `TextLayoutConfig::jlreq_strictness` preset.
 
 Any; RepeatMark; true; true; true; 1000; 1000; 1000; iteration marks stay with the previous cluster
+Any; ReferenceMark; true; true; true; 1000; 1000; 1000; reference marks stay with the previous main-text cluster
+ReferenceMark; ReferenceMark; true; true; true; 1000; 1000; 1000; letters or digits of a reference mark stay together
+ReferenceMark; Closing; true; true; true; 1000; 1000; 1000; full stops after reference marks stay attached
 Dash; Dash; false; true; true; 100; 1000; 1000; repeated dash/prolonged-sound marks stay together outside loose composition
 Leader; Leader; false; true; true; 100; 1000; 1000; repeated leader marks stay together outside loose composition
 Opening; Closing; true; true; true; 1000; 1000; 1000; adjacent opening/closing brackets stay together as a compact pair

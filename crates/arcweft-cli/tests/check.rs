@@ -5931,6 +5931,20 @@ fn agent_observe_native_renderer_writes_published_jlreq_european_numeral_sequenc
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_published_jlreq_reference_mark_geometry() {
+    assert_native_published_jlreq_reference_mark_geometry("vertical_rl");
+    assert_native_published_jlreq_reference_mark_geometry("vertical_lr");
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_published_jlreq_reference_mark_raw_crops() {
+    assert_native_published_jlreq_reference_mark_raw_crop("vertical_rl", "mask");
+    assert_native_published_jlreq_reference_mark_raw_crop("vertical_rl", "object-id");
+    assert_native_published_jlreq_reference_mark_raw_crop("vertical_lr", "mask");
+    assert_native_published_jlreq_reference_mark_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_strict_jlreq_ruby_text_combine_geometry() {
     assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_rl", true);
     assert_native_strict_jlreq_ruby_text_combine_geometry("vertical_lr", false);
@@ -6515,6 +6529,176 @@ fn assert_native_published_jlreq_european_numeral_sequence_objects<'report>(
         &format!("{writing_mode} published JLREQ European numeral final digit"),
     );
     final_digit
+}
+
+fn assert_native_published_jlreq_reference_mark_geometry(writing_mode: &str) {
+    let json = observe_native_published_jlreq_reference_mark_fixture(writing_mode);
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_eq!(
+        first_text_run_presentation_layout(&json)["writing_mode"],
+        writing_mode
+    );
+    assert_native_published_jlreq_reference_mark_objects(&json, writing_mode);
+}
+
+fn observe_native_published_jlreq_reference_mark_fixture(writing_mode: &str) -> serde_json::Value {
+    let path = temp_arcw(
+        &format!("agent-observe-native-{writing_mode}-published-jlreq-reference-mark"),
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]本¹²。人[/][p]
+}}
+"
+        ),
+    );
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp published JLREQ reference mark source");
+    json
+}
+
+fn assert_native_published_jlreq_reference_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let fixture_name = format!(
+        "agent-observe-native-{writing_mode}-published-jlreq-reference-mark-{capture_kind}"
+    );
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode} jlreq=normal]本¹²。人[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-published-jlreq-reference-mark-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.2.5.7")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native published JLREQ reference mark raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} published JLREQ reference mark {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native published JLREQ reference mark report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let second_mark = assert_native_published_jlreq_reference_mark_objects(&json, writing_mode);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        second_mark["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        second_mark["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], second_mark["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], second_mark["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(second_mark),
+            content_pixels,
+            &format!("{writing_mode} published JLREQ reference mark object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native published JLREQ reference mark crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp published JLREQ reference mark source");
+    fs::remove_dir_all(&dir).expect("remove temp published JLREQ reference mark dir");
+}
+
+fn assert_native_published_jlreq_reference_mark_objects<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+) -> &'report serde_json::Value {
+    assert_eq!(
+        first_text_run_presentation_layout(json)["jlreq_strictness"],
+        "normal"
+    );
+    let body = find_rich_text_cluster_object(json, "本", 0, 3);
+    let first_mark = find_rich_text_cluster_object(json, "¹", 3, 5);
+    let second_mark = find_rich_text_cluster_object(json, "²", 5, 7);
+    let full_stop = find_rich_text_cluster_object(json, "。", 7, 10);
+    let next_body = find_rich_text_cluster_object(json, "人", 10, 13);
+    assert_vertical_cluster_after(
+        body,
+        first_mark,
+        "published JLREQ reference mark should stay with the preceding main-text cluster",
+    );
+    assert_vertical_cluster_after(
+        first_mark,
+        second_mark,
+        "published JLREQ reference mark digits should stay together",
+    );
+    assert_eq!(
+        agent_json_bbox_x(&second_mark["bbox"]),
+        agent_json_bbox_x(&full_stop["bbox"]),
+        "published JLREQ full stop after a reference mark should stay in the reference mark column"
+    );
+    assert!(
+        agent_json_bbox_bottom(&full_stop["bbox"]) > agent_json_bbox_y(&second_mark["bbox"]),
+        "published JLREQ full stop after a reference mark should remain attached to the reference mark column"
+    );
+    assert_next_paragraph_column(
+        full_stop,
+        next_body,
+        writing_mode == "vertical_lr",
+        "body text after the published JLREQ reference mark sequence should continue in the next column",
+    );
+    assert_rich_text_object_has_mask_capture(
+        second_mark,
+        &format!("{writing_mode} published JLREQ reference mark second digit"),
+    );
+    second_mark
 }
 
 fn assert_native_strict_jlreq_ruby_text_combine_geometry(writing_mode: &str, ruby_on_right: bool) {

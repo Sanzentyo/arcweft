@@ -20,6 +20,7 @@ pub(crate) enum JlreqPunctuationClass {
     Leader,
     MiddleDot,
     RepeatMark,
+    ReferenceMark,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,9 +62,19 @@ pub(crate) const JLREQ_PUNCTUATION_RANGES: &[JlreqPunctuationRange] = &[
         class: JlreqPunctuationClass::Closing,
     },
     JlreqPunctuationRange {
+        start: 0x00B2,
+        end: 0x00B3,
+        class: JlreqPunctuationClass::ReferenceMark,
+    },
+    JlreqPunctuationRange {
         start: 0x00B7,
         end: 0x00B7,
         class: JlreqPunctuationClass::MiddleDot,
+    },
+    JlreqPunctuationRange {
+        start: 0x00B9,
+        end: 0x00B9,
+        class: JlreqPunctuationClass::ReferenceMark,
     },
     JlreqPunctuationRange {
         start: 0x2010,
@@ -109,6 +120,16 @@ pub(crate) const JLREQ_PUNCTUATION_RANGES: &[JlreqPunctuationRange] = &[
         start: 0x2046,
         end: 0x2049,
         class: JlreqPunctuationClass::Closing,
+    },
+    JlreqPunctuationRange {
+        start: 0x2070,
+        end: 0x2070,
+        class: JlreqPunctuationClass::ReferenceMark,
+    },
+    JlreqPunctuationRange {
+        start: 0x2074,
+        end: 0x2079,
+        class: JlreqPunctuationClass::ReferenceMark,
     },
     JlreqPunctuationRange {
         start: 0x207D,
@@ -994,6 +1015,60 @@ pub(crate) const JLREQ_PAIR_ADJUSTMENTS: &[JlreqPairAdjustmentRule] = &[
     JlreqPairAdjustmentRule {
         left: None,
         right: JlreqPunctuationClass::RepeatMark,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: None,
+        right: JlreqPunctuationClass::ReferenceMark,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::ReferenceMark),
+        right: JlreqPunctuationClass::ReferenceMark,
+        adjustments: JlreqPairAdjustmentSet {
+            loose: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            normal: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+            strict: JlreqPairAdjustment {
+                keep_together: true,
+                break_penalty: 1000,
+            },
+        },
+    },
+    JlreqPairAdjustmentRule {
+        left: Some(JlreqPunctuationClass::ReferenceMark),
+        right: JlreqPunctuationClass::Closing,
         adjustments: JlreqPairAdjustmentSet {
             loose: JlreqPairAdjustment {
                 keep_together: true,

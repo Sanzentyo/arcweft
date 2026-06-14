@@ -445,6 +445,12 @@ the concrete choices to follow when turning that package into production code.
   native Agent geometry/raw mask/object-id fixtures verify that `2026502671234`
   restarts as one column unit when it can fit better there and that the final
   digit still reads back from rendered GlyphArea pixels.
+  Published JLREQ 3.1.10 reference-mark sequencing is also covered: generated
+  JLREQ punctuation data classifies superscript reference digits as
+  `ReferenceMark`, the pair table keeps a reference mark with preceding main
+  text, keeps multi-character reference marks together, and keeps a following
+  full stop attached, while native Agent geometry/raw mask/object-id fixtures
+  verify that `本¹²。人` is observed from the same rendered GlyphArea geometry.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent

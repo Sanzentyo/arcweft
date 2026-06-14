@@ -143,6 +143,8 @@ mod tests {
         assert!(is_line_end_prohibited_cluster("︵"));
         assert!(!is_line_head_prohibited_cluster("「"));
         assert!(!is_line_end_prohibited_cluster("。"));
+        assert!(!is_line_head_prohibited_cluster("¹"));
+        assert!(!is_line_end_prohibited_cluster("¹"));
     }
 
     #[test]
@@ -160,6 +162,9 @@ mod tests {
         assert!(pair_adjustment_for_clusters("ー", "ー", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("…", "…", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("「", "」", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("本", "¹", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("¹", "²", JlreqStrictness::Normal).keep_together);
+        assert!(pair_adjustment_for_clusters("²", "。", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("あ", "っ", JlreqStrictness::Normal).keep_together);
         assert!(pair_adjustment_for_clusters("あ", "ー", JlreqStrictness::Normal).keep_together);
         assert_eq!(
@@ -231,6 +236,7 @@ mod tests {
             "Leader" => Some(JlreqPunctuationClass::Leader),
             "MiddleDot" => Some(JlreqPunctuationClass::MiddleDot),
             "RepeatMark" => Some(JlreqPunctuationClass::RepeatMark),
+            "ReferenceMark" => Some(JlreqPunctuationClass::ReferenceMark),
             _ => None,
         }
     }

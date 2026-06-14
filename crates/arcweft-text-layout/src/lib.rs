@@ -2036,6 +2036,52 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_reference_mark_sequence_unbroken() {
+        // W3C JLREQ 3.1.10 keeps reference marks with their preceding main
+        // text, keeps multi-character reference marks together, and keeps the
+        // following full stop attached to that reference mark sequence.
+        let text = "本¹²。人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "本", 0);
+            let first_mark = nth_laid_out_glyph(&layout, "¹", 0);
+            let second_mark = nth_laid_out_glyph(&layout, "²", 0);
+            let full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_after(
+                body,
+                first_mark,
+                "reference mark should stay with the preceding main-text cluster",
+            );
+            assert_vertical_layout_after(
+                first_mark,
+                second_mark,
+                "reference mark digits should stay together",
+            );
+            assert_f32_eq(second_mark.origin.x, full_stop.origin.x);
+            assert!(
+                full_stop.bounds.bottom() > second_mark.origin.y,
+                "full stop after a reference mark should stay attached to the reference mark column: {full_stop:?}"
+            );
+            assert_next_vertical_layout_column(
+                full_stop,
+                next_body,
+                next_column_moves_right,
+                "body text after the reference mark sequence should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_crlf_advances_to_next_column_without_emitting_glyph() {
         let frame = frame_with_run(
             "天\r\n地",

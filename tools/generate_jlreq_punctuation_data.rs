@@ -129,9 +129,8 @@ fn parse_ranges(source: &str) -> Result<Vec<Range>, String> {
 
 fn validate_class(class: &str) -> Result<(), String> {
     match class {
-        "Closing" | "Opening" | "SmallKana" | "Dash" | "Leader" | "MiddleDot" | "RepeatMark" => {
-            Ok(())
-        }
+        "Closing" | "Opening" | "SmallKana" | "Dash" | "Leader" | "MiddleDot" | "RepeatMark"
+        | "ReferenceMark" => Ok(()),
         _ => Err(format!("unknown class `{class}`")),
     }
 }
@@ -312,6 +311,7 @@ fn generate(
     output.push_str("    Leader,\n");
     output.push_str("    MiddleDot,\n");
     output.push_str("    RepeatMark,\n");
+    output.push_str("    ReferenceMark,\n");
     output.push_str("}\n\n");
     output.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
     output.push_str("pub(crate) struct JlreqPunctuationRange {\n");
