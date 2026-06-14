@@ -534,7 +534,10 @@ the concrete choices to follow when turning that package into production code.
   (`O'K` and `O’K`) are now embedded in the same longer strict paragraph mix,
   with native raw crops for the apostrophe objects, so word-internal punctuation
   and later ordinary closing/opening punctuation are proven in one paragraph-DP
-  plan.
+  plan. The accented Latin word `café` is also embedded in that longer strict
+  paragraph mix, with native raw crops for `é`, proving non-ASCII Latin
+  grapheme byte ranges travel through the same paragraph-DP and rendered
+  GlyphArea path.
   Subscript/superscript object sequences from the same section are represented
   separately from reference marks: Sans I/O layout keeps `H₂O` and Greek-base
   formulas such as `α₂β` and `α²β` attached as one formula-like object in vertical text,
