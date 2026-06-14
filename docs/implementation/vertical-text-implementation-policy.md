@@ -410,6 +410,10 @@ the concrete choices to follow when turning that package into production code.
   and native Agent fixtures compare `jlreq=loose` with `jlreq=strict` in both
   `vertical_rl` and `vertical_lr`, proving the strict pair changes the
   paragraph-level plan without dropping the surrounding class interactions.
+  The attached strict opening-punctuation object in that longer paragraph is
+  also captured as raw native mask and object-id crops in both writing
+  directions, tying the paragraph-level strictness decision back to rendered
+  rotated-alternate GlyphArea pixels and stable object colors.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent
