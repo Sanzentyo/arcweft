@@ -414,6 +414,11 @@ the concrete choices to follow when turning that package into production code.
   also captured as raw native mask and object-id crops in both writing
   directions, tying the paragraph-level strictness decision back to rendered
   rotated-alternate GlyphArea pixels and stable object colors.
+  Explicit hard line breaks split the paragraph-DP problem into separate
+  vertical segments: a strict closing/opening punctuation pair across `[r]` does
+  not attach back to the previous segment, and native Agent fixtures cover the
+  hard-break opening cluster plus raw mask/object-id crops in both
+  `vertical_rl` and `vertical_lr`.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent

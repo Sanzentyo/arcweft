@@ -2124,6 +2124,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn vertical_hard_line_break_resets_strict_jlreq_paragraph_segment() {
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run("天地。\n「人外", vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 147.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            let full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let opening = nth_laid_out_glyph(&layout, "「", 0);
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+
+            assert_next_vertical_layout_column(
+                full_stop,
+                opening,
+                next_column_moves_right,
+                "explicit hard line break should start a new strict JLREQ paragraph segment",
+            );
+            assert_vertical_layout_after(
+                opening,
+                person,
+                "text after the hard-break opening punctuation should stay in its new segment column",
+            );
+            assert_f32_eq(opening.origin.y, config.origin.y);
+        }
+    }
+
     fn assert_vertical_paragraph_dash_suffix(layout: &LaidOutText, next_column_moves_right: bool) {
         let syllable = nth_laid_out_glyph(layout, "え", 0);
         let dash = nth_laid_out_glyph(layout, "―", 0);
