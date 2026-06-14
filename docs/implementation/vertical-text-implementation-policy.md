@@ -410,9 +410,11 @@ the concrete choices to follow when turning that package into production code.
   object color to rendered sideways GlyphArea pixels in both vertical writing
   directions. Small-kana no-break placement is also captured as raw native mask
   and object-id crops, tying upright-alternate glyph pixels to the observed
-  same-column geometry. Iteration-mark placement is also captured as raw native
-  mask and object-id crops, tying the mark-with-previous-cluster geometry to
-  rendered GlyphArea pixels. Compact bracket-pair placement is also captured as
+  same-column geometry; the halfwidth small-kana variant `ｯ` is covered through
+  its rotated UAX #50 `vertical_form=none` path in both vertical writing modes.
+  Iteration-mark placement is also captured as raw native mask and object-id
+  crops, tying the mark-with-previous-cluster geometry to rendered GlyphArea
+  pixels. Compact bracket-pair placement is also captured as
   raw native mask and object-id crops, tying rotated alternate bracket glyph
   pixels to the no-break pair geometry. Leader-mark placement is also captured
   as raw native mask and object-id crops, tying its no-break same-column

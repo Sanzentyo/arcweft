@@ -4700,6 +4700,37 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_object_id_r
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_halfwidth_small_kana_geometry() {
+    assert_native_halfwidth_suffix_mark_geometry(
+        "vertical_rl",
+        "ｯ",
+        "halfwidth-small-kana",
+        "halfwidth small kana",
+    );
+    assert_native_halfwidth_suffix_mark_geometry(
+        "vertical_lr",
+        "ｯ",
+        "halfwidth-small-kana",
+        "halfwidth small kana",
+    );
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_halfwidth_small_kana_raw_crops() {
+    for writing_mode in ["vertical_rl", "vertical_lr"] {
+        for capture_kind in ["mask", "object-id"] {
+            assert_native_halfwidth_suffix_mark_raw_crop(
+                writing_mode,
+                "ｯ",
+                "halfwidth-small-kana",
+                "halfwidth small kana",
+                capture_kind,
+            );
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_jlreq_iteration_mark_raw_crops() {
     assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "mask");
     assert_native_jlreq_iteration_mark_raw_crop("vertical_rl", "object-id");

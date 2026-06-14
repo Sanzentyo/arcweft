@@ -5627,10 +5627,17 @@ mod tests {
 
     #[test]
     fn vertical_column_keeps_small_kana_out_of_column_heads() {
-        let frame = frame_with_run(
-            "天地ぁ人",
-            vertical_presentation(RichTextWritingMode::VerticalRl),
-        );
+        for (text, mark) in [("天地ぁ人", "ぁ"), ("天地ｯ人", "ｯ")] {
+            assert_vertical_rl_no_column_head_mark(
+                text,
+                mark,
+                "small kana may overhang the current column instead of starting the next column",
+            );
+        }
+    }
+
+    fn assert_vertical_rl_no_column_head_mark(text: &str, mark: &str, message: &str) {
+        let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalRl));
         let config = TextLayoutConfig {
             size: LayoutSize::new(160.0, 84.0),
             ..TextLayoutConfig::default()
@@ -5638,11 +5645,11 @@ mod tests {
         let layout = layout_frame(&frame, config).expect("layout succeeds");
 
         assert_eq!(layout.glyphs.len(), 4);
-        assert_eq!(layout.glyphs[2].text, "ぁ");
+        assert_eq!(layout.glyphs[2].text, mark);
         assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
         assert!(
             layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-            "small kana may overhang the current column instead of starting the next column"
+            "{message}"
         );
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(
@@ -5880,26 +5887,6 @@ mod tests {
         }
     }
 
-    fn assert_vertical_rl_no_column_head_mark(text: &str, mark: &str, message: &str) {
-        let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalRl));
-        let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 84.0),
-            ..TextLayoutConfig::default()
-        };
-        let layout = layout_frame(&frame, config).expect("layout succeeds");
-
-        assert_eq!(layout.glyphs.len(), 4);
-        assert_eq!(layout.glyphs[2].text, mark);
-        assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
-        assert!(
-            layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
-            "{message}"
-        );
-        assert_eq!(layout.glyphs[3].text, "人");
-        assert!(layout.glyphs[3].origin.x < layout.glyphs[2].origin.x);
-        assert_f32_eq(layout.glyphs[3].origin.y, config.origin.y);
-    }
-
     #[test]
     fn vertical_column_keeps_jlreq_iteration_marks_with_previous_cluster() {
         let frame = frame_with_run(
@@ -5927,6 +5914,7 @@ mod tests {
     #[test]
     fn vertical_lr_column_keeps_small_kana_out_of_column_heads() {
         assert_vertical_lr_no_column_head_mark("天地ぁ人", "ぁ");
+        assert_vertical_lr_no_column_head_mark("天地ｯ人", "ｯ");
     }
 
     #[test]
