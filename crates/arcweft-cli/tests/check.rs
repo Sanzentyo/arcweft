@@ -18169,6 +18169,7 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
                     .as_str()
                     .is_some_and(|uri| uri.ends_with(".mask.rgba")))
     );
+    assert_windows_fonts_sample_vertical_cluster_readback(&source_path, &json);
 }
 
 #[test]
@@ -18247,6 +18248,41 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         "short vertical_lr sample run should be visibly vertical: {vertical_lr}"
     );
     assert_full_grammar_sample_vertical_lr_cluster_readback(&source_path, &json);
+}
+
+fn assert_windows_fonts_sample_vertical_cluster_readback(
+    source_path: &Path,
+    json: &serde_json::Value,
+) {
+    let first_vertical_cluster = find_rich_text_cluster_object(json, "縦", 0, 3);
+    assert_eq!(
+        first_vertical_cluster["rich_text_ref"]["kind"],
+        "glyph_cluster"
+    );
+    assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
+    assert_eq!(
+        first_vertical_cluster["rich_text_ref"]["orientation"],
+        "upright"
+    );
+    assert_eq!(
+        first_vertical_cluster["rich_text_ref"]["vertical_form"],
+        "none"
+    );
+    assert_eq!(first_vertical_cluster["bbox"]["width"], 42);
+    assert_eq!(first_vertical_cluster["bbox"]["height"], 42);
+    for (kind, mime_type) in [
+        ("mask", "application/octet-stream"),
+        ("object_id", "application/octet-stream"),
+    ] {
+        let uri = rich_text_object_capture_uri(first_vertical_cluster, kind, mime_type);
+        assert_agent_read_uri_object_image_has_content(
+            source_path,
+            uri,
+            first_vertical_cluster["id"].as_str().unwrap(),
+            42,
+            42,
+        );
+    }
 }
 
 fn assert_full_grammar_sample_vertical_lr_cluster_readback(

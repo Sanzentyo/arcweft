@@ -348,9 +348,10 @@ the concrete choices to follow when turning that package into production code.
   bboxes and capture crops. The full-grammar sample test follows a vertical
   cluster mask URI and asserts the raw capture contains rendered pixels. The
   full-grammar sample now also follows a `vertical_lr` cluster's raw mask and
-  object-id URIs back through `--read-uri`, proving both vertical writing modes
-  in the authored sample expose object-scoped native readback from the same
-  cluster geometry. Focused native Agent coverage checks sideways,
+  object-id URIs back through `--read-uri`, and the Windows-fonts sample follows
+  a `vertical_rl` cluster's raw mask/object-id URIs the same way, proving both
+  authored samples expose object-scoped native readback from the same cluster
+  geometry. Focused native Agent coverage checks sideways,
   upright-alternate, rotated-alternate, and text-combine-upright cluster metadata. The
   text-combine-upright path is also verified through raw native mask and
   object-id crops so compressed multi-glyph cells expose object-local readback
