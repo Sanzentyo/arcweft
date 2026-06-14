@@ -9597,32 +9597,40 @@ fn assert_native_published_jlreq_subscript_object_geometry(
     writing_mode: &str,
     next_column_moves_right: bool,
 ) {
-    let json = observe_native_published_jlreq_subscript_object_fixture(writing_mode);
-    assert_native_rich_text_layer_image_has_content(&json);
-    assert_eq!(
-        first_text_run_presentation_layout(&json)["writing_mode"],
-        writing_mode
-    );
-    assert_native_published_jlreq_subscript_object_objects(
-        &json,
-        writing_mode,
-        next_column_moves_right,
-    );
+    for case in native_published_jlreq_subscript_object_cases() {
+        let json = observe_native_published_jlreq_subscript_object_fixture(writing_mode, case);
+        assert_native_rich_text_layer_image_has_content(&json);
+        assert_eq!(
+            first_text_run_presentation_layout(&json)["writing_mode"],
+            writing_mode
+        );
+        assert_native_published_jlreq_subscript_object_objects(
+            &json,
+            writing_mode,
+            next_column_moves_right,
+            case,
+        );
+    }
 }
 
 fn observe_native_published_jlreq_subscript_object_fixture(
     writing_mode: &str,
+    case: NativeSubscriptObjectCase,
 ) -> serde_json::Value {
     let path = temp_arcw(
-        &format!("agent-observe-native-{writing_mode}-published-jlreq-subscript-object"),
+        &format!(
+            "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-{}",
+            case.label
+        ),
         &format!(
             r"
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天H₂O人[/][p]
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
-"
+",
+            case.text
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -9635,8 +9643,25 @@ fn assert_native_published_jlreq_subscript_object_raw_crop(
     next_column_moves_right: bool,
     capture_kind: &str,
 ) {
+    for case in native_published_jlreq_subscript_object_cases() {
+        assert_native_published_jlreq_subscript_object_case_raw_crop(
+            writing_mode,
+            next_column_moves_right,
+            capture_kind,
+            case,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_subscript_object_case_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+    case: NativeSubscriptObjectCase,
+) {
     let fixture_name = format!(
-        "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-{capture_kind}"
+        "agent-observe-native-{writing_mode}-published-jlreq-subscript-object-{}-{capture_kind}",
+        case.label
     );
     let path = temp_arcw(
         &fixture_name,
@@ -9645,14 +9670,16 @@ fn assert_native_published_jlreq_subscript_object_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]天H₂O人[/][p]
+    alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
-"
+",
+            case.text
         ),
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
-        "native-{writing_mode}-published-jlreq-subscript-object-{capture_kind}.rgba"
+        "native-{writing_mode}-published-jlreq-subscript-object-{}-{capture_kind}.rgba",
+        case.label
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -9665,7 +9692,7 @@ flow @flow.main main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.7.8")
+        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -9699,6 +9726,7 @@ flow @flow.main main {{
         &json,
         writing_mode,
         next_column_moves_right,
+        case,
     );
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
@@ -9742,16 +9770,23 @@ fn assert_native_published_jlreq_subscript_object_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
     next_column_moves_right: bool,
+    case: NativeSubscriptObjectCase,
 ) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let base = find_rich_text_cluster_object(json, "H", 3, 4);
-    let subscript = find_rich_text_cluster_object(json, "₂", 4, 7);
-    let following_base = find_rich_text_cluster_object(json, "O", 7, 8);
-    let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
+    let base = find_rich_text_cluster_object(json, case.base, case.base_range.0, case.base_range.1);
+    let subscript =
+        find_rich_text_cluster_object(json, "₂", case.subscript_range.0, case.subscript_range.1);
+    let following_base = find_rich_text_cluster_object(
+        json,
+        case.following_base,
+        case.following_base_range.0,
+        case.following_base_range.1,
+    );
+    let next_body = find_rich_text_cluster_object(json, "人", case.next_range.0, case.next_range.1);
     assert_vertical_cluster_after(
         body,
         base,
@@ -9778,6 +9813,46 @@ fn assert_native_published_jlreq_subscript_object_objects<'report>(
         &format!("{writing_mode} published JLREQ subscript object following base"),
     );
     following_base
+}
+
+#[derive(Clone, Copy)]
+struct NativeSubscriptObjectCase {
+    label: &'static str,
+    text: &'static str,
+    base: &'static str,
+    base_range: (u64, u64),
+    subscript_range: (u64, u64),
+    following_base: &'static str,
+    following_base_range: (u64, u64),
+    object_id: &'static str,
+    next_range: (u64, u64),
+}
+
+const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObjectCase; 2] {
+    [
+        NativeSubscriptObjectCase {
+            label: "ascii",
+            text: "天H₂O人",
+            base: "H",
+            base_range: (3, 4),
+            subscript_range: (4, 7),
+            following_base: "O",
+            following_base_range: (7, 8),
+            object_id: "object.dialogue.0.0.cluster.3.7.8",
+            next_range: (8, 11),
+        },
+        NativeSubscriptObjectCase {
+            label: "greek",
+            text: "天α₂β人",
+            base: "α",
+            base_range: (3, 5),
+            subscript_range: (5, 8),
+            following_base: "β",
+            following_base_range: (8, 10),
+            object_id: "object.dialogue.0.0.cluster.3.8.10",
+            next_range: (10, 13),
+        },
+    ]
 }
 
 fn assert_native_strict_jlreq_ruby_text_combine_geometry(writing_mode: &str, ruby_on_right: bool) {

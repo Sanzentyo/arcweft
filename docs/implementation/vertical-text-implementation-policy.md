@@ -496,10 +496,11 @@ the concrete choices to follow when turning that package into production code.
   apostrophe objects in `天O'K人` and `天O’K人`, and the accented `é` object in
   `天té人` are read back from rendered GlyphArea pixels.
   Subscript/superscript object sequences from the same section are represented
-  separately from reference marks: Sans I/O layout keeps `H₂O` attached as one
-  formula-like object in vertical text, and native Agent raw mask/object-id
-  crops verify that the following base `O` in `天H₂O人` reads back from rendered
-  GlyphArea pixels in both vertical writing directions.
+  separately from reference marks: Sans I/O layout keeps `H₂O` and Greek-base
+  formulas such as `α₂β` attached as one formula-like object in vertical text,
+  and native Agent raw mask/object-id crops verify that the following base `O`
+  in `天H₂O人` and `β` in `天α₂β人` read back from rendered GlyphArea pixels in
+  both vertical writing directions.
   Strict
   middle-dot/opening-punctuation pairs are covered the same way: Sans I/O
   layout compares loose and strict paragraph plans for `・「`, and native Agent

@@ -1244,7 +1244,7 @@ fn sub_superscript_object_sequence_requires_previous(
 }
 
 fn is_sub_superscript_base_cluster_text(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    is_ascii_digit_cluster_text(text) || is_latin_or_greek_alphabetic_cluster_text(text)
 }
 
 fn is_sub_superscript_cluster_text(text: &str) -> bool {
@@ -3175,6 +3175,47 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after the subscript object should continue in the next column",
+            );
+        }
+
+        let text = "天α₂β人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let base = nth_laid_out_glyph(&layout, "α", 0);
+            let subscript = nth_laid_out_glyph(&layout, "₂", 0);
+            let following_base = nth_laid_out_glyph(&layout, "β", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                base,
+                next_column_moves_right,
+                "Greek subscript object should start after body text",
+            );
+            assert_vertical_layout_after(
+                base,
+                subscript,
+                "subscript should stay attached to the preceding Greek base character",
+            );
+            assert_vertical_layout_after(
+                subscript,
+                following_base,
+                "following Greek base character should stay attached to the subscript object",
+            );
+            assert_next_vertical_layout_column(
+                following_base,
+                next_body,
+                next_column_moves_right,
+                "body text after the Greek subscript object should continue in the next column",
             );
         }
     }
