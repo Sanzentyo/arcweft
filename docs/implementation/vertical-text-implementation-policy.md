@@ -485,8 +485,8 @@ the concrete choices to follow when turning that package into production code.
   Superscript parenthesized reference marks are covered as the same no-break
   sequence: Sans I/O layout keeps `本⁽¹⁾。` attached through the brackets,
   digit, and following full stop, and native Agent raw mask/object-id crops
-  verify that the closing bracket object in `本⁽¹⁾人` is read back from rendered
-  GlyphArea pixels.
+  verify that the closing bracket and following full stop objects in `本⁽¹⁾。人`
+  are read back from rendered GlyphArea pixels.
   Latin/Greek unit symbols and Western words from the same JLREQ section are
   also represented in the paragraph planner: Sans I/O layout keeps `kg`,
   Greek+Latin SI units such as `μm`, `Web`, accented Latin words such as

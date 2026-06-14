@@ -8364,7 +8364,7 @@ fn observe_native_published_jlreq_parenthesized_reference_mark_fixture(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]本⁽¹⁾人[/][p]
+    alice: [.{writing_mode} jlreq=normal]本⁽¹⁾。人[/][p]
 }}
 "
         ),
@@ -8380,8 +8380,25 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_raw_crop(
     next_column_moves_right: bool,
     capture_kind: &str,
 ) {
+    for target in native_published_jlreq_parenthesized_reference_mark_targets() {
+        assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
+            writing_mode,
+            next_column_moves_right,
+            capture_kind,
+            target,
+        );
+    }
+}
+
+fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    capture_kind: &str,
+    target: NativeParenthesizedReferenceMarkTarget,
+) {
     let fixture_name = format!(
-        "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-{capture_kind}"
+        "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-{}-{capture_kind}",
+        target.label
     );
     let path = temp_arcw(
         &fixture_name,
@@ -8390,14 +8407,15 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_raw_crop(
 character @character.alice Alice as alice {{}}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=normal]本⁽¹⁾人[/][p]
+    alice: [.{writing_mode} jlreq=normal]本⁽¹⁾。人[/][p]
 }}
 "
         ),
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
-        "native-{writing_mode}-published-jlreq-parenthesized-reference-mark-{capture_kind}.rgba"
+        "native-{writing_mode}-published-jlreq-parenthesized-reference-mark-{}-{capture_kind}.rgba",
+        target.label
     ));
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -8410,7 +8428,7 @@ flow @flow.main main {{
         .arg("--capture")
         .arg(capture_kind)
         .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.8.11")
+        .arg(target.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -8440,15 +8458,22 @@ flow @flow.main main {{
         }
     );
 
-    let close = assert_native_published_jlreq_parenthesized_reference_mark_objects(
+    let crop_target = assert_native_published_jlreq_parenthesized_reference_mark_target(
         &json,
         writing_mode,
         next_column_moves_right,
+        target,
     );
-    assert_eq!(json["images"][0]["crop_origin"]["x"], close["bbox"]["x"]);
-    assert_eq!(json["images"][0]["crop_origin"]["y"], close["bbox"]["y"]);
-    assert_eq!(json["images"][0]["width"], close["bbox"]["width"]);
-    assert_eq!(json["images"][0]["height"], close["bbox"]["height"]);
+    assert_eq!(
+        json["images"][0]["crop_origin"]["x"],
+        crop_target["bbox"]["x"]
+    );
+    assert_eq!(
+        json["images"][0]["crop_origin"]["y"],
+        crop_target["bbox"]["y"]
+    );
+    assert_eq!(json["images"][0]["width"], crop_target["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], crop_target["bbox"]["height"]);
 
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -8458,9 +8483,12 @@ flow @flow.main main {{
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             &raw_path,
-            agent_object_id_color_from_json(close),
+            agent_object_id_color_from_json(crop_target),
             content_pixels,
-            &format!("{writing_mode} published JLREQ parenthesized reference mark object-id crop"),
+            &format!(
+                "{writing_mode} published JLREQ parenthesized reference mark {} object-id crop",
+                target.description
+            ),
         );
     } else {
         let bytes = fs::read(&raw_path)
@@ -8481,6 +8509,21 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_objects<'report>(
     writing_mode: &str,
     next_column_moves_right: bool,
 ) -> &'report serde_json::Value {
+    let full_stop = native_published_jlreq_parenthesized_reference_mark_targets()[1];
+    assert_native_published_jlreq_parenthesized_reference_mark_target(
+        json,
+        writing_mode,
+        next_column_moves_right,
+        full_stop,
+    )
+}
+
+fn assert_native_published_jlreq_parenthesized_reference_mark_target<'report>(
+    json: &'report serde_json::Value,
+    writing_mode: &str,
+    next_column_moves_right: bool,
+    target: NativeParenthesizedReferenceMarkTarget,
+) -> &'report serde_json::Value {
     assert_eq!(
         first_text_run_presentation_layout(json)["jlreq_strictness"],
         "normal"
@@ -8489,7 +8532,10 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_objects<'report>(
     let open = find_rich_text_cluster_object(json, "⁽", 3, 6);
     let mark = find_rich_text_cluster_object(json, "¹", 6, 8);
     let close = find_rich_text_cluster_object(json, "⁾", 8, 11);
-    let next_body = find_rich_text_cluster_object(json, "人", 11, 14);
+    let full_stop = find_rich_text_cluster_object(json, "。", 11, 14);
+    let crop_target =
+        find_rich_text_cluster_object(json, target.text, target.range.0, target.range.1);
+    let next_body = find_rich_text_cluster_object(json, "人", 14, 17);
     assert_vertical_cluster_after(
         body,
         open,
@@ -8505,8 +8551,16 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_objects<'report>(
         close,
         "published JLREQ parenthesized reference mark closing should stay with digit",
     );
+    assert_eq!(
+        close["bbox"]["x"], full_stop["bbox"]["x"],
+        "published JLREQ full stop should stay in the parenthesized reference mark column"
+    );
+    assert!(
+        agent_json_bboxes_intersect(&close["bbox"], &full_stop["bbox"]),
+        "published JLREQ full stop should stay attached to the parenthesized reference mark bbox"
+    );
     assert_next_paragraph_column(
-        close,
+        full_stop,
         next_body,
         next_column_moves_right,
         "body text after the parenthesized reference mark should continue in the next column",
@@ -8515,7 +8569,40 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_objects<'report>(
         close,
         &format!("{writing_mode} published JLREQ parenthesized reference mark closing"),
     );
-    close
+    assert_rich_text_object_has_mask_capture(
+        full_stop,
+        &format!("{writing_mode} published JLREQ parenthesized reference mark full stop"),
+    );
+    crop_target
+}
+
+#[derive(Clone, Copy)]
+struct NativeParenthesizedReferenceMarkTarget {
+    label: &'static str,
+    text: &'static str,
+    range: (u64, u64),
+    object_id: &'static str,
+    description: &'static str,
+}
+
+const fn native_published_jlreq_parenthesized_reference_mark_targets()
+-> [NativeParenthesizedReferenceMarkTarget; 2] {
+    [
+        NativeParenthesizedReferenceMarkTarget {
+            label: "closing",
+            text: "⁾",
+            range: (8, 11),
+            object_id: "object.dialogue.0.0.cluster.3.8.11",
+            description: "closing",
+        },
+        NativeParenthesizedReferenceMarkTarget {
+            label: "full-stop",
+            text: "。",
+            range: (11, 14),
+            object_id: "object.dialogue.0.0.cluster.4.11.14",
+            description: "full stop",
+        },
+    ]
 }
 
 fn assert_native_published_jlreq_latin_unit_geometry(
