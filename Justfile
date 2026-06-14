@@ -59,13 +59,14 @@ test-visual-golden:
 
 native-visual-artifacts out="target\\arcweft-native-capture-artifacts":
     @New-Item -ItemType Directory -Force -Path "{{out}}" | Out-Null
-    @cargo run -p arcweft-cli --quiet -- agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{out}}\vertical_tutr_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_tutr_golden.observe.json"
+    @cargo build --release -p arcweft-cli --quiet
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{out}}\vertical_tutr_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_tutr_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{out}}\vertical_tutr_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_loose_golden.observe.json"
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_loose_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.png "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_loose_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_normal_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_normal_golden.observe.json"
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_normal_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_normal_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.png "{{out}}\vertical_jlreq_preset_normal_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_normal_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --quiet -- agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_lr_ruby_text_combine_golden.observe.json"
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_lr_ruby_text_combine_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 check-vendor-glyphon:

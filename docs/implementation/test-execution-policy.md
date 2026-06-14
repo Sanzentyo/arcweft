@@ -303,8 +303,16 @@ Operational budget:
 - Milestone native visual handoff: run `just native-visual-artifacts` on a
   Windows machine with `imq` available and publish
   `target/arcweft-native-capture-artifacts/` as the CI/job artifact. That target
-  writes fresh native PNG candidates, `arcw agent observe` JSON, and `imq` JSON
-  metric reports for every checked-in native visual golden.
+  builds `arcweft-cli` in release mode once, then uses `target/release/arcw.exe`
+  for the image-producing `agent observe` calls because native PNG capture and
+  image comparison are often faster through the optimized binary once the
+  release build is warm. The target writes fresh native PNG candidates,
+  `arcw agent observe` JSON, and `imq` JSON metric reports for every checked-in
+  native visual golden.
+- Sample visual review issues that are visible in generated PNGs must be kept
+  under `docs/implementation/visual-sample-review-issues/` with the issue text
+  and the corresponding PNG until the implementation has been improved and the
+  issue is explicitly closed or superseded.
 
 ## CI Direction
 

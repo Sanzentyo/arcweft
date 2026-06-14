@@ -154,6 +154,53 @@ impl Default for TextLayoutConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RubyMetrics {
+    font_size: f32,
+    gap: f32,
+    overhang: f32,
+    collision_gap: f32,
+}
+
+fn ruby_metrics(annotation: &RichTextRubyAnnotation, config: TextLayoutConfig) -> RubyMetrics {
+    ruby_metrics_from_presentation(&annotation.presentation, config)
+}
+
+fn ruby_metrics_from_presentation(
+    presentation: &RichTextPresentation,
+    config: TextLayoutConfig,
+) -> RubyMetrics {
+    let font_size = presentation
+        .layout
+        .as_ref()
+        .and_then(|layout| positive_milli(layout.ruby_font_size))
+        .unwrap_or(config.ruby_font_size.max(1.0));
+    RubyMetrics {
+        font_size,
+        gap: presentation
+            .layout
+            .as_ref()
+            .and_then(|layout| positive_milli(layout.ruby_gap))
+            .unwrap_or(font_size * 0.2),
+        overhang: presentation
+            .layout
+            .as_ref()
+            .and_then(|layout| positive_milli(layout.ruby_overhang))
+            .unwrap_or(font_size * 0.5),
+        collision_gap: presentation
+            .layout
+            .as_ref()
+            .and_then(|layout| positive_milli(layout.ruby_collision_gap))
+            .unwrap_or(2.0),
+    }
+}
+
+fn positive_milli(value: Option<arcweft_render_text::Milli>) -> Option<f32> {
+    value
+        .map(arcweft_render_text::Milli::as_f32)
+        .filter(|value| value.is_finite() && *value > 0.0)
+}
+
 /// Strictness preset for JLREQ punctuation pair planning.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -445,21 +492,26 @@ fn vertical_ruby_track_reservation_width(
     annotation: &RichTextRubyAnnotation,
     config: TextLayoutConfig,
 ) -> f32 {
-    let gap = config.ruby_font_size * 0.25;
-    let segment_count = vertical_ruby_segment_count(annotation.ruby.chars().count(), config).max(1);
-    gap + config.ruby_font_size
+    let metrics = ruby_metrics(annotation, config);
+    let segment_count =
+        vertical_ruby_segment_count(annotation.ruby.chars().count(), config, metrics).max(1);
+    metrics.gap
+        + metrics.font_size
         + usize_to_f32(segment_count.saturating_sub(1))
-            * vertical_ruby_continuation_track_step(config)
+            * vertical_ruby_continuation_track_step(metrics)
 }
 
-fn vertical_ruby_segment_count(char_count: usize, config: TextLayoutConfig) -> usize {
-    let max_chars = max_ruby_chars_per_vertical_segment(config).max(1);
+fn vertical_ruby_segment_count(
+    char_count: usize,
+    config: TextLayoutConfig,
+    metrics: RubyMetrics,
+) -> usize {
+    let max_chars = max_ruby_chars_per_vertical_segment(config, metrics).max(1);
     char_count.max(1).div_ceil(max_chars)
 }
 
-fn vertical_ruby_continuation_track_step(config: TextLayoutConfig) -> f32 {
-    const GAP: f32 = 2.0;
-    config.ruby_font_size + GAP
+fn vertical_ruby_continuation_track_step(metrics: RubyMetrics) -> f32 {
+    metrics.font_size + metrics.collision_gap
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1529,7 +1581,8 @@ fn layout_one_ruby(
         .map_or(RichTextWritingMode::HorizontalTb, |glyph| {
             glyph.writing_mode
         });
-    let ruby_extent = ruby_text_extent(&annotation.ruby, config.ruby_font_size);
+    let metrics = ruby_metrics(annotation, config);
+    let ruby_extent = ruby_text_extent(&annotation.ruby, metrics.font_size);
     let base_bounds = if vertical {
         if matches!(
             ruby_position(annotation),
@@ -1548,9 +1601,16 @@ fn layout_one_ruby(
             RichTextRubyPosition::InterCharacter
         )
     {
-        layout_vertical_inter_character_ruby(ruby_index, annotation, base_bounds, glyphs, config)
+        layout_vertical_inter_character_ruby(ruby_index, annotation, base_bounds, glyphs, metrics)
     } else if vertical && ruby_extent > config.size.height {
-        layout_overheight_vertical_ruby(ruby_index, annotation, base_bounds, writing_mode, config)
+        layout_overheight_vertical_ruby(
+            ruby_index,
+            annotation,
+            base_bounds,
+            writing_mode,
+            config,
+            metrics,
+        )
     } else if vertical {
         vec![laid_out_ruby_segment(
             ruby_index,
@@ -1558,14 +1618,14 @@ fn layout_one_ruby(
             annotation.ruby.clone(),
             base_bounds,
             LayoutRect::new(
-                vertical_ruby_track_x(base_bounds, writing_mode, annotation, config),
+                vertical_ruby_track_x(base_bounds, writing_mode, annotation, config, metrics),
                 ruby_annotation_start(
                     base_bounds.y,
                     base_bounds.height,
                     ruby_extent,
-                    ruby_overhang_limit(config),
+                    ruby_overhang_limit(metrics),
                 ),
-                config.ruby_font_size,
+                metrics.font_size,
                 ruby_extent,
             ),
             writing_mode,
@@ -1581,11 +1641,11 @@ fn layout_one_ruby(
                     base_bounds.x,
                     base_bounds.width,
                     ruby_extent,
-                    ruby_overhang_limit(config),
+                    ruby_overhang_limit(metrics),
                 ),
-                horizontal_ruby_track_y(base_bounds, annotation, config),
+                horizontal_ruby_track_y(base_bounds, annotation, metrics),
                 ruby_extent,
-                config.ruby_font_size,
+                metrics.font_size,
             ),
             writing_mode,
         )]
@@ -1597,7 +1657,7 @@ fn layout_vertical_inter_character_ruby(
     annotation: &RichTextRubyAnnotation,
     base_bounds: LayoutRect,
     glyphs: &[LaidOutGlyph],
-    config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> Vec<LaidOutRuby> {
     let Some(first_base) = glyphs
         .iter()
@@ -1611,7 +1671,7 @@ fn layout_vertical_inter_character_ruby(
     else {
         return Vec::new();
     };
-    let ruby_extent = ruby_text_extent(&annotation.ruby, config.ruby_font_size);
+    let ruby_extent = ruby_text_extent(&annotation.ruby, metrics.font_size);
     let ruby_bounds = LayoutRect::new(
         base_bounds.x,
         first_base.bounds.bottom(),
@@ -1634,14 +1694,15 @@ fn layout_overheight_vertical_ruby(
     base_bounds: LayoutRect,
     writing_mode: RichTextWritingMode,
     config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> Vec<LaidOutRuby> {
-    let max_chars_per_segment = max_ruby_chars_per_vertical_segment(config);
-    let track_x = vertical_ruby_track_x(base_bounds, writing_mode, annotation, config);
+    let max_chars_per_segment = max_ruby_chars_per_vertical_segment(config, metrics);
+    let track_x = vertical_ruby_track_x(base_bounds, writing_mode, annotation, config, metrics);
     split_ruby_text(&annotation.ruby, max_chars_per_segment)
         .into_iter()
         .enumerate()
         .map(|(segment_index, ruby)| {
-            let ruby_extent = ruby_text_extent(&ruby, config.ruby_font_size);
+            let ruby_extent = ruby_text_extent(&ruby, metrics.font_size);
             laid_out_ruby_segment(
                 ruby_index,
                 annotation,
@@ -1649,10 +1710,10 @@ fn layout_overheight_vertical_ruby(
                 base_bounds,
                 LayoutRect::new(
                     track_x
-                        + vertical_ruby_continuation_step(writing_mode, config)
+                        + vertical_ruby_continuation_step(writing_mode, metrics)
                             * usize_to_f32(segment_index),
                     config.origin.y,
-                    config.ruby_font_size,
+                    metrics.font_size,
                     ruby_extent,
                 ),
                 writing_mode,
@@ -1696,13 +1757,13 @@ fn split_ruby_text(ruby: &str, max_chars_per_segment: usize) -> Vec<String> {
     segments
 }
 
-fn max_ruby_chars_per_vertical_segment(config: TextLayoutConfig) -> usize {
+fn max_ruby_chars_per_vertical_segment(config: TextLayoutConfig, metrics: RubyMetrics) -> usize {
     let mut count = 1usize;
-    let mut extent = config.ruby_font_size.max(1.0);
+    let mut extent = metrics.font_size.max(1.0);
     let max_extent = config.size.height.max(extent);
-    while extent + config.ruby_font_size <= max_extent {
+    while extent + metrics.font_size <= max_extent {
         count += 1;
-        extent += config.ruby_font_size;
+        extent += metrics.font_size;
     }
     count
 }
@@ -1711,8 +1772,8 @@ fn ruby_text_extent(ruby: &str, ruby_font_size: f32) -> f32 {
     usize_to_f32(ruby.chars().count().max(1)) * ruby_font_size
 }
 
-fn ruby_overhang_limit(config: TextLayoutConfig) -> f32 {
-    config.ruby_font_size * 0.5
+fn ruby_overhang_limit(metrics: RubyMetrics) -> f32 {
+    metrics.overhang
 }
 
 fn ruby_annotation_start(
@@ -1764,31 +1825,33 @@ fn vertical_ruby_track_x(
     writing_mode: RichTextWritingMode,
     annotation: &RichTextRubyAnnotation,
     config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> f32 {
-    let gap = config.ruby_font_size * 0.25;
-    match (writing_mode, ruby_position(annotation)) {
+    let x = match (writing_mode, ruby_position(annotation)) {
         (RichTextWritingMode::VerticalRl, RichTextRubyPosition::Under)
         | (
             RichTextWritingMode::VerticalLr,
             RichTextRubyPosition::Auto
             | RichTextRubyPosition::Over
             | RichTextRubyPosition::InterCharacter,
-        ) => base_bounds.x - config.ruby_font_size - gap,
+        ) => base_bounds.x - metrics.font_size - metrics.gap,
         (RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb, _)
         | (RichTextWritingMode::VerticalLr, RichTextRubyPosition::Under) => {
-            base_bounds.right() + gap
+            base_bounds.right() + metrics.gap
         }
-    }
+    };
+    x.max(config.origin.x)
+        .min((config.origin.x + config.size.width - metrics.font_size).max(config.origin.x))
 }
 
 fn horizontal_ruby_track_y(
     base_bounds: LayoutRect,
     annotation: &RichTextRubyAnnotation,
-    config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> f32 {
     match ruby_position(annotation) {
-        RichTextRubyPosition::Under => base_bounds.bottom() + config.ruby_font_size * 0.2,
-        _ => (base_bounds.y - config.ruby_font_size * 1.2).max(0.0),
+        RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap,
+        _ => (base_bounds.y - metrics.font_size - metrics.gap).max(0.0),
     }
 }
 
@@ -1800,14 +1863,11 @@ fn ruby_position(annotation: &RichTextRubyAnnotation) -> RichTextRubyPosition {
         .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position)
 }
 
-fn vertical_ruby_continuation_step(
-    writing_mode: RichTextWritingMode,
-    config: TextLayoutConfig,
-) -> f32 {
+fn vertical_ruby_continuation_step(writing_mode: RichTextWritingMode, metrics: RubyMetrics) -> f32 {
     match writing_mode {
-        RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(config),
+        RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(metrics),
         RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
-            -vertical_ruby_continuation_track_step(config)
+            -vertical_ruby_continuation_track_step(metrics)
         }
     }
 }
@@ -1825,9 +1885,10 @@ fn resolve_ruby_collisions(ruby: &mut [LaidOutRuby], config: TextLayoutConfig) {
         ) {
             continue;
         }
+        let metrics = ruby_metrics_from_presentation(&annotation.presentation, config);
         let resolved = match annotation.writing_mode {
             RichTextWritingMode::HorizontalTb => {
-                resolve_horizontal_ruby_collision(annotation.ruby_bounds, &placed, config)
+                resolve_horizontal_ruby_collision(annotation.ruby_bounds, &placed, config, metrics)
             }
             RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
                 resolve_vertical_ruby_collision(
@@ -1835,6 +1896,7 @@ fn resolve_ruby_collisions(ruby: &mut [LaidOutRuby], config: TextLayoutConfig) {
                     annotation.writing_mode,
                     &placed,
                     config,
+                    metrics,
                 )
             }
         };
@@ -1856,17 +1918,17 @@ fn resolve_horizontal_ruby_collision(
     mut bounds: LayoutRect,
     placed: &[RubyTrackPlacement],
     config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> LayoutRect {
-    const GAP: f32 = 2.0;
     for previous in placed
         .iter()
         .filter(|placement| matches!(placement.writing_mode, RichTextWritingMode::HorizontalTb))
     {
         if bounds.intersects(previous.bounds) {
-            bounds.x = previous.bounds.right() + GAP;
+            bounds.x = previous.bounds.right() + metrics.collision_gap;
         }
     }
-    let overhang = ruby_overhang_limit(config);
+    let overhang = ruby_overhang_limit(metrics);
     let min_left = config.origin.x - overhang;
     let max_right = config.origin.x + config.size.width + overhang;
     if bounds.x < min_left {
@@ -1874,7 +1936,7 @@ fn resolve_horizontal_ruby_collision(
     }
     if bounds.right() > max_right {
         bounds.x = (max_right - bounds.width).max(min_left);
-        bounds.y = (bounds.y - config.ruby_font_size - GAP).max(0.0);
+        bounds.y = (bounds.y - metrics.font_size - metrics.collision_gap).max(0.0);
     }
     bounds
 }
@@ -1884,8 +1946,8 @@ fn resolve_vertical_ruby_collision(
     writing_mode: RichTextWritingMode,
     placed: &[RubyTrackPlacement],
     config: TextLayoutConfig,
+    metrics: RubyMetrics,
 ) -> LayoutRect {
-    const GAP: f32 = 2.0;
     for previous in placed.iter().filter(|placement| {
         matches!(
             placement.writing_mode,
@@ -1893,10 +1955,10 @@ fn resolve_vertical_ruby_collision(
         )
     }) {
         if bounds.intersects(previous.bounds) {
-            bounds.y = previous.bounds.bottom() + GAP;
+            bounds.y = previous.bounds.bottom() + metrics.collision_gap;
         }
     }
-    let overhang = ruby_overhang_limit(config);
+    let overhang = ruby_overhang_limit(metrics);
     let min_top = config.origin.y - overhang;
     let max_bottom = config.origin.y + config.size.height + overhang;
     if bounds.y < min_top {
@@ -1905,9 +1967,9 @@ fn resolve_vertical_ruby_collision(
     if bounds.bottom() > max_bottom {
         bounds.y = min_top;
         bounds.x += match writing_mode {
-            RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(config),
+            RichTextWritingMode::VerticalRl => vertical_ruby_continuation_track_step(metrics),
             RichTextWritingMode::VerticalLr | RichTextWritingMode::HorizontalTb => {
-                -vertical_ruby_continuation_track_step(config)
+                -vertical_ruby_continuation_track_step(metrics)
             }
         };
     }
@@ -6330,6 +6392,29 @@ mod tests {
         assert_f32_eq(
             inter_character_layout.ruby[0].ruby_bounds.x,
             inter_character_layout.glyphs[0].bounds.x,
+        );
+    }
+
+    #[test]
+    fn horizontal_ruby_typography_attrs_control_size_gap_and_overhang() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+        frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+            ruby_font_size: Some(arcweft_render_text::Milli(10000)),
+            ruby_gap: Some(arcweft_render_text::Milli(1000)),
+            ruby_overhang: Some(arcweft_render_text::Milli(3000)),
+            ruby_collision_gap: Some(arcweft_render_text::Milli(4000)),
+            ..RichTextLayout::default()
+        });
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        let base = layout.ruby[0].base_bounds;
+        let annotation = layout.ruby[0].ruby_bounds;
+        assert_f32_eq(annotation.height, 10.0);
+        assert_f32_eq(annotation.y, base.y - 11.0);
+        assert!(
+            annotation.x >= base.x - 3.0,
+            "overhang should constrain annotation start near the base: {annotation:?}"
         );
     }
 

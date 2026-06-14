@@ -206,6 +206,14 @@ pub struct RichTextLayout {
     pub jlreq_strictness: RichTextJlreqStrictness,
     #[serde(default = "default_column_gap")]
     pub column_gap: Milli,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_font_size: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_gap: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_overhang: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_collision_gap: Option<Milli>,
 }
 
 const fn default_column_gap() -> Milli {
@@ -221,6 +229,10 @@ impl Default for RichTextLayout {
             ruby_position: RichTextRubyPosition::Auto,
             jlreq_strictness: RichTextJlreqStrictness::Auto,
             column_gap: default_column_gap(),
+            ruby_font_size: None,
+            ruby_gap: None,
+            ruby_overhang: None,
+            ruby_collision_gap: None,
         }
     }
 }

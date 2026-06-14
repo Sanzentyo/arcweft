@@ -835,6 +835,18 @@ fn merge_layout_presentation(out: &mut RichTextPresentation, layout: &RichTextLa
     if layout.column_gap != RichTextLayout::default().column_gap {
         merged.column_gap = layout.column_gap;
     }
+    if layout.ruby_font_size.is_some() {
+        merged.ruby_font_size = layout.ruby_font_size;
+    }
+    if layout.ruby_gap.is_some() {
+        merged.ruby_gap = layout.ruby_gap;
+    }
+    if layout.ruby_overhang.is_some() {
+        merged.ruby_overhang = layout.ruby_overhang;
+    }
+    if layout.ruby_collision_gap.is_some() {
+        merged.ruby_collision_gap = layout.ruby_collision_gap;
+    }
     out.layout = Some(merged);
 }
 

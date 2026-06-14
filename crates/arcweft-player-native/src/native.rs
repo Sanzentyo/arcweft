@@ -8,7 +8,7 @@ use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
     RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
-    RichTextStyle, RichTextWritingMode, parse_decimal_milli,
+    RichTextStyle, RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
 };
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
@@ -1655,7 +1655,7 @@ fn display_map_ruby_for_range(
                 base_range: (base_range.start - page_range.start)
                     ..(base_range.end - page_range.start),
                 ruby: annotation.ruby.clone(),
-                style: native_ruby_style_from_styles(&annotation.styles),
+                style: native_ruby_style_from_styles(&annotation.styles, &annotation.presentation),
                 presentation: annotation.presentation.clone(),
             })
         })
@@ -1684,7 +1684,8 @@ fn debug_rich_text_for_regions(
             if base_range.start < page_range.start || base_range.end > page_range.end {
                 return None;
             }
-            let mut style = native_ruby_style_from_styles(&annotation.styles);
+            let mut style =
+                native_ruby_style_from_styles(&annotation.styles, &annotation.presentation);
             style.color = selected_ruby
                 .iter()
                 .find_map(|(selected_index, color)| (*selected_index == index).then_some(*color))
@@ -1727,7 +1728,8 @@ fn color_rich_text_for_regions(
             if base_range.start < page_range.start || base_range.end > page_range.end {
                 return None;
             }
-            let mut style = native_ruby_style_from_styles(&annotation.styles);
+            let mut style =
+                native_ruby_style_from_styles(&annotation.styles, &annotation.presentation);
             if !selected_ruby.contains(&index) {
                 style.color = NativeTextColor::rgba(0, 0, 0, 0);
             }
@@ -2117,16 +2119,15 @@ impl WindowRichTextBuilder {
             RichTextNode::Ruby { base, ruby } => {
                 let base_style = self.current_style();
                 let base_range = self.push_text(base, base_style.clone());
-                let ruby_style = NativeTextStyle {
-                    color: NativeTextColor::new(170, 190, 220),
-                    size: Some(16),
-                    ..base_style
-                };
+                let presentation = presentation_from_styles(
+                    self.base_styles.iter().chain(self.active_styles.iter()),
+                );
+                let ruby_style = native_ruby_style_from_base(base_style, &presentation);
                 self.ruby_annotations.push(WindowRubyAnnotation {
                     base_range,
                     ruby: ruby.clone(),
                     style: ruby_style,
-                    presentation: RichTextPresentation::default(),
+                    presentation,
                 });
             }
             RichTextNode::StyleStart { style } => self.active_styles.push(style.clone()),
@@ -2198,11 +2199,39 @@ fn native_style_from_styles<'a>(
         .fold(NativeTextStyle::default(), apply_style)
 }
 
-fn native_ruby_style_from_styles(styles: &[RichTextStyle]) -> NativeTextStyle {
-    NativeTextStyle {
+fn native_ruby_style_from_base(
+    base_style: NativeTextStyle,
+    presentation: &RichTextPresentation,
+) -> NativeTextStyle {
+    let mut style = NativeTextStyle {
         color: NativeTextColor::new(170, 190, 220),
-        size: Some(16),
-        ..native_style_from_styles(styles)
+        size: Some(14),
+        ..base_style
+    };
+    if let Some(size) = native_ruby_font_size(presentation) {
+        style.size = Some(size);
+    }
+    style
+}
+
+fn native_ruby_style_from_styles(
+    styles: &[RichTextStyle],
+    presentation: &RichTextPresentation,
+) -> NativeTextStyle {
+    native_ruby_style_from_base(native_style_from_styles(styles), presentation)
+}
+
+fn native_ruby_font_size(presentation: &RichTextPresentation) -> Option<u16> {
+    let value = presentation.layout.as_ref()?.ruby_font_size?.as_f32();
+    if value.is_finite() && value >= 1.0 {
+        value
+            .round()
+            .min(f32::from(u16::MAX))
+            .to_string()
+            .parse()
+            .ok()
+    } else {
+        None
     }
 }
 
@@ -3700,7 +3729,7 @@ mod tests {
                     family: NativeFontFamily::Monospace,
                     weight: NativeTextWeight::Regular,
                     italic: false,
-                    size: Some(16),
+                    size: Some(14),
                 },
                 presentation: RichTextPresentation::default(),
             }]

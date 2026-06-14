@@ -658,6 +658,10 @@ fn split_selector_attrs(attrs: &str) -> (&str, &str) {
 
 fn layout_from_selector(selector: &str, attrs: &str) -> RichTextLayout {
     let attrs = parse_attrs(attrs);
+    let ruby_selector = matches!(
+        selector,
+        "ruby_over" | "ruby_under" | "ruby_inter_character"
+    );
     RichTextLayout {
         writing_mode: match selector {
             "vertical_rl" | "vertical" => RichTextWritingMode::VerticalRl,
@@ -690,8 +694,49 @@ fn layout_from_selector(selector: &str, attrs: &str) -> RichTextLayout {
             _ => RichTextRubyPosition::Auto,
         },
         jlreq_strictness: jlreq_strictness_attr(&attrs),
-        column_gap: milli_attr(&attrs, "gap").unwrap_or(Milli(8000)),
+        column_gap: column_gap_attr(&attrs, ruby_selector).unwrap_or(Milli(8000)),
+        ruby_font_size: ruby_milli_attr(&attrs, ruby_selector, "ruby_size", "size"),
+        ruby_gap: ruby_milli_attr(&attrs, ruby_selector, "ruby_gap", "gap"),
+        ruby_overhang: attrs
+            .get("ruby_overhang")
+            .or_else(|| attrs.get("overhang"))
+            .map(|value| parse_milli_token(value)),
+        ruby_collision_gap: attrs
+            .get("ruby_collision_gap")
+            .or_else(|| attrs.get("collision_gap"))
+            .map(|value| parse_milli_token(value)),
     }
+}
+
+fn column_gap_attr(attrs: &BTreeMap<String, String>, ruby_selector: bool) -> Option<Milli> {
+    attrs
+        .get("column_gap")
+        .or_else(|| {
+            if ruby_selector {
+                None
+            } else {
+                attrs.get("gap")
+            }
+        })
+        .map(|value| parse_milli_token(value))
+}
+
+fn ruby_milli_attr(
+    attrs: &BTreeMap<String, String>,
+    ruby_selector: bool,
+    explicit_name: &str,
+    ruby_selector_short_name: &str,
+) -> Option<Milli> {
+    attrs
+        .get(explicit_name)
+        .or_else(|| {
+            if ruby_selector {
+                attrs.get(ruby_selector_short_name)
+            } else {
+                None
+            }
+        })
+        .map(|value| parse_milli_token(value))
 }
 
 fn jlreq_strictness_attr(attrs: &BTreeMap<String, String>) -> RichTextJlreqStrictness {
@@ -1307,6 +1352,51 @@ flow @flow.main main {
 
         assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
         assert_eq!(layout.ruby_position, RichTextRubyPosition::Under);
+    }
+
+    #[test]
+    fn ruby_layout_selector_lowers_typography_attrs() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.ruby_over ruby_size=11px ruby_gap=1px ruby_overhang=4px ruby_collision_gap=3px]|[夢](ゆめ)[/][p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.004".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let ruby = frame
+            .display_map
+            .ruby_annotations
+            .first()
+            .expect("ruby annotation");
+        let layout = ruby.presentation.layout.as_ref().expect("ruby layout");
+
+        assert_eq!(layout.ruby_position, RichTextRubyPosition::Over);
+        assert_eq!(layout.ruby_font_size, Some(Milli(11000)));
+        assert_eq!(layout.ruby_gap, Some(Milli(1000)));
+        assert_eq!(layout.ruby_overhang, Some(Milli(4000)));
+        assert_eq!(layout.ruby_collision_gap, Some(Milli(3000)));
+        assert_eq!(layout.column_gap, Milli(8000));
     }
 
     #[test]
