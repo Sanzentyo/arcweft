@@ -79,7 +79,7 @@ scan-absolute-paths:
 scan-removed-dsl:
     @cargo test -p arcweft-cli source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims --test regression_harness
 
-verify: fmt-check clippy test-workspace scan-absolute-paths scan-removed-dsl
+verify: fmt-check check-jlreq-punctuation clippy test-workspace scan-absolute-paths scan-removed-dsl
 
 verify-full: verify test-doc test-tier2
 

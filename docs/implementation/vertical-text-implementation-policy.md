@@ -115,7 +115,9 @@ the concrete choices to follow when turning that package into production code.
   `arcweft-text-layout/src/jlreq_punctuation_data.rs`.
   `tools/generate_jlreq_punctuation_data.rs` regenerates or checks those
   tables, and `just generate-jlreq-punctuation` /
-  `just check-jlreq-punctuation` wrap the tool. The range table classifies
+  `just check-jlreq-punctuation` wrap the tool. The normal `just verify` path
+  runs the check target so generated JLREQ table drift is caught at main push
+  cut points. The range table classifies
   opening/closing punctuation, small kana, dash marks, leaders, middle dots,
   and repeat marks, including fullwidth, halfwidth, vertical presentation, and
   broader paired-bracket codepoints. The generated pair/cost table keeps

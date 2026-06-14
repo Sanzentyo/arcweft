@@ -235,10 +235,13 @@ Operational budget:
   `just test-rich-text` when the touched behavior is in the render/layout/native
   path.
 - Main push cut point: add `just test-workspace` unless the change is docs-only
-  or otherwise demonstrably outside Rust behavior. Add `just test-cli-check`
-  when the CLI integration surface changed broadly. Add `just test-doc` only
-  when Rust documentation comments, doctest examples, or public API
-  documentation changed, or when preparing a milestone validation.
+  or otherwise demonstrably outside Rust behavior. Use `just verify` when the
+  cut point touches generated JLREQ punctuation data or is broad enough that
+  formatter, clippy, workspace tests, absolute-path scans, removed-DSL scans,
+  and `just check-jlreq-punctuation` should all be asserted together. Add
+  `just test-cli-check` when the CLI integration surface changed broadly. Add
+  `just test-doc` only when Rust documentation comments, doctest examples, or
+  public API documentation changed, or when preparing a milestone validation.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
 
@@ -246,11 +249,12 @@ Operational budget:
 
 MCP stdio, the broad Agent observe resource matrix, and exact visual golden
 coverage are marked `#[ignore]`. The normal fast test job should use
-`cargo test --workspace --lib --tests` or `just test-workspace`, not an
-unqualified `cargo test --workspace`, so cold doc-test work cannot unexpectedly
-dominate every push. CI should keep fast crate tests and focused native renderer
-tests in the normal job, run doc-tests as a separate named job, then run Tier 2
-in an explicitly named slow job or scheduled job.
+`just verify` or its constituent commands rather than an unqualified
+`cargo test --workspace`, so cold doc-test work cannot unexpectedly dominate
+every push and JLREQ generated table drift is still caught. CI should keep fast
+crate tests, `just check-jlreq-punctuation`, and focused native renderer tests
+in the normal job, run doc-tests as a separate named job, then run Tier 2 in an
+explicitly named slow job or scheduled job.
 
 Local reports should state which tier was run and whether the slow MCP stdio,
 broad Agent observe resource-matrix, exact visual-golden suites, and doc-tests
