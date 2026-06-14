@@ -5486,6 +5486,7 @@ mod tests {
             ("：", "fullwidth colon"),
             ("；", "fullwidth semicolon"),
             ("｡", "halfwidth full stop"),
+            ("､", "halfwidth ideographic comma"),
         ] {
             for (writing_mode, next_column_moves_right) in [
                 (RichTextWritingMode::VerticalRl, false),

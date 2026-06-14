@@ -436,8 +436,8 @@ the concrete choices to follow when turning that package into production code.
   punctuation clusters are captured as raw native mask and object-id crops,
   tying the mirrored Agent bboxes, stable object colors, and crop origins back
   to rendered GlyphArea pixels. Fullwidth and halfwidth closing punctuation
-  coverage now includes `？`, `：`, `；`, and `｡` in Sans I/O layout and native
-  Agent fixtures for both `vertical_rl` and `vertical_lr`, with raw
+  coverage now includes `？`, `：`, `；`, `｡`, and `､` in Sans I/O layout and
+  native Agent fixtures for both `vertical_rl` and `vertical_lr`, with raw
   mask/object-id crops tying each half-cell hanging bbox and stable object color
   back to rendered GlyphArea pixels. Preset-specific native Agent coverage
   compares `jlreq=loose` and

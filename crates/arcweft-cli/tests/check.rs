@@ -5870,6 +5870,24 @@ fn agent_observe_native_renderer_reports_halfwidth_full_stop_hanging_punctuation
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_halfwidth_ideographic_comma_hanging_punctuation() {
+    assert_native_closing_punctuation_hanging_geometry(
+        "vertical_rl",
+        false,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+    );
+    assert_native_closing_punctuation_hanging_geometry(
+        "vertical_lr",
+        true,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+    );
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_fullwidth_question_mark_raw_crops() {
     assert_native_closing_punctuation_raw_crop(
         "vertical_rl",
@@ -5926,6 +5944,42 @@ fn agent_observe_native_renderer_writes_fullwidth_colon_semicolon_raw_crops() {
             }
         }
     }
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_halfwidth_ideographic_comma_raw_crops() {
+    assert_native_closing_punctuation_raw_crop(
+        "vertical_rl",
+        false,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+        "mask",
+    );
+    assert_native_closing_punctuation_raw_crop(
+        "vertical_rl",
+        false,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+        "object-id",
+    );
+    assert_native_closing_punctuation_raw_crop(
+        "vertical_lr",
+        true,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+        "mask",
+    );
+    assert_native_closing_punctuation_raw_crop(
+        "vertical_lr",
+        true,
+        "､",
+        "halfwidth-ideographic-comma",
+        "halfwidth ideographic comma",
+        "object-id",
+    );
 }
 
 #[test]
