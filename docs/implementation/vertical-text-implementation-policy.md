@@ -361,7 +361,12 @@ the concrete choices to follow when turning that package into production code.
   rendered GlyphArea pixels. Preset-specific native Agent coverage compares
   `jlreq=loose` and
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
-  observed column geometry changes with the selected strictness preset. Broader
+  observed column geometry changes with the selected strictness preset.
+  Vertical presentation-form leader coverage also exercises `︙` as a generated
+  leader class in Sans I/O layout and native Agent fixtures for both
+  `vertical_rl` and `vertical_lr`, with raw mask/object-id crops tying the
+  observed suffix geometry and rendered upright GlyphArea pixels back to the
+  same Agent object. Broader
   paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, dash marks, middle dots,
   repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
