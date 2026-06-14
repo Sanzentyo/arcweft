@@ -3968,6 +3968,52 @@ mod tests {
     }
 
     #[test]
+    fn vertical_paragraph_plan_keeps_variation_selector_grapheme_inside_strict_class_mix() {
+        let text = "天地春夏秋冬漢\u{fe00}人。「川」あっいおーえ―中・外………終";
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 210.0),
+                jlreq_strictness: JlreqStrictness::Strict,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+            assert!(
+                vertical_layout_column_count(&layout) >= 4,
+                "{writing_mode:?} strict paragraph with a variation-selector grapheme should require a multi-column plan: {layout:?}"
+            );
+
+            let variant = nth_laid_out_glyph(&layout, "漢\u{fe00}", 0);
+            assert_eq!(variant.range, RichTextRange::new(18, 24));
+            assert_eq!(variant.orientation, GlyphOrientation::Upright);
+            assert_eq!(variant.vertical_form, GlyphVerticalForm::None);
+
+            let person = nth_laid_out_glyph(&layout, "人", 0);
+            let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
+            let strict_open = nth_laid_out_glyph(&layout, "「", 0);
+            let river = nth_laid_out_glyph(&layout, "川", 0);
+            assert_vertical_layout_after(
+                person,
+                strict_full_stop,
+                "strict paragraph class mix should still keep closing punctuation after a variation-selector grapheme",
+            );
+            assert_vertical_layout_after(
+                strict_full_stop,
+                strict_open,
+                "strict paragraph class mix should still keep adjacent closing/opening punctuation after a variation-selector grapheme",
+            );
+            assert_vertical_layout_after(
+                strict_open,
+                river,
+                "strict opening punctuation should still stay with its base after a variation-selector grapheme",
+            );
+        }
+    }
+
+    #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_unit_symbol_inside_class_mix() {
         for (text, first_unit, second_unit, description) in [
             (

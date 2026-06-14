@@ -108,7 +108,10 @@ the concrete choices to follow when turning that package into production code.
   paragraph-DP and rendered GlyphArea path. Decomposed kana graphemes are
   covered the same way, with a strict paragraph-mix fixture and raw crops for
   `か + U+3099`, proving combining-mark kana clusters use the same layout and
-  rendered GlyphArea geometry path.
+  rendered GlyphArea geometry path. Variation-selector graphemes are also
+  covered in strict paragraph mix through `漢 + U+FE00`, proving variation
+  selectors are ignored for orientation lookup without splitting source ranges
+  or capture geometry.
 - Vertical column breaking uses `unicode-linebreak` UAX #14 opportunities as
   initial break candidates. When a column overflows, the layout only moves the
   next cluster to a new column if the cluster boundary is a break opportunity,
