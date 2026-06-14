@@ -5034,6 +5034,72 @@ fn agent_observe_native_renderer_writes_vertical_presentation_curly_and_square_b
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_fullwidth_bracket_pair_geometry() {
+    for (open, close, label, description) in [
+        ("（", "）", "fullwidth-parenthesis", "fullwidth parenthesis"),
+        (
+            "［",
+            "］",
+            "fullwidth-square-bracket",
+            "fullwidth square bracket",
+        ),
+        (
+            "｛",
+            "｝",
+            "fullwidth-curly-bracket",
+            "fullwidth curly bracket",
+        ),
+        (
+            "｟",
+            "｠",
+            "fullwidth-white-parenthesis",
+            "fullwidth white parenthesis",
+        ),
+    ] {
+        assert_native_rotated_bracket_geometry("vertical_rl", open, close, label, description);
+        assert_native_rotated_bracket_geometry("vertical_lr", open, close, label, description);
+    }
+}
+
+#[test]
+fn agent_observe_native_renderer_writes_fullwidth_bracket_pair_raw_crops() {
+    for (open, close, label, description) in [
+        ("（", "）", "fullwidth-parenthesis", "fullwidth parenthesis"),
+        (
+            "［",
+            "］",
+            "fullwidth-square-bracket",
+            "fullwidth square bracket",
+        ),
+        (
+            "｛",
+            "｝",
+            "fullwidth-curly-bracket",
+            "fullwidth curly bracket",
+        ),
+        (
+            "｟",
+            "｠",
+            "fullwidth-white-parenthesis",
+            "fullwidth white parenthesis",
+        ),
+    ] {
+        for writing_mode in ["vertical_rl", "vertical_lr"] {
+            for capture_kind in ["mask", "object-id"] {
+                assert_native_rotated_bracket_raw_crop(
+                    writing_mode,
+                    open,
+                    close,
+                    label,
+                    description,
+                    capture_kind,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_halfwidth_corner_bracket_geometry() {
     assert_native_halfwidth_corner_bracket_geometry("vertical_rl");
     assert_native_halfwidth_corner_bracket_geometry("vertical_lr");
@@ -5049,16 +5115,56 @@ fn agent_observe_native_renderer_writes_halfwidth_corner_bracket_raw_crops() {
 
 #[test]
 fn agent_observe_native_renderer_reports_small_parenthesis_geometry() {
-    assert_native_small_parenthesis_geometry("vertical_rl");
-    assert_native_small_parenthesis_geometry("vertical_lr");
+    assert_native_rotated_bracket_geometry(
+        "vertical_rl",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+    );
+    assert_native_rotated_bracket_geometry(
+        "vertical_lr",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+    );
 }
 
 #[test]
 fn agent_observe_native_renderer_writes_small_parenthesis_raw_crops() {
-    assert_native_small_parenthesis_raw_crop("vertical_rl", "mask");
-    assert_native_small_parenthesis_raw_crop("vertical_rl", "object-id");
-    assert_native_small_parenthesis_raw_crop("vertical_lr", "mask");
-    assert_native_small_parenthesis_raw_crop("vertical_lr", "object-id");
+    assert_native_rotated_bracket_raw_crop(
+        "vertical_rl",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+        "mask",
+    );
+    assert_native_rotated_bracket_raw_crop(
+        "vertical_rl",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+        "object-id",
+    );
+    assert_native_rotated_bracket_raw_crop(
+        "vertical_lr",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+        "mask",
+    );
+    assert_native_rotated_bracket_raw_crop(
+        "vertical_lr",
+        "﹙",
+        "﹚",
+        "small-parenthesis",
+        "small parenthesis",
+        "object-id",
+    );
 }
 
 #[test]
@@ -5072,8 +5178,8 @@ fn agent_observe_native_renderer_reports_small_curly_and_tortoise_bracket_geomet
             "small tortoise shell bracket",
         ),
     ] {
-        assert_native_small_bracket_geometry("vertical_rl", open, close, label, description);
-        assert_native_small_bracket_geometry("vertical_lr", open, close, label, description);
+        assert_native_rotated_bracket_geometry("vertical_rl", open, close, label, description);
+        assert_native_rotated_bracket_geometry("vertical_lr", open, close, label, description);
     }
 }
 
@@ -5090,7 +5196,7 @@ fn agent_observe_native_renderer_writes_small_curly_and_tortoise_bracket_raw_cro
     ] {
         for writing_mode in ["vertical_rl", "vertical_lr"] {
             for capture_kind in ["mask", "object-id"] {
-                assert_native_small_bracket_raw_crop(
+                assert_native_rotated_bracket_raw_crop(
                     writing_mode,
                     open,
                     close,
@@ -5932,28 +6038,7 @@ fn assert_native_halfwidth_corner_bracket_object<'report>(
     close
 }
 
-fn assert_native_small_parenthesis_geometry(writing_mode: &str) {
-    assert_native_small_bracket_geometry(
-        writing_mode,
-        "﹙",
-        "﹚",
-        "small-parenthesis",
-        "small parenthesis",
-    );
-}
-
-fn assert_native_small_parenthesis_raw_crop(writing_mode: &str, capture_kind: &str) {
-    assert_native_small_bracket_raw_crop(
-        writing_mode,
-        "﹙",
-        "﹚",
-        "small-parenthesis",
-        "small parenthesis",
-        capture_kind,
-    );
-}
-
-fn assert_native_small_bracket_geometry(
+fn assert_native_rotated_bracket_geometry(
     writing_mode: &str,
     open: &str,
     close: &str,
@@ -5973,12 +6058,12 @@ flow @flow.main main {{
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
-    fs::remove_file(&path).expect("remove temp small bracket source");
+    fs::remove_file(&path).expect("remove temp rotated bracket source");
     assert_native_rich_text_layer_image_has_content(&json);
-    assert_native_small_bracket_object(&json, writing_mode, open, close, description);
+    assert_native_rotated_bracket_object(&json, writing_mode, open, close, description);
 }
 
-fn assert_native_small_bracket_raw_crop(
+fn assert_native_rotated_bracket_raw_crop(
     writing_mode: &str,
     open: &str,
     close: &str,
@@ -6022,7 +6107,7 @@ flow @flow.main main {{
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe writes native small-bracket raw crop");
+        .expect("arcw agent observe writes native rotated-bracket raw crop");
 
     assert!(
         output.status.success(),
@@ -6030,7 +6115,7 @@ flow @flow.main main {{
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native small-bracket report is JSON");
+        serde_json::from_slice(&output.stdout).expect("native rotated-bracket report is JSON");
     assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
     assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
     assert_eq!(
@@ -6043,7 +6128,7 @@ flow @flow.main main {{
     );
 
     let close_object =
-        assert_native_small_bracket_object(&json, writing_mode, open, close, description);
+        assert_native_rotated_bracket_object(&json, writing_mode, open, close, description);
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
         close_object["bbox"]["x"]
@@ -6068,18 +6153,18 @@ flow @flow.main main {{
             &format!("{writing_mode} {description} object-id crop"),
         );
     } else {
-        let bytes = fs::read(&raw_path).expect("read native small-bracket mask crop");
+        let bytes = fs::read(&raw_path).expect("read native rotated-bracket mask crop");
         let opaque = opaque_pixel_count(&bytes);
         let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
         assert_eq!(opaque as u64, content_pixels);
         assert!(transparent > 0);
     }
 
-    fs::remove_file(&path).expect("remove temp native small bracket source");
-    fs::remove_dir_all(&dir).expect("remove temp native small bracket dir");
+    fs::remove_file(&path).expect("remove temp native rotated bracket source");
+    fs::remove_dir_all(&dir).expect("remove temp native rotated bracket dir");
 }
 
-fn assert_native_small_bracket_object<'report>(
+fn assert_native_rotated_bracket_object<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
     open: &str,

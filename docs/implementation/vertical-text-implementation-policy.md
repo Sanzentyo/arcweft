@@ -465,11 +465,15 @@ the concrete choices to follow when turning that package into production code.
   crops from the same observed GlyphArea geometry. Halfwidth
   corner brackets `｢｣` are covered as the same generated compact bracket pair
   through their rotated UAX #50 path, with native raw mask/object-id crops in
-  both vertical writing modes for the closing bracket object. Small parentheses
-  `﹙﹚`, small curly brackets `﹛﹜`, and small tortoise shell brackets `﹝﹞`
-  are covered the same way through their transformed-rotated
-  `vertical_form=rotated_alternate` paths. Broader
-  paragraph-style native Agent coverage now combines comma compression,
+  both vertical writing modes for the closing bracket object. Fullwidth
+  parentheses `（）`, square brackets `［］`, curly brackets `｛｝`, and white
+  parentheses `｟｠` are covered as compact bracket pairs through the
+  transformed-rotated `vertical_form=rotated_alternate` path, with Sans I/O
+  overhang/no-break checks and native raw mask/object-id crops for both
+  vertical writing modes. Small parentheses `﹙﹚`, small curly brackets
+  `﹛﹜`, and small tortoise shell brackets `﹝﹞` are covered the same way
+  through their transformed-rotated `vertical_form=rotated_alternate` paths.
+  Broader paragraph-style native Agent coverage now combines comma compression,
   iteration marks, bracket grouping, small kana, dash marks, middle dots,
   repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
   `vertical_rl` and `vertical_lr` fixtures so the integrated JLREQ behavior is
