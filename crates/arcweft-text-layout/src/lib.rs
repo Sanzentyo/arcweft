@@ -1125,16 +1125,35 @@ fn latin_word_sequence_requires_previous(
     let Some(cluster) = clusters.get(cluster_index) else {
         return false;
     };
-    !cluster.break_allowed_before
-        && is_ascii_alphabetic_cluster_text(&cluster.text)
-        && cluster_index
-            .checked_sub(1)
-            .and_then(|previous_index| clusters.get(previous_index))
-            .is_some_and(|previous| is_ascii_alphabetic_cluster_text(&previous.text))
+    let previous = cluster_index
+        .checked_sub(1)
+        .and_then(|previous_index| clusters.get(previous_index));
+    let next = clusters.get(cluster_index + 1);
+    if is_latin_word_joiner_cluster_text(&cluster.text) {
+        return previous.is_some_and(|previous| is_ascii_alphabetic_cluster_text(&previous.text))
+            && next.is_some_and(|next| is_ascii_alphabetic_cluster_text(&next.text));
+    }
+    if !is_ascii_alphabetic_cluster_text(&cluster.text) {
+        return false;
+    }
+    previous.is_some_and(|previous| {
+        (!cluster.break_allowed_before && is_ascii_alphabetic_cluster_text(&previous.text))
+            || (is_latin_word_joiner_cluster_text(&previous.text)
+                && cluster_index
+                    .checked_sub(2)
+                    .and_then(|before_joiner_index| clusters.get(before_joiner_index))
+                    .is_some_and(|before_joiner| {
+                        is_ascii_alphabetic_cluster_text(&before_joiner.text)
+                    }))
+    })
 }
 
 fn is_ascii_alphabetic_cluster_text(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphabetic())
+}
+
+fn is_latin_word_joiner_cluster_text(text: &str) -> bool {
+    matches!(text, "-" | "\u{2010}" | "\u{2011}")
 }
 
 fn sub_superscript_object_sequence_requires_previous(
@@ -2671,8 +2690,8 @@ mod tests {
 
     #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_latin_units_and_words_unbroken() {
-        // W3C JLREQ 3.1.10 keeps Latin unit symbols and non-hyphenated
-        // Western words unbroken inside the sequence of letters.
+        // W3C JLREQ 3.1.10 keeps Latin unit symbols and Western words
+        // unbroken inside the sequence of letters and word-internal hyphens.
         let text = "天kg人";
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
@@ -2732,6 +2751,49 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a Western word should continue in the next column",
+            );
+        }
+
+        let text = "天Web-Test人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let first = nth_laid_out_glyph(&layout, "W", 0);
+            let before_hyphen = nth_laid_out_glyph(&layout, "b", 0);
+            let hyphen = nth_laid_out_glyph(&layout, "-", 0);
+            let after_hyphen = nth_laid_out_glyph(&layout, "T", 0);
+            let last = nth_laid_out_glyph(&layout, "t", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                first,
+                next_column_moves_right,
+                "hyphenated Western word should start as one object after body text",
+            );
+            assert_vertical_layout_after(
+                before_hyphen,
+                hyphen,
+                "word-internal hyphen should stay attached to the preceding letters",
+            );
+            assert_vertical_layout_after(
+                hyphen,
+                after_hyphen,
+                "letters after a word-internal hyphen should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                last,
+                next_body,
+                next_column_moves_right,
+                "body text after a hyphenated Western word should continue in the next column",
             );
         }
     }
