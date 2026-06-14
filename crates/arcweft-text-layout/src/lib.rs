@@ -1178,7 +1178,7 @@ const fn is_latin_or_greek_alphabetic_char(ch: char) -> bool {
 }
 
 fn is_latin_word_joiner_cluster_text(text: &str) -> bool {
-    matches!(text, "-" | "\u{2010}" | "\u{2011}")
+    matches!(text, "'" | "\u{2019}" | "-" | "\u{2010}" | "\u{2011}")
 }
 
 fn sub_superscript_object_sequence_requires_previous(
@@ -2883,6 +2883,50 @@ mod tests {
                 next_body,
                 next_column_moves_right,
                 "body text after a hyphenated Western word should continue in the next column",
+            );
+        }
+    }
+
+    #[test]
+    fn vertical_paragraph_plan_keeps_published_jlreq_apostrophe_western_words_unbroken() {
+        let text = "天O'K人";
+        for (writing_mode, next_column_moves_right) in [
+            (RichTextWritingMode::VerticalRl, false),
+            (RichTextWritingMode::VerticalLr, true),
+        ] {
+            let frame = frame_with_run(text, vertical_presentation(writing_mode));
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(210.0, 84.0),
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            let body = nth_laid_out_glyph(&layout, "天", 0);
+            let first = nth_laid_out_glyph(&layout, "O", 0);
+            let apostrophe = nth_laid_out_glyph(&layout, "'", 0);
+            let after_apostrophe = nth_laid_out_glyph(&layout, "K", 0);
+            let next_body = nth_laid_out_glyph(&layout, "人", 0);
+            assert_vertical_layout_column_restart(
+                body,
+                first,
+                next_column_moves_right,
+                "apostrophe Western word should start as one object after body text",
+            );
+            assert_vertical_layout_after(
+                first,
+                apostrophe,
+                "word-internal apostrophe should stay attached to the preceding letter",
+            );
+            assert_vertical_layout_after(
+                apostrophe,
+                after_apostrophe,
+                "letter after a word-internal apostrophe should stay attached",
+            );
+            assert_next_vertical_layout_column(
+                after_apostrophe,
+                next_body,
+                next_column_moves_right,
+                "body text after an apostrophe Western word should continue in the next column",
             );
         }
     }
