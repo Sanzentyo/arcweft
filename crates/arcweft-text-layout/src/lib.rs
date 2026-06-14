@@ -2764,25 +2764,34 @@ mod tests {
 
     #[test]
     fn overheight_vertical_ruby_splits_into_column_segments() {
-        let mut frame =
-            frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalRl));
-        push_ruby(&mut frame, 0, "夢".len(), "あいうえお");
-        let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 42.0),
-            ruby_font_size: 14.0,
-            ..TextLayoutConfig::default()
-        };
-        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        for (writing_mode, continuation_moves_right) in [
+            (RichTextWritingMode::VerticalRl, true),
+            (RichTextWritingMode::VerticalLr, false),
+        ] {
+            let mut frame = frame_with_run("夢", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢".len(), "あいうえお");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 42.0),
+                ruby_font_size: 14.0,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-        assert_eq!(layout.ruby.len(), 2);
-        assert_eq!(layout.ruby[0].ruby_index, layout.ruby[1].ruby_index);
-        assert_eq!(layout.ruby[0].ruby, "あいう");
-        assert_eq!(layout.ruby[1].ruby, "えお");
-        assert!(layout.ruby[0].ruby_bounds.height <= config.size.height);
-        assert!(layout.ruby[1].ruby_bounds.height <= config.size.height);
-        assert!(layout.ruby[1].ruby_bounds.x > layout.ruby[0].ruby_bounds.x);
-        assert_f32_eq(layout.ruby[0].ruby_bounds.y, config.origin.y);
-        assert_f32_eq(layout.ruby[1].ruby_bounds.y, config.origin.y);
+            assert_eq!(layout.ruby.len(), 2);
+            assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+            assert_eq!(layout.ruby[0].ruby_index, layout.ruby[1].ruby_index);
+            assert_eq!(layout.ruby[0].ruby, "あいう");
+            assert_eq!(layout.ruby[1].ruby, "えお");
+            assert!(layout.ruby[0].ruby_bounds.height <= config.size.height);
+            assert!(layout.ruby[1].ruby_bounds.height <= config.size.height);
+            if continuation_moves_right {
+                assert!(layout.ruby[1].ruby_bounds.x > layout.ruby[0].ruby_bounds.x);
+            } else {
+                assert!(layout.ruby[1].ruby_bounds.x < layout.ruby[0].ruby_bounds.x);
+            }
+            assert_f32_eq(layout.ruby[0].ruby_bounds.y, config.origin.y);
+            assert_f32_eq(layout.ruby[1].ruby_bounds.y, config.origin.y);
+        }
     }
 
     fn push_ruby(frame: &mut LineDisplayFrame, start: usize, end: usize, ruby: &str) {
