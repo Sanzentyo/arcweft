@@ -343,14 +343,15 @@ the concrete choices to follow when turning that package into production code.
   `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
   observed column geometry changes with the selected strictness preset. Broader
   paragraph-style native Agent coverage now combines comma compression,
-  iteration marks, bracket grouping, small kana, middle dots, repeated leaders,
-  an overhanging leader chain, and multi-column DP placement in mirrored
+  iteration marks, bracket grouping, small kana, dash marks, middle dots,
+  repeated leaders, an overhanging leader chain, and multi-column DP placement in mirrored
   `vertical_rl` and `vertical_lr` fixtures so the integrated JLREQ behavior is
   observable beyond isolated punctuation-pair tests in both column-progression
   directions. The Sans I/O planner now also runs the same published-style
   paragraph class mix across `vertical_rl` and `vertical_lr`, checking comma
-  hanging/compression, iteration marks, compact brackets, small kana, middle
-  dots, and leader-chain overhang inside one renderer-independent paragraph
+  hanging/compression, iteration marks, compact brackets, small kana,
+  dash marks, middle dots, and leader-chain overhang inside one
+  renderer-independent paragraph
   plan. The Sans I/O planner also covers a longer leader chain whose
   trailing separation-prohibited suffix requires more than one body cell of
   allowed overhang before ordinary text can continue in the next column.

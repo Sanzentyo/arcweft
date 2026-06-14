@@ -1915,7 +1915,7 @@ mod tests {
         // W3C JLREQ 3.1 groups these as line-head/line-end and
         // separation-prohibited punctuation classes; keep them together in one
         // paragraph plan instead of only proving isolated two-cluster cases.
-        let text = "天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終";
+        let text = "天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終";
         for (writing_mode, next_column_moves_right) in [
             (RichTextWritingMode::VerticalRl, false),
             (RichTextWritingMode::VerticalLr, true),
@@ -1986,6 +1986,8 @@ mod tests {
                 "text after an overhanging small kana should continue in the next paragraph column",
             );
 
+            assert_vertical_paragraph_dash_suffix(&layout, next_column_moves_right);
+
             let middle_dot = nth_laid_out_glyph(&layout, "・", 0);
             let outside = nth_laid_out_glyph(&layout, "外", 0);
             assert_same_vertical_layout_column(
@@ -2020,6 +2022,23 @@ mod tests {
                 "text after an overhanging leader chain should continue in the next paragraph column",
             );
         }
+    }
+
+    fn assert_vertical_paragraph_dash_suffix(layout: &LaidOutText, next_column_moves_right: bool) {
+        let syllable = nth_laid_out_glyph(layout, "え", 0);
+        let dash = nth_laid_out_glyph(layout, "―", 0);
+        let center = nth_laid_out_glyph(layout, "中", 0);
+        assert_vertical_layout_after(
+            syllable,
+            dash,
+            "dash mark should stay with the previous paragraph cluster",
+        );
+        assert_next_vertical_layout_column(
+            dash,
+            center,
+            next_column_moves_right,
+            "text after an overhanging dash-mark suffix should continue in the next paragraph column",
+        );
     }
 
     #[test]

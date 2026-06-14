@@ -4691,7 +4691,7 @@ fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終[/][p]
+    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終[/][p]
 }
 ",
     );
@@ -4710,7 +4710,7 @@ fn agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geom
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.vertical_lr jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終[/][p]
+    alice: [.vertical_lr jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終[/][p]
 }
 ",
     );
@@ -4729,7 +4729,7 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
     );
     let run = find_rich_text_run_object(
         json,
-        "天地春夏秋冬月火、山々人「川」あっいおーえ中・外………終",
+        "天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終",
     );
     assert!(
         run["bbox"]["width"].as_u64().unwrap() >= 300
@@ -4807,8 +4807,23 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(
         "text after small kana continues in the same paragraph column",
     );
 
-    let middle_dot = find_rich_text_cluster_object(json, "・", 66, 69);
-    let outside = find_rich_text_cluster_object(json, "外", 69, 72);
+    let syllable = find_rich_text_cluster_object(json, "え", 60, 63);
+    let dash = find_rich_text_cluster_object(json, "―", 63, 66);
+    let center = find_rich_text_cluster_object(json, "中", 66, 69);
+    assert_vertical_cluster_after(
+        syllable,
+        dash,
+        "paragraph dash mark stays with its preceding cluster",
+    );
+    assert_next_paragraph_column(
+        dash,
+        center,
+        next_column_moves_right,
+        "paragraph text after an overhanging dash-mark suffix should continue in the next column",
+    );
+
+    let middle_dot = find_rich_text_cluster_object(json, "・", 69, 72);
+    let outside = find_rich_text_cluster_object(json, "外", 72, 75);
     assert_eq!(
         middle_dot["bbox"]["x"], outside["bbox"]["x"],
         "text after a middle dot should remain in the same paragraph column"
@@ -4818,9 +4833,9 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(
         "middle-dot compression should still advance paragraph text downward"
     );
 
-    let first_leader = find_rich_text_cluster_object(json, "…", 72, 75);
-    let second_leader = find_rich_text_cluster_object(json, "…", 75, 78);
-    let ending = find_rich_text_cluster_object(json, "終", 81, 84);
+    let first_leader = find_rich_text_cluster_object(json, "…", 75, 78);
+    let second_leader = find_rich_text_cluster_object(json, "…", 78, 81);
+    let ending = find_rich_text_cluster_object(json, "終", 84, 87);
     assert_vertical_cluster_after(
         first_leader,
         second_leader,
