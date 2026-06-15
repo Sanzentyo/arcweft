@@ -1946,7 +1946,7 @@ pub dialogue defaults @dialogue.defaults {
     text_color = rgb("#101112")
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue:.defaults.mobile {
     text_color = rgb("#202122")
 }
 
