@@ -23508,7 +23508,11 @@ pub textbox plan {
 
 pub surface character alice {
     dialogue_style {
-        text_color = "#202122"
+        rich_text {
+            text {
+                color = "#202122"
+            }
+        }
     }
 }
 
@@ -23543,7 +23547,7 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
         contributions,
         PlanStyleContribution {
             layer: "character_dialogue_style",
-            path: "text_color",
+            path: "rich_text.text.color",
             value: "\"#202122\"",
             active: None,
             requires_range: true,
@@ -23557,7 +23561,7 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
             layer: "dialogue_window_theme",
             path: "rich_text.text.color",
             value: "\"#303132\"",
-            active: Some(true),
+            active: Some(false),
             requires_range: true,
             context: "textbox theme",
         },
