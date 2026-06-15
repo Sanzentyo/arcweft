@@ -393,12 +393,16 @@ flow @flow.title title {}
 fn parses_attributes_and_wiki_links() {
     let tree = parse_ok(
         r"
+#![generated(tool)]
 /// links to [[flow.alice_intro]]
 #[derive(Debug)]
     flow @flow.opening opening {}
 ",
     );
 
+    assert_eq!(tree.attrs().len(), 1);
+    assert_eq!(tree.attrs()[0].name(), "generated");
+    assert_eq!(tree.attrs()[0].args(), Some("tool"));
     assert_eq!(tree.wiki_links()[0].body(), "flow.alice_intro");
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");

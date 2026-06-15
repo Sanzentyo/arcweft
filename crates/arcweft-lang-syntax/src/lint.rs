@@ -89,24 +89,45 @@ pub fn lint_id_policy(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
 }
 
 fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint>) {
+    let source_attrs = tree.attrs();
     match item {
         Item::Flow(flow) => {
             if flow.has_explicit_name()
                 && let (Some(id), Some(name)) = (flow.id(), flow.name())
             {
-                lint_decl_identity("flow", id.body(), name, *id.range(), flow.attrs(), lints);
+                lint_decl_identity(
+                    "flow",
+                    id.body(),
+                    name,
+                    *id.range(),
+                    flow.attrs(),
+                    source_attrs,
+                    lints,
+                );
             } else if let Some(id) = flow.id() {
                 let name = flow
                     .name()
                     .or_else(|| id.body().rsplit('.').next())
                     .unwrap_or("flow");
-                lint_explicit_decl_id("flow", id.body(), name, *id.range(), flow.attrs(), lints);
+                lint_explicit_decl_id(
+                    "flow",
+                    id.body(),
+                    name,
+                    *id.range(),
+                    flow.attrs(),
+                    source_attrs,
+                    lints,
+                );
             }
             if let (Some(module), Some(id)) = (tree.module(), flow.id()) {
                 let module_tail = module.path().rsplit("::").next();
                 let id_tail = id.body().rsplit('.').next();
                 if module_tail != id_tail
-                    && !allows_lint(flow.attrs(), SyntaxLintCode::FlowIdModuleMismatch)
+                    && !allows_lint(
+                        flow.attrs(),
+                        source_attrs,
+                        SyntaxLintCode::FlowIdModuleMismatch,
+                    )
                 {
                     lints.push(SyntaxLint::new(
                         SyntaxLintCode::FlowIdModuleMismatch,
@@ -131,17 +152,22 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                     name,
                     *item.id().range(),
                     item.attrs(),
+                    source_attrs,
                     lints,
                 );
             }
         }
-        Item::Source(source) => lint_source_identity(source, lints),
+        Item::Source(source) => lint_source_identity(source, source_attrs, lints),
         Item::FlowItem(item) => lint_flow_item_ids(item, lints),
         _ => {}
     }
 }
 
-fn lint_source_identity(source: &SourceItem, lints: &mut Vec<SyntaxLint>) {
+fn lint_source_identity(
+    source: &SourceItem,
+    source_attrs: &[Attribute],
+    lints: &mut Vec<SyntaxLint>,
+) {
     match (source.id(), source.name()) {
         (Some(id), Some(name)) => {
             lint_decl_identity(
@@ -150,6 +176,7 @@ fn lint_source_identity(source: &SourceItem, lints: &mut Vec<SyntaxLint>) {
                 name,
                 *id.range(),
                 source.attrs(),
+                source_attrs,
                 lints,
             );
         }
@@ -161,6 +188,7 @@ fn lint_source_identity(source: &SourceItem, lints: &mut Vec<SyntaxLint>) {
                     name,
                     *id.range(),
                     source.attrs(),
+                    source_attrs,
                     lints,
                 );
             }
@@ -175,17 +203,18 @@ fn lint_decl_identity(
     name: &str,
     range: TextRange,
     attrs: &[Attribute],
+    source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
     let Some(id_tail) = id.rsplit('.').next() else {
         return;
     };
     if id_tail == name {
-        if is_generated(attrs) {
-            lint_generated_surface_form(kind, id, name, range, attrs, lints);
+        if is_generated(attrs, source_attrs) {
+            lint_generated_surface_form(kind, id, name, range, attrs, source_attrs, lints);
             return;
         }
-        if allows_lint(attrs, SyntaxLintCode::RedundantDeclIdentity) {
+        if allows_lint(attrs, source_attrs, SyntaxLintCode::RedundantDeclIdentity) {
             return;
         }
         lints.push(SyntaxLint::new(
@@ -210,9 +239,10 @@ fn lint_explicit_decl_id(
     name: &str,
     range: TextRange,
     attrs: &[Attribute],
+    source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
-    if allows_lint(attrs, SyntaxLintCode::ExplicitDeclId) {
+    if allows_lint(attrs, source_attrs, SyntaxLintCode::ExplicitDeclId) {
         return;
     }
     lints.push(SyntaxLint::new(
@@ -228,9 +258,10 @@ fn lint_generated_surface_form(
     name: &str,
     range: TextRange,
     attrs: &[Attribute],
+    source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
-    if allows_lint(attrs, SyntaxLintCode::GeneratedSurfaceForm) {
+    if allows_lint(attrs, source_attrs, SyntaxLintCode::GeneratedSurfaceForm) {
         return;
     }
     lints.push(SyntaxLint::new(
@@ -240,19 +271,27 @@ fn lint_generated_surface_form(
     ));
 }
 
-fn is_generated(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.name() == "generated")
+fn is_generated(attrs: &[Attribute], source_attrs: &[Attribute]) -> bool {
+    attrs
+        .iter()
+        .chain(source_attrs.iter())
+        .any(|attr| attr.name() == "generated")
 }
 
-fn allows_lint(attrs: &[Attribute], code: SyntaxLintCode) -> bool {
-    attrs.iter().any(|attr| {
-        attr.name() == "allow"
-            && attr.args().is_some_and(|args| {
-                args.split(',')
-                    .map(str::trim)
-                    .any(|arg| arg == code.domain_name() || arg == code.stable_code())
-            })
-    })
+fn allows_lint(attrs: &[Attribute], source_attrs: &[Attribute], code: SyntaxLintCode) -> bool {
+    attrs
+        .iter()
+        .chain(source_attrs.iter())
+        .any(|attr| attr_allows_lint(attr, code))
+}
+
+fn attr_allows_lint(attr: &Attribute, code: SyntaxLintCode) -> bool {
+    attr.name() == "allow"
+        && attr.args().is_some_and(|args| {
+            args.split(',')
+                .map(str::trim)
+                .any(|arg| arg == code.domain_name() || arg == code.stable_code())
+        })
 }
 
 fn lint_flow_item_ids(item: &FlowItem, lints: &mut Vec<SyntaxLint>) {
@@ -463,6 +502,42 @@ flow @flow.opening opening {
     }
 
     #[test]
+    fn inner_generated_marker_applies_to_source_decl_forms() {
+        let codes = lint_codes(
+            r"
+#![generated(tool)]
+flow @flow.opening opening {
+}
+
+source @source.http_requests http_requests: Source<HttpRequest, HttpError> {
+}
+",
+        );
+
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == SyntaxLintCode::GeneratedSurfaceForm)
+                .count(),
+            2
+        );
+        assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
+    fn inner_generated_marker_does_not_suppress_decl_mismatch() {
+        let codes = lint_codes(
+            r"
+#![generated(tool)]
+flow @flow.opening start {
+}
+",
+        );
+
+        assert!(codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+    }
+
+    #[test]
     fn allow_attribute_suppresses_flow_module_mismatch() {
         let codes = lint_codes(
             r"
@@ -475,6 +550,22 @@ flow @flow.prologue {
         );
 
         assert!(!codes.contains(&SyntaxLintCode::FlowIdModuleMismatch));
+    }
+
+    #[test]
+    fn inner_allow_attribute_suppresses_source_wide_id_lints() {
+        let codes = lint_codes(
+            r"
+#![allow(id::flow_module_mismatch, style::redundant_decl_identity)]
+mod route::opening
+
+flow @flow.prologue prologue {
+}
+",
+        );
+
+        assert!(!codes.contains(&SyntaxLintCode::FlowIdModuleMismatch));
+        assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
     }
 
     #[test]

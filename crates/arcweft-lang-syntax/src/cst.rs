@@ -1181,7 +1181,7 @@ fn classify_line(text: &str) -> CstLineKind {
 }
 
 fn classify_top_level_line(trimmed: &str) -> CstTopLevelLineKind {
-    if trimmed.starts_with("#[") {
+    if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
         CstTopLevelLineKind::Attribute
     } else if trimmed.starts_with("mod ") {
         CstTopLevelLineKind::Module

@@ -859,10 +859,14 @@ Current high-confidence state:
   rejected in favor of `thread`. Line-plan flat fence blocks report parser
   diagnostics for unknown fence kinds, close mismatches, and missing close
   fences instead of relying on later raw-node rejection.
-- Syntax-level ID policy linting exists as `lint_id_policy`. It currently
-  reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
-  tail does not match the module tail. Further hierarchy checks should build on
-  this pass rather than parser diagnostics.
+- Syntax-level ID policy linting exists as `lint_id_policy`. It reports deep
+  dot-run relative IDs such as `@...suffix`, flow IDs whose tail does not match
+  the module tail, and declaration identity style/errors. Outer attributes
+  attach to the following supported item, while source-level inner attributes
+  such as `#![generated(...)]` and `#![allow(...)]` are preserved on
+  `TypedSyntaxTree::attrs()` and participate in file-wide syntax lint policy.
+  Further hierarchy checks should build on this pass rather than parser
+  diagnostics.
 - `pro_review12.md` P0-P2 work is partially implemented: syntax/checking now
   uses structured `LifetimeScopeKind`/`LifetimeKey`, recognizes upper-lifetime
   write capabilities such as `state.write(flow)`, and accepts source effects

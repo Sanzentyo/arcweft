@@ -12,6 +12,7 @@ use super::source::SourceItem;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedSyntaxTree {
     source: String,
+    attrs: Vec<Attribute>,
     module: Option<ModuleDecl>,
     uses: Vec<UseItem>,
     items: Vec<Item>,
@@ -88,6 +89,7 @@ pub struct Attribute {
 impl TypedSyntaxTree {
     pub(crate) fn new(
         source: String,
+        attrs: Vec<Attribute>,
         module: Option<ModuleDecl>,
         uses: Vec<UseItem>,
         items: Vec<Item>,
@@ -95,6 +97,7 @@ impl TypedSyntaxTree {
     ) -> Self {
         Self {
             source,
+            attrs,
             module,
             uses,
             items,
@@ -105,6 +108,11 @@ impl TypedSyntaxTree {
     /// Original source text.
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Inner attributes attached to the whole source file.
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     /// Optional module declaration.

@@ -74,7 +74,7 @@ fn cst_text_helpers_split_lines_and_doc_prefixes() {
 #[test]
 fn cst_line_events_classify_top_level_dispatch() {
     let root = crate::cst::parse_cst(
-        "@memo old\n#[build(tool)]\nmod game::routes\npub use crate::prelude::*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
+        "@memo old\n#[build(tool)]\n#![generated(tool)]\nmod game::routes\npub use crate::prelude::*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
     );
     let lines = cst_lines(&root);
 
@@ -88,18 +88,22 @@ fn cst_line_events_classify_top_level_dispatch() {
     );
     assert_eq!(
         lines.get(2).map(CstLine::top_level_line_kind),
-        Some(CstTopLevelLineKind::Module)
+        Some(CstTopLevelLineKind::Attribute)
     );
     assert_eq!(
         lines.get(3).map(CstLine::top_level_line_kind),
+        Some(CstTopLevelLineKind::Module)
+    );
+    assert_eq!(
+        lines.get(4).map(CstLine::top_level_line_kind),
         Some(CstTopLevelLineKind::Use)
     );
     assert_eq!(
-        lines.get(4).map(CstLine::top_level_item_kind),
+        lines.get(5).map(CstLine::top_level_item_kind),
         Some(CstTopLevelItemKind::Source)
     );
     assert_eq!(
-        lines.get(5).map(CstLine::top_level_item_kind),
+        lines.get(6).map(CstLine::top_level_item_kind),
         Some(CstTopLevelItemKind::FlowBodyItemOrRaw)
     );
 }

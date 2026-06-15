@@ -1,11 +1,14 @@
 //! Top-level parser dispatch for modules, imports, and item families.
 
 use super::{
-    Parser, TopLevelDispatch,
-    helpers::{is_relative_id_path, normalize_module_path, parse_attribute, parse_use_line},
+    Parser, TopLevelDispatch, TopLevelSinks,
+    helpers::{
+        is_relative_id_path, normalize_module_path, parse_inner_attribute, parse_outer_attribute,
+        parse_use_line,
+    },
 };
 use crate::ast::{
-    common::{ModuleDecl, TextRange, UseItem},
+    common::{ModuleDecl, TextRange},
     items::{Item, RawItem},
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
@@ -16,17 +19,20 @@ impl Parser<'_> {
         dispatch: TopLevelDispatch,
         trimmed: &str,
         range: TextRange,
-        module: &mut Option<ModuleDecl>,
-        uses: &mut Vec<UseItem>,
-        items: &mut Vec<Item>,
+        sinks: &mut TopLevelSinks<'_>,
     ) {
         match dispatch.line {
             CstTopLevelLineKind::Attribute => {
-                if let Some(attribute) = parse_attribute(trimmed, range) {
+                if let Some(attribute) = parse_outer_attribute(trimmed, range) {
                     self.push_pending_attr(attribute);
                     self.index += 1;
+                } else if let Some(attribute) = parse_inner_attribute(trimmed, range) {
+                    self.reject_pending_doc(range);
+                    self.reject_pending_attrs(range);
+                    sinks.attrs.push(attribute);
+                    self.index += 1;
                 } else {
-                    self.parse_top_level_item(dispatch.item, trimmed, range, items);
+                    self.parse_top_level_item(dispatch.item, trimmed, range, sinks.items);
                 }
             }
             CstTopLevelLineKind::Module => {
@@ -34,7 +40,8 @@ impl Parser<'_> {
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
                 if self.validate_module_path(path, range) {
-                    *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
+                    *sinks.module =
+                        Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
                 }
                 self.index += 1;
             }
@@ -44,7 +51,7 @@ impl Parser<'_> {
                 if let Some(use_item) = parse_use_line(trimmed, range)
                     && self.validate_use_tree(use_item.tree(), range)
                 {
-                    uses.push(use_item);
+                    sinks.uses.push(use_item);
                 }
                 self.index += 1;
             }
@@ -63,7 +70,7 @@ impl Parser<'_> {
                         ["use `#[...]` for attributes or an ordinary item keyword"],
                     );
                 }
-                self.parse_top_level_item(dispatch.item, trimmed, range, items);
+                self.parse_top_level_item(dispatch.item, trimmed, range, sinks.items);
             }
         }
     }

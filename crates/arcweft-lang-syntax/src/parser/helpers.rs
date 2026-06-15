@@ -101,8 +101,16 @@ pub(super) fn is_relative_id_path(path: &str) -> bool {
     trimmed.starts_with('.') || trimmed.starts_with("@.") || trimmed.starts_with("@super.")
 }
 
-pub(super) fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
-    let rest = trimmed.strip_prefix("#[")?.strip_suffix(']')?.trim();
+pub(super) fn parse_outer_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
+    parse_attribute_with_prefix(trimmed, "#[", range)
+}
+
+pub(super) fn parse_inner_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
+    parse_attribute_with_prefix(trimmed, "#![", range)
+}
+
+fn parse_attribute_with_prefix(trimmed: &str, prefix: &str, range: TextRange) -> Option<Attribute> {
+    let rest = trimmed.strip_prefix(prefix)?.strip_suffix(']')?.trim();
     if !rest.contains('(') {
         return Some(Attribute::new(rest.to_owned(), None, range));
     }

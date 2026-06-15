@@ -1,4 +1,4 @@
-use crate::ast::common::{DocBlock, TextRange};
+use crate::ast::common::{DocBlock, ModuleDecl, TextRange, UseItem};
 use crate::ast::dialogue::{ContentCall, DialogueContent, SpeakerLine};
 use crate::ast::flow::{
     BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
@@ -6,7 +6,7 @@ use crate::ast::flow::{
     StmtMatchArm, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
-use crate::ast::items::{Attribute, RawSyntax, TypedSyntaxTree};
+use crate::ast::items::{Attribute, Item, RawSyntax, TypedSyntaxTree};
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
     CstBlockEvent, CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents,
@@ -80,6 +80,13 @@ struct TopLevelDispatch {
     item: CstTopLevelItemKind,
 }
 
+struct TopLevelSinks<'a> {
+    attrs: &'a mut Vec<Attribute>,
+    module: &'a mut Option<ModuleDecl>,
+    uses: &'a mut Vec<UseItem>,
+    items: &'a mut Vec<Item>,
+}
+
 impl From<&CstLine<'_>> for TopLevelDispatch {
     fn from(line: &CstLine<'_>) -> Self {
         Self {
@@ -148,6 +155,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse(&mut self) -> (TypedSyntaxTree, Vec<ParseError>, SyntaxParseStats) {
+        let mut attrs = Vec::new();
         let mut module = None;
         let mut uses = Vec::new();
         let mut items = Vec::new();
@@ -182,11 +190,17 @@ impl<'a> Parser<'a> {
             let range = TextRange::new(line.start, line.end);
             let dispatch = TopLevelDispatch::from(&line);
 
-            self.parse_top_level_line(dispatch, trimmed, range, &mut module, &mut uses, &mut items);
+            let mut sinks = TopLevelSinks {
+                attrs: &mut attrs,
+                module: &mut module,
+                uses: &mut uses,
+                items: &mut items,
+            };
+            self.parse_top_level_line(dispatch, trimmed, range, &mut sinks);
         }
 
         self.reject_pending_attrs(TextRange::new(self.previous_end(), self.previous_end()));
-        let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);
+        let tree = TypedSyntaxTree::new(source_take(self), attrs, module, uses, items, wiki_links);
         (tree, core::mem::take(&mut self.errors), self.syntax_stats)
     }
 
