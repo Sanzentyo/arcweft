@@ -654,6 +654,47 @@ mod tests {
     }
 
     #[test]
+    fn code_actions_expand_sugar_respects_source_allow_decl_identity_attribute() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        let source = "#![allow(style::redundant_decl_identity)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+        open_text(&mut session, uri.clone(), source);
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(Position::new(0, 0), Position::new(4, 0)),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Expand Arcweft sugar" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("expand sugar action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        let rewritten = &edits[0].new_text;
+        assert!(rewritten.contains("flow @flow.generated generated {"));
+        assert!(rewritten.contains("alice.say()[hi[p]]"));
+    }
+
+    #[test]
     fn code_actions_expand_sugar_nests_dotted_dialogue_defaults() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());
