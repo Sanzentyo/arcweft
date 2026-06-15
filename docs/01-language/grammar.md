@@ -319,8 +319,9 @@ chosen unambiguously.
 
 Relative IDs such as `dialogue defaults @.mobile` are not canonical and should
 be rejected for defaults profiles. The mobile defaults profile is written as
-`pub dialogue defaults @dialogue.defaults.mobile { ... }` so the profile family
-is explicit.
+`pub dialogue defaults @dialogue.defaults.mobile { ... }` or the equivalent
+family-relative spelling `pub dialogue defaults @dialogue:.defaults.mobile {
+... }` so the profile family is explicit.
 
 Inside the block, structured RichText typography is written as a nested
 assignment block:

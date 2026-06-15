@@ -516,7 +516,7 @@ impl Parser<'_> {
 
 fn starts_dialogue_defaults_relative_id(source: &str) -> bool {
     let trimmed = source.trim_start();
-    trimmed.starts_with("@.") || trimmed.starts_with("@..") || trimmed.starts_with("@dialogue:.")
+    trimmed.starts_with("@.") || trimmed.starts_with("@..")
 }
 
 fn parse_dialogue_default_assignments(

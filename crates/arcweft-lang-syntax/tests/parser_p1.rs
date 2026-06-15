@@ -257,3 +257,26 @@ pub dialogue defaults @.mobile {
             .contains("one-line nested dialogue defaults blocks are not canonical")
     }));
 }
+
+#[test]
+fn dialogue_defaults_accept_family_relative_profile_ids() {
+    let tree = parse_ok(
+        r"
+pub dialogue defaults @dialogue:.defaults.mobile {
+    rich_text {
+        ruby {
+            size = 11px
+        }
+    }
+}
+",
+    );
+
+    let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
+        panic!("expected dialogue defaults");
+    };
+    assert_eq!(
+        defaults.id().expect("defaults id").body(),
+        "dialogue.defaults.mobile"
+    );
+}
