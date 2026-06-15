@@ -3,55 +3,55 @@
     "name": "issue-001-ruby-gap-full-frame",
     "exit": 0,
     "bytes": 23686,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-001-ruby-gap-full-frame.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-001-ruby-gap-full-frame.png"
   },
   {
     "name": "issue-002-ruby-object-crop-full-grammar",
     "exit": 0,
     "bytes": 16286,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-002-ruby-object-crop-full-grammar.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-002-ruby-object-crop-full-grammar.png"
   },
   {
     "name": "issue-003-ruby-object-crop-showcase",
     "exit": 0,
     "bytes": 15257,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-003-ruby-object-crop-showcase.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-003-ruby-object-crop-showcase.png"
   },
   {
     "name": "issue-004-vertical-mixed-crop-showcase",
     "exit": 0,
     "bytes": 17483,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-004-vertical-mixed-crop-showcase.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-004-vertical-mixed-crop-showcase.png"
   },
   {
     "name": "issue-005-vertical-mixed-crop-windows-fonts",
     "exit": 0,
     "bytes": 12833,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-005-vertical-mixed-crop-windows-fonts.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-005-vertical-mixed-crop-windows-fonts.png"
   },
   {
     "name": "issue-006-long-line-clips-windows-fonts",
     "exit": 0,
     "bytes": 12263,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-006-long-line-clips-windows-fonts.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-006-long-line-clips-windows-fonts.png"
   },
   {
     "name": "issue-007-effect-transform-overlap-full-grammar",
     "exit": 0,
     "bytes": 17514,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-007-effect-transform-overlap-full-grammar.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-007-effect-transform-overlap-full-grammar.png"
   },
   {
     "name": "issue-008-escape-yen-glyph-full-grammar",
     "exit": 0,
     "bytes": 16237,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-008-escape-yen-glyph-full-grammar.png"
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-008-escape-yen-glyph-full-grammar.png"
   },
   {
     "name": "provenance-rich-text-showcase",
     "exit": 0,
     "bytes": 25501,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-showcase.png",
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-showcase.png",
     "provenance": {
       "dialogue_defaults": true,
       "line_override_shadowed_defaults": true,
@@ -67,7 +67,7 @@
     "name": "provenance-rich-text-full-grammar",
     "exit": 0,
     "bytes": 21682,
-    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-full-grammar.png",
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-full-grammar.png",
     "provenance": {
       "dialogue_defaults": true,
       "line_override_shadowed_defaults": true,
@@ -79,5 +79,11 @@
         "2px"
       ]
     }
+  },
+  {
+    "name": "issue-008-fixed-escape-consolas-full-grammar",
+    "exit": 0,
+    "bytes": 16379,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-008-fixed-escape-consolas-full-grammar.png"
   }
 ]

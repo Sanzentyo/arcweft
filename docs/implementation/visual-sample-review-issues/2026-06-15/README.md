@@ -44,7 +44,6 @@ authored values such as `12px` remain available in `style_contributions`.
 | `SVR-2026-06-15-005` | open | [`issue-005-vertical-mixed-crop-windows-fonts.png`](issue-005-vertical-mixed-crop-windows-fonts.png) | Windows-font vertical sample has visible vertical text clipped in object capture. | Same as `SVR-2026-06-15-004`; validate with Windows default fonts. |
 | `SVR-2026-06-15-006` | open | [`issue-006-long-line-clips-windows-fonts.png`](issue-006-long-line-clips-windows-fonts.png) | Long horizontal font-mix line is clipped at the right edge instead of wrapping or reporting overflow. | Define and implement textbox wrap/overflow behavior for long rich-text runs. |
 | `SVR-2026-06-15-007` | open | [`issue-007-effect-transform-overlap-full-grammar.png`](issue-007-effect-transform-overlap-full-grammar.png) | Combined offset/rotate/scale/wave/shake/typewriter sample is hard to inspect because transformed runs overlap and reach crop edges. | Split effect validation samples or include transform-inflated capture bounds for debug images. |
-| `SVR-2026-06-15-008` | open | [`issue-008-escape-yen-glyph-full-grammar.png`](issue-008-escape-yen-glyph-full-grammar.png) | Escape examples render backslash as Yen glyph under the selected Windows/Japanese font. | Use an explicit debug/sample font for escape syntax examples, or expose font fallback choice for literal syntax samples. |
 
 ## Current Formatting Support State
 
@@ -65,3 +64,9 @@ of resetting ruby annotations to default metadata. The remaining open issues in
 this directory are not closed until the corresponding sample PNGs are
 regenerated, reviewed, and either shown fixed or replaced with narrower
 follow-up issues.
+
+## Closed Issues
+
+| ID | Closed in | Evidence | Validation |
+| --- | --- | --- | --- |
+| `SVR-2026-06-15-008` | `samples/rich-text-full-grammar.arcw` pins the escape-syntax demonstration span to `Consolas`, avoiding the Windows/Japanese U+005C Yen-glyph presentation for literal syntax review. | Original: [`issue-008-escape-yen-glyph-full-grammar.png`](issue-008-escape-yen-glyph-full-grammar.png); fixed: [`issue-008-fixed-escape-consolas-full-grammar.png`](issue-008-fixed-escape-consolas-full-grammar.png). | `target\release\arcw.exe agent observe samples\rich-text-full-grammar.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-008-fixed-escape-consolas-full-grammar.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.7` |

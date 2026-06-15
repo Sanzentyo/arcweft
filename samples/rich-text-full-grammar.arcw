@@ -96,7 +96,7 @@ flow rich_text_full_grammar {
     ]
 
     bob.say(id=@say.full.008, voice=auto)[
-        raw短縮 [raw: [p]や#[expr]をそのまま表示] と escape \[ \] \# \$ \( \) \| \{ \} \: \｜ \《 \》 \\。[p]
+        raw短縮 [raw: [p]や#[expr]をそのまま表示] と escape [font "Consolas"]\[ \] \# \$ \( \) \| \{ \} \: \｜ \《 \》 \\[/font]。[p]
     ]
 
     narrator.say(id=@say.full.009, voice=auto)[
