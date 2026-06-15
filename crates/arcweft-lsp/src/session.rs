@@ -245,7 +245,9 @@ impl ArcweftLspSession {
                 let result = self
                     .document_for_params(&params.text_document_position_params.text_document.uri)
                     .and_then(|document| {
+                        let profile = self.profile_for_uri(document.uri());
                         features::definition::definition(
+                            profile,
                             &params.text_document_position_params.text_document.uri,
                             document,
                             params.text_document_position_params.position,
@@ -258,7 +260,9 @@ impl ArcweftLspSession {
                 let result = self
                     .document_for_params(&params.text_document_position.text_document.uri)
                     .map(|document| {
+                        let profile = self.profile_for_uri(document.uri());
                         features::references::references(
+                            profile,
                             &params.text_document_position.text_document.uri,
                             document,
                             params.text_document_position.position,
@@ -319,6 +323,7 @@ impl ArcweftLspSession {
             self.profile_for_uri(document.uri()),
         );
         let actions = features::actions::actions(
+            self.profile_for_uri(document.uri()),
             &params.text_document.uri,
             document,
             &analysis,
@@ -1144,6 +1149,51 @@ params = [{ name = "value", ty = "String" }]
 
         let completions = completion_labels(&mut session, uri);
         assert!(completions.iter().any(|item| item.label == "custom.echo"));
+    }
+
+    #[test]
+    fn hover_uses_profile_selected_dialogue_defaults() {
+        let project = TestProject::new("lsp-session-dialogue-defaults-profile");
+        let source = r"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    rich_text {
+        ruby {
+            size = 10px
+        }
+    }
+}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+";
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+"#,
+        );
+        project.write("src/main.arcw", source);
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), source);
+
+        let hover = hover_text(&mut session, uri, source, "夢");
+
+        assert!(hover.contains("rich_text.ruby.size = 10px"));
+        assert!(!hover.contains("rich_text.ruby.size = 14px"));
     }
 
     #[test]

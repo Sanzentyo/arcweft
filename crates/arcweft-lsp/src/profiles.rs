@@ -22,6 +22,7 @@ pub struct LspProfile {
     adapter: AdapterManifest,
     declared_manifests: Vec<AdapterManifest>,
     runner: RuntimeHostRunnerKind,
+    dialogue_defaults: Option<String>,
     diagnostics: Vec<LspProfileDiagnostic>,
 }
 
@@ -32,6 +33,7 @@ impl LspProfile {
             adapter,
             declared_manifests: Vec::new(),
             runner,
+            dialogue_defaults: None,
             diagnostics: Vec::new(),
         }
     }
@@ -42,6 +44,7 @@ impl LspProfile {
             adapter: standard::sans_io_manifest(),
             declared_manifests: Vec::new(),
             runner,
+            dialogue_defaults: None,
             diagnostics: Vec::new(),
         }
     }
@@ -64,6 +67,11 @@ impl LspProfile {
     /// Profile-loading diagnostics that should be surfaced in the editor.
     pub fn diagnostics(&self) -> &[LspProfileDiagnostic] {
         &self.diagnostics
+    }
+
+    /// Dialogue defaults profile selected by the launch profile, if any.
+    pub fn dialogue_defaults(&self) -> Option<&str> {
+        self.dialogue_defaults.as_deref()
     }
 
     /// Builds a Sans I/O LSP context for helper calls.
@@ -237,6 +245,7 @@ impl LspProfileResolver {
             adapter,
             declared_manifests,
             runner: self.runner,
+            dialogue_defaults: profile.dialogue_defaults().map(str::to_owned),
             diagnostics,
         }
     }

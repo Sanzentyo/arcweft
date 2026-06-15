@@ -1,6 +1,7 @@
 use crate::diagnostics::DocumentAnalysis;
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
+use crate::profiles::LspProfile;
 use arcweft_lang_syntax::{
     ast::{
         common::TextRange,
@@ -26,17 +27,19 @@ use arcweft_tooling::TextEdit;
 
 /// Computes code actions for one open Arcweft document.
 pub fn actions(
+    profile: &LspProfile,
     uri: &Uri,
     document: &DocumentSnapshot,
     _analysis: &DocumentAnalysis,
     position: Position,
 ) -> Vec<CodeAction> {
     let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index());
-    actions.extend(dialogue_override_actions(uri, document, position));
+    actions.extend(dialogue_override_actions(profile, uri, document, position));
     actions
 }
 
 fn dialogue_override_actions(
+    profile: &LspProfile,
     uri: &Uri,
     document: &DocumentSnapshot,
     position: Position,
@@ -45,7 +48,9 @@ fn dialogue_override_actions(
     let Some(insertion) = dialogue_option_insertion_at(document.text(), offset) else {
         return Vec::new();
     };
-    let Some(cascade) = effective_dialogue_cascade_at(document, offset) else {
+    let Some(cascade) =
+        effective_dialogue_cascade_at(document, offset, profile.dialogue_defaults())
+    else {
         return Vec::new();
     };
 

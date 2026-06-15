@@ -23,15 +23,19 @@ pub fn hover(
     if let Some(hover) = dialogue_defaults_hover(document, offset) {
         return Some(hover);
     }
-    if let Some(hover) = effective_dialogue_style_hover(document, offset) {
+    if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
         return Some(hover);
     }
     let word = word_at_position(document, position)?;
     profile_hover(&profile.context(), &word)
 }
 
-fn effective_dialogue_style_hover(document: &DocumentSnapshot, offset: usize) -> Option<Hover> {
-    let cascade = effective_dialogue_cascade_at(document, offset)?;
+fn effective_dialogue_style_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<Hover> {
+    let cascade = effective_dialogue_cascade_at(document, offset, profile.dialogue_defaults())?;
     let contributions = cascade.selected_contributions();
     if contributions.is_empty() {
         return None;

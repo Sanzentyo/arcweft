@@ -137,7 +137,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   entries with leaf source ranges, and LSP hover/definition/reference path
   filtering can select those inline leaf fields from dialogue content. Dialogue
   content outside a selected inline style field still falls back to the whole
-  effective cascade. Selection-scoped code actions can extract active non-line
+  effective cascade. LSP effective cascade lowering now uses the opened
+  document's launch profile selection, so `dialogue_defaults =
+  "dialogue.defaults.mobile"` changes hover, definition, references, and
+  extraction actions to the selected defaults profile instead of always using
+  the canonical implicit profile. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`

@@ -12,7 +12,9 @@ use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
-use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats;
+use arcweft_runtime_plan::flow::{
+    RuntimePlanLowerOptions, lower_runtime_plan_with_stats_and_options,
+};
 use std::ops::Range;
 
 /// Effective dialogue display context at a document byte offset.
@@ -46,6 +48,7 @@ impl EffectiveDialogueCascade {
 pub(crate) fn effective_dialogue_cascade_at(
     document: &DocumentSnapshot,
     offset: usize,
+    selected_dialogue_defaults: Option<&str>,
 ) -> Option<EffectiveDialogueCascade> {
     let parsed = parse_source(document.text());
     if !parsed.errors().is_empty() {
@@ -66,7 +69,11 @@ pub(crate) fn effective_dialogue_cascade_at(
     if dialogue_index >= dialogues.len() {
         return None;
     }
-    let report = lower_runtime_plan_with_stats(&hir).ok()?;
+    let runtime_options = selected_dialogue_defaults
+        .map_or_else(RuntimePlanLowerOptions::default, |id| {
+            RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
+        });
+    let report = lower_runtime_plan_with_stats_and_options(&hir, &runtime_options).ok()?;
     let spec = report.line_display_catalog.lines().get(dialogue_index)?;
     Some(EffectiveDialogueCascade {
         spec: spec.clone(),
