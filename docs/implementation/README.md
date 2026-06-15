@@ -114,8 +114,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   find references, signature help, inlay hints, and code actions through the
   helper crates. Rich-text dialogue hover, definition, and references share the
   same effective cascade lookup over the runtime-plan `LineDisplayCatalog`, so
-  source value ranges for active and shadowed style contributors are exposed
-  consistently. Source-level sugar expansion and ID materialization actions now
+  hover lists active contributors, shadowed contributors, and unset cascade
+  layers while definition/reference requests expose source value ranges
+  consistently. Selection-scoped code actions can extract active non-line
+  contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
+  options. Source-level sugar expansion and ID materialization actions now
   return LSP `WorkspaceEdit` values through the same byte-span mapper used for
   diagnostics, and
   `workspace/executeCommand` can translate the older command argument shape into

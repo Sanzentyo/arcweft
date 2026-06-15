@@ -318,16 +318,21 @@ impl ArcweftLspSession {
             document.line_index().position_encoding(),
             self.profile_for_uri(document.uri()),
         );
-        let actions = features::actions::actions(&params.text_document.uri, document, &analysis)
-            .into_iter()
-            .map(|mut action| {
-                action.edit = action.edit.map(|edit| {
-                    self.workspace_edit_policy
-                        .normalize(edit, document.uri(), document.version())
-                });
-                CodeActionOrCommand::CodeAction(action)
-            })
-            .collect();
+        let actions = features::actions::actions(
+            &params.text_document.uri,
+            document,
+            &analysis,
+            params.range.start,
+        )
+        .into_iter()
+        .map(|mut action| {
+            action.edit = action.edit.map(|edit| {
+                self.workspace_edit_policy
+                    .normalize(edit, document.uri(), document.version())
+            });
+            CodeActionOrCommand::CodeAction(action)
+        })
+        .collect();
         Some(actions)
     }
 
@@ -576,6 +581,66 @@ mod tests {
                         && action.edit.is_some()
             )
         }));
+    }
+
+    #[test]
+    fn code_actions_extract_active_style_contributor_to_line_options() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub character alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
+}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+"##;
+        open_text(&mut session, uri.clone(), source);
+        let document = session.documents.get(&uri).expect("open document");
+        let offset = source.find("夢").expect("dialogue content");
+        let position = document.line_index().position_from_byte_offset(offset);
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(position, position),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Extract `text_color` override to line options" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("text color extraction action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "(text_color=rgb(\"#202122\"))");
     }
 
     #[test]
