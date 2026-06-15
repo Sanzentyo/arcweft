@@ -1269,6 +1269,78 @@ dialogue_defaults = "dialogue.defaults.mobile"
     }
 
     #[test]
+    fn references_include_profile_selected_dialogue_defaults_manifest_location() {
+        let project = TestProject::new("lsp-session-dialogue-defaults-references");
+        let source = r"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    rich_text {
+        ruby {
+            size = 10px
+        }
+    }
+}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+";
+        let manifest = r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+"#;
+        project.write("arcw.toml", manifest);
+        project.write("src/main.arcw", source);
+        let source_uri = file_uri(&project.path("src/main.arcw"));
+        let manifest_uri = file_uri(&project.path("arcw.toml"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, source_uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(11),
+            method: References::METHOD.to_owned(),
+            params: serde_json::json!(ReferenceParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: source_uri.clone()
+                    },
+                    position: position_of(source, "夢"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+                context: ReferenceContext {
+                    include_declaration: true
+                },
+            }),
+        });
+        let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
+            response.result.expect("references response"),
+        )
+        .expect("references response decodes");
+
+        assert!(locations.iter().any(|location| {
+            location.uri == source_uri
+                && location.range.start == position_of(source, "10px")
+                && location.range.end == position_of(source, "\n        }\n    }\n}\n\nflow")
+        }));
+        assert!(locations.iter().any(|location| {
+            location.uri == manifest_uri
+                && location.range.start == position_of(manifest, "dialogue.defaults.mobile")
+                && location.range.end == position_after(manifest, "dialogue.defaults.mobile")
+        }));
+    }
+
+    #[test]
     fn completions_use_document_scoped_profiles() {
         let alpha = TestProject::new("lsp-session-alpha");
         alpha.write(

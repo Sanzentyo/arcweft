@@ -141,7 +141,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   document's launch profile selection, so `dialogue_defaults =
   "dialogue.defaults.mobile"` changes hover, definition, references, and
   extraction actions to the selected defaults profile instead of always using
-  the canonical implicit profile. Selection-scoped code actions can extract active non-line
+  the canonical implicit profile. Definition and reference requests include the
+  manifest value that selected that defaults profile when the selected defaults
+  contribute to the effective field. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`

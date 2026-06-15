@@ -97,7 +97,8 @@ LSP features use that shared index:
   defaults profile
 - peek cascade shows shadowed and unset layers
 - find all contributors lists declarations and inline spans that can affect the
-  field in the current entry profile
+  field in the current entry profile, including the manifest value that selected
+  a dialogue defaults profile when that profile contributes to the field
 - go to active profile selection jumps to the manifest or build profile that
   selected `@dialogue.defaults.mobile`
 - code actions can extract an override to a line option, speaker preset,
