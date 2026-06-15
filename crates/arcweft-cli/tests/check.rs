@@ -25150,8 +25150,11 @@ fn fmt_expand_sugar_nests_dotted_dialogue_defaults_when_writing() {
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("rich_text {\n        ruby {\n            size = 14px"));
-    assert!(rewritten.contains("rich_text {\n        ruby {\n            gap += 1px"));
+    assert!(
+        rewritten.contains(
+            "rich_text {\n        ruby {\n            size = 14px\n            gap += 1px"
+        )
+    );
     assert!(!rewritten.contains("rich_text.ruby.size"));
     assert!(!rewritten.contains("rich_text.ruby.gap"));
 }
