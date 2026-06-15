@@ -118,7 +118,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   layers while definition/reference requests expose source value ranges
   consistently. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
-  options. Source-level sugar expansion and canonical rich-text actions now
+  options, and can lift selected defaults into the matching character's
+  `dialogue_style` block when the character declaration is in the current
+  document. Source-level sugar expansion and canonical rich-text actions now
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
   rewrite. ID materialization actions return focused LSP `WorkspaceEdit` values

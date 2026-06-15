@@ -9,7 +9,7 @@ use arcweft_lang_syntax::{
             BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
             SourceLocaleBlock, WhileBlock, WhileLetBlock,
         },
-        items::Item,
+        items::{EntityDeclItem, EntityDeclKind, Item},
     },
     parser::parse_source,
 };
@@ -45,7 +45,7 @@ fn dialogue_override_actions(
         return Vec::new();
     };
 
-    cascade
+    let mut actions = cascade
         .spec
         .style_contributions
         .iter()
@@ -65,13 +65,55 @@ fn dialogue_override_actions(
                 ..CodeAction::default()
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    actions.extend(
+        cascade
+            .spec
+            .style_contributions
+            .iter()
+            .filter(|contribution| extractable_character_override(contribution))
+            .take(8)
+            .filter_map(|contribution| {
+                let edit = character_dialogue_style_edit(
+                    document.text(),
+                    &cascade.spec.callee,
+                    &contribution.path,
+                    &contribution.value,
+                )?;
+                Some(CodeAction {
+                    title: format!(
+                        "Extract `{}` override to character dialogue_style",
+                        contribution.path
+                    ),
+                    kind: Some(CodeActionKind::REFACTOR_EXTRACT),
+                    edit: Some(workspace_edit_from_tooling_edit(
+                        uri,
+                        &edit,
+                        document.line_index(),
+                    )),
+                    ..CodeAction::default()
+                })
+            }),
+    );
+    actions
 }
 
 fn extractable_line_override(contribution: &RichTextStyleContribution) -> bool {
     contribution.active
         && contribution.op == RichTextAssignOp::Replace
         && contribution.layer != RichTextCascadeLayer::LineOptions
+        && !contribution.path.is_empty()
+        && !contribution.value.is_empty()
+}
+
+fn extractable_character_override(contribution: &RichTextStyleContribution) -> bool {
+    contribution.active
+        && contribution.op == RichTextAssignOp::Replace
+        && !matches!(
+            contribution.layer,
+            RichTextCascadeLayer::LineOptions | RichTextCascadeLayer::CharacterDialogueStyle
+        )
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }
@@ -312,6 +354,104 @@ fn range_contains(range: &TextRange, offset: usize) -> bool {
     range.start() <= offset && offset <= range.end()
 }
 
+fn character_dialogue_style_edit(
+    source: &str,
+    callee: &str,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let parsed = parse_source(source);
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(entity)
+                if entity.kind() == EntityDeclKind::Character
+                    && character_matches_callee(entity, callee) =>
+            {
+                entity_dialogue_style_edit(entity, path, value)
+            }
+            _ => None,
+        })
+}
+
+fn character_matches_callee(entity: &EntityDeclItem, callee: &str) -> bool {
+    let key = callee.strip_suffix(".say").unwrap_or(callee);
+    [
+        Some(entity.id().body()),
+        entity.name(),
+        entity.surface_alias(),
+        entity.id().body().rsplit('.').next(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|candidate| candidate == key || format!("@<{candidate}>") == key)
+}
+
+fn entity_dialogue_style_edit(
+    entity: &EntityDeclItem,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let body = entity.body()?;
+    let body_range = entity.body_range()?;
+    if let Some(insertion) = existing_dialogue_style_insertion(body, body_range, path, value) {
+        return Some(insertion);
+    }
+    Some(TextEdit {
+        start: body_range.end(),
+        end: body_range.end(),
+        replacement: format!("\n    dialogue_style {{\n        {path} = {value}\n    }}"),
+    })
+}
+
+fn existing_dialogue_style_insertion(
+    body: &str,
+    body_range: &TextRange,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let start = body.find("dialogue_style")?;
+    let open = body[start..].find('{')? + start;
+    let close = matching_brace(body, open)?;
+    let line_start = body[..close].rfind('\n').map_or(0, |offset| offset + 1);
+    let close_indent = &body[line_start..close];
+    Some(TextEdit {
+        start: body_range.start() + line_start,
+        end: body_range.start() + line_start,
+        replacement: format!("{close_indent}    {path} = {value}\n"),
+    })
+}
+
+fn matching_brace(source: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source[open..].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => depth += 1,
+            '}' if !in_string => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,5 +488,28 @@ mod tests {
                 replacement: ", rich_text.ruby.size=14px".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn character_dialogue_style_edit_creates_missing_block() {
+        let source = "pub character alice {}\nflow opening {\n    alice: Hello[p]\n}\n";
+        let edit = character_dialogue_style_edit(source, "alice", "rich_text.ruby.size", "14px")
+            .expect("character style edit");
+
+        assert_eq!(edit.start, source.find("{}").expect("empty body") + 1);
+        assert_eq!(
+            edit.replacement,
+            "\n    dialogue_style {\n        rich_text.ruby.size = 14px\n    }"
+        );
+    }
+
+    #[test]
+    fn character_dialogue_style_edit_appends_existing_block() {
+        let source = "pub character alice {\n    dialogue_style {\n        text_color = rgb(\"#202122\")\n    }\n}\n";
+        let edit = character_dialogue_style_edit(source, "alice", "rich_text.ruby.size", "14px")
+            .expect("character style edit");
+
+        assert_eq!(edit.start, source.find("    }\n}").expect("style close"));
+        assert_eq!(edit.replacement, "        rich_text.ruby.size = 14px\n");
     }
 }
