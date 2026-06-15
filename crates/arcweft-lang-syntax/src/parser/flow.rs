@@ -538,9 +538,12 @@ impl<'a> Parser<'a> {
             TextRange::new(line.start, self.previous_end()),
         );
         let (callee, args) = split_call_head(head);
+        let option_args = args
+            .as_ref()
+            .map(|(args, relative)| (args.as_str(), line.start + head_start + relative));
         FlowItem::ContentCall(ContentCall::new(
             callee,
-            parse_line_options(args.as_deref(), line.start + head_start, &mut self.errors),
+            parse_line_options(option_args, &mut self.errors),
             self.dialogue_content(
                 content_source.trim().to_owned(),
                 TextRange::new(line.end, self.previous_end()),

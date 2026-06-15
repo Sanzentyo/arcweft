@@ -127,6 +127,7 @@ impl Parser<'_> {
     pub(super) fn parse_content_call_or_speaker_line(&mut self) -> Option<FlowItem> {
         let line = self.current().clone();
         let trimmed = line.text.trim();
+        let line_leading = line.text.len() - line.text.trim_start().len();
 
         if let Some((speaker, args, inline_content)) = split_speaker_line(trimmed) {
             self.index += 1;
@@ -139,9 +140,12 @@ impl Parser<'_> {
                 )
             };
             let plan = self.take_optional_line_plan();
+            let option_args = args
+                .as_ref()
+                .map(|(args, relative)| (args.as_str(), line.start + line_leading + relative));
             return Some(FlowItem::SpeakerLine(SpeakerLine::new(
                 speaker,
-                parse_line_options(args.as_deref(), line.start, &mut self.errors),
+                parse_line_options(option_args, &mut self.errors),
                 content,
                 plan,
                 TextRange::new(line.start, self.previous_end()),
@@ -155,9 +159,10 @@ impl Parser<'_> {
             if let Some(block) = trailing_block {
                 self.pending_flow_items.push(FlowItem::Scope(block));
             }
+            let option_args = args.as_ref().map(|(args, base)| (args.as_str(), *base));
             return Some(FlowItem::ContentCall(ContentCall::new(
                 callee,
-                parse_line_options(args.as_deref(), line.start, &mut self.errors),
+                parse_line_options(option_args, &mut self.errors),
                 content,
                 plan,
                 TextRange::new(line.start, consumed_end),
@@ -169,6 +174,7 @@ impl Parser<'_> {
 
     fn try_take_content_call(&mut self) -> Option<ContentCallParse> {
         let start = self.current().clone();
+        let line_leading = start.text.len() - start.text.trim_start().len();
         let mut text = start.text.trim().to_owned();
         let mut end = start.end;
         let mut cursor = self.index;
@@ -198,7 +204,10 @@ impl Parser<'_> {
         if before.is_empty() || before.starts_with('@') && !before.starts_with("@<") {
             return None;
         }
+        let before_start = text[..open].find(before).unwrap_or(0);
         let (callee, args) = split_call_head(before);
+        let args = args
+            .map(|(args, relative)| (args, start.start + line_leading + before_start + relative));
         let raw_content = text[open + 1..close].trim().to_owned();
         let trailing = text[close + 1..].trim();
         let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);

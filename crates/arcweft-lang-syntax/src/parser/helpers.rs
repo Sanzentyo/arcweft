@@ -151,20 +151,25 @@ pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {
 }
 
 pub(super) fn parse_line_options(
-    args: Option<&str>,
-    base: usize,
+    args: Option<(&str, usize)>,
     errors: &mut Vec<ParseError>,
 ) -> LineOptions {
-    let Some(args) = args else {
+    let Some((args, args_start_base)) = args else {
         return LineOptions::default();
     };
     let mut state = LineOptionsParseState::default();
     let mut consumed_positional_look = false;
+    let mut search_start = 0usize;
     for arg in split_comma_args(args) {
+        let arg_start = args[search_start..]
+            .find(arg)
+            .map_or(search_start, |relative| search_start + relative);
+        let arg_source_base = args_start_base + arg_start;
+        search_start = arg_start + arg.len();
         let Some((name, value)) = split_top_level_punctuation_once(arg, '=') else {
             if consumed_positional_look {
                 errors.push(simple_error(
-                    base,
+                    arg_source_base,
                     arg.len(),
                     "only the first positional dialogue line option may be used as `look`",
                     "look = expr",
@@ -175,14 +180,7 @@ pub(super) fn parse_line_options(
             state.look = Some(parse_expr_lossy(arg.trim()));
             continue;
         };
-        parse_named_line_option(
-            &mut state,
-            name.trim(),
-            value.trim(),
-            arg.len(),
-            base,
-            errors,
-        );
+        parse_named_line_option(&mut state, name, value, arg.len(), arg_source_base, errors);
     }
     LineOptions::new(LineOptionsInit {
         id: state.id,
@@ -198,8 +196,10 @@ pub(super) fn parse_line_options(
         hooks: state.hooks,
         style: state.style,
         style_raw: state.style_raw,
+        style_range: state.style_range,
         rich_text: state.rich_text,
         rich_text_raw: state.rich_text_raw,
+        rich_text_range: state.rich_text_range,
         args: state.line_args,
     })
 }
@@ -219,28 +219,38 @@ struct LineOptionsParseState {
     hooks: Vec<Expr>,
     style: Option<Expr>,
     style_raw: Option<String>,
+    style_range: Option<TextRange>,
     rich_text: Option<Expr>,
     rich_text_raw: Option<String>,
+    rich_text_range: Option<TextRange>,
     line_args: Vec<LineArg>,
 }
 
 fn parse_named_line_option(
     state: &mut LineOptionsParseState,
-    name: &str,
-    value: &str,
+    name_raw: &str,
+    value_raw: &str,
     arg_len: usize,
-    base: usize,
+    arg_base: usize,
     errors: &mut Vec<ParseError>,
 ) {
+    let name = name_raw.trim();
+    let value = value_raw.trim();
+    let value_leading = value_raw.len() - value_raw.trim_start().len();
+    let value_start = arg_base + name_raw.len() + '='.len_utf8() + value_leading;
+    let value_range = TextRange::new(value_start, value_start + value.len());
     match name {
-        "id" => state.id = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity),
+        "id" => {
+            state.id = parse_required_id_ref(value, value_start, errors).map(|(entity, _)| entity);
+        }
         "text_key" => {
-            state.text_key = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
+            state.text_key =
+                parse_required_id_ref(value, value_start, errors).map(|(entity, _)| entity);
         }
         "voice" => state.voice = Some(parse_expr_lossy(value)),
         "look" => state.look = Some(parse_expr_lossy(value)),
         "face" => errors.push(simple_error(
-            base,
+            arg_base,
             arg_len,
             "`face` is not a canonical dialogue line option",
             "use `look = expr` or the first positional look option",
@@ -250,23 +260,26 @@ fn parse_named_line_option(
         "focus" => state.focus = Some(parse_expr_lossy(value)),
         "cleanup" => state.cleanup = Some(parse_expr_lossy(value)),
         "window" => {
-            state.window =
-                parse_required_entity_ref_syntax(value, base, errors).map(|(entity, _)| entity);
+            state.window = parse_required_entity_ref_syntax(value, value_start, errors)
+                .map(|(entity, _)| entity);
         }
         "source_locale" => state.source_locale = Some(value.to_owned()),
         "hooks" => push_line_hooks(&mut state.hooks, parse_expr_lossy(value)),
         "style" => {
             state.style = Some(parse_expr_lossy(value));
             state.style_raw = Some(value.to_owned());
+            state.style_range = Some(value_range);
         }
         "rich_text" => {
             state.rich_text = Some(parse_expr_lossy(value));
             state.rich_text_raw = Some(value.to_owned());
+            state.rich_text_range = Some(value_range);
         }
         name => state.line_args.push(LineArg::new(
             name.to_owned(),
             parse_expr_lossy(value),
             value.to_owned(),
+            value_range,
         )),
     }
 }
@@ -342,18 +355,25 @@ pub(super) fn split_brace_item_with_scan<'a>(
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }
 
-pub(super) fn split_speaker_line(trimmed: &str) -> Option<(String, Option<String>, &str)> {
+type SpeakerLineParts<'a> = (String, Option<(String, usize)>, &'a str);
+
+pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> {
     let colon = find_top_level_colon(trimmed)?;
     if has_top_level_square(&trimmed[..colon]) || trimmed[..colon].contains("->") {
         return None;
     }
     let head = trimmed[..colon].trim();
+    let head_start = trimmed[..colon].find(head).unwrap_or(0);
     let content = trimmed[colon + 1..].trim();
     if head.is_empty() || head.starts_with("cancel ") || head.starts_with("at(") {
         return None;
     }
     let (speaker, args) = split_call_head(head);
-    Some((speaker, args, content))
+    Some((
+        speaker,
+        args.map(|(args, relative)| (args, head_start + relative)),
+        content,
+    ))
 }
 
 fn has_top_level_square(input: &str) -> bool {
@@ -375,14 +395,20 @@ fn find_top_level_colon(input: &str) -> Option<usize> {
     find_top_level_punctuation(input, ':')
 }
 
-pub(super) fn split_call_head(head: &str) -> (String, Option<String>) {
+pub(super) fn split_call_head(head: &str) -> (String, Option<(String, usize)>) {
     let head = head.trim();
     if let Some((open, close)) = find_top_level_matching_punctuation(head, '(', ')')
         && head[close + ')'.len_utf8()..].trim().is_empty()
     {
+        let args_source = &head[open + 1..close];
+        let args_trimmed = args_source.trim();
+        let args_leading = args_source.len() - args_source.trim_start().len();
         return (
             head[..open].trim().to_owned(),
-            Some(head[open + 1..close].trim().to_owned()),
+            Some((
+                args_trimmed.to_owned(),
+                open + '('.len_utf8() + args_leading,
+            )),
         );
     }
     (head.to_owned(), None)

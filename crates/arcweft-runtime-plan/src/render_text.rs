@@ -157,52 +157,54 @@ fn lower_effective_dialogue_style_contributions(
         append_style_contributions(&mut contributions, character, &mut base_offset);
     }
 
-    let source = dialogue_option_source(dialogue);
     if let Some(style) = dialogue.style() {
         let styles = display_styles_from_expr(style);
         let has_policy = inline_default_from_named_expr("style", style).is_some();
+        let source = dialogue_option_source(dialogue, dialogue.style_range().map(source_range));
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            LineOptionContribution {
+            &LineOptionContribution {
                 path: "style",
                 expr: style,
                 raw: dialogue.style_raw(),
                 styles: &styles,
                 has_policy,
-                source: &source,
+                source,
             },
         );
     }
     if let Some(rich_text) = dialogue.rich_text() {
         let styles = display_styles_from_expr(rich_text);
         let has_policy = inline_default_from_named_expr("rich_text", rich_text).is_some();
+        let source = dialogue_option_source(dialogue, dialogue.rich_text_range().map(source_range));
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            LineOptionContribution {
+            &LineOptionContribution {
                 path: "rich_text",
                 expr: rich_text,
                 raw: dialogue.rich_text_raw(),
                 styles: &styles,
                 has_policy,
-                source: &source,
+                source,
             },
         );
     }
     for arg in dialogue.args() {
         let styles = display_styles_from_named_expr(arg.name(), arg.value());
         let has_policy = inline_default_from_named_expr(arg.name(), arg.value()).is_some();
+        let source = dialogue_option_source(dialogue, Some(source_range(arg.value_range())));
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            LineOptionContribution {
+            &LineOptionContribution {
                 path: arg.name(),
                 expr: arg.value(),
                 raw: Some(arg.raw_value()),
                 styles: &styles,
                 has_policy,
-                source: &source,
+                source,
             },
         );
     }
@@ -347,20 +349,20 @@ fn append_style_contributions(
     *base_offset += defaults.base_styles.len();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct LineOptionContribution<'a> {
     path: &'a str,
     expr: &'a Expr,
     raw: Option<&'a str>,
     styles: &'a [RichTextStyle],
     has_policy: bool,
-    source: &'a RichTextSettingSource,
+    source: RichTextSettingSource,
 }
 
 fn append_line_option_contributions(
     target: &mut Vec<RichTextStyleContribution>,
     base_offset: &mut usize,
-    input: LineOptionContribution<'_>,
+    input: &LineOptionContribution<'_>,
 ) {
     let style_index = (!input.styles.is_empty()).then_some(*base_offset);
     let active = input.has_policy || !input.styles.is_empty();
@@ -540,11 +542,14 @@ fn rich_text_assign_op(op: DialogueDefaultAssignOp) -> RichTextAssignOp {
     }
 }
 
-fn dialogue_option_source(dialogue: &HirDialogue) -> RichTextSettingSource {
+fn dialogue_option_source(
+    dialogue: &HirDialogue,
+    range: Option<RichTextSourceRange>,
+) -> RichTextSettingSource {
     RichTextSettingSource::SourceFile {
         item_id: dialogue.id().map(|id| id.body().to_owned()),
         public_id: dialogue.text_key().map(|id| id.body().to_owned()),
-        range: None,
+        range,
     }
 }
 
@@ -1891,6 +1896,13 @@ flow @flow.main main {
                 && contribution.value == "11px"
                 && contribution.active
                 && contribution.style_index == Some(2)
+                && matches!(
+                    contribution.source,
+                    RichTextSettingSource::SourceFile {
+                        range: Some(RichTextSourceRange { .. }),
+                        ..
+                    }
+                )
         }));
         assert!(spec.style_contributions.iter().any(|contribution| {
             contribution.layer == RichTextCascadeLayer::DialogueDefaults

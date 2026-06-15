@@ -76,8 +76,10 @@ pub struct LineOptions {
     hooks: Vec<Expr>,
     style: Option<Expr>,
     style_raw: Option<String>,
+    style_range: Option<TextRange>,
     rich_text: Option<Expr>,
     rich_text_raw: Option<String>,
+    rich_text_range: Option<TextRange>,
     args: Vec<LineArg>,
 }
 
@@ -97,8 +99,10 @@ pub(crate) struct LineOptionsInit {
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
     pub(crate) style_raw: Option<String>,
+    pub(crate) style_range: Option<TextRange>,
     pub(crate) rich_text: Option<Expr>,
     pub(crate) rich_text_raw: Option<String>,
+    pub(crate) rich_text_range: Option<TextRange>,
     pub(crate) args: Vec<LineArg>,
 }
 
@@ -108,6 +112,7 @@ pub struct LineArg {
     name: String,
     value: Expr,
     raw_value: String,
+    value_range: TextRange,
 }
 
 /// Global dialogue default declaration.
@@ -279,8 +284,10 @@ impl LineOptions {
             hooks: init.hooks,
             style: init.style,
             style_raw: init.style_raw,
+            style_range: init.style_range,
             rich_text: init.rich_text,
             rich_text_raw: init.rich_text_raw,
+            rich_text_range: init.rich_text_range,
             args: init.args,
         }
     }
@@ -337,6 +344,10 @@ impl LineOptions {
         self.style_raw.as_deref()
     }
 
+    pub const fn style_range(&self) -> Option<TextRange> {
+        self.style_range
+    }
+
     pub const fn rich_text(&self) -> Option<&Expr> {
         self.rich_text.as_ref()
     }
@@ -345,17 +356,27 @@ impl LineOptions {
         self.rich_text_raw.as_deref()
     }
 
+    pub const fn rich_text_range(&self) -> Option<TextRange> {
+        self.rich_text_range
+    }
+
     pub fn args(&self) -> &[LineArg] {
         &self.args
     }
 }
 
 impl LineArg {
-    pub(crate) const fn new(name: String, value: Expr, raw_value: String) -> Self {
+    pub(crate) const fn new(
+        name: String,
+        value: Expr,
+        raw_value: String,
+        value_range: TextRange,
+    ) -> Self {
         Self {
             name,
             value,
             raw_value,
+            value_range,
         }
     }
 
@@ -369,6 +390,10 @@ impl LineArg {
 
     pub fn raw_value(&self) -> &str {
         &self.raw_value
+    }
+
+    pub const fn value_range(&self) -> &TextRange {
+        &self.value_range
     }
 }
 

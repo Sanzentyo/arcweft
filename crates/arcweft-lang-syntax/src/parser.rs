@@ -90,7 +90,7 @@ impl From<&CstLine<'_>> for TopLevelDispatch {
 
 type ContentCallParse = (
     String,
-    Option<String>,
+    Option<(String, usize)>,
     DialogueContent,
     usize,
     Option<LinePlan>,
