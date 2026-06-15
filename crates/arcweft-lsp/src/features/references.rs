@@ -1,21 +1,22 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::{effective_dialogue_cascade_at, source_range};
 use arcweft_verify_lsp::LspPositionMapper;
-use lsp_types::{GotoDefinitionResponse, Location, Position, Uri};
+use lsp_types::{Location, Position, Uri};
+use std::collections::BTreeSet;
 
-/// Computes definition locations for the effective presentation context.
-pub fn definition(
-    uri: &Uri,
-    document: &DocumentSnapshot,
-    position: Position,
-) -> Option<GotoDefinitionResponse> {
+/// Lists source ranges that contribute to the effective dialogue style cascade.
+pub fn references(uri: &Uri, document: &DocumentSnapshot, position: Position) -> Vec<Location> {
     let offset = document.line_index().byte_offset_from_position(position);
-    let spec = effective_dialogue_cascade_at(document, offset)?.spec;
-    let locations = spec
+    let Some(cascade) = effective_dialogue_cascade_at(document, offset) else {
+        return Vec::new();
+    };
+    let mut seen = BTreeSet::new();
+    cascade
+        .spec
         .style_contributions
         .iter()
-        .filter(|contribution| contribution.active)
         .filter_map(|contribution| source_range(&contribution.source))
+        .filter(|range| seen.insert((range.start, range.end)))
         .map(|range| {
             Location::new(
                 uri.clone(),
@@ -24,7 +25,5 @@ pub fn definition(
                     .range_from_byte_span(range.start, range.end),
             )
         })
-        .collect::<Vec<_>>();
-
-    (!locations.is_empty()).then_some(GotoDefinitionResponse::Array(locations))
+        .collect()
 }

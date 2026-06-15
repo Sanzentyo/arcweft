@@ -110,10 +110,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the first actual stdio language-server transport on top of `lsp-server`,
   while `arcweft-verify-lsp` remains Sans I/O. The transport negotiates LSP
   position encoding, keeps a FULL-sync open-document cache, publishes syntax /
-  HIR / verifier diagnostics, and routes completion, hover, signature help,
-  inlay hints, and code actions through the helper crates. Source-level sugar
-  expansion and ID materialization actions now return LSP `WorkspaceEdit`
-  values through the same byte-span mapper used for diagnostics, and
+  HIR / verifier diagnostics, and routes completion, hover, go-to definition,
+  find references, signature help, inlay hints, and code actions through the
+  helper crates. Rich-text dialogue hover, definition, and references share the
+  same effective cascade lookup over the runtime-plan `LineDisplayCatalog`, so
+  source value ranges for active and shadowed style contributors are exposed
+  consistently. Source-level sugar expansion and ID materialization actions now
+  return LSP `WorkspaceEdit` values through the same byte-span mapper used for
+  diagnostics, and
   `workspace/executeCommand` can translate the older command argument shape into
   the same edit without writing files server-side. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned

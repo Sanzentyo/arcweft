@@ -13,7 +13,7 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     CodeActionRequest, Completion, ExecuteCommand, GotoDefinition, HoverRequest, InlayHintRequest,
-    Request as LspRequest, SignatureHelpRequest,
+    References, Request as LspRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
@@ -21,7 +21,7 @@ use lsp_types::{
     DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams,
     HoverParams, HoverProviderCapability, InitializeParams, InlayHintParams,
-    InlayHintServerCapabilities, OneOf, OptionalVersionedTextDocumentIdentifier,
+    InlayHintServerCapabilities, OneOf, OptionalVersionedTextDocumentIdentifier, ReferenceParams,
     ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
     TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
 };
@@ -92,6 +92,7 @@ impl ArcweftLspSession {
             text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(true)),
+            references_provider: Some(OneOf::Left(true)),
             completion_provider: Some(lsp_types::CompletionOptions {
                 trigger_characters: Some(vec![".".to_owned(), "@".to_owned(), ":".to_owned()]),
                 ..lsp_types::CompletionOptions::default()
@@ -248,6 +249,19 @@ impl ArcweftLspSession {
                             &params.text_document_position_params.text_document.uri,
                             document,
                             params.text_document_position_params.position,
+                        )
+                    });
+                Ok(Response::new_ok(id, result))
+            }
+            References::METHOD => {
+                let (id, params) = extract::<ReferenceParams>(request, References::METHOD)?;
+                let result = self
+                    .document_for_params(&params.text_document_position.text_document.uri)
+                    .map(|document| {
+                        features::references::references(
+                            &params.text_document_position.text_document.uri,
+                            document,
+                            params.text_document_position.position,
                         )
                     });
                 Ok(Response::new_ok(id, result))
@@ -444,7 +458,7 @@ mod tests {
     use lsp_types::{
         ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
         DidChangeWatchedFilesParams, DidOpenTextDocumentParams, GotoDefinitionResponse, InlayHint,
-        InlayHintLabel, PartialResultParams, Position, Range, SignatureHelp,
+        InlayHintLabel, PartialResultParams, Position, Range, ReferenceContext, SignatureHelp,
         TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
         TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
         WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
@@ -468,6 +482,8 @@ mod tests {
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL))
         );
         assert!(capabilities.hover_provider.is_some());
+        assert!(capabilities.definition_provider.is_some());
+        assert!(capabilities.references_provider.is_some());
         assert!(capabilities.completion_provider.is_some());
         assert!(capabilities.code_action_provider.is_some());
         assert!(capabilities.inlay_hint_provider.is_some());
@@ -977,6 +993,58 @@ flow opening {
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "14px")
                 && location.range.end == position_of(source, "\n        }\n")
+        }));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#202122\")")
+                && location.range.end == position_of(source, "\n    }\n}\n\nflow")
+        }));
+    }
+
+    #[test]
+    fn references_request_returns_all_effective_style_contributors() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+pub character alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
+}
+
+flow opening {
+    @<character.alice>.say[hi[p]]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(6),
+            method: References::METHOD.to_owned(),
+            params: serde_json::json!(ReferenceParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: position_of(source, "hi[p]"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+                context: ReferenceContext {
+                    include_declaration: true
+                },
+            }),
+        });
+        let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
+            response.result.expect("references response"),
+        )
+        .expect("references response decodes");
+
+        assert!(locations.iter().all(|location| location.uri == uri));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#101112\")")
+                && location.range.end == position_of(source, "\n}\n\npub character")
         }));
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rgb(\"#202122\")")
