@@ -121,5 +121,11 @@
     "exit": 0,
     "bytes": 21682,
     "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-001-fixed-ruby-gap-full-frame.png"
+  },
+  {
+    "name": "issue-006-fixed-horizontal-wrap-windows-fonts",
+    "exit": 0,
+    "bytes": 13380,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-006-fixed-horizontal-wrap-windows-fonts.png"
   }
 ]

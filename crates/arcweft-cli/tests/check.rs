@@ -2736,6 +2736,67 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_textbox_capture_wraps_long_horizontal_lines() {
+    let path = temp_arcw(
+        "agent-observe-native-textbox-horizontal-wrap",
+        r#"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [font "Segoe UI"]AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[/font][p]
+}
+"#,
+    );
+    let dir = temp_dir("agent-observe-native-textbox-horizontal-wrap");
+    let raw_path = dir.join("textbox-horizontal-wrap-mask.rgba");
+
+    let json = observe_native_textbox_object_raw_report(
+        &path,
+        &raw_path,
+        "mask",
+        &["--viewport-width", "360", "--viewport-height", "240"],
+    );
+    let image = &json["images"][0];
+    let textbox = find_textbox_object(&json);
+    let clusters = json["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .filter(|object| {
+            object["role"] == "rich_text_cluster"
+                && object["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("object.dialogue.0.0.cluster."))
+        })
+        .collect::<Vec<_>>();
+    let mut rows = clusters
+        .iter()
+        .map(|object| agent_json_bbox_y(&object["bbox"]))
+        .collect::<Vec<_>>();
+    rows.sort_unstable();
+    rows.dedup();
+
+    assert!(
+        rows.len() > 1,
+        "long horizontal rich text should wrap into multiple rows: {json}"
+    );
+    assert!(
+        clusters
+            .iter()
+            .all(|object| agent_json_bbox_right(&object["bbox"]) <= 360),
+        "wrapped horizontal clusters should stay inside the viewport: {json}"
+    );
+    assert!(
+        image["height"].as_u64().unwrap() > agent_json_bbox_height(&textbox["bbox"]),
+        "textbox object capture should expand to include wrapped rows: {json}"
+    );
+    assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
+
+    fs::remove_file(&path).expect("remove temp native textbox horizontal wrap source");
+    fs::remove_dir_all(&dir).expect("remove temp native textbox horizontal wrap dir");
+}
+
+#[test]
 fn agent_observe_native_vertical_capture_matches_imq_reference() {
     if !imq_is_available() {
         eprintln!("skipping native vertical capture imq comparison: imq is not available");

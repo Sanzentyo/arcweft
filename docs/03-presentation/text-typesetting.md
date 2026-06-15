@@ -83,6 +83,16 @@ Ruby-specific fields mean:
 | `overhang` | Maximum annotation overhang allowed beyond the base allocation |
 | `collision_gap` | Separation between adjacent ruby annotations or continuation tracks |
 
+### Horizontal wrapping
+
+`horizontal_tb` RichText wraps inside the textbox layout width by default.
+The current deterministic layout model places one visual cluster at a time and
+starts a new line before a cluster that would exceed `origin.x + size.width`.
+Explicit hard line breaks reset `x` to the textbox origin and advance `y` by the
+line advance. A single cluster wider than the textbox is placed at the line
+start and may overhang; this keeps geometry deterministic until word-aware
+UAX14 wrapping and overflow diagnostics are implemented.
+
 ## Content functions
 
 ```arcw

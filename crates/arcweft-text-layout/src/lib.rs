@@ -545,6 +545,10 @@ fn layout_horizontal_run(
             continue;
         }
         let width = horizontal_advance(ch, config.font_size);
+        if horizontal_cluster_should_wrap(cursor.x, width, config) {
+            cursor.x = config.origin.x;
+            cursor.y += config.line_advance;
+        }
         let start = range_start + offset;
         let end = start + ch.len_utf8();
         let bounds = LayoutRect::new(cursor.x, cursor.y, width.max(1.0), config.line_advance);
@@ -562,6 +566,12 @@ fn layout_horizontal_run(
         });
         cursor.x += width;
     }
+}
+
+fn horizontal_cluster_should_wrap(cursor_x: f32, width: f32, config: TextLayoutConfig) -> bool {
+    let line_start = config.origin.x;
+    let line_end = config.origin.x + config.size.width.max(1.0);
+    cursor_x > line_start + f32::EPSILON && cursor_x + width > line_end + f32::EPSILON
 }
 
 fn layout_vertical_run(
@@ -2304,6 +2314,44 @@ mod tests {
         assert_f32_eq(layout.glyphs[0].origin.x, 24.0);
         assert!(layout.glyphs[1].origin.x > layout.glyphs[0].origin.x);
         assert_f32_eq(layout.glyphs[1].origin.y, layout.glyphs[0].origin.y);
+    }
+
+    #[test]
+    fn horizontal_layout_wraps_inside_textbox_width() {
+        let frame = frame_with_run("AAAA", RichTextPresentation::default());
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(40.0, 120.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_f32_eq(layout.glyphs[0].origin.x, config.origin.x);
+        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+        assert_f32_eq(layout.glyphs[2].origin.x, config.origin.x);
+        assert_f32_eq(
+            layout.glyphs[2].origin.y,
+            config.origin.y + config.line_advance,
+        );
+        assert!(layout.bounds.unwrap().height > config.line_advance);
+    }
+
+    #[test]
+    fn horizontal_layout_wraps_across_style_run_boundary() {
+        let frame = frame_with_split_runs("AAAA", 2, RichTextPresentation::default());
+        let config = TextLayoutConfig {
+            size: LayoutSize::new(40.0, 120.0),
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.runs.len(), 2);
+        assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
+        assert_f32_eq(layout.glyphs[2].origin.x, config.origin.x);
+        assert_f32_eq(
+            layout.glyphs[2].origin.y,
+            config.origin.y + config.line_advance,
+        );
     }
 
     #[test]
