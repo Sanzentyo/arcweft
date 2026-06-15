@@ -7,7 +7,10 @@ use arcweft_lang_sema::{
     diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
 };
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    lint::{SyntaxLint, SyntaxLintCode, lint_id_policy},
+    parser::parse_source,
+};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
 use arcweft_verify_lsp::{
     LspPositionMapper, diagnostics_from_report_with_mapper,
@@ -47,6 +50,10 @@ impl DocumentAnalysis {
             .collect::<Vec<_>>();
 
         if parsed.errors().is_empty() {
+            diagnostics.extend(syntax_lint_diagnostics(
+                &lint_id_policy(parsed.typed_tree()),
+                &line_index,
+            ));
             match lower_to_hir(parsed.typed_tree()) {
                 Ok(hir) => {
                     let env = profile.typecheck_env();
@@ -113,6 +120,25 @@ impl DocumentAnalysis {
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
     }
+}
+
+fn syntax_lint_diagnostics(lints: &[SyntaxLint], line_index: &LineIndex) -> Vec<Diagnostic> {
+    lints
+        .iter()
+        .map(|lint| Diagnostic {
+            range: line_index.range_from_byte_span(lint.range().start(), lint.range().end()),
+            severity: Some(match lint.code() {
+                SyntaxLintCode::DeclBindingMismatch => DiagnosticSeverity::ERROR,
+                SyntaxLintCode::DeepDotRunRelativeId
+                | SyntaxLintCode::FlowIdModuleMismatch
+                | SyntaxLintCode::RedundantDeclIdentity => DiagnosticSeverity::WARNING,
+            }),
+            code: Some(NumberOrString::String(lint.code().stable_code().to_owned())),
+            source: Some("arcweft-syntax".to_owned()),
+            message: format!("{}: {}", lint.code().domain_name(), lint.message()),
+            ..Diagnostic::default()
+        })
+        .collect()
 }
 
 /// Builds a publishDiagnostics notification payload for one open document.
@@ -295,5 +321,27 @@ flow @.main main {
                 .message
                 .contains("unknown function `custom_echo`")
         }));
+    }
+
+    #[test]
+    fn diagnostics_include_stable_syntax_lint_codes() {
+        let source = r"
+flow @flow.opening start {
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == Some(NumberOrString::String("AWF0102".into())))
+            .expect("identity mismatch diagnostic");
+
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+        assert!(
+            diagnostic
+                .message
+                .contains("identity::decl_binding_mismatch")
+        );
     }
 }

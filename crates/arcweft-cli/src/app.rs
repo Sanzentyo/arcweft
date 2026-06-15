@@ -8831,7 +8831,12 @@ fn load_and_check_with_env(
         Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(lint_id_policy(&tree))
     })?;
     for lint in &lints {
-        eprintln!("warning[{:?}]: {}", lint.code(), lint.message());
+        eprintln!(
+            "warning[{} {}]: {}",
+            lint.code().stable_code(),
+            lint.code().domain_name(),
+            lint.message()
+        );
     }
 
     let hir = profile_lower_hir(&tree, &mut phases)?;
