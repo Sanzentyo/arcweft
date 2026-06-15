@@ -390,7 +390,7 @@ fn append_dialogue_default_assignment(
         assignment.raw_value().to_owned(),
         assignment.value(),
         RichTextCascadeLayer::DialogueDefaults,
-        source_file(item_id, Some(source_range(assignment.range()))),
+        source_file(item_id, Some(source_range(assignment.value_range()))),
     );
 }
 
@@ -2005,8 +2005,7 @@ flow @flow.main main {
 
     #[test]
     fn rich_text_defaults_and_line_options_lower_to_ruby_layout() {
-        let parsed = parse_source(
-            r"
+        let source = r"
 pub dialogue defaults @dialogue.defaults {
     rich_text {
         ruby {
@@ -2021,8 +2020,9 @@ character @character.alice Alice as alice {}
 flow @flow.main main {
     alice(rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px))): |[夢](ゆめ)[p]
 }
-",
-        );
+";
+        let default_ruby_size_start = source.find("14px").expect("default ruby size literal");
+        let parsed = parse_source(source);
         let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
         let dialogue = hir
             .flows()
@@ -2080,6 +2080,8 @@ flow @flow.main main {
                     && contribution.value == "14px"
                     && !contribution.active
                     && contribution.style_index == Some(0)
+                    && contribution_source_range(contribution)
+                        == Some((default_ruby_size_start, default_ruby_size_start + 4))
             }),
             "{:#?}",
             spec.style_contributions
@@ -2390,5 +2392,16 @@ flow @flow.main main {
                 } if expr == "missing"
             )
         }));
+    }
+
+    fn contribution_source_range(
+        contribution: &RichTextStyleContribution,
+    ) -> Option<(usize, usize)> {
+        match &contribution.source {
+            RichTextSettingSource::SourceFile {
+                range: Some(range), ..
+            } => Some((range.start, range.end)),
+            _ => None,
+        }
     }
 }
