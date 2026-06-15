@@ -456,6 +456,26 @@ impl<'a> CstLineEvents<'a> {
         self.stats
     }
 
+    pub(crate) fn with_absolute_offsets(mut self, base_offset: usize) -> Option<Self> {
+        self.lines = self
+            .lines
+            .into_iter()
+            .map(|line| line.with_absolute_offsets(base_offset))
+            .collect::<Option<Vec<_>>>()?;
+        Some(self)
+    }
+
+    pub(crate) fn line_slice(&self, range: Range<usize>) -> Option<CstLineEvents<'a>> {
+        if range.start > range.end || range.end > self.lines.len() {
+            return None;
+        }
+        Some(CstLineEvents {
+            lines: self.lines[range].to_vec(),
+            source: None,
+            stats: SyntaxParseStats::default(),
+        })
+    }
+
     /// Reuses a complete line-event range as parser input with offsets rebased
     /// to a virtual fragment. This avoids reparsing nested flow bodies when the
     /// body is already represented by whole CST lines.
@@ -995,6 +1015,19 @@ impl<'a> CstLine<'a> {
             text: self.text.clone(),
             start: self.start.checked_sub(base_offset)?,
             end: self.end.checked_sub(base_offset)?,
+            trim_start: self.trim_start,
+            trim_end: self.trim_end,
+            leading_trim_start: self.leading_trim_start,
+            punctuation: self.punctuation,
+            kind: self.kind,
+        })
+    }
+
+    fn with_absolute_offsets(self, base_offset: usize) -> Option<Self> {
+        Some(Self {
+            text: self.text,
+            start: self.start.checked_add(base_offset)?,
+            end: self.end.checked_add(base_offset)?,
             trim_start: self.trim_start,
             trim_end: self.trim_end,
             leading_trim_start: self.leading_trim_start,

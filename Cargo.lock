@@ -366,6 +366,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-runtime-host",
+ "arcweft-runtime-plan",
  "arcweft-rust-abi",
  "arcweft-tooling",
  "arcweft-verify",

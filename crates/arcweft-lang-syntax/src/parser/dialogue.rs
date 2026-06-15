@@ -129,14 +129,16 @@ impl Parser<'_> {
         let trimmed = line.text.trim();
         let line_leading = line.text.len() - line.text.trim_start().len();
 
-        if let Some((speaker, args, inline_content)) = split_speaker_line(trimmed) {
+        if let Some((speaker, args, inline_content, content_relative)) = split_speaker_line(trimmed)
+        {
             self.index += 1;
             let content = if inline_content.is_empty() {
                 self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
             } else {
+                let content_start = line.start + line_leading + content_relative;
                 self.dialogue_content(
                     inline_content.to_owned(),
-                    TextRange::new(line.start, line.end),
+                    TextRange::new(content_start, content_start + inline_content.len()),
                 )
             };
             let plan = self.take_optional_line_plan();

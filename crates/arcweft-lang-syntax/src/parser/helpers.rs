@@ -355,7 +355,7 @@ pub(super) fn split_brace_item_with_scan<'a>(
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }
 
-type SpeakerLineParts<'a> = (String, Option<(String, usize)>, &'a str);
+type SpeakerLineParts<'a> = (String, Option<(String, usize)>, &'a str, usize);
 
 pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> {
     let colon = find_top_level_colon(trimmed)?;
@@ -364,7 +364,9 @@ pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> 
     }
     let head = trimmed[..colon].trim();
     let head_start = trimmed[..colon].find(head).unwrap_or(0);
-    let content = trimmed[colon + 1..].trim();
+    let content_source = &trimmed[colon + 1..];
+    let content_leading = content_source.len() - content_source.trim_start().len();
+    let content = content_source.trim();
     if head.is_empty() || head.starts_with("cancel ") || head.starts_with("at(") {
         return None;
     }
@@ -373,6 +375,7 @@ pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> 
         speaker,
         args.map(|(args, relative)| (args, head_start + relative)),
         content,
+        colon + 1 + content_leading,
     ))
 }
 

@@ -96,15 +96,15 @@ impl<'a> Parser<'a> {
     pub(super) fn parse_flow_body_from_line_range(
         &mut self,
         range: Range<usize>,
-        base_offset: usize,
+        _base_offset: usize,
     ) -> Option<Vec<FlowItem>> {
-        let events = self.events.relative_line_slice(range, base_offset)?;
-        Some(self.parse_flow_body_events(events, base_offset))
+        let events = self.events.line_slice(range)?;
+        Some(self.parse_flow_body_events(events, 0))
     }
 
     pub(super) fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
-        let mut nested = Parser::new(body);
-        self.parse_nested_flow_body(&mut nested, base_offset)
+        let mut nested = Parser::new_with_base_offset(body, base_offset);
+        self.parse_nested_flow_body(&mut nested, 0)
     }
 
     fn parse_flow_body_events(

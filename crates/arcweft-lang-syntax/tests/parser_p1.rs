@@ -129,6 +129,34 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
 }
 
 #[test]
+fn flow_body_dialogue_ranges_use_document_offsets() {
+    let source = r"
+pub character alice {}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+";
+    let tree = parse_ok(source);
+
+    let Item::Flow(flow) = &tree.items()[1] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected speaker line");
+    };
+    let dream_offset = source.find("夢").expect("dialogue content offset");
+    let content_range = line.content().range();
+    assert!(content_range.start() <= dream_offset);
+    assert!(dream_offset < content_range.end());
+    assert_eq!(&source[content_range.as_range()], "|[夢](ゆめ)[p]");
+    assert_eq!(
+        &source[line.range().as_range()],
+        "    alice: |[夢](ゆめ)[p]"
+    );
+}
+
+#[test]
 fn hook_headers_keep_when_priority_once_and_effects() {
     let tree = parse_ok(
         r"

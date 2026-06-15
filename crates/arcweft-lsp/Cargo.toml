@@ -13,6 +13,7 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }

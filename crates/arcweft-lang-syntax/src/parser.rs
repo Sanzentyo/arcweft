@@ -114,6 +114,15 @@ impl<'a> Parser<'a> {
         Self::from_syntax(source, &syntax)
     }
 
+    fn new_with_base_offset(source: &'a str, base_offset: usize) -> Self {
+        let syntax = crate::cst::parse_cst(source);
+        let events = cst_lines_for_source(&syntax, source)
+            .with_absolute_offsets(base_offset)
+            .unwrap_or_default();
+        let syntax_stats = events.stats();
+        Self::from_line_events("", events, syntax_stats)
+    }
+
     fn from_syntax(source: &'a str, syntax: &SyntaxNode) -> Self {
         let events = cst_lines_for_source(syntax, source);
         let syntax_stats = events.stats();
