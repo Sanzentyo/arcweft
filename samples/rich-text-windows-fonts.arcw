@@ -2,9 +2,13 @@ pub surface character akira {
     display = "Akira"
     default_voice = auto
     dialogue_style {
-        font = "Yu Gothic"
-        text_color = "#d9f2ff"
-        text_size = 30
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#d9f2ff")
+                size = 30px
+            }
+        }
     }
 }
 
@@ -12,9 +16,13 @@ pub surface character mio {
     display = "Mio"
     default_voice = auto
     dialogue_style {
-        font = "Meiryo"
-        text_color = "#ffd9f0"
-        text_size = 29
+        rich_text {
+            text {
+                font = "Meiryo"
+                color = rgb("#ffd9f0")
+                size = 29px
+            }
+        }
     }
 }
 
@@ -22,9 +30,13 @@ pub surface character sen {
     display = "Sen"
     default_voice = auto
     dialogue_style {
-        font = "MS Mincho"
-        text_color = "#fff0c8"
-        text_size = 30
+        rich_text {
+            text {
+                font = "MS Mincho"
+                color = rgb("#fff0c8")
+                size = 30px
+            }
+        }
     }
 }
 
@@ -32,9 +44,13 @@ pub surface character terminal {
     display = "Terminal"
     default_voice = auto
     dialogue_style {
-        font = "Consolas"
-        text_color = "#d8ffd8"
-        text_size = 27
+        rich_text {
+            text {
+                font = "Consolas"
+                color = rgb("#d8ffd8")
+                size = 27px
+            }
+        }
     }
 }
 
@@ -42,9 +58,13 @@ pub surface character narrator {
     display = "Narrator"
     default_voice = auto
     dialogue_style {
-        font = "Segoe UI"
-        text_color = "#e8e8e8"
-        text_size = 28
+        rich_text {
+            text {
+                font = "Segoe UI"
+                color = rgb("#e8e8e8")
+                size = 28px
+            }
+        }
     }
 }
 

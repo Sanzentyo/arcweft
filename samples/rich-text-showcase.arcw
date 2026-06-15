@@ -2,9 +2,13 @@ pub surface character alice {
     display = "Alice"
     default_voice = auto
     dialogue_style {
-        font = "Yu Gothic"
-        text_color = "#d9f2ff"
-        text_size = 30
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#d9f2ff")
+                size = 30px
+            }
+        }
     }
 }
 
@@ -12,9 +16,13 @@ pub surface character narrator {
     display = "Narrator"
     default_voice = auto
     dialogue_style {
-        font = "Yu Gothic UI"
-        text_color = "#e8e8e8"
-        text_size = 28
+        rich_text {
+            text {
+                font = "Yu Gothic UI"
+                color = rgb("#e8e8e8")
+                size = 28px
+            }
+        }
     }
 }
 
@@ -22,9 +30,13 @@ pub surface character benio {
     display = "Benio"
     default_voice = auto
     dialogue_style {
-        font = "Meiryo"
-        text_color = "#ffd9e8"
-        text_size = 29
+        rich_text {
+            text {
+                font = "Meiryo"
+                color = rgb("#ffd9e8")
+                size = 29px
+            }
+        }
     }
 }
 
@@ -32,9 +44,13 @@ pub surface character clerk {
     display = "Clerk"
     default_voice = auto
     dialogue_style {
-        font = "MS Gothic"
-        text_color = "#e8ffd9"
-        text_size = 27
+        rich_text {
+            text {
+                font = "MS Gothic"
+                color = rgb("#e8ffd9")
+                size = 27px
+            }
+        }
     }
 }
 

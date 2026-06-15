@@ -2,9 +2,13 @@ pub surface character alice {
     display = "Alice"
     default_voice = auto
     dialogue_style {
-        font = "Yu Gothic"
-        text_color = "#d9f2ff"
-        text_size = 29
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#d9f2ff")
+                size = 29px
+            }
+        }
     }
 }
 
@@ -12,9 +16,13 @@ pub surface character bob {
     display = "Bob"
     default_voice = auto
     dialogue_style {
-        font = "Meiryo"
-        text_color = "#ffe0d0"
-        text_size = 28
+        rich_text {
+            text {
+                font = "Meiryo"
+                color = rgb("#ffe0d0")
+                size = 28px
+            }
+        }
     }
 }
 
@@ -22,13 +30,17 @@ pub surface character narrator {
     display = "Narrator"
     default_voice = auto
     dialogue_style {
-        font = "Segoe UI"
-        text_color = "#e8e8e8"
-        text_size = 27
+        rich_text {
+            text {
+                font = "Segoe UI"
+                color = rgb("#e8e8e8")
+                size = 27px
+            }
+        }
     }
 }
 
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults @dialogue:.defaults.full {
     rich_text {
         layout {
             writing_mode = horizontal_tb
