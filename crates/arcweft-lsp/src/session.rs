@@ -992,6 +992,86 @@ flow opening {
     }
 
     #[test]
+    fn code_actions_extract_to_profile_selected_dialogue_defaults() {
+        let project = TestProject::new("lsp-session-dialogue-defaults-extract-profile");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+}
+
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
+    }
+}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+"##;
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+"#,
+        );
+        project.write("src/main.arcw", source);
+        let uri = file_uri(&project.path("src/main.arcw"));
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+        open_text(&mut session, uri.clone(), source);
+        let document = session.documents.get(&uri).expect("open document");
+        let offset = source.find("夢").expect("dialogue content");
+        let position = document.line_index().position_from_byte_offset(offset);
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(position, position),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title
+                        == "Extract `rich_text.text.color` override to dialogue defaults" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("dialogue defaults extraction action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+        let mobile_close = position_of(source, "}\n\npub character alice");
+
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].range.start, mobile_close);
+        assert_eq!(
+            edits[0].new_text,
+            "    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n"
+        );
+    }
+
+    #[test]
     fn code_actions_extract_rich_text_contributor_to_nested_dialogue_defaults() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());

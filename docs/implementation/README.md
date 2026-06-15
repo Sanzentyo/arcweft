@@ -153,7 +153,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   block when the character declaration is in the current document, can extract
   active contributors into the effective textbox theme (`rich_text` for
   `rich_text.*` paths, `dialogue_style` for other dialogue style paths), or move
-  active non-default contributors into the selected `dialogue defaults` profile.
+  active non-default contributors into the profile-selected `dialogue defaults`
+  block when one is selected, falling back to the canonical `@dialogue.defaults`
+  or single visible defaults block only when no profile selection is active.
   Block extraction targets use canonical nested style blocks such as
   `rich_text { ruby { size = ... } }`. Source-level sugar
   expansion and canonical

@@ -62,6 +62,7 @@ fn dialogue_override_actions(
     actions.extend(dialogue_defaults_actions(
         uri,
         document,
+        profile.dialogue_defaults(),
         &cascade.spec.style_contributions,
     ));
     actions
@@ -174,6 +175,7 @@ fn textbox_theme_actions(
 fn dialogue_defaults_actions(
     uri: &Uri,
     document: &DocumentSnapshot,
+    selected_profile: Option<&str>,
     contributions: &[RichTextStyleContribution],
 ) -> Vec<CodeAction> {
     contributions
@@ -181,8 +183,12 @@ fn dialogue_defaults_actions(
         .filter(|contribution| extractable_dialogue_defaults_override(contribution))
         .take(8)
         .filter_map(|contribution| {
-            let edit =
-                dialogue_defaults_edit(document.text(), &contribution.path, &contribution.value)?;
+            let edit = dialogue_defaults_edit(
+                document.text(),
+                selected_profile,
+                &contribution.path,
+                &contribution.value,
+            )?;
             Some(extraction_code_action(
                 uri,
                 document,
@@ -609,7 +615,12 @@ fn matching_brace(source: &str, open: usize) -> Option<usize> {
     None
 }
 
-fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextEdit> {
+fn dialogue_defaults_edit(
+    source: &str,
+    selected_profile: Option<&str>,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
     let parsed = parse_source(source);
     if !parsed.errors().is_empty() {
         return None;
@@ -623,6 +634,14 @@ fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextE
             _ => None,
         })
         .collect::<Vec<_>>();
+    if let Some(selected_profile) = selected_profile {
+        let target = defaults.iter().copied().find(|defaults| {
+            defaults
+                .id()
+                .is_some_and(|id| id.body() == selected_profile)
+        })?;
+        return block_path_assignment_insertion(source, target.range(), path, value);
+    }
     let target = defaults
         .iter()
         .copied()
@@ -1259,7 +1278,7 @@ mod tests {
     #[test]
     fn dialogue_defaults_edit_uses_canonical_profile() {
         let source = "pub dialogue defaults @dialogue.defaults.debug {\n}\n\npub dialogue defaults @dialogue.defaults {\n}\n";
-        let edit = dialogue_defaults_edit(source, "text_color", "rgb(\"#202122\")")
+        let edit = dialogue_defaults_edit(source, None, "text_color", "rgb(\"#202122\")")
             .expect("defaults edit");
         let expected = source
             .rfind("}\n")
@@ -1270,10 +1289,43 @@ mod tests {
     }
 
     #[test]
+    fn dialogue_defaults_edit_uses_selected_profile() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n}\n\npub dialogue defaults @dialogue.defaults.mobile {\n}\n";
+        let edit = dialogue_defaults_edit(
+            source,
+            Some("dialogue.defaults.mobile"),
+            "text_color",
+            "rgb(\"#202122\")",
+        )
+        .expect("selected defaults edit");
+        let expected = source
+            .rfind("}\n")
+            .expect("selected defaults closing brace");
+
+        assert_eq!(edit.start, expected);
+        assert_eq!(edit.replacement, "    text_color = rgb(\"#202122\")\n");
+    }
+
+    #[test]
+    fn dialogue_defaults_edit_skips_missing_selected_profile() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n}\n";
+
+        assert!(
+            dialogue_defaults_edit(
+                source,
+                Some("dialogue.defaults.mobile"),
+                "text_color",
+                "rgb(\"#202122\")"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn dialogue_defaults_edit_creates_nested_rich_text_blocks() {
         let source = "pub dialogue defaults @dialogue.defaults {\n}\n";
-        let edit =
-            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
+            .expect("defaults edit");
         let expected = source.find("}\n").expect("defaults close");
 
         assert_eq!(edit.start, expected);
@@ -1286,8 +1338,8 @@ mod tests {
     #[test]
     fn dialogue_defaults_edit_appends_missing_nested_child_block() {
         let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n}\n";
-        let edit =
-            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
+            .expect("defaults edit");
         let expected = source.find("    }\n}\n").expect("rich_text close");
 
         assert_eq!(edit.start, expected);
@@ -1300,8 +1352,8 @@ mod tests {
     #[test]
     fn dialogue_defaults_edit_appends_existing_nested_leaf_block() {
         let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
-        let edit =
-            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
+            .expect("defaults edit");
         let expected = source.find("        }\n    }\n}\n").expect("ruby close");
 
         assert_eq!(edit.start, expected);
