@@ -886,8 +886,10 @@ rich_text.ruby.size = 14px
 `--canonical-rich-text` is narrower than `--expand-sugar`: it rewrites inferred
 dot rich-text selectors such as `[.shake]...[/]` to explicit family tags such as
 `[effect .shake]...[/effect]`, and rewrites unknown dot selectors to
-`[mark .name]`. It does not expand unrelated dialogue sugar such as `$(expr)`,
-ruby shorthand, `[page]`, or speaker-line sugar.
+`[mark .name]`, removing a paired `[/]` when the unknown selector was written as
+a span even though markers are zero-width. It does not expand unrelated
+dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or speaker-line
+sugar.
 
 Declaration canonicalization uses the same diagnostic names as LSP. Source-level
 lint names are domain namespaces, while JSON diagnostics and CI logs also carry

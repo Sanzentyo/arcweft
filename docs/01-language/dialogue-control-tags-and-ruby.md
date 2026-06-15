@@ -134,6 +134,9 @@ Known selector families are style (`.italic`, `.oblique`), layout
 selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
 effect (`.wave`, `.shake`, `.arc`, `.typewriter`, `.jitter`, `.shader`,
 `.host`). Unknown dot selectors are markers and canonicalize to `[mark .name]`.
+If an unknown dot selector was accidentally written with a following `[/]`,
+canonical tooling removes that inferred close because markers are zero-width,
+not spans.
 
 Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as

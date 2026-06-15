@@ -1269,7 +1269,7 @@ fn dollar_expr_edit(raw: &str, start: usize) -> Option<(usize, String)> {
 fn bracket_dialogue_edit(
     raw: &str,
     start: usize,
-    inferred_span_stack: &mut Vec<&'static str>,
+    inferred_span_stack: &mut Vec<Option<&'static str>>,
     mode: DialogueSugarMode,
 ) -> Option<(usize, String)> {
     if mode == DialogueSugarMode::All
@@ -1286,8 +1286,10 @@ fn bracket_dialogue_edit(
     let inside = raw.get(start + '['.len_utf8()..close)?.trim();
     let end = close + ']'.len_utf8();
     if inside == "/" {
-        let family = inferred_span_stack.pop()?;
-        return Some((end, format!("[/{family}]")));
+        return inferred_span_stack
+            .pop()
+            .map(|family| family.map_or_else(String::new, |family| format!("[/{family}]")))
+            .map(|replacement| (end, replacement));
     }
     if mode == DialogueSugarMode::All && inside == "page" {
         return Some((end, "[p]".to_owned()));
@@ -1306,7 +1308,7 @@ fn bracket_dialogue_edit(
     if inside.starts_with('.') && inside.len() > 1 {
         let (selector, attrs) = split_dialogue_tag_head(inside);
         if let Some(family) = inferred_rich_text_family(selector.trim_start_matches('.')) {
-            inferred_span_stack.push(family);
+            inferred_span_stack.push(Some(family));
             let replacement = if attrs.is_empty() {
                 format!("[{family} {selector}]")
             } else {
@@ -1314,6 +1316,7 @@ fn bracket_dialogue_edit(
             };
             return Some((end, replacement));
         }
+        inferred_span_stack.push(None);
         return Some((end, format!("[mark {selector}]")));
     }
     if mode == DialogueSugarMode::All
@@ -2420,6 +2423,27 @@ mod tests {
                 .contains("[layout .vertical_rl]縦[/layout][p]")
         );
         assert!(report.output.contains("[page]"));
+    }
+
+    #[test]
+    fn canonical_rich_text_removes_marker_like_inferred_close() {
+        let source =
+            "flow @flow.opening opening {\n    alice: [.keyword]word[/][.shake]there[/][p]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report
+                .output
+                .contains("[mark .keyword]word[effect .shake]there[/effect]")
+        );
+        assert!(!report.output.contains("[/]"));
     }
 
     #[test]
