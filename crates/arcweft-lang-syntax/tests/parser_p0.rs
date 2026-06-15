@@ -8,6 +8,36 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
     parsed.into_typed_tree()
 }
 
+#[test]
+fn flow_body_attributes_are_explicit_recovery_diagnostics() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+flow opening {
+    #![generated(tool)]
+    #[allow(style::redundant_decl_identity)]
+    alice: hello[p]
+}
+",
+    );
+
+    assert_eq!(parsed.errors().len(), 2);
+    assert!(parsed.errors()[0].message().contains("inner attributes"));
+    assert!(parsed.errors()[1].message().contains("outer attributes"));
+    let tree = parsed.typed_tree();
+    let arcweft_lang_syntax::ast::items::Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    assert_eq!(flow.body().len(), 3);
+    assert!(matches!(
+        flow.body()[0],
+        arcweft_lang_syntax::ast::flow::FlowItem::Raw(_)
+    ));
+    assert!(matches!(
+        flow.body()[1],
+        arcweft_lang_syntax::ast::flow::FlowItem::Raw(_)
+    ));
+}
+
 use arcweft_lang_syntax::{
     ast::{
         flow::{FlowItem, Stmt},

@@ -163,6 +163,26 @@ impl<'a> Parser<'a> {
         let trimmed = line.text.trim();
         let kind = line.flow_item_kind();
 
+        if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
+            let message = if trimmed.starts_with("#![") {
+                "inner attributes are not supported in flow bodies yet"
+            } else {
+                "outer attributes are not supported in flow bodies yet"
+            };
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                message,
+                ["attribute before a top-level declaration"],
+                Some(trimmed),
+                ["move the attribute to a supported declaration or source header"],
+            );
+            self.index += 1;
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, line.end)),
+            )));
+        }
+
         match kind {
             CstFlowItemKind::StructuredBlock(kind) => {
                 return self.parse_structured_flow_block(kind);

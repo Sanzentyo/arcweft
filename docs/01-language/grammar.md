@@ -125,6 +125,9 @@ items; misplaced inner attributes are diagnostics and are not applied
 retroactively. `#[allow(...)]` controls lint suppression; `#[generated]` and
 `#![generated(...)]` mark generated or fully elaborated source and do not by
 themselves silence unrelated diagnostics.
+Inner and outer attributes inside flow bodies are currently diagnostics rather
+than statement syntax; future block-scope attribute surfaces must add explicit
+AST attachment instead of falling through as raw statements.
 
 ## Flow and fragments
 
