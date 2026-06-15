@@ -644,6 +644,48 @@ mod tests {
     }
 
     #[test]
+    fn code_actions_expand_sugar_nests_dotted_dialogue_defaults() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        let source =
+            "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n}\n";
+        open_text(&mut session, uri.clone(), source);
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(Position::new(0, 0), Position::new(3, 0)),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Expand Arcweft sugar" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("expand sugar action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        let rewritten = &edits[0].new_text;
+        assert!(rewritten.contains("rich_text {\n        ruby {\n            size = 14px"));
+        assert!(!rewritten.contains("rich_text.ruby.size"));
+    }
+
+    #[test]
     fn code_actions_extract_active_style_contributor_to_line_options() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());

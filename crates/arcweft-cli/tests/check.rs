@@ -25132,6 +25132,31 @@ fn fmt_expand_sugar_respects_decl_identity_attributes_when_writing() {
 }
 
 #[test]
+fn fmt_expand_sugar_nests_dotted_dialogue_defaults_when_writing() {
+    let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
+    let path = temp_arcw("fmt-expand-dialogue-defaults", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--expand-sugar")
+        .arg("--write")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt --expand-sugar should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rewritten = fs::read_to_string(&path).expect("rewritten source");
+    assert!(rewritten.contains("rich_text {\n        ruby {\n            size = 14px"));
+    assert!(rewritten.contains("rich_text {\n        ruby {\n            gap += 1px"));
+    assert!(!rewritten.contains("rich_text.ruby.size"));
+    assert!(!rewritten.contains("rich_text.ruby.gap"));
+}
+
+#[test]
 fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
     let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.shake amp=2px]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text", source);

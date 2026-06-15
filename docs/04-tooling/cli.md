@@ -878,6 +878,8 @@ $(expr)              -> #[expr]
 [.mark]              -> [mark .mark]
 [w 500ms]            -> [w time=500ms]
 [page]/[wait]/[nl]   -> [p]/[l]/[r]
+rich_text.ruby.size = 14px
+                      -> rich_text { ruby { size = 14px } }
 ```
 
 `--canonical-rich-text` is narrower than `--expand-sugar`: it rewrites inferred
@@ -915,6 +917,9 @@ callable speaker value, so `alice2(voice=auto): text` expands to
 `alice2(voice=auto)[text]`, not to `alice2.say(voice=auto)[text]`.
 Dialogue-text authoring sugar is preserved by default and normalized only when
 `--expand-sugar` is requested.
+Dialogue defaults may be authored with dotted assignment paths, but formatter
+expansion canonicalizes them to nested blocks so CLI and LSP edits converge on
+the same structure that semantic defaults and provenance reporting use.
 
 The command must preserve IDs, source anchors where possible, comments, and stable child entity slots. It must never renumber dialogue or choice IDs as a side effect of formatting.
 

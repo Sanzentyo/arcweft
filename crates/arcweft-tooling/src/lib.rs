@@ -9,7 +9,7 @@ use arcweft_lang_hir::id_context::{
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem},
-        dialogue::DialogueContent,
+        dialogue::{DialogueContent, DialogueDefaultAssignOp, DialogueDefaultsItem},
         flow::{AwaitBranch, FlowItem, Stmt},
         items::{EntityDeclKind, Item},
         line_plan::LinePlanItem,
@@ -299,6 +299,7 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         collect_speaker_preset_locals_from_typed_tree(&parsed, &character_aliases);
     let mut edits = Vec::new();
     edits.extend(declaration_identity_edits(source, &parsed));
+    edits.extend(dialogue_defaults_nested_assignment_edits(source, &parsed));
 
     for line in lines.iter() {
         if line.kind() == CstLineKind::Comment {
@@ -334,6 +335,79 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         }
     }
     edits
+}
+
+fn dialogue_defaults_nested_assignment_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            Item::DialogueDefaults(defaults) => Some(defaults),
+            _ => None,
+        })
+        .flat_map(DialogueDefaultsItem::assignments)
+        .filter_map(|assignment| {
+            let path_source = source.get(assignment.path_range().as_range())?.trim();
+            let parts = path_source
+                .split('.')
+                .filter(|part| !part.trim().is_empty())
+                .collect::<Vec<_>>();
+            if parts.len() <= 1 {
+                return None;
+            }
+            let line_start = source[..assignment.range().start()]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1);
+            let indent = source.get(line_start..assignment.range().start())?;
+            Some(TextEdit {
+                start: line_start,
+                end: assignment.range().end(),
+                replacement: nested_dialogue_defaults_assignment(
+                    indent,
+                    &parts,
+                    assignment_op_label(assignment.op()),
+                    assignment.raw_value(),
+                ),
+            })
+        })
+        .collect()
+}
+
+fn nested_dialogue_defaults_assignment(
+    indent: &str,
+    parts: &[&str],
+    op: &str,
+    value: &str,
+) -> String {
+    let mut output = String::new();
+    for (depth, part) in parts[..parts.len() - 1].iter().enumerate() {
+        output.push_str(indent);
+        output.push_str(&"    ".repeat(depth));
+        output.push_str(part.trim());
+        output.push_str(" {\n");
+    }
+    output.push_str(indent);
+    output.push_str(&"    ".repeat(parts.len() - 1));
+    output.push_str(parts[parts.len() - 1].trim());
+    output.push(' ');
+    output.push_str(op);
+    output.push(' ');
+    output.push_str(value);
+    for depth in (0..parts.len() - 1).rev() {
+        output.push('\n');
+        output.push_str(indent);
+        output.push_str(&"    ".repeat(depth));
+        output.push('}');
+    }
+    output
+}
+
+fn assignment_op_label(op: DialogueDefaultAssignOp) -> &'static str {
+    match op {
+        DialogueDefaultAssignOp::Replace => "=",
+        DialogueDefaultAssignOp::Append => "+=",
+    }
 }
 
 fn declaration_identity_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
@@ -1774,6 +1848,31 @@ mod tests {
                 .output
                 .contains("source @source.http_requests http_requests")
         );
+    }
+
+    #[test]
+    fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
+
+        assert!(report.changed);
+        assert!(report.output.contains(
+            "    rich_text {\n        ruby {\n            size = 14px\n        }\n    }"
+        ));
+        assert!(
+            report.output.contains(
+                "    rich_text {\n        ruby {\n            gap += 1px\n        }\n    }"
+            )
+        );
+        assert!(!report.output.contains("rich_text.ruby.size"));
+        assert!(!report.output.contains("rich_text.ruby.gap"));
     }
 
     #[test]
