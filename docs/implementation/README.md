@@ -156,7 +156,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bindings such as `let handles = alice.say()[...] with: ...`, and they
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
-  rewrite. The full rich-text grammar check fixture now includes a
+  rewrite. Sugar expansion now guards AST-derived dialogue content ranges before
+  applying line-level rewrites, so body text such as `cue:` is not rewritten as a
+  speaker line, while `[raw: ...]` shorthand scans nested bracket-like text
+  before choosing its closing bracket. The full rich-text grammar check fixture now includes a
   family-relative `dialogue defaults` profile and canonical nested `rich_text`
   typography blocks in both defaults and character `dialogue_style` examples.
   ID materialization actions return focused LSP `WorkspaceEdit` values

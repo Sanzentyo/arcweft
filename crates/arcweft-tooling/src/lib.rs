@@ -26,6 +26,7 @@ use arcweft_lang_syntax::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::ops::Range;
 use thiserror::Error;
 
 /// Formatting and source normalization options.
@@ -300,12 +301,20 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     let character_aliases = collect_character_aliases(&parsed);
     let speaker_presets =
         collect_speaker_preset_locals_from_typed_tree(&parsed, &character_aliases);
+    let dialogue_content_ranges = collect_dialogue_content_ranges(source, &parsed);
     let mut edits = Vec::new();
     edits.extend(declaration_identity_edits(source, &parsed));
     edits.extend(dialogue_defaults_nested_assignment_edits(source, &parsed));
 
     for line in lines.iter() {
         if line.kind() == CstLineKind::Comment {
+            continue;
+        }
+        if line_starts_inside_any_dialogue_content(
+            line.start(),
+            line.text(),
+            &dialogue_content_ranges,
+        ) {
             continue;
         }
         edits.extend(parent_path_edits(line.text(), line.start()));
@@ -338,6 +347,252 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         }
     }
     edits
+}
+
+fn line_starts_inside_any_dialogue_content(
+    line_start: usize,
+    line_text: &str,
+    ranges: &[Range<usize>],
+) -> bool {
+    let trimmed_start = line_start + line_text.len() - line_text.trim_start().len();
+    ranges
+        .iter()
+        .any(|range| range.contains(&line_start) || range.contains(&trimmed_start))
+}
+
+fn collect_dialogue_content_ranges(source: &str, parsed: &ParsedSource) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    for item in parsed.typed_tree().items() {
+        collect_dialogue_content_ranges_from_item(source, item, &mut ranges);
+    }
+    ranges
+}
+
+fn collect_dialogue_content_ranges_from_item(
+    source: &str,
+    item: &Item,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    match item {
+        Item::Flow(flow) => {
+            for item in flow.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        Item::FlowItem(item) => {
+            collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+        }
+        _ => {}
+    }
+}
+
+fn collect_dialogue_content_ranges_from_flow_item(
+    source: &str,
+    item: &FlowItem,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    match item {
+        FlowItem::SpeakerLine(line) => push_dialogue_content_range(source, line.content(), ranges),
+        FlowItem::ContentCall(call) => push_dialogue_content_range(source, call.content(), ranges),
+        FlowItem::Scope(scope) => {
+            for item in scope.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::If(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::IfLet(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::Match(block) => {
+            for arm in block.arms() {
+                for item in arm.body() {
+                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+                }
+            }
+        }
+        FlowItem::Loop(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::While(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::WhileLet(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::For(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::Select(block) => {
+            for branch in block.branches() {
+                for item in branch.body() {
+                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+                }
+            }
+        }
+        FlowItem::BorrowBlock(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::SourceLocale(block) => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        FlowItem::AwaitWith(await_with) => {
+            for branch in await_with.branches() {
+                for item in branch.body() {
+                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+                }
+            }
+        }
+        FlowItem::Stmt(stmt) => collect_dialogue_content_ranges_from_stmt(source, stmt, ranges),
+        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+    }
+}
+
+fn collect_dialogue_content_ranges_from_stmt(
+    source: &str,
+    stmt: &Stmt,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    match stmt {
+        Stmt::Let {
+            expr,
+            expr_source,
+            expr_range,
+            ..
+        } => collect_dialogue_content_ranges_from_expr(
+            expr,
+            expr_source.as_deref(),
+            expr_range.as_ref(),
+            ranges,
+        ),
+        Stmt::LetElse { else_body, .. } => {
+            for stmt in else_body {
+                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+            }
+        }
+        Stmt::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+            }
+        }
+        Stmt::LetLoop { block, .. } => {
+            for item in block.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        Stmt::LetAwait { await_with, .. } => {
+            for branch in await_with.branches() {
+                for item in branch.body() {
+                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+                }
+            }
+        }
+        Stmt::Thread(thread) => {
+            for item in thread.body() {
+                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            }
+        }
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop {
+            body: statements, ..
+        }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => {
+            for stmt in statements {
+                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+            }
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                for stmt in arm.body() {
+                    collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+                }
+            }
+        }
+        Stmt::LetChoice { .. }
+        | Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::Goto(_)
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Wait(_)
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Expr(_)
+        | Stmt::Raw(_) => {}
+    }
+}
+
+fn collect_dialogue_content_ranges_from_expr(
+    expr: &Expr,
+    expr_source: Option<&str>,
+    expr_range: Option<&arcweft_lang_syntax::ast::common::TextRange>,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    match expr {
+        Expr::DialogueCall { content, .. } => {
+            let (Some(expr_source), Some(expr_range)) = (expr_source, expr_range) else {
+                return;
+            };
+            let Some(content_start) = expr_source.find(content) else {
+                return;
+            };
+            let start = expr_range.start() + content_start;
+            ranges.push(start..start + content.len());
+        }
+        Expr::Try { expr } => {
+            collect_dialogue_content_ranges_from_expr(expr, expr_source, expr_range, ranges);
+        }
+        _ => {}
+    }
+}
+
+fn push_dialogue_content_range(
+    source: &str,
+    content: &DialogueContent,
+    ranges: &mut Vec<Range<usize>>,
+) {
+    let Some(base) = dialogue_content_source_base(source, content) else {
+        return;
+    };
+    ranges.push(base..base + content.raw().len());
 }
 
 fn dialogue_defaults_nested_assignment_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
@@ -1020,7 +1275,7 @@ fn bracket_dialogue_edit(
     if mode == DialogueSugarMode::All
         && let Some(body) = raw.get(start..)?.strip_prefix("[raw:")
     {
-        let close_relative = body.rfind(']')?;
+        let close_relative = raw_colon_close(body)?;
         let raw_body = body[..close_relative].trim_start();
         return Some((
             start + "[raw:".len() + close_relative + ']'.len_utf8(),
@@ -1086,6 +1341,33 @@ fn bracket_dialogue_edit(
     } else {
         None
     }
+}
+
+fn raw_colon_close(body: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut cursor = 0usize;
+    while cursor < body.len() {
+        let ch = body[cursor..].chars().next()?;
+        match ch {
+            '\\' => {
+                cursor += ch.len_utf8();
+                if let Some(escaped) = body[cursor..].chars().next() {
+                    cursor += escaped.len_utf8();
+                }
+            }
+            '[' => {
+                depth += 1;
+                cursor += ch.len_utf8();
+            }
+            ']' if depth == 0 => return Some(cursor),
+            ']' => {
+                depth = depth.saturating_sub(1);
+                cursor += ch.len_utf8();
+            }
+            _ => cursor += ch.len_utf8(),
+        }
+    }
+    None
 }
 
 fn split_dialogue_tag_head(source: &str) -> (&str, &str) {
@@ -2074,6 +2356,26 @@ mod tests {
         assert!(expanded.output.contains("[p]"));
         assert!(expanded.output.contains("[em]夢[/em]"));
         assert!(expanded.output.contains("[raw][p][/raw]"));
+    }
+
+    #[test]
+    fn expand_sugar_does_not_treat_dialogue_content_lines_as_speaker_sugar() {
+        let source = "flow @flow.opening opening {\n    alice.say()[\n        cue: [raw: [p]や#[expr]をそのまま表示] と [! flash()][p]\n    ]\n}\n";
+        let expanded = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
+
+        assert!(!expanded.output.contains("cue.say()"));
+        assert!(
+            expanded
+                .output
+                .contains("cue: [raw][p]や#[expr]をそのまま表示[/raw] と [call flash()][p]")
+        );
     }
 
     #[test]
