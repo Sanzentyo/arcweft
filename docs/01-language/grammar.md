@@ -119,7 +119,10 @@ AttrArgs     := '(' AttrToken* ')'
 
 Outer attributes attach to the following item. They are not standalone module
 items. Inner attributes attach to the source file or enclosing block when that
-surface exists. `#[allow(...)]` controls lint suppression; `#[generated]` and
+surface exists. Source-file inner attributes must appear in the source header,
+before documentation comments, outer attributes, `mod`/`use` declarations, and
+items; misplaced inner attributes are diagnostics and are not applied
+retroactively. `#[allow(...)]` controls lint suppression; `#[generated]` and
 `#![generated(...)]` mark generated or fully elaborated source and do not by
 themselves silence unrelated diagnostics.
 

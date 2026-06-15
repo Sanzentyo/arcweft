@@ -82,6 +82,7 @@ struct TopLevelDispatch {
 
 struct TopLevelSinks<'a> {
     attrs: &'a mut Vec<Attribute>,
+    source_attrs_open: &'a mut bool,
     module: &'a mut Option<ModuleDecl>,
     uses: &'a mut Vec<UseItem>,
     items: &'a mut Vec<Item>,
@@ -159,6 +160,7 @@ impl<'a> Parser<'a> {
         let mut module = None;
         let mut uses = Vec::new();
         let mut items = Vec::new();
+        let mut source_attrs_open = true;
         let wiki_links = if self.source.contains("[[") {
             self.syntax_stats.wiki_scan_performed += 1;
             collect_wiki_links(self.source)
@@ -182,6 +184,7 @@ impl<'a> Parser<'a> {
                     );
                 }
                 self.pending_doc = Some(doc);
+                source_attrs_open = false;
                 continue;
             }
 
@@ -192,6 +195,7 @@ impl<'a> Parser<'a> {
 
             let mut sinks = TopLevelSinks {
                 attrs: &mut attrs,
+                source_attrs_open: &mut source_attrs_open,
                 module: &mut module,
                 uses: &mut uses,
                 items: &mut items,

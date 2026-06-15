@@ -569,6 +569,33 @@ flow @flow.prologue prologue {
     }
 
     #[test]
+    fn misplaced_inner_attribute_does_not_apply_to_source_lints() {
+        let parsed = parse_source(
+            r"
+flow @flow.opening opening {
+}
+
+#![generated(tool)]
+flow @flow.generated generated {
+}
+",
+        );
+
+        assert!(parsed.errors().iter().any(|error| {
+            error
+                .message()
+                .contains("inner source attribute must appear before")
+        }));
+        assert!(parsed.typed_tree().attrs().is_empty());
+        let codes = lint_id_policy(parsed.typed_tree())
+            .into_iter()
+            .map(|lint| lint.code())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+        assert!(!codes.contains(&SyntaxLintCode::GeneratedSurfaceForm));
+    }
+
+    #[test]
     fn explicit_decl_id_has_stable_hint_code() {
         let parsed = parse_source(
             r"

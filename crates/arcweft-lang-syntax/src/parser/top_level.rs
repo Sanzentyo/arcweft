@@ -24,18 +24,35 @@ impl Parser<'_> {
         match dispatch.line {
             CstTopLevelLineKind::Attribute => {
                 if let Some(attribute) = parse_outer_attribute(trimmed, range) {
+                    *sinks.source_attrs_open = false;
                     self.push_pending_attr(attribute);
                     self.index += 1;
                 } else if let Some(attribute) = parse_inner_attribute(trimmed, range) {
-                    self.reject_pending_doc(range);
-                    self.reject_pending_attrs(range);
-                    sinks.attrs.push(attribute);
+                    if *sinks.source_attrs_open
+                        && self.pending_doc.is_none()
+                        && self.pending_attrs.is_empty()
+                    {
+                        sinks.attrs.push(attribute);
+                    } else {
+                        self.push_error(
+                            range,
+                            "inner source attribute must appear before documentation comments, outer attributes, module/use declarations, and items",
+                            ["#![generated(...)] at the start of the source file"],
+                            Some(trimmed),
+                            ["move source-level `#![...]` attributes to the source header"],
+                        );
+                        self.reject_pending_doc(range);
+                        self.reject_pending_attrs(range);
+                        *sinks.source_attrs_open = false;
+                    }
                     self.index += 1;
                 } else {
+                    *sinks.source_attrs_open = false;
                     self.parse_top_level_item(dispatch.item, trimmed, range, sinks.items);
                 }
             }
             CstTopLevelLineKind::Module => {
+                *sinks.source_attrs_open = false;
                 let path = trimmed.strip_prefix("mod ").unwrap_or_default();
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
@@ -46,6 +63,7 @@ impl Parser<'_> {
                 self.index += 1;
             }
             CstTopLevelLineKind::Use => {
+                *sinks.source_attrs_open = false;
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
                 if let Some(use_item) = parse_use_line(trimmed, range)
@@ -56,6 +74,7 @@ impl Parser<'_> {
                 self.index += 1;
             }
             CstTopLevelLineKind::Item => {
+                *sinks.source_attrs_open = false;
                 if trimmed.starts_with('@') {
                     let message = if trimmed.starts_with("@memo") {
                         "`@memo` is not valid Arcweft syntax"
