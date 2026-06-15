@@ -133,10 +133,12 @@ Known selector families are style (`.italic`, `.oblique`), layout
 (`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
 selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
 effect (`.wave`, `.shake`, `.arc`, `.typewriter`, `.jitter`, `.shader`,
-`.host`). Unknown dot selectors are markers and canonicalize to `[mark .name]`.
-If an unknown dot selector was accidentally written with a following `[/]`,
-canonical tooling removes that inferred close because markers are zero-width,
-not spans.
+`.host`). Unknown dot selectors without attributes are markers and canonicalize
+to `[mark .name]`. If an unknown marker-like selector was accidentally written
+with a following `[/]`, canonical tooling removes that inferred close because
+markers are zero-width, not spans. Unknown dot selectors with attributes
+canonicalize to custom effect spans, for example
+`[.sparkle amp=2px]...[/]` becomes `[effect .sparkle amp=2px]...[/effect]`.
 
 Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as

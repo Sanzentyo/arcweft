@@ -84,7 +84,7 @@ flow rich_text_full_grammar {
     ]
 
     bob.say(id=@say.full.005, voice=auto)[
-        推論: [.italic]italic[/]、[.oblique 12deg]oblique[/]、[.vertical_rl jlreq=strict]吾輩は猫である。ABC 123 2026[/]、[.vertical_lr]縦LR[/]。[r]変形: [.offset x=4px y=-2px]offset[/]、[.rotate angle=8deg]rotate[/]、[.scale x=1.2 y=1.2]scale[/]。[r]効果: [.wave amp=2px dir=0,1]wave[/]、[.shake amp=1px seed=full]shake[/]、[.typewriter cps=20]typewriter[/]、[.keyword]marker。[p]
+        推論: [.italic]italic[/]、[.oblique 12deg]oblique[/]、[.vertical_rl jlreq=strict]吾輩は猫である。ABC 123 2026[/]、[.vertical_lr]縦LR[/]。[r]変形: [.offset x=4px y=-2px]offset[/]、[.rotate angle=8deg]rotate[/]、[.scale x=1.2 y=1.2]scale[/]。[r]効果: [.wave amp=2px dir=0,1]wave[/]、[.shake amp=1px seed=full]shake[/]、[.typewriter cps=20]typewriter[/]、[.sparkle amp=2px seed=custom]custom effect[/]、[.keyword]marker。[p]
     ]
 
     narrator.say(id=@say.full.006, voice=auto)[
