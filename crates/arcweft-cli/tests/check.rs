@@ -23452,33 +23452,7 @@ flow @flow.audit audit {
 
 #[test]
 fn plan_json_lists_runtime_task_graph() {
-    let path = temp_arcw(
-        "runtime-plan",
-        r##"
-pub dialogue defaults @dialogue.defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub surface character @character.alice Alice as alice {
-    dialogue_style {
-        text_color = rgb("#202122")
-    }
-}
-
-flow @flow.plan plan {
-    @<character.alice>.say[|[待](ま)って。[mark .release][p]]
-    with:
-        thread motion:
-            wait(0.1s)
-        on mark(.release):
-            log.info("release")
-}
-"##,
-    );
+    let path = runtime_plan_fixture_path();
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("plan")
@@ -23508,27 +23482,142 @@ flow @flow.plan plan {
     let contributions = line_display["style_contributions"]
         .as_array()
         .expect("line display includes style contributions");
-    assert!(
-        contributions.iter().any(|contribution| {
-            contribution["layer"] == "dialogue_defaults"
-                && contribution["path"] == "rich_text.ruby.size"
-                && contribution["value"] == "14px"
-                && contribution["source"]["kind"] == "source_file"
-                && contribution["source"]["range"]["start"].is_number()
-                && contribution["source"]["range"]["end"].is_number()
-        }),
-        "plan JSON should include dialogue defaults provenance: {stdout}"
+    assert_plan_style_contributions(&stdout, contributions);
+}
+
+fn runtime_plan_fixture_path() -> PathBuf {
+    temp_arcw(
+        "runtime-plan",
+        r##"
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.plan
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub textbox plan {
+    rich_text {
+        text {
+            color = "#303132"
+        }
+    }
+}
+
+pub surface character alice {
+    dialogue_style {
+        text_color = "#202122"
+    }
+}
+
+flow plan {
+    let alice_preset = alice(text_color="#404142")
+    alice_preset(text_color="#505152")[|[待](ま)って。[mark .release][p]]
+    with:
+        thread motion:
+            wait(0.1s)
+        on mark(.release):
+            log.info("release")
+}
+"##,
+    )
+}
+
+fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Value]) {
+    assert_plan_style_contribution(
+        stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "dialogue_defaults",
+            path: "rich_text.ruby.size",
+            value: "14px",
+            active: None,
+            requires_range: true,
+            context: "dialogue defaults",
+        },
     );
+    assert_plan_style_contribution(
+        stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "character_dialogue_style",
+            path: "text_color",
+            value: "\"#202122\"",
+            active: None,
+            requires_range: true,
+            context: "character dialogue_style",
+        },
+    );
+    assert_plan_style_contribution(
+        stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "dialogue_window_theme",
+            path: "rich_text.text.color",
+            value: "\"#303132\"",
+            active: Some(true),
+            requires_range: true,
+            context: "textbox theme",
+        },
+    );
+    assert_plan_style_contribution(
+        stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "speaker_preset",
+            path: "text_color",
+            value: "\"#404142\"",
+            active: Some(false),
+            requires_range: false,
+            context: "speaker preset",
+        },
+    );
+    assert_plan_style_contribution(
+        stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "line_options",
+            path: "text_color",
+            value: "\"#505152\"",
+            active: Some(true),
+            requires_range: false,
+            context: "line option",
+        },
+    );
+}
+
+#[derive(Clone, Copy)]
+struct PlanStyleContribution<'a> {
+    layer: &'a str,
+    path: &'a str,
+    value: &'a str,
+    active: Option<bool>,
+    requires_range: bool,
+    context: &'a str,
+}
+
+fn assert_plan_style_contribution(
+    stdout: &str,
+    contributions: &[serde_json::Value],
+    expected: PlanStyleContribution<'_>,
+) {
     assert!(
         contributions.iter().any(|contribution| {
-            contribution["layer"] == "character_dialogue_style"
-                && contribution["path"] == "text_color"
-                && contribution["value"] == "rgb(\"#202122\")"
+            contribution["layer"] == expected.layer
+                && contribution["path"] == expected.path
+                && contribution["value"] == expected.value
                 && contribution["source"]["kind"] == "source_file"
-                && contribution["source"]["range"]["start"].is_number()
-                && contribution["source"]["range"]["end"].is_number()
+                && expected
+                    .active
+                    .is_none_or(|active| contribution["active"] == active)
+                && (!expected.requires_range
+                    || (contribution["source"]["range"]["start"].is_number()
+                        && contribution["source"]["range"]["end"].is_number()))
         }),
-        "plan JSON should include character dialogue_style provenance: {stdout}"
+        "plan JSON should include {} provenance: {stdout}",
+        expected.context
     );
 }
 

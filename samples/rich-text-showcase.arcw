@@ -38,7 +38,19 @@ pub surface character clerk {
     }
 }
 
+pub textbox rich_text_panel {
+    rich_text {
+        text {
+            color = "#cdefff"
+        }
+        ruby {
+            size = 13px
+        }
+    }
+}
+
 pub dialogue defaults @dialogue.defaults {
+    window = @textbox.rich_text_panel
     rich_text {
         layout {
             writing_mode = horizontal_tb
@@ -59,7 +71,9 @@ entry game @entry.main {
 }
 
 flow rich_text_showcase {
-    alice.say(id=@say.rich_text.001, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
+    let alice_panel = alice(text_color="#9fdcff")
+
+    alice_panel(id=@say.rich_text.001, voice=auto, look=.smile, text_color="#8fd7ff", rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
         [font "Yu Gothic"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl][font "Yu Mincho"]縦書きも混ざる[/font][/]。[p]
     ]
 
