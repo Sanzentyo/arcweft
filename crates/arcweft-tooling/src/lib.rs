@@ -86,6 +86,8 @@ pub enum ToolingError {
     },
     #[error("text edit range {start}..{end} overlaps a later edit")]
     OverlappingEdit { start: usize, end: usize },
+    #[error("text edit range {start}..{end} does not align to UTF-8 character boundaries")]
+    InvalidCharBoundary { start: usize, end: usize },
 }
 
 /// Formats source while preserving authoring sugar by default.
@@ -251,6 +253,12 @@ pub fn apply_text_edits(source: &str, edits: &[TextEdit]) -> Result<String, Tool
                 start: edit.start,
                 end: edit.end,
                 len: source.len(),
+            });
+        }
+        if !source.is_char_boundary(edit.start) || !source.is_char_boundary(edit.end) {
+            return Err(ToolingError::InvalidCharBoundary {
+                start: edit.start,
+                end: edit.end,
             });
         }
         if edit.start < previous_end {
@@ -494,7 +502,135 @@ fn collect_dialogue_text_sugar_edits_from_flow_item(
                 }
             }
         }
-        FlowItem::Stmt(_) | FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+        FlowItem::Stmt(stmt) => {
+            collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+        }
+        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_stmt(
+    source: &str,
+    stmt: &Stmt,
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+) {
+    match stmt {
+        Stmt::Let {
+            expr,
+            expr_source,
+            expr_range,
+            ..
+        } => collect_dialogue_text_sugar_edits_from_expr(
+            expr,
+            expr_source.as_deref(),
+            expr_range.as_ref(),
+            edits,
+            mode,
+        ),
+        Stmt::LetElse { else_body, .. } => {
+            for stmt in else_body {
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+            }
+        }
+        Stmt::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+            }
+        }
+        Stmt::LetLoop { block, .. } => {
+            for item in block.body() {
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+            }
+        }
+        Stmt::LetAwait { await_with, .. } => {
+            for branch in await_with.branches() {
+                for item in branch.body() {
+                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                }
+            }
+        }
+        Stmt::Thread(thread) => {
+            for item in thread.body() {
+                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+            }
+        }
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop {
+            body: statements, ..
+        }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => {
+            for stmt in statements {
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+            }
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                for stmt in arm.body() {
+                    collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+                }
+            }
+        }
+        Stmt::LetChoice { .. }
+        | Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::Goto(_)
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Wait(_)
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Expr(_)
+        | Stmt::Raw(_) => {}
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_expr(
+    expr: &Expr,
+    expr_source: Option<&str>,
+    expr_range: Option<&arcweft_lang_syntax::ast::common::TextRange>,
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+) {
+    match expr {
+        Expr::DialogueCall { content, .. } => {
+            let (Some(expr_source), Some(expr_range)) = (expr_source, expr_range) else {
+                return;
+            };
+            let Some(content_start) = expr_source.find(content) else {
+                return;
+            };
+            edits.extend(dialogue_text_canonical_edits(
+                content,
+                expr_range.start() + content_start,
+                mode,
+            ));
+        }
+        Expr::Try { expr } => {
+            collect_dialogue_text_sugar_edits_from_expr(expr, expr_source, expr_range, edits, mode);
+        }
+        _ => {}
     }
 }
 
@@ -1699,7 +1835,7 @@ mod tests {
 
     #[test]
     fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
-        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px pattern=a,b,c]there[/][page]\n}\n";
+        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
         let report = format_source(
             source,
             FormatOptions {
@@ -1714,6 +1850,11 @@ mod tests {
             report
                 .output
                 .contains("[effect .shake amp=2px pattern=a,b,c]there[/effect]")
+        );
+        assert!(
+            report
+                .output
+                .contains("[layout .vertical_rl]縦[/layout][p]")
         );
         assert!(report.output.contains("[page]"));
     }

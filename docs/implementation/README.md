@@ -132,7 +132,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `dialogue_style` block when the character declaration is in the current
   document or move active non-default contributors into the selected
   `dialogue defaults` profile. Source-level sugar expansion and canonical
-  rich-text actions now
+  rich-text actions now include dialogue content embedded in line-result `let`
+  bindings such as `let handles = alice.say()[...] with: ...`, and they
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
   rewrite. ID materialization actions return focused LSP `WorkspaceEdit` values

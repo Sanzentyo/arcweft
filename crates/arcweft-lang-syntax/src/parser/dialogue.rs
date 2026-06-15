@@ -103,7 +103,9 @@ impl Parser<'_> {
         let expr_offset = rest_offset + find_top_level_punctuation(rest, '=')? + 1;
         let open = find_content_bracket(expr_text).map(|offset| expr_offset + offset)?;
         let close = find_matching_punctuation(&text, open, '[', ']')?;
-        let expr_source = text[expr_offset..=close].trim();
+        let expr_untrimmed = &text[expr_offset..=close];
+        let expr_leading = expr_untrimmed.len() - expr_untrimmed.trim_start().len();
+        let expr_source = expr_untrimmed.trim();
         let trailing = text[close + 1..].trim();
         let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
 
@@ -121,8 +123,8 @@ impl Parser<'_> {
         }
 
         let (pattern, ty) = parse_binding_pattern(pattern);
-        let expr_start =
-            start.start + expr_offset + expr_source.len() - expr_source.trim_start().len();
+        let line_leading = start.text.len() - start.text.trim_start().len();
+        let expr_start = start.start + line_leading + expr_offset + expr_leading;
         Some(Stmt::Let {
             pattern,
             ty,

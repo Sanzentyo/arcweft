@@ -25104,8 +25104,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 
 #[test]
 fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
-    let source =
-        "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px]there[/][page]\n}\n";
+    let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -25123,6 +25122,7 @@ fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("$(name)"));
     assert!(stdout.contains("[effect .shake amp=2px]there[/effect]"));
+    assert!(stdout.contains("[layout .vertical_rl]縦[/layout][p]"));
     assert!(stdout.contains("[page]"));
     assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
 }
