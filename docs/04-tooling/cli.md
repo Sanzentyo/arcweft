@@ -893,6 +893,10 @@ AWF0103 style::explicit_decl_id
 AWF0104 style::generated_surface_form
 ```
 
+Default CLI labels are `warning` for `style::redundant_decl_identity`, `error`
+for `identity::decl_binding_mismatch`, `hint` for `style::explicit_decl_id`, and
+`info` for `style::generated_surface_form`.
+
 `flow @flow.opening opening(...)` and
 `source @source.http_requests http_requests: ...` are fully elaborated source
 forms. The parser accepts them, but formatter and check report

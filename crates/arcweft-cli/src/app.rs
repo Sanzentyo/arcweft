@@ -72,7 +72,7 @@ use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{
     expr::{CallArg, Expr, Literal, parse_expr},
-    lint::lint_id_policy,
+    lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy},
     parser::parse_source,
 };
 use arcweft_launch::{
@@ -5251,7 +5251,8 @@ fn compile_profile_runtime_plan(
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
-        Ok::<usize, ExitCode>(lint_id_policy(&tree).len())
+        let lints = lint_id_policy(&tree);
+        Ok::<usize, ExitCode>(count_warning_lints(&lints))
     })?;
     let hir = profile_lower_hir(&tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;
@@ -8856,7 +8857,8 @@ fn load_and_check_with_env(
     })?;
     for lint in &lints {
         eprintln!(
-            "warning[{} {}]: {}",
+            "{}[{} {}]: {}",
+            lint.severity().label(),
             lint.code().stable_code(),
             lint.code().domain_name(),
             lint.message()
@@ -8879,12 +8881,24 @@ fn load_and_check_with_env(
     Ok(CheckedModule {
         hir,
         env: env.clone(),
-        syntax_warnings: lints.len(),
+        syntax_warnings: count_warning_lints(&lints),
         syntax_stats,
         line_task_groups,
         typecheck_report,
         phases,
     })
+}
+
+fn count_warning_lints(lints: &[SyntaxLint]) -> usize {
+    lints
+        .iter()
+        .filter(|lint| {
+            matches!(
+                lint.severity(),
+                SyntaxLintSeverity::Error | SyntaxLintSeverity::Warning
+            )
+        })
+        .count()
 }
 
 #[derive(Args, Clone, Debug)]

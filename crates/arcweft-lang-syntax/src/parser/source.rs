@@ -71,7 +71,8 @@ impl Parser<'_> {
             )? {
                 (DeclEntityId::Entity(id), rest) => {
                     let (id, tail) = normalize_trailing_colon_id(id, rest);
-                    (Some(id), None, tail.trim().to_owned())
+                    let (name, tail) = parse_name_and_tail(&tail);
+                    (Some(id), name, tail.trim().to_owned())
                 }
                 (DeclEntityId::NameMarker(marker), rest) => {
                     let (name, tail) = parse_name_and_tail(rest);

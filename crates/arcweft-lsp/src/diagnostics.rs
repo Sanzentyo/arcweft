@@ -8,7 +8,7 @@ use arcweft_lang_sema::{
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
 };
 use arcweft_lang_syntax::{
-    lint::{SyntaxLint, SyntaxLintCode, lint_id_policy},
+    lint::{SyntaxLint, lint_id_policy},
     parser::parse_source,
 };
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
@@ -127,11 +127,15 @@ fn syntax_lint_diagnostics(lints: &[SyntaxLint], line_index: &LineIndex) -> Vec<
         .iter()
         .map(|lint| Diagnostic {
             range: line_index.range_from_byte_span(lint.range().start(), lint.range().end()),
-            severity: Some(match lint.code() {
-                SyntaxLintCode::DeclBindingMismatch => DiagnosticSeverity::ERROR,
-                SyntaxLintCode::DeepDotRunRelativeId
-                | SyntaxLintCode::FlowIdModuleMismatch
-                | SyntaxLintCode::RedundantDeclIdentity => DiagnosticSeverity::WARNING,
+            severity: Some(match lint.severity() {
+                arcweft_lang_syntax::lint::SyntaxLintSeverity::Error => DiagnosticSeverity::ERROR,
+                arcweft_lang_syntax::lint::SyntaxLintSeverity::Warning => {
+                    DiagnosticSeverity::WARNING
+                }
+                arcweft_lang_syntax::lint::SyntaxLintSeverity::Information => {
+                    DiagnosticSeverity::INFORMATION
+                }
+                arcweft_lang_syntax::lint::SyntaxLintSeverity::Hint => DiagnosticSeverity::HINT,
             }),
             code: Some(NumberOrString::String(lint.code().stable_code().to_owned())),
             source: Some("arcweft-syntax".to_owned()),
@@ -343,5 +347,23 @@ flow @flow.opening start {
                 .message
                 .contains("identity::decl_binding_mismatch")
         );
+    }
+
+    #[test]
+    fn diagnostics_map_explicit_decl_id_to_hint() {
+        let source = r"
+flow @flow.opening {
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == Some(NumberOrString::String("AWF0103".into())))
+            .expect("explicit declaration id diagnostic");
+
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::HINT));
+        assert!(diagnostic.message.contains("style::explicit_decl_id"));
     }
 }

@@ -3,6 +3,7 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::FlowItem;
 use crate::ast::ids::{FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, TypedSyntaxTree};
+use crate::ast::source::SourceItem;
 
 /// Syntax-level lint emitted before full name resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -19,6 +20,8 @@ pub enum SyntaxLintCode {
     FlowIdModuleMismatch,
     RedundantDeclIdentity,
     DeclBindingMismatch,
+    ExplicitDeclId,
+    GeneratedSurfaceForm,
 }
 
 impl SyntaxLintCode {
@@ -28,6 +31,8 @@ impl SyntaxLintCode {
             Self::FlowIdModuleMismatch => "AWF0002",
             Self::RedundantDeclIdentity => "AWF0101",
             Self::DeclBindingMismatch => "AWF0102",
+            Self::ExplicitDeclId => "AWF0103",
+            Self::GeneratedSurfaceForm => "AWF0104",
         }
     }
 
@@ -37,6 +42,39 @@ impl SyntaxLintCode {
             Self::FlowIdModuleMismatch => "id::flow_module_mismatch",
             Self::RedundantDeclIdentity => "style::redundant_decl_identity",
             Self::DeclBindingMismatch => "identity::decl_binding_mismatch",
+            Self::ExplicitDeclId => "style::explicit_decl_id",
+            Self::GeneratedSurfaceForm => "style::generated_surface_form",
+        }
+    }
+
+    pub const fn default_severity(self) -> SyntaxLintSeverity {
+        match self {
+            Self::DeclBindingMismatch => SyntaxLintSeverity::Error,
+            Self::DeepDotRunRelativeId
+            | Self::FlowIdModuleMismatch
+            | Self::RedundantDeclIdentity => SyntaxLintSeverity::Warning,
+            Self::GeneratedSurfaceForm => SyntaxLintSeverity::Information,
+            Self::ExplicitDeclId => SyntaxLintSeverity::Hint,
+        }
+    }
+}
+
+/// Default severity for a syntax lint before user lint-level overrides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SyntaxLintSeverity {
+    Error,
+    Warning,
+    Information,
+    Hint,
+}
+
+impl SyntaxLintSeverity {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Information => "info",
+            Self::Hint => "hint",
         }
     }
 }
@@ -57,6 +95,12 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                 && let (Some(id), Some(name)) = (flow.id(), flow.name())
             {
                 lint_decl_identity("flow", id.body(), name, *id.range(), flow.attrs(), lints);
+            } else if let Some(id) = flow.id() {
+                let name = flow
+                    .name()
+                    .or_else(|| id.body().rsplit('.').next())
+                    .unwrap_or("flow");
+                lint_explicit_decl_id("flow", id.body(), name, *id.range(), flow.attrs(), lints);
             }
             if let (Some(module), Some(id)) = (tree.module(), flow.id()) {
                 let module_tail = module.path().rsplit("::").next();
@@ -89,8 +133,37 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                 );
             }
         }
+        Item::Source(source) => lint_source_identity(source, lints),
         Item::FlowItem(item) => lint_flow_item_ids(item, lints),
         _ => {}
+    }
+}
+
+fn lint_source_identity(source: &SourceItem, lints: &mut Vec<SyntaxLint>) {
+    match (source.id(), source.name()) {
+        (Some(id), Some(name)) => {
+            lint_decl_identity(
+                "source",
+                id.body(),
+                name,
+                *id.range(),
+                source.attrs(),
+                lints,
+            );
+        }
+        (Some(id), None) => {
+            if let Some(name) = id.body().rsplit('.').next() {
+                lint_explicit_decl_id(
+                    "source",
+                    id.body(),
+                    name,
+                    *id.range(),
+                    source.attrs(),
+                    lints,
+                );
+            }
+        }
+        (None, _) => {}
     }
 }
 
@@ -106,7 +179,11 @@ fn lint_decl_identity(
         return;
     };
     if id_tail == name {
-        if allows_redundant_decl_identity(attrs) {
+        if is_generated(attrs) {
+            lint_generated_surface_form(kind, id, name, range, attrs, lints);
+            return;
+        }
+        if allows_lint(attrs, SyntaxLintCode::RedundantDeclIdentity) {
             return;
         }
         lints.push(SyntaxLint::new(
@@ -125,13 +202,54 @@ fn lint_decl_identity(
     }
 }
 
-fn allows_redundant_decl_identity(attrs: &[Attribute]) -> bool {
+fn lint_explicit_decl_id(
+    kind: &str,
+    id: &str,
+    name: &str,
+    range: TextRange,
+    attrs: &[Attribute],
+    lints: &mut Vec<SyntaxLint>,
+) {
+    if allows_lint(attrs, SyntaxLintCode::ExplicitDeclId) {
+        return;
+    }
+    lints.push(SyntaxLint::new(
+        SyntaxLintCode::ExplicitDeclId,
+        format!("`{kind} @{id}` uses an explicit declaration id; `{kind} {name}` is the compact authoring form"),
+        range,
+    ));
+}
+
+fn lint_generated_surface_form(
+    kind: &str,
+    id: &str,
+    name: &str,
+    range: TextRange,
+    attrs: &[Attribute],
+    lints: &mut Vec<SyntaxLint>,
+) {
+    if allows_lint(attrs, SyntaxLintCode::GeneratedSurfaceForm) {
+        return;
+    }
+    lints.push(SyntaxLint::new(
+        SyntaxLintCode::GeneratedSurfaceForm,
+        format!("`{kind} @{id} {name}` is a generated or fully elaborated declaration surface"),
+        range,
+    ));
+}
+
+fn is_generated(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| attr.name() == "generated")
+}
+
+fn allows_lint(attrs: &[Attribute], code: SyntaxLintCode) -> bool {
     attrs.iter().any(|attr| {
-        attr.name() == "generated"
-            || (attr.name() == "allow"
-                && attr
-                    .args()
-                    .is_some_and(|args| args.contains("style::redundant_decl_identity")))
+        attr.name() == "allow"
+            && attr.args().is_some_and(|args| {
+                args.split(',')
+                    .map(str::trim)
+                    .any(|arg| arg == code.domain_name() || arg == code.stable_code())
+            })
     })
 }
 
@@ -247,11 +365,102 @@ impl SyntaxLint {
         self.code
     }
 
+    pub const fn severity(&self) -> SyntaxLintSeverity {
+        self.code.default_severity()
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse_source;
+
+    fn lint_codes(source: &str) -> Vec<SyntaxLintCode> {
+        let parsed = parse_source(source);
+        lint_id_policy(parsed.typed_tree())
+            .into_iter()
+            .map(|lint| lint.code())
+            .collect()
+    }
+
+    #[test]
+    fn lints_redundant_flow_and_source_decl_identity() {
+        let codes = lint_codes(
+            r"
+flow @flow.opening opening {
+}
+
+source @source.http_requests http_requests: Source<HttpRequest, HttpError> {
+}
+",
+        );
+
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == SyntaxLintCode::RedundantDeclIdentity)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn lints_decl_binding_mismatch_as_identity_error() {
+        let codes = lint_codes(
+            r"
+flow @flow.opening start {
+}
+
+source @source.http_requests local_requests: Source<HttpRequest, HttpError> {
+}
+",
+        );
+
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == SyntaxLintCode::DeclBindingMismatch)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn generated_marker_surfaces_generated_decl_form() {
+        let codes = lint_codes(
+            r"
+#[generated]
+flow @flow.opening opening {
+}
+",
+        );
+
+        assert!(codes.contains(&SyntaxLintCode::GeneratedSurfaceForm));
+        assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
+    fn explicit_decl_id_has_stable_hint_code() {
+        let parsed = parse_source(
+            r"
+flow @flow.opening {
+}
+",
+        );
+        let lint = lint_id_policy(parsed.typed_tree())
+            .into_iter()
+            .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
+            .expect("explicit id lint");
+
+        assert_eq!(lint.code().stable_code(), "AWF0103");
+        assert_eq!(lint.severity(), SyntaxLintSeverity::Hint);
     }
 }

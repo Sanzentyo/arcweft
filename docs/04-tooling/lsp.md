@@ -112,6 +112,10 @@ AWF0103 style::explicit_decl_id
 AWF0104 style::generated_surface_form
 ```
 
+LSP severities follow the same default policy: redundant declaration identity is
+a warning, declaration binding mismatch is an error, explicit declaration IDs
+are hints, and generated surface forms are informational diagnostics.
+
 ## Custom requests
 
 ```text
