@@ -1,6 +1,7 @@
 use super::common::{TextRange, Visibility};
 use super::flow::Stmt;
 use super::ids::EntityRef;
+use super::items::Attribute;
 use super::pattern::Pattern;
 use crate::expr::Expr;
 use crate::types::TypeRef;
@@ -12,6 +13,7 @@ use crate::types::TypeRef;
 /// later semantic passes do not need to reparse the body text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: Option<EntityRef>,
     name: Option<String>,
@@ -25,6 +27,7 @@ pub struct SourceItem {
 }
 
 pub(crate) struct SourceItemParts {
+    pub(crate) attrs: Vec<Attribute>,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
@@ -112,6 +115,7 @@ pub enum SourceEventPattern {
 impl SourceItem {
     pub(crate) fn from_parts(parts: SourceItemParts) -> Self {
         Self {
+            attrs: parts.attrs,
             visibility: parts.visibility,
             id: parts.id,
             name: parts.name,
@@ -127,6 +131,10 @@ impl SourceItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn id(&self) -> Option<&EntityRef> {

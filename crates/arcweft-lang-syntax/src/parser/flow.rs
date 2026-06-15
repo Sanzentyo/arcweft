@@ -18,6 +18,7 @@ use std::ops::Range;
 
 impl<'a> Parser<'a> {
     pub(super) fn parse_flow(&mut self) -> Option<Flow> {
+        let attrs = self.take_pending_attrs();
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
         let header = start_line.text.trim();
@@ -62,6 +63,7 @@ impl<'a> Parser<'a> {
         let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
 
         Some(Flow::new(FlowInit {
+            attrs,
             doc,
             kind,
             visibility,

@@ -369,6 +369,9 @@ fn parses_attributes_and_wiki_links() {
     );
 
     assert_eq!(tree.wiki_links()[0].body(), "flow.alice_intro");
-    assert!(matches!(&tree.items()[0], Item::Attribute(attr) if attr.name() == "derive"));
-    assert!(matches!(&tree.items()[1], Item::Flow(_)));
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    assert_eq!(flow.attrs().len(), 1);
+    assert_eq!(flow.attrs()[0].name(), "derive");
 }

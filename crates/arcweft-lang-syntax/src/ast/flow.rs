@@ -5,12 +5,13 @@ use super::choice::ChoiceBlock;
 use super::common::{DocBlock, TextRange, Visibility};
 use super::dialogue::{ContentCall, SpeakerLine};
 use super::ids::{EntityRefSyntax, IdRef};
-use super::items::RawSyntax;
+use super::items::{Attribute, RawSyntax};
 use super::line_plan::{DeferOutcome, TriggerPattern};
 use super::pattern::Pattern;
 /// Flow item with typed header and parsed flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Flow {
+    attrs: Vec<Attribute>,
     doc: Option<DocBlock>,
     kind: FlowKind,
     visibility: Option<Visibility>,
@@ -26,6 +27,7 @@ pub struct Flow {
 /// Internal initializer for a flow-like item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FlowInit {
+    pub(crate) attrs: Vec<Attribute>,
     pub(crate) doc: Option<DocBlock>,
     pub(crate) kind: FlowKind,
     pub(crate) visibility: Option<Visibility>,
@@ -431,6 +433,7 @@ pub enum AwaitBranchKind {
 impl Flow {
     pub(crate) fn new(init: FlowInit) -> Self {
         Self {
+            attrs: init.attrs,
             doc: init.doc,
             kind: init.kind,
             visibility: init.visibility,
@@ -446,6 +449,10 @@ impl Flow {
 
     pub const fn kind(&self) -> FlowKind {
         self.kind
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn doc(&self) -> Option<&DocBlock> {

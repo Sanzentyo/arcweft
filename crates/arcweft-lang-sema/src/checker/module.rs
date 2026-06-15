@@ -273,8 +273,7 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
-            HirTopLevelDecl::Attribute(_)
-            | HirTopLevelDecl::DialogueDefaults(_)
+            HirTopLevelDecl::DialogueDefaults(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Impl(_)
             | HirTopLevelDecl::Proof(_)

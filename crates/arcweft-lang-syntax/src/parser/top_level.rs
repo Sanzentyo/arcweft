@@ -23,7 +23,7 @@ impl Parser<'_> {
         match dispatch.line {
             CstTopLevelLineKind::Attribute => {
                 if let Some(attribute) = parse_attribute(trimmed, range) {
-                    items.push(Item::Attribute(attribute));
+                    self.push_pending_attr(attribute);
                     self.index += 1;
                 } else {
                     self.parse_top_level_item(dispatch.item, trimmed, range, items);
@@ -32,6 +32,7 @@ impl Parser<'_> {
             CstTopLevelLineKind::Module => {
                 let path = trimmed.strip_prefix("mod ").unwrap_or_default();
                 self.reject_pending_doc(range);
+                self.reject_pending_attrs(range);
                 if self.validate_module_path(path, range) {
                     *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
                 }
@@ -39,6 +40,7 @@ impl Parser<'_> {
             }
             CstTopLevelLineKind::Use => {
                 self.reject_pending_doc(range);
+                self.reject_pending_attrs(range);
                 if let Some(use_item) = parse_use_line(trimmed, range)
                     && self.validate_use_tree(use_item.tree(), range)
                 {
@@ -119,6 +121,20 @@ impl Parser<'_> {
             }
             kind => {
                 self.reject_pending_doc(range);
+                if !matches!(
+                    kind,
+                    CstTopLevelItemKind::State
+                        | CstTopLevelItemKind::Trait
+                        | CstTopLevelItemKind::Enum
+                        | CstTopLevelItemKind::Struct
+                        | CstTopLevelItemKind::TypeAlias
+                        | CstTopLevelItemKind::EntityDecl
+                        | CstTopLevelItemKind::ExternCapability
+                        | CstTopLevelItemKind::DialogueDefaults
+                        | CstTopLevelItemKind::Source
+                ) {
+                    self.reject_pending_attrs(range);
+                }
                 if let Some(item) = self.parse_classified_top_level_item(kind) {
                     items.push(item);
                 }
@@ -170,6 +186,7 @@ impl Parser<'_> {
         items: &mut Vec<Item>,
     ) {
         self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
         if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
             items.push(Item::FlowItem(Box::new(flow_item)));
         } else {

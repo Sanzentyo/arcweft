@@ -44,6 +44,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_source_item(&mut self) -> Option<SourceItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_flow_block();
         if !ok {
@@ -104,6 +105,7 @@ impl Parser<'_> {
         let handlers = parse_source_handlers(&body);
         let body_statements = parse_source_stmt_lines(&body);
         Some(SourceItem::from_parts(SourceItemParts {
+            attrs,
             visibility,
             id,
             name,

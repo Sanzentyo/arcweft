@@ -21,7 +21,6 @@ pub struct TypedSyntaxTree {
 /// Top-level syntax item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
-    Attribute(Attribute),
     Flow(Flow),
     Function(FunctionItem),
     Callable(CallableItem),
@@ -220,6 +219,7 @@ impl core::fmt::Display for RawSyntax {
 /// Top-level function item with parsed signature head and contract clauses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionItem {
+    attrs: Vec<Attribute>,
     doc: Option<DocBlock>,
     kind: FunctionKind,
     visibility: Option<Visibility>,
@@ -269,6 +269,7 @@ pub enum EntityDeclKind {
 /// `signal`, or `layer`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntityDeclItem {
+    attrs: Vec<Attribute>,
     kind: EntityDeclKind,
     visibility: Option<Visibility>,
     id: EntityRef,
@@ -392,6 +393,7 @@ pub struct ExternModActivity {
 /// tooling. They do not import host code into Sans I/O core crates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternCapabilityItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: String,
     functions: Vec<CapabilityFn>,
@@ -409,6 +411,7 @@ pub struct CapabilityFn {
 /// Internal initializer for a function item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionInit {
+    pub(crate) attrs: Vec<Attribute>,
     pub(crate) doc: Option<DocBlock>,
     pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
@@ -457,6 +460,7 @@ pub enum CallableKind {
 /// Root state declaration with typed fields and initializer expressions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
     fields: Vec<StateField>,
@@ -476,6 +480,7 @@ pub struct StateField {
 /// Trait declaration with associated type and function members.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraitItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
     supertraits: Vec<String>,
@@ -529,6 +534,7 @@ pub struct ImplItem {
 /// Top-level algebraic data type declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
     variants: Vec<EnumVariant>,
@@ -546,6 +552,7 @@ pub struct EnumVariant {
 /// Top-level struct declaration with typed fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
     fields: Vec<StructField>,
@@ -563,6 +570,7 @@ pub struct StructField {
 /// Newtype/type alias declaration with optional `where` contracts.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeAliasItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
     target: TypeRef,
@@ -629,6 +637,7 @@ pub struct ParserItem {
 impl FunctionItem {
     pub(crate) fn new(init: FunctionInit) -> Self {
         Self {
+            attrs: init.attrs,
             doc: init.doc,
             kind: init.kind,
             visibility: init.visibility,
@@ -648,6 +657,10 @@ impl FunctionItem {
 
     pub const fn doc(&self) -> Option<&DocBlock> {
         self.doc.as_ref()
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {
@@ -686,6 +699,7 @@ impl FunctionItem {
 impl EntityDeclItem {
     #[allow(clippy::too_many_arguments)]
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         kind: EntityDeclKind,
         visibility: Option<Visibility>,
         id: EntityRef,
@@ -696,6 +710,7 @@ impl EntityDeclItem {
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             kind,
             visibility,
             id,
@@ -709,6 +724,10 @@ impl EntityDeclItem {
 
     pub const fn kind(&self) -> EntityDeclKind {
         self.kind
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {
@@ -948,6 +967,7 @@ impl ExternModActivity {
 
 impl ExternCapabilityItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         id: String,
         functions: Vec<CapabilityFn>,
@@ -955,6 +975,7 @@ impl ExternCapabilityItem {
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             id,
             functions,
@@ -965,6 +986,10 @@ impl ExternCapabilityItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn id(&self) -> &str {
@@ -1052,12 +1077,14 @@ impl CallableItem {
 
 impl StateItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
         fields: Vec<StateField>,
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             name,
             fields,
@@ -1067,6 +1094,10 @@ impl StateItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn name(&self) -> &str {
@@ -1122,6 +1153,7 @@ impl StateField {
 
 impl TraitItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
         supertraits: Vec<String>,
@@ -1129,6 +1161,7 @@ impl TraitItem {
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             name,
             supertraits,
@@ -1139,6 +1172,10 @@ impl TraitItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn name(&self) -> &str {
@@ -1210,12 +1247,14 @@ impl ImplItem {
 
 impl EnumItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
         variants: Vec<EnumVariant>,
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             name,
             variants,
@@ -1225,6 +1264,10 @@ impl EnumItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn name(&self) -> &str {
@@ -1260,12 +1303,14 @@ impl EnumVariant {
 
 impl StructItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
         fields: Vec<StructField>,
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             name,
             fields,
@@ -1275,6 +1320,10 @@ impl StructItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn name(&self) -> &str {
@@ -1310,6 +1359,7 @@ impl StructField {
 
 impl TypeAliasItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
         target: TypeRef,
@@ -1317,6 +1367,7 @@ impl TypeAliasItem {
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             name,
             target,
@@ -1327,6 +1378,10 @@ impl TypeAliasItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub fn name(&self) -> &str {

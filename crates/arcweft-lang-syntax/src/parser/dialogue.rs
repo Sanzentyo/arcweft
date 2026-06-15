@@ -18,6 +18,7 @@ use crate::cst::CstPunctuationScan;
 
 impl Parser<'_> {
     pub(super) fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -66,6 +67,7 @@ impl Parser<'_> {
             &mut self.errors,
         );
         Some(DialogueDefaultsItem::new(
+            attrs,
             visibility,
             id,
             assignments,

@@ -131,6 +131,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_function_item(&mut self) -> Option<FunctionItem> {
+        let attrs = self.take_pending_attrs();
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_function_block();
@@ -171,6 +172,7 @@ impl Parser<'_> {
         let (body_statements, body_value) = parse_scope_expr_body(&body);
 
         Some(FunctionItem::new(FunctionInit {
+            attrs,
             doc,
             kind,
             visibility,
@@ -185,6 +187,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_enum_item(&mut self) -> Option<EnumItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -201,6 +204,7 @@ impl Parser<'_> {
         let name = rest.trim_start().strip_prefix("enum")?.trim();
         let (name, _) = parse_name_and_tail(name);
         Some(EnumItem::new(
+            attrs,
             visibility,
             name.unwrap_or_default(),
             parse_enum_variants(&body),
@@ -251,6 +255,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_state_item(&mut self) -> Option<StateItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -267,6 +272,7 @@ impl Parser<'_> {
         let name = rest.trim_start().strip_prefix("state")?.trim();
         let (name, _) = parse_name_and_tail(name);
         Some(StateItem::new(
+            attrs,
             visibility,
             name.unwrap_or_default(),
             parse_state_fields(&body),
@@ -275,6 +281,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_trait_item(&mut self) -> Option<TraitItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -292,6 +299,7 @@ impl Parser<'_> {
         let (name, supertraits) = split_top_level_punctuation_once(rest, ':')
             .map_or((rest, ""), |(name, traits)| (name.trim(), traits.trim()));
         Some(TraitItem::new(
+            attrs,
             visibility,
             name.to_owned(),
             split_supertraits(supertraits),
@@ -332,6 +340,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_struct_item(&mut self) -> Option<StructItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -348,6 +357,7 @@ impl Parser<'_> {
         let name = rest.trim_start().strip_prefix("struct")?.trim();
         let (name, _) = parse_name_and_tail(name);
         Some(StructItem::new(
+            attrs,
             visibility,
             name.unwrap_or_default(),
             parse_struct_fields(&body),
@@ -356,6 +366,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_type_alias(&mut self) -> Option<TypeAliasItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let mut raw = start_line.text().to_owned();
         let mut end = start_line.end;
@@ -385,6 +396,7 @@ impl Parser<'_> {
             .collect();
 
         Some(TypeAliasItem::new(
+            attrs,
             visibility,
             name.trim().to_owned(),
             target,
@@ -402,6 +414,7 @@ impl Parser<'_> {
     }
 
     fn parse_entity_decl_block(&mut self) -> Option<EntityDeclItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_flow_block();
         if !ok {
@@ -417,6 +430,7 @@ impl Parser<'_> {
         let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
         Some(EntityDeclItem::new(
+            attrs,
             kind,
             visibility,
             id,
@@ -429,11 +443,13 @@ impl Parser<'_> {
     }
 
     fn parse_entity_decl_line(&mut self) -> Option<EntityDeclItem> {
+        let attrs = self.take_pending_attrs();
         let line = self.current().clone();
         self.index += 1;
         let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
         Some(EntityDeclItem::new(
+            attrs,
             kind,
             visibility,
             id,
@@ -470,6 +486,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_extern_capability_item(&mut self) -> Option<ExternCapabilityItem> {
+        let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -489,6 +506,7 @@ impl Parser<'_> {
             .trim()
             .to_owned();
         Some(ExternCapabilityItem::new(
+            attrs,
             visibility,
             id,
             parse_capability_fns(&body),

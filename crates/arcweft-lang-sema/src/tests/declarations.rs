@@ -175,10 +175,11 @@ where len(self) <= 16
 ",
     );
 
-    assert!(matches!(&tree.items()[0], Item::Attribute(_)));
-    let Item::Enum(event) = &tree.items()[1] else {
+    let Item::Enum(event) = &tree.items()[0] else {
         panic!("expected enum item");
     };
+    assert_eq!(event.attrs().len(), 1);
+    assert_eq!(event.attrs()[0].name(), "derive");
     assert_eq!(event.visibility(), Some(Visibility::Public));
     assert_eq!(event.name(), "GameEvent");
     assert_eq!(event.variants().len(), 3);
@@ -194,13 +195,13 @@ where len(self) <= 16
             .is_some_and(|payload| payload.contains("label: TextKey"))
     );
 
-    let Item::Struct(settings) = &tree.items()[2] else {
+    let Item::Struct(settings) = &tree.items()[1] else {
         panic!("expected struct item");
     };
     assert_eq!(settings.fields().len(), 2);
     assert_eq!(settings.fields()[0].name(), "text_speed");
 
-    let Item::TypeAlias(alias) = &tree.items()[3] else {
+    let Item::TypeAlias(alias) = &tree.items()[2] else {
         panic!("expected type alias item");
     };
     assert_eq!(alias.name(), "PlayerName");
@@ -212,7 +213,6 @@ where len(self) <= 16
     assert!(matches!(
         hir.declarations(),
         [
-            HirTopLevelDecl::Attribute(_),
             HirTopLevelDecl::Enum(_),
             HirTopLevelDecl::Struct(_),
             HirTopLevelDecl::TypeAlias(_)

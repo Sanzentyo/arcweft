@@ -1,6 +1,6 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::items::{Attribute, FunctionItem, Item, TypedSyntaxTree};
+use arcweft_lang_syntax::ast::items::{FunctionItem, Item, TypedSyntaxTree};
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
@@ -19,37 +19,27 @@ struct HirLoweringState {
     declarations: Vec<HirTopLevelDecl>,
     top_level_items: Vec<crate::model::HirFlowItem>,
     errors: Vec<HirLowerError>,
-    pending_attributes: Vec<Attribute>,
 }
 
 impl HirLoweringState {
     fn lower_item(&mut self, item: &Item) {
         match item {
-            Item::Attribute(attribute) => {
-                self.pending_attributes.push(attribute.clone());
-            }
             Item::Flow(flow) => match lower_flow(flow) {
                 Ok(flow) => {
-                    self.flush_pending_attributes();
                     self.flows.push(flow);
                 }
                 Err(err) => self.errors.push(err),
             },
             Item::Function(function) => {
-                self.functions.push(lower_function(
-                    function,
-                    std::mem::take(&mut self.pending_attributes),
-                ));
+                self.functions.push(lower_function(function));
             }
             Item::FlowItem(item) => match lower_flow_item(item) {
                 Ok(item) => {
-                    self.flush_pending_attributes();
                     self.top_level_items.push(item);
                 }
                 Err(err) => self.errors.push(err),
             },
             Item::Raw(raw) => {
-                self.flush_pending_attributes();
                 self.errors.push(HirLowerError::new(
                     format!("raw top-level item cannot be lowered: {}", raw.head()),
                     Some(*raw.range()),
@@ -60,7 +50,6 @@ impl HirLoweringState {
     }
 
     fn lower_declaration_item(&mut self, item: &Item) {
-        self.flush_pending_attributes();
         match item {
             Item::Callable(item) => {
                 self.declarations
@@ -133,16 +122,11 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::TypeAlias(item.clone()));
             }
-            Item::Attribute(_)
-            | Item::Flow(_)
-            | Item::Function(_)
-            | Item::FlowItem(_)
-            | Item::Raw(_) => {}
+            Item::Flow(_) | Item::Function(_) | Item::FlowItem(_) | Item::Raw(_) => {}
         }
     }
 
-    fn finish(mut self) -> Result<HirModule, Vec<HirLowerError>> {
-        self.flush_pending_attributes();
+    fn finish(self) -> Result<HirModule, Vec<HirLowerError>> {
         if self.errors.is_empty() {
             Ok(HirModule {
                 flows: self.flows,
@@ -154,19 +138,11 @@ impl HirLoweringState {
             Err(self.errors)
         }
     }
-
-    fn flush_pending_attributes(&mut self) {
-        self.declarations.extend(
-            self.pending_attributes
-                .drain(..)
-                .map(HirTopLevelDecl::Attribute),
-        );
-    }
 }
 
-fn lower_function(function: &FunctionItem, attributes: Vec<Attribute>) -> HirFunction {
+fn lower_function(function: &FunctionItem) -> HirFunction {
     HirFunction {
-        attributes,
+        attributes: function.attrs().to_vec(),
         kind: function.kind(),
         visibility: function.visibility(),
         signature: function.signature().clone(),

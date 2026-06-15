@@ -59,7 +59,6 @@ pub struct HirFunction {
 /// HIR-facing top-level declaration preserved for later semantic passes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirTopLevelDecl {
-    Attribute(Attribute),
     Callable(CallableItem),
     State(StateItem),
     Trait(TraitItem),

@@ -6,7 +6,7 @@ use crate::ast::flow::{
     StmtMatchArm, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
-use crate::ast::items::{RawSyntax, TypedSyntaxTree};
+use crate::ast::items::{Attribute, RawSyntax, TypedSyntaxTree};
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
     CstBlockEvent, CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents,
@@ -104,6 +104,7 @@ struct Parser<'a> {
     errors: Vec<ParseError>,
     pending_flow_items: Vec<FlowItem>,
     pending_doc: Option<DocBlock>,
+    pending_attrs: Vec<Attribute>,
     syntax_stats: SyntaxParseStats,
 }
 
@@ -131,6 +132,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             pending_flow_items: Vec::new(),
             pending_doc: None,
+            pending_attrs: Vec::new(),
             syntax_stats,
         }
     }
@@ -173,6 +175,7 @@ impl<'a> Parser<'a> {
             self.parse_top_level_line(dispatch, trimmed, range, &mut module, &mut uses, &mut items);
         }
 
+        self.reject_pending_attrs(TextRange::new(self.previous_end(), self.previous_end()));
         let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);
         (tree, core::mem::take(&mut self.errors), self.syntax_stats)
     }
@@ -378,6 +381,27 @@ impl<'a> Parser<'a> {
 
     fn take_pending_doc(&mut self) -> Option<DocBlock> {
         self.pending_doc.take()
+    }
+
+    fn push_pending_attr(&mut self, attr: Attribute) {
+        self.pending_attrs.push(attr);
+    }
+
+    fn take_pending_attrs(&mut self) -> Vec<Attribute> {
+        core::mem::take(&mut self.pending_attrs)
+    }
+
+    fn reject_pending_attrs(&mut self, fallback_range: TextRange) {
+        for attr in self.take_pending_attrs() {
+            self.push_error(
+                *attr.range(),
+                "attribute is not attached to an attribute-aware item",
+                ["flow", "fn", "character", "dialogue defaults", "source"],
+                Some(attr.name()),
+                ["move the attribute directly before a supported declaration"],
+            );
+        }
+        let _ = fallback_range;
     }
 
     fn reject_pending_doc(&mut self, fallback_range: TextRange) {

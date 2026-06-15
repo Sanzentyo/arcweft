@@ -1,5 +1,6 @@
 use super::common::{TextRange, Visibility};
 use super::ids::{EntityRef, EntityRefSyntax, IdRef};
+use super::items::Attribute;
 use super::line_plan::LinePlan;
 use crate::expr::Expr;
 
@@ -107,6 +108,7 @@ pub struct LineArg {
 /// Global dialogue default declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueDefaultsItem {
+    attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: Option<EntityRef>,
     assignments: Vec<DialogueDefaultAssignment>,
@@ -348,12 +350,14 @@ impl LineArg {
 
 impl DialogueDefaultsItem {
     pub(crate) const fn new(
+        attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         id: Option<EntityRef>,
         assignments: Vec<DialogueDefaultAssignment>,
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
             id,
             assignments,
@@ -363,6 +367,10 @@ impl DialogueDefaultsItem {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn id(&self) -> Option<&EntityRef> {
