@@ -179,9 +179,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   family-relative `dialogue defaults` profile and canonical nested `rich_text`
   typography blocks in both defaults and character `dialogue_style` examples.
   ID materialization actions return focused LSP `WorkspaceEdit` values
-  through the same byte-span mapper used for diagnostics, and
-  `workspace/executeCommand` can translate the older command argument shape into
-  the same edit without writing files server-side. The transport negotiates
+  through the same byte-span mapper used for diagnostics, and command-backed
+  `workspace/executeCommand` edits use one structured `{ uri, edit }` argument
+  without accepting legacy positional shim arguments. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned
   `documentChanges` when supported and `changes` otherwise. It resolves
   declaration-identity syntax lints through attached item attributes and

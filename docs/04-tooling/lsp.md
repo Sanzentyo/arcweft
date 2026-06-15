@@ -186,10 +186,24 @@ advertises it through initialize capabilities.
 Source-level code actions return `WorkspaceEdit` values when the server can map
 the current document snapshot. Sugar expansion and ID materialization edits are
 computed by `arcweft-tooling`, converted through `LspPositionMapper`, and sent
-as LSP text edits. `workspace/executeCommand` also accepts the older
-`[uri, tooling_edit]` command argument shape and returns a `WorkspaceEdit`, so
-clients that still invoke command-backed actions get the same edit without the
-server writing files directly.
+as LSP text edits. Command-backed edits use a single structured
+`workspace/executeCommand` argument:
+
+```json
+{
+  "uri": "file:///story.arcw",
+  "edit": {
+    "start": 0,
+    "end": 0,
+    "replacement": "// generated\n"
+  }
+}
+```
+
+The server does not accept older positional command argument shapes; removed
+syntax and removed tooling protocols should fail through the normal request
+result path instead of compatibility shims. The command still returns a
+`WorkspaceEdit`, so the server never writes files directly.
 
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
 consumes an already-resolved adapter manifest containing standard adapter facts,

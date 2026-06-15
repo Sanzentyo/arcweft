@@ -25,7 +25,7 @@ use lsp_types::{
     ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
     TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
 };
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -391,16 +391,17 @@ impl ArcweftLspSession {
 fn command_uri_and_edit(
     params: &ExecuteCommandParams,
 ) -> Option<(lsp_types::Uri, arcweft_tooling::TextEdit)> {
-    let uri = params
-        .arguments
-        .first()
-        .and_then(|value| value.as_str())
-        .and_then(|value| value.parse().ok())?;
-    let edit = params
-        .arguments
-        .get(1)
-        .and_then(|value| serde_json::from_value(value.clone()).ok())?;
-    Some((uri, edit))
+    if params.arguments.len() != 1 {
+        return None;
+    }
+    let args: ToolingEditCommandArgs = serde_json::from_value(params.arguments[0].clone()).ok()?;
+    Some((args.uri, args.edit))
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolingEditCommandArgs {
+    uri: lsp_types::Uri,
+    edit: arcweft_tooling::TextEdit,
 }
 
 fn extract<P: DeserializeOwned>(
@@ -1188,7 +1189,10 @@ flow opening {
 
         let result = session.execute_command(&ExecuteCommandParams {
             command: ArcweftCommand::ExpandSugar.as_str().to_owned(),
-            arguments: vec![serde_json::json!(uri.to_string()), serde_json::json!(edit)],
+            arguments: vec![serde_json::json!({
+                "uri": uri.to_string(),
+                "edit": edit
+            })],
             work_done_progress_params: WorkDoneProgressParams::default(),
         });
 
@@ -1201,6 +1205,26 @@ flow opening {
                 .values()
                 .any(|edits| !edits.is_empty())
         );
+    }
+
+    #[test]
+    fn execute_command_rejects_legacy_positional_tooling_edit_arguments() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_fixture(&mut session, uri.clone());
+        let edit = arcweft_tooling::TextEdit {
+            start: 0,
+            end: 0,
+            replacement: "// generated\n".to_owned(),
+        };
+
+        let result = session.execute_command(&ExecuteCommandParams {
+            command: ArcweftCommand::ExpandSugar.as_str().to_owned(),
+            arguments: vec![serde_json::json!(uri.to_string()), serde_json::json!(edit)],
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        });
+
+        assert_eq!(result, serde_json::Value::Null);
     }
 
     #[test]
@@ -1229,7 +1253,10 @@ flow opening {
 
         let result = session.execute_command(&ExecuteCommandParams {
             command: ArcweftCommand::ExpandSugar.as_str().to_owned(),
-            arguments: vec![serde_json::json!(uri.to_string()), serde_json::json!(edit)],
+            arguments: vec![serde_json::json!({
+                "uri": uri.to_string(),
+                "edit": edit
+            })],
             work_done_progress_params: WorkDoneProgressParams::default(),
         });
 
