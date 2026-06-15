@@ -115,5 +115,11 @@
     "exit": 0,
     "bytes": 20758,
     "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-005-fixed-native-textbox-vertical-crop-windows-fonts.png"
+  },
+  {
+    "name": "issue-001-fixed-ruby-gap-full-frame",
+    "exit": 0,
+    "bytes": 21682,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-001-fixed-ruby-gap-full-frame.png"
   }
 ]

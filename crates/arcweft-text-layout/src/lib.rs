@@ -25,6 +25,8 @@ pub use jlreq_punctuation_data::{
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
 
+const DEFAULT_RUBY_GAP: f32 = 2.0;
+
 /// Text layout failed before geometry could be produced.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TextLayoutError {
@@ -181,7 +183,7 @@ fn ruby_metrics_from_presentation(
             .layout
             .as_ref()
             .and_then(|layout| positive_milli(layout.ruby_gap))
-            .unwrap_or(font_size * 0.2),
+            .unwrap_or(DEFAULT_RUBY_GAP),
         overhang: presentation
             .layout
             .as_ref()
@@ -6182,6 +6184,17 @@ mod tests {
         assert_eq!(layout.ruby.len(), 1);
         assert_eq!(layout.ruby[0].base_bounds, layout.glyphs[0].bounds);
         assert!(layout.ruby[0].ruby_bounds.y < layout.glyphs[0].bounds.y);
+    }
+
+    #[test]
+    fn default_horizontal_ruby_gap_matches_engine_default() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        let base = layout.ruby[0].base_bounds;
+        let annotation = layout.ruby[0].ruby_bounds;
+        assert_f32_eq(base.y - annotation.bottom(), DEFAULT_RUBY_GAP);
     }
 
     #[test]
