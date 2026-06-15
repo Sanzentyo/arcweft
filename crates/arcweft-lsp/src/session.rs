@@ -12,18 +12,18 @@ use lsp_types::notification::{
     DidOpenTextDocument, DidSaveTextDocument, Notification as LspNotification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    CodeActionRequest, Completion, ExecuteCommand, HoverRequest, InlayHintRequest,
+    CodeActionRequest, Completion, ExecuteCommand, GotoDefinition, HoverRequest, InlayHintRequest,
     Request as LspRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
     CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, ExecuteCommandOptions, ExecuteCommandParams, HoverParams,
-    HoverProviderCapability, InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
-    OptionalVersionedTextDocumentIdentifier, ServerCapabilities, SignatureHelpOptions,
-    SignatureHelpParams, TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind,
-    WorkDoneProgressOptions, WorkspaceEdit,
+    DidSaveTextDocumentParams, ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams,
+    HoverParams, HoverProviderCapability, InitializeParams, InlayHintParams,
+    InlayHintServerCapabilities, OneOf, OptionalVersionedTextDocumentIdentifier,
+    ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
+    TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -91,6 +91,7 @@ impl ArcweftLspSession {
             position_encoding: Some(self.position_encoding.as_lsp_kind()),
             text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
+            definition_provider: Some(OneOf::Left(true)),
             completion_provider: Some(lsp_types::CompletionOptions {
                 trigger_characters: Some(vec![".".to_owned(), "@".to_owned(), ":".to_owned()]),
                 ..lsp_types::CompletionOptions::default()
@@ -231,6 +232,20 @@ impl ArcweftLspSession {
                         let profile = self.profile_for_uri(document.uri());
                         features::hover::hover(
                             profile,
+                            document,
+                            params.text_document_position_params.position,
+                        )
+                    });
+                Ok(Response::new_ok(id, result))
+            }
+            GotoDefinition::METHOD => {
+                let (id, params) =
+                    extract::<GotoDefinitionParams>(request, GotoDefinition::METHOD)?;
+                let result = self
+                    .document_for_params(&params.text_document_position_params.text_document.uri)
+                    .and_then(|document| {
+                        features::definition::definition(
+                            &params.text_document_position_params.text_document.uri,
                             document,
                             params.text_document_position_params.position,
                         )
@@ -428,11 +443,11 @@ mod tests {
     };
     use lsp_types::{
         ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
-        DidChangeWatchedFilesParams, DidOpenTextDocumentParams, InlayHint, InlayHintLabel,
-        PartialResultParams, Position, Range, SignatureHelp, TextDocumentContentChangeEvent,
-        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
-        VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceClientCapabilities,
-        WorkspaceEditClientCapabilities,
+        DidChangeWatchedFilesParams, DidOpenTextDocumentParams, GotoDefinitionResponse, InlayHint,
+        InlayHintLabel, PartialResultParams, Position, Range, SignatureHelp,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+        WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
     };
     use std::{
         fs::{create_dir_all, write},
@@ -911,6 +926,62 @@ rust_metadata = ["target/arcweft/quest.json"]
                 .iter()
                 .any(|label| label.contains("id=@say.opening.alice.001"))
         );
+    }
+
+    #[test]
+    fn definition_request_returns_effective_style_contributor_ranges() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub character alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
+}
+
+flow opening {
+    alice: hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(5),
+            method: GotoDefinition::METHOD.to_owned(),
+            params: serde_json::json!(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: position_of(source, "hi[p]"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            }),
+        });
+        let definition = serde_json::from_value::<GotoDefinitionResponse>(
+            response.result.expect("definition response"),
+        )
+        .expect("definition response decodes");
+        let GotoDefinitionResponse::Array(locations) = definition else {
+            panic!("expected location array");
+        };
+
+        assert!(locations.iter().all(|location| location.uri == uri));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "14px")
+                && location.range.end == position_of(source, "\n        }\n")
+        }));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#202122\")")
+                && location.range.end == position_of(source, "\n    }\n}\n\nflow")
+        }));
     }
 
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {

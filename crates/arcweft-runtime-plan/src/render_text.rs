@@ -362,7 +362,7 @@ fn style_defaults_from_body(
                 assignment.value.to_owned(),
                 &expr,
                 layer,
-                style_assignment_source(item_id, body_absolute_start, assignment.range),
+                style_assignment_source(item_id, body_absolute_start, assignment.value_range),
             );
         }
     }
@@ -1009,7 +1009,7 @@ fn matching_brace(source: &str, open: usize) -> Option<usize> {
 struct StyleBlockAssignment<'a> {
     name: &'a str,
     value: &'a str,
-    range: Range<usize>,
+    value_range: Range<usize>,
 }
 
 struct LogicalStyleItem<'a> {
@@ -1019,7 +1019,7 @@ struct LogicalStyleItem<'a> {
 
 fn style_block_assignments(body: &str) -> Vec<StyleBlockAssignment<'_>> {
     logical_style_items(body)
-        .into_iter()
+        .iter()
         .filter_map(split_assignment)
         .collect()
 }
@@ -1067,14 +1067,18 @@ fn trim_logical_style_item(body: &str, start: usize, end: usize) -> LogicalStyle
     }
 }
 
-fn split_assignment(item: LogicalStyleItem<'_>) -> Option<StyleBlockAssignment<'_>> {
-    let (name, value) = item.source.split_once('=')?;
-    let name = name.trim();
-    let value = value.trim().trim_end_matches(',').trim();
+fn split_assignment<'a>(item: &LogicalStyleItem<'a>) -> Option<StyleBlockAssignment<'a>> {
+    let equals = item.source.find('=')?;
+    let name = item.source[..equals].trim();
+    let value_source = &item.source[equals + '='.len_utf8()..];
+    let value_trimmed_start = value_source.trim_start();
+    let leading = value_source.len() - value_trimmed_start.len();
+    let value = value_trimmed_start.trim_end_matches(',').trim_end();
+    let value_start = item.range.start + equals + '='.len_utf8() + leading;
     (!name.is_empty() && !value.is_empty()).then_some(StyleBlockAssignment {
         name,
         value,
-        range: item.range,
+        value_range: value_start..value_start + value.len(),
     })
 }
 
@@ -2378,10 +2382,7 @@ flow @flow.main main {
         else {
             panic!("character contribution should preserve its source range");
         };
-        assert_eq!(
-            source[range.start..range.end].trim(),
-            "text_color = rgb(\"#202122\")"
-        );
+        assert_eq!(source[range.start..range.end].trim(), "rgb(\"#202122\")");
         assert!(spec.content.nodes.iter().any(|node| {
             matches!(
                 node,

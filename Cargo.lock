@@ -365,6 +365,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
+ "arcweft-render-text",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
  "arcweft-rust-abi",
