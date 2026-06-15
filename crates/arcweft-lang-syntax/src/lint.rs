@@ -105,7 +105,9 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
             if let (Some(module), Some(id)) = (tree.module(), flow.id()) {
                 let module_tail = module.path().rsplit("::").next();
                 let id_tail = id.body().rsplit('.').next();
-                if module_tail != id_tail {
+                if module_tail != id_tail
+                    && !allows_lint(flow.attrs(), SyntaxLintCode::FlowIdModuleMismatch)
+                {
                     lints.push(SyntaxLint::new(
                         SyntaxLintCode::FlowIdModuleMismatch,
                         format!(
@@ -445,6 +447,21 @@ flow @flow.opening opening {
 
         assert!(codes.contains(&SyntaxLintCode::GeneratedSurfaceForm));
         assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
+    fn allow_attribute_suppresses_flow_module_mismatch() {
+        let codes = lint_codes(
+            r"
+mod route::opening
+
+#[allow(id::flow_module_mismatch)]
+flow @flow.prologue {
+}
+",
+        );
+
+        assert!(!codes.contains(&SyntaxLintCode::FlowIdModuleMismatch));
     }
 
     #[test]

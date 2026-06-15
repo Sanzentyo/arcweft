@@ -142,6 +142,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the same edit without writing files server-side. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned
   `documentChanges` when supported and `changes` otherwise. It resolves
+  declaration-identity syntax lints through attached attributes, including
+  `#[allow(id::flow_module_mismatch)]` on flows, before LSP diagnostics are
+  published. It resolves
   `arcw.toml` near opened documents, caches profile metadata per document URI,
   refreshes profile metadata on open, save, watched-file, and configuration
   notifications, loads project-local adapter manifests and Rust ABI JSON into

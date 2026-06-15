@@ -366,4 +366,21 @@ flow @flow.opening {
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::HINT));
         assert!(diagnostic.message.contains("style::explicit_decl_id"));
     }
+
+    #[test]
+    fn diagnostics_respect_allow_attribute_for_flow_module_mismatch() {
+        let source = r"
+mod route::opening
+
+#[allow(id::flow_module_mismatch)]
+flow @flow.prologue {
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        assert!(!analysis.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("AWF0002".into()))
+        }));
+    }
 }
