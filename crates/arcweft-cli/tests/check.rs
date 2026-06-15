@@ -24093,6 +24093,102 @@ dialogue_defaults = "dialogue.defaults.mobile"
     );
 }
 
+#[test]
+fn rich_text_profiled_sample_checks_profiles_and_plan_defaults() {
+    let manifest = workspace_root().join("samples/rich-text-profiled/arcw.toml");
+
+    for profile in ["desktop", "mobile"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("check")
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("--profile")
+            .arg(profile)
+            .output()
+            .expect("arcw check --profile runs for rich-text-profiled sample");
+        assert!(
+            output.status.success(),
+            "rich-text-profiled {profile} check should succeed, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("mobile")
+        .arg("--json")
+        .output()
+        .expect("arcw plan --profile runs for rich-text-profiled sample");
+
+    assert!(
+        output.status.success(),
+        "rich-text-profiled mobile plan should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("sample profile plan output is structured JSON");
+    let display = json["line_display_catalog"]
+        .as_array()
+        .and_then(|catalog| catalog.first())
+        .expect("sample profile plan includes a line display");
+    assert_eq!(
+        display["window"], "textbox.mobile",
+        "mobile profile should select the mobile textbox: {stdout}"
+    );
+    let contributions = display["style_contributions"]
+        .as_array()
+        .expect("sample profile line display includes style contributions");
+
+    assert_plan_style_contribution(
+        &stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "dialogue_defaults",
+            path: "window",
+            value: "@textbox.mobile",
+            active: Some(true),
+            requires_range: true,
+            context: "sample mobile textbox defaults",
+        },
+    );
+    assert_plan_style_contribution(
+        &stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "dialogue_defaults",
+            path: "rich_text.ruby.gap",
+            value: "1px",
+            active: Some(true),
+            requires_range: true,
+            context: "sample mobile ruby gap defaults",
+        },
+    );
+    assert_plan_style_contribution(
+        &stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "inline_span",
+            path: "rich_text.effect",
+            value: "shake",
+            active: Some(true),
+            requires_range: true,
+            context: "sample inferred inline effect",
+        },
+    );
+    assert!(
+        contributions.iter().all(|contribution| {
+            !(contribution["layer"] == "dialogue_defaults"
+                && contribution["source"]["item_id"] == "dialogue.defaults"
+                && contribution["active"] == true)
+        }),
+        "mobile profile should not activate desktop dialogue defaults: {stdout}"
+    );
+}
+
 fn runtime_plan_fixture_path() -> PathBuf {
     temp_arcw(
         "runtime-plan",
