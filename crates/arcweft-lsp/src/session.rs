@@ -658,7 +658,11 @@ pub dialogue defaults @dialogue.defaults {
 
 pub character alice {
     dialogue_style {
-        text_color = rgb("#202122")
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
     }
 }
 
@@ -685,7 +689,8 @@ flow opening {
             .iter()
             .find_map(|action| match action {
                 CodeActionOrCommand::CodeAction(action)
-                    if action.title == "Extract `text_color` override to line options" =>
+                    if action.title
+                        == "Extract `rich_text.text.color` override to line options" =>
                 {
                     Some(action)
                 }
@@ -700,7 +705,7 @@ flow opening {
             .expect("workspace edit");
 
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].new_text, "(text_color=rgb(\"#202122\"))");
+        assert_eq!(edits[0].new_text, "(rich_text.text.color=rgb(\"#202122\"))");
     }
 
     #[test]
@@ -773,7 +778,11 @@ pub dialogue defaults @dialogue.defaults {
 
 pub character alice {
     dialogue_style {
-        text_color = rgb("#202122")
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
     }
 }
 
@@ -800,7 +809,8 @@ flow opening {
             .iter()
             .find_map(|action| match action {
                 CodeActionOrCommand::CodeAction(action)
-                    if action.title == "Extract `text_color` override to dialogue defaults" =>
+                    if action.title
+                        == "Extract `rich_text.text.color` override to dialogue defaults" =>
                 {
                     Some(action)
                 }
@@ -815,7 +825,10 @@ flow opening {
             .expect("workspace edit");
 
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].new_text, "    text_color = rgb(\"#202122\")\n");
+        assert_eq!(
+            edits[0].new_text,
+            "    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n"
+        );
     }
 
     #[test]
@@ -1261,12 +1274,16 @@ pub dialogue defaults @dialogue.defaults {
 
 pub character alice {
     dialogue_style {
-        text_color = rgb("#202122")
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
     }
 }
 
 flow opening {
-    let alice_side = alice(rich_text=rich_text_style(text=text_style(color=rgb("#303132"))))
+    let alice_side = alice(rich_text=rich_text_style(ruby=ruby_style(gap=1px)))
     alice_side: hi[p]
 }
 "##;
@@ -1300,7 +1317,8 @@ flow opening {
         }));
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rgb(\"#202122\")")
-                && location.range.end == position_of(source, "\n    }\n}\n\nflow")
+                && location.range.end
+                    == position_of(source, "\n            }\n        }\n    }\n}\n\nflow")
         }));
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rich_text_style")
@@ -1313,12 +1331,20 @@ flow opening {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let source = r##"
 pub dialogue defaults @dialogue.defaults {
-    text_color = rgb("#101112")
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+    }
 }
 
 pub character alice {
     dialogue_style {
-        text_color = rgb("#202122")
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
     }
 }
 
@@ -1352,11 +1378,13 @@ flow opening {
         assert!(locations.iter().all(|location| location.uri == uri));
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rgb(\"#101112\")")
-                && location.range.end == position_of(source, "\n}\n\npub character")
+                && location.range.end
+                    == position_of(source, "\n        }\n    }\n}\n\npub character")
         }));
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rgb(\"#202122\")")
-                && location.range.end == position_of(source, "\n    }\n}\n\nflow")
+                && location.range.end
+                    == position_of(source, "\n            }\n        }\n    }\n}\n\nflow")
         }));
     }
 

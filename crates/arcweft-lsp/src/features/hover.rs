@@ -281,8 +281,10 @@ pub dialogue defaults @dialogue.defaults {
     fn hover_describes_effective_dialogue_style_cascade() {
         let source = r##"
 pub dialogue defaults @dialogue.defaults {
-    text_color = rgb("#101112")
     rich_text {
+        text {
+            color = rgb("#101112")
+        }
         ruby {
             size = 14px
         }
@@ -291,7 +293,11 @@ pub dialogue defaults @dialogue.defaults {
 
 pub character alice {
     dialogue_style {
-        text_color = rgb("#202122")
+        rich_text {
+            text {
+                color = rgb("#202122")
+            }
+        }
     }
 }
 
@@ -322,9 +328,9 @@ flow opening {
                 assert!(text.contains("effective dialogue style for `alice`"));
                 assert!(text.contains("active contributors:"));
                 assert!(text.contains("rich_text.ruby.size = 14px"));
-                assert!(text.contains("text_color = rgb(\"#202122\")"));
+                assert!(text.contains("rich_text.text.color = rgb(\"#202122\")"));
                 assert!(text.contains("shadowed contributors:"));
-                assert!(text.contains("text_color = rgb(\"#101112\")"));
+                assert!(text.contains("rich_text.text.color = rgb(\"#101112\")"));
                 assert!(text.contains("unset layers:"));
                 assert!(text.contains("line_options"));
             }
