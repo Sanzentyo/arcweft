@@ -35,10 +35,14 @@ state, list resources, then either call `arcweft.capture` for a
 viewport/layer/object PNG or raw RGBA image content, or read a specific
 object/layer/rich-text child image URI. `arcweft.capture` can also take a
 listed image `uri` directly, using that URI to infer format, capture kind, and
-viewport/layer/object scope. Passing `source` to `arcweft.capture` runs a
-bounded observation first and then returns the requested capture, which gives
-LLM debuggers a single-call path for "show me this layer/object" workflows while
-still updating `resources/list`. Capture resources are retained in the current
+viewport/layer/object scope. Passing `source`, or passing `manifest` plus
+`profile`, to `arcweft.capture` runs a bounded observation first and then
+returns the requested capture, which gives LLM debuggers a single-call path for
+"show me this layer/object" workflows while still updating `resources/list`.
+`arcweft.observe` uses the same direct-source versus launch-profile selection
+model as `arcw agent observe`, so project-selected dialogue defaults and adapter
+context are available through MCP without also supplying a source path. Capture
+resources are retained in the current
 MCP session by URI, so later captures do not evict earlier PNG/raw resources;
 `resources/read` and `arcweft.resource.read` return the same native renderer
 composition, metadata, and image bytes that each capture tool call produced.

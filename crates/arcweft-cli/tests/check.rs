@@ -21813,6 +21813,82 @@ fn agent_mcp_stdio_lists_resource_templates_before_observe() {
     }));
 }
 
+#[test]
+fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
+    let dir = temp_dir("agent-mcp-profile-dialogue-defaults");
+    let src_dir = dir.join("src");
+    fs::create_dir_all(&src_dir).expect("create profiled MCP source dir");
+    fs::write(src_dir.join("main.arcw"), profiled_observe_source())
+        .expect("write profiled MCP source");
+    let manifest_path = dir.join("arcw.toml");
+    fs::write(&manifest_path, profiled_observe_manifest()).expect("write profiled MCP manifest");
+
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.observe",
+                "arguments": {
+                    "manifest": manifest_path.display().to_string(),
+                    "profile": "mobile",
+                    "steps": 4,
+                    "max_ops": 128
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.session.info",
+                "arguments": {}
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    fs::remove_dir_all(&dir).expect("remove profiled MCP fixture");
+    assert!(
+        output.status.success(),
+        "profiled agent mcp should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+    assert_eq!(responses[1]["result"]["isError"], false);
+
+    let session = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "profiled MCP session info is JSON",
+    );
+    assert_eq!(session["observed"], true);
+    assert_eq!(session["source"], "main.arcw");
+    let textbox = session["objects"]
+        .as_array()
+        .expect("MCP session objects are listed")
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .unwrap_or_else(|| panic!("MCP profile observation should include textbox: {session}"));
+    let contributions = textbox["rich_text"]["style_contributions"]
+        .as_array()
+        .expect("MCP textbox style contributions are reported");
+    assert!(contributions.iter().any(|contribution| {
+        contribution["path"] == "window"
+            && contribution["value"] == "@textbox.mobile"
+            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+            && contribution["active"] == true
+    }));
+    assert!(contributions.iter().any(|contribution| {
+        contribution["path"] == "rich_text.ruby.gap"
+            && contribution["value"] == "1px"
+            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+            && contribution["active"] == true
+    }));
+}
+
 fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value]) {
     assert_eq!(responses.len(), 12);
     assert_eq!(

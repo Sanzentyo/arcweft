@@ -1990,7 +1990,7 @@ fn agent_mcp_call_capture(
     state: &mut AgentMcpState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
-    if arguments.get("source").is_some() {
+    if arguments.get("source").is_some() || arguments.get("profile").is_some() {
         let (report, image_output, _) = agent_mcp_run_observation(
             &agent_mcp_capture_observe_arguments(arguments),
             adapter_registrars,
@@ -2001,7 +2001,7 @@ fn agent_mcp_call_capture(
     }
     let Some(report) = state.report.clone() else {
         return Err(
-            "arcweft.capture requires a prior arcweft.observe call or arguments.source".to_owned(),
+            "arcweft.capture requires a prior arcweft.observe call, arguments.source, or arguments.profile".to_owned(),
         );
     };
     let request = agent_mcp_capture_request(arguments, &report)?;
@@ -2184,20 +2184,27 @@ fn agent_mcp_capture_image_kind(value: &str) -> Result<AgentObserveImageKind, St
 }
 
 fn agent_mcp_observe_options(arguments: &serde_json::Value) -> Result<AgentObserveOptions, String> {
-    let source = arguments
-        .get("source")
+    let source = arguments.get("source").and_then(serde_json::Value::as_str);
+    let profile = arguments
+        .get("profile")
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "arcweft.observe requires arguments.source".to_owned())?;
+        .map(ToOwned::to_owned);
+    if source.is_some() && profile.is_some() {
+        return Err(
+            "arcweft.observe arguments.source and arguments.profile are mutually exclusive"
+                .to_owned(),
+        );
+    }
+    if source.is_none() && profile.is_none() {
+        return Err("arcweft.observe requires arguments.source or arguments.profile".to_owned());
+    }
     if arguments.get("renderer").is_some() {
         return Err("arcweft.observe no longer accepts arguments.renderer".to_owned());
     }
     Ok(AgentObserveOptions {
-        path: Some(PathBuf::from(source)),
+        path: source.map(PathBuf::from),
         profile: ProfileOptions {
-            profile: arguments
-                .get("profile")
-                .and_then(serde_json::Value::as_str)
-                .map(ToOwned::to_owned),
+            profile,
             manifest: arguments
                 .get("manifest")
                 .and_then(serde_json::Value::as_str)

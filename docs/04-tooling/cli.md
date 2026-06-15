@@ -443,10 +443,13 @@ metadata. That lets a client discover rich-text child object ids and their
 capture refs before choosing an image URI. When a capture has already run,
 session info also includes `latest_capture_uri` and `latest_capture_resource`
 for immediate readback or recapture. If `source` is supplied to
-`arcweft.capture`, the server first runs the bounded observation and updates the
+`arcweft.capture`, or `manifest` plus `profile` are supplied for project-context
+observation, the server first runs the bounded observation and updates the
 latest resource set, so a client can request a layer/object image in one tool
-call without a separate `arcweft.observe`. `arcweft.observe` and
-`arcweft.capture` uses the same native full-viewport,
+call without a separate `arcweft.observe`. `arcweft.observe` accepts the same
+direct-source or launch-profile selection model, keeping profile-selected
+dialogue defaults available to MCP debuggers. `arcweft.observe` and
+`arcweft.capture` use the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
 Both tools accept a non-negative capture time in seconds (`--capture-time` on
 the CLI, `capture_time` in MCP) for visibility-only glyph effects such as

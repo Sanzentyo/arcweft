@@ -143,7 +143,9 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "source": { "type": "string" },
+                    "source": { "type": "string", "description": "Direct .arcw source path. Mutually exclusive with profile." },
+                    "manifest": { "type": "string", "description": "Launch manifest path for profile-based observation. Defaults to arcw.toml when profile is supplied." },
+                    "profile": { "type": "string", "description": "Launch profile to resolve before observing. Mutually exclusive with source." },
                     "image": { "type": "string", "enum": ["overlay", "png", "raw-rgba"] },
                     "capture": { "type": "string", "enum": ["color", "object-id", "mask"], "default": "color" },
                     "layer": { "type": "string" },
@@ -156,7 +158,10 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "steps": { "type": "integer", "minimum": 1 },
                     "max_ops": { "type": "integer", "minimum": 1 }
                 },
-                "required": ["source"]
+                "anyOf": [
+                    { "required": ["source"] },
+                    { "required": ["profile"] }
+                ]
             }),
         },
         McpToolDescriptor {
@@ -178,7 +183,9 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "source": { "type": "string", "description": "Optional .arcw source to observe before capturing." },
+                    "source": { "type": "string", "description": "Optional .arcw source to observe before capturing. Mutually exclusive with profile." },
+                    "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-capture. Defaults to arcw.toml when profile is supplied." },
+                    "profile": { "type": "string", "description": "Optional launch profile to resolve before capturing. Mutually exclusive with source." },
                     "entry": { "type": "string" },
                     "flow": { "type": "string" },
                     "steps": { "type": "integer", "minimum": 1 },
@@ -791,6 +798,16 @@ mod tests {
             serde_json::json!(["color", "object-id", "mask"])
         );
         assert!(properties.get("renderer").is_none());
+        assert_eq!(properties["source"]["type"], "string");
+        assert_eq!(properties["manifest"]["type"], "string");
+        assert_eq!(properties["profile"]["type"], "string");
+        assert_eq!(
+            observe.input_schema["anyOf"],
+            serde_json::json!([
+                { "required": ["source"] },
+                { "required": ["profile"] }
+            ])
+        );
         assert_eq!(properties["layer"]["type"], "string");
         assert_eq!(properties["object"]["type"], "string");
         assert_eq!(properties["page"]["type"], "integer");
@@ -810,6 +827,9 @@ mod tests {
             .expect("capture tool is described");
         let properties = &capture.input_schema["properties"];
         assert_eq!(properties["uri"]["type"], "string");
+        assert_eq!(properties["source"]["type"], "string");
+        assert_eq!(properties["manifest"]["type"], "string");
+        assert_eq!(properties["profile"]["type"], "string");
         assert!(properties.get("renderer").is_none());
         assert_eq!(
             properties["format"]["enum"],
