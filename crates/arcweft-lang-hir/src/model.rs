@@ -136,6 +136,7 @@ pub struct HirDialogue {
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
+    pub(crate) rich_text: Option<Expr>,
     pub(crate) args: Vec<LineArg>,
     pub(crate) content: DialogueContent,
     pub(crate) plan: Option<LinePlan>,
@@ -434,6 +435,10 @@ impl HirDialogue {
 
     pub const fn style(&self) -> Option<&Expr> {
         self.style.as_ref()
+    }
+
+    pub const fn rich_text(&self) -> Option<&Expr> {
+        self.rich_text.as_ref()
     }
 
     pub fn args(&self) -> &[LineArg] {

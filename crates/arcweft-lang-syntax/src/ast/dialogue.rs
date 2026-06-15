@@ -74,6 +74,7 @@ pub struct LineOptions {
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
+    rich_text: Option<Expr>,
     args: Vec<LineArg>,
 }
 
@@ -92,6 +93,7 @@ pub(crate) struct LineOptionsInit {
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
+    pub(crate) rich_text: Option<Expr>,
     pub(crate) args: Vec<LineArg>,
 }
 
@@ -107,16 +109,32 @@ pub struct LineArg {
 pub struct DialogueDefaultsItem {
     visibility: Option<Visibility>,
     id: Option<EntityRef>,
-    options: Vec<DialogueDefaultOption>,
+    assignments: Vec<DialogueDefaultAssignment>,
     range: TextRange,
 }
 
 /// One assignment inside a `dialogue defaults` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueDefaultOption {
-    name: String,
+pub struct DialogueDefaultAssignment {
+    path: DialogueDefaultPath,
+    op: DialogueDefaultAssignOp,
     value: Expr,
     range: TextRange,
+    path_range: TextRange,
+    value_range: TextRange,
+}
+
+/// Dot-separated path of a structured dialogue defaults assignment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueDefaultPath {
+    segments: Vec<String>,
+}
+
+/// Assignment operator used by a dialogue defaults assignment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueDefaultAssignOp {
+    Replace,
+    Append,
 }
 
 impl DialogueContent {
@@ -252,6 +270,7 @@ impl LineOptions {
             source_locale: init.source_locale,
             hooks: init.hooks,
             style: init.style,
+            rich_text: init.rich_text,
             args: init.args,
         }
     }
@@ -304,6 +323,10 @@ impl LineOptions {
         self.style.as_ref()
     }
 
+    pub const fn rich_text(&self) -> Option<&Expr> {
+        self.rich_text.as_ref()
+    }
+
     pub fn args(&self) -> &[LineArg] {
         &self.args
     }
@@ -327,13 +350,13 @@ impl DialogueDefaultsItem {
     pub(crate) const fn new(
         visibility: Option<Visibility>,
         id: Option<EntityRef>,
-        options: Vec<DialogueDefaultOption>,
+        assignments: Vec<DialogueDefaultAssignment>,
         range: TextRange,
     ) -> Self {
         Self {
             visibility,
             id,
-            options,
+            assignments,
             range,
         }
     }
@@ -346,8 +369,8 @@ impl DialogueDefaultsItem {
         self.id.as_ref()
     }
 
-    pub fn options(&self) -> &[DialogueDefaultOption] {
-        &self.options
+    pub fn assignments(&self) -> &[DialogueDefaultAssignment] {
+        &self.assignments
     }
 
     pub const fn range(&self) -> &TextRange {
@@ -355,13 +378,31 @@ impl DialogueDefaultsItem {
     }
 }
 
-impl DialogueDefaultOption {
-    pub(crate) const fn new(name: String, value: Expr, range: TextRange) -> Self {
-        Self { name, value, range }
+impl DialogueDefaultAssignment {
+    pub(crate) const fn new(
+        path: DialogueDefaultPath,
+        op: DialogueDefaultAssignOp,
+        value: Expr,
+        range: TextRange,
+        path_range: TextRange,
+        value_range: TextRange,
+    ) -> Self {
+        Self {
+            path,
+            op,
+            value,
+            range,
+            path_range,
+            value_range,
+        }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn path(&self) -> &DialogueDefaultPath {
+        &self.path
+    }
+
+    pub const fn op(&self) -> DialogueDefaultAssignOp {
+        self.op
     }
 
     pub const fn value(&self) -> &Expr {
@@ -370,5 +411,33 @@ impl DialogueDefaultOption {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+
+    pub const fn path_range(&self) -> &TextRange {
+        &self.path_range
+    }
+
+    pub const fn value_range(&self) -> &TextRange {
+        &self.value_range
+    }
+}
+
+impl DialogueDefaultPath {
+    pub fn from_dotted(path: &str) -> Option<Self> {
+        let segments: Vec<String> = path
+            .split('.')
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .map(str::to_owned)
+            .collect();
+        (!segments.is_empty()).then(|| Self { segments })
+    }
+
+    pub fn segments(&self) -> &[String] {
+        &self.segments
+    }
+
+    pub fn dotted(&self) -> String {
+        self.segments.join(".")
     }
 }

@@ -1,4 +1,6 @@
-use crate::ast::dialogue::{DialogueDefaultOption, DialogueDefaultsItem};
+use crate::ast::dialogue::{
+    DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultPath, DialogueDefaultsItem,
+};
 
 use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
 use super::{
@@ -33,6 +35,15 @@ impl Parser<'_> {
             .trim_start()
             .strip_prefix("dialogue defaults")?
             .trim_start();
+        if starts_dialogue_defaults_relative_id(after_defaults) {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "dialogue defaults profiles cannot use relative IDs",
+                ["@dialogue.defaults", "@dialogue.defaults.mobile"],
+                Some(after_defaults),
+                ["write the full defaults profile ID"],
+            );
+        }
         let (id, tail) = parse_optional_decl_entity_ref(
             after_defaults,
             "dialogue",
@@ -48,37 +59,16 @@ impl Parser<'_> {
                 ["move defaults into the declaration body"],
             );
         }
-        let options = body
-            .lines()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with("//") {
-                    return None;
-                }
-                let (name, value) =
-                    split_top_level_punctuation_once(trimmed, '=').unwrap_or_else(|| {
-                        self.push_error(
-                            TextRange::new(start_line.start, start_line.start + trimmed.len()),
-                            "expected dialogue default assignment",
-                            ["name = expr"],
-                            Some(trimmed),
-                            ["write defaults as `name = value`"],
-                        );
-                        ("", "")
-                    });
-                (!name.trim().is_empty()).then(|| {
-                    DialogueDefaultOption::new(
-                        name.trim().to_owned(),
-                        parse_expr_lossy(value.trim()),
-                        TextRange::new(start_line.start, start_line.start + trimmed.len()),
-                    )
-                })
-            })
-            .collect();
+        let assignments = parse_dialogue_default_assignments(
+            &body,
+            start_line.start,
+            TextRange::new(start_line.start, end),
+            &mut self.errors,
+        );
         Some(DialogueDefaultsItem::new(
             visibility,
             id,
-            options,
+            assignments,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -494,4 +484,106 @@ impl Parser<'_> {
             &mut self.errors,
         )
     }
+}
+
+fn starts_dialogue_defaults_relative_id(source: &str) -> bool {
+    let trimmed = source.trim_start();
+    trimmed.starts_with("@.") || trimmed.starts_with("@..") || trimmed.starts_with("@dialogue:.")
+}
+
+fn parse_dialogue_default_assignments(
+    body: &str,
+    base: usize,
+    fallback_range: TextRange,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<DialogueDefaultAssignment> {
+    let mut assignments = Vec::new();
+    let mut path_stack: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+        if trimmed == "}" {
+            if path_stack.pop().is_none() {
+                errors.push(simple_error(
+                    fallback_range.start(),
+                    fallback_range.end() - fallback_range.start(),
+                    "unexpected closing brace in dialogue defaults",
+                    "nested defaults block",
+                ));
+            }
+            continue;
+        }
+        if let Some(block_name) = trimmed.strip_suffix('{').map(str::trim) {
+            if block_name.is_empty() || block_name.contains(char::is_whitespace) {
+                errors.push(simple_error(
+                    base,
+                    trimmed.len(),
+                    "expected dialogue defaults block path",
+                    "rich_text {",
+                ));
+            } else {
+                path_stack.extend(block_name.split('.').map(str::trim).map(str::to_owned));
+            }
+            continue;
+        }
+        if trimmed.contains('{') || trimmed.contains('}') {
+            errors.push(simple_error(
+                base,
+                trimmed.len(),
+                "one-line nested dialogue defaults blocks are not canonical",
+                "write nested assignments on separate lines",
+            ));
+            continue;
+        }
+        let Some((name, op, value)) = split_dialogue_default_assignment(trimmed) else {
+            errors.push(simple_error(
+                base,
+                trimmed.len(),
+                "expected dialogue default assignment",
+                "name = expr",
+            ));
+            continue;
+        };
+        let mut segments = path_stack.clone();
+        segments.extend(name.split('.').map(str::trim).map(str::to_owned));
+        let Some(path) = DialogueDefaultPath::from_dotted(&segments.join(".")) else {
+            errors.push(simple_error(
+                base,
+                trimmed.len(),
+                "expected dialogue default assignment path",
+                "rich_text.ruby.size = expr",
+            ));
+            continue;
+        };
+        let value = value.trim();
+        assignments.push(DialogueDefaultAssignment::new(
+            path,
+            op,
+            parse_expr_lossy(value),
+            fallback_range,
+            fallback_range,
+            fallback_range,
+        ));
+    }
+    if !path_stack.is_empty() {
+        errors.push(simple_error(
+            fallback_range.start(),
+            fallback_range.end() - fallback_range.start(),
+            "unclosed nested dialogue defaults block",
+            "}",
+        ));
+    }
+    assignments
+}
+
+fn split_dialogue_default_assignment(
+    source: &str,
+) -> Option<(&str, DialogueDefaultAssignOp, &str)> {
+    if let Some((name, value)) = source.split_once("+=") {
+        return Some((name.trim(), DialogueDefaultAssignOp::Append, value.trim()));
+    }
+    split_top_level_punctuation_once(source, '=')
+        .map(|(name, value)| (name.trim(), DialogueDefaultAssignOp::Replace, value.trim()))
 }

@@ -36,9 +36,9 @@ impl DialogueDisplayDefaults {
             match declaration {
                 HirTopLevelDecl::DialogueDefaults(item) => {
                     defaults.global = style_defaults_from_options(
-                        item.options()
+                        item.assignments()
                             .iter()
-                            .map(|option| (option.name(), option.value())),
+                            .map(|assignment| (assignment.path().dotted(), assignment.value())),
                     );
                 }
                 HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Character => {
@@ -117,6 +117,12 @@ fn lower_effective_dialogue_base_styles(
     );
     styles.extend(
         dialogue
+            .rich_text()
+            .into_iter()
+            .flat_map(display_styles_from_expr),
+    );
+    styles.extend(
+        dialogue
             .args()
             .iter()
             .flat_map(|arg| display_styles_from_named_expr(arg.name(), arg.value())),
@@ -180,11 +186,15 @@ fn style_defaults_from_body(body: &str) -> DialogueStyleDefaults {
     defaults
 }
 
-fn style_defaults_from_options<'a>(
-    options: impl IntoIterator<Item = (&'a str, &'a Expr)>,
-) -> DialogueStyleDefaults {
+fn style_defaults_from_options<'a, N>(
+    options: impl IntoIterator<Item = (N, &'a Expr)>,
+) -> DialogueStyleDefaults
+where
+    N: AsRef<str>,
+{
     let mut defaults = DialogueStyleDefaults::default();
     for (name, value) in options {
+        let name = name.as_ref();
         if let Some(policy) = inline_default_from_named_expr(name, value) {
             defaults.default_inline_failure_policy = Some(policy);
         }
@@ -219,9 +229,17 @@ fn display_styles_from_expr(expr: &Expr) -> Vec<RichTextStyle> {
             .map(|attrs| RichTextStyle::from_tag("size", &attrs))
             .into_iter()
             .collect(),
-        "text_style" | "dialogue_style" | "style" => args
+        "text_style" | "dialogue_style" | "style" | "rich_text_style" => args
             .iter()
             .flat_map(display_styles_from_style_arg)
+            .collect(),
+        "ruby_style" => ruby_layout_from_args(args)
+            .map(|layout| RichTextStyle::Layout { layout })
+            .into_iter()
+            .collect(),
+        "layout_style" => text_layout_from_args(args)
+            .map(|layout| RichTextStyle::Layout { layout })
+            .into_iter()
             .collect(),
         _ => Vec::new(),
     }
@@ -236,9 +254,26 @@ fn display_styles_from_style_arg(arg: &CallArg) -> Vec<RichTextStyle> {
 }
 
 fn display_styles_from_named_expr(name: &str, value: &Expr) -> Vec<RichTextStyle> {
+    if let Some(field) = name.strip_prefix("rich_text.text.") {
+        return display_styles_from_named_expr(field, value);
+    }
+    if let Some(field) = name.strip_prefix("rich_text.ruby.") {
+        return ruby_layout_from_field(field, value)
+            .map(|layout| RichTextStyle::Layout { layout })
+            .into_iter()
+            .collect();
+    }
+    if let Some(field) = name.strip_prefix("rich_text.layout.") {
+        return text_layout_from_field(field, value)
+            .map(|layout| RichTextStyle::Layout { layout })
+            .into_iter()
+            .collect();
+    }
     let attrs = expr_style_value(value);
     match name {
-        "style" | "text_style" | "dialogue_style" => display_styles_from_expr(value),
+        "style" | "text_style" | "dialogue_style" | "rich_text" | "text" | "layout" | "ruby" => {
+            display_styles_from_expr(value)
+        }
         "font" | "font_family" | "text_font" => vec![RichTextStyle::Font {
             family: RichTextFontFamily::from_attrs(&attrs),
         }],
@@ -249,6 +284,136 @@ fn display_styles_from_named_expr(name: &str, value: &Expr) -> Vec<RichTextStyle
         }
         "size" | "text_size" => vec![RichTextStyle::from_tag("size", &attrs)],
         _ => Vec::new(),
+    }
+}
+
+fn ruby_layout_from_args(args: &[CallArg]) -> Option<RichTextLayout> {
+    let mut layout = RichTextLayout::default();
+    let mut changed = false;
+    for arg in args {
+        if let CallArg::Named { name, value } = arg
+            && apply_ruby_layout_field(&mut layout, name, value)
+        {
+            changed = true;
+        }
+    }
+    changed.then_some(layout)
+}
+
+fn ruby_layout_from_field(field: &str, value: &Expr) -> Option<RichTextLayout> {
+    let mut layout = RichTextLayout::default();
+    apply_ruby_layout_field(&mut layout, field, value).then_some(layout)
+}
+
+fn apply_ruby_layout_field(layout: &mut RichTextLayout, field: &str, value: &Expr) -> bool {
+    match field {
+        "position" => {
+            layout.ruby_position = ruby_position_from_value(&expr_style_value(value));
+            true
+        }
+        "size" | "font_size" => {
+            layout.ruby_font_size = Some(parse_milli_token(&expr_style_value(value)));
+            true
+        }
+        "gap" => {
+            layout.ruby_gap = Some(parse_milli_token(&expr_style_value(value)));
+            true
+        }
+        "overhang" => {
+            layout.ruby_overhang = Some(parse_milli_token(&expr_style_value(value)));
+            true
+        }
+        "collision_gap" => {
+            layout.ruby_collision_gap = Some(parse_milli_token(&expr_style_value(value)));
+            true
+        }
+        _ => false,
+    }
+}
+
+fn text_layout_from_args(args: &[CallArg]) -> Option<RichTextLayout> {
+    let mut layout = RichTextLayout::default();
+    let mut changed = false;
+    for arg in args {
+        if let CallArg::Named { name, value } = arg
+            && apply_text_layout_field(&mut layout, name, value)
+        {
+            changed = true;
+        }
+    }
+    changed.then_some(layout)
+}
+
+fn text_layout_from_field(field: &str, value: &Expr) -> Option<RichTextLayout> {
+    let mut layout = RichTextLayout::default();
+    apply_text_layout_field(&mut layout, field, value).then_some(layout)
+}
+
+fn apply_text_layout_field(layout: &mut RichTextLayout, field: &str, value: &Expr) -> bool {
+    match field {
+        "writing_mode" => {
+            layout.writing_mode = writing_mode_from_value(&expr_style_value(value));
+            true
+        }
+        "direction" | "dir" => {
+            layout.direction = direction_from_value(&expr_style_value(value));
+            true
+        }
+        "vertical_latin" | "latin" => {
+            layout.vertical_latin = vertical_latin_from_value(&expr_style_value(value));
+            true
+        }
+        "jlreq" | "jlreq_strictness" => {
+            layout.jlreq_strictness = jlreq_from_value(&expr_style_value(value));
+            true
+        }
+        "column_gap" => {
+            layout.column_gap = parse_milli_token(&expr_style_value(value));
+            true
+        }
+        _ => false,
+    }
+}
+
+fn ruby_position_from_value(value: &str) -> RichTextRubyPosition {
+    match value {
+        "over" => RichTextRubyPosition::Over,
+        "under" => RichTextRubyPosition::Under,
+        "inter_character" => RichTextRubyPosition::InterCharacter,
+        _ => RichTextRubyPosition::Auto,
+    }
+}
+
+fn writing_mode_from_value(value: &str) -> RichTextWritingMode {
+    match value {
+        "vertical_rl" | "vertical" | "rl" => RichTextWritingMode::VerticalRl,
+        "vertical_lr" | "lr" => RichTextWritingMode::VerticalLr,
+        _ => RichTextWritingMode::HorizontalTb,
+    }
+}
+
+fn direction_from_value(value: &str) -> RichTextInlineDirection {
+    match value {
+        "ltr" => RichTextInlineDirection::Ltr,
+        "rtl" => RichTextInlineDirection::Rtl,
+        _ => RichTextInlineDirection::Auto,
+    }
+}
+
+fn vertical_latin_from_value(value: &str) -> RichTextVerticalLatinMode {
+    match value {
+        "upright" => RichTextVerticalLatinMode::Upright,
+        "sideways" => RichTextVerticalLatinMode::Sideways,
+        _ => RichTextVerticalLatinMode::Mixed,
+    }
+}
+
+fn jlreq_from_value(value: &str) -> RichTextJlreqStrictness {
+    match value {
+        "loose" => RichTextJlreqStrictness::Loose,
+        "normal" => RichTextJlreqStrictness::Normal,
+        "strict" => RichTextJlreqStrictness::Strict,
+        _ => RichTextJlreqStrictness::Auto,
     }
 }
 
@@ -1274,6 +1439,78 @@ flow @flow.main main {
             })
             .expect("plain text run after inferred close");
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn rich_text_defaults_and_line_options_lower_to_ruby_layout() {
+        let parsed = parse_source(
+            r"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+            gap = 2px
+        }
+    }
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice(rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px))): |[夢](ゆめ)[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.defaults".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+
+        assert!(spec.base_styles.iter().any(|style| {
+            matches!(
+                style,
+                RichTextStyle::Layout {
+                    layout: RichTextLayout {
+                        ruby_font_size: Some(Milli(14000)),
+                        ..
+                    }
+                }
+            )
+        }));
+        assert!(spec.base_styles.iter().any(|style| {
+            matches!(
+                style,
+                RichTextStyle::Layout {
+                    layout: RichTextLayout {
+                        ruby_gap: Some(Milli(2000)),
+                        ..
+                    }
+                }
+            )
+        }));
+        assert!(spec.base_styles.iter().any(|style| {
+            matches!(
+                style,
+                RichTextStyle::Layout {
+                    layout: RichTextLayout {
+                        ruby_font_size: Some(Milli(11000)),
+                        ruby_gap: Some(Milli(1000)),
+                        ..
+                    }
+                }
+            )
+        }));
     }
 
     #[test]

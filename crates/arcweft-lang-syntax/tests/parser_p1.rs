@@ -78,7 +78,7 @@ fn function_signatures_reject_misplaced_rest_parameters() {
 fn dialogue_line_options_are_structured_not_raw_args() {
     let tree = parse_ok(
         r#"
-alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, look=smile, source_locale="ja-JP"): 今日は少しだけ。[p]
+alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP"): 今日は少しだけ。[p]
 "#,
     );
 
@@ -101,6 +101,7 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
     assert_eq!(options.window().expect("window").body(), "textbox.side");
     assert_eq!(options.hooks().len(), 1);
     assert!(matches!(options.style(), Some(Expr::EntityRef(id)) if id.body() == "style.dream"));
+    assert!(matches!(options.rich_text(), Some(Expr::Call { .. })));
     assert!(matches!(options.look(), Some(Expr::Path(path)) if path == "smile"));
     assert!(options.args().is_empty());
     assert_eq!(options.source_locale(), Some("\"ja-JP\""));
@@ -139,7 +140,12 @@ fn dialogue_defaults_are_preserved_as_top_level_declarations() {
 pub dialogue defaults @dialogue.defaults {
     window = @textbox.0
     voice = auto
-    style = @style.dialogue.default
+    rich_text {
+        ruby {
+            size = 14px
+            gap += 1px
+        }
+    }
 }
 ",
     );
@@ -151,5 +157,32 @@ pub dialogue defaults @dialogue.defaults {
         defaults.id().expect("defaults id").body(),
         "dialogue.defaults"
     );
-    assert_eq!(defaults.options().len(), 3);
+    let assignments = defaults.assignments();
+    assert_eq!(assignments.len(), 4);
+    assert_eq!(assignments[0].path().dotted(), "window");
+    assert_eq!(assignments[2].path().dotted(), "rich_text.ruby.size");
+    assert_eq!(assignments[3].path().dotted(), "rich_text.ruby.gap");
+}
+
+#[test]
+fn dialogue_defaults_reject_relative_profile_ids_and_one_line_nested_blocks() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+pub dialogue defaults @.mobile {
+    rich_text { ruby { size = 11px } }
+}
+",
+    );
+
+    let errors = parsed.errors();
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("dialogue defaults profiles cannot use relative IDs")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("one-line nested dialogue defaults blocks are not canonical")
+    }));
 }
