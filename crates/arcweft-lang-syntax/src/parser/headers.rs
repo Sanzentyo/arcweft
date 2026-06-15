@@ -141,8 +141,9 @@ pub(super) fn parse_entity_decl_head(
     let family = entity_decl_family(kind);
     let rest = rest.trim_start();
     let (id, name, signature_tail) = if rest.starts_with('@') {
+        let id_base = base + slice_offset(head, rest);
         let (parsed_id, rest) =
-            parse_required_decl_entity_ref_or_marker(rest, family, base, errors)?;
+            parse_required_decl_entity_ref_or_marker(rest, family, id_base, errors)?;
         let (id, rest) = match parsed_id {
             DeclEntityId::Entity(id) => normalize_trailing_colon_id(id, rest),
             DeclEntityId::NameMarker(marker) => {
@@ -193,6 +194,10 @@ fn entity_bare_name_range(head: &str, base: usize, name: &str) -> TextRange {
         .find(name)
         .map_or(base, |offset| base.saturating_add(offset));
     TextRange::new(start, start.saturating_add(name.len()))
+}
+
+pub(super) fn slice_offset(source: &str, slice: &str) -> usize {
+    (slice.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
 pub(super) fn split_surface_alias(signature_tail: String) -> (String, Option<String>) {

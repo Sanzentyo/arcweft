@@ -1,7 +1,7 @@
 use super::headers::{
     flow_decl_family, implicit_flow_name_from_id, parse_contract_clause, parse_flow_kind,
     parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
-    parse_required_entity_ref_syntax, parse_visibility_prefix,
+    parse_required_entity_ref_syntax, parse_visibility_prefix, slice_offset,
 };
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
@@ -43,10 +43,11 @@ impl<'a> Parser<'a> {
         let first = header_lines.first().copied()?;
         let (visibility, after_visibility) = parse_visibility_prefix(first);
         let (kind, after_flow) = parse_flow_kind(after_visibility.trim_start())?;
+        let after_flow_base = start_line.start + slice_offset(first, after_flow);
         let (id, after_id) = parse_optional_decl_id_ref(
             after_flow,
             flow_decl_family(kind),
-            start_line.start,
+            after_flow_base,
             &mut self.errors,
         );
         let (explicit_name, signature_tail) = parse_name_and_tail(after_id.trim());

@@ -12,7 +12,7 @@ use crate::types::parse_type_ref;
 
 use super::headers::{
     DeclEntityId, normalize_trailing_colon_id, parse_name_and_tail,
-    parse_required_decl_entity_ref_or_marker, parse_visibility_prefix, simple_error,
+    parse_required_decl_entity_ref_or_marker, parse_visibility_prefix, simple_error, slice_offset,
 };
 use super::{
     Parser, collect_logical_block_items, parse_expr_lossy, parse_stmt, parse_stmt_lines,
@@ -57,16 +57,19 @@ impl Parser<'_> {
             );
             return None;
         }
-        let (visibility, after_visibility) = parse_visibility_prefix(head.trim());
+        let head_trimmed = head.trim();
+        let head_base = start_line.start + slice_offset(&head, head_trimmed);
+        let (visibility, after_visibility) = parse_visibility_prefix(head_trimmed);
         let after_source = after_visibility
             .trim_start()
             .strip_prefix("source")?
             .trim_start();
         let (id, name, signature_tail) = if after_source.starts_with('@') {
+            let id_base = head_base + slice_offset(head_trimmed, after_source);
             match parse_required_decl_entity_ref_or_marker(
                 after_source,
                 "source",
-                start_line.start,
+                id_base,
                 &mut self.errors,
             )? {
                 (DeclEntityId::Entity(id), rest) => {

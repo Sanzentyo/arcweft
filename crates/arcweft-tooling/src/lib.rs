@@ -17,6 +17,7 @@ use arcweft_lang_syntax::{
     },
     cst::{CstLineEvents, CstLineKind, cst_lines},
     expr::Expr,
+    lint::{SyntaxLintCode, lint_id_policy},
     parser::parse_source,
     source::ParsedSource,
 };
@@ -256,13 +257,11 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     let speaker_presets =
         collect_speaker_preset_locals_from_typed_tree(&parsed, &character_aliases);
     let mut edits = Vec::new();
+    edits.extend(declaration_identity_edits(source, &parsed));
 
     for line in lines.iter() {
         if line.kind() == CstLineKind::Comment {
             continue;
-        }
-        if let Some(edit) = declaration_identity_line_edit(line.text(), line.start()) {
-            edits.push(edit);
         }
         edits.extend(parent_path_edits(line.text(), line.start()));
         if line.trimmed() == "with:" {
@@ -296,28 +295,26 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     edits
 }
 
-fn declaration_identity_line_edit(line: &str, base: usize) -> Option<TextEdit> {
-    redundant_decl_identity_edit(line, base, "flow")
-        .or_else(|| redundant_decl_identity_edit(line, base, "source"))
+fn declaration_identity_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
+    lint_id_policy(parsed.typed_tree())
+        .into_iter()
+        .filter(|lint| lint.code() == SyntaxLintCode::RedundantDeclIdentity)
+        .filter_map(|lint| {
+            redundant_decl_identity_edit(source, lint.range().start(), lint.range().end())
+        })
+        .collect()
 }
 
-fn redundant_decl_identity_edit(line: &str, base: usize, keyword: &str) -> Option<TextEdit> {
-    let leading_len = line.len() - line.trim_start().len();
-    let trimmed = line.trim_start();
-    let (visibility, after_visibility) = trimmed
-        .strip_prefix("pub ")
-        .map_or(("", trimmed), |rest| ("pub ", rest));
-    let after_keyword_raw = after_visibility.strip_prefix(keyword)?;
-    let after_keyword = after_keyword_raw.trim_start();
-    let keyword_gap = after_keyword_raw.len() - after_keyword.len();
-    let id_start_in_trimmed = visibility.len() + keyword.len() + keyword_gap;
-    let id = after_keyword.strip_prefix('@')?;
-    let id_len = id
-        .find(|ch: char| ch.is_whitespace() || ch == '(' || ch == ':' || ch == '{')
-        .unwrap_or(id.len())
-        + 1;
-    let id_token = &after_keyword[..id_len];
-    let after_id_raw = &after_keyword[id_len..];
+fn redundant_decl_identity_edit(source: &str, id_start: usize, id_end: usize) -> Option<TextEdit> {
+    let edit_start = id_start
+        .checked_sub(1)
+        .filter(|start| source.as_bytes().get(*start) == Some(&b'@'))
+        .unwrap_or(id_start);
+    let id_token = source.get(id_start..id_end)?;
+    let line_end = source[id_end..]
+        .find('\n')
+        .map_or(source.len(), |offset| id_end + offset);
+    let after_id_raw = source.get(id_end..line_end)?;
     let after_id = after_id_raw.trim_start();
     let id_gap = after_id_raw.len() - after_id.len();
     let name_len = after_id
@@ -331,10 +328,9 @@ fn redundant_decl_identity_edit(line: &str, base: usize, keyword: &str) -> Optio
     if id_tail != name {
         return None;
     }
-    let start = base + leading_len + id_start_in_trimmed;
-    let end = start + id_len + id_gap + name_len;
+    let end = id_end + id_gap + name_len;
     Some(TextEdit {
-        start,
+        start: edit_start,
         end,
         replacement: name.to_owned(),
     })
@@ -1565,7 +1561,7 @@ mod tests {
 
     #[test]
     fn expand_sugar_canonicalizes_redundant_decl_identity_only() {
-        let source = "flow @flow.opening opening {\n}\nflow @flow.opening start {\n}\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\n";
+        let source = "flow @flow.opening opening {\n}\nflow @flow.opening start {\n}\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\ncharacter @character.alice alice {\n}\n";
         let report = format_source(
             source,
             FormatOptions {
@@ -1581,6 +1577,28 @@ mod tests {
             report
                 .output
                 .contains("source http_requests: Source<HttpRequest, HttpError>")
+        );
+        assert!(report.output.contains("character alice {"));
+    }
+
+    #[test]
+    fn expand_sugar_preserves_generated_decl_identity_surface() {
+        let source = "#[generated]\nflow @flow.opening opening {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
+
+        assert!(!report.changed);
+        assert!(report.output.contains("flow @flow.opening opening {"));
+        assert!(
+            report
+                .output
+                .contains("source @source.http_requests http_requests")
         );
     }
 
@@ -1676,6 +1694,25 @@ mod tests {
         assert_eq!(action.label, "Canonicalize inferred rich-text tags");
         assert_eq!(&source[edit.start..edit.end], "[.vertical_rl]");
         assert_eq!(edit.replacement, "[layout .vertical_rl]");
+    }
+
+    #[test]
+    fn source_code_actions_include_decl_identity_rewrite_only_when_linted() {
+        let source =
+            "flow @flow.opening opening {\n}\n#[generated]\nflow @flow.generated generated {\n}\n";
+        let actions = source_code_actions(source);
+        let declaration_edits = actions
+            .iter()
+            .filter(|action| action.id == "arcweft.expandSugar")
+            .filter_map(|action| action.edit.as_ref())
+            .filter(|edit| edit.replacement == "opening")
+            .collect::<Vec<_>>();
+
+        assert_eq!(declaration_edits.len(), 1);
+        assert_eq!(
+            &source[declaration_edits[0].start..declaration_edits[0].end],
+            "@flow.opening opening"
+        );
     }
 
     #[test]
