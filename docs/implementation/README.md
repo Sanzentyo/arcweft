@@ -138,7 +138,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bindings such as `let handles = alice.say()[...] with: ...`, and they
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
-  rewrite. ID materialization actions return focused LSP `WorkspaceEdit` values
+  rewrite. The full rich-text grammar check fixture now includes a
+  family-relative `dialogue defaults` profile and canonical nested `rich_text`
+  typography blocks in both defaults and character `dialogue_style` examples.
+  ID materialization actions return focused LSP `WorkspaceEdit` values
   through the same byte-span mapper used for diagnostics, and
   `workspace/executeCommand` can translate the older command argument shape into
   the same edit without writing files server-side. The transport negotiates

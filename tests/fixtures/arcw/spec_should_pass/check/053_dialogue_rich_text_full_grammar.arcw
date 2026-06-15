@@ -1,27 +1,75 @@
+pub dialogue defaults @dialogue:.defaults.full {
+    inline_error = InlineFailure.fallback("?")
+
+    rich_text {
+        text {
+            font = "Yu Gothic"
+            size = 30px
+            color = rgb("#f5f5f5")
+        }
+
+        layout {
+            writing_mode = horizontal_tb
+            jlreq = normal
+            vertical_latin = mixed
+            wrap = textbox
+            overflow = page
+        }
+
+        ruby {
+            position = over
+            size = 14px
+            gap = 2px
+            overhang = 7px
+            collision_gap = 2px
+        }
+    }
+}
+
 pub surface character @character.alice Alice as alice {
     default_voice = auto
     dialogue_style {
-        font = "Yu Gothic"
-        text_color = "#d9f2ff"
-        text_size = 29
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#d9f2ff")
+                size = 29px
+            }
+
+            ruby {
+                gap = 1px
+            }
+        }
     }
 }
 
 pub surface character @character.bob Bob as bob {
     default_voice = auto
     dialogue_style {
-        font = "Meiryo"
-        text_color = "#ffe0d0"
-        text_size = 28
+        rich_text {
+            text {
+                font = "Meiryo"
+                color = rgb("#ffe0d0")
+                size = 28px
+            }
+
+            ruby {
+                position = under
+            }
+        }
     }
 }
 
 pub surface character @character.narrator Narrator as narrator {
     default_voice = auto
     dialogue_style {
-        font = "Segoe UI"
-        text_color = "#e8e8e8"
-        text_size = 27
+        rich_text {
+            text {
+                font = "Segoe UI"
+                color = rgb("#e8e8e8")
+                size = 27px
+            }
+        }
     }
 }
 
