@@ -31,13 +31,13 @@ test-crate crate:
 
 test-rich-text:
     @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet
-    @cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet
+    @just test-cli-native
 
 test-cli-check:
     @cargo test -p arcweft-cli --test check --quiet
 
 test-cli-native:
-    @cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet
+    @foreach ($test in @("agent_observe_native_renderer_writes_framebuffer_png", "agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop", "agent_observe_native_renderer_writes_object_raw_crop", "agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry", "agent_observe_native_renderer_writes_textbox_object_id_as_glyph_geometry")) { cargo test -p arcweft-cli --test check $test --quiet -- --exact; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
 test-profile:
     @Write-Host "workspace-no-run"; Measure-Command { cargo test --workspace --no-run --quiet }
@@ -46,7 +46,7 @@ test-profile:
     @Write-Host "workspace-all"; Measure-Command { cargo test --workspace --quiet }
     @Write-Host "test-fast"; Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet }
     @Write-Host "cli-check"; Measure-Command { cargo test -p arcweft-cli --test check --quiet }
-    @Write-Host "cli-native"; Measure-Command { cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet }
+    @Write-Host "cli-native"; Measure-Command { just test-cli-native }
     @Write-Host "bench-json"; Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }
     @Write-Host "run-json"; Measure-Command { cargo test -p arcweft-cli --test check run_json --quiet }
     @Write-Host "jit-check-json"; Measure-Command { cargo test -p arcweft-cli --test check jit_check_json --quiet }

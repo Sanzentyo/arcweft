@@ -96,6 +96,20 @@ routine local loop:
 | `cargo test --workspace --doc --quiet` | workspace doc-tests only | 117.769s wall | passed |
 | `cargo test --workspace --quiet` | workspace default after the doc-test run warmed its artifacts | 24.801s wall | passed, 13 ignored |
 
+Rechecked on 2026-06-16 after the native renderer test prefix had grown to
+cover JLREQ and vertical-text matrices:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | broad prefix, 204 selected tests | 230.6s wall | failed on stale textbox object crop expectations |
+| `cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | rich-text/native library route | 3.6s wall | passed |
+
+The broad `agent_observe_native_renderer` prefix is no longer a Tier 1 shortcut.
+`just test-cli-native` now runs an exact smoke list for framebuffer capture,
+dialogue layer crop, textbox object crop, textbox mask, and textbox object-id
+capture. Use targeted exact tests for JLREQ or vertical-text work, and keep
+large prefix runs for explicit profiling or milestone validation.
+
 Re-profiled after the vendored glyphon fork became part of the vertical text
 acceptance evidence:
 
@@ -225,11 +239,13 @@ just test-doc
 `just test-fast` is now a smoke route, not a full workspace route. It covers
 the core/render-text/text-layout/native-player library path used by rich-text
 and native capture work. `just test-rich-text` adds the direct native
-`agent observe` slice. `just test-workspace` is the normal workspace fast path:
-it runs lib and integration tests with ignored Tier 2 tests excluded, and it
-intentionally does not run doc-tests. `just test-doc` is the explicit doc-test
-path for Rust documentation examples and milestone validation. `just test-cli-native`
-is the normal native rich-text/Agent observe slice.
+`agent observe` exact smoke slice. `just test-workspace` is the normal workspace
+fast path: it runs lib and integration tests with ignored Tier 2 tests excluded,
+and it intentionally does not run doc-tests. `just test-doc` is the explicit
+doc-test path for Rust documentation examples and milestone validation.
+`just test-cli-native` is the normal native rich-text/Agent observe smoke slice;
+it must remain exact-test based rather than using the broad
+`agent_observe_native_renderer` prefix.
 `just test-cli-check` is useful before a CLI-heavy cut point, but it is not
 required after every small parser, layout, or protocol edit.
 
