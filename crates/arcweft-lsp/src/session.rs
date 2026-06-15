@@ -1677,6 +1677,88 @@ flow opening {
         assert!(!hover.contains("rich_text.ruby.size = 14px"));
     }
 
+    #[test]
+    fn hover_on_nested_rich_text_line_option_filters_to_leaf_path() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+        let hover = hover_text(&mut session, uri, source, "11px");
+
+        assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
+        assert!(hover.contains("rich_text.ruby.size = 11px"));
+        assert!(hover.contains("rich_text.ruby.size = 14px"));
+        assert!(!hover.contains("rich_text.text.color"));
+    }
+
+    #[test]
+    fn definition_on_nested_rich_text_line_option_returns_leaf_path_winner() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(9),
+            method: GotoDefinition::METHOD.to_owned(),
+            params: serde_json::json!(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: position_of(source, "11px"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            }),
+        });
+        let definition = serde_json::from_value::<GotoDefinitionResponse>(
+            response.result.expect("definition response"),
+        )
+        .expect("definition response decodes");
+        let GotoDefinitionResponse::Array(locations) = definition else {
+            panic!("expected location array");
+        };
+
+        assert!(locations.iter().all(|location| location.uri == uri));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "11px")
+                && location.range.end == position_of(source, "))): hi[p]")
+        }));
+        assert!(!locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#101112\")")
+                && location.range.end == position_of(source, "\n        }\n        ruby")
+        }));
+    }
+
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
         open_text(
             session,

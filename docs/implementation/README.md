@@ -129,7 +129,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   reference features. Hover, definition, and references now preserve the
   selected style path when the cursor is on a dialogue line option value, so
   `rich_text.text.color` navigation does not include unrelated fields such as
-  `rich_text.ruby.size`; dialogue content still falls back to the whole
+  `rich_text.ruby.size`; nested line-option values such as
+  `rich_text=rich_text_style(ruby=ruby_style(size=11px))` now preserve the leaf
+  `rich_text.ruby.size` source range for runtime-plan JSON and LSP definition
+  targets. Dialogue content still falls back to the whole
   effective cascade. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's

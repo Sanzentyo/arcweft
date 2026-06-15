@@ -13,6 +13,7 @@ use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
 use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats;
+use std::ops::Range;
 
 /// Effective dialogue display context at a document byte offset.
 #[derive(Clone, Debug)]
@@ -332,23 +333,28 @@ fn style_path_from_stmts(statements: &[Stmt], offset: usize) -> Option<String> {
 }
 
 fn line_options_style_path(options: &LineOptions, offset: usize) -> Option<String> {
-    if options
-        .style_range()
-        .is_some_and(|range| range_contains(&range, offset))
+    if let Some(range) = options.style_range()
+        && range_contains(&range, offset)
     {
-        return Some("style".to_owned());
+        return options
+            .style_raw()
+            .and_then(|raw| style_value_path_at("style", raw, range, offset))
+            .or_else(|| Some("style".to_owned()));
     }
-    if options
-        .rich_text_range()
-        .is_some_and(|range| range_contains(&range, offset))
+    if let Some(range) = options.rich_text_range()
+        && range_contains(&range, offset)
     {
-        return Some("rich_text".to_owned());
+        return options
+            .rich_text_raw()
+            .and_then(|raw| style_value_path_at("rich_text", raw, range, offset))
+            .or_else(|| Some("rich_text".to_owned()));
     }
-    options
-        .args()
-        .iter()
-        .find(|arg| range_contains(arg.value_range(), offset))
-        .map(|arg| arg.name().to_owned())
+    options.args().iter().find_map(|arg| {
+        range_contains(arg.value_range(), offset).then(|| {
+            style_value_path_at(arg.name(), arg.raw_value(), *arg.value_range(), offset)
+                .unwrap_or_else(|| arg.name().to_owned())
+        })
+    })
 }
 
 fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Option<String> {
@@ -370,8 +376,129 @@ fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Opt
             let value_start =
                 open + '('.len_utf8() + arg_start + leading + name.len() + '='.len_utf8();
             let value_end = value_start + value.trim().len();
-            (value_start <= relative && relative <= value_end).then(|| name.trim().to_owned())
+            let path = name.trim();
+            let absolute_value_range = TextRange::new(
+                range.start() + value_start,
+                range.start() + value_start + value.trim().len(),
+            );
+            (value_start <= relative && relative <= value_end).then(|| {
+                style_value_path_at(path, value.trim(), absolute_value_range, offset)
+                    .unwrap_or_else(|| path.to_owned())
+            })
         })
+}
+
+fn style_value_path_at(
+    root_path: &str,
+    raw: &str,
+    value_range: TextRange,
+    offset: usize,
+) -> Option<String> {
+    if !range_contains(&value_range, offset) {
+        return None;
+    }
+    let (callee, args_range) = raw_call_parts_with_args_range(raw)?;
+    match style_call_path_mode(callee)? {
+        StyleCallPathMode::NestedRecord | StyleCallPathMode::LeafRecord => {
+            style_arg_path_at(root_path, raw, args_range, value_range.start(), offset)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StyleCallPathMode {
+    NestedRecord,
+    LeafRecord,
+}
+
+fn style_call_path_mode(callee: &str) -> Option<StyleCallPathMode> {
+    match callee.rsplit('.').next().unwrap_or(callee) {
+        "text_style" | "dialogue_style" | "style" | "rich_text_style" => {
+            Some(StyleCallPathMode::NestedRecord)
+        }
+        "ruby_style" | "layout_style" => Some(StyleCallPathMode::LeafRecord),
+        _ => None,
+    }
+}
+
+fn style_arg_path_at(
+    root_path: &str,
+    raw: &str,
+    args_range: Range<usize>,
+    raw_absolute_start: usize,
+    offset: usize,
+) -> Option<String> {
+    split_top_level_range_indices(&raw[args_range.clone()], ',')
+        .into_iter()
+        .find_map(|arg_range| {
+            let arg_source =
+                &raw[args_range.start + arg_range.start..args_range.start + arg_range.end];
+            let leading = arg_source.len() - arg_source.trim_start().len();
+            let trailing = arg_source.len() - arg_source.trim_end().len();
+            let trimmed_start = args_range.start + arg_range.start + leading;
+            let trimmed_end = args_range.start + arg_range.end - trailing;
+            let absolute_arg = TextRange::new(
+                raw_absolute_start + trimmed_start,
+                raw_absolute_start + trimmed_end,
+            );
+            if !range_contains(&absolute_arg, offset) {
+                return None;
+            }
+            let trimmed = arg_source.trim();
+            let Some(equals) = find_top_level_char(trimmed, '=') else {
+                return style_value_path_at(root_path, trimmed, absolute_arg, offset)
+                    .or_else(|| Some(root_path.to_owned()));
+            };
+            let name = trimmed[..equals].trim();
+            if name.is_empty() {
+                return Some(root_path.to_owned());
+            }
+            let value = &trimmed[equals + '='.len_utf8()..];
+            let value_leading = value.len() - value.trim_start().len();
+            let value = value.trim();
+            let child_path = format!("{root_path}.{name}");
+            if value.is_empty() {
+                return Some(child_path);
+            }
+            let value_start =
+                raw_absolute_start + trimmed_start + equals + '='.len_utf8() + value_leading;
+            let value_range = TextRange::new(value_start, value_start + value.len());
+            style_value_path_at(&child_path, value, value_range, offset).or(Some(child_path))
+        })
+}
+
+fn raw_call_parts_with_args_range(raw: &str) -> Option<(&str, Range<usize>)> {
+    let open = find_top_level_char(raw, '(')?;
+    let close = raw.rfind(')')?;
+    (close > open && raw[close + ')'.len_utf8()..].trim().is_empty())
+        .then(|| (raw[..open].trim(), open + '('.len_utf8()..close))
+}
+
+fn split_top_level_range_indices(source: &str, delimiter: char) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ if ch == delimiter && !in_string && depth == 0 => {
+                ranges.push(start..offset);
+                start = offset + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    ranges.push(start..source.len());
+    ranges
 }
 
 fn split_top_level_ranges(source: &str, delimiter: char) -> Vec<(usize, &str)> {

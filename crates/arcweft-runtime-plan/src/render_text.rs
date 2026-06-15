@@ -806,25 +806,41 @@ fn append_line_option_contributions(
 ) {
     let style_index = (!input.styles.is_empty()).then_some(*base_offset);
     let active = input.has_policy || !input.styles.is_empty();
-    let paths = input
+    if let Some(assignments) = input
         .raw
-        .map(|raw| style_assignment_paths_from_raw(input.path, raw))
-        .filter(|paths| !paths.is_empty())
-        .unwrap_or_else(|| style_assignment_paths(input.path, input.expr));
-    target.extend(
-        paths
-            .into_iter()
-            .map(|(path, value)| RichTextStyleContribution {
-                path,
-                layer: input.layer,
-                source: input.source.clone(),
-                op: RichTextAssignOp::Replace,
-                value,
-                style_index,
-                active,
-                shadowed_by: None,
-            }),
-    );
+        .map(|raw| style_assignments_from_raw(input.path, raw))
+        .filter(|assignments| !assignments.is_empty())
+    {
+        target.extend(
+            assignments
+                .into_iter()
+                .map(|assignment| RichTextStyleContribution {
+                    path: assignment.path,
+                    layer: input.layer,
+                    source: source_with_relative_range(&input.source, assignment.value_range),
+                    op: RichTextAssignOp::Replace,
+                    value: assignment.value,
+                    style_index,
+                    active,
+                    shadowed_by: None,
+                }),
+        );
+    } else {
+        target.extend(
+            style_assignment_paths(input.path, input.expr)
+                .into_iter()
+                .map(|(path, value)| RichTextStyleContribution {
+                    path,
+                    layer: input.layer,
+                    source: input.source.clone(),
+                    op: RichTextAssignOp::Replace,
+                    value,
+                    style_index,
+                    active,
+                    shadowed_by: None,
+                }),
+        );
+    }
     *base_offset += input.styles.len();
 }
 
@@ -837,31 +853,129 @@ fn style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
     }
 }
 
-fn style_assignment_paths_from_raw(path: &str, raw: &str) -> Vec<(String, String)> {
+struct RawStyleAssignment {
+    path: String,
+    value: String,
+    value_range: Option<Range<usize>>,
+}
+
+fn style_assignments_from_raw(path: &str, raw: &str) -> Vec<RawStyleAssignment> {
     let raw = raw.trim();
-    let Some((callee, args)) = raw_call_parts(raw) else {
-        return vec![(path.to_owned(), raw.to_owned())];
+    style_assignments_from_trimmed_raw(path, raw, 0)
+}
+
+fn style_assignments_from_trimmed_raw(
+    path: &str,
+    raw: &str,
+    raw_offset: usize,
+) -> Vec<RawStyleAssignment> {
+    let Some((callee, _args)) = raw_call_parts(raw) else {
+        return vec![RawStyleAssignment {
+            path: path.to_owned(),
+            value: raw.to_owned(),
+            value_range: Some(raw_offset..raw_offset + raw.len()),
+        }];
+    };
+    let Some(call_args_range) = raw_call_args_source_range(raw) else {
+        return vec![RawStyleAssignment {
+            path: path.to_owned(),
+            value: raw.to_owned(),
+            value_range: Some(raw_offset..raw_offset + raw.len()),
+        }];
     };
     match callee.rsplit('.').next().unwrap_or(callee) {
-        "text_style" | "dialogue_style" | "style" | "rich_text_style" => raw_call_args(args)
-            .into_iter()
-            .flat_map(|arg| {
-                if let Some((name, value)) = split_raw_named_arg(arg) {
-                    let child = format!("{path}.{name}");
-                    style_assignment_paths_from_raw(&child, value)
-                } else {
-                    style_assignment_paths_from_raw(path, arg)
-                }
-            })
-            .collect(),
-        "ruby_style" | "layout_style" => raw_call_args(args)
+        "text_style" | "dialogue_style" | "style" | "rich_text_style" => {
+            raw_call_arg_ranges(&raw[call_args_range.clone()])
+                .into_iter()
+                .flat_map(|arg| {
+                    let raw_arg_range =
+                        call_args_range.start + arg.start..call_args_range.start + arg.end;
+                    let trimmed_arg_range = trim_raw_range(raw, raw_arg_range);
+                    if let Some((name, value)) =
+                        split_named_raw_range(raw, trimmed_arg_range.clone())
+                    {
+                        let child = format!("{path}.{name}");
+                        style_assignments_from_trimmed_raw(
+                            &child,
+                            &raw[value.clone()],
+                            raw_offset + value.start,
+                        )
+                    } else {
+                        style_assignments_from_trimmed_raw(
+                            path,
+                            &raw[trimmed_arg_range.clone()],
+                            raw_offset + trimmed_arg_range.start,
+                        )
+                    }
+                })
+                .collect()
+        }
+        "ruby_style" | "layout_style" => raw_call_arg_ranges(&raw[call_args_range.clone()])
             .into_iter()
             .filter_map(|arg| {
-                let (name, value) = split_raw_named_arg(arg)?;
-                Some((format!("{path}.{name}"), value.trim().to_owned()))
+                let raw_arg_range =
+                    call_args_range.start + arg.start..call_args_range.start + arg.end;
+                let trimmed_arg_range = trim_raw_range(raw, raw_arg_range);
+                let (name, value) = split_named_raw_range(raw, trimmed_arg_range)?;
+                Some(RawStyleAssignment {
+                    path: format!("{path}.{name}"),
+                    value: raw[value.clone()].trim().to_owned(),
+                    value_range: Some(raw_offset + value.start..raw_offset + value.end),
+                })
             })
             .collect(),
-        _ => vec![(path.to_owned(), raw.to_owned())],
+        _ => vec![RawStyleAssignment {
+            path: path.to_owned(),
+            value: raw.to_owned(),
+            value_range: Some(raw_offset..raw_offset + raw.len()),
+        }],
+    }
+}
+
+fn trim_raw_range(source: &str, range: Range<usize>) -> Range<usize> {
+    let raw = &source[range.clone()];
+    let leading = raw.len() - raw.trim_start().len();
+    let trailing = raw.len() - raw.trim_end().len();
+    range.start + leading..range.end - trailing
+}
+
+fn split_named_raw_range(source: &str, range: Range<usize>) -> Option<(&str, Range<usize>)> {
+    let raw = &source[range.clone()];
+    let equals = find_top_level_raw_punctuation(raw, '=')?;
+    let name = raw[..equals].trim();
+    if name.is_empty() {
+        return None;
+    }
+    let value = &raw[equals + '='.len_utf8()..];
+    let value_leading = value.len() - value.trim_start().len();
+    let value_trailing = value.len() - value.trim_end().len();
+    Some((
+        name,
+        range.start + equals + '='.len_utf8() + value_leading..range.end - value_trailing,
+    ))
+}
+
+fn source_with_relative_range(
+    source: &RichTextSettingSource,
+    value_range: Option<Range<usize>>,
+) -> RichTextSettingSource {
+    match (source, value_range) {
+        (
+            RichTextSettingSource::SourceFile {
+                item_id,
+                public_id,
+                range: Some(source_range),
+            },
+            Some(value_range),
+        ) => RichTextSettingSource::SourceFile {
+            item_id: item_id.clone(),
+            public_id: public_id.clone(),
+            range: Some(RichTextSourceRange {
+                start: source_range.start + value_range.start,
+                end: source_range.start + value_range.end,
+            }),
+        },
+        _ => source.clone(),
     }
 }
 
@@ -924,51 +1038,11 @@ fn raw_call_args_source_range(raw: &str) -> Option<Range<usize>> {
         .then(|| open + '('.len_utf8()..close)
 }
 
-fn raw_call_args(source: &str) -> Vec<&str> {
-    split_top_level_raw(source, ',')
-        .into_iter()
-        .map(str::trim)
-        .filter(|arg| !arg.is_empty())
-        .collect()
-}
-
 fn raw_call_arg_ranges(source: &str) -> Vec<Range<usize>> {
     split_top_level_raw_ranges(source, ',')
         .into_iter()
         .filter(|range| !source[range.clone()].trim().is_empty())
         .collect()
-}
-
-fn split_raw_named_arg(arg: &str) -> Option<(&str, &str)> {
-    let equals = find_top_level_raw_punctuation(arg, '=')?;
-    Some((arg[..equals].trim(), arg[equals + '='.len_utf8()..].trim()))
-}
-
-fn split_top_level_raw(source: &str, delimiter: char) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (offset, ch) in source.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => escaped = true,
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
-            _ if ch == delimiter && !in_string && depth == 0 => {
-                parts.push(&source[start..offset]);
-                start = offset + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    parts.push(&source[start..]);
-    parts
 }
 
 fn split_top_level_raw_ranges(source: &str, delimiter: char) -> Vec<Range<usize>> {
