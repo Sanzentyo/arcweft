@@ -1707,6 +1707,35 @@ flow opening {
     }
 
     #[test]
+    fn hover_on_inline_rich_text_span_filters_to_leaf_path() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice: [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+        let hover = hover_text(&mut session, uri, source, "11px");
+
+        assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
+        assert!(hover.contains("rich_text.ruby.size = 11px (inline_span"));
+        assert!(hover.contains("rich_text.ruby.size = 14px"));
+        assert!(!hover.contains("rich_text.text.color"));
+    }
+
+    #[test]
     fn definition_on_nested_rich_text_line_option_returns_leaf_path_winner() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let source = r##"

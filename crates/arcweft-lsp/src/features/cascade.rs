@@ -2,7 +2,7 @@ use crate::documents::DocumentSnapshot;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_syntax::ast::common::TextRange;
-use arcweft_lang_syntax::ast::dialogue::LineOptions;
+use arcweft_lang_syntax::ast::dialogue::{DialogueContent, LineOptions};
 use arcweft_lang_syntax::ast::flow::{
     AwaitWith, BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
     SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
@@ -174,8 +174,10 @@ pub(crate) fn style_path_at(items: &[Item], offset: usize) -> Option<String> {
 
 fn style_path_from_flow_items(items: &[FlowItem], offset: usize) -> Option<String> {
     items.iter().find_map(|item| match item {
-        FlowItem::SpeakerLine(line) => line_options_style_path(line.options(), offset),
-        FlowItem::ContentCall(call) => line_options_style_path(call.options(), offset),
+        FlowItem::SpeakerLine(line) => line_options_style_path(line.options(), offset)
+            .or_else(|| inline_content_style_path(line.content(), offset)),
+        FlowItem::ContentCall(call) => line_options_style_path(call.options(), offset)
+            .or_else(|| inline_content_style_path(call.content(), offset)),
         FlowItem::Stmt(stmt) => style_path_from_stmt(stmt, offset),
         FlowItem::If(block) => nested_style_path(block, offset),
         FlowItem::IfLet(block) => nested_style_path(block, offset),
@@ -355,6 +357,279 @@ fn line_options_style_path(options: &LineOptions, offset: usize) -> Option<Strin
                 .unwrap_or_else(|| arg.name().to_owned())
         })
     })
+}
+
+fn inline_content_style_path(content: &DialogueContent, offset: usize) -> Option<String> {
+    if !range_contains(content.range(), offset) {
+        return None;
+    }
+    let raw = content.raw();
+    let raw_start = content.range().start();
+    inline_tag_ranges(raw).into_iter().find_map(|tag_range| {
+        let absolute = TextRange::new(raw_start + tag_range.start, raw_start + tag_range.end);
+        if !range_contains(&absolute, offset) {
+            return None;
+        }
+        let inside = &raw[tag_range.start + '['.len_utf8()..tag_range.end - ']'.len_utf8()];
+        inline_tag_style_path(inside, raw_start + tag_range.start + '['.len_utf8(), offset)
+    })
+}
+
+fn inline_tag_ranges(raw: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open_relative) = raw[cursor..].find('[') {
+        let open = cursor + open_relative;
+        let Some(close_relative) = raw[open + '['.len_utf8()..].find(']') else {
+            break;
+        };
+        let close = open + '['.len_utf8() + close_relative + ']'.len_utf8();
+        ranges.push(open..close);
+        cursor = close;
+    }
+    ranges
+}
+
+fn inline_tag_style_path(inside: &str, inside_start: usize, offset: usize) -> Option<String> {
+    let leading = inside.len() - inside.trim_start().len();
+    let trimmed = inside.trim();
+    if trimmed.is_empty() || trimmed.starts_with('/') || trimmed.starts_with('!') {
+        return None;
+    }
+    let trimmed_start = inside_start + leading;
+    if trimmed.starts_with('.') {
+        let (selector, attrs) = split_inline_name_attrs(trimmed);
+        let attrs_start = inline_attrs_start(trimmed, selector, trimmed_start);
+        return inferred_inline_style_path(
+            selector.trim_start_matches('.'),
+            attrs,
+            trimmed_start,
+            attrs_start,
+            offset,
+        );
+    }
+    let (name, attrs) = split_inline_name_attrs(trimmed);
+    let attrs_start = inline_attrs_start(trimmed, name, trimmed_start);
+    match name {
+        "style" => selected_inline_style_path(attrs, attrs_start, style_selector_path, offset),
+        "layout" => selected_inline_style_path(attrs, attrs_start, layout_selector_path, offset),
+        "transform" => {
+            selected_inline_style_path(attrs, attrs_start, transform_selector_path, offset)
+        }
+        "effect" | "fx" => {
+            selected_inline_style_path(attrs, attrs_start, effect_selector_path, offset)
+        }
+        "color" | "font" | "size" | "em" | "strong" | "i" | "italic" | "oblique" | "slant" => {
+            direct_inline_style_path(name, attrs, trimmed_start, attrs_start, offset)
+        }
+        _ => None,
+    }
+}
+
+fn split_inline_name_attrs(source: &str) -> (&str, &str) {
+    let mut parts = source.splitn(2, char::is_whitespace);
+    let name = parts.next().unwrap_or_default();
+    let attrs = parts.next().unwrap_or_default().trim();
+    (name, attrs)
+}
+
+fn inline_attrs_start(trimmed: &str, name: &str, trimmed_start: usize) -> usize {
+    trimmed_start + name.len() + trimmed[name.len()..].len()
+        - trimmed[name.len()..].trim_start().len()
+}
+
+fn selected_inline_style_path(
+    attrs: &str,
+    attrs_start: usize,
+    path_for: fn(&str, &str, &str) -> Option<String>,
+    offset: usize,
+) -> Option<String> {
+    let (selector, selector_attrs) = split_selector_attrs_for_inline(attrs);
+    let selector_offset = attrs.find(selector).unwrap_or(0);
+    let selector_start = attrs_start + selector_offset;
+    let selector_attrs_start =
+        inline_attrs_start(&attrs[selector_offset..], selector, selector_start);
+    selector_or_attr_path(
+        selector.trim_start_matches('.'),
+        selector_attrs,
+        selector_start,
+        selector_attrs_start,
+        path_for,
+        offset,
+    )
+}
+
+fn inferred_inline_style_path(
+    selector: &str,
+    attrs: &str,
+    selector_start: usize,
+    attrs_start: usize,
+    offset: usize,
+) -> Option<String> {
+    let path_for = match selector {
+        "italic" | "oblique" => style_selector_path,
+        "horizontal_tb"
+        | "vertical_rl"
+        | "vertical_lr"
+        | "dir"
+        | "ruby_over"
+        | "ruby_under"
+        | "ruby_inter_character" => layout_selector_path,
+        "offset" | "pos" | "rotate" | "scale" | "skew" => transform_selector_path,
+        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => {
+            effect_selector_path
+        }
+        _ => return None,
+    };
+    selector_or_attr_path(
+        selector,
+        attrs,
+        selector_start,
+        attrs_start,
+        path_for,
+        offset,
+    )
+}
+
+fn selector_or_attr_path(
+    selector: &str,
+    attrs: &str,
+    selector_start: usize,
+    attrs_start: usize,
+    path_for: fn(&str, &str, &str) -> Option<String>,
+    offset: usize,
+) -> Option<String> {
+    if selector_start <= offset && offset <= selector_start + selector.len() {
+        return path_for(selector, "", "");
+    }
+    inline_attr_ranges(attrs, attrs_start)
+        .into_iter()
+        .find_map(|attr| {
+            (attr.value_range.start <= offset && offset <= attr.value_range.end)
+                .then(|| path_for(selector, &attr.name, &attr.value))
+                .flatten()
+        })
+}
+
+fn direct_inline_style_path(
+    name: &str,
+    attrs: &str,
+    name_start: usize,
+    attrs_start: usize,
+    offset: usize,
+) -> Option<String> {
+    let value_range = if attrs.is_empty() {
+        name_start..name_start + name.len()
+    } else {
+        attrs_start..attrs_start + attrs.len()
+    };
+    if offset < value_range.start || offset > value_range.end {
+        return None;
+    }
+    match name {
+        "color" => Some("rich_text.text.color".to_owned()),
+        "font" => Some("rich_text.text.font".to_owned()),
+        "size" => Some("rich_text.text.size".to_owned()),
+        "em" | "strong" | "i" | "italic" | "oblique" | "slant" => {
+            Some("rich_text.text.style".to_owned())
+        }
+        _ => None,
+    }
+}
+
+fn split_selector_attrs_for_inline(attrs: &str) -> (&str, &str) {
+    let attrs = attrs.trim();
+    let mut parts = attrs.splitn(2, char::is_whitespace);
+    let first = parts.next().unwrap_or_default();
+    if first.starts_with('.') {
+        (first, parts.next().unwrap_or_default().trim())
+    } else {
+        ("", attrs)
+    }
+}
+
+fn style_selector_path(selector: &str, name: &str, _value: &str) -> Option<String> {
+    (!selector.is_empty() || !name.is_empty()).then(|| "rich_text.text.style".to_owned())
+}
+
+fn layout_selector_path(selector: &str, name: &str, _value: &str) -> Option<String> {
+    match name {
+        "" if matches!(
+            selector,
+            "vertical_rl" | "vertical" | "vertical_lr" | "horizontal_tb"
+        ) =>
+        {
+            Some("rich_text.layout.writing_mode".to_owned())
+        }
+        "" if matches!(
+            selector,
+            "ruby_over" | "ruby_under" | "ruby_inter_character"
+        ) =>
+        {
+            Some("rich_text.ruby.position".to_owned())
+        }
+        "ruby_size" | "size" if selector.starts_with("ruby_") => {
+            Some("rich_text.ruby.size".to_owned())
+        }
+        "ruby_gap" | "gap" if selector.starts_with("ruby_") => {
+            Some("rich_text.ruby.gap".to_owned())
+        }
+        "ruby_overhang" | "overhang" => Some("rich_text.ruby.overhang".to_owned()),
+        "ruby_collision_gap" | "collision_gap" => Some("rich_text.ruby.collision_gap".to_owned()),
+        "jlreq" | "strictness" | "kinsoku" => Some("rich_text.layout.jlreq".to_owned()),
+        "latin" | "vertical_latin" => Some("rich_text.layout.vertical_latin".to_owned()),
+        "dir" | "direction" => Some("rich_text.layout.direction".to_owned()),
+        "column_gap" | "gap" => Some("rich_text.layout.column_gap".to_owned()),
+        _ => None,
+    }
+}
+
+fn transform_selector_path(selector: &str, name: &str, _value: &str) -> Option<String> {
+    if name.is_empty() {
+        Some("rich_text.transform.kind".to_owned())
+    } else {
+        Some(format!("rich_text.transform.{name}"))
+    }
+    .filter(|_| !selector.is_empty())
+}
+
+fn effect_selector_path(selector: &str, name: &str, _value: &str) -> Option<String> {
+    if selector.is_empty() {
+        return None;
+    }
+    if name.is_empty() {
+        Some("rich_text.effect".to_owned())
+    } else {
+        Some(format!("rich_text.effect.{selector}.{name}"))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InlineAttrRange {
+    name: String,
+    value: String,
+    value_range: Range<usize>,
+}
+
+fn inline_attr_ranges(attrs: &str, attrs_start: usize) -> Vec<InlineAttrRange> {
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    for part in attrs.split_whitespace() {
+        let part_start = attrs[cursor..]
+            .find(part)
+            .map_or(cursor, |relative| cursor + relative);
+        cursor = part_start + part.len();
+        let Some((name, value)) = part.split_once('=') else {
+            continue;
+        };
+        let value_start = attrs_start + part_start + name.len() + '='.len_utf8();
+        ranges.push(InlineAttrRange {
+            name: name.to_owned(),
+            value: value.to_owned(),
+            value_range: value_start..value_start + value.len(),
+        });
+    }
+    ranges
 }
 
 fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Option<String> {
