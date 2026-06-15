@@ -335,9 +335,19 @@ pub textbox @textbox.phone_message PhoneMessageBox {
     layer = @layer.ui.messages
     anchor = bottom_right
     width = 420
-    style = @style.phone_message
+
+    rich_text {
+        text {
+            color = rgb("#d8f0ff")
+        }
+    }
 }
 ```
+
+The `rich_text` block on a textbox is the textbox theme contribution for
+dialogue rendered into that window. It participates in the same effective
+RichText cascade as dialogue defaults, character `dialogue_style`, speaker
+presets, line options, and inline spans.
 
 Use it from dialogue:
 

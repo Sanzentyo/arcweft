@@ -119,10 +119,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   consistently. Runtime-plan lowering now includes lexical speaker preset
   rich-text/style options in that cascade, including chained presets such as
   `let worried = side(...)`, and records them as `SpeakerPreset` contributions
-  between character `dialogue_style` and per-line options. The current HIR does
-  not yet retain source ranges for `let` expression arguments, so speaker preset
-  contribution ranges are intentionally absent until statement expression spans
-  are preserved. Selection-scoped code actions can extract active non-line
+  between character `dialogue_style` and per-line options. Dialogue window
+  targets now resolve through the same cascade, defaulting to `textbox.0`, and
+  textbox `rich_text` / `dialogue_style` blocks contribute
+  `DialogueWindowTheme` values between selected dialogue defaults and character
+  `dialogue_style`. The current HIR does not yet retain source ranges for `let`
+  expression arguments, so speaker preset contribution ranges are intentionally
+  absent until statement expression spans are preserved. Selection-scoped code
+  actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, and can lift selected defaults into the matching character's
   `dialogue_style` block when the character declaration is in the current

@@ -28,6 +28,7 @@ use std::ops::Range;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct DialogueDisplayDefaults {
     global: DialogueStyleDefaults,
+    textboxes: BTreeMap<String, DialogueStyleDefaults>,
     characters: BTreeMap<String, DialogueStyleDefaults>,
 }
 
@@ -36,6 +37,7 @@ pub(crate) struct DialogueStyleDefaults {
     base_styles: Vec<RichTextStyle>,
     style_contributions: Vec<RichTextStyleContribution>,
     default_inline_failure_policy: Option<InlineFailurePolicy>,
+    window: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +71,14 @@ impl DialogueDisplayDefaults {
                         }
                     }
                 }
+                HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Textbox => {
+                    let style = textbox_style_defaults(item);
+                    if !style.is_empty() {
+                        for key in entity_style_keys(item) {
+                            defaults.textboxes.insert(key, style.clone());
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -79,6 +89,12 @@ impl DialogueDisplayDefaults {
         character_callee_keys(callee)
             .into_iter()
             .find_map(|key| self.characters.get(&key))
+    }
+
+    fn textbox_for_window(&self, window: &str) -> Option<&DialogueStyleDefaults> {
+        entity_ref_keys(window)
+            .into_iter()
+            .find_map(|key| self.textboxes.get(&key))
     }
 }
 
@@ -188,7 +204,7 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
         line,
         callee: dialogue.callee().to_owned(),
         text_key: dialogue.text_key().map(|id| id.body().to_owned()),
-        window: dialogue.window().map(|id| id.body().to_owned()),
+        window: effective_dialogue_window(dialogue, defaults, speaker_presets),
         voice: dialogue.voice().map(expr_label),
         look: dialogue.look().map(expr_label),
         style: dialogue.style().map(expr_label),
@@ -227,6 +243,12 @@ fn lower_effective_dialogue_base_styles(
 ) -> Vec<RichTextStyle> {
     let mut styles = defaults.global.base_styles.clone();
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    if let Some(textbox) = effective_dialogue_window(dialogue, defaults, speaker_presets)
+        .as_deref()
+        .and_then(|window| defaults.textbox_for_window(window))
+    {
+        styles.extend(textbox.base_styles.clone());
+    }
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
@@ -268,6 +290,10 @@ fn lower_effective_inline_failure_policy(
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
+    let textbox_policy = effective_dialogue_window(dialogue, defaults, speaker_presets)
+        .as_deref()
+        .and_then(|window| defaults.textbox_for_window(window))
+        .and_then(|textbox| textbox.default_inline_failure_policy.clone());
     lower_default_inline_failure_policy(dialogue.args())
         .or_else(|| {
             preset_chain
@@ -280,6 +306,7 @@ fn lower_effective_inline_failure_policy(
                 .character_for_callee(character_callee)
                 .and_then(|character| character.default_inline_failure_policy.clone())
         })
+        .or(textbox_policy)
         .or_else(|| defaults.global.default_inline_failure_policy.clone())
 }
 
@@ -293,6 +320,12 @@ fn lower_effective_dialogue_style_contributions(
 
     append_style_contributions(&mut contributions, &defaults.global, &mut base_offset);
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    if let Some(textbox) = effective_dialogue_window(dialogue, defaults, speaker_presets)
+        .as_deref()
+        .and_then(|window| defaults.textbox_for_window(window))
+    {
+        append_style_contributions(&mut contributions, textbox, &mut base_offset);
+    }
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
@@ -424,10 +457,13 @@ fn append_speaker_preset_arg(
     if let Some(policy) = policy.clone() {
         defaults.default_inline_failure_policy = Some(policy);
     }
+    if path == "window" {
+        defaults.window = Some(entity_ref_label(value));
+    }
 
     let style_index = defaults.base_styles.len();
     let styles = display_styles_from_named_expr(path, value);
-    let active = policy.is_some() || !styles.is_empty();
+    let active = policy.is_some() || path == "window" || !styles.is_empty();
     let style_index = (!styles.is_empty()).then_some(style_index);
     defaults.base_styles.extend(styles);
     defaults
@@ -487,20 +523,58 @@ fn preset_names(callee: &str) -> impl Iterator<Item = &str> {
     )
 }
 
+fn effective_dialogue_window(
+    dialogue: &HirDialogue,
+    defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
+) -> Option<String> {
+    dialogue
+        .window()
+        .map(|id| id.body().to_owned())
+        .or_else(|| {
+            speaker_preset_chain(dialogue.callee(), speaker_presets)
+                .into_iter()
+                .rev()
+                .find_map(|preset| preset.defaults.window.clone())
+        })
+        .or_else(|| {
+            let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+            let character_callee = preset_chain
+                .first()
+                .map_or_else(|| dialogue.callee(), |preset| preset.callee());
+            defaults
+                .character_for_callee(character_callee)
+                .and_then(|character| character.window.clone())
+        })
+        .or_else(|| defaults.global.window.clone())
+        .or_else(|| Some("textbox.0".to_owned()))
+}
+
 impl DialogueStyleDefaults {
     fn is_empty(&self) -> bool {
         self.base_styles.is_empty()
             && self.style_contributions.is_empty()
             && self.default_inline_failure_policy.is_none()
+            && self.window.is_none()
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.base_styles.extend(other.base_styles);
+        self.style_contributions.extend(other.style_contributions);
+        self.default_inline_failure_policy = other
+            .default_inline_failure_policy
+            .or_else(|| self.default_inline_failure_policy.clone());
+        self.window = other.window.or_else(|| self.window.clone());
     }
 }
 
 fn character_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
     item.body()
-        .and_then(|body| dialogue_style_block(body, item.body_range()))
+        .and_then(|body| named_style_block(body, item.body_range(), "dialogue_style"))
         .map(|body| {
             style_defaults_from_body(
                 body.source,
+                None,
                 RichTextCascadeLayer::CharacterDialogueStyle,
                 Some(item.id().body()),
                 body.absolute_start,
@@ -510,6 +584,35 @@ fn character_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
 }
 
 fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
+    entity_style_keys(item)
+}
+
+fn textbox_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
+    let mut defaults = DialogueStyleDefaults::default();
+    if let Some(body) = item.body() {
+        if let Some(block) = named_style_block(body, item.body_range(), "dialogue_style") {
+            defaults.merge(style_defaults_from_body(
+                block.source,
+                None,
+                RichTextCascadeLayer::DialogueWindowTheme,
+                Some(item.id().body()),
+                block.absolute_start,
+            ));
+        }
+        if let Some(block) = named_style_block(body, item.body_range(), "rich_text") {
+            defaults.merge(style_defaults_from_body(
+                block.source,
+                Some("rich_text"),
+                RichTextCascadeLayer::DialogueWindowTheme,
+                Some(item.id().body()),
+                block.absolute_start,
+            ));
+        }
+    }
+    defaults
+}
+
+fn entity_style_keys(item: &EntityDeclItem) -> Vec<String> {
     [
         item.surface_alias().map(str::to_owned),
         item.name().map(str::to_owned),
@@ -522,6 +625,12 @@ fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
     .into_iter()
     .flatten()
     .collect()
+}
+
+fn entity_ref_keys(raw: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    push_character_callee_key(&mut keys, raw);
+    keys
 }
 
 fn character_callee_keys(callee: &str) -> Vec<String> {
@@ -561,16 +670,17 @@ fn push_unique_string(keys: &mut Vec<String>, value: &str) {
 
 fn style_defaults_from_body(
     body: &str,
+    path_prefix: Option<&str>,
     layer: RichTextCascadeLayer,
     item_id: Option<&str>,
     body_absolute_start: Option<usize>,
 ) -> DialogueStyleDefaults {
     let mut defaults = DialogueStyleDefaults::default();
-    for assignment in style_block_assignments(body) {
+    for assignment in style_block_assignments(body, path_prefix) {
         if let Ok(expr) = parse_expr(assignment.value) {
             append_style_default(
                 &mut defaults,
-                assignment.name.to_owned(),
+                assignment.name.clone(),
                 RichTextAssignOp::Replace,
                 assignment.value.to_owned(),
                 &expr,
@@ -620,10 +730,13 @@ fn append_style_default(
     if let Some(policy) = policy.clone() {
         defaults.default_inline_failure_policy = Some(policy);
     }
+    if path == "window" {
+        defaults.window = Some(entity_ref_label(expr));
+    }
 
     let style_index = defaults.base_styles.len();
     let styles = display_styles_from_named_expr(&path, expr);
-    let active = policy.is_some() || !styles.is_empty();
+    let active = policy.is_some() || path == "window" || !styles.is_empty();
     let style_index = (!styles.is_empty()).then_some(style_index);
     defaults.base_styles.extend(styles);
     defaults
@@ -1147,6 +1260,13 @@ fn color_from_expr(expr: &Expr) -> RichTextColor {
     }
 }
 
+fn entity_ref_label(expr: &Expr) -> String {
+    match expr {
+        Expr::EntityRef(entity) => entity.body().to_owned(),
+        _ => expr_style_value(expr).trim_start_matches('@').to_owned(),
+    }
+}
+
 fn expr_style_value(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(value)) | Expr::Path(value) => value.clone(),
@@ -1179,11 +1299,12 @@ struct DialogueStyleBlock<'a> {
     absolute_start: Option<usize>,
 }
 
-fn dialogue_style_block<'a>(
+fn named_style_block<'a>(
     body: &'a str,
     body_range: Option<&arcweft_lang_hir::syntax::ast::common::TextRange>,
+    name: &str,
 ) -> Option<DialogueStyleBlock<'a>> {
-    let start = body.find("dialogue_style")?;
+    let start = body.find(name)?;
     let open = body[start..].find('{')? + start;
     let close = matching_brace(body, open)?;
     let raw_block = &body[open + 1..close];
@@ -1221,7 +1342,7 @@ fn matching_brace(source: &str, open: usize) -> Option<usize> {
 }
 
 struct StyleBlockAssignment<'a> {
-    name: &'a str,
+    name: String,
     value: &'a str,
     value_range: Range<usize>,
 }
@@ -1231,10 +1352,44 @@ struct LogicalStyleItem<'a> {
     range: Range<usize>,
 }
 
-fn style_block_assignments(body: &str) -> Vec<StyleBlockAssignment<'_>> {
+fn style_block_assignments<'a>(
+    body: &'a str,
+    path_prefix: Option<&str>,
+) -> Vec<StyleBlockAssignment<'a>> {
+    nested_style_block_assignments(body, path_prefix)
+}
+
+fn nested_style_block_assignments<'a>(
+    body: &'a str,
+    path_prefix: Option<&str>,
+) -> Vec<StyleBlockAssignment<'a>> {
     logical_style_items(body)
         .iter()
-        .filter_map(split_assignment)
+        .flat_map(|item| style_item_assignments(body, item, path_prefix))
+        .collect()
+}
+
+fn style_item_assignments<'a>(
+    body: &'a str,
+    item: &LogicalStyleItem<'a>,
+    path_prefix: Option<&str>,
+) -> Vec<StyleBlockAssignment<'a>> {
+    if let Some(assignment) = split_assignment(item, path_prefix) {
+        return vec![assignment];
+    }
+    let Some((head, nested_body, nested_start)) = split_nested_style_block(body, item) else {
+        return Vec::new();
+    };
+    let next_prefix =
+        path_prefix.map_or_else(|| head.to_owned(), |prefix| format!("{prefix}.{head}"));
+    nested_style_block_assignments(nested_body, Some(&next_prefix))
+        .into_iter()
+        .map(|assignment| StyleBlockAssignment {
+            name: assignment.name,
+            value: assignment.value,
+            value_range: assignment.value_range.start + nested_start
+                ..assignment.value_range.end + nested_start,
+        })
         .collect()
 }
 
@@ -1281,8 +1436,11 @@ fn trim_logical_style_item(body: &str, start: usize, end: usize) -> LogicalStyle
     }
 }
 
-fn split_assignment<'a>(item: &LogicalStyleItem<'a>) -> Option<StyleBlockAssignment<'a>> {
-    let equals = item.source.find('=')?;
+fn split_assignment<'a>(
+    item: &LogicalStyleItem<'a>,
+    path_prefix: Option<&str>,
+) -> Option<StyleBlockAssignment<'a>> {
+    let equals = find_top_level_raw_punctuation(item.source, '=')?;
     let name = item.source[..equals].trim();
     let value_source = &item.source[equals + '='.len_utf8()..];
     let value_trimmed_start = value_source.trim_start();
@@ -1290,10 +1448,31 @@ fn split_assignment<'a>(item: &LogicalStyleItem<'a>) -> Option<StyleBlockAssignm
     let value = value_trimmed_start.trim_end_matches(',').trim_end();
     let value_start = item.range.start + equals + '='.len_utf8() + leading;
     (!name.is_empty() && !value.is_empty()).then_some(StyleBlockAssignment {
-        name,
+        name: path_prefix.map_or_else(|| name.to_owned(), |prefix| format!("{prefix}.{name}")),
         value,
         value_range: value_start..value_start + value.len(),
     })
+}
+
+fn split_nested_style_block<'a>(
+    body: &'a str,
+    item: &LogicalStyleItem<'a>,
+) -> Option<(&'a str, &'a str, usize)> {
+    let open_in_item = item.source.find('{')?;
+    let close_in_item = matching_brace(item.source, open_in_item)?;
+    if !item.source[close_in_item + '}'.len_utf8()..]
+        .trim()
+        .is_empty()
+    {
+        return None;
+    }
+    let head = item.source[..open_in_item].trim();
+    if head.is_empty() || head.contains(char::is_whitespace) {
+        return None;
+    }
+    let inner_start = item.range.start + open_in_item + '{'.len_utf8();
+    let inner_end = item.range.start + close_in_item;
+    Some((head, &body[inner_start..inner_end], inner_start))
 }
 
 fn lower_dialogue_token(
