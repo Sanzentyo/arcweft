@@ -395,6 +395,15 @@ with:
         mark_keyword(word="夢", color=@color.dream)
 ```
 
+Dot-prefixed authoring tags are inferred only when the family is unambiguous.
+Known rich-text selectors such as `[.vertical_rl]...[/]` and
+`[.shake amp=1px]...[/]` lower as `layout` / `effect` spans. Unknown selectors
+without attributes, such as `[.keyword]`, lower as zero-width marks. Unknown
+selectors with attributes, such as `[.sparkle amp=2px]...[/]`, lower as custom
+rich-text effects because markers do not carry parameters. Tooling can
+canonicalize these inferred forms back to `[layout .vertical_rl]...[/layout]`,
+`[mark .keyword]`, and `[effect .sparkle amp=2px]...[/effect]`.
+
 A dialogue-safe function must declare its effects:
 
 ```arcw

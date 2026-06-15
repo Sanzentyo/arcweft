@@ -1307,7 +1307,7 @@ fn bracket_dialogue_edit(
     }
     if inside.starts_with('.') && inside.len() > 1 {
         let (selector, attrs) = split_dialogue_tag_head(inside);
-        if let Some(family) = inferred_rich_text_family(selector.trim_start_matches('.')) {
+        if let Some(family) = inferred_rich_text_family(selector.trim_start_matches('.'), attrs) {
             inferred_span_stack.push(Some(family));
             let replacement = if attrs.is_empty() {
                 format!("[{family} {selector}]")
@@ -1381,7 +1381,7 @@ fn split_dialogue_tag_head(source: &str) -> (&str, &str) {
     )
 }
 
-fn inferred_rich_text_family(selector: &str) -> Option<&'static str> {
+fn inferred_rich_text_family(selector: &str, attrs: &str) -> Option<&'static str> {
     match selector {
         "italic" | "oblique" => Some("style"),
         "horizontal_tb"
@@ -1393,6 +1393,7 @@ fn inferred_rich_text_family(selector: &str) -> Option<&'static str> {
         | "ruby_inter_character" => Some("layout"),
         "offset" | "pos" | "rotate" | "scale" | "skew" => Some("transform"),
         "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => Some("effect"),
+        _ if !attrs.trim().is_empty() => Some("effect"),
         _ => None,
     }
 }
@@ -2417,7 +2418,7 @@ mod tests {
 
     #[test]
     fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
-        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.shake amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
+        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.sparkle amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
         let report = format_source(
             source,
             FormatOptions {
@@ -2432,7 +2433,7 @@ mod tests {
         assert!(
             report
                 .output
-                .contains("[effect .shake amp=2px pattern=a,b,c]there[/effect]")
+                .contains("[effect .sparkle amp=2px pattern=a,b,c]there[/effect]")
         );
         assert!(
             report

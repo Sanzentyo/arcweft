@@ -167,7 +167,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bindings such as `let handles = alice.say()[...] with: ...`, and they
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
-  rewrite. Sugar expansion now guards AST-derived dialogue content ranges before
+  rewrite. Runtime rich-text lowering and formatter/LSP canonicalization treat
+  unknown dot selectors without attributes as zero-width markers, while
+  unknown dot selectors with attributes such as `[.sparkle amp=2px]...[/]`
+  infer custom effect spans and canonicalize them to
+  `[effect .sparkle amp=2px]...[/effect]`. Sugar expansion now guards
+  AST-derived dialogue content ranges before
   applying line-level rewrites, so body text such as `cue:` is not rewritten as a
   speaker line, while `[raw: ...]` shorthand scans nested bracket-like text
   before choosing its closing bracket. The full rich-text grammar check fixture now includes a

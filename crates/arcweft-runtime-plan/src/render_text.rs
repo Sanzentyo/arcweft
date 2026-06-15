@@ -983,7 +983,7 @@ fn inferred_inline_assignments(
     selector_start: usize,
     attrs_start: usize,
 ) -> Vec<InlineStyleAssignment> {
-    match inferred_tag_family(selector) {
+    match inferred_tag_family(selector, attrs) {
         Some(InferredTagFamily::Style) => {
             style_selector_inline_assignments(selector, attrs, selector_start, attrs_start)
         }
@@ -2097,7 +2097,7 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
 
 fn lower_inferred_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
     let selector = tag.name().trim_start_matches('.');
-    match inferred_tag_family(selector) {
+    match inferred_tag_family(selector, tag.attrs()) {
         Some(InferredTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
         Some(InferredTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
         Some(InferredTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
@@ -2119,7 +2119,7 @@ enum InferredTagFamily {
     Marker,
 }
 
-fn inferred_tag_family(selector: &str) -> Option<InferredTagFamily> {
+fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily> {
     match selector {
         "italic" | "oblique" => Some(InferredTagFamily::Style),
         "horizontal_tb"
@@ -2134,6 +2134,7 @@ fn inferred_tag_family(selector: &str) -> Option<InferredTagFamily> {
             Some(InferredTagFamily::Effect)
         }
         "mark" => Some(InferredTagFamily::Marker),
+        _ if !attrs.trim().is_empty() => Some(InferredTagFamily::Effect),
         _ => None,
     }
 }
@@ -2776,13 +2777,13 @@ flow @flow.main main {
     }
 
     #[test]
-    fn inferred_dot_rich_text_lowers_to_effect_presentation_and_raw_params() {
+    fn inferred_dot_rich_text_lowers_custom_attr_selector_to_effect_presentation() {
         let parsed = parse_source(
             r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.shake amp=2px dir=0,1 pattern=a,b,c seed=dialogue]BC[/]D[p]
+    alice: A[.sparkle amp=2px dir=0,1 pattern=a,b,c seed=dialogue]BC[/]D[p]
 }
 ",
         );
@@ -2822,7 +2823,7 @@ flow @flow.main main {
             .first()
             .expect("effect presentation");
 
-        assert_eq!(effect.id, "shake");
+        assert_eq!(effect.id, "sparkle");
         assert_eq!(
             effect.params.get("amp"),
             Some(&RichTextParam::Milli { value: Milli(2000) })
