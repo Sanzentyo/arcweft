@@ -15,7 +15,10 @@ clippy:
 test: test-workspace
 
 test-workspace:
-    @cargo test --workspace --lib --tests --quiet
+    @cargo test --workspace --lib --tests --exclude arcweft-cli --quiet
+    @cargo test -p arcweft-cli --lib --bins --quiet
+    @cargo test -p arcweft-cli --test regression_harness --quiet
+    @cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
 
 test-doc:
     @cargo test --workspace --doc --quiet

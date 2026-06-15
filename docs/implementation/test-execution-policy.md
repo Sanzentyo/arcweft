@@ -110,6 +110,13 @@ dialogue layer crop, textbox object crop, textbox mask, and textbox object-id
 capture. Use targeted exact tests for JLREQ or vertical-text work, and keep
 large prefix runs for explicit profiling or milestone validation.
 
+`arcweft-cli --test check` is now a purpose-specific CLI integration suite, not
+part of the workspace fast path. `just test-workspace` excludes `arcweft-cli`
+from the workspace-wide lib/test command, then runs `arcweft-cli` lib/bin tests,
+the source-tree regression harness, and the checked-in fixture check runner.
+Use `just test-cli-check`, exact `check.rs` tests, or the relevant Tier 2 target
+when a change intentionally touches broad CLI command behavior.
+
 Re-profiled after the vendored glyphon fork became part of the vertical text
 acceptance evidence:
 
@@ -240,14 +247,17 @@ just test-doc
 the core/render-text/text-layout/native-player library path used by rich-text
 and native capture work. `just test-rich-text` adds the direct native
 `agent observe` exact smoke slice. `just test-workspace` is the normal workspace
-fast path: it runs lib and integration tests with ignored Tier 2 tests excluded,
-and it intentionally does not run doc-tests. `just test-doc` is the explicit
-doc-test path for Rust documentation examples and milestone validation.
+fast path: it runs workspace lib/integration tests except the large
+`arcweft-cli --test check` binary, then runs CLI lib/bin tests plus lightweight
+CLI integration harnesses. It intentionally does not run doc-tests.
+`just test-doc` is the explicit doc-test path for Rust documentation examples
+and milestone validation.
 `just test-cli-native` is the normal native rich-text/Agent observe smoke slice;
 it must remain exact-test based rather than using the broad
 `agent_observe_native_renderer` prefix.
 `just test-cli-check` is useful before a CLI-heavy cut point, but it is not
-required after every small parser, layout, or protocol edit.
+required after every small parser, layout, or protocol edit and should not be
+used as the routine workspace fast path.
 
 `vendor/glyphon` is patched into the workspace but remains an external manifest,
 so ordinary `cargo check --workspace`, workspace clippy, and
@@ -308,9 +318,10 @@ Operational budget:
 - Main push cut point: add `just test-workspace` unless the change is docs-only
   or otherwise demonstrably outside Rust behavior. Use `just verify` when the
   cut point touches generated JLREQ punctuation data or is broad enough that
-  formatter, clippy, workspace tests, absolute-path scans, removed-DSL scans,
-  and `just check-jlreq-punctuation` should all be asserted together. Add
-  `just test-cli-check` when the CLI integration surface changed broadly. Add
+  formatter, clippy, workspace fast tests, absolute-path scans, removed-DSL
+  scans, and `just check-jlreq-punctuation` should all be asserted together.
+  Add `just test-cli-check`, a focused exact `check.rs` test set, or a matching
+  Tier 2 target when the CLI integration surface changed broadly. Add
   `just test-doc` only when Rust documentation comments, doctest examples, or
   public API documentation changed, or when preparing a milestone validation.
   Add `just verify-vendor-glyphon` when the vendored glyphon fork or its

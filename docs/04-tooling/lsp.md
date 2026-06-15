@@ -202,7 +202,7 @@ as LSP text edits. Command-backed edits use a single structured
 
 The server does not accept older positional command argument shapes; removed
 syntax and removed tooling protocols should fail through the normal request
-result path instead of compatibility shims. The command still returns a
+result path instead of transitional protocol branches. The command still returns a
 `WorkspaceEdit`, so the server never writes files directly.
 
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper

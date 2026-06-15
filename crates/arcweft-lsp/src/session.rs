@@ -1208,7 +1208,7 @@ flow opening {
     }
 
     #[test]
-    fn execute_command_rejects_legacy_positional_tooling_edit_arguments() {
+    fn execute_command_rejects_old_positional_tooling_edit_arguments() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());
         open_fixture(&mut session, uri.clone());

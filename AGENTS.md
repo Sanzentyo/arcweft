@@ -76,8 +76,9 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Do not run full workspace tests after every small edit. Use `just test-fast`
   for the short core/render-text/text-layout/native-player smoke route,
   `just test-rich-text` or `just test-cli-native` for native rich-text/Agent
-  observe work, `just test-workspace` for the normal workspace lib/integration
-  pass at main push cut points, `just test-cli-check` for CLI-heavy cut points,
+  observe smoke work, `just test-workspace` for the normal workspace fast path
+  at main push cut points, `just test-cli-check` or focused exact `check.rs`
+  tests for broad CLI-heavy cut points,
   `just test-doc` for explicit doc-test validation, and `just test-tier2` only
   for explicit slow validation.
 - Keep public API intentional.
