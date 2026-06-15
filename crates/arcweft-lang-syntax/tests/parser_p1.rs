@@ -236,6 +236,40 @@ pub dialogue defaults @dialogue.defaults {
 }
 
 #[test]
+fn dialogue_defaults_preserve_attached_attributes() {
+    let tree = parse_ok(
+        r"
+#[generated]
+#[allow(style::explicit_decl_id)]
+pub dialogue defaults @dialogue:.defaults.mobile {
+    rich_text {
+        ruby {
+            size = 11px
+        }
+    }
+}
+",
+    );
+
+    let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
+        panic!("expected dialogue defaults");
+    };
+    let attrs = defaults.attrs();
+    assert_eq!(attrs.len(), 2);
+    assert_eq!(attrs[0].name(), "generated");
+    assert_eq!(attrs[1].name(), "allow");
+    assert_eq!(attrs[1].args(), Some("style::explicit_decl_id"));
+    assert_eq!(
+        defaults.id().expect("defaults id").body(),
+        "dialogue.defaults.mobile"
+    );
+    assert_eq!(
+        defaults.assignments()[0].path().dotted(),
+        "rich_text.ruby.size"
+    );
+}
+
+#[test]
 fn dialogue_defaults_reject_relative_profile_ids_and_one_line_nested_blocks() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
