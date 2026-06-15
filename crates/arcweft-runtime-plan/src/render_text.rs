@@ -21,6 +21,7 @@ use arcweft_render_text::{
     RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
 };
 use std::collections::BTreeMap;
+use std::fmt;
 use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -37,9 +38,17 @@ struct DialogueStyleDefaults {
 }
 
 impl DialogueDisplayDefaults {
+    #[cfg(test)]
     pub(crate) fn from_module(module: &HirModule) -> Self {
+        Self::try_from_module_with_selection(module, None).unwrap_or_default()
+    }
+
+    pub(crate) fn try_from_module_with_selection(
+        module: &HirModule,
+        selected_profile: Option<&str>,
+    ) -> Result<Self, DialogueDefaultsSelectionError> {
         let mut defaults = Self::default();
-        if let Some(item) = selected_dialogue_defaults(module) {
+        if let Some(item) = selected_dialogue_defaults(module, selected_profile)? {
             defaults.global = style_defaults_from_dialogue_defaults(item);
         }
         for declaration in module.declarations() {
@@ -55,7 +64,7 @@ impl DialogueDisplayDefaults {
                 _ => {}
             }
         }
-        defaults
+        Ok(defaults)
     }
 
     fn character_for_callee(&self, callee: &str) -> Option<&DialogueStyleDefaults> {
@@ -67,7 +76,31 @@ impl DialogueDisplayDefaults {
     }
 }
 
-fn selected_dialogue_defaults(module: &HirModule) -> Option<&DialogueDefaultsItem> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum DialogueDefaultsSelectionError {
+    MissingSelected { id: String },
+    Ambiguous { profiles: Vec<String> },
+}
+
+impl fmt::Display for DialogueDefaultsSelectionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSelected { id } => {
+                write!(f, "selected dialogue defaults profile `{id}` was not found")
+            }
+            Self::Ambiguous { profiles } => write!(
+                f,
+                "multiple dialogue defaults profiles are visible but none was selected: {}",
+                profiles.join(", ")
+            ),
+        }
+    }
+}
+
+fn selected_dialogue_defaults<'a>(
+    module: &'a HirModule,
+    selected_profile: Option<&str>,
+) -> Result<Option<&'a DialogueDefaultsItem>, DialogueDefaultsSelectionError> {
     let items = module
         .declarations()
         .iter()
@@ -76,19 +109,56 @@ fn selected_dialogue_defaults(module: &HirModule) -> Option<&DialogueDefaultsIte
             _ => None,
         })
         .collect::<Vec<_>>();
-    items
+    if let Some(selected_profile) = selected_profile {
+        return items
+            .iter()
+            .copied()
+            .find(|item| item.id().is_some_and(|id| id.body() == selected_profile))
+            .map(Some)
+            .ok_or_else(|| DialogueDefaultsSelectionError::MissingSelected {
+                id: selected_profile.to_owned(),
+            });
+    }
+    if let Some(item) = items
         .iter()
         .copied()
         .find(|item| item.id().is_some_and(|id| id.body() == "dialogue.defaults"))
-        .or_else(|| {
-            let public = items
+    {
+        return Ok(Some(item));
+    }
+    let public = items
+        .iter()
+        .copied()
+        .filter(|item| item.visibility() == Some(Visibility::Public))
+        .collect::<Vec<_>>();
+    if public.len() == 1 {
+        return Ok(Some(public[0]));
+    }
+    if public.len() > 1 {
+        return Err(DialogueDefaultsSelectionError::Ambiguous {
+            profiles: public
                 .iter()
-                .copied()
-                .filter(|item| item.visibility() == Some(Visibility::Public))
-                .collect::<Vec<_>>();
-            (public.len() == 1).then(|| public[0])
-        })
-        .or_else(|| (items.len() == 1).then(|| items[0]))
+                .map(|item| dialogue_defaults_label(item))
+                .collect(),
+        });
+    }
+    if items.len() == 1 {
+        return Ok(Some(items[0]));
+    }
+    if items.len() > 1 {
+        return Err(DialogueDefaultsSelectionError::Ambiguous {
+            profiles: items
+                .iter()
+                .map(|item| dialogue_defaults_label(item))
+                .collect(),
+        });
+    }
+    Ok(None)
+}
+
+fn dialogue_defaults_label(item: &DialogueDefaultsItem) -> String {
+    item.id()
+        .map_or_else(|| "<anonymous>".to_owned(), |id| format!("@{}", id.body()))
 }
 
 pub(crate) fn lower_dialogue_display(

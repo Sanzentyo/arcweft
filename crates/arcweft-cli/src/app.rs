@@ -94,7 +94,8 @@ use arcweft_runtime_host::{
     internal_scheduler_manifest, run_bundle_file_with_native_adapters, runtime_executor_stats,
 };
 use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerStats, lower_runtime_plan, lower_runtime_plan_with_stats,
+    RuntimePlanLowerOptions, RuntimePlanLowerStats, lower_runtime_plan_with_options,
+    lower_runtime_plan_with_stats_and_options,
 };
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
@@ -1576,12 +1577,14 @@ fn runtime_run_command(
 
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
-    let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let mut plan =
+        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let trace = run_runtime_steps(
@@ -1890,7 +1893,8 @@ fn agent_mcp_run_observation(
         .map_err(|_| "failed to check MCP observe source".to_owned())?;
     let host_policy = native_host_policy_for_selection(&selection)
         .map_err(|_| "failed to resolve native host policy".to_owned())?;
-    let lowered = lower_runtime_plan_with_stats(&checked.hir)
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
         .map_err(|_| "failed to lower runtime plan".to_owned())?;
     let mut plan = lowered.plan;
     let entry = options.entry.as_deref().or(selection.entry());
@@ -2332,12 +2336,14 @@ fn agent_observe_command(
     )?;
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
-    let lowered = lower_runtime_plan_with_stats(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
+        .map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })?;
     let mut plan = lowered.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
@@ -5258,7 +5264,8 @@ fn compile_profile_runtime_plan(
         })
     })?;
     let runtime_plan_report = run_profile_phase(phases, "runtime_plan_lower", || {
-        lower_runtime_plan_with_stats(&hir).map_err(|errors| {
+        let runtime_options = runtime_plan_options_for_selection(selection);
+        lower_runtime_plan_with_stats_and_options(&hir, &runtime_options).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -5791,12 +5798,14 @@ fn runtime_cli_command(
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
-    let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let mut plan =
+        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            ExitCode::FAILURE
+        })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_cli_entry_selection(&mut plan, entry)?;
     let mut bindings = options.values.clone();
@@ -5894,12 +5903,14 @@ fn runtime_serve_selection(
         .unwrap_or("sans-io");
     let checked = load_and_check_selection(selection, Some(adapter))?;
     let host_policy = native_host_policy_for_selection_with_adapter(selection, Some(adapter))?;
-    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
+    let runtime_options = runtime_plan_options_for_selection(selection);
+    let plan =
+        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            ExitCode::FAILURE
+        })?;
     let entry = select_server_entry(&plan, entry_override.or(selection.entry()))?;
     let routes = server_routes(entry);
     if routes.is_empty() {
@@ -6147,12 +6158,14 @@ fn script_test_selection(
     let checked = load_and_check_selection(selection, None)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let manifest = collect_script_tests(&checked.hir);
-    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
+    let runtime_options = runtime_plan_options_for_selection(selection);
+    let plan =
+        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })?;
     let output = ScriptTestRunReport {
         tests: manifest
             .tests
@@ -8368,7 +8381,8 @@ fn verify_types_runtime_plan(
     options: &VerifyTypesOptions,
 ) -> Result<RuntimePlan, ExitCode> {
     let mut runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
-        lower_runtime_plan(&checked.hir).map_err(|errors| {
+        let runtime_options = runtime_plan_options_for_selection(selection);
+        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -8513,6 +8527,15 @@ impl SourceSelection {
     fn adapter(&self) -> Option<&str> {
         self.profile().and_then(ResolvedLaunchProfile::adapter)
     }
+}
+
+fn runtime_plan_options_for_selection(selection: &SourceSelection) -> RuntimePlanLowerOptions {
+    selection
+        .profile()
+        .and_then(ResolvedLaunchProfile::dialogue_defaults)
+        .map_or_else(RuntimePlanLowerOptions::default, |id| {
+            RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
+        })
 }
 
 fn runtime_pure_config_for_selection(

@@ -60,6 +60,7 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
+dialogue_defaults = "dialogue.defaults.debug"
 rust_metadata = ["target/arcweft/truck_game.json"]
 
 [profiles."server.dev".pure]
@@ -74,6 +75,14 @@ object_artifacts = false
 Direct path and `--profile` are mutually exclusive. This keeps core source mode
 reproducible for verifier, formatter, LSP, and CI use while still allowing
 profile-aware checks for adapter-backed entries.
+
+`dialogue_defaults` optionally selects the `dialogue defaults` profile used by
+runtime lowering, `run`/`cli`/`serve`/`test`/`bench`, bundle builds, and Agent
+observe. It stores the canonical entity body without the `@` sigil, for example
+`dialogue.defaults.mobile`. When omitted, runtime lowering uses
+`@dialogue.defaults`, a single visible public profile, or a single visible
+profile; multiple visible profiles without a selected profile are reported as an
+ambiguity instead of being merged by source order.
 
 Profiles may register project-local adapter manifests through
 `adapter_manifests`. These paths are resolved relative to `arcw.toml` and are

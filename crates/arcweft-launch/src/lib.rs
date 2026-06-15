@@ -68,6 +68,8 @@ pub struct LaunchProfileSpec {
     #[serde(default)]
     listen: Option<String>,
     #[serde(default)]
+    dialogue_defaults: Option<String>,
+    #[serde(default)]
     pure: Option<LaunchPureProfileSpec>,
     #[serde(default)]
     rust_metadata: Vec<PathBuf>,
@@ -100,6 +102,7 @@ pub struct ResolvedLaunchProfile {
     adapter: Option<String>,
     adapter_manifests: Vec<PathBuf>,
     listen: Option<String>,
+    dialogue_defaults: Option<String>,
     pure: Option<LaunchPureProfileSpec>,
     rust_metadata: Vec<PathBuf>,
 }
@@ -203,6 +206,7 @@ impl LaunchProfileManifest {
             adapter: spec.adapter.clone(),
             adapter_manifests,
             listen: spec.listen.clone(),
+            dialogue_defaults: spec.dialogue_defaults.clone(),
             pure: spec.pure.clone(),
             rust_metadata,
         })
@@ -248,6 +252,11 @@ impl ResolvedLaunchProfile {
     /// Optional listen address selected by the profile.
     pub fn listen(&self) -> Option<&str> {
         self.listen.as_deref()
+    }
+
+    /// Optional dialogue defaults profile selected by this launch profile.
+    pub fn dialogue_defaults(&self) -> Option<&str> {
+        self.dialogue_defaults.as_deref()
     }
 
     /// Optional pure-helper execution policy selected by the profile.
@@ -308,6 +317,7 @@ entry = "http"
 adapter = "native-http"
 adapter_manifests = ["adapters/http.toml"]
 listen = "127.0.0.1:8787"
+dialogue_defaults = "dialogue.defaults.mobile"
 rust_metadata = ["target/arcweft/truck_game.json"]
 
 [profiles."server.dev".pure]
@@ -334,6 +344,10 @@ object_artifacts = true
             &[PathBuf::from("game/adapters/http.toml")]
         );
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
+        assert_eq!(
+            resolved.dialogue_defaults(),
+            Some("dialogue.defaults.mobile")
+        );
         assert_eq!(
             resolved.rust_metadata(),
             &[PathBuf::from("game/target/arcweft/truck_game.json")]

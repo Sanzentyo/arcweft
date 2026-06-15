@@ -52,6 +52,36 @@ pub struct RuntimePlanLowerReport {
     pub line_display_catalog: LineDisplayCatalog,
 }
 
+/// Options that select profile/build-context inputs for runtime-plan lowering.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimePlanLowerOptions {
+    dialogue_defaults: Option<String>,
+}
+
+impl RuntimePlanLowerOptions {
+    /// Creates default source-local lowering options.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            dialogue_defaults: None,
+        }
+    }
+
+    /// Selects a dialogue defaults profile by entity ID, for example
+    /// `dialogue.defaults.mobile`.
+    #[must_use]
+    pub fn with_dialogue_defaults(mut self, id: impl Into<String>) -> Self {
+        self.dialogue_defaults = Some(id.into());
+        self
+    }
+
+    /// Selected dialogue defaults profile ID, if supplied by a launch profile.
+    #[must_use]
+    pub fn dialogue_defaults(&self) -> Option<&str> {
+        self.dialogue_defaults.as_deref()
+    }
+}
+
 /// Compiler-side counters for runtime-plan pure and flow optimization work.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerStats {
@@ -81,9 +111,26 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
     lower_runtime_plan_with_stats(module).map(|report| report.plan)
 }
 
+/// Lowers checked HIR with explicit profile/build-context options.
+pub fn lower_runtime_plan_with_options(
+    module: &HirModule,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
+    lower_runtime_plan_with_stats_and_options(module, options).map(|report| report.plan)
+}
+
 /// Lowers checked HIR to a runtime plan and records lowering-time counters.
 pub fn lower_runtime_plan_with_stats(
     module: &HirModule,
+) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    lower_runtime_plan_with_stats_and_options(module, &RuntimePlanLowerOptions::default())
+}
+
+/// Lowers checked HIR with explicit profile/build-context options and records
+/// lowering-time counters.
+pub fn lower_runtime_plan_with_stats_and_options(
+    module: &HirModule,
+    options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
     let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
@@ -100,7 +147,7 @@ pub fn lower_runtime_plan_with_stats(
     };
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
-    let lowered_flows = lower_runtime_flows(module, &pure_map)?;
+    let lowered_flows = lower_runtime_flows(module, &pure_map, options)?;
     let LoweredRuntimeFlows {
         flows,
         line_task_groups,
@@ -1156,11 +1203,17 @@ fn implicit_entry_flow(
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
     pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
+    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
+        module,
+        options.dialogue_defaults(),
+    )
+    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
-        display_defaults: DialogueDisplayDefaults::from_module(module),
+        display_defaults,
         errors: Vec::new(),
         pure_helpers,
     };
@@ -1774,6 +1827,9 @@ mod tests {
     use arcweft_core::value::{
         RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values,
     };
+    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_render_text::{RichTextColor, RichTextStyle};
 
     #[test]
     fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
@@ -1828,5 +1884,109 @@ mod tests {
                         if matches!(target.as_ref(), RuntimeExpr::Local(name) if name == "rows")
                 )
         ));
+    }
+
+    #[test]
+    fn runtime_plan_options_select_dialogue_defaults_profile() {
+        let parsed = parse_source(
+            r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    text_color = rgb("#202122")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let report = lower_runtime_plan_with_stats_and_options(
+            &hir,
+            &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        )
+        .expect("runtime plan lowers with selected dialogue defaults");
+        let spec = report
+            .line_display_catalog
+            .lines()
+            .first()
+            .expect("line display spec");
+
+        assert_eq!(
+            spec.base_styles,
+            vec![RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 32,
+                    green: 33,
+                    blue: 34
+                }
+            }]
+        );
+    }
+
+    #[test]
+    fn runtime_plan_reports_ambiguous_dialogue_defaults_profiles() {
+        let parsed = parse_source(
+            r##"
+pub dialogue defaults @dialogue.defaults.debug {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    text_color = rgb("#202122")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let errors = lower_runtime_plan_with_stats(&hir)
+            .expect_err("ambiguous dialogue defaults should fail runtime lowering");
+
+        assert!(
+            errors.iter().any(|error| error
+                .message()
+                .contains("multiple dialogue defaults profiles")),
+            "{errors:#?}"
+        );
+    }
+
+    #[test]
+    fn runtime_plan_reports_missing_selected_dialogue_defaults_profile() {
+        let parsed = parse_source(
+            r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let errors = lower_runtime_plan_with_stats_and_options(
+            &hir,
+            &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        )
+        .expect_err("missing selected dialogue defaults should fail runtime lowering");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("dialogue.defaults.mobile")),
+            "{errors:#?}"
+        );
     }
 }
