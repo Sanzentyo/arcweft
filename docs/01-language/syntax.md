@@ -167,7 +167,6 @@ scope = session
 hook @hook.choice.listen_visible
 on @choice.opening.listen
 phase VisibilityChanged
-check on change
 when object.visible
 once
 {

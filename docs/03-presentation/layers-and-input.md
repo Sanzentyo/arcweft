@@ -705,7 +705,7 @@ layer @layer.choices: Choice {
     hook @hook.layer.choices.layout_changed
     on @layer.choices
     phase AfterLayout
-    check on change layout
+    when layout.changed
     {
         log.debug("choices layer layout changed")
     }
@@ -722,7 +722,6 @@ Layer は Hook target でもある。描画順・visibility・input policy・foc
 hook @hook.choice_ui_appeared
 on @layer.choice_ui
 phase AfterLayout
-check on change visibility
 when visible(self)
 once per scene
 {
@@ -732,7 +731,6 @@ once per scene
 hook @hook.modal_opened
 on @layer.modal.settings
 phase AfterLayout
-check on change visibility
 when visible(self)
 effects { signal_write }
 {

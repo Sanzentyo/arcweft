@@ -873,6 +873,26 @@ dot rich-text selectors such as `[.shake]...[/]` to explicit family tags such as
 `[mark .name]`. It does not expand unrelated dialogue sugar such as `$(expr)`,
 ruby shorthand, `[page]`, or speaker-line sugar.
 
+Declaration canonicalization uses the same diagnostic names as LSP. Source-level
+lint names are domain namespaces, while JSON diagnostics and CI logs also carry
+stable numeric codes:
+
+```text
+AWF0101 style::redundant_decl_identity
+AWF0102 identity::decl_binding_mismatch
+AWF0103 style::explicit_decl_id
+AWF0104 style::generated_surface_form
+```
+
+`flow @flow.opening opening(...)` and
+`source @source.http_requests http_requests: ...` are fully elaborated source
+forms. The parser accepts them, but formatter and check report
+`style::redundant_decl_identity` for hand-written source and may rewrite them to
+the canonical form. Generated source can opt in with `#[generated]` or
+`#[allow(style::redundant_decl_identity)]`. A mismatch such as
+`flow @flow.opening start(...)` reports `identity::decl_binding_mismatch` and is
+not rewritten automatically.
+
 The expansion must preserve the callee kind. A lexical `SpeakerPreset` remains a
 callable speaker value, so `alice2(voice=auto): text` expands to
 `alice2(voice=auto)[text]`, not to `alice2.say(voice=auto)[text]`.

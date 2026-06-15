@@ -368,7 +368,9 @@ alice.look(worried)
 Characters can declare how their sprite parts, looks, lip-sync data, and voices should be prepared.
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     preload_policy {
         sprites = on_flow_anticipate
         looks = [normal, smile, worried, surprised]
@@ -408,7 +410,9 @@ anticipate @flow.alice_intro {
 Expensive character presentation work is memoized by stable keys.
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     memo_policy {
         compose_sprite key=(pose, look, mouth, scale_bucket, theme_hash) cache=session
         lipsync_plan key=(voice_key, locale) cache=session
@@ -537,13 +541,9 @@ Stage objects support hooks. These can be used for read-state visual changes, au
 hook @hook.character.unread_glow
 on query StageObject where entity == @character.alice
 phase before_render
-check on change ctx.dialogue.read_state
+when ctx.dialogue.read_state == .Unread
 {
-    if ctx.dialogue.read_state == .Unread {
-        return StagePatch::ShaderParam { name = "glow", value = 0.18 }
-    }
-
-    StagePatch::None
+    StagePatch::ShaderParam { name = "glow", value = 0.18 }
 }
 ```
 

@@ -153,7 +153,8 @@ alice: [.ruby_over ruby_size=11px ruby_gap=1px ruby_overhang=4px ruby_collision_
 These attributes override the effective `rich_text { ruby { ... } }` defaults
 only for the enclosed span. The inline names are prefixed with `ruby_` because
 dialogue tag attributes are flat. Defaults use the structured form
-`rich_text { ruby { size = ... gap = ... } }`.
+`rich_text { ruby { size = ... } }`, normally written as a multiline block when
+more than one field is set.
 
 ---
 
@@ -509,7 +510,9 @@ alice_serif: この preset の通常表示は serif です。[p]
 Character default colors are defined in the character declaration. Dialogue lines inherit them automatically.
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     dialogue_style {
         text_color = rgb("#f7d7ff")
         name_color = rgb("#e070ff")
@@ -536,11 +539,9 @@ Custom hook:
 pub hook @hook.dialogue.read_color
 on query DialogueLine
 phase BeforeTextStyle
-check on change line.read_state
+when line.read_state == .Read
 {
-    if line.read_state == .Read {
-        line.style.text_color = rgb("#b8b8c0")
-    }
+    line.style.text_color = rgb("#b8b8c0")
 }
 ```
 

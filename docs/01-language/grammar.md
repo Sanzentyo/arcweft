@@ -97,7 +97,8 @@ UseDecl      := Visibility? ('lazy' | 'eager')? 'use' ModulePath ('::' UseTree)?
 Visibility   := 'pub'?
 ModulePath   := ('crate' '::' | 'self' '::' | 'super' '::' | 'parent' '::')? IdentPath
 
-Item         :=
+Item         := OuterAttr* ItemDecl
+ItemDecl     :=
     FlowDecl
   | FragmentDecl
   | FunctionDecl
@@ -110,13 +111,24 @@ Item         :=
   | MemoDecl
   | DialogueDefaultsDecl
   | TypeDecl
+OuterAttr    := '#[' AttrPath AttrArgs? ']'
+InnerAttr    := '#![' AttrPath AttrArgs? ']'
+AttrPath     := Ident ('::' Ident)*
+AttrArgs     := '(' AttrToken* ')'
 ```
+
+Outer attributes attach to the following item. They are not standalone module
+items. Inner attributes attach to the source file or enclosing block when that
+surface exists. `#[allow(...)]` controls lint suppression; `#[generated]` and
+`#![generated(...)]` mark generated or fully elaborated source and do not by
+themselves silence unrelated diagnostics.
 
 ## Flow and fragments
 
 ```text
-FlowDecl     := Visibility 'flow' EntityRef Ident? GenericParams? ParamGroup* ReturnType? Contract* FlowBody
-FragmentDecl := Visibility 'fragment' EntityRef Ident? (':' Type)? Contract* FlowBody
+FlowDecl     := Visibility? 'flow' DeclIdentity GenericParams? ParamGroup* ReturnType? Contract* FlowBody
+FragmentDecl := Visibility? 'fragment' DeclIdentity (':' Type)? Contract* FlowBody
+DeclIdentity := Ident | EntityRef | EntityRef Ident
 FlowBody     := '{' FlowItem* '}'
 
 FlowItem     :=
@@ -148,6 +160,23 @@ StagingClear    := ('bg' | 'show') '.clear' CallArgs | 'hide' CallArgs
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
 reserved alias for `super`; formatters should normalize it to `super`.
 
+Declaration identities have a hand-written canonical surface and a generated
+surface. Hand-written flows should use either `flow opening(...)` or
+`flow @flow.opening(...)`. The fully elaborated spelling
+`flow @flow.opening opening(...)` is accepted for generated source and
+roundtrips, but hand-written source reports `style::redundant_decl_identity`
+unless it is covered by `#[allow(style::redundant_decl_identity)]` or
+`#[generated]`. A mismatch such as `flow @flow.opening start(...)` reports
+`identity::decl_binding_mismatch`; it is not a style warning.
+
+Source and entity declarations follow the same principle. Prefer
+`source http_requests: Source<T, E>` or
+`source @source.http_requests: Source<T, E>` over
+`source @source.http_requests http_requests: ...`. Prefer
+`pub character alice { display = "Alice" }` or
+`pub character @character.alice { display = "Alice" }` over putting display
+names or aliases in the declaration header.
+
 ## Dialogue and line plans
 
 ```text
@@ -162,10 +191,11 @@ LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'text_key' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'voice' '=' Expr
                 | 'window' '=' EntityRef
-                | Ident '=' Expr
                 | 'source_locale' '=' Locale
                 | 'hooks' '=' Expr
                 | 'style' '=' Expr
+                | 'rich_text' '=' Expr
+                | Ident '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
 DialogueContent:= TextAndDialogueTags*
 
@@ -278,7 +308,7 @@ choice @.first outside a scope -> @choice.opening.first
 
 ```text
 DialogueDefaultsDecl :=
-    Visibility? 'dialogue' 'defaults' (EntityRef | RelativeId)? Block
+    Visibility? 'dialogue' 'defaults' EntityRef? Block
 
 Dialogue defaults declare a defaults profile. `pub dialogue defaults
 @dialogue.defaults` is the conventional exported project-wide profile; other
@@ -286,6 +316,11 @@ profiles are selected explicitly by project/build configuration or tooling and
 are not merged merely because they are visible. Product/test lowering must
 diagnose multiple visible defaults profiles when no active profile can be
 chosen unambiguously.
+
+Relative IDs such as `dialogue defaults @.mobile` are not canonical and should
+be rejected for defaults profiles. The mobile defaults profile is written as
+`pub dialogue defaults @dialogue.defaults.mobile { ... }` so the profile family
+is explicit.
 
 Inside the block, structured RichText typography is written as a nested
 assignment block:
@@ -303,6 +338,11 @@ dialogue defaults {
 Structured defaults deep-merge by field through the dialogue cascade. Scalar
 fields use nearest-wins semantics; collections require explicit collection
 operators such as `=` or `+=`.
+
+One-line nested assignments such as `ruby { size = 11px gap = 1px }` are not
+canonical because field boundaries are ambiguous. Formatters should write
+multiline blocks, or require commas if a compact single-line form is ever
+accepted.
 
 HookDecl   :=
     Visibility 'hook' EntityRef

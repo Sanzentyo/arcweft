@@ -44,6 +44,67 @@
 - audio cue / signal / BGM completion
 - UI component preview
 
+## Effective presentation context
+
+Style/defaults navigation is based on the effective presentation context at the
+cursor position, not only lexical scope. A context may include the selected
+project/build profile, module, flow, named scope path, current dialogue line or
+content call, speaker preset, character, textbox theme, selected dialogue
+defaults profile, and inline rich-text span stack.
+
+The dialogue RichText cascade is:
+
+```text
+inline rich-text span
+  -> line options
+  -> speaker preset options
+  -> character dialogue_style
+  -> dialogue window theme
+  -> selected dialogue defaults
+  -> engine defaults
+```
+
+Lowering must preserve provenance for each effective setting:
+
+```text
+ResolvedSetting {
+  path,
+  value,
+  winner,
+  contributions,
+}
+```
+
+Each contribution records the cascade layer, source kind, assignment operator,
+path range, value range, displayed value, whether it is active, and the winning
+contribution that shadows it when applicable. Source kinds include Arcweft
+source files, project manifests, build profiles, and engine defaults.
+
+LSP features use that shared index:
+
+- hover shows the winning value and cascade contributors for fields such as
+  `rich_text.ruby.size`
+- go to definition on an effective style field jumps to the winning assignment
+  value range
+- peek cascade shows shadowed and unset layers
+- find all contributors lists declarations and inline spans that can affect the
+  field in the current entry profile
+- go to active profile selection jumps to the manifest or build profile that
+  selected `@dialogue.defaults.mobile`
+- code actions can extract an override to a line option, speaker preset,
+  character `dialogue_style`, textbox theme, or dialogue defaults profile
+
+Generated or fully elaborated source is also surfaced through diagnostics.
+Domain lint names are used in user-authored attributes, while stable numeric
+codes are displayed in LSP diagnostics:
+
+```text
+AWF0101 style::redundant_decl_identity
+AWF0102 identity::decl_binding_mismatch
+AWF0103 style::explicit_decl_id
+AWF0104 style::generated_surface_form
+```
+
 ## Custom requests
 
 ```text

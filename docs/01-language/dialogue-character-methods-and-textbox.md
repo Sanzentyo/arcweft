@@ -235,11 +235,12 @@ underlying character.
 The effective option order is:
 
 ```text
-per-line options
+inline rich-text span
+  -> per-line options
   -> speaker preset options
   -> character dialogue_style
   -> dialogue window theme
-  -> global dialogue defaults
+  -> selected dialogue defaults
   -> engine defaults
 ```
 
@@ -358,7 +359,8 @@ A dialogue window target is a stateful UI object. Updating a line in that textbo
 Characters can define default dialogue style, nameplate style, and voice/text policies.
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 
@@ -381,10 +383,12 @@ pub character @character.alice Alice {
 When a line is displayed, the effective style is resolved in this order:
 
 ```text
-line options
+inline rich-text span
+  -> line options
+  -> speaker preset options
   -> character dialogue_style
   -> dialogue window theme
-  -> global dialogue defaults
+  -> selected dialogue defaults
   -> engine defaults
 ```
 
@@ -437,8 +441,14 @@ pub dialogue defaults @dialogue.defaults.debug {
 pub dialogue defaults @dialogue.defaults.mobile {
     window = @textbox.phone_message
     rich_text {
-        text { size = 24px }
-        ruby { size = 11px gap = 1px }
+        text {
+            size = 24px
+        }
+
+        ruby {
+            size = 11px
+            gap = 1px
+        }
     }
 }
 ```
@@ -510,11 +520,19 @@ Character defaults use the same structure and override only the fields they
 mention:
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     dialogue_style {
         rich_text {
-            text { color = rgb("#f7d7ff") }
-            ruby { size = 13px gap = 1px }
+            text {
+                color = rgb("#f7d7ff")
+            }
+
+            ruby {
+                size = 13px
+                gap = 1px
+            }
         }
     }
 }
@@ -562,7 +580,9 @@ pub dialogue defaults @dialogue.defaults {
 Character-level override:
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     dialogue_style {
         read_state_style = builtin.read_state_color(
             unread = rgb("#ffeaff"),
@@ -578,11 +598,9 @@ A custom hook can override or extend this behavior:
 pub hook @hook.dialogue.alice_read_color
 on query DialogueLine where line.speaker == @character.alice
 phase BeforeTextStyle
-check on change line.read_state
+when line.read_state == .Read
 {
-    if line.read_state == .Read {
-        line.style.text_color = rgb("#c5b6cc")
-    }
+    line.style.text_color = rgb("#c5b6cc")
 }
 ```
 
@@ -857,7 +875,9 @@ alice.stage.show(smile, at=center, fade=200ms)
 Characters own preload and memoization policies for sprites, expressions, mouth parts, voice metadata, and composed render layers.
 
 ```arcw
-pub character @character.alice Alice {
+pub character alice {
+    display = "Alice"
+
     preload_policy {
         sprites = on_flow_anticipate
         expressions = [normal, smile, worried]

@@ -489,7 +489,7 @@ Layer は hook target でもある。描画・layout・input routing の各 phas
 hook @hook.ui_layer_bbox
 on @layer.ui.game
 phase AfterLayout
-check on change layer.layout_hash
+when layer.layout_hash.changed
 {
     log.debug("ui layer bbox={bbox:?}", bbox = object.bbox)
 }

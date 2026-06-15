@@ -385,7 +385,7 @@ check on input PointerEnter
 hook @hook.layer.choices.layout_changed
 on @layer.choices
 phase AfterLayout
-check on change layout
+when layout.changed
 {
     log.debug("choices layer layout changed")
 }

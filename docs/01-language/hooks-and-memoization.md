@@ -73,7 +73,6 @@ query target も使える。
 hook @hook.disable_all_choices
 on query ChoiceOption where parent == @choice.opening.first
 phase StateChanged
-check on change state.ui.locked
 when state.ui.locked
 {
     command ui.disable(target)
@@ -121,7 +120,6 @@ pub enum HookPhase {
 hook @hook.alice_affection_watch
 on state .affection[@character.alice]
 phase StateChanged
-check on change
 when state.affection[@character.alice] >= 3
 once per save
 {
@@ -234,7 +232,6 @@ when event.key == .Enter && focus.target.is_choice
 hook @hook.show_unlock_once
 on state .affection[@character.alice]
 phase StateChanged
-check on change
 when state.affection[@character.alice] >= 3
 once per save
 {

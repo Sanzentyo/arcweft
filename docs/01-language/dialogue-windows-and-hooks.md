@@ -189,7 +189,6 @@ Conceptual behavior:
 hook @hook.dialogue.read_state_color
 on query DialogueLine
 phase before_text_style
-check on change ctx.line.read_state
 {
     match ctx.line.read_state {
         .Unread => DialoguePatch::Style { color = ctx.character.text_style.unread_color }
