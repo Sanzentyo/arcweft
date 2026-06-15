@@ -909,7 +909,8 @@ for `identity::decl_binding_mismatch`, `hint` for `style::explicit_decl_id`, and
 forms. The parser accepts them, but formatter and check report
 `style::redundant_decl_identity` for hand-written source and may rewrite them to
 the canonical form. Generated source can opt in with `#[generated]` or
-`#[allow(style::redundant_decl_identity)]`. A mismatch such as
+source-level `#![generated(...)]`; specific lint rewrites can be suppressed with
+`#[allow(style::redundant_decl_identity)]` or source-level `#![allow(...)]`. A mismatch such as
 `flow @flow.opening start(...)` reports `identity::decl_binding_mismatch` and is
 not rewritten automatically.
 

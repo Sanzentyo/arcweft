@@ -383,4 +383,30 @@ flow @flow.prologue {
             diagnostic.code == Some(NumberOrString::String("AWF0002".into()))
         }));
     }
+
+    #[test]
+    fn diagnostics_respect_source_generated_attribute_for_decl_identity() {
+        let source = r"
+#![generated(tool)]
+flow @flow.opening opening {
+}
+
+flow @flow.opening start {
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        assert!(analysis.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("AWF0104".into()))
+                && diagnostic.severity == Some(DiagnosticSeverity::INFORMATION)
+        }));
+        assert!(!analysis.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("AWF0101".into()))
+        }));
+        assert!(analysis.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("AWF0102".into()))
+                && diagnostic.severity == Some(DiagnosticSeverity::ERROR)
+        }));
+    }
 }

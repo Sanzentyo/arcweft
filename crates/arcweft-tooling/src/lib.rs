@@ -2282,6 +2282,23 @@ mod tests {
     }
 
     #[test]
+    fn expand_sugar_preserves_source_generated_decl_identity_surface() {
+        let source = "#![generated(tool)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
+
+        assert!(report.changed);
+        assert!(report.output.contains("flow @flow.generated generated {"));
+        assert!(report.output.contains("alice.say()[hi[p]]"));
+    }
+
+    #[test]
     fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
         let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
         let report = format_source(

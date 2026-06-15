@@ -173,9 +173,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the same edit without writing files server-side. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned
   `documentChanges` when supported and `changes` otherwise. It resolves
-  declaration-identity syntax lints through attached attributes, including
-  `#[allow(id::flow_module_mismatch)]` on flows, before LSP diagnostics are
-  published. CLI check/runtime-profile compile paths now also fail on syntax
+  declaration-identity syntax lints through attached item attributes and
+  source-level inner attributes, including `#[allow(id::flow_module_mismatch)]`
+  on flows and `#![generated(...)]` on generated source files, before LSP
+  diagnostics are published. CLI check/runtime-profile compile paths now also fail on syntax
   lints whose default severity is `error`, so
   `identity::decl_binding_mismatch` no longer reports as an error while still
   exiting successfully. Entity declaration identity linting treats a surface
