@@ -511,7 +511,38 @@ fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextE
                 .is_some_and(|id| id.body() == "dialogue.defaults")
         })
         .or_else(|| (defaults.len() == 1).then(|| defaults[0]))?;
-    block_assignment_insertion(source, target.range(), path, value)
+    dialogue_defaults_assignment_insertion(source, target.range(), path, value)
+}
+
+fn dialogue_defaults_assignment_insertion(
+    source: &str,
+    range: &TextRange,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let parts = path
+        .split('.')
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() <= 1 {
+        return block_assignment_insertion(source, range, path, value);
+    }
+
+    let mut block_range = *range;
+    let mut consumed = 0usize;
+    for part in &parts[..parts.len() - 1] {
+        let Some(child) = find_direct_child_block(source, &block_range, part) else {
+            break;
+        };
+        block_range = child;
+        consumed += 1;
+    }
+
+    if consumed == parts.len() - 1 {
+        block_assignment_insertion(source, &block_range, parts[parts.len() - 1], value)
+    } else {
+        block_nested_assignment_insertion(source, &block_range, &parts[consumed..], value)
+    }
 }
 
 fn block_assignment_insertion(
@@ -532,6 +563,114 @@ fn block_assignment_insertion(
         end: range.start() + line_start,
         replacement: format!("{close_indent}    {path} = {value}\n"),
     })
+}
+
+fn block_nested_assignment_insertion(
+    source: &str,
+    range: &TextRange,
+    parts: &[&str],
+    value: &str,
+) -> Option<TextEdit> {
+    let (_, close) = block_braces(source, range)?;
+    let line_start = source[..close].rfind('\n').map_or(0, |offset| offset + 1);
+    let close_indent = &source[line_start..close];
+    Some(TextEdit {
+        start: line_start,
+        end: line_start,
+        replacement: nested_assignment_text(close_indent, parts, value),
+    })
+}
+
+fn nested_assignment_text(close_indent: &str, parts: &[&str], value: &str) -> String {
+    let mut output = String::new();
+    let base_indent = format!("{close_indent}    ");
+    for (depth, part) in parts.iter().take(parts.len().saturating_sub(1)).enumerate() {
+        output.push_str(&base_indent);
+        output.push_str(&"    ".repeat(depth));
+        output.push_str(part);
+        output.push_str(" {\n");
+    }
+    output.push_str(&base_indent);
+    output.push_str(&"    ".repeat(parts.len().saturating_sub(1)));
+    output.push_str(parts.last().copied().unwrap_or_default());
+    output.push_str(" = ");
+    output.push_str(value);
+    output.push('\n');
+    for (depth, _) in parts
+        .iter()
+        .take(parts.len().saturating_sub(1))
+        .enumerate()
+        .rev()
+    {
+        output.push_str(&base_indent);
+        output.push_str(&"    ".repeat(depth));
+        output.push_str("}\n");
+    }
+    output
+}
+
+fn find_direct_child_block(source: &str, range: &TextRange, name: &str) -> Option<TextRange> {
+    let (open, close) = block_braces(source, range)?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (relative, ch) in source[open + '{'.len_utf8()..close].char_indices() {
+        let offset = open + '{'.len_utf8() + relative;
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if depth == 0 && starts_block_head(source, offset, name) {
+            let open =
+                source[offset + name.len()..]
+                    .char_indices()
+                    .find_map(|(relative, ch)| {
+                        if ch == '{' {
+                            Some(offset + name.len() + relative)
+                        } else if ch.is_whitespace() {
+                            None
+                        } else {
+                            Some(usize::MAX)
+                        }
+                    })?;
+            if open == usize::MAX {
+                continue;
+            }
+            let close = matching_brace(source, open)?;
+            return Some(TextRange::new(offset, close + '}'.len_utf8()));
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => depth += 1,
+            '}' if !in_string => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn starts_block_head(source: &str, offset: usize, name: &str) -> bool {
+    source[offset..].starts_with(name)
+        && source[..offset]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !is_block_head_symbol(ch))
+        && source[offset + name.len()..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_whitespace() || ch == '{')
+}
+
+fn is_block_head_symbol(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | ':')
+}
+
+fn block_braces(source: &str, range: &TextRange) -> Option<(usize, usize)> {
+    let block = source.get(range.as_range())?;
+    let open = range.start() + block.find('{')?;
+    let close = matching_brace(source, open)?;
+    Some((open, close))
 }
 
 #[cfg(test)]
@@ -606,5 +745,44 @@ mod tests {
 
         assert_eq!(edit.start, expected);
         assert_eq!(edit.replacement, "    text_color = rgb(\"#202122\")\n");
+    }
+
+    #[test]
+    fn dialogue_defaults_edit_creates_nested_rich_text_blocks() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n}\n";
+        let edit =
+            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let expected = source.find("}\n").expect("defaults close");
+
+        assert_eq!(edit.start, expected);
+        assert_eq!(
+            edit.replacement,
+            "    rich_text {\n        ruby {\n            size = 14px\n        }\n    }\n"
+        );
+    }
+
+    #[test]
+    fn dialogue_defaults_edit_appends_missing_nested_child_block() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n}\n";
+        let edit =
+            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let expected = source.find("    }\n}\n").expect("rich_text close");
+
+        assert_eq!(edit.start, expected);
+        assert_eq!(
+            edit.replacement,
+            "        ruby {\n            size = 14px\n        }\n"
+        );
+    }
+
+    #[test]
+    fn dialogue_defaults_edit_appends_existing_nested_leaf_block() {
+        let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
+        let edit =
+            dialogue_defaults_edit(source, "rich_text.ruby.size", "14px").expect("defaults edit");
+        let expected = source.find("        }\n    }\n}\n").expect("ruby close");
+
+        assert_eq!(edit.start, expected);
+        assert_eq!(edit.replacement, "            size = 14px\n");
     }
 }

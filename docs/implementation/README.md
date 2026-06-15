@@ -131,7 +131,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   options, and can lift selected defaults into the matching character's
   `dialogue_style` block when the character declaration is in the current
   document or move active non-default contributors into the selected
-  `dialogue defaults` profile. Source-level sugar expansion and canonical
+  `dialogue defaults` profile using canonical nested defaults blocks such as
+  `rich_text { ruby { size = ... } }`. Source-level sugar expansion and canonical
   rich-text actions now include dialogue content embedded in line-result `let`
   bindings such as `let handles = alice.say()[...] with: ...`, and they
   return a coordinated rewrite edit so paired constructs such as
