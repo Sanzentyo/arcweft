@@ -54,16 +54,12 @@ fn dialogue_override_actions(
         .map(|contribution| {
             let option = format!("{}={}", contribution.path, contribution.value);
             let edit = insertion.edit_for_option(&option);
-            CodeAction {
-                title: format!("Extract `{}` override to line options", contribution.path),
-                kind: Some(CodeActionKind::REFACTOR_EXTRACT),
-                edit: Some(workspace_edit_from_tooling_edit(
-                    uri,
-                    &edit,
-                    document.line_index(),
-                )),
-                ..CodeAction::default()
-            }
+            extraction_code_action(
+                uri,
+                document,
+                format!("Extract `{}` override to line options", contribution.path),
+                &edit,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -81,19 +77,37 @@ fn dialogue_override_actions(
                     &contribution.path,
                     &contribution.value,
                 )?;
-                Some(CodeAction {
-                    title: format!(
+                Some(extraction_code_action(
+                    uri,
+                    document,
+                    format!(
                         "Extract `{}` override to character dialogue_style",
                         contribution.path
                     ),
-                    kind: Some(CodeActionKind::REFACTOR_EXTRACT),
-                    edit: Some(workspace_edit_from_tooling_edit(
-                        uri,
-                        &edit,
-                        document.line_index(),
-                    )),
-                    ..CodeAction::default()
-                })
+                    &edit,
+                ))
+            }),
+    );
+    actions.extend(
+        cascade
+            .spec
+            .style_contributions
+            .iter()
+            .filter(|contribution| extractable_textbox_theme_override(contribution))
+            .take(8)
+            .filter_map(|contribution| {
+                let edit = textbox_theme_edit(
+                    document.text(),
+                    cascade.spec.window.as_deref()?,
+                    &contribution.path,
+                    &contribution.value,
+                )?;
+                Some(extraction_code_action(
+                    uri,
+                    document,
+                    format!("Extract `{}` override to textbox theme", contribution.path),
+                    &edit,
+                ))
             }),
     );
     actions.extend(
@@ -109,22 +123,36 @@ fn dialogue_override_actions(
                     &contribution.path,
                     &contribution.value,
                 )?;
-                Some(CodeAction {
-                    title: format!(
+                Some(extraction_code_action(
+                    uri,
+                    document,
+                    format!(
                         "Extract `{}` override to dialogue defaults",
                         contribution.path
                     ),
-                    kind: Some(CodeActionKind::REFACTOR_EXTRACT),
-                    edit: Some(workspace_edit_from_tooling_edit(
-                        uri,
-                        &edit,
-                        document.line_index(),
-                    )),
-                    ..CodeAction::default()
-                })
+                    &edit,
+                ))
             }),
     );
     actions
+}
+
+fn extraction_code_action(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    title: String,
+    edit: &TextEdit,
+) -> CodeAction {
+    CodeAction {
+        title,
+        kind: Some(CodeActionKind::REFACTOR_EXTRACT),
+        edit: Some(workspace_edit_from_tooling_edit(
+            uri,
+            edit,
+            document.line_index(),
+        )),
+        ..CodeAction::default()
+    }
 }
 
 fn extractable_line_override(contribution: &RichTextStyleContribution) -> bool {
@@ -150,6 +178,14 @@ fn extractable_dialogue_defaults_override(contribution: &RichTextStyleContributi
     contribution.active
         && contribution.op == RichTextAssignOp::Replace
         && contribution.layer != RichTextCascadeLayer::DialogueDefaults
+        && !contribution.path.is_empty()
+        && !contribution.value.is_empty()
+}
+
+fn extractable_textbox_theme_override(contribution: &RichTextStyleContribution) -> bool {
+    contribution.active
+        && contribution.op == RichTextAssignOp::Replace
+        && contribution.layer != RichTextCascadeLayer::DialogueWindowTheme
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }
@@ -463,11 +499,22 @@ fn existing_dialogue_style_insertion(
     path: &str,
     value: &str,
 ) -> Option<TextEdit> {
-    let start = body.find("dialogue_style")?;
+    existing_named_block_insertion(source, body, body_range, "dialogue_style", path, value)
+}
+
+fn existing_named_block_insertion(
+    source: &str,
+    body: &str,
+    body_range: &TextRange,
+    block_name: &str,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let start = body.find(block_name)?;
     let open = body[start..].find('{')? + start;
     let close = matching_brace(body, open)?;
-    let style_range = TextRange::new(body_range.start() + start, body_range.start() + close + 1);
-    block_path_assignment_insertion(source, &style_range, path, value)
+    let block_range = TextRange::new(body_range.start() + start, body_range.start() + close + 1);
+    block_path_assignment_insertion(source, &block_range, path, value)
 }
 
 fn matching_brace(source: &str, open: usize) -> Option<usize> {
@@ -521,6 +568,96 @@ fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextE
     block_path_assignment_insertion(source, target.range(), path, value)
 }
 
+fn textbox_theme_edit(source: &str, window: &str, path: &str, value: &str) -> Option<TextEdit> {
+    let parsed = parse_source(source);
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(entity)
+                if entity.kind() == EntityDeclKind::Textbox
+                    && entity_matches_ref(entity, window) =>
+            {
+                entity_textbox_theme_edit(source, entity, path, value)
+            }
+            _ => None,
+        })
+}
+
+fn entity_matches_ref(entity: &EntityDeclItem, raw_ref: &str) -> bool {
+    let key = raw_ref
+        .trim()
+        .strip_prefix("@<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .or_else(|| raw_ref.trim().strip_prefix('@'))
+        .unwrap_or(raw_ref)
+        .trim();
+    [
+        Some(entity.id().body()),
+        entity.name(),
+        entity.surface_alias(),
+        entity
+            .id()
+            .body()
+            .rsplit_once('.')
+            .map(|(_, suffix)| suffix),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|candidate| candidate == key || format!("@<{candidate}>") == key)
+}
+
+fn entity_textbox_theme_edit(
+    source: &str,
+    entity: &EntityDeclItem,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let body = entity.body()?;
+    let body_range = entity.body_range()?;
+    if let Some(rest) = path.strip_prefix("rich_text.") {
+        if let Some(insertion) =
+            existing_named_block_insertion(source, body, body_range, "rich_text", rest, value)
+        {
+            return Some(insertion);
+        }
+        let parts = assignment_path_parts(rest);
+        if parts.is_empty() {
+            return None;
+        }
+        return Some(TextEdit {
+            start: body_range.end(),
+            end: body_range.end(),
+            replacement: format!(
+                "\n    rich_text {{\n{}    }}",
+                nested_assignment_text("    ", &parts, value)
+            ),
+        });
+    }
+    if let Some(insertion) =
+        existing_named_block_insertion(source, body, body_range, "dialogue_style", path, value)
+    {
+        return Some(insertion);
+    }
+    let replacement = if let Some(parts) = nested_path_parts(path) {
+        format!(
+            "\n    dialogue_style {{\n{}    }}",
+            nested_assignment_text("    ", &parts, value)
+        )
+    } else {
+        format!("\n    dialogue_style {{\n        {path} = {value}\n    }}")
+    };
+    Some(TextEdit {
+        start: body_range.end(),
+        end: body_range.end(),
+        replacement,
+    })
+}
+
 fn block_path_assignment_insertion(
     source: &str,
     range: &TextRange,
@@ -549,11 +686,15 @@ fn block_path_assignment_insertion(
 }
 
 fn nested_path_parts(path: &str) -> Option<Vec<&str>> {
-    let parts = path
-        .split('.')
-        .filter(|part| !part.trim().is_empty())
-        .collect::<Vec<_>>();
+    let parts = assignment_path_parts(path);
     (parts.len() > 1).then_some(parts)
+}
+
+fn assignment_path_parts(path: &str) -> Vec<&str> {
+    path.split('.')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 fn block_assignment_insertion(
@@ -761,6 +902,51 @@ mod tests {
                 .expect("ruby close")
         );
         assert_eq!(edit.replacement, "                size = 14px\n");
+    }
+
+    #[test]
+    fn textbox_theme_edit_creates_rich_text_block_for_window() {
+        let source = "pub textbox @textbox.phone PhoneBox {}\nflow opening {\n    alice(window=@textbox.phone): Hello[p]\n}\n";
+        let edit = textbox_theme_edit(source, "textbox.phone", "rich_text.ruby.size", "14px")
+            .expect("textbox theme edit");
+
+        assert_eq!(
+            edit.start,
+            source.find("{}").expect("empty textbox body") + 1
+        );
+        assert_eq!(
+            edit.replacement,
+            "\n    rich_text {\n        ruby {\n            size = 14px\n        }\n    }"
+        );
+    }
+
+    #[test]
+    fn textbox_theme_edit_appends_existing_rich_text_leaf_block() {
+        let source = "pub textbox @textbox.phone PhoneBox {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
+        let edit = textbox_theme_edit(source, "@textbox.phone", "rich_text.ruby.size", "14px")
+            .expect("textbox theme edit");
+
+        assert_eq!(
+            edit.start,
+            source.find("        }\n    }\n}\n").expect("ruby close")
+        );
+        assert_eq!(edit.replacement, "            size = 14px\n");
+    }
+
+    #[test]
+    fn textbox_theme_edit_uses_dialogue_style_for_non_rich_text_paths() {
+        let source = "pub textbox @textbox.phone PhoneBox {}\n";
+        let edit = textbox_theme_edit(source, "phone", "text_color", "rgb(\"#202122\")")
+            .expect("textbox dialogue style edit");
+
+        assert_eq!(
+            edit.start,
+            source.find("{}").expect("empty textbox body") + 1
+        );
+        assert_eq!(
+            edit.replacement,
+            "\n    dialogue_style {\n        text_color = rgb(\"#202122\")\n    }"
+        );
     }
 
     #[test]

@@ -128,10 +128,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   expose source value ranges through runtime-plan JSON, LSP definition, and LSP
   reference features. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
-  options, and can lift selected defaults into the matching character's
+  options, can lift selected defaults into the matching character's
   `dialogue_style` block when the character declaration is in the current
-  document or move active non-default contributors into the selected
-  `dialogue defaults` profile. Both extraction targets use canonical nested
+  document, can extract active contributors into the effective textbox theme
+  (`rich_text` for `rich_text.*` paths, `dialogue_style` for other dialogue
+  style paths), or move active non-default contributors into the selected
+  `dialogue defaults` profile. These extraction targets use canonical nested
   style blocks such as `rich_text { ruby { size = ... } }`. Source-level sugar
   expansion and canonical
   rich-text actions now include dialogue content embedded in line-result `let`
