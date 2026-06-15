@@ -565,7 +565,7 @@ mod tests {
 
         let actions = session
             .code_actions(&CodeActionParams {
-                text_document: TextDocumentIdentifier { uri },
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
                 range: Range::new(Position::new(0, 0), Position::new(10, 0)),
                 context: CodeActionContext::default(),
                 work_done_progress_params: WorkDoneProgressParams::default(),
@@ -573,14 +573,31 @@ mod tests {
             })
             .expect("open document actions");
 
-        assert!(actions.iter().any(|action| {
-            matches!(
-                action,
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
                 CodeActionOrCommand::CodeAction(action)
-                    if action.title == "Canonicalize inferred rich-text tags"
-                        && action.edit.is_some()
-            )
-        }));
+                    if action.title == "Canonicalize inferred rich-text tags" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("canonical rich-text action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        assert!(
+            edits[0]
+                .new_text
+                .contains("[effect .shake amp=2px]hi[/effect]")
+        );
+        assert!(!edits[0].new_text.contains("[/]"));
     }
 
     #[test]
