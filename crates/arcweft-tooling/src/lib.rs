@@ -1835,7 +1835,7 @@ mod tests {
 
     #[test]
     fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
-        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
+        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.shake amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
         let report = format_source(
             source,
             FormatOptions {
@@ -1846,6 +1846,7 @@ mod tests {
         .expect("format report");
 
         assert!(report.output.contains("$(name)"));
+        assert!(report.output.contains("[mark .keyword]"));
         assert!(
             report
                 .output
@@ -1861,7 +1862,7 @@ mod tests {
 
     #[test]
     fn source_code_actions_include_canonical_rich_text_edits() {
-        let source = "flow @flow.opening opening {\n    alice: [.vertical_rl]縦[/]\n}\n";
+        let source = "flow @flow.opening opening {\n    alice: [.keyword][.vertical_rl]縦[/]\n}\n";
         let actions = source_code_actions(source);
 
         let action = actions
@@ -1877,6 +1878,7 @@ mod tests {
             edit.replacement
                 .contains("[layout .vertical_rl]縦[/layout]")
         );
+        assert!(edit.replacement.contains("[mark .keyword]"));
         assert!(!edit.replacement.contains("[/]"));
     }
 
