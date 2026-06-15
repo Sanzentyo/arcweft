@@ -67,7 +67,7 @@ flow rich_text_full_grammar {
     let score: i32 = 42
     let debug_label = "debug-ok"
 
-    alice.say(id=@say.full.001, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)), inline_error=InlineFailure.fallback("?"))[
+    alice.say(id=@say.full.001, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=13px, gap=1px)), inline_error=InlineFailure.fallback("?"))[
         ルビ: |[変な夢](へんなゆめ)、|悪夢{あくむ}、｜星影《ほしかげ》、[ruby rt="時計塔"]時の塔[/ruby]、[rb rt=ゆめ]夢[/rb]、#[ruby("秘密", "ひみつ")]。[p]
     ]
 

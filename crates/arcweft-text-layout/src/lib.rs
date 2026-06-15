@@ -551,7 +551,7 @@ fn layout_horizontal_run(
         }
         let start = range_start + offset;
         let end = start + ch.len_utf8();
-        let bounds = LayoutRect::new(cursor.x, cursor.y, width.max(1.0), config.line_advance);
+        let bounds = horizontal_glyph_bounds(cursor.x, cursor.y, width, config);
         glyphs.push(LaidOutGlyph {
             run_index,
             range: RichTextRange::new(start, end),
@@ -566,6 +566,17 @@ fn layout_horizontal_run(
         });
         cursor.x += width;
     }
+}
+
+fn horizontal_glyph_bounds(
+    x: f32,
+    line_y: f32,
+    width: f32,
+    config: TextLayoutConfig,
+) -> LayoutRect {
+    let height = config.font_size.max(1.0).min(config.line_advance.max(1.0));
+    let y = line_y + (config.line_advance - height).max(0.0) * 0.5;
+    LayoutRect::new(x, y, width.max(1.0), height)
 }
 
 fn horizontal_cluster_should_wrap(cursor_x: f32, width: f32, config: TextLayoutConfig) -> bool {
@@ -6232,6 +6243,21 @@ mod tests {
         assert_eq!(layout.ruby.len(), 1);
         assert_eq!(layout.ruby[0].base_bounds, layout.glyphs[0].bounds);
         assert!(layout.ruby[0].ruby_bounds.y < layout.glyphs[0].bounds.y);
+    }
+
+    #[test]
+    fn horizontal_glyph_bounds_track_font_size_inside_line_advance() {
+        let frame = frame_with_run("夢", RichTextPresentation::default());
+        let config = TextLayoutConfig::default();
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        let glyph = &layout.glyphs[0];
+
+        assert_f32_eq(glyph.origin.y, config.origin.y);
+        assert_f32_eq(glyph.bounds.height, config.font_size);
+        assert_f32_eq(
+            glyph.bounds.y,
+            config.origin.y + (config.line_advance - config.font_size) * 0.5,
+        );
     }
 
     #[test]

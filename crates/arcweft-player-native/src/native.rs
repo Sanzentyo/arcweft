@@ -2016,6 +2016,14 @@ struct NativeTextStyle {
 
 impl NativeTextStyle {
     fn attrs(&self) -> Attrs<'_> {
+        self.attrs_with_metrics(Self::metrics_for_size)
+    }
+
+    fn ruby_attrs(&self) -> Attrs<'_> {
+        self.attrs_with_metrics(Self::ruby_metrics_for_size)
+    }
+
+    fn attrs_with_metrics(&self, metrics_for_size: fn(u16) -> Metrics) -> Attrs<'_> {
         let mut attrs = Attrs::new()
             .family(self.family.as_glyphon_family())
             .color(self.color.into_glyphon());
@@ -2026,7 +2034,7 @@ impl NativeTextStyle {
             attrs = attrs.style(Style::Italic);
         }
         if let Some(size) = self.size {
-            attrs = attrs.metrics(Self::metrics_for_size(size));
+            attrs = attrs.metrics(metrics_for_size(size));
         }
         attrs
     }
@@ -2037,9 +2045,20 @@ impl NativeTextStyle {
         })
     }
 
+    fn ruby_metrics(&self) -> Metrics {
+        self.size.map_or(Metrics::new(14.0, 14.0), |size| {
+            Self::ruby_metrics_for_size(size)
+        })
+    }
+
     fn metrics_for_size(size: u16) -> Metrics {
         let font_size = f32::from(size);
         Metrics::new(font_size, font_size * 1.35)
+    }
+
+    fn ruby_metrics_for_size(size: u16) -> Metrics {
+        let font_size = f32::from(size);
+        Metrics::new(font_size, font_size)
     }
 }
 
@@ -2454,13 +2473,13 @@ fn build_ruby_buffers(
             }
         }
 
-        let mut buffer = Buffer::new(font_system, Metrics::new(16.0, 20.0));
+        let mut buffer = Buffer::new(font_system, annotation.style.ruby_metrics());
         buffer.set_size(
             font_system,
             Some(surface_extent_f32(width)),
             Some(surface_extent_f32(height)),
         );
-        let attrs = annotation.style.attrs();
+        let attrs = annotation.style.ruby_attrs();
         let spans = [(annotation.ruby.as_str(), attrs.clone())];
         buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(font_system, false);
@@ -2491,13 +2510,13 @@ fn build_ruby_buffer(
     style: &NativeTextStyle,
     spec: RubyBufferSpec<'_>,
 ) -> WindowRubyBuffer {
-    let mut buffer = Buffer::new(font_system, Metrics::new(16.0, 20.0));
+    let mut buffer = Buffer::new(font_system, style.ruby_metrics());
     buffer.set_size(
         font_system,
         Some(surface_extent_f32(spec.width)),
         Some(surface_extent_f32(spec.height)),
     );
-    let attrs = style.attrs();
+    let attrs = style.ruby_attrs();
     let spans = [(spec.ruby, attrs.clone())];
     buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
@@ -4395,6 +4414,22 @@ mod tests {
 
         assert!((metrics.font_size - 48.0).abs() < f32::EPSILON);
         assert!((metrics.line_height - 64.8).abs() <= 0.0001);
+    }
+
+    #[test]
+    fn native_ruby_style_uses_tight_line_height() {
+        let presentation = RichTextPresentation {
+            layout: Some(RichTextLayout {
+                ruby_font_size: Some(arcweft_render_text::Milli(11000)),
+                ..RichTextLayout::default()
+            }),
+            ..RichTextPresentation::default()
+        };
+        let native = native_ruby_style_from_styles(&[], &presentation);
+        let metrics = native.ruby_metrics();
+
+        assert!((metrics.font_size - 11.0).abs() < f32::EPSILON);
+        assert!((metrics.line_height - 11.0).abs() < f32::EPSILON);
     }
 
     #[test]

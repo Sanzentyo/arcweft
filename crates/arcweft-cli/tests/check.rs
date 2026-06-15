@@ -18790,14 +18790,16 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["kind"], "color");
     assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
     assert_eq!(json["images"][0]["composition"], "isolated_regions");
-    assert_eq!(json["images"][0]["width"], 1088);
-    assert_eq!(json["images"][0]["height"], 132);
+    let capture_width = json["images"][0]["width"].as_u64().unwrap();
+    let capture_height = json["images"][0]["height"].as_u64().unwrap();
+    assert_eq!(capture_width, 1088);
+    assert_eq!(capture_height, 126);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
     assert_eq!(json["images"][0]["crop_origin"]["x"], 96);
-    assert_eq!(json["images"][0]["crop_origin"]["y"], 540);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 546);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
-    assert!(content_pixels < 1088 * 132);
+    assert!(content_pixels < capture_width * capture_height);
     let bytes = fs::read(&raw_path).expect("read native object raw crop");
     let width = usize::try_from(json["images"][0]["width"].as_u64().unwrap()).unwrap();
     let height = usize::try_from(json["images"][0]["height"].as_u64().unwrap()).unwrap();
@@ -21498,12 +21500,14 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["kind"], "object");
     assert_eq!(json["images"][0]["scope"]["id"], "object.dialogue.0.0");
     assert_eq!(json["images"][0]["composition"], "mask_attachment");
-    assert_eq!(json["images"][0]["width"], 1088);
-    assert_eq!(json["images"][0]["height"], 132);
+    let capture_width = json["images"][0]["width"].as_u64().unwrap();
+    let capture_height = json["images"][0]["height"].as_u64().unwrap();
+    assert_eq!(capture_width, 1088);
+    assert_eq!(capture_height, 126);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
     assert!(
-        content_pixels < 1088 * 132,
+        content_pixels < capture_width * capture_height,
         "native textbox mask should expose glyph geometry instead of filling the whole bbox"
     );
     let bytes = fs::read(&raw_path).expect("read native textbox mask raw crop");
@@ -21566,12 +21570,14 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["kind"], "object");
     assert_eq!(json["images"][0]["scope"]["id"], "object.dialogue.0.0");
     assert_eq!(json["images"][0]["composition"], "object_id_attachment");
-    assert_eq!(json["images"][0]["width"], 1088);
-    assert_eq!(json["images"][0]["height"], 132);
+    let capture_width = json["images"][0]["width"].as_u64().unwrap();
+    let capture_height = json["images"][0]["height"].as_u64().unwrap();
+    assert_eq!(capture_width, 1088);
+    assert_eq!(capture_height, 126);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
     assert!(
-        content_pixels < 1088 * 132,
+        content_pixels < capture_width * capture_height,
         "native textbox object-id should expose glyph geometry instead of filling the whole bbox"
     );
     let bytes = fs::read(&raw_path).expect("read native textbox object-id raw crop");
@@ -22656,12 +22662,14 @@ flow @flow.main main {
         &responses[1]["result"]["content"][0],
         "native object capture metadata is JSON",
     );
-    assert_eq!(metadata["image"]["width"], 1088);
-    assert_eq!(metadata["image"]["height"], 132);
+    let capture_width = metadata["image"]["width"].as_u64().unwrap();
+    let capture_height = metadata["image"]["height"].as_u64().unwrap();
+    assert_eq!(capture_width, 1088);
+    assert_eq!(capture_height, 126);
     assert_eq!(metadata["image"]["composition"], "isolated_regions");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
-        metadata["image"]["content_pixels"].as_u64().unwrap() < 1088 * 132,
+        metadata["image"]["content_pixels"].as_u64().unwrap() < capture_width * capture_height,
         "native object color capture should isolate glyph regions inside the textbox crop"
     );
 }
