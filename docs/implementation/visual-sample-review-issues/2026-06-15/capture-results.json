@@ -85,5 +85,11 @@
     "exit": 0,
     "bytes": 16379,
     "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-008-fixed-escape-consolas-full-grammar.png"
+  },
+  {
+    "name": "issue-007-fixed-split-effect-transform-full-grammar",
+    "exit": 0,
+    "bytes": 27751,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-007-fixed-split-effect-transform-full-grammar.png"
   }
 ]
