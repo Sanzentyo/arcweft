@@ -410,3 +410,39 @@ fn parses_attributes_and_wiki_links() {
     assert_eq!(flow.attrs().len(), 1);
     assert_eq!(flow.attrs()[0].name(), "derive");
 }
+
+#[test]
+fn parses_and_lowers_dialogue_defaults_attributes() {
+    let tree = parse_ok(
+        r#"
+#[profile(note="mobile defaults")]
+pub dialogue defaults @dialogue.defaults.mobile {
+    rich_text {
+        text {
+            font = "Meiryo"
+        }
+    }
+}
+"#,
+    );
+
+    let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
+        panic!("expected dialogue defaults");
+    };
+    assert_eq!(defaults.attrs().len(), 1);
+    assert_eq!(defaults.attrs()[0].name(), "profile");
+    assert_eq!(defaults.attrs()[0].args(), Some("note=\"mobile defaults\""));
+
+    let hir = lower_to_hir(&tree).expect("dialogue defaults fixture lowers");
+    let HirTopLevelDecl::DialogueDefaults(lowered) = hir
+        .declarations()
+        .iter()
+        .find(|decl| matches!(decl, HirTopLevelDecl::DialogueDefaults(_)))
+        .expect("lowered dialogue defaults")
+    else {
+        panic!("expected lowered dialogue defaults");
+    };
+    assert_eq!(lowered.attrs().len(), 1);
+    assert_eq!(lowered.attrs()[0].name(), "profile");
+    assert_eq!(lowered.attrs()[0].args(), Some("note=\"mobile defaults\""));
+}

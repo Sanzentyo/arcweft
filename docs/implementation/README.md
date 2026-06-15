@@ -880,7 +880,9 @@ Current high-confidence state:
   attach to the following supported item, while source-level inner attributes
   such as `#![generated(...)]` and `#![allow(...)]` are preserved on
   `TypedSyntaxTree::attrs()` and `HirModule::attributes()`, and flow outer
-  attributes are preserved on `HirFlow::attributes()`. These attributes
+  attributes are preserved on `HirFlow::attributes()`. Dialogue defaults also
+  keep their outer attributes through AST and HIR lowering, so profile/defaults
+  metadata can be inspected without reparsing source text. These attributes
   participate in file-wide syntax lint policy.
   Further hierarchy checks should build on this pass rather than parser
   diagnostics.
