@@ -7,13 +7,17 @@ use arcweft_lang_syntax::{
         dialogue::{ContentCall, SpeakerLine},
         flow::{
             BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
-            SourceLocaleBlock, WhileBlock, WhileLetBlock,
+            SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
         },
         items::{EntityDeclItem, EntityDeclKind, Item},
+        pattern::Pattern,
     },
+    expr::Expr,
     parser::parse_source,
 };
-use arcweft_render_text::{RichTextAssignOp, RichTextCascadeLayer, RichTextStyleContribution};
+use arcweft_render_text::{
+    LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextStyleContribution,
+};
 use arcweft_verify_lsp::source_code_actions_with_mapper;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_types::{CodeAction, CodeActionKind, Position, Uri};
@@ -45,9 +49,26 @@ fn dialogue_override_actions(
         return Vec::new();
     };
 
-    let mut actions = cascade
-        .spec
-        .style_contributions
+    let mut actions =
+        line_override_actions(uri, document, &cascade.spec.style_contributions, insertion);
+    actions.extend(character_override_actions(uri, document, &cascade.spec));
+    actions.extend(speaker_preset_actions(uri, document, &cascade.spec));
+    actions.extend(textbox_theme_actions(uri, document, &cascade.spec));
+    actions.extend(dialogue_defaults_actions(
+        uri,
+        document,
+        &cascade.spec.style_contributions,
+    ));
+    actions
+}
+
+fn line_override_actions(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    contributions: &[RichTextStyleContribution],
+    insertion: DialogueOptionInsertion,
+) -> Vec<CodeAction> {
+    contributions
         .iter()
         .filter(|contribution| extractable_line_override(contribution))
         .take(8)
@@ -61,80 +82,113 @@ fn dialogue_override_actions(
                 &edit,
             )
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
 
-    actions.extend(
-        cascade
-            .spec
-            .style_contributions
-            .iter()
-            .filter(|contribution| extractable_character_override(contribution))
-            .take(8)
-            .filter_map(|contribution| {
-                let edit = character_dialogue_style_edit(
-                    document.text(),
-                    &cascade.spec.callee,
-                    &contribution.path,
-                    &contribution.value,
-                )?;
-                Some(extraction_code_action(
-                    uri,
-                    document,
-                    format!(
-                        "Extract `{}` override to character dialogue_style",
-                        contribution.path
-                    ),
-                    &edit,
-                ))
-            }),
-    );
-    actions.extend(
-        cascade
-            .spec
-            .style_contributions
-            .iter()
-            .filter(|contribution| extractable_textbox_theme_override(contribution))
-            .take(8)
-            .filter_map(|contribution| {
-                let edit = textbox_theme_edit(
-                    document.text(),
-                    cascade.spec.window.as_deref()?,
-                    &contribution.path,
-                    &contribution.value,
-                )?;
-                Some(extraction_code_action(
-                    uri,
-                    document,
-                    format!("Extract `{}` override to textbox theme", contribution.path),
-                    &edit,
-                ))
-            }),
-    );
-    actions.extend(
-        cascade
-            .spec
-            .style_contributions
-            .iter()
-            .filter(|contribution| extractable_dialogue_defaults_override(contribution))
-            .take(8)
-            .filter_map(|contribution| {
-                let edit = dialogue_defaults_edit(
-                    document.text(),
-                    &contribution.path,
-                    &contribution.value,
-                )?;
-                Some(extraction_code_action(
-                    uri,
-                    document,
-                    format!(
-                        "Extract `{}` override to dialogue defaults",
-                        contribution.path
-                    ),
-                    &edit,
-                ))
-            }),
-    );
-    actions
+fn character_override_actions(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    spec: &LineDisplaySpec,
+) -> Vec<CodeAction> {
+    spec.style_contributions
+        .iter()
+        .filter(|contribution| extractable_character_override(contribution))
+        .take(8)
+        .filter_map(|contribution| {
+            let edit = character_dialogue_style_edit(
+                document.text(),
+                &spec.callee,
+                &contribution.path,
+                &contribution.value,
+            )?;
+            Some(extraction_code_action(
+                uri,
+                document,
+                format!(
+                    "Extract `{}` override to character dialogue_style",
+                    contribution.path
+                ),
+                &edit,
+            ))
+        })
+        .collect()
+}
+
+fn speaker_preset_actions(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    spec: &LineDisplaySpec,
+) -> Vec<CodeAction> {
+    spec.style_contributions
+        .iter()
+        .filter(|contribution| extractable_speaker_preset_override(contribution))
+        .take(8)
+        .filter_map(|contribution| {
+            let edit = speaker_preset_edit(
+                document.text(),
+                &spec.callee,
+                &contribution.path,
+                &contribution.value,
+            )?;
+            Some(extraction_code_action(
+                uri,
+                document,
+                format!("Extract `{}` override to speaker preset", contribution.path),
+                &edit,
+            ))
+        })
+        .collect()
+}
+
+fn textbox_theme_actions(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    spec: &LineDisplaySpec,
+) -> Vec<CodeAction> {
+    spec.style_contributions
+        .iter()
+        .filter(|contribution| extractable_textbox_theme_override(contribution))
+        .take(8)
+        .filter_map(|contribution| {
+            let edit = textbox_theme_edit(
+                document.text(),
+                spec.window.as_deref()?,
+                &contribution.path,
+                &contribution.value,
+            )?;
+            Some(extraction_code_action(
+                uri,
+                document,
+                format!("Extract `{}` override to textbox theme", contribution.path),
+                &edit,
+            ))
+        })
+        .collect()
+}
+
+fn dialogue_defaults_actions(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    contributions: &[RichTextStyleContribution],
+) -> Vec<CodeAction> {
+    contributions
+        .iter()
+        .filter(|contribution| extractable_dialogue_defaults_override(contribution))
+        .take(8)
+        .filter_map(|contribution| {
+            let edit =
+                dialogue_defaults_edit(document.text(), &contribution.path, &contribution.value)?;
+            Some(extraction_code_action(
+                uri,
+                document,
+                format!(
+                    "Extract `{}` override to dialogue defaults",
+                    contribution.path
+                ),
+                &edit,
+            ))
+        })
+        .collect()
 }
 
 fn extraction_code_action(
@@ -186,6 +240,14 @@ fn extractable_textbox_theme_override(contribution: &RichTextStyleContribution) 
     contribution.active
         && contribution.op == RichTextAssignOp::Replace
         && contribution.layer != RichTextCascadeLayer::DialogueWindowTheme
+        && !contribution.path.is_empty()
+        && !contribution.value.is_empty()
+}
+
+fn extractable_speaker_preset_override(contribution: &RichTextStyleContribution) -> bool {
+    contribution.active
+        && contribution.op == RichTextAssignOp::Replace
+        && contribution.layer != RichTextCascadeLayer::SpeakerPreset
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }
@@ -658,6 +720,219 @@ fn entity_textbox_theme_edit(
     })
 }
 
+fn speaker_preset_edit(source: &str, callee: &str, path: &str, value: &str) -> Option<TextEdit> {
+    let preset_name = callee.strip_suffix(".say").unwrap_or(callee).trim();
+    if preset_name.is_empty() {
+        return None;
+    }
+    let parsed = parse_source(source);
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let option = format!("{path}={value}");
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| speaker_preset_edit_from_item(source, item, preset_name, &option))
+}
+
+fn speaker_preset_edit_from_item(
+    source: &str,
+    item: &Item,
+    preset_name: &str,
+    option: &str,
+) -> Option<TextEdit> {
+    match item {
+        Item::Flow(flow) => {
+            speaker_preset_edit_from_flow_items(source, flow.body(), preset_name, option)
+        }
+        Item::FlowItem(item) => speaker_preset_edit_from_flow_items(
+            source,
+            std::slice::from_ref(item.as_ref()),
+            preset_name,
+            option,
+        ),
+        _ => None,
+    }
+}
+
+fn speaker_preset_edit_from_flow_items(
+    source: &str,
+    items: &[FlowItem],
+    preset_name: &str,
+    option: &str,
+) -> Option<TextEdit> {
+    items.iter().find_map(|item| match item {
+        FlowItem::Stmt(stmt) => speaker_preset_edit_from_stmt(source, stmt, preset_name, option),
+        FlowItem::If(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::IfLet(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::Match(block) => block.arms().iter().find_map(|arm| {
+            speaker_preset_edit_from_flow_items(source, arm.body(), preset_name, option)
+        }),
+        FlowItem::Loop(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::While(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::WhileLet(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::For(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::Select(block) => block.branches().iter().find_map(|branch| {
+            speaker_preset_edit_from_flow_items(source, branch.body(), preset_name, option)
+        }),
+        FlowItem::BorrowBlock(block) => {
+            nested_speaker_preset_edit(source, block, preset_name, option)
+        }
+        FlowItem::SourceLocale(block) => {
+            nested_speaker_preset_edit(source, block, preset_name, option)
+        }
+        FlowItem::Scope(block) => nested_speaker_preset_edit(source, block, preset_name, option),
+        FlowItem::AwaitWith(await_with) => await_with.branches().iter().find_map(|branch| {
+            speaker_preset_edit_from_flow_items(source, branch.body(), preset_name, option)
+        }),
+        FlowItem::SpeakerLine(_)
+        | FlowItem::ContentCall(_)
+        | FlowItem::Choice(_)
+        | FlowItem::Include(_)
+        | FlowItem::Raw(_) => None,
+    })
+}
+
+fn nested_speaker_preset_edit(
+    source: &str,
+    block: &impl HasFlowBody,
+    preset_name: &str,
+    option: &str,
+) -> Option<TextEdit> {
+    speaker_preset_edit_from_flow_items(source, block.body(), preset_name, option)
+}
+
+fn speaker_preset_edit_from_stmt(
+    source: &str,
+    stmt: &Stmt,
+    preset_name: &str,
+    option: &str,
+) -> Option<TextEdit> {
+    match stmt {
+        Stmt::Let {
+            pattern,
+            expr,
+            expr_source,
+            expr_range,
+            ..
+        } if pattern_ident(pattern).is_some_and(|name| name == preset_name) => {
+            speaker_preset_expr_edit(
+                source,
+                expr,
+                expr_source.as_deref(),
+                expr_range.as_ref(),
+                option,
+            )
+        }
+        Stmt::LetElse { else_body, .. } => {
+            speaker_preset_edit_from_stmts(source, else_body, preset_name, option)
+        }
+        Stmt::LetScope { scope, .. } => {
+            speaker_preset_edit_from_stmts(source, scope.statements(), preset_name, option)
+        }
+        Stmt::LetLoop { block, .. } => {
+            speaker_preset_edit_from_flow_items(source, block.body(), preset_name, option)
+        }
+        Stmt::LetAwait { await_with, .. } => await_with.branches().iter().find_map(|branch| {
+            speaker_preset_edit_from_flow_items(source, branch.body(), preset_name, option)
+        }),
+        Stmt::Thread(thread) => {
+            speaker_preset_edit_from_flow_items(source, thread.body(), preset_name, option)
+        }
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop {
+            body: statements, ..
+        }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => speaker_preset_edit_from_stmts(source, statements, preset_name, option),
+        Stmt::Match { arms, .. } => arms.iter().find_map(|arm| {
+            speaker_preset_edit_from_stmts(source, arm.body(), preset_name, option)
+        }),
+        Stmt::Let { .. }
+        | Stmt::LetChoice { .. }
+        | Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::Goto(_)
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Wait(_)
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Expr(_)
+        | Stmt::Raw(_) => None,
+    }
+}
+
+fn speaker_preset_edit_from_stmts(
+    source: &str,
+    statements: &[Stmt],
+    preset_name: &str,
+    option: &str,
+) -> Option<TextEdit> {
+    statements
+        .iter()
+        .find_map(|stmt| speaker_preset_edit_from_stmt(source, stmt, preset_name, option))
+}
+
+fn speaker_preset_expr_edit(
+    source: &str,
+    expr: &Expr,
+    expr_source: Option<&str>,
+    expr_range: Option<&TextRange>,
+    option: &str,
+) -> Option<TextEdit> {
+    if !matches!(expr, Expr::Call { .. }) {
+        return None;
+    }
+    let expr_range = expr_range?;
+    let expr_source = expr_source?;
+    let insertion = call_header_option_insertion(
+        source,
+        expr_range.start(),
+        expr_range.start() + expr_source.len(),
+    )?;
+    Some(insertion.edit_for_option(option))
+}
+
+fn pattern_ident(pattern: &Pattern) -> Option<&str> {
+    match pattern {
+        Pattern::Ident(name)
+        | Pattern::MutIdent(name)
+        | Pattern::Typed { name, .. }
+        | Pattern::Whole { name, .. } => Some(name),
+        Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Variant { .. }
+        | Pattern::Discard
+        | Pattern::Tuple(_)
+        | Pattern::Record { .. }
+        | Pattern::BracketSeq { .. }
+        | Pattern::Raw(_) => None,
+    }
+}
+
 fn block_path_assignment_insertion(
     source: &str,
     range: &TextRange,
@@ -947,6 +1222,33 @@ mod tests {
             edit.replacement,
             "\n    dialogue_style {\n        text_color = rgb(\"#202122\")\n    }"
         );
+    }
+
+    #[test]
+    fn speaker_preset_edit_appends_existing_call_options() {
+        let source =
+            "flow opening {\n    let alice_side = alice(voice=auto)\n    alice_side: Hello[p]\n}\n";
+        let edit = speaker_preset_edit(source, "alice_side", "rich_text.ruby.size", "14px")
+            .expect("speaker preset edit");
+
+        assert_eq!(
+            edit.start,
+            source.find(")\n    alice_side").expect("call close")
+        );
+        assert_eq!(edit.replacement, ", rich_text.ruby.size=14px");
+    }
+
+    #[test]
+    fn speaker_preset_edit_creates_call_options() {
+        let source = "flow opening {\n    let alice_side = alice()\n    alice_side: Hello[p]\n}\n";
+        let edit = speaker_preset_edit(source, "alice_side", "text_color", "rgb(\"#202122\")")
+            .expect("speaker preset edit");
+
+        assert_eq!(
+            edit.start,
+            source.find(")\n    alice_side").expect("call close")
+        );
+        assert_eq!(edit.replacement, "text_color=rgb(\"#202122\")");
     }
 
     #[test]

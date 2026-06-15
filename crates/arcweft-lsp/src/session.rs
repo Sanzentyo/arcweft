@@ -863,6 +863,62 @@ flow opening {
     }
 
     #[test]
+    fn code_actions_extract_active_style_contributor_to_speaker_preset() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        let source = r"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    let alice_side = alice(voice=auto)
+    alice_side: |[夢](ゆめ)[p]
+}
+";
+        open_text(&mut session, uri.clone(), source);
+        let document = session.documents.get(&uri).expect("open document");
+        let offset = source.find("夢").expect("dialogue content");
+        let position = document.line_index().position_from_byte_offset(offset);
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(position, position),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title
+                        == "Extract `rich_text.ruby.size` override to speaker preset" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("speaker preset extraction action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, ", rich_text.ruby.size=14px");
+    }
+
+    #[test]
     fn code_actions_extract_active_style_contributor_to_dialogue_defaults() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());
