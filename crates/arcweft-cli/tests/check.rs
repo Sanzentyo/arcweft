@@ -25103,6 +25103,31 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 }
 
 #[test]
+fn fmt_expand_sugar_respects_decl_identity_attributes_when_writing() {
+    let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
+    let path = temp_arcw("fmt-expand-decl-identity-attrs", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--expand-sugar")
+        .arg("--write")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt --expand-sugar should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rewritten = fs::read_to_string(&path).expect("rewritten source");
+    assert!(rewritten.contains("flow @flow.generated generated {"));
+    assert!(rewritten.contains("source @source.http_requests http_requests"));
+    assert!(rewritten.contains("flow opening {"));
+    assert!(rewritten.contains("flow @flow.opening start {"));
+}
+
+#[test]
 fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
     let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.shake amp=2px]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text", source);
