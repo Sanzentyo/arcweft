@@ -1,8 +1,10 @@
-pub surface character @character.alice Alice as alice {
+pub surface character alice {
+    display = "Alice"
     default_voice = auto
 }
 
-pub surface character @character.narrator Narrator as narrator {
+pub surface character narrator {
+    display = "Narrator"
     default_voice = auto
 }
 
@@ -13,12 +15,12 @@ entry game @entry.main {
     start @flow.opening
 }
 
-flow @flow.opening opening
+flow opening
 effects { signal.write, metric.write }
 {
     log.info("enter opening")
     signal.set(@signal.current_flow, @flow.opening)
-    metric.set(@metric.opening_lines, 1)
+    metric.set(@metric.opening_lines, 1i32)
 
     narrator.say(id=@say.opening.narrator.001, voice=auto)[
         雨の音だけが、古い駅舎に残っていた。[p]
@@ -28,7 +30,7 @@ effects { signal.write, metric.write }
     alice2:
         おはよう。[p]
 
-    let route = if player_score() >= 3 {
+    let route = if player_score() >= 3i32 {
         @flow.alice_intro
     } else {
         @flow.quiet_intro
@@ -51,7 +53,7 @@ effects { signal.write, metric.write }
     goto route
 }
 
-flow @flow.alice_intro alice_intro
+flow alice_intro
 effects { signal.write }
 {
     log.info("route alice_intro")
@@ -63,7 +65,7 @@ effects { signal.write }
     return "alice_intro"
 }
 
-flow @flow.quiet_intro quiet_intro
+flow quiet_intro
 effects { signal.write }
 {
     log.info("route quiet_intro")
@@ -75,10 +77,10 @@ effects { signal.write }
     return "quiet_intro"
 }
 
-flow @flow.title title {
+flow title {
     return "title"
 }
 
 fn player_score() -> i32 {
-    4
+    4i32
 }

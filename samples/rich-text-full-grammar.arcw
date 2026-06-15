@@ -1,4 +1,5 @@
-pub surface character @character.alice Alice as alice {
+pub surface character alice {
+    display = "Alice"
     default_voice = auto
     dialogue_style {
         font = "Yu Gothic"
@@ -7,7 +8,8 @@ pub surface character @character.alice Alice as alice {
     }
 }
 
-pub surface character @character.bob Bob as bob {
+pub surface character bob {
+    display = "Bob"
     default_voice = auto
     dialogue_style {
         font = "Meiryo"
@@ -16,7 +18,8 @@ pub surface character @character.bob Bob as bob {
     }
 }
 
-pub surface character @character.narrator Narrator as narrator {
+pub surface character narrator {
+    display = "Narrator"
     default_voice = auto
     dialogue_style {
         font = "Segoe UI"
@@ -47,7 +50,7 @@ entry game {
     start @flow.rich_text_full_grammar
 }
 
-flow @flow.rich_text_full_grammar rich_text_full_grammar {
+flow rich_text_full_grammar {
     let player_name = "澪"
     let score: i32 = 42
     let debug_label = "debug-ok"

@@ -1,4 +1,5 @@
-pub surface character @character.alice Alice as alice {
+pub surface character alice {
+    display = "Alice"
     default_voice = auto
     dialogue_style {
         font = "Yu Gothic"
@@ -7,7 +8,8 @@ pub surface character @character.alice Alice as alice {
     }
 }
 
-pub surface character @character.narrator Narrator as narrator {
+pub surface character narrator {
+    display = "Narrator"
     default_voice = auto
     dialogue_style {
         font = "Yu Gothic UI"
@@ -16,7 +18,8 @@ pub surface character @character.narrator Narrator as narrator {
     }
 }
 
-pub surface character @character.benio Benio as benio {
+pub surface character benio {
+    display = "Benio"
     default_voice = auto
     dialogue_style {
         font = "Meiryo"
@@ -25,7 +28,8 @@ pub surface character @character.benio Benio as benio {
     }
 }
 
-pub surface character @character.clerk Clerk as clerk {
+pub surface character clerk {
+    display = "Clerk"
     default_voice = auto
     dialogue_style {
         font = "MS Gothic"
@@ -54,7 +58,7 @@ entry game @entry.main {
     start @flow.rich_text_showcase
 }
 
-flow @flow.rich_text_showcase rich_text_showcase {
+flow rich_text_showcase {
     alice.say(id=@say.rich_text.001, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
         [font "Yu Gothic"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl][font "Yu Mincho"]縦書きも混ざる[/font][/]。[p]
     ]
