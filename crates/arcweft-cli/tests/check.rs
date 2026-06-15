@@ -24991,7 +24991,7 @@ fn fmt_preserves_sugar_by_default() {
 fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
     let path = temp_arcw(
         "fmt-expand",
-        "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
+        "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -25008,7 +25008,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("alice.say()[hi[p]]"));
+    assert!(rewritten.contains("alice.say()[hi #[name][effect .shake]there[/effect][p]]"));
     assert!(rewritten.contains("with {"));
     assert!(rewritten.contains("goto super::next"));
 }

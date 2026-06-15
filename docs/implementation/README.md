@@ -118,9 +118,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   layers while definition/reference requests expose source value ranges
   consistently. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
-  options. Source-level sugar expansion and ID materialization actions now
-  return LSP `WorkspaceEdit` values through the same byte-span mapper used for
-  diagnostics, and
+  options. Source-level sugar expansion and canonical rich-text actions now
+  return a coordinated rewrite edit so paired constructs such as
+  `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
+  rewrite. ID materialization actions return focused LSP `WorkspaceEdit` values
+  through the same byte-span mapper used for diagnostics, and
   `workspace/executeCommand` can translate the older command argument shape into
   the same edit without writing files server-side. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned

@@ -183,19 +183,35 @@ fn id_context_hints(source: &str) -> Vec<InlayHint> {
 /// Returns source-level code actions that are safe to expose through LSP.
 pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
     let mut actions = Vec::new();
-    for edit in sugar_expansion_edits(source) {
-        actions.push(ToolingCodeAction {
-            id: "arcweft.expandSugar".to_owned(),
-            label: "Expand Arcweft sugar".to_owned(),
-            edit: Some(edit),
-        });
+    if let Ok(report) = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    ) && report.changed
+    {
+        actions.push(rewrite_action(
+            "arcweft.expandSugar",
+            "Expand Arcweft sugar",
+            source,
+            report.output,
+        ));
     }
-    for edit in rich_text_canonical_edits(source) {
-        actions.push(ToolingCodeAction {
-            id: "arcweft.canonicalRichText".to_owned(),
-            label: "Canonicalize inferred rich-text tags".to_owned(),
-            edit: Some(edit),
-        });
+    if let Ok(report) = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    ) && report.changed
+    {
+        actions.push(rewrite_action(
+            "arcweft.canonicalRichText",
+            "Canonicalize inferred rich-text tags",
+            source,
+            report.output,
+        ));
     }
     if let Ok(report) = materialize_ids(source) {
         actions.extend(report.edits.into_iter().map(|edit| ToolingCodeAction {
@@ -205,6 +221,23 @@ pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
         }));
     }
     actions
+}
+
+fn rewrite_action(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    source: &str,
+    output: String,
+) -> ToolingCodeAction {
+    ToolingCodeAction {
+        id: id.into(),
+        label: label.into(),
+        edit: Some(TextEdit {
+            start: 0,
+            end: source.len(),
+            replacement: output,
+        }),
+    }
 }
 
 /// Applies edits to source. Edits may be unsorted, but must not overlap.
@@ -1459,7 +1492,7 @@ fn speaker_line_edit(
     if !is_identifier(base_name) {
         return None;
     }
-    let text = text.trim_start();
+    let text = canonical_dialogue_text_for_speaker_line(text.trim_start());
     let callee = if speaker_presets.contains(base_name) {
         args.map_or_else(
             || base_name.to_owned(),
@@ -1478,6 +1511,11 @@ fn speaker_line_edit(
         end: base + line.len(),
         replacement: format!("{callee}[{text}]"),
     })
+}
+
+fn canonical_dialogue_text_for_speaker_line(text: &str) -> String {
+    let edits = dialogue_text_canonical_edits(text, 0, DialogueSugarMode::All);
+    apply_text_edits(text, &edits).unwrap_or_else(|_| text.to_owned())
 }
 
 fn split_call_head(head: &str) -> (&str, Option<&str>) {
@@ -1692,8 +1730,33 @@ mod tests {
         let edit = action.edit.as_ref().expect("canonical action has edit");
 
         assert_eq!(action.label, "Canonicalize inferred rich-text tags");
-        assert_eq!(&source[edit.start..edit.end], "[.vertical_rl]");
-        assert_eq!(edit.replacement, "[layout .vertical_rl]");
+        assert_eq!(edit.start, 0);
+        assert_eq!(edit.end, source.len());
+        assert!(
+            edit.replacement
+                .contains("[layout .vertical_rl]縦[/layout]")
+        );
+        assert!(!edit.replacement.contains("[/]"));
+    }
+
+    #[test]
+    fn source_code_actions_group_expand_sugar_rewrites() {
+        let source =
+            "flow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n}\n";
+        let actions = source_code_actions(source);
+
+        let action = actions
+            .iter()
+            .find(|action| action.id == "arcweft.expandSugar")
+            .expect("expand action");
+        let edit = action.edit.as_ref().expect("expand action has edit");
+
+        assert_eq!(edit.start, 0);
+        assert_eq!(edit.end, source.len());
+        assert!(edit.replacement.contains("alice.say()["));
+        assert!(edit.replacement.contains("#[name]"));
+        assert!(edit.replacement.contains("[effect .shake]there[/effect]"));
+        assert!(edit.replacement.contains("[p]"));
     }
 
     #[test]
@@ -1701,17 +1764,18 @@ mod tests {
         let source =
             "flow @flow.opening opening {\n}\n#[generated]\nflow @flow.generated generated {\n}\n";
         let actions = source_code_actions(source);
-        let declaration_edits = actions
+        let action = actions
             .iter()
-            .filter(|action| action.id == "arcweft.expandSugar")
-            .filter_map(|action| action.edit.as_ref())
-            .filter(|edit| edit.replacement == "opening")
-            .collect::<Vec<_>>();
+            .find(|action| action.id == "arcweft.expandSugar")
+            .expect("expand action");
+        let edit = action.edit.as_ref().expect("expand action has edit");
 
-        assert_eq!(declaration_edits.len(), 1);
-        assert_eq!(
-            &source[declaration_edits[0].start..declaration_edits[0].end],
-            "@flow.opening opening"
+        assert_eq!(edit.start, 0);
+        assert_eq!(edit.end, source.len());
+        assert!(edit.replacement.contains("flow opening {"));
+        assert!(
+            edit.replacement
+                .contains("#[generated]\nflow @flow.generated generated {")
         );
     }
 
