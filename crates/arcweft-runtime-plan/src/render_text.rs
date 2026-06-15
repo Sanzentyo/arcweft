@@ -3,6 +3,7 @@
 use crate::labels::expr_label;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_lang_hir::model::{HirDialogue, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::syntax::ast::common::Visibility;
 use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem, DialogueTag,
     DialogueToken, LineArg,
@@ -38,11 +39,11 @@ struct DialogueStyleDefaults {
 impl DialogueDisplayDefaults {
     pub(crate) fn from_module(module: &HirModule) -> Self {
         let mut defaults = Self::default();
+        if let Some(item) = selected_dialogue_defaults(module) {
+            defaults.global = style_defaults_from_dialogue_defaults(item);
+        }
         for declaration in module.declarations() {
             match declaration {
-                HirTopLevelDecl::DialogueDefaults(item) => {
-                    defaults.global = style_defaults_from_dialogue_defaults(item);
-                }
                 HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Character => {
                     let style = character_style_defaults(item);
                     if !style.is_empty() {
@@ -64,6 +65,30 @@ impl DialogueDisplayDefaults {
                 .and_then(|(speaker, _)| self.characters.get(speaker))
         })
     }
+}
+
+fn selected_dialogue_defaults(module: &HirModule) -> Option<&DialogueDefaultsItem> {
+    let items = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            HirTopLevelDecl::DialogueDefaults(item) => Some(item),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    items
+        .iter()
+        .copied()
+        .find(|item| item.id().is_some_and(|id| id.body() == "dialogue.defaults"))
+        .or_else(|| {
+            let public = items
+                .iter()
+                .copied()
+                .filter(|item| item.visibility() == Some(Visibility::Public))
+                .collect::<Vec<_>>();
+            (public.len() == 1).then(|| public[0])
+        })
+        .or_else(|| (items.len() == 1).then(|| items[0]))
 }
 
 pub(crate) fn lower_dialogue_display(
@@ -1963,6 +1988,66 @@ flow @flow.main main {
                 && contribution.path == "rich_text.ruby.size"
                 && !contribution.active
                 && contribution.shadowed_by.is_some()
+        }));
+    }
+
+    #[test]
+    fn dialogue_display_uses_canonical_defaults_profile_when_multiple_exist() {
+        let parsed = parse_source(
+            r##"
+pub dialogue defaults @dialogue.defaults.debug {
+    text_color = rgb("#ff0000")
+}
+
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    text_color = rgb("#00ff00")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.defaults.profile".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+
+        assert_eq!(
+            spec.base_styles,
+            vec![RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 16,
+                    green: 17,
+                    blue: 18
+                }
+            }]
+        );
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::DialogueDefaults
+                && contribution.path == "text_color"
+                && contribution.value == "rgb(\"#101112\")"
+                && contribution.active
+        }));
+        assert!(!spec.style_contributions.iter().any(|contribution| {
+            contribution.value == "rgb(\"#ff0000\")" || contribution.value == "rgb(\"#00ff00\")"
         }));
     }
 
