@@ -91,5 +91,29 @@
     "exit": 0,
     "bytes": 27751,
     "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-007-fixed-split-effect-transform-full-grammar.png"
+  },
+  {
+    "name": "issue-002-fixed-native-textbox-ruby-crop-full-grammar",
+    "exit": 0,
+    "bytes": 16803,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-002-fixed-native-textbox-ruby-crop-full-grammar.png"
+  },
+  {
+    "name": "issue-003-fixed-native-textbox-ruby-crop-showcase",
+    "exit": 0,
+    "bytes": 19776,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-003-fixed-native-textbox-ruby-crop-showcase.png"
+  },
+  {
+    "name": "issue-004-fixed-native-textbox-vertical-crop-showcase",
+    "exit": 0,
+    "bytes": 27374,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-004-fixed-native-textbox-vertical-crop-showcase.png"
+  },
+  {
+    "name": "issue-005-fixed-native-textbox-vertical-crop-windows-fonts",
+    "exit": 0,
+    "bytes": 20758,
+    "png": "docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-005-fixed-native-textbox-vertical-crop-windows-fonts.png"
   }
 ]

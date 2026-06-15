@@ -2638,6 +2638,104 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_textbox_capture_bounds_include_ruby_extents() {
+    let path = temp_arcw(
+        "agent-observe-native-textbox-ruby-crop-bounds",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.ruby_over ruby_size=14px ruby_gap=12px]|[夢](ゆめ)[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-textbox-ruby-crop-bounds");
+    let raw_path = dir.join("textbox-ruby-mask.rgba");
+
+    let json = observe_native_textbox_object_raw_report(
+        &path,
+        &raw_path,
+        "mask",
+        &["--textbox-height", "32"],
+    );
+    let image = &json["images"][0];
+    let textbox = find_textbox_object(&json);
+    let ruby = find_rich_text_ruby_object(&json, 0);
+    let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
+
+    assert_eq!(image["kind"], "mask");
+    assert_eq!(image["scope"]["kind"], "object");
+    assert_eq!(image["scope"]["id"], "object.dialogue.0.0");
+    assert!(
+        image["crop_origin"]["y"].as_u64().unwrap() <= agent_json_bbox_y(annotation),
+        "textbox object capture should start above the measured ruby annotation: {json}"
+    );
+    assert!(
+        image["crop_origin"]["y"].as_u64().unwrap() + image["height"].as_u64().unwrap()
+            >= agent_json_bbox_bottom(annotation),
+        "textbox object capture should include the measured ruby annotation: {json}"
+    );
+    assert!(
+        image["height"].as_u64().unwrap() > agent_json_bbox_height(&textbox["bbox"]),
+        "textbox object capture should expand beyond the intentionally small textbox bbox: {json}"
+    );
+    assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
+
+    fs::remove_file(&path).expect("remove temp native textbox ruby crop source");
+    fs::remove_dir_all(&dir).expect("remove temp native textbox ruby crop dir");
+}
+
+#[test]
+fn agent_observe_native_textbox_capture_bounds_include_vertical_columns() {
+    let path = temp_arcw(
+        "agent-observe-native-textbox-vertical-crop-bounds",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl]吾輩は猫である。ABC 123 2026。[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-textbox-vertical-crop-bounds");
+    let raw_path = dir.join("textbox-vertical-mask.rgba");
+
+    let json = observe_native_textbox_object_raw_report(
+        &path,
+        &raw_path,
+        "mask",
+        &["--textbox-height", "32"],
+    );
+    let image = &json["images"][0];
+    let textbox = find_textbox_object(&json);
+    let vertical_bottom = json["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .filter(|object| object["role"] == "rich_text_cluster")
+        .map(|object| agent_json_bbox_bottom(&object["bbox"]))
+        .max()
+        .expect("vertical cluster objects are reported");
+
+    assert_eq!(image["kind"], "mask");
+    assert_eq!(image["scope"]["kind"], "object");
+    assert_eq!(image["scope"]["id"], "object.dialogue.0.0");
+    assert!(
+        image["crop_origin"]["y"].as_u64().unwrap() + image["height"].as_u64().unwrap()
+            >= vertical_bottom,
+        "textbox object capture should include measured vertical cluster extents: {json}"
+    );
+    assert!(
+        image["height"].as_u64().unwrap() > agent_json_bbox_height(&textbox["bbox"]),
+        "textbox object capture should expand beyond the intentionally small textbox bbox: {json}"
+    );
+    assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
+
+    fs::remove_file(&path).expect("remove temp native textbox vertical crop source");
+    fs::remove_dir_all(&dir).expect("remove temp native textbox vertical crop dir");
+}
+
+#[test]
 fn agent_observe_native_vertical_capture_matches_imq_reference() {
     if !imq_is_available() {
         eprintln!("skipping native vertical capture imq comparison: imq is not available");
@@ -30040,6 +30138,60 @@ fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json:
     serde_json::from_slice(&output.stdout).expect("native capture report is JSON")
 }
 
+fn observe_native_textbox_object_raw_report(
+    source_path: &Path,
+    raw_path: &Path,
+    capture_kind: &str,
+    extra_args: &[&str],
+) -> serde_json::Value {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64");
+    command.args(extra_args);
+    let output = command
+        .output()
+        .expect("arcw agent observe writes native textbox object raw crop");
+
+    assert!(
+        output.status.success(),
+        "native textbox object {capture_kind} capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native textbox object raw report is JSON");
+    let width = json["images"][0]["width"]
+        .as_u64()
+        .expect("native textbox object raw width is reported");
+    let height = json["images"][0]["height"]
+        .as_u64()
+        .expect("native textbox object raw height is reported");
+    assert_eq!(
+        fs::read(raw_path)
+            .expect("read native textbox object raw crop")
+            .len(),
+        4 * usize::try_from(width).expect("raw width fits usize")
+            * usize::try_from(height).expect("raw height fits usize")
+    );
+    json
+}
+
 fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Value {
     observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
         source_path,
@@ -30092,6 +30244,37 @@ fn observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("native rich-text layer report is JSON")
+}
+
+fn find_textbox_object(report: &serde_json::Value) -> &serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .unwrap_or_else(|| panic!("textbox object should be observed: {report}"))
+}
+
+fn assert_object_capture_ref_matches_image(
+    object: &serde_json::Value,
+    image: &serde_json::Value,
+    kind: &str,
+    mime_type: &str,
+) {
+    let capture = object["capture_refs"]["captures"]
+        .as_array()
+        .expect("object capture refs are reported")
+        .iter()
+        .find(|capture| capture["kind"] == kind && capture["mime_type"] == mime_type)
+        .unwrap_or_else(|| panic!("object should expose {kind} {mime_type} capture ref: {object}"));
+    assert_eq!(
+        capture["width"], image["width"],
+        "{kind} capture ref width should match actual image metadata"
+    );
+    assert_eq!(
+        capture["height"], image["height"],
+        "{kind} capture ref height should match actual image metadata"
+    );
 }
 
 fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {

@@ -3200,6 +3200,9 @@ fn agent_native_object_rect(
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
+    if object.role == "textbox" {
+        return agent_native_textbox_rect(capture_width, capture_height, context, object);
+    }
     if object.role.starts_with("rich_text_")
         && let Some(rect) = agent_native_rich_text_child_rect(
             capture_width,
@@ -3219,6 +3222,50 @@ fn agent_native_object_rect(
         object.bbox.width,
         object.bbox.height,
     ))
+}
+
+fn agent_native_textbox_rect(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    textbox: &AgentObservedObject,
+) -> Result<(u32, u32, u32, u32), ExitCode> {
+    let mut rect = agent_clamped_bbox_rect(
+        capture_width,
+        capture_height,
+        textbox.bbox.x,
+        textbox.bbox.y,
+        textbox.bbox.width,
+        textbox.bbox.height,
+    );
+    let (left, top) = agent_native_text_origin(textbox);
+    let bounds = match arcweft_player_native::native::measure_frame_elements_at_page(
+        &textbox.rich_text,
+        capture_width,
+        capture_height,
+        left,
+        top,
+        context.page_index,
+    ) {
+        Ok(bounds) => bounds,
+        Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => return Ok(rect),
+        Err(error) => {
+            eprintln!("error: native text layout measurement failed: {error}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    for bounds in bounds {
+        let child_rect = agent_clamped_bbox_rect(
+            capture_width,
+            capture_height,
+            bounds.bbox.x,
+            bounds.bbox.y,
+            bounds.bbox.width,
+            bounds.bbox.height,
+        );
+        rect = agent_union_rect(rect, child_rect, capture_width, capture_height);
+    }
+    Ok(rect)
 }
 
 fn agent_native_rich_text_child_rect(
@@ -3323,6 +3370,33 @@ fn agent_clamped_bbox_rect(
     let width = width.min(capture_width.saturating_sub(x)).max(1);
     let height = height.min(capture_height.saturating_sub(y)).max(1);
     (x, y, width, height)
+}
+
+fn agent_union_rect(
+    left: (u32, u32, u32, u32),
+    right: (u32, u32, u32, u32),
+    capture_width: u32,
+    capture_height: u32,
+) -> (u32, u32, u32, u32) {
+    let min_x = left.0.min(right.0);
+    let min_y = left.1.min(right.1);
+    let max_x = left
+        .0
+        .saturating_add(left.2)
+        .max(right.0.saturating_add(right.2));
+    let max_y = left
+        .1
+        .saturating_add(left.3)
+        .max(right.1.saturating_add(right.3));
+    let width = max_x
+        .saturating_sub(min_x)
+        .min(capture_width.saturating_sub(min_x))
+        .max(1);
+    let height = max_y
+        .saturating_sub(min_y)
+        .min(capture_height.saturating_sub(min_y))
+        .max(1);
+    (min_x, min_y, width, height)
 }
 
 fn agent_crop_raster_capture(
@@ -3790,40 +3864,20 @@ fn run_agent_observation(
             message: diagnostic.message.clone(),
         }));
         for event in &output.flow_events {
-            if let FlowEvent::DialogueLine { line, bindings } = event {
-                let Some(spec) = catalog.find(line) else {
-                    diagnostics.push(AgentDiagnostic {
-                        step: step_index,
-                        severity: AgentDiagnosticSeverity::Warning,
-                        message: format!("missing display catalog entry for line {}", line.0),
-                    });
-                    continue;
-                };
-                match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
-                    Ok(frame) => {
-                        let index = objects
-                            .iter()
-                            .filter(|object| object.role == "textbox")
-                            .count();
-                        let textbox =
-                            agent_textbox_object(step_index, index, frame, &viewport, options);
-                        let native_bounds =
-                            agent_native_rich_text_element_bboxes(&textbox, &viewport);
-                        let children = agent_rich_text_child_objects(
-                            step_index,
-                            index,
-                            &textbox,
-                            &native_bounds,
-                        );
-                        objects.push(textbox);
-                        objects.extend(children);
-                    }
-                    Err(error) => diagnostics.push(AgentDiagnostic {
-                        step: step_index,
-                        severity: AgentDiagnosticSeverity::Error,
-                        message: error.to_string(),
-                    }),
-                }
+            let textbox_index = objects
+                .iter()
+                .filter(|object| object.role == "textbox")
+                .count();
+            match agent_observed_objects_for_flow_event(
+                step_index,
+                textbox_index,
+                catalog,
+                event,
+                &viewport,
+                options,
+            ) {
+                Ok(event_objects) => objects.extend(event_objects),
+                Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
         let task_requests = std::mem::take(&mut output.requests.tasks);
@@ -3851,6 +3905,44 @@ fn run_agent_observation(
         },
         options,
     ))
+}
+
+fn agent_observed_objects_for_flow_event(
+    step: usize,
+    textbox_index: usize,
+    catalog: &LineDisplayCatalog,
+    event: &FlowEvent,
+    viewport: &AgentViewport,
+    options: &AgentObserveOptions,
+) -> Result<Vec<AgentObservedObject>, AgentDiagnostic> {
+    let FlowEvent::DialogueLine { line, bindings } = event else {
+        return Ok(Vec::new());
+    };
+    let Some(spec) = catalog.find(line) else {
+        return Err(AgentDiagnostic {
+            step,
+            severity: AgentDiagnosticSeverity::Warning,
+            message: format!("missing display catalog entry for line {}", line.0),
+        });
+    };
+    let frame = spec
+        .resolve_frame(&RuntimeLineContext::new(bindings.clone()))
+        .map_err(|error| AgentDiagnostic {
+            step,
+            severity: AgentDiagnosticSeverity::Error,
+            message: error.to_string(),
+        })?;
+    let mut textbox = agent_textbox_object(step, textbox_index, frame, viewport, options);
+    if let Some(capture_bbox) = agent_native_textbox_capture_bbox_for_page(&textbox, viewport, 0) {
+        textbox.capture_refs =
+            agent_object_capture_refs_for_page("cli", step, &textbox.id, &capture_bbox, 0);
+    }
+    let native_bounds = agent_native_rich_text_element_bboxes(&textbox, viewport);
+    let children = agent_rich_text_child_objects(step, textbox_index, &textbox, &native_bounds);
+    let mut objects = Vec::with_capacity(1 + children.len());
+    objects.push(textbox);
+    objects.extend(children);
+    Ok(objects)
 }
 
 fn finish_agent_observation_report(
@@ -4398,6 +4490,31 @@ fn agent_native_rich_text_element_bboxes(
         }
     }
     bboxes
+}
+
+fn agent_native_textbox_capture_bbox_for_page(
+    textbox: &AgentObservedObject,
+    viewport: &AgentViewport,
+    page_index: usize,
+) -> Option<AgentBBox> {
+    let (left, top) = agent_native_text_origin(textbox);
+    let Ok(bounds) = arcweft_player_native::native::measure_frame_elements_at_page(
+        &textbox.rich_text,
+        viewport.width,
+        viewport.height,
+        left,
+        top,
+        page_index,
+    ) else {
+        return None;
+    };
+    Some(
+        bounds
+            .into_iter()
+            .fold(textbox.bbox.clone(), |bbox, bounds| {
+                agent_union_bbox(&bbox, &agent_bbox_from_native(bounds.bbox))
+            }),
+    )
 }
 
 #[derive(Clone, Debug)]
