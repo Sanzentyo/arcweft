@@ -16,6 +16,25 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
+fn typechecks_canonical_bare_character_as_dialogue_callee() {
+    let tree = parse_ok(
+        r#"
+pub character alice {
+    display = "Alice"
+}
+
+flow opening {
+    alice: おはよう。[p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("canonical character fixture lowers");
+    validate_typecheck_ready(&hir).expect("canonical character fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("bare character identity suffix binds as dialogue callee");
+}
+
+#[test]
 fn adapter_function_signature_checks_arguments() {
     let tree = parse_ok(
         r"

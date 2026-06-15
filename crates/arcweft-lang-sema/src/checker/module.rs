@@ -12,8 +12,8 @@ use crate::diagnostics::TypeCheckWarning;
 use arcweft_lang_hir::model::{HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
-    EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem, ExternModMember,
-    TypeAliasItem,
+    EntityDeclItem, EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem,
+    ExternModMember, TypeAliasItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnSignature, TypeRef};
@@ -207,13 +207,10 @@ impl TypeChecker<'_> {
             let HirTopLevelDecl::EntityDecl(item) = declaration else {
                 continue;
             };
-            let Some(alias) = item.surface_alias() else {
-                continue;
-            };
-            self.global_symbols.insert(
-                alias.to_owned(),
-                TypeKind::Ref(entity_kind_for_decl(item.kind())),
-            );
+            for alias in entity_symbol_aliases(item) {
+                self.global_symbols
+                    .insert(alias, TypeKind::Ref(entity_kind_for_decl(item.kind())));
+            }
         }
     }
 
@@ -958,6 +955,20 @@ fn route_bindable_pattern_name(pattern: &Pattern) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn entity_symbol_aliases(item: &EntityDeclItem) -> Vec<String> {
+    [
+        item.surface_alias().map(str::to_owned),
+        item.name().map(str::to_owned),
+        item.id()
+            .body()
+            .rsplit_once('.')
+            .map(|(_, suffix)| suffix.to_owned()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn route_path_params(path: &str) -> HashSet<String> {

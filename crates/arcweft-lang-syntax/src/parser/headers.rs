@@ -139,31 +139,60 @@ pub(super) fn parse_entity_decl_head(
         .unwrap_or(rest.trim_start());
     let (kind, rest) = entity_decl_kind(rest.trim_start())?;
     let family = entity_decl_family(kind);
-    let (parsed_id, rest) = parse_required_decl_entity_ref_or_marker(rest, family, base, errors)?;
-    let (id, rest) = match parsed_id {
-        DeclEntityId::Entity(id) => normalize_trailing_colon_id(id, rest),
-        DeclEntityId::NameMarker(marker) => {
-            let rest = rest.trim();
-            let (name, _) = parse_name_and_tail(rest);
-            let Some(name) = name.as_deref() else {
-                errors.push(simple_error(
-                    marker.range.start(),
-                    marker.range.end() - marker.range.start(),
-                    "relative declaration marker needs a following declaration name",
-                    &format!("@{family}:. name"),
-                ));
-                return None;
-            };
-            (
-                EntityRef::new(format!("{family}.{name}"), false, marker.range),
-                rest.to_owned(),
-            )
-        }
+    let rest = rest.trim_start();
+    let (id, name, signature_tail) = if rest.starts_with('@') {
+        let (parsed_id, rest) =
+            parse_required_decl_entity_ref_or_marker(rest, family, base, errors)?;
+        let (id, rest) = match parsed_id {
+            DeclEntityId::Entity(id) => normalize_trailing_colon_id(id, rest),
+            DeclEntityId::NameMarker(marker) => {
+                let rest = rest.trim();
+                let (name, _) = parse_name_and_tail(rest);
+                let Some(name) = name.as_deref() else {
+                    errors.push(simple_error(
+                        marker.range.start(),
+                        marker.range.end() - marker.range.start(),
+                        "relative declaration marker needs a following declaration name",
+                        &format!("@{family}:. name"),
+                    ));
+                    return None;
+                };
+                (
+                    EntityRef::new(format!("{family}.{name}"), false, marker.range),
+                    rest.to_owned(),
+                )
+            }
+        };
+        let rest = rest.trim();
+        let (name, signature_tail) = parse_name_and_tail(rest);
+        (id, name, signature_tail)
+    } else {
+        let (name, signature_tail) = parse_name_and_tail(rest);
+        let Some(name) = name else {
+            errors.push(simple_error(
+                base,
+                head.len(),
+                "entity declaration needs an id or canonical declaration name",
+                &format!("{family} name"),
+            ));
+            return None;
+        };
+        let range = entity_bare_name_range(head, base, &name);
+        (
+            EntityRef::new(format!("{family}.{name}"), false, range),
+            None,
+            signature_tail,
+        )
     };
-    let rest = rest.trim();
-    let (name, signature_tail) = parse_name_and_tail(rest);
     let (signature_tail, surface_alias) = split_surface_alias(signature_tail);
     Some((kind, visibility, id, name, surface_alias, signature_tail))
+}
+
+fn entity_bare_name_range(head: &str, base: usize, name: &str) -> TextRange {
+    let start = head
+        .find(name)
+        .map_or(base, |offset| base.saturating_add(offset));
+    TextRange::new(start, start.saturating_add(name.len()))
 }
 
 pub(super) fn split_surface_alias(signature_tail: String) -> (String, Option<String>) {

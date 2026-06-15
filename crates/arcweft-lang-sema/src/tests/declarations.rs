@@ -267,6 +267,25 @@ pub rig @rig.alice.live2d {
 }
 
 #[test]
+fn parses_canonical_bare_entity_decl_name() {
+    let tree = parse_ok(
+        r#"
+pub character alice {
+    display = "Alice"
+}
+"#,
+    );
+
+    let Item::EntityDecl(character) = &tree.items()[0] else {
+        panic!("expected character declaration");
+    };
+    assert_eq!(character.kind(), EntityDeclKind::Character);
+    assert_eq!(character.id().body(), "character.alice");
+    assert_eq!(character.name(), None);
+    assert_eq!(character.surface_alias(), None);
+}
+
+#[test]
 fn function_signatures_keep_default_parameters() {
     let signature =
         parse_fn_signature("fn fade(time: Duration = 120ms, easing: Ease = quad.out) -> Unit")

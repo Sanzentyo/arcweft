@@ -463,4 +463,17 @@ flow @flow.opening {
         assert_eq!(lint.code().stable_code(), "AWF0103");
         assert_eq!(lint.severity(), SyntaxLintSeverity::Hint);
     }
+
+    #[test]
+    fn bare_entity_decl_name_is_canonical_not_redundant() {
+        let codes = lint_codes(
+            r"
+character alice {
+}
+",
+        );
+
+        assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+        assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+    }
 }
