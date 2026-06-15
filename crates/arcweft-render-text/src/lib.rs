@@ -846,7 +846,8 @@ pub fn canonical_style_name(name: &str) -> &str {
         | "ruby_inter_character"
         | "layout" => "layout",
         "offset" | "pos" | "rotate" | "scale" | "transform" => "transform",
-        "shader" | "effect" | "fx" => "effect",
+        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" | "effect"
+        | "fx" => "effect",
         other => other,
     }
 }

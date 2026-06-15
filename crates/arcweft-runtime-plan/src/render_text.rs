@@ -1250,7 +1250,8 @@ fn canonical_end_tag(name: &str) -> &str {
         | "ruby_under"
         | "ruby_inter_character" => "layout",
         "transform" | "offset" | "pos" | "rotate" | "scale" | "skew" => "transform",
-        "effect" | "fx" | "shader" => "effect",
+        "effect" | "fx" | "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader"
+        | "host" => "effect",
         other => other,
     }
 }
@@ -1885,6 +1886,50 @@ flow @flow.main main {
                     .is_some_and(|text| text == "D")
             })
             .expect("plain text run after inferred close");
+        assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn explicit_effect_selector_end_tag_closes_effect_span() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[effect .shake amp=2px]BC[/shake]D[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.effect.end".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let plain_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "D")
+            })
+            .expect("plain text run after explicit selector end");
+
         assert!(plain_run.presentation.effects.is_empty());
     }
 
