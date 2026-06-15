@@ -23470,7 +23470,7 @@ pub surface character @character.alice Alice as alice {
 }
 
 flow @flow.plan plan {
-    alice: |[待](ま)って。[mark .release][p]
+    @<character.alice>.say[|[待](ま)って。[mark .release][p]]
     with:
         thread motion:
             wait(0.1s)

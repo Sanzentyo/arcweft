@@ -68,11 +68,9 @@ impl DialogueDisplayDefaults {
     }
 
     fn character_for_callee(&self, callee: &str) -> Option<&DialogueStyleDefaults> {
-        self.characters.get(callee).or_else(|| {
-            callee
-                .split_once('.')
-                .and_then(|(speaker, _)| self.characters.get(speaker))
-        })
+        character_callee_keys(callee)
+            .into_iter()
+            .find_map(|key| self.characters.get(&key))
     }
 }
 
@@ -344,6 +342,41 @@ fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
     .into_iter()
     .flatten()
     .collect()
+}
+
+fn character_callee_keys(callee: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    push_character_callee_key(&mut keys, callee.trim());
+    if let Some(receiver) = callee.trim().strip_suffix(".say") {
+        push_character_callee_key(&mut keys, receiver);
+    }
+    if let Some((speaker, _)) = callee.trim().split_once('.') {
+        push_character_callee_key(&mut keys, speaker);
+    }
+    keys
+}
+
+fn push_character_callee_key(keys: &mut Vec<String>, raw: &str) {
+    let normalized = raw
+        .trim()
+        .strip_prefix("@<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .or_else(|| raw.trim().strip_prefix('@'))
+        .unwrap_or(raw)
+        .trim();
+    if normalized.is_empty() {
+        return;
+    }
+    push_unique_string(keys, normalized);
+    if let Some((_, suffix)) = normalized.rsplit_once(['.', ':']) {
+        push_unique_string(keys, suffix);
+    }
+}
+
+fn push_unique_string(keys: &mut Vec<String>, value: &str) {
+    if !keys.iter().any(|key| key == value) {
+        keys.push(value.to_owned());
+    }
 }
 
 fn style_defaults_from_body(
@@ -2312,7 +2345,7 @@ character @character.alice Alice as alice {
 }
 
 flow @flow.main main {
-    alice(color=rgb("#303132")): Hello #[missing][p]
+    @<character.alice>.say(color=rgb("#303132"))[Hello #[missing][p]]
 }
 "##;
         let parsed = parse_source(source);
