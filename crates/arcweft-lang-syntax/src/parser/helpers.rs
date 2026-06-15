@@ -197,7 +197,9 @@ pub(super) fn parse_line_options(
         source_locale: state.source_locale,
         hooks: state.hooks,
         style: state.style,
+        style_raw: state.style_raw,
         rich_text: state.rich_text,
+        rich_text_raw: state.rich_text_raw,
         args: state.line_args,
     })
 }
@@ -216,7 +218,9 @@ struct LineOptionsParseState {
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
+    style_raw: Option<String>,
     rich_text: Option<Expr>,
+    rich_text_raw: Option<String>,
     line_args: Vec<LineArg>,
 }
 
@@ -251,11 +255,19 @@ fn parse_named_line_option(
         }
         "source_locale" => state.source_locale = Some(value.to_owned()),
         "hooks" => push_line_hooks(&mut state.hooks, parse_expr_lossy(value)),
-        "style" => state.style = Some(parse_expr_lossy(value)),
-        "rich_text" => state.rich_text = Some(parse_expr_lossy(value)),
-        name => state
-            .line_args
-            .push(LineArg::new(name.to_owned(), parse_expr_lossy(value))),
+        "style" => {
+            state.style = Some(parse_expr_lossy(value));
+            state.style_raw = Some(value.to_owned());
+        }
+        "rich_text" => {
+            state.rich_text = Some(parse_expr_lossy(value));
+            state.rich_text_raw = Some(value.to_owned());
+        }
+        name => state.line_args.push(LineArg::new(
+            name.to_owned(),
+            parse_expr_lossy(value),
+            value.to_owned(),
+        )),
     }
 }
 

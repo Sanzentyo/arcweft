@@ -78,7 +78,7 @@ fn function_signatures_reject_misplaced_rest_parameters() {
 fn dialogue_line_options_are_structured_not_raw_args() {
     let tree = parse_ok(
         r#"
-alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP"): 今日は少しだけ。[p]
+alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
 "#,
     );
 
@@ -101,9 +101,16 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
     assert_eq!(options.window().expect("window").body(), "textbox.side");
     assert_eq!(options.hooks().len(), 1);
     assert!(matches!(options.style(), Some(Expr::EntityRef(id)) if id.body() == "style.dream"));
+    assert_eq!(options.style_raw(), Some("@style.dream"));
     assert!(matches!(options.rich_text(), Some(Expr::Call { .. })));
+    assert_eq!(
+        options.rich_text_raw(),
+        Some("rich_text_style(ruby=ruby_style(size=11px))")
+    );
     assert!(matches!(options.look(), Some(Expr::Path(path)) if path == "smile"));
-    assert!(options.args().is_empty());
+    assert_eq!(options.args().len(), 1);
+    assert_eq!(options.args()[0].name(), "custom");
+    assert_eq!(options.args()[0].raw_value(), "foo(size=12px)");
     assert_eq!(options.source_locale(), Some("\"ja-JP\""));
 }
 

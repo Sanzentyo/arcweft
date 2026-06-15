@@ -75,7 +75,9 @@ pub struct LineOptions {
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
+    style_raw: Option<String>,
     rich_text: Option<Expr>,
+    rich_text_raw: Option<String>,
     args: Vec<LineArg>,
 }
 
@@ -94,7 +96,9 @@ pub(crate) struct LineOptionsInit {
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
+    pub(crate) style_raw: Option<String>,
     pub(crate) rich_text: Option<Expr>,
+    pub(crate) rich_text_raw: Option<String>,
     pub(crate) args: Vec<LineArg>,
 }
 
@@ -103,6 +107,7 @@ pub(crate) struct LineOptionsInit {
 pub struct LineArg {
     name: String,
     value: Expr,
+    raw_value: String,
 }
 
 /// Global dialogue default declaration.
@@ -273,7 +278,9 @@ impl LineOptions {
             source_locale: init.source_locale,
             hooks: init.hooks,
             style: init.style,
+            style_raw: init.style_raw,
             rich_text: init.rich_text,
+            rich_text_raw: init.rich_text_raw,
             args: init.args,
         }
     }
@@ -326,8 +333,16 @@ impl LineOptions {
         self.style.as_ref()
     }
 
+    pub fn style_raw(&self) -> Option<&str> {
+        self.style_raw.as_deref()
+    }
+
     pub const fn rich_text(&self) -> Option<&Expr> {
         self.rich_text.as_ref()
+    }
+
+    pub fn rich_text_raw(&self) -> Option<&str> {
+        self.rich_text_raw.as_deref()
     }
 
     pub fn args(&self) -> &[LineArg] {
@@ -336,8 +351,12 @@ impl LineOptions {
 }
 
 impl LineArg {
-    pub(crate) const fn new(name: String, value: Expr) -> Self {
-        Self { name, value }
+    pub(crate) const fn new(name: String, value: Expr, raw_value: String) -> Self {
+        Self {
+            name,
+            value,
+            raw_value,
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -346,6 +365,10 @@ impl LineArg {
 
     pub const fn value(&self) -> &Expr {
         &self.value
+    }
+
+    pub fn raw_value(&self) -> &str {
+        &self.raw_value
     }
 }
 

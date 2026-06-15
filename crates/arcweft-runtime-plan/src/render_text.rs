@@ -164,11 +164,14 @@ fn lower_effective_dialogue_style_contributions(
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            "style",
-            style,
-            &styles,
-            has_policy,
-            &source,
+            LineOptionContribution {
+                path: "style",
+                expr: style,
+                raw: dialogue.style_raw(),
+                styles: &styles,
+                has_policy,
+                source: &source,
+            },
         );
     }
     if let Some(rich_text) = dialogue.rich_text() {
@@ -177,11 +180,14 @@ fn lower_effective_dialogue_style_contributions(
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            "rich_text",
-            rich_text,
-            &styles,
-            has_policy,
-            &source,
+            LineOptionContribution {
+                path: "rich_text",
+                expr: rich_text,
+                raw: dialogue.rich_text_raw(),
+                styles: &styles,
+                has_policy,
+                source: &source,
+            },
         );
     }
     for arg in dialogue.args() {
@@ -190,11 +196,14 @@ fn lower_effective_dialogue_style_contributions(
         append_line_option_contributions(
             &mut contributions,
             &mut base_offset,
-            arg.name(),
-            arg.value(),
-            &styles,
-            has_policy,
-            &source,
+            LineOptionContribution {
+                path: arg.name(),
+                expr: arg.value(),
+                raw: Some(arg.raw_value()),
+                styles: &styles,
+                has_policy,
+                source: &source,
+            },
         );
     }
 
@@ -338,25 +347,35 @@ fn append_style_contributions(
     *base_offset += defaults.base_styles.len();
 }
 
+#[derive(Clone, Copy)]
+struct LineOptionContribution<'a> {
+    path: &'a str,
+    expr: &'a Expr,
+    raw: Option<&'a str>,
+    styles: &'a [RichTextStyle],
+    has_policy: bool,
+    source: &'a RichTextSettingSource,
+}
+
 fn append_line_option_contributions(
     target: &mut Vec<RichTextStyleContribution>,
     base_offset: &mut usize,
-    path: &str,
-    expr: &Expr,
-    styles: &[RichTextStyle],
-    has_policy: bool,
-    source: &RichTextSettingSource,
+    input: LineOptionContribution<'_>,
 ) {
-    let style_index = (!styles.is_empty()).then_some(*base_offset);
-    let active = has_policy || !styles.is_empty();
-    let paths = style_assignment_paths(path, expr);
+    let style_index = (!input.styles.is_empty()).then_some(*base_offset);
+    let active = input.has_policy || !input.styles.is_empty();
+    let paths = input
+        .raw
+        .map(|raw| style_assignment_paths_from_raw(input.path, raw))
+        .filter(|paths| !paths.is_empty())
+        .unwrap_or_else(|| style_assignment_paths(input.path, input.expr));
     target.extend(
         paths
             .into_iter()
             .map(|(path, value)| RichTextStyleContribution {
                 path,
                 layer: RichTextCascadeLayer::LineOptions,
-                source: source.clone(),
+                source: input.source.clone(),
                 op: RichTextAssignOp::Replace,
                 value,
                 style_index,
@@ -364,7 +383,7 @@ fn append_line_option_contributions(
                 shadowed_by: None,
             }),
     );
-    *base_offset += styles.len();
+    *base_offset += input.styles.len();
 }
 
 fn style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
@@ -374,6 +393,102 @@ fn style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
     } else {
         nested
     }
+}
+
+fn style_assignment_paths_from_raw(path: &str, raw: &str) -> Vec<(String, String)> {
+    let raw = raw.trim();
+    let Some((callee, args)) = raw_call_parts(raw) else {
+        return vec![(path.to_owned(), raw.to_owned())];
+    };
+    match callee.rsplit('.').next().unwrap_or(callee) {
+        "text_style" | "dialogue_style" | "style" | "rich_text_style" => raw_call_args(args)
+            .into_iter()
+            .flat_map(|arg| {
+                if let Some((name, value)) = split_raw_named_arg(arg) {
+                    let child = format!("{path}.{name}");
+                    style_assignment_paths_from_raw(&child, value)
+                } else {
+                    style_assignment_paths_from_raw(path, arg)
+                }
+            })
+            .collect(),
+        "ruby_style" | "layout_style" => raw_call_args(args)
+            .into_iter()
+            .filter_map(|arg| {
+                let (name, value) = split_raw_named_arg(arg)?;
+                Some((format!("{path}.{name}"), value.trim().to_owned()))
+            })
+            .collect(),
+        _ => vec![(path.to_owned(), raw.to_owned())],
+    }
+}
+
+fn raw_call_parts(raw: &str) -> Option<(&str, &str)> {
+    let open = find_top_level_raw_punctuation(raw, '(')?;
+    let close = raw.rfind(')')?;
+    (close > open && raw[close + ')'.len_utf8()..].trim().is_empty())
+        .then(|| (raw[..open].trim(), raw[open + '('.len_utf8()..close].trim()))
+}
+
+fn raw_call_args(source: &str) -> Vec<&str> {
+    split_top_level_raw(source, ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|arg| !arg.is_empty())
+        .collect()
+}
+
+fn split_raw_named_arg(arg: &str) -> Option<(&str, &str)> {
+    let equals = find_top_level_raw_punctuation(arg, '=')?;
+    Some((arg[..equals].trim(), arg[equals + '='.len_utf8()..].trim()))
+}
+
+fn split_top_level_raw(source: &str, delimiter: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ if ch == delimiter && !in_string && depth == 0 => {
+                parts.push(&source[start..offset]);
+                start = offset + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&source[start..]);
+    parts
+}
+
+fn find_top_level_raw_punctuation(source: &str, needle: char) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            _ if ch == needle && !in_string && depth == 0 => return Some(offset),
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn nested_style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
@@ -1773,7 +1888,7 @@ flow @flow.main main {
         assert!(spec.style_contributions.iter().any(|contribution| {
             contribution.layer == RichTextCascadeLayer::LineOptions
                 && contribution.path == "rich_text.ruby.size"
-                && contribution.value == "11"
+                && contribution.value == "11px"
                 && contribution.active
                 && contribution.style_index == Some(2)
         }));
