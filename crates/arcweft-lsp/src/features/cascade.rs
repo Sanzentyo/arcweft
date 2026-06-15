@@ -1,14 +1,45 @@
 use crate::documents::DocumentSnapshot;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
+use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_lang_syntax::ast::dialogue::LineOptions;
+use arcweft_lang_syntax::ast::flow::{
+    AwaitWith, BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
+    SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
+};
+use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_render_text::{LineDisplaySpec, RichTextSettingSource, RichTextSourceRange};
+use arcweft_render_text::{
+    LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+};
 use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats;
 
 /// Effective dialogue display context at a document byte offset.
 #[derive(Clone, Debug)]
 pub(crate) struct EffectiveDialogueCascade {
     pub(crate) spec: LineDisplaySpec,
+    pub(crate) selected_path: Option<String>,
+}
+
+impl EffectiveDialogueCascade {
+    pub(crate) fn selected_contributions(&self) -> Vec<&RichTextStyleContribution> {
+        self.selected_path.as_ref().map_or_else(
+            || self.spec.style_contributions.iter().collect(),
+            |path| {
+                self.spec
+                    .style_contributions
+                    .iter()
+                    .filter(|contribution| {
+                        contribution.path == *path
+                            || contribution
+                                .path
+                                .strip_prefix(path)
+                                .is_some_and(|tail| tail.starts_with('.'))
+                    })
+                    .collect()
+            },
+        )
+    }
 }
 
 pub(crate) fn effective_dialogue_cascade_at(
@@ -19,14 +50,89 @@ pub(crate) fn effective_dialogue_cascade_at(
     if !parsed.errors().is_empty() {
         return None;
     }
+    let selected_path = style_path_at(parsed.typed_tree().items(), offset);
+    let syntax_ranges = collect_syntax_dialogue_ranges(parsed.typed_tree().items());
     let hir = lower_to_hir(parsed.typed_tree()).ok()?;
     let dialogues = collect_dialogues(&hir);
-    let dialogue_index = dialogues
+    let dialogue_index = syntax_ranges
         .iter()
-        .position(|dialogue| dialogue_content_contains_offset(dialogue, offset))?;
+        .position(|range| range_contains(range, offset))
+        .or_else(|| {
+            dialogues
+                .iter()
+                .position(|dialogue| dialogue_content_contains_offset(dialogue, offset))
+        })?;
+    if dialogue_index >= dialogues.len() {
+        return None;
+    }
     let report = lower_runtime_plan_with_stats(&hir).ok()?;
     let spec = report.line_display_catalog.lines().get(dialogue_index)?;
-    Some(EffectiveDialogueCascade { spec: spec.clone() })
+    Some(EffectiveDialogueCascade {
+        spec: spec.clone(),
+        selected_path,
+    })
+}
+
+fn collect_syntax_dialogue_ranges(items: &[Item]) -> Vec<TextRange> {
+    let mut ranges = Vec::new();
+    for item in items {
+        match item {
+            Item::Flow(flow) => collect_syntax_dialogue_ranges_from_flow(flow.body(), &mut ranges),
+            Item::FlowItem(item) => collect_syntax_dialogue_ranges_from_flow(
+                std::slice::from_ref(item.as_ref()),
+                &mut ranges,
+            ),
+            _ => {}
+        }
+    }
+    ranges
+}
+
+fn collect_syntax_dialogue_ranges_from_flow(items: &[FlowItem], ranges: &mut Vec<TextRange>) {
+    for item in items {
+        match item {
+            FlowItem::SpeakerLine(line) => ranges.push(*line.range()),
+            FlowItem::ContentCall(call) => ranges.push(*call.range()),
+            FlowItem::If(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
+            FlowItem::IfLet(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+                collect_syntax_dialogue_ranges_from_flow(block.else_body(), ranges);
+            }
+            FlowItem::Match(block) => {
+                for arm in block.arms() {
+                    collect_syntax_dialogue_ranges_from_flow(arm.body(), ranges);
+                }
+            }
+            FlowItem::Loop(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
+            FlowItem::While(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+            }
+            FlowItem::WhileLet(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+            }
+            FlowItem::For(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
+            FlowItem::Select(block) => {
+                for branch in block.branches() {
+                    collect_syntax_dialogue_ranges_from_flow(branch.body(), ranges);
+                }
+            }
+            FlowItem::BorrowBlock(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+            }
+            FlowItem::SourceLocale(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+            }
+            FlowItem::Scope(block) => {
+                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
+            }
+            FlowItem::AwaitWith(await_with) => {
+                for branch in await_with.branches() {
+                    collect_syntax_dialogue_ranges_from_flow(branch.body(), ranges);
+                }
+            }
+            FlowItem::Stmt(_) | FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+        }
+    }
 }
 
 fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
@@ -36,6 +142,288 @@ fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
     }
     collect_flow_item_dialogues(module.top_level_items(), &mut dialogues);
     dialogues
+}
+
+fn dialogue_content_contains_offset(dialogue: &HirDialogue, offset: usize) -> bool {
+    let range = dialogue.content().range();
+    range.start() <= offset && offset <= range.end()
+}
+
+pub(crate) fn source_range(source: &RichTextSettingSource) -> Option<RichTextSourceRange> {
+    match source {
+        RichTextSettingSource::SourceFile { range, .. } => *range,
+        RichTextSettingSource::EngineDefault { .. } => None,
+    }
+}
+
+pub(crate) fn style_path_at(items: &[Item], offset: usize) -> Option<String> {
+    items.iter().find_map(|item| match item {
+        Item::DialogueDefaults(defaults) => defaults
+            .assignments()
+            .iter()
+            .find(|assignment| range_contains(assignment.range(), offset))
+            .map(|assignment| assignment.path().dotted()),
+        Item::Flow(flow) => style_path_from_flow_items(flow.body(), offset),
+        Item::FlowItem(item) => {
+            style_path_from_flow_items(std::slice::from_ref(item.as_ref()), offset)
+        }
+        _ => None,
+    })
+}
+
+fn style_path_from_flow_items(items: &[FlowItem], offset: usize) -> Option<String> {
+    items.iter().find_map(|item| match item {
+        FlowItem::SpeakerLine(line) => line_options_style_path(line.options(), offset),
+        FlowItem::ContentCall(call) => line_options_style_path(call.options(), offset),
+        FlowItem::Stmt(stmt) => style_path_from_stmt(stmt, offset),
+        FlowItem::If(block) => nested_style_path(block, offset),
+        FlowItem::IfLet(block) => nested_style_path(block, offset),
+        FlowItem::Match(block) => block
+            .arms()
+            .iter()
+            .find_map(|arm| style_path_from_flow_items(arm.body(), offset)),
+        FlowItem::Loop(block) => nested_style_path(block, offset),
+        FlowItem::While(block) => nested_style_path(block, offset),
+        FlowItem::WhileLet(block) => nested_style_path(block, offset),
+        FlowItem::For(block) => nested_style_path(block, offset),
+        FlowItem::Select(block) => block
+            .branches()
+            .iter()
+            .find_map(|branch| style_path_from_flow_items(branch.body(), offset)),
+        FlowItem::BorrowBlock(block) => nested_style_path(block, offset),
+        FlowItem::SourceLocale(block) => nested_style_path(block, offset),
+        FlowItem::Scope(block) => nested_style_path(block, offset),
+        FlowItem::AwaitWith(await_with) => style_path_from_await_with(await_with, offset),
+        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => None,
+    })
+}
+
+trait HasFlowBody {
+    fn body(&self) -> &[FlowItem];
+}
+
+impl HasFlowBody for IfBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for IfLetBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for LoopBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for WhileBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for WhileLetBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for ForBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for BorrowBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for SourceLocaleBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+impl HasFlowBody for ScopeBlock {
+    fn body(&self) -> &[FlowItem] {
+        self.body()
+    }
+}
+
+fn nested_style_path(block: &impl HasFlowBody, offset: usize) -> Option<String> {
+    style_path_from_flow_items(block.body(), offset)
+}
+
+fn style_path_from_await_with(await_with: &AwaitWith, offset: usize) -> Option<String> {
+    await_with
+        .branches()
+        .iter()
+        .find_map(|branch| style_path_from_flow_items(branch.body(), offset))
+}
+
+fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
+    match stmt {
+        Stmt::Let {
+            expr_source,
+            expr_range,
+            ..
+        } => expr_source
+            .as_deref()
+            .zip(expr_range.as_ref())
+            .and_then(|(source, range)| call_option_style_path(source, range, offset)),
+        Stmt::LetElse { else_body, .. } => style_path_from_stmts(else_body, offset),
+        Stmt::LetScope { scope, .. } => style_path_from_stmts(scope.statements(), offset),
+        Stmt::LetLoop { block, .. } => style_path_from_flow_items(block.body(), offset),
+        Stmt::LetAwait { await_with, .. } => style_path_from_await_with(await_with, offset),
+        Stmt::Thread(thread) => style_path_from_flow_items(thread.body(), offset),
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop {
+            body: statements, ..
+        }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => style_path_from_stmts(statements, offset),
+        Stmt::Match { arms, .. } => arms
+            .iter()
+            .find_map(|arm| style_path_from_stmts(arm.body(), offset)),
+        Stmt::LetChoice { .. }
+        | Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::Goto(_)
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Wait(_)
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Expr(_)
+        | Stmt::Raw(_) => None,
+    }
+}
+
+fn style_path_from_stmts(statements: &[Stmt], offset: usize) -> Option<String> {
+    statements
+        .iter()
+        .find_map(|stmt| style_path_from_stmt(stmt, offset))
+}
+
+fn line_options_style_path(options: &LineOptions, offset: usize) -> Option<String> {
+    if options
+        .style_range()
+        .is_some_and(|range| range_contains(&range, offset))
+    {
+        return Some("style".to_owned());
+    }
+    if options
+        .rich_text_range()
+        .is_some_and(|range| range_contains(&range, offset))
+    {
+        return Some("rich_text".to_owned());
+    }
+    options
+        .args()
+        .iter()
+        .find(|arg| range_contains(arg.value_range(), offset))
+        .map(|arg| arg.name().to_owned())
+}
+
+fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Option<String> {
+    if !range_contains(range, offset) {
+        return None;
+    }
+    let relative = offset.saturating_sub(range.start());
+    let open = find_top_level_char(source, '(')?;
+    let close = source.rfind(')')?;
+    if relative <= open || relative > close {
+        return None;
+    }
+    split_top_level_ranges(&source[open + '('.len_utf8()..close], ',')
+        .into_iter()
+        .find_map(|(arg_start, raw)| {
+            let leading = raw.len() - raw.trim_start().len();
+            let trimmed = raw.trim();
+            let (name, value) = trimmed.split_once('=')?;
+            let value_start =
+                open + '('.len_utf8() + arg_start + leading + name.len() + '='.len_utf8();
+            let value_end = value_start + value.trim().len();
+            (value_start <= relative && relative <= value_end).then(|| name.trim().to_owned())
+        })
+}
+
+fn split_top_level_ranges(source: &str, delimiter: char) -> Vec<(usize, &str)> {
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ if ch == delimiter && !in_string && depth == 0 => {
+                ranges.push((start, &source[start..offset]));
+                start = offset + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    ranges.push((start, &source[start..]));
+    ranges
+}
+
+fn find_top_level_char(source: &str, needle: char) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            _ if ch == needle && !in_string && depth == 0 => return Some(offset),
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn range_contains(range: &TextRange, offset: usize) -> bool {
+    range.start() <= offset && offset <= range.end()
 }
 
 fn collect_flow_item_dialogues<'a>(items: &'a [HirFlowItem], dialogues: &mut Vec<&'a HirDialogue>) {
@@ -83,17 +471,5 @@ fn collect_flow_item_dialogues<'a>(items: &'a [HirFlowItem], dialogues: &mut Vec
             | HirFlowItem::LetScope { .. }
             | HirFlowItem::Include(_) => {}
         }
-    }
-}
-
-fn dialogue_content_contains_offset(dialogue: &HirDialogue, offset: usize) -> bool {
-    let range = dialogue.content().range();
-    range.start() <= offset && offset <= range.end()
-}
-
-pub(crate) fn source_range(source: &RichTextSettingSource) -> Option<RichTextSourceRange> {
-    match source {
-        RichTextSettingSource::SourceFile { range, .. } => *range,
-        RichTextSettingSource::EngineDefault { .. } => None,
     }
 }

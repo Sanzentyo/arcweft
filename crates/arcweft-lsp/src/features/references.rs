@@ -12,9 +12,8 @@ pub fn references(uri: &Uri, document: &DocumentSnapshot, position: Position) ->
     };
     let mut seen = BTreeSet::new();
     cascade
-        .spec
-        .style_contributions
-        .iter()
+        .selected_contributions()
+        .into_iter()
         .filter_map(|contribution| source_range(&contribution.source))
         .filter(|range| seen.insert((range.start, range.end)))
         .map(|range| {

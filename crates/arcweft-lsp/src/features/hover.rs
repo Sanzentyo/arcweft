@@ -31,22 +31,34 @@ pub fn hover(
 }
 
 fn effective_dialogue_style_hover(document: &DocumentSnapshot, offset: usize) -> Option<Hover> {
-    let spec = effective_dialogue_cascade_at(document, offset)?.spec;
-    if spec.style_contributions.is_empty() {
+    let cascade = effective_dialogue_cascade_at(document, offset)?;
+    let contributions = cascade.selected_contributions();
+    if contributions.is_empty() {
         return None;
     }
 
     Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(effective_style_hover_text(&spec))),
+        contents: HoverContents::Scalar(MarkedString::String(effective_style_hover_text(
+            &cascade.spec,
+            cascade.selected_path.as_deref(),
+            &contributions,
+        ))),
         range: None,
     })
 }
 
-fn effective_style_hover_text(spec: &LineDisplaySpec) -> String {
-    let mut lines = vec![format!("effective dialogue style for `{}`", spec.callee)];
-    let active = spec
-        .style_contributions
+fn effective_style_hover_text(
+    spec: &LineDisplaySpec,
+    selected_path: Option<&str>,
+    contributions: &[&RichTextStyleContribution],
+) -> String {
+    let mut lines = vec![selected_path.map_or_else(
+        || format!("effective dialogue style for `{}`", spec.callee),
+        |path| format!("effective dialogue style `{path}` for `{}`", spec.callee),
+    )];
+    let active = contributions
         .iter()
+        .copied()
         .filter(|contribution| contribution.active)
         .collect::<Vec<_>>();
     if !active.is_empty() {
@@ -59,9 +71,9 @@ fn effective_style_hover_text(spec: &LineDisplaySpec) -> String {
         );
     }
 
-    let shadowed = spec
-        .style_contributions
+    let shadowed = contributions
         .iter()
+        .copied()
         .filter(|contribution| contribution.shadowed_by.is_some())
         .collect::<Vec<_>>();
     if !shadowed.is_empty() {

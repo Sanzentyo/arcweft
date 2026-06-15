@@ -1538,6 +1538,145 @@ flow opening {
         }));
     }
 
+    #[test]
+    fn definition_request_on_line_option_returns_matching_style_path() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice(rich_text.text.color=rgb("#202122")): hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(7),
+            method: GotoDefinition::METHOD.to_owned(),
+            params: serde_json::json!(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: position_of(source, "#202122"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            }),
+        });
+        let definition = serde_json::from_value::<GotoDefinitionResponse>(
+            response.result.expect("definition response"),
+        )
+        .expect("definition response decodes");
+        let GotoDefinitionResponse::Array(locations) = definition else {
+            panic!("expected location array");
+        };
+
+        assert!(locations.iter().all(|location| location.uri == uri));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#202122\")")
+                && location.range.end == position_of(source, "): hi[p]")
+        }));
+        assert!(!locations.iter().any(|location| {
+            location.range.start == position_of(source, "14px")
+                && location.range.end == position_of(source, "\n        }\n")
+        }));
+    }
+
+    #[test]
+    fn references_request_on_line_option_filters_to_matching_style_path() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice(rich_text.text.color=rgb("#202122")): hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+
+        let response = session.handle_request(Request {
+            id: RequestId::from(8),
+            method: References::METHOD.to_owned(),
+            params: serde_json::json!(ReferenceParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: position_of(source, "#202122"),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+                context: ReferenceContext {
+                    include_declaration: true
+                },
+            }),
+        });
+        let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
+            response.result.expect("references response"),
+        )
+        .expect("references response decodes");
+
+        assert!(locations.iter().all(|location| location.uri == uri));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#101112\")")
+                && location.range.end == position_of(source, "\n        }\n        ruby")
+        }));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rgb(\"#202122\")")
+                && location.range.end == position_of(source, "): hi[p]")
+        }));
+        assert!(!locations.iter().any(|location| {
+            location.range.start == position_of(source, "14px")
+                && location.range.end == position_of(source, "\n        }\n")
+        }));
+    }
+
+    #[test]
+    fn hover_on_line_option_filters_effective_style_path() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        text {
+            color = rgb("#101112")
+        }
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+flow opening {
+    alice(rich_text.text.color=rgb("#202122")): hi[p]
+}
+"##;
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(&mut session, uri.clone(), source);
+        let hover = hover_text(&mut session, uri, source, "202122");
+
+        assert!(hover.contains("effective dialogue style `rich_text.text.color` for `alice`"));
+        assert!(hover.contains("rich_text.text.color = rgb(\"#202122\")"));
+        assert!(hover.contains("rich_text.text.color = rgb(\"#101112\")"));
+        assert!(!hover.contains("rich_text.ruby.size = 14px"));
+    }
+
     fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
         open_text(
             session,

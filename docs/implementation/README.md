@@ -126,7 +126,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `dialogue_style`. Flow `let` statements now retain their expression source
   text and byte range when parsed from source, so speaker preset contributions
   expose source value ranges through runtime-plan JSON, LSP definition, and LSP
-  reference features. Selection-scoped code actions can extract active non-line
+  reference features. Hover, definition, and references now preserve the
+  selected style path when the cursor is on a dialogue line option value, so
+  `rich_text.text.color` navigation does not include unrelated fields such as
+  `rich_text.ruby.size`; dialogue content still falls back to the whole
+  effective cascade. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`

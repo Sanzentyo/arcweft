@@ -10,10 +10,10 @@ pub fn definition(
     position: Position,
 ) -> Option<GotoDefinitionResponse> {
     let offset = document.line_index().byte_offset_from_position(position);
-    let spec = effective_dialogue_cascade_at(document, offset)?.spec;
-    let locations = spec
-        .style_contributions
-        .iter()
+    let cascade = effective_dialogue_cascade_at(document, offset)?;
+    let locations = cascade
+        .selected_contributions()
+        .into_iter()
         .filter(|contribution| contribution.active)
         .filter_map(|contribution| source_range(&contribution.source))
         .map(|range| {
