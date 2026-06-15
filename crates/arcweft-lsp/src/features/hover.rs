@@ -6,6 +6,10 @@ use arcweft_lang_syntax::ast::dialogue::{
 };
 use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
+use arcweft_render_text::{
+    LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
+    RichTextStyleContribution,
+};
 use arcweft_verify_lsp::profile_hover;
 use lsp_types::{Hover, HoverContents, MarkedString, Position};
 
@@ -32,32 +36,128 @@ fn effective_dialogue_style_hover(document: &DocumentSnapshot, offset: usize) ->
         return None;
     }
 
+    Some(Hover {
+        contents: HoverContents::Scalar(MarkedString::String(effective_style_hover_text(&spec))),
+        range: None,
+    })
+}
+
+fn effective_style_hover_text(spec: &LineDisplaySpec) -> String {
     let mut lines = vec![format!("effective dialogue style for `{}`", spec.callee)];
-    lines.extend(
-        spec.style_contributions
-            .iter()
-            .filter(|contribution| contribution.active)
-            .take(8)
-            .map(|contribution| {
-                format!(
-                    "{} = {} ({:?}, {:?})",
-                    contribution.path, contribution.value, contribution.layer, contribution.op
-                )
-            }),
-    );
+    let active = spec
+        .style_contributions
+        .iter()
+        .filter(|contribution| contribution.active)
+        .collect::<Vec<_>>();
+    if !active.is_empty() {
+        lines.push("active contributors:".to_owned());
+        lines.extend(
+            active
+                .iter()
+                .take(8)
+                .map(|contribution| format!("  {}", contribution_label(contribution))),
+        );
+    }
+
     let shadowed = spec
         .style_contributions
         .iter()
         .filter(|contribution| contribution.shadowed_by.is_some())
-        .count();
-    if shadowed > 0 {
-        lines.push(format!("shadowed contributors: {shadowed}"));
+        .collect::<Vec<_>>();
+    if !shadowed.is_empty() {
+        lines.push("shadowed contributors:".to_owned());
+        lines.extend(shadowed.iter().take(8).map(|contribution| {
+            let shadowed_by = contribution
+                .shadowed_by
+                .map_or("?".to_owned(), |index| format!("#{index}"));
+            format!(
+                "  {} (shadowed by {shadowed_by})",
+                contribution_label(contribution)
+            )
+        }));
     }
 
-    Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(lines.join("\n"))),
-        range: None,
-    })
+    let unset_layers = unset_cascade_layers(spec);
+    if !unset_layers.is_empty() {
+        lines.push(format!("unset layers: {}", unset_layers.join(", ")));
+    }
+
+    lines.join("\n")
+}
+
+fn contribution_label(contribution: &RichTextStyleContribution) -> String {
+    format!(
+        "{} = {} ({}, {}, {})",
+        contribution.path,
+        contribution.value,
+        cascade_layer_label(contribution.layer),
+        assign_op_label(contribution.op),
+        setting_source_label(&contribution.source)
+    )
+}
+
+fn unset_cascade_layers(spec: &LineDisplaySpec) -> Vec<&'static str> {
+    all_cascade_layers()
+        .into_iter()
+        .filter(|layer| {
+            !spec
+                .style_contributions
+                .iter()
+                .any(|contribution| contribution.layer == *layer)
+        })
+        .map(cascade_layer_label)
+        .collect()
+}
+
+fn all_cascade_layers() -> [RichTextCascadeLayer; 7] {
+    [
+        RichTextCascadeLayer::InlineSpan,
+        RichTextCascadeLayer::LineOptions,
+        RichTextCascadeLayer::SpeakerPreset,
+        RichTextCascadeLayer::CharacterDialogueStyle,
+        RichTextCascadeLayer::DialogueWindowTheme,
+        RichTextCascadeLayer::DialogueDefaults,
+        RichTextCascadeLayer::EngineDefaults,
+    ]
+}
+
+fn cascade_layer_label(layer: RichTextCascadeLayer) -> &'static str {
+    match layer {
+        RichTextCascadeLayer::InlineSpan => "inline_span",
+        RichTextCascadeLayer::LineOptions => "line_options",
+        RichTextCascadeLayer::SpeakerPreset => "speaker_preset",
+        RichTextCascadeLayer::CharacterDialogueStyle => "character_dialogue_style",
+        RichTextCascadeLayer::DialogueWindowTheme => "dialogue_window_theme",
+        RichTextCascadeLayer::DialogueDefaults => "dialogue_defaults",
+        RichTextCascadeLayer::EngineDefaults => "engine_defaults",
+    }
+}
+
+fn assign_op_label(op: RichTextAssignOp) -> &'static str {
+    match op {
+        RichTextAssignOp::Replace => "replace",
+        RichTextAssignOp::Append => "append",
+    }
+}
+
+fn setting_source_label(source: &RichTextSettingSource) -> String {
+    match source {
+        RichTextSettingSource::SourceFile {
+            item_id,
+            public_id,
+            range,
+        } => {
+            let identity = item_id
+                .as_deref()
+                .or(public_id.as_deref())
+                .unwrap_or("source");
+            range.map_or_else(
+                || format!("source_file:{identity}"),
+                |range| format!("source_file:{identity}@{}..{}", range.start, range.end),
+            )
+        }
+        RichTextSettingSource::EngineDefault { key } => format!("engine_default:{key}"),
+    }
 }
 
 fn dialogue_defaults_hover(document: &DocumentSnapshot, offset: usize) -> Option<Hover> {
@@ -181,6 +281,7 @@ pub dialogue defaults @dialogue.defaults {
     fn hover_describes_effective_dialogue_style_cascade() {
         let source = r##"
 pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
     rich_text {
         ruby {
             size = 14px
@@ -219,8 +320,13 @@ flow opening {
         match hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("effective dialogue style for `alice`"));
+                assert!(text.contains("active contributors:"));
                 assert!(text.contains("rich_text.ruby.size = 14px"));
                 assert!(text.contains("text_color = rgb(\"#202122\")"));
+                assert!(text.contains("shadowed contributors:"));
+                assert!(text.contains("text_color = rgb(\"#101112\")"));
+                assert!(text.contains("unset layers:"));
+                assert!(text.contains("line_options"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
