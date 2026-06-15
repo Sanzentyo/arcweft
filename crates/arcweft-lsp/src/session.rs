@@ -565,7 +565,7 @@ mod tests {
         open_text(
             &mut session,
             uri.clone(),
-            "flow @flow.opening opening {\n    alice: [.shake amp=2px]hi[/]\n}\n",
+            "flow @flow.opening opening {\n    alice: [.keyword]word[/][.shake amp=2px]hi[/]\n}\n",
         );
 
         let actions = session
@@ -597,6 +597,11 @@ mod tests {
             .expect("workspace edit");
 
         assert_eq!(edits.len(), 1);
+        assert!(
+            edits[0]
+                .new_text
+                .contains("[mark .keyword]word[effect .shake amp=2px]hi[/effect]")
+        );
         assert!(
             edits[0]
                 .new_text
