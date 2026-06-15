@@ -96,6 +96,34 @@ fn dialogue_override_actions(
                 })
             }),
     );
+    actions.extend(
+        cascade
+            .spec
+            .style_contributions
+            .iter()
+            .filter(|contribution| extractable_dialogue_defaults_override(contribution))
+            .take(8)
+            .filter_map(|contribution| {
+                let edit = dialogue_defaults_edit(
+                    document.text(),
+                    &contribution.path,
+                    &contribution.value,
+                )?;
+                Some(CodeAction {
+                    title: format!(
+                        "Extract `{}` override to dialogue defaults",
+                        contribution.path
+                    ),
+                    kind: Some(CodeActionKind::REFACTOR_EXTRACT),
+                    edit: Some(workspace_edit_from_tooling_edit(
+                        uri,
+                        &edit,
+                        document.line_index(),
+                    )),
+                    ..CodeAction::default()
+                })
+            }),
+    );
     actions
 }
 
@@ -114,6 +142,14 @@ fn extractable_character_override(contribution: &RichTextStyleContribution) -> b
             contribution.layer,
             RichTextCascadeLayer::LineOptions | RichTextCascadeLayer::CharacterDialogueStyle
         )
+        && !contribution.path.is_empty()
+        && !contribution.value.is_empty()
+}
+
+fn extractable_dialogue_defaults_override(contribution: &RichTextStyleContribution) -> bool {
+    contribution.active
+        && contribution.op == RichTextAssignOp::Replace
+        && contribution.layer != RichTextCascadeLayer::DialogueDefaults
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }
@@ -452,6 +488,52 @@ fn matching_brace(source: &str, open: usize) -> Option<usize> {
     None
 }
 
+fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextEdit> {
+    let parsed = parse_source(source);
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let defaults = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            Item::DialogueDefaults(defaults) => Some(defaults),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let target = defaults
+        .iter()
+        .copied()
+        .find(|defaults| {
+            defaults
+                .id()
+                .is_some_and(|id| id.body() == "dialogue.defaults")
+        })
+        .or_else(|| (defaults.len() == 1).then(|| defaults[0]))?;
+    block_assignment_insertion(source, target.range(), path, value)
+}
+
+fn block_assignment_insertion(
+    source: &str,
+    range: &TextRange,
+    path: &str,
+    value: &str,
+) -> Option<TextEdit> {
+    let block = source.get(range.as_range())?;
+    let open = block.find('{')?;
+    let close = matching_brace(block, open)?;
+    let line_start = block[..close]
+        .rfind('\n')
+        .map_or(open + 1, |offset| offset + 1);
+    let close_indent = &block[line_start..close];
+    Some(TextEdit {
+        start: range.start() + line_start,
+        end: range.start() + line_start,
+        replacement: format!("{close_indent}    {path} = {value}\n"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,5 +593,18 @@ mod tests {
 
         assert_eq!(edit.start, source.find("    }\n}").expect("style close"));
         assert_eq!(edit.replacement, "        rich_text.ruby.size = 14px\n");
+    }
+
+    #[test]
+    fn dialogue_defaults_edit_uses_canonical_profile() {
+        let source = "pub dialogue defaults @dialogue.defaults.debug {\n}\n\npub dialogue defaults @dialogue.defaults {\n}\n";
+        let edit = dialogue_defaults_edit(source, "text_color", "rgb(\"#202122\")")
+            .expect("defaults edit");
+        let expected = source
+            .rfind("}\n")
+            .expect("canonical defaults closing brace");
+
+        assert_eq!(edit.start, expected);
+        assert_eq!(edit.replacement, "    text_color = rgb(\"#202122\")\n");
     }
 }

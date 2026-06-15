@@ -120,7 +120,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, and can lift selected defaults into the matching character's
   `dialogue_style` block when the character declaration is in the current
-  document. Source-level sugar expansion and canonical rich-text actions now
+  document or move active non-default contributors into the selected
+  `dialogue defaults` profile. Source-level sugar expansion and canonical
+  rich-text actions now
   return a coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
   rewrite. ID materialization actions return focused LSP `WorkspaceEdit` values
