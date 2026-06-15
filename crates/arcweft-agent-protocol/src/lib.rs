@@ -614,6 +614,9 @@ pub enum AgentDiagnosticSeverity {
 mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
+    use arcweft_render_text::{
+        RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextStyleContribution,
+    };
 
     fn test_capture_refs() -> AgentObjectCaptureRefs {
         AgentObjectCaptureRefs {
@@ -654,6 +657,18 @@ mod tests {
             text: "Hello".to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: vec![RichTextStyleContribution {
+                path: "rich_text.ruby.size".to_owned(),
+                layer: RichTextCascadeLayer::DialogueDefaults,
+                source: RichTextSettingSource::EngineDefault {
+                    key: "dialogue.rich_text.ruby.size".to_owned(),
+                },
+                op: RichTextAssignOp::Replace,
+                value: "14".to_owned(),
+                style_index: None,
+                active: true,
+                shadowed_by: None,
+            }],
             nodes: Vec::new(),
             display_map: arcweft_render_text::RichTextDisplayMap::default(),
             host_events: Vec::new(),
@@ -911,6 +926,14 @@ mod tests {
         );
         assert_eq!(json["objects"][0]["rich_text_ref"]["kind"], "text_run");
         assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
+        assert_eq!(
+            json["objects"][0]["rich_text"]["style_contributions"][0]["path"],
+            "rich_text.ruby.size"
+        );
+        assert_eq!(
+            json["objects"][0]["rich_text"]["style_contributions"][0]["layer"],
+            "dialogue_defaults"
+        );
         assert_eq!(
             json["objects"][0]["rich_text_ref"]["hit_regions"][0]["kind"],
             "text_run"

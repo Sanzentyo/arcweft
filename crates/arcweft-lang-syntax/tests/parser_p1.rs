@@ -135,8 +135,7 @@ effects signal.choice_visible, ui.patch
 
 #[test]
 fn dialogue_defaults_are_preserved_as_top_level_declarations() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 pub dialogue defaults @dialogue.defaults {
     window = @textbox.0
     voice = auto
@@ -147,8 +146,8 @@ pub dialogue defaults @dialogue.defaults {
         }
     }
 }
-",
-    );
+";
+    let tree = parse_ok(source);
 
     let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
         panic!("expected dialogue defaults");
@@ -162,6 +161,27 @@ pub dialogue defaults @dialogue.defaults {
     assert_eq!(assignments[0].path().dotted(), "window");
     assert_eq!(assignments[2].path().dotted(), "rich_text.ruby.size");
     assert_eq!(assignments[3].path().dotted(), "rich_text.ruby.gap");
+    assert_eq!(
+        source[assignments[2].range().as_range()].trim(),
+        "size = 14px"
+    );
+    assert_eq!(
+        source[assignments[2].path_range().as_range()].trim(),
+        "size"
+    );
+    assert_eq!(
+        source[assignments[2].value_range().as_range()].trim(),
+        "14px"
+    );
+    assert_eq!(
+        source[assignments[3].range().as_range()].trim(),
+        "gap += 1px"
+    );
+    assert_eq!(source[assignments[3].path_range().as_range()].trim(), "gap");
+    assert_eq!(
+        source[assignments[3].value_range().as_range()].trim(),
+        "1px"
+    );
 }
 
 #[test]

@@ -60,9 +60,14 @@ impl Parser<'_> {
                 ["move defaults into the declaration body"],
             );
         }
+        let body_base = start_line.start
+            + start_line
+                .text
+                .find('{')
+                .map_or_else(|| head.len() + "{".len(), |open| open + "{".len());
         let assignments = parse_dialogue_default_assignments(
             &body,
-            start_line.start,
+            body_base,
             TextRange::new(start_line.start, end),
             &mut self.errors,
         );
@@ -501,16 +506,24 @@ fn parse_dialogue_default_assignments(
 ) -> Vec<DialogueDefaultAssignment> {
     let mut assignments = Vec::new();
     let mut path_stack: Vec<String> = Vec::new();
-    for line in body.lines() {
-        let trimmed = line.trim();
+    let mut line_start = 0usize;
+    for line in body.split_inclusive('\n') {
+        let line_without_eol = line.trim_end_matches(['\r', '\n']);
+        let trimmed = line_without_eol.trim();
+        let trimmed_start_in_line = line_without_eol
+            .len()
+            .saturating_sub(line_without_eol.trim_start().len());
+        let trimmed_start = base + line_start + trimmed_start_in_line;
+        let trimmed_range = TextRange::new(trimmed_start, trimmed_start + trimmed.len());
+        line_start += line.len();
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }
         if trimmed == "}" {
             if path_stack.pop().is_none() {
                 errors.push(simple_error(
-                    fallback_range.start(),
-                    fallback_range.end() - fallback_range.start(),
+                    trimmed_range.start(),
+                    trimmed_range.end() - trimmed_range.start(),
                     "unexpected closing brace in dialogue defaults",
                     "nested defaults block",
                 ));
@@ -520,8 +533,8 @@ fn parse_dialogue_default_assignments(
         if let Some(block_name) = trimmed.strip_suffix('{').map(str::trim) {
             if block_name.is_empty() || block_name.contains(char::is_whitespace) {
                 errors.push(simple_error(
-                    base,
-                    trimmed.len(),
+                    trimmed_range.start(),
+                    trimmed_range.end() - trimmed_range.start(),
                     "expected dialogue defaults block path",
                     "rich_text {",
                 ));
@@ -532,8 +545,8 @@ fn parse_dialogue_default_assignments(
         }
         if trimmed.contains('{') || trimmed.contains('}') {
             errors.push(simple_error(
-                base,
-                trimmed.len(),
+                trimmed_range.start(),
+                trimmed_range.end() - trimmed_range.start(),
                 "one-line nested dialogue defaults blocks are not canonical",
                 "write nested assignments on separate lines",
             ));
@@ -541,8 +554,8 @@ fn parse_dialogue_default_assignments(
         }
         let Some((name, op, value)) = split_dialogue_default_assignment(trimmed) else {
             errors.push(simple_error(
-                base,
-                trimmed.len(),
+                trimmed_range.start(),
+                trimmed_range.end() - trimmed_range.start(),
                 "expected dialogue default assignment",
                 "name = expr",
             ));
@@ -552,21 +565,31 @@ fn parse_dialogue_default_assignments(
         segments.extend(name.split('.').map(str::trim).map(str::to_owned));
         let Some(path) = DialogueDefaultPath::from_dotted(&segments.join(".")) else {
             errors.push(simple_error(
-                base,
-                trimmed.len(),
+                trimmed_range.start(),
+                trimmed_range.end() - trimmed_range.start(),
                 "expected dialogue default assignment path",
                 "rich_text.ruby.size = expr",
             ));
             continue;
         };
         let value = value.trim();
+        let name_offset = trimmed.find(name).unwrap_or_default();
+        let value_offset = trimmed
+            .rfind(value)
+            .unwrap_or_else(|| trimmed.len().saturating_sub(value.len()));
         assignments.push(DialogueDefaultAssignment::new(
             path,
             op,
             parse_expr_lossy(value),
-            fallback_range,
-            fallback_range,
-            fallback_range,
+            trimmed_range,
+            TextRange::new(
+                trimmed_start + name_offset,
+                trimmed_start + name_offset + name.len(),
+            ),
+            TextRange::new(
+                trimmed_start + value_offset,
+                trimmed_start + value_offset + value.len(),
+            ),
         ));
     }
     if !path_stack.is_empty() {

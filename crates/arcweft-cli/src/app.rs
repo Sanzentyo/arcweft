@@ -4786,6 +4786,7 @@ fn agent_child_line_display_frame(parent: &LineDisplayFrame, text: String) -> Li
         text: text.clone(),
         base_styles: parent.base_styles.clone(),
         default_inline_failure_policy: parent.default_inline_failure_policy.clone(),
+        style_contributions: parent.style_contributions.clone(),
         nodes: vec![RichTextNode::Text { text }],
         display_map: arcweft_render_text::RichTextDisplayMap::default(),
         host_events: Vec::new(),
@@ -9041,6 +9042,7 @@ mod tests {
             text: String::new(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: arcweft_render_text::RichTextDisplayMap::default(),
             host_events: Vec::new(),
@@ -9060,6 +9062,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: arcweft_render_text::RichTextDocument::new(vec![RichTextNode::Text {
                 text: "native attachment seed".to_owned(),
@@ -9076,6 +9079,7 @@ mod tests {
             text: "ABCDE".to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: arcweft_render_text::RichTextDisplayMap {
                 text_runs: vec![

@@ -948,6 +948,7 @@ fn page_local_layout_frame(
             text,
             base_styles: frame.base_styles.clone(),
             default_inline_failure_policy: frame.default_inline_failure_policy.clone(),
+            style_contributions: frame.style_contributions.clone(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap {
                 text_runs,
@@ -3631,6 +3632,7 @@ mod tests {
             style: None,
             base_styles: vec![RichTextStyle::from_tag("color", "#aabedc")],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -3679,6 +3681,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -3838,6 +3841,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4025,6 +4029,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4141,6 +4146,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4239,6 +4245,7 @@ mod tests {
                 style: None,
                 base_styles: Vec::new(),
                 default_inline_failure_policy: None,
+                style_contributions: Vec::new(),
                 args: Vec::new(),
                 content: RichTextDocument::new(vec![
                     RichTextNode::StyleStart {
@@ -4299,6 +4306,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4404,6 +4412,7 @@ mod tests {
                 raw: "48".to_owned(),
             }],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4491,6 +4500,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -4558,6 +4568,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4625,6 +4636,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4674,6 +4686,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -4731,6 +4744,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -4812,6 +4826,7 @@ mod tests {
             style: None,
             base_styles: vec![RichTextStyle::from_tag("color", "#ff0000")],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -4871,6 +4886,7 @@ mod tests {
             style: None,
             base_styles: vec![RichTextStyle::from_tag("color", "#ff0000")],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -4932,6 +4948,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -5029,6 +5046,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {
@@ -5136,6 +5154,7 @@ mod tests {
             style: None,
             base_styles: vec![RichTextStyle::from_tag("font", "serif")],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -5183,6 +5202,7 @@ mod tests {
             text: "ABCDE".to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: arcweft_render_text::RichTextDisplayMap {
                 text_runs: vec![
@@ -5275,6 +5295,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {

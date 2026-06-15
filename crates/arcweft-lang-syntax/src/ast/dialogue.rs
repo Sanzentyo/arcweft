@@ -438,7 +438,7 @@ impl DialogueDefaultPath {
             .filter(|segment| !segment.is_empty())
             .map(str::to_owned)
             .collect();
-        (!segments.is_empty()).then(|| Self { segments })
+        (!segments.is_empty()).then_some(Self { segments })
     }
 
     pub fn segments(&self) -> &[String] {

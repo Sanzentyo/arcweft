@@ -2211,6 +2211,7 @@ mod tests {
             text: text.to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap {
                 text_runs: vec![RichTextTextRun {
@@ -2251,6 +2252,7 @@ mod tests {
             text: text.to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap {
                 text_runs: vec![

@@ -35,8 +35,71 @@ pub struct LineDisplaySpec {
     pub base_styles: Vec<RichTextStyle>,
     #[serde(default)]
     pub default_inline_failure_policy: Option<InlineFailurePolicy>,
+    #[serde(default)]
+    pub style_contributions: Vec<RichTextStyleContribution>,
     pub args: Vec<LineDisplayArg>,
     pub content: RichTextDocument,
+}
+
+/// Provenance for one style contribution in the effective dialogue cascade.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RichTextStyleContribution {
+    pub path: String,
+    pub layer: RichTextCascadeLayer,
+    pub source: RichTextSettingSource,
+    pub op: RichTextAssignOp,
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_index: Option<usize>,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadowed_by: Option<usize>,
+}
+
+/// Effective style cascade layer.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RichTextCascadeLayer {
+    InlineSpan,
+    LineOptions,
+    SpeakerPreset,
+    CharacterDialogueStyle,
+    DialogueWindowTheme,
+    DialogueDefaults,
+    EngineDefaults,
+}
+
+/// Source of a style/default contribution.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RichTextSettingSource {
+    SourceFile {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        public_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<RichTextSourceRange>,
+    },
+    EngineDefault {
+        key: String,
+    },
+}
+
+/// Assignment operator used by a style/default contribution.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RichTextAssignOp {
+    Replace,
+    Append,
+}
+
+/// Half-open byte range in source text.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RichTextSourceRange {
+    pub start: usize,
+    pub end: usize,
 }
 
 /// Non-reserved line argument preserved for player adapters.
@@ -201,6 +264,8 @@ pub struct LineDisplayFrame {
     pub text: String,
     pub base_styles: Vec<RichTextStyle>,
     pub default_inline_failure_policy: Option<InlineFailurePolicy>,
+    #[serde(default)]
+    pub style_contributions: Vec<RichTextStyleContribution>,
     pub nodes: Vec<RichTextNode>,
     pub display_map: RichTextDisplayMap,
     pub host_events: Vec<DialogueHostEvent>,
@@ -707,6 +772,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
             text: self.text,
             base_styles: self.spec.base_styles.clone(),
             default_inline_failure_policy: self.spec.default_inline_failure_policy.clone(),
+            style_contributions: self.spec.style_contributions.clone(),
             nodes: self.nodes,
             display_map: self.display_map,
             host_events: self.host_events,
@@ -934,6 +1000,7 @@ mod tests {
             style: None,
             base_styles: vec![RichTextStyle::from_tag("font", "monospace")],
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -1031,6 +1098,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Text {
@@ -1086,6 +1154,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![RichTextNode::Interpolation {
                 expr: "missing".to_owned(),
@@ -1114,6 +1183,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::Interpolation {
@@ -1169,6 +1239,7 @@ mod tests {
             style: None,
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
                 RichTextNode::StyleStart {

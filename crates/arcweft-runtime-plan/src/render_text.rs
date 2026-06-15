@@ -3,17 +3,21 @@
 use crate::labels::expr_label;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_lang_hir::model::{HirDialogue, HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTag, DialogueToken, LineArg};
+use arcweft_lang_hir::syntax::ast::dialogue::{
+    DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem, DialogueTag,
+    DialogueToken, LineArg,
+};
 use arcweft_lang_hir::syntax::ast::items::{EntityDeclItem, EntityDeclKind};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, parse_expr};
 use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LineDisplayArg,
-    LineDisplaySpec, Milli, RichTextAngle, RichTextColor, RichTextControl, RichTextDocument,
-    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam,
-    RichTextRubyPosition, RichTextShaderRef, RichTextStateScope, RichTextStyle, RichTextTransform,
-    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
-    parse_decimal_milli, parse_milli_token,
+    LineDisplaySpec, Milli, RichTextAngle, RichTextAssignOp, RichTextCascadeLayer, RichTextColor,
+    RichTextControl, RichTextDocument, RichTextEffectDescriptor, RichTextEffectPhase,
+    RichTextEffectTarget, RichTextFontFamily, RichTextInlineDirection, RichTextJlreqStrictness,
+    RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition, RichTextSettingSource,
+    RichTextShaderRef, RichTextSourceRange, RichTextStateScope, RichTextStyle,
+    RichTextStyleContribution, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
+    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
 };
 use std::collections::BTreeMap;
 
@@ -26,6 +30,7 @@ pub(crate) struct DialogueDisplayDefaults {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct DialogueStyleDefaults {
     base_styles: Vec<RichTextStyle>,
+    style_contributions: Vec<RichTextStyleContribution>,
     default_inline_failure_policy: Option<InlineFailurePolicy>,
 }
 
@@ -35,11 +40,7 @@ impl DialogueDisplayDefaults {
         for declaration in module.declarations() {
             match declaration {
                 HirTopLevelDecl::DialogueDefaults(item) => {
-                    defaults.global = style_defaults_from_options(
-                        item.assignments()
-                            .iter()
-                            .map(|assignment| (assignment.path().dotted(), assignment.value())),
-                    );
+                    defaults.global = style_defaults_from_dialogue_defaults(item);
                 }
                 HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Character => {
                     let style = character_style_defaults(item);
@@ -80,6 +81,7 @@ pub(crate) fn lower_dialogue_display(
         style: dialogue.style().map(expr_label),
         base_styles: lower_effective_dialogue_base_styles(dialogue, defaults),
         default_inline_failure_policy: default_inline_failure_policy.clone(),
+        style_contributions: lower_effective_dialogue_style_contributions(dialogue, defaults),
         args: dialogue
             .args()
             .iter()
@@ -143,16 +145,81 @@ fn lower_effective_inline_failure_policy(
         .or_else(|| defaults.global.default_inline_failure_policy.clone())
 }
 
+fn lower_effective_dialogue_style_contributions(
+    dialogue: &HirDialogue,
+    defaults: &DialogueDisplayDefaults,
+) -> Vec<RichTextStyleContribution> {
+    let mut contributions = Vec::new();
+    let mut base_offset = 0usize;
+
+    append_style_contributions(&mut contributions, &defaults.global, &mut base_offset);
+    if let Some(character) = defaults.character_for_callee(dialogue.callee()) {
+        append_style_contributions(&mut contributions, character, &mut base_offset);
+    }
+
+    let source = dialogue_option_source(dialogue);
+    if let Some(style) = dialogue.style() {
+        let styles = display_styles_from_expr(style);
+        let has_policy = inline_default_from_named_expr("style", style).is_some();
+        append_line_option_contributions(
+            &mut contributions,
+            &mut base_offset,
+            "style",
+            style,
+            &styles,
+            has_policy,
+            &source,
+        );
+    }
+    if let Some(rich_text) = dialogue.rich_text() {
+        let styles = display_styles_from_expr(rich_text);
+        let has_policy = inline_default_from_named_expr("rich_text", rich_text).is_some();
+        append_line_option_contributions(
+            &mut contributions,
+            &mut base_offset,
+            "rich_text",
+            rich_text,
+            &styles,
+            has_policy,
+            &source,
+        );
+    }
+    for arg in dialogue.args() {
+        let styles = display_styles_from_named_expr(arg.name(), arg.value());
+        let has_policy = inline_default_from_named_expr(arg.name(), arg.value()).is_some();
+        append_line_option_contributions(
+            &mut contributions,
+            &mut base_offset,
+            arg.name(),
+            arg.value(),
+            &styles,
+            has_policy,
+            &source,
+        );
+    }
+
+    mark_shadowed_style_contributions(&mut contributions);
+    contributions
+}
+
 impl DialogueStyleDefaults {
     fn is_empty(&self) -> bool {
-        self.base_styles.is_empty() && self.default_inline_failure_policy.is_none()
+        self.base_styles.is_empty()
+            && self.style_contributions.is_empty()
+            && self.default_inline_failure_policy.is_none()
     }
 }
 
 fn character_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
     item.body()
         .and_then(dialogue_style_block)
-        .map(style_defaults_from_body)
+        .map(|body| {
+            let source = source_file(
+                Some(item.id().body().to_owned()),
+                Some(source_range(item.range())),
+            );
+            style_defaults_from_body(body, RichTextCascadeLayer::CharacterDialogueStyle, &source)
+        })
         .unwrap_or_default()
 }
 
@@ -171,38 +238,217 @@ fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
     .collect()
 }
 
-fn style_defaults_from_body(body: &str) -> DialogueStyleDefaults {
+fn style_defaults_from_body(
+    body: &str,
+    layer: RichTextCascadeLayer,
+    source: &RichTextSettingSource,
+) -> DialogueStyleDefaults {
     let mut defaults = DialogueStyleDefaults::default();
     for (name, value) in style_block_assignments(body) {
         if let Ok(expr) = parse_expr(value) {
-            if let Some(policy) = inline_default_from_named_expr(name, &expr) {
-                defaults.default_inline_failure_policy = Some(policy);
-            }
-            defaults
-                .base_styles
-                .extend(display_styles_from_named_expr(name, &expr));
+            append_style_default(
+                &mut defaults,
+                name.to_owned(),
+                RichTextAssignOp::Replace,
+                expr_label(&expr),
+                &expr,
+                layer,
+                source.clone(),
+            );
         }
     }
     defaults
 }
 
-fn style_defaults_from_options<'a, N>(
-    options: impl IntoIterator<Item = (N, &'a Expr)>,
-) -> DialogueStyleDefaults
-where
-    N: AsRef<str>,
-{
+fn style_defaults_from_dialogue_defaults(item: &DialogueDefaultsItem) -> DialogueStyleDefaults {
     let mut defaults = DialogueStyleDefaults::default();
-    for (name, value) in options {
-        let name = name.as_ref();
-        if let Some(policy) = inline_default_from_named_expr(name, value) {
-            defaults.default_inline_failure_policy = Some(policy);
-        }
-        defaults
-            .base_styles
-            .extend(display_styles_from_named_expr(name, value));
+    let item_id = item.id().map(|id| id.body().to_owned());
+    for assignment in item.assignments() {
+        append_dialogue_default_assignment(&mut defaults, assignment, item_id.clone());
     }
     defaults
+}
+
+fn append_dialogue_default_assignment(
+    defaults: &mut DialogueStyleDefaults,
+    assignment: &DialogueDefaultAssignment,
+    item_id: Option<String>,
+) {
+    append_style_default(
+        defaults,
+        assignment.path().dotted(),
+        rich_text_assign_op(assignment.op()),
+        expr_label(assignment.value()),
+        assignment.value(),
+        RichTextCascadeLayer::DialogueDefaults,
+        source_file(item_id, Some(source_range(assignment.range()))),
+    );
+}
+
+fn append_style_default(
+    defaults: &mut DialogueStyleDefaults,
+    path: String,
+    op: RichTextAssignOp,
+    value: String,
+    expr: &Expr,
+    layer: RichTextCascadeLayer,
+    source: RichTextSettingSource,
+) {
+    let policy = inline_default_from_named_expr(&path, expr);
+    if let Some(policy) = policy.clone() {
+        defaults.default_inline_failure_policy = Some(policy);
+    }
+
+    let style_index = defaults.base_styles.len();
+    let styles = display_styles_from_named_expr(&path, expr);
+    let active = policy.is_some() || !styles.is_empty();
+    let style_index = (!styles.is_empty()).then_some(style_index);
+    defaults.base_styles.extend(styles);
+    defaults
+        .style_contributions
+        .push(RichTextStyleContribution {
+            path,
+            layer,
+            source,
+            op,
+            value,
+            style_index,
+            active,
+            shadowed_by: None,
+        });
+}
+
+fn append_style_contributions(
+    target: &mut Vec<RichTextStyleContribution>,
+    defaults: &DialogueStyleDefaults,
+    base_offset: &mut usize,
+) {
+    target.extend(
+        defaults
+            .style_contributions
+            .iter()
+            .cloned()
+            .map(|mut contribution| {
+                if let Some(style_index) = contribution.style_index {
+                    contribution.style_index = Some(*base_offset + style_index);
+                }
+                contribution
+            }),
+    );
+    *base_offset += defaults.base_styles.len();
+}
+
+fn append_line_option_contributions(
+    target: &mut Vec<RichTextStyleContribution>,
+    base_offset: &mut usize,
+    path: &str,
+    expr: &Expr,
+    styles: &[RichTextStyle],
+    has_policy: bool,
+    source: &RichTextSettingSource,
+) {
+    let style_index = (!styles.is_empty()).then_some(*base_offset);
+    let active = has_policy || !styles.is_empty();
+    let paths = style_assignment_paths(path, expr);
+    target.extend(
+        paths
+            .into_iter()
+            .map(|(path, value)| RichTextStyleContribution {
+                path,
+                layer: RichTextCascadeLayer::LineOptions,
+                source: source.clone(),
+                op: RichTextAssignOp::Replace,
+                value,
+                style_index,
+                active,
+                shadowed_by: None,
+            }),
+    );
+    *base_offset += styles.len();
+}
+
+fn style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
+    let nested = nested_style_assignment_paths(path, expr);
+    if nested.is_empty() {
+        vec![(path.to_owned(), expr_label(expr))]
+    } else {
+        nested
+    }
+}
+
+fn nested_style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
+    let Expr::Call { callee, args } = expr else {
+        return Vec::new();
+    };
+    match style_call_name(callee) {
+        Some("text_style" | "dialogue_style" | "style" | "rich_text_style") => args
+            .iter()
+            .flat_map(|arg| match arg {
+                CallArg::Named { name, value } => {
+                    let child = format!("{path}.{name}");
+                    style_assignment_paths(&child, value)
+                }
+                CallArg::Positional(value) => style_assignment_paths(path, value),
+                CallArg::Spread { .. } => Vec::new(),
+            })
+            .collect(),
+        Some("ruby_style" | "layout_style") => args
+            .iter()
+            .filter_map(|arg| match arg {
+                CallArg::Named { name, value } => {
+                    Some((format!("{path}.{name}"), expr_label(value)))
+                }
+                CallArg::Positional(_) | CallArg::Spread { .. } => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn mark_shadowed_style_contributions(contributions: &mut [RichTextStyleContribution]) {
+    let mut latest_by_path = BTreeMap::<String, usize>::new();
+    for index in 0..contributions.len() {
+        if !contributions[index].active || contributions[index].op != RichTextAssignOp::Replace {
+            continue;
+        }
+        if let Some(previous) = latest_by_path.insert(contributions[index].path.clone(), index) {
+            contributions[previous].active = false;
+            contributions[previous].shadowed_by = Some(index);
+        }
+    }
+}
+
+fn rich_text_assign_op(op: DialogueDefaultAssignOp) -> RichTextAssignOp {
+    match op {
+        DialogueDefaultAssignOp::Replace => RichTextAssignOp::Replace,
+        DialogueDefaultAssignOp::Append => RichTextAssignOp::Append,
+    }
+}
+
+fn dialogue_option_source(dialogue: &HirDialogue) -> RichTextSettingSource {
+    RichTextSettingSource::SourceFile {
+        item_id: dialogue.id().map(|id| id.body().to_owned()),
+        public_id: dialogue.text_key().map(|id| id.body().to_owned()),
+        range: None,
+    }
+}
+
+fn source_file(
+    item_id: Option<String>,
+    range: Option<RichTextSourceRange>,
+) -> RichTextSettingSource {
+    RichTextSettingSource::SourceFile {
+        public_id: item_id.clone(),
+        item_id,
+        range,
+    }
+}
+
+fn source_range(range: &arcweft_lang_hir::syntax::ast::common::TextRange) -> RichTextSourceRange {
+    RichTextSourceRange {
+        start: range.start(),
+        end: range.end(),
+    }
 }
 
 fn display_styles_from_expr(expr: &Expr) -> Vec<RichTextStyle> {
@@ -1251,7 +1497,9 @@ mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
-    use arcweft_render_text::{RichTextColor, RichTextFontFamily, RuntimeLineContext};
+    use arcweft_render_text::{
+        RichTextCascadeLayer, RichTextColor, RichTextFontFamily, RuntimeLineContext,
+    };
 
     #[test]
     fn lowers_full_tag_families_to_render_text_nodes() {
@@ -1510,6 +1758,30 @@ flow @flow.main main {
                     }
                 }
             )
+        }));
+        assert!(
+            spec.style_contributions.iter().any(|contribution| {
+                contribution.layer == RichTextCascadeLayer::DialogueDefaults
+                    && contribution.path == "rich_text.ruby.size"
+                    && contribution.value == "14"
+                    && !contribution.active
+                    && contribution.style_index == Some(0)
+            }),
+            "{:#?}",
+            spec.style_contributions
+        );
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::LineOptions
+                && contribution.path == "rich_text.ruby.size"
+                && contribution.value == "11"
+                && contribution.active
+                && contribution.style_index == Some(2)
+        }));
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::DialogueDefaults
+                && contribution.path == "rich_text.ruby.size"
+                && !contribution.active
+                && contribution.shadowed_by.is_some()
         }));
     }
 

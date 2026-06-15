@@ -927,6 +927,7 @@ mod tests {
             text: "A".to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: arcweft_render_text::RichTextDisplayMap {
                 text_runs: vec![arcweft_render_text::RichTextTextRun {
