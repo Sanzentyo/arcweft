@@ -398,7 +398,7 @@ fn dialogue_tokenizer_reports_invalid_compact_ruby_without_consuming_text() {
 #[test]
 fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
     let tokens = parse_dialogue_tokens(
-        r"$(player_name)[! flash(color=#ffffff)][.keyword][w 500ms][page][wait][nl][em:夢][strong:声][color #a8b5ff:夜][raw: [p] literal]",
+        r"$(player_name)[! flash(color=#ffffff)][.keyword][w 500ms][page][wait][nl][em:夢][strong:声][color #a8b5ff:夜][raw: [p] literal][p]",
     );
 
     assert!(tokens.iter().any(
@@ -450,6 +450,13 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
         tokens
             .iter()
             .any(|token| matches!(token, DialogueToken::Raw(raw) if raw == "[p] literal"))
+    );
+    assert_eq!(
+        tokens
+            .iter()
+            .filter(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "p"))
+            .count(),
+        2
     );
 }
 

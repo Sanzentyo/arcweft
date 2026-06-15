@@ -357,10 +357,9 @@ fn parse_raw_span(source: &str, start: usize) -> Option<(String, usize)> {
 
 fn parse_inline_raw_span(source: &str, start: usize) -> Option<(String, usize)> {
     let tail = source.get(start..)?;
-    let body = tail.strip_prefix("[raw:")?;
-    let close_relative = body.rfind(']')?;
-    let raw = body[..close_relative].trim_start().to_owned();
-    Some((raw, start + "[raw:".len() + close_relative + ']'.len_utf8()))
+    tail.strip_prefix("[raw:")?;
+    let (raw, consumed_to) = take_balanced_bracket(source, start + "[raw:".len())?;
+    Some((raw.trim_start().to_owned(), consumed_to))
 }
 
 fn parse_inline_style_span(source: &str, start: usize) -> Option<(Vec<DialogueToken>, usize)> {
