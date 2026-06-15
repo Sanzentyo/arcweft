@@ -218,6 +218,7 @@ policy, handler count, stream op count, and stream yield count.
 ```bash
 arcw plan game/routes/opening.arcw
 arcw plan game/routes/opening.arcw --json
+arcw plan --manifest arcw.toml --profile game.dev --json
 ```
 
 This is an inspection command, not an executor. It performs file I/O only in the

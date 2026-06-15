@@ -1503,7 +1503,15 @@ fn run_tooling_command(
 fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = RuntimePlanReport::from_checked(&checked);
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
+        .map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            ExitCode::from(2)
+        })?;
+    let report = RuntimePlanReport::from_lowered(&checked, &lowered);
     if options.json {
         print_json(&report)
     } else {

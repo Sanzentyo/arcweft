@@ -23644,6 +23644,99 @@ fn plan_json_lists_runtime_task_graph() {
     assert_plan_style_contributions(&stdout, contributions);
 }
 
+#[test]
+fn plan_json_uses_profile_selected_dialogue_defaults() {
+    let dir = temp_dir("plan-profile-dialogue-defaults");
+    let source_path = dir.join("src/main.arcw");
+    fs::create_dir_all(source_path.parent().expect("source parent")).expect("create source dir");
+    fs::write(
+        &source_path,
+        r"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    rich_text {
+        ruby {
+            size = 10px
+        }
+    }
+}
+
+pub surface character alice {
+}
+
+flow opening {
+    alice: |[夢](ゆめ)[p]
+}
+",
+    )
+    .expect("write profile source");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+"#,
+    )
+    .expect("write profile manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("dev")
+        .arg("--json")
+        .output()
+        .expect("arcw plan --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(
+        output.status.success(),
+        "profile plan should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("profile plan output is structured JSON");
+    let contributions = json["line_display_catalog"]
+        .as_array()
+        .and_then(|catalog| catalog.first())
+        .and_then(|display| display["style_contributions"].as_array())
+        .expect("profile plan includes line display style contributions");
+
+    assert_plan_style_contribution(
+        &stdout,
+        contributions,
+        PlanStyleContribution {
+            layer: "dialogue_defaults",
+            path: "rich_text.ruby.size",
+            value: "10px",
+            active: Some(true),
+            requires_range: true,
+            context: "profile-selected dialogue defaults",
+        },
+    );
+    assert!(
+        !contributions.iter().any(|contribution| {
+            contribution["layer"] == "dialogue_defaults"
+                && contribution["path"] == "rich_text.ruby.size"
+                && contribution["value"] == "14px"
+        }),
+        "profile plan should not use implicit defaults when dialogue_defaults selects mobile: {stdout}"
+    );
+}
+
 fn runtime_plan_fixture_path() -> PathBuf {
     temp_arcw(
         "runtime-plan",

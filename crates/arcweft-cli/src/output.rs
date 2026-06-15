@@ -19,7 +19,7 @@ use arcweft_runtime_host::{
     HostSystemInfo, NativeTaskStats, RuntimeExecutorPureCompileStatsSummary,
     RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
 };
-use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan_with_stats};
+use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, RuntimePlanLowerStats};
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{
@@ -150,7 +150,10 @@ impl CheckReport {
 }
 
 impl RuntimePlanReport {
-    pub(crate) fn from_checked(checked: &CheckedModule) -> Self {
+    pub(crate) fn from_lowered(
+        checked: &CheckedModule,
+        runtime_report: &RuntimePlanLowerReport,
+    ) -> Self {
         let verification = verify_module_with_env(
             &checked.hir,
             &checked.env,
@@ -159,51 +162,37 @@ impl RuntimePlanReport {
                 backend: BackendKind::Emit,
             },
         );
-        let runtime_report = lower_runtime_plan_with_stats(&checked.hir).ok();
         Self {
             lines: checked
                 .line_task_groups
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
-            line_display_catalog: runtime_report
-                .as_ref()
-                .map(|report| report.line_display_catalog.lines().to_vec())
-                .unwrap_or_default(),
+            line_display_catalog: runtime_report.line_display_catalog.lines().to_vec(),
             streams: runtime_report
-                .as_ref()
-                .map(|report| {
-                    report
-                        .plan
-                        .stream_plans
-                        .iter()
-                        .map(|stream| RuntimeStreamPlanSummary {
-                            id: stream.id.0.clone(),
-                            item_ty: stream.item_ty.clone(),
-                            error_ty: stream.error_ty.clone(),
-                            ops: stream.ops.len(),
-                            yields: stream.ops.iter().map(count_stream_yields).sum(),
-                        })
-                        .collect()
+                .plan
+                .stream_plans
+                .iter()
+                .map(|stream| RuntimeStreamPlanSummary {
+                    id: stream.id.0.clone(),
+                    item_ty: stream.item_ty.clone(),
+                    error_ty: stream.error_ty.clone(),
+                    ops: stream.ops.len(),
+                    yields: stream.ops.iter().map(count_stream_yields).sum(),
                 })
-                .unwrap_or_default(),
+                .collect(),
             sources: runtime_report
-                .as_ref()
-                .map(|report| {
-                    report
-                        .plan
-                        .source_plans
-                        .iter()
-                        .map(|source| RuntimeSourcePlanSummary {
-                            id: source.id.0.clone(),
-                            item_ty: source.item_ty.clone(),
-                            error_ty: source.error_ty.clone(),
-                            policy: source_policy_summary(&source.policy),
-                            handlers: source.handlers.len(),
-                        })
-                        .collect()
+                .plan
+                .source_plans
+                .iter()
+                .map(|source| RuntimeSourcePlanSummary {
+                    id: source.id.0.clone(),
+                    item_ty: source.item_ty.clone(),
+                    error_ty: source.error_ty.clone(),
+                    policy: source_policy_summary(&source.policy),
+                    handlers: source.handlers.len(),
                 })
-                .unwrap_or_default(),
+                .collect(),
             verifier_diagnostics: verification.diagnostics.len(),
             verifier_obligations: verification.obligations.len(),
         }

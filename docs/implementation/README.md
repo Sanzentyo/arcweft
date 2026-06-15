@@ -143,7 +143,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   extraction actions to the selected defaults profile instead of always using
   the canonical implicit profile. Definition and reference requests include the
   manifest value that selected that defaults profile when the selected defaults
-  contribute to the effective field. Selection-scoped code actions can extract active non-line
+  contribute to the effective field. `arcw plan --manifest ... --profile ...
+  --json` now builds its line display sidecar from the same profile-aware
+  lowering options, so runtime-plan JSON reports the selected dialogue defaults
+  provenance instead of source-local implicit defaults. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`
