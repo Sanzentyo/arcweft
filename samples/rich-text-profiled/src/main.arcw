@@ -1,0 +1,69 @@
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.desktop
+    rich_text {
+        text {
+            font = "Yu Gothic"
+            size = 30px
+            color = rgb("#d9f2ff")
+        }
+        ruby {
+            size = 14px
+            gap = 2px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    window = @textbox.mobile
+    rich_text {
+        text {
+            font = "Meiryo"
+            size = 24px
+            color = rgb("#f0f8ff")
+        }
+        ruby {
+            size = 10px
+            gap = 1px
+        }
+    }
+}
+
+pub textbox desktop {
+    rich_text {
+        text {
+            color = rgb("#cdefff")
+        }
+    }
+}
+
+pub textbox mobile {
+    rich_text {
+        text {
+            color = rgb("#f8f0ff")
+        }
+    }
+}
+
+pub surface character alice {
+    display = "Alice"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#8fd7ff")
+            }
+        }
+    }
+}
+
+entry game {
+    start @flow.profiled_rich_text
+}
+
+flow profiled_rich_text {
+    alice.say(id=@say.profiled.001, voice=auto)[
+        Profile selected defaults decide ruby size and textbox theme: |[星影](ほしかげ) と [.shake amp=1px seed=profiled]揺れる文字[/]。[p]
+    ]
+
+    return "profiled_rich_text"
+}

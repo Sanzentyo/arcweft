@@ -1,0 +1,11 @@
+[profiles.desktop]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults"
+
+[profiles.mobile]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
