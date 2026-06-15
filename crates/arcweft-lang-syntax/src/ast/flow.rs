@@ -17,6 +17,7 @@ pub struct Flow {
     visibility: Option<Visibility>,
     id: Option<IdRef>,
     name: Option<String>,
+    explicit_name: bool,
     signature_tail: String,
     signature: Option<crate::types::FnSignature>,
     contracts: Vec<ContractClause>,
@@ -33,6 +34,7 @@ pub(crate) struct FlowInit {
     pub(crate) visibility: Option<Visibility>,
     pub(crate) id: Option<IdRef>,
     pub(crate) name: Option<String>,
+    pub(crate) explicit_name: bool,
     pub(crate) signature_tail: String,
     pub(crate) signature: Option<crate::types::FnSignature>,
     pub(crate) contracts: Vec<ContractClause>,
@@ -439,6 +441,7 @@ impl Flow {
             visibility: init.visibility,
             id: init.id,
             name: init.name,
+            explicit_name: init.explicit_name,
             signature_tail: init.signature_tail,
             signature: init.signature,
             contracts: init.contracts,
@@ -469,6 +472,10 @@ impl Flow {
 
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    pub const fn has_explicit_name(&self) -> bool {
+        self.explicit_name
     }
 
     pub fn signature_tail(&self) -> &str {

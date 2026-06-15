@@ -298,6 +298,37 @@ flow @flow.title title {
             .iter()
             .any(|lint| lint.code() == SyntaxLintCode::FlowIdModuleMismatch)
     );
+    assert!(
+        lints
+            .iter()
+            .any(|lint| lint.code() == SyntaxLintCode::RedundantDeclIdentity)
+    );
+}
+
+#[test]
+fn lints_declaration_identity_mismatch_and_respects_redundant_allow() {
+    let tree = parse_ok(
+        r"
+#[allow(style::redundant_decl_identity)]
+flow @flow.opening opening {
+}
+
+flow @flow.opening start {
+}
+",
+    );
+    let lints = lint_id_policy(&tree);
+
+    assert!(
+        !lints
+            .iter()
+            .any(|lint| lint.code() == SyntaxLintCode::RedundantDeclIdentity)
+    );
+    assert!(
+        lints
+            .iter()
+            .any(|lint| lint.code() == SyntaxLintCode::DeclBindingMismatch)
+    );
 }
 
 #[test]

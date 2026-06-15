@@ -254,6 +254,9 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         if line.kind() == CstLineKind::Comment {
             continue;
         }
+        if let Some(edit) = declaration_identity_line_edit(line.text(), line.start()) {
+            edits.push(edit);
+        }
         edits.extend(parent_path_edits(line.text(), line.start()));
         if line.trimmed() == "with:" {
             edits.push(TextEdit {
@@ -284,6 +287,50 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         }
     }
     edits
+}
+
+fn declaration_identity_line_edit(line: &str, base: usize) -> Option<TextEdit> {
+    redundant_decl_identity_edit(line, base, "flow")
+        .or_else(|| redundant_decl_identity_edit(line, base, "source"))
+}
+
+fn redundant_decl_identity_edit(line: &str, base: usize, keyword: &str) -> Option<TextEdit> {
+    let leading_len = line.len() - line.trim_start().len();
+    let trimmed = line.trim_start();
+    let (visibility, after_visibility) = trimmed
+        .strip_prefix("pub ")
+        .map_or(("", trimmed), |rest| ("pub ", rest));
+    let after_keyword_raw = after_visibility.strip_prefix(keyword)?;
+    let after_keyword = after_keyword_raw.trim_start();
+    let keyword_gap = after_keyword_raw.len() - after_keyword.len();
+    let id_start_in_trimmed = visibility.len() + keyword.len() + keyword_gap;
+    let id = after_keyword.strip_prefix('@')?;
+    let id_len = id
+        .find(|ch: char| ch.is_whitespace() || ch == '(' || ch == ':' || ch == '{')
+        .unwrap_or(id.len())
+        + 1;
+    let id_token = &after_keyword[..id_len];
+    let after_id_raw = &after_keyword[id_len..];
+    let after_id = after_id_raw.trim_start();
+    let id_gap = after_id_raw.len() - after_id.len();
+    let name_len = after_id
+        .find(|ch: char| ch.is_whitespace() || ch == '(' || ch == ':' || ch == '{')
+        .unwrap_or(after_id.len());
+    if name_len == 0 {
+        return None;
+    }
+    let name = &after_id[..name_len];
+    let id_tail = id_token.trim_start_matches('@').rsplit('.').next()?;
+    if id_tail != name {
+        return None;
+    }
+    let start = base + leading_len + id_start_in_trimmed;
+    let end = start + id_len + id_gap + name_len;
+    Some(TextEdit {
+        start,
+        end,
+        replacement: name.to_owned(),
+    })
 }
 
 fn rich_text_canonical_edits(source: &str) -> Vec<TextEdit> {
@@ -1507,6 +1554,27 @@ mod tests {
         assert!(report.output.contains("with {"));
         assert!(report.output.contains("    }"));
         assert!(report.output.contains("goto super::next"));
+    }
+
+    #[test]
+    fn expand_sugar_canonicalizes_redundant_decl_identity_only() {
+        let source = "flow @flow.opening opening {\n}\nflow @flow.opening start {\n}\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: true,
+                canonical_rich_text: false,
+            },
+        )
+        .expect("format report");
+
+        assert!(report.output.contains("flow opening {"));
+        assert!(report.output.contains("flow @flow.opening start {"));
+        assert!(
+            report
+                .output
+                .contains("source http_requests: Source<HttpRequest, HttpError>")
+        );
     }
 
     #[test]

@@ -265,6 +265,28 @@ pub enum EntityDeclKind {
     Rig,
 }
 
+impl EntityDeclKind {
+    pub const fn keyword(self) -> &'static str {
+        match self {
+            Self::Character => "character",
+            Self::Component => "component",
+            Self::Activity => "activity",
+            Self::Signal => "signal",
+            Self::Metric => "metric",
+            Self::Layer => "layer",
+            Self::Textbox => "textbox",
+            Self::Voice => "voice",
+            Self::Se => "se",
+            Self::Bgm => "bgm",
+            Self::AudioBus => "audio bus",
+            Self::MixerSnapshot => "mixer snapshot",
+            Self::Ducking => "ducking",
+            Self::Motion => "motion",
+            Self::Rig => "rig",
+        }
+    }
+}
+
 /// Top-level entity declaration such as `character`, `component`, `activity`,
 /// `signal`, or `layer`.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -49,8 +49,9 @@ impl<'a> Parser<'a> {
             start_line.start,
             &mut self.errors,
         );
-        let (name, signature_tail) = parse_name_and_tail(after_id.trim());
-        let name = name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
+        let (explicit_name, signature_tail) = parse_name_and_tail(after_id.trim());
+        let has_explicit_name = explicit_name.is_some();
+        let name = explicit_name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
         let (signature_tail, inline_contracts) = split_inline_flow_contracts(&signature_tail);
         let signature = parse_flow_signature(name.as_deref(), &signature_tail);
         let mut contracts = inline_contracts;
@@ -69,6 +70,7 @@ impl<'a> Parser<'a> {
             visibility,
             id,
             name,
+            explicit_name: has_explicit_name,
             signature_tail,
             signature,
             contracts,

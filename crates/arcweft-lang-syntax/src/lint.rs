@@ -2,7 +2,7 @@ use crate::ast::choice::{ChoiceAction, ChoiceItem};
 use crate::ast::common::TextRange;
 use crate::ast::flow::FlowItem;
 use crate::ast::ids::{FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling};
-use crate::ast::items::{Item, TypedSyntaxTree};
+use crate::ast::items::{Attribute, Item, TypedSyntaxTree};
 
 /// Syntax-level lint emitted before full name resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,6 +17,28 @@ pub struct SyntaxLint {
 pub enum SyntaxLintCode {
     DeepDotRunRelativeId,
     FlowIdModuleMismatch,
+    RedundantDeclIdentity,
+    DeclBindingMismatch,
+}
+
+impl SyntaxLintCode {
+    pub const fn stable_code(self) -> &'static str {
+        match self {
+            Self::DeepDotRunRelativeId => "AWF0001",
+            Self::FlowIdModuleMismatch => "AWF0002",
+            Self::RedundantDeclIdentity => "AWF0101",
+            Self::DeclBindingMismatch => "AWF0102",
+        }
+    }
+
+    pub const fn domain_name(self) -> &'static str {
+        match self {
+            Self::DeepDotRunRelativeId => "id::deep_dot_run",
+            Self::FlowIdModuleMismatch => "id::flow_module_mismatch",
+            Self::RedundantDeclIdentity => "style::redundant_decl_identity",
+            Self::DeclBindingMismatch => "identity::decl_binding_mismatch",
+        }
+    }
 }
 
 /// Lints ID policy choices that are parseable but discouraged.
@@ -31,6 +53,11 @@ pub fn lint_id_policy(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
 fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint>) {
     match item {
         Item::Flow(flow) => {
+            if flow.has_explicit_name()
+                && let (Some(id), Some(name)) = (flow.id(), flow.name())
+            {
+                lint_decl_identity("flow", id.body(), name, *id.range(), flow.attrs(), lints);
+            }
             if let (Some(module), Some(id)) = (tree.module(), flow.id()) {
                 let module_tail = module.path().rsplit("::").next();
                 let id_tail = id.body().rsplit('.').next();
@@ -50,9 +77,62 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                 lint_flow_item_ids(item, lints);
             }
         }
+        Item::EntityDecl(item) => {
+            if let Some(name) = item.name() {
+                lint_decl_identity(
+                    item.kind().keyword(),
+                    item.id().body(),
+                    name,
+                    *item.id().range(),
+                    item.attrs(),
+                    lints,
+                );
+            }
+        }
         Item::FlowItem(item) => lint_flow_item_ids(item, lints),
         _ => {}
     }
+}
+
+fn lint_decl_identity(
+    kind: &str,
+    id: &str,
+    name: &str,
+    range: TextRange,
+    attrs: &[Attribute],
+    lints: &mut Vec<SyntaxLint>,
+) {
+    let Some(id_tail) = id.rsplit('.').next() else {
+        return;
+    };
+    if id_tail == name {
+        if allows_redundant_decl_identity(attrs) {
+            return;
+        }
+        lints.push(SyntaxLint::new(
+            SyntaxLintCode::RedundantDeclIdentity,
+            format!("`{kind} @{id} {name}` repeats the same declaration identity twice"),
+            range,
+        ));
+    } else {
+        lints.push(SyntaxLint::new(
+            SyntaxLintCode::DeclBindingMismatch,
+            format!(
+                "`{kind} @{id} {name}` binds declaration id `{id}` to mismatched name `{name}`"
+            ),
+            range,
+        ));
+    }
+}
+
+fn allows_redundant_decl_identity(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        attr.name() == "generated"
+            || (attr.name() == "allow"
+                && attr
+                    .args()
+                    .is_some_and(|args| args.contains("style::redundant_decl_identity")))
+    })
 }
 
 fn lint_flow_item_ids(item: &FlowItem, lints: &mut Vec<SyntaxLint>) {
