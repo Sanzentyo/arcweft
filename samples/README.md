@@ -9,4 +9,12 @@ run with `arcw`.
 
 - [visual-novel-mini](visual-novel-mini/README.md) - a small narrative project
   with game, CLI, server, test, and bench entry examples.
-
+- [rich-text-showcase.arcw](rich-text-showcase.arcw) - rich-text rendering
+  showcase with Windows fonts, vertical snippets, dialogue defaults, and line
+  ruby overrides for Agent observe provenance checks.
+- [rich-text-full-grammar.arcw](rich-text-full-grammar.arcw) - broad
+  rich-text grammar sample covering ruby forms, interpolation, control tags,
+  inferred dot selectors, explicit tag families, dialogue defaults, and line
+  option overrides.
+- [rich-text-windows-fonts.arcw](rich-text-windows-fonts.arcw) - Windows
+  default font comparison sample for horizontal, mixed, and vertical text.

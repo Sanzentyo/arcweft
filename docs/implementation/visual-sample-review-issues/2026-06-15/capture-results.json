@@ -46,5 +46,38 @@
     "exit": 0,
     "bytes": 16237,
     "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\issue-008-escape-yen-glyph-full-grammar.png"
+  },
+  {
+    "name": "provenance-rich-text-showcase",
+    "exit": 0,
+    "bytes": 25501,
+    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-showcase.png",
+    "provenance": {
+      "dialogue_defaults": true,
+      "line_override_shadowed_defaults": true,
+      "raw_values": [
+        "12px",
+        "1px",
+        "3px",
+        "2px"
+      ]
+    }
+  },
+  {
+    "name": "provenance-rich-text-full-grammar",
+    "exit": 0,
+    "bytes": 21682,
+    "png": "D:\\git\\arcweft\\docs\\implementation\\visual-sample-review-issues\\2026-06-15\\provenance-rich-text-full-grammar.png",
+    "provenance": {
+      "dialogue_defaults": true,
+      "line_override_shadowed_defaults": true,
+      "raw_values": [
+        "over",
+        "12px",
+        "1px",
+        "3px",
+        "2px"
+      ]
+    }
   }
 ]

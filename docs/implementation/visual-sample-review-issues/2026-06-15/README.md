@@ -19,6 +19,20 @@ are large; regenerate them with the command above when geometry details are
 needed. `capture-results.json` records the captured PNG names, byte sizes, and
 command exit status.
 
+The provenance validation PNGs in this directory were captured with the same
+release `agent observe` path after adding `dialogue defaults` and line-level
+rich-text overrides to the samples:
+
+```bash
+target\release\arcw.exe agent observe samples/rich-text-showcase.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\provenance-rich-text-showcase.png --mode drain --steps 4 --max-ops 128
+target\release\arcw.exe agent observe samples/rich-text-full-grammar.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\provenance-rich-text-full-grammar.png --mode drain --steps 4 --max-ops 128
+```
+
+The generated observation JSON was reviewed but not checked in. It confirmed
+that `rich_text.ruby.size` and `rich_text.ruby.gap` contributions from
+`dialogue_defaults` are shadowed by line-level `rich_text` overrides, while raw
+authored values such as `12px` remain available in `style_contributions`.
+
 ## Open Issues
 
 | ID | Status | PNG | Problem | Expected direction |
