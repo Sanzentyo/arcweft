@@ -279,6 +279,7 @@ pub(crate) enum CstBlockOpenRule {
 pub(crate) struct CstBlockEvent<'a> {
     pub(crate) head: Cow<'a, str>,
     pub(crate) body: Cow<'a, str>,
+    pub(crate) body_range: Option<Range<usize>>,
     pub(crate) end: usize,
     pub(crate) ok: bool,
     pub(crate) next_index: usize,
@@ -567,9 +568,26 @@ impl<'a> CstLineEvents<'a> {
         }
         let head = self.collect_virtual_fragment(start, index, 0, open);
         let body = self.collect_virtual_fragment(start, index, open + 1, close);
-        CstBlockEvent::new(trim_cow(head), body, end, true, index).with_body_line_range(
-            self.full_line_range_for_virtual_fragment(start, index, open + 1, close),
-        )
+        CstBlockEvent::new(trim_cow(head), body, end, true, index)
+            .with_body_range(self.source_range_for_virtual_fragment(start, index, open + 1, close))
+            .with_body_line_range(self.full_line_range_for_virtual_fragment(
+                start,
+                index,
+                open + 1,
+                close,
+            ))
+    }
+
+    fn source_range_for_virtual_fragment(
+        &self,
+        start: usize,
+        end: usize,
+        range_start: usize,
+        range_end: usize,
+    ) -> Option<Range<usize>> {
+        let source_start = self.source_pos_for_virtual_offset(start, end, range_start)?;
+        let source_end = self.source_pos_for_virtual_offset(start, end, range_end)?;
+        Some(source_start..source_end)
     }
 
     fn full_line_range_for_virtual_fragment(
@@ -1530,11 +1548,17 @@ impl<'a> CstBlockEvent<'a> {
         Self {
             head,
             body,
+            body_range: None,
             end,
             ok,
             next_index,
             body_line_range: None,
         }
+    }
+
+    fn with_body_range(mut self, body_range: Option<Range<usize>>) -> Self {
+        self.body_range = body_range;
+        self
     }
 
     fn with_body_line_range(mut self, body_line_range: Option<Range<usize>>) -> Self {

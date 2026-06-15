@@ -299,6 +299,7 @@ pub struct EntityDeclItem {
     surface_alias: Option<String>,
     signature_tail: String,
     body: Option<String>,
+    body_range: Option<TextRange>,
     range: TextRange,
 }
 
@@ -729,6 +730,7 @@ impl EntityDeclItem {
         surface_alias: Option<String>,
         signature_tail: String,
         body: Option<String>,
+        body_range: Option<TextRange>,
         range: TextRange,
     ) -> Self {
         Self {
@@ -740,6 +742,7 @@ impl EntityDeclItem {
             surface_alias,
             signature_tail,
             body,
+            body_range,
             range,
         }
     }
@@ -774,6 +777,10 @@ impl EntityDeclItem {
 
     pub fn body(&self) -> Option<&str> {
         self.body.as_deref()
+    }
+
+    pub const fn body_range(&self) -> Option<&TextRange> {
+        self.body_range.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {

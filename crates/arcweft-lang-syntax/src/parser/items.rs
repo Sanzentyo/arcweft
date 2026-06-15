@@ -416,8 +416,8 @@ impl Parser<'_> {
     fn parse_entity_decl_block(&mut self) -> Option<EntityDeclItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
+        let block = self.take_flow_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing entity declaration",
@@ -427,6 +427,12 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = block.head;
+        let body = block.body;
+        let body_range = block
+            .body_range
+            .as_ref()
+            .map(|range| TextRange::new(range.start, range.end));
         let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
         Some(EntityDeclItem::new(
@@ -438,7 +444,8 @@ impl Parser<'_> {
             surface_alias,
             signature_tail,
             Some(body.into_owned()),
-            TextRange::new(start_line.start, end),
+            body_range,
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
@@ -456,6 +463,7 @@ impl Parser<'_> {
             name,
             surface_alias,
             signature_tail,
+            None,
             None,
             TextRange::new(line.start, line.end),
         ))

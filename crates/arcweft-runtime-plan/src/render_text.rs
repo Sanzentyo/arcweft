@@ -20,6 +20,7 @@ use arcweft_render_text::{
     RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
 };
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct DialogueDisplayDefaults {
@@ -223,13 +224,14 @@ impl DialogueStyleDefaults {
 
 fn character_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
     item.body()
-        .and_then(dialogue_style_block)
+        .and_then(|body| dialogue_style_block(body, item.body_range()))
         .map(|body| {
-            let source = source_file(
-                Some(item.id().body().to_owned()),
-                Some(source_range(item.range())),
-            );
-            style_defaults_from_body(body, RichTextCascadeLayer::CharacterDialogueStyle, &source)
+            style_defaults_from_body(
+                body.source,
+                RichTextCascadeLayer::CharacterDialogueStyle,
+                Some(item.id().body()),
+                body.absolute_start,
+            )
         })
         .unwrap_or_default()
 }
@@ -252,19 +254,20 @@ fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
 fn style_defaults_from_body(
     body: &str,
     layer: RichTextCascadeLayer,
-    source: &RichTextSettingSource,
+    item_id: Option<&str>,
+    body_absolute_start: Option<usize>,
 ) -> DialogueStyleDefaults {
     let mut defaults = DialogueStyleDefaults::default();
-    for (name, value) in style_block_assignments(body) {
-        if let Ok(expr) = parse_expr(value) {
+    for assignment in style_block_assignments(body) {
+        if let Ok(expr) = parse_expr(assignment.value) {
             append_style_default(
                 &mut defaults,
-                name.to_owned(),
+                assignment.name.to_owned(),
                 RichTextAssignOp::Replace,
-                expr_label(&expr),
+                assignment.value.to_owned(),
                 &expr,
                 layer,
-                source.clone(),
+                style_assignment_source(item_id, body_absolute_start, assignment.range),
             );
         }
     }
@@ -564,6 +567,18 @@ fn source_file(
     }
 }
 
+fn style_assignment_source(
+    item_id: Option<&str>,
+    body_absolute_start: Option<usize>,
+    body_relative_range: Range<usize>,
+) -> RichTextSettingSource {
+    let range = body_absolute_start.map(|start| RichTextSourceRange {
+        start: start + body_relative_range.start,
+        end: start + body_relative_range.end,
+    });
+    source_file(item_id.map(str::to_owned), range)
+}
+
 fn source_range(range: &arcweft_lang_hir::syntax::ast::common::TextRange) -> RichTextSourceRange {
     RichTextSourceRange {
         start: range.start(),
@@ -850,11 +865,25 @@ fn inline_default_from_named_expr(name: &str, value: &Expr) -> Option<InlineFail
     }
 }
 
-fn dialogue_style_block(body: &str) -> Option<&str> {
+struct DialogueStyleBlock<'a> {
+    source: &'a str,
+    absolute_start: Option<usize>,
+}
+
+fn dialogue_style_block<'a>(
+    body: &'a str,
+    body_range: Option<&arcweft_lang_hir::syntax::ast::common::TextRange>,
+) -> Option<DialogueStyleBlock<'a>> {
     let start = body.find("dialogue_style")?;
     let open = body[start..].find('{')? + start;
     let close = matching_brace(body, open)?;
-    Some(body[open + 1..close].trim())
+    let raw_block = &body[open + 1..close];
+    let leading = raw_block.len() - raw_block.trim_start().len();
+    let source = raw_block.trim();
+    Some(DialogueStyleBlock {
+        source,
+        absolute_start: body_range.map(|range| range.start() + open + 1 + leading),
+    })
 }
 
 fn matching_brace(source: &str, open: usize) -> Option<usize> {
@@ -882,14 +911,25 @@ fn matching_brace(source: &str, open: usize) -> Option<usize> {
     None
 }
 
-fn style_block_assignments(body: &str) -> Vec<(&str, &str)> {
+struct StyleBlockAssignment<'a> {
+    name: &'a str,
+    value: &'a str,
+    range: Range<usize>,
+}
+
+struct LogicalStyleItem<'a> {
+    source: &'a str,
+    range: Range<usize>,
+}
+
+fn style_block_assignments(body: &str) -> Vec<StyleBlockAssignment<'_>> {
     logical_style_items(body)
         .into_iter()
         .filter_map(split_assignment)
         .collect()
 }
 
-fn logical_style_items(body: &str) -> Vec<&str> {
+fn logical_style_items(body: &str) -> Vec<LogicalStyleItem<'_>> {
     let mut items = Vec::new();
     let mut start = 0usize;
     let mut depth = 0i32;
@@ -906,8 +946,8 @@ fn logical_style_items(body: &str) -> Vec<&str> {
             '(' | '[' | '{' if !in_string => depth += 1,
             ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
             '\n' if !in_string && depth == 0 => {
-                let item = body[start..offset].trim();
-                if !item.is_empty() && !item.starts_with("//") {
+                let item = trim_logical_style_item(body, start, offset);
+                if !item.source.is_empty() && !item.source.starts_with("//") {
                     items.push(item);
                 }
                 start = offset + '\n'.len_utf8();
@@ -915,18 +955,32 @@ fn logical_style_items(body: &str) -> Vec<&str> {
             _ => {}
         }
     }
-    let tail = body[start..].trim();
-    if !tail.is_empty() && !tail.starts_with("//") {
+    let tail = trim_logical_style_item(body, start, body.len());
+    if !tail.source.is_empty() && !tail.source.starts_with("//") {
         items.push(tail);
     }
     items
 }
 
-fn split_assignment(source: &str) -> Option<(&str, &str)> {
-    let (name, value) = source.split_once('=')?;
+fn trim_logical_style_item(body: &str, start: usize, end: usize) -> LogicalStyleItem<'_> {
+    let raw = &body[start..end];
+    let leading = raw.len() - raw.trim_start().len();
+    let source = raw.trim();
+    LogicalStyleItem {
+        source,
+        range: start + leading..start + leading + source.len(),
+    }
+}
+
+fn split_assignment(item: LogicalStyleItem<'_>) -> Option<StyleBlockAssignment<'_>> {
+    let (name, value) = item.source.split_once('=')?;
     let name = name.trim();
     let value = value.trim().trim_end_matches(',').trim();
-    (!name.is_empty() && !value.is_empty()).then_some((name, value))
+    (!name.is_empty() && !value.is_empty()).then_some(StyleBlockAssignment {
+        name,
+        value,
+        range: item.range,
+    })
 }
 
 fn lower_dialogue_token(
@@ -2037,8 +2091,7 @@ flow @flow.main main {
 
     #[test]
     fn dialogue_display_inherits_global_and_character_style_defaults() {
-        let parsed = parse_source(
-            r##"
+        let source = r##"
 pub dialogue defaults @dialogue.defaults {
     font = serif
     text_color = rgb("#101112")
@@ -2055,8 +2108,8 @@ character @character.alice Alice as alice {
 flow @flow.main main {
     alice(color=rgb("#303132")): Hello #[missing][p]
 }
-"##,
-        );
+"##;
+        let parsed = parse_source(source);
         let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
         let defaults = DialogueDisplayDefaults::from_module(&hir);
         let dialogue = hir
@@ -2107,6 +2160,25 @@ flow @flow.main main {
         assert_eq!(
             spec.default_inline_failure_policy,
             Some(InlineFailurePolicy::Discard)
+        );
+        let character_text_color = spec
+            .style_contributions
+            .iter()
+            .find(|contribution| {
+                contribution.layer == RichTextCascadeLayer::CharacterDialogueStyle
+                    && contribution.path == "text_color"
+                    && contribution.value == "rgb(\"#202122\")"
+            })
+            .expect("character text color contribution");
+        let RichTextSettingSource::SourceFile {
+            range: Some(range), ..
+        } = &character_text_color.source
+        else {
+            panic!("character contribution should preserve its source range");
+        };
+        assert_eq!(
+            source[range.start..range.end].trim(),
+            "text_color = rgb(\"#202122\")"
         );
         assert!(spec.content.nodes.iter().any(|node| {
             matches!(
