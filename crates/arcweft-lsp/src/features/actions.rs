@@ -409,7 +409,7 @@ fn character_dialogue_style_edit(
                 if entity.kind() == EntityDeclKind::Character
                     && character_matches_callee(entity, callee) =>
             {
-                entity_dialogue_style_edit(entity, path, value)
+                entity_dialogue_style_edit(source, entity, path, value)
             }
             _ => None,
         })
@@ -429,23 +429,35 @@ fn character_matches_callee(entity: &EntityDeclItem, callee: &str) -> bool {
 }
 
 fn entity_dialogue_style_edit(
+    source: &str,
     entity: &EntityDeclItem,
     path: &str,
     value: &str,
 ) -> Option<TextEdit> {
     let body = entity.body()?;
     let body_range = entity.body_range()?;
-    if let Some(insertion) = existing_dialogue_style_insertion(body, body_range, path, value) {
+    if let Some(insertion) =
+        existing_dialogue_style_insertion(source, body, body_range, path, value)
+    {
         return Some(insertion);
     }
+    let replacement = if let Some(parts) = nested_path_parts(path) {
+        format!(
+            "\n    dialogue_style {{\n{}    }}",
+            nested_assignment_text("    ", &parts, value)
+        )
+    } else {
+        format!("\n    dialogue_style {{\n        {path} = {value}\n    }}")
+    };
     Some(TextEdit {
         start: body_range.end(),
         end: body_range.end(),
-        replacement: format!("\n    dialogue_style {{\n        {path} = {value}\n    }}"),
+        replacement,
     })
 }
 
 fn existing_dialogue_style_insertion(
+    source: &str,
     body: &str,
     body_range: &TextRange,
     path: &str,
@@ -454,13 +466,8 @@ fn existing_dialogue_style_insertion(
     let start = body.find("dialogue_style")?;
     let open = body[start..].find('{')? + start;
     let close = matching_brace(body, open)?;
-    let line_start = body[..close].rfind('\n').map_or(0, |offset| offset + 1);
-    let close_indent = &body[line_start..close];
-    Some(TextEdit {
-        start: body_range.start() + line_start,
-        end: body_range.start() + line_start,
-        replacement: format!("{close_indent}    {path} = {value}\n"),
-    })
+    let style_range = TextRange::new(body_range.start() + start, body_range.start() + close + 1);
+    block_path_assignment_insertion(source, &style_range, path, value)
 }
 
 fn matching_brace(source: &str, open: usize) -> Option<usize> {
@@ -511,22 +518,18 @@ fn dialogue_defaults_edit(source: &str, path: &str, value: &str) -> Option<TextE
                 .is_some_and(|id| id.body() == "dialogue.defaults")
         })
         .or_else(|| (defaults.len() == 1).then(|| defaults[0]))?;
-    dialogue_defaults_assignment_insertion(source, target.range(), path, value)
+    block_path_assignment_insertion(source, target.range(), path, value)
 }
 
-fn dialogue_defaults_assignment_insertion(
+fn block_path_assignment_insertion(
     source: &str,
     range: &TextRange,
     path: &str,
     value: &str,
 ) -> Option<TextEdit> {
-    let parts = path
-        .split('.')
-        .filter(|part| !part.trim().is_empty())
-        .collect::<Vec<_>>();
-    if parts.len() <= 1 {
+    let Some(parts) = nested_path_parts(path) else {
         return block_assignment_insertion(source, range, path, value);
-    }
+    };
 
     let mut block_range = *range;
     let mut consumed = 0usize;
@@ -543,6 +546,14 @@ fn dialogue_defaults_assignment_insertion(
     } else {
         block_nested_assignment_insertion(source, &block_range, &parts[consumed..], value)
     }
+}
+
+fn nested_path_parts(path: &str) -> Option<Vec<&str>> {
+    let parts = path
+        .split('.')
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>();
+    (parts.len() > 1).then_some(parts)
 }
 
 fn block_assignment_insertion(
@@ -720,18 +731,36 @@ mod tests {
         assert_eq!(edit.start, source.find("{}").expect("empty body") + 1);
         assert_eq!(
             edit.replacement,
-            "\n    dialogue_style {\n        rich_text.ruby.size = 14px\n    }"
+            "\n    dialogue_style {\n        rich_text {\n            ruby {\n                size = 14px\n            }\n        }\n    }"
         );
     }
 
     #[test]
-    fn character_dialogue_style_edit_appends_existing_block() {
+    fn character_dialogue_style_edit_appends_nested_block_to_existing_style() {
         let source = "pub character alice {\n    dialogue_style {\n        text_color = rgb(\"#202122\")\n    }\n}\n";
         let edit = character_dialogue_style_edit(source, "alice", "rich_text.ruby.size", "14px")
             .expect("character style edit");
 
         assert_eq!(edit.start, source.find("    }\n}").expect("style close"));
-        assert_eq!(edit.replacement, "        rich_text.ruby.size = 14px\n");
+        assert_eq!(
+            edit.replacement,
+            "        rich_text {\n            ruby {\n                size = 14px\n            }\n        }\n"
+        );
+    }
+
+    #[test]
+    fn character_dialogue_style_edit_appends_existing_nested_leaf_block() {
+        let source = "pub character alice {\n    dialogue_style {\n        rich_text {\n            ruby {\n                gap = 1px\n            }\n        }\n    }\n}\n";
+        let edit = character_dialogue_style_edit(source, "alice", "rich_text.ruby.size", "14px")
+            .expect("character style edit");
+
+        assert_eq!(
+            edit.start,
+            source
+                .find("            }\n        }\n    }\n}\n")
+                .expect("ruby close")
+        );
+        assert_eq!(edit.replacement, "                size = 14px\n");
     }
 
     #[test]

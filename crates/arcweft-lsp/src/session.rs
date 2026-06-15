@@ -699,7 +699,7 @@ flow opening {
         assert_eq!(edits.len(), 1);
         assert_eq!(
             edits[0].new_text,
-            "\n    dialogue_style {\n        rich_text.ruby.size = 14px\n    }"
+            "\n    dialogue_style {\n        rich_text {\n            ruby {\n                size = 14px\n            }\n        }\n    }"
         );
     }
 
