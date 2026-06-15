@@ -173,6 +173,7 @@ pub dialogue defaults @dialogue.defaults {
         source[assignments[2].value_range().as_range()].trim(),
         "14px"
     );
+    assert_eq!(assignments[2].raw_value(), "14px");
     assert_eq!(
         source[assignments[3].range().as_range()].trim(),
         "gap += 1px"
@@ -182,6 +183,7 @@ pub dialogue defaults @dialogue.defaults {
         source[assignments[3].value_range().as_range()].trim(),
         "1px"
     );
+    assert_eq!(assignments[3].raw_value(), "1px");
 }
 
 #[test]

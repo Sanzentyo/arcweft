@@ -121,6 +121,7 @@ pub struct DialogueDefaultAssignment {
     path: DialogueDefaultPath,
     op: DialogueDefaultAssignOp,
     value: Expr,
+    raw_value: String,
     range: TextRange,
     path_range: TextRange,
     value_range: TextRange,
@@ -391,6 +392,7 @@ impl DialogueDefaultAssignment {
         path: DialogueDefaultPath,
         op: DialogueDefaultAssignOp,
         value: Expr,
+        raw_value: String,
         range: TextRange,
         path_range: TextRange,
         value_range: TextRange,
@@ -399,6 +401,7 @@ impl DialogueDefaultAssignment {
             path,
             op,
             value,
+            raw_value,
             range,
             path_range,
             value_range,
@@ -415,6 +418,10 @@ impl DialogueDefaultAssignment {
 
     pub const fn value(&self) -> &Expr {
         &self.value
+    }
+
+    pub fn raw_value(&self) -> &str {
+        &self.raw_value
     }
 
     pub const fn range(&self) -> &TextRange {

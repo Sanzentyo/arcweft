@@ -581,6 +581,7 @@ fn parse_dialogue_default_assignments(
             path,
             op,
             parse_expr_lossy(value),
+            value.to_owned(),
             trimmed_range,
             TextRange::new(
                 trimmed_start + name_offset,

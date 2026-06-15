@@ -278,7 +278,7 @@ fn append_dialogue_default_assignment(
         defaults,
         assignment.path().dotted(),
         rich_text_assign_op(assignment.op()),
-        expr_label(assignment.value()),
+        assignment.raw_value().to_owned(),
         assignment.value(),
         RichTextCascadeLayer::DialogueDefaults,
         source_file(item_id, Some(source_range(assignment.range()))),
@@ -1763,7 +1763,7 @@ flow @flow.main main {
             spec.style_contributions.iter().any(|contribution| {
                 contribution.layer == RichTextCascadeLayer::DialogueDefaults
                     && contribution.path == "rich_text.ruby.size"
-                    && contribution.value == "14"
+                    && contribution.value == "14px"
                     && !contribution.active
                     && contribution.style_index == Some(0)
             }),
