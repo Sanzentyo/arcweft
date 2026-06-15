@@ -1851,6 +1851,165 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() {
+    let dir = temp_dir("agent-observe-profile-dialogue-defaults");
+    let src_dir = dir.join("src");
+    fs::create_dir_all(&src_dir).expect("create profiled observe source dir");
+    let source_path = src_dir.join("main.arcw");
+    fs::write(&source_path, profiled_observe_source()).expect("write profiled observe source");
+    let manifest_path = dir.join("arcw.toml");
+    fs::write(&manifest_path, profiled_observe_manifest())
+        .expect("write profiled observe manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--profile")
+        .arg("mobile")
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe runs profiled source");
+
+    fs::remove_dir_all(&dir).expect("remove profiled observe fixture");
+    assert!(
+        output.status.success(),
+        "profiled agent observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("profiled observe output is JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["source"], "main.arcw");
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["mime_type"], "image/png");
+    assert!(
+        json["images"][0]["content_pixels"]
+            .as_u64()
+            .is_some_and(|pixels| pixels > 0),
+        "profiled native image should contain rendered pixels: {json}"
+    );
+
+    let textbox = find_textbox_object(&json);
+    let base_styles = textbox["rich_text"]["base_styles"]
+        .as_array()
+        .expect("base styles are reported");
+    assert!(
+        base_styles.iter().any(|style| {
+            style["kind"] == "font"
+                && style["family"]["kind"] == "named"
+                && style["family"]["name"] == "Meiryo"
+        }),
+        "mobile dialogue defaults should select the Meiryo base font: {textbox}"
+    );
+    assert!(
+        base_styles
+            .iter()
+            .any(|style| style["kind"] == "size" && style["raw"] == "24"),
+        "mobile dialogue defaults should select the 24px base text size: {textbox}"
+    );
+
+    let contributions = textbox["rich_text"]["style_contributions"]
+        .as_array()
+        .expect("style contributions are reported");
+    assert!(contributions.iter().any(|contribution| {
+        contribution["path"] == "window"
+            && contribution["value"] == "@textbox.mobile"
+            && contribution["active"] == true
+            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+    }));
+    assert!(contributions.iter().any(|contribution| {
+        contribution["path"] == "rich_text.ruby.gap"
+            && contribution["value"] == "1px"
+            && contribution["active"] == true
+            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+    }));
+    assert!(contributions.iter().any(|contribution| {
+        contribution["path"] == "rich_text.effect"
+            && contribution["value"] == "shake"
+            && contribution["active"] == true
+    }));
+}
+
+fn profiled_observe_source() -> &'static str {
+    r##"
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.desktop
+    rich_text {
+        text {
+            font = "Yu Gothic"
+            size = 30px
+            color = rgb("#d9f2ff")
+        }
+        ruby {
+            size = 14px
+            gap = 2px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    window = @textbox.mobile
+    rich_text {
+        text {
+            font = "Meiryo"
+            size = 24px
+            color = rgb("#f0f8ff")
+        }
+        ruby {
+            size = 10px
+            gap = 1px
+        }
+    }
+}
+
+pub textbox desktop {}
+pub textbox mobile {}
+
+pub surface character alice {
+    display = "Alice"
+}
+
+entry game {
+    start @flow.main
+}
+
+flow main {
+    alice.say(id=@say.profiled.001)[
+        Profile defaults: |[星影](ほしかげ) と [.shake amp=1px seed=profiled]揺れる文字[/]。[p]
+    ]
+
+    return "done"
+}
+"##
+}
+
+fn profiled_observe_manifest() -> &'static str {
+    r#"
+[profiles.desktop]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults"
+
+[profiles.mobile]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+"#
+}
+
+#[test]
 fn agent_observe_json_reports_rich_text_reset_controls_and_host_markers() {
     let path = temp_arcw(
         "agent-observe-rich-text-controls",

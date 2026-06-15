@@ -146,7 +146,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   contribute to the effective field. `arcw plan --manifest ... --profile ...
   --json` now builds its line display sidecar from the same profile-aware
   lowering options, so runtime-plan JSON reports the selected dialogue defaults
-  provenance instead of source-local implicit defaults. Selection-scoped code actions can extract active non-line
+  provenance instead of source-local implicit defaults. `arcw agent observe
+  --manifest ... --profile ... --image png` uses the same profile-selected
+  defaults for Agent JSON and native image debug output, including selected
+  textbox targets, rich-text base styles, ruby layout defaults, and inline
+  effect provenance. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`
