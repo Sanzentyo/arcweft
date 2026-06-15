@@ -27,6 +27,7 @@ use thiserror::Error;
 /// re-parsing raw strings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirModule {
+    pub(crate) attributes: Vec<Attribute>,
     pub(crate) flows: Vec<HirFlow>,
     pub(crate) functions: Vec<HirFunction>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
@@ -36,6 +37,7 @@ pub struct HirModule {
 /// HIR-facing flow.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFlow {
+    pub(crate) attributes: Vec<Attribute>,
     pub(crate) kind: FlowKind,
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
@@ -304,6 +306,16 @@ pub struct HirLowerError {
 }
 
 impl HirModule {
+    pub fn attributes(&self) -> &[Attribute] {
+        &self.attributes
+    }
+
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|attribute| attribute.name() == name)
+    }
+
     pub fn flows(&self) -> &[HirFlow] {
         &self.flows
     }
@@ -322,6 +334,16 @@ impl HirModule {
 }
 
 impl HirFlow {
+    pub fn attributes(&self) -> &[Attribute] {
+        &self.attributes
+    }
+
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|attribute| attribute.name() == name)
+    }
+
     pub const fn kind(&self) -> FlowKind {
         self.kind
     }

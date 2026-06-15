@@ -182,7 +182,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   declaration-identity syntax lints through attached item attributes and
   source-level inner attributes, including `#[allow(id::flow_module_mismatch)]`
   on flows and `#![generated(...)]` on generated source files, before LSP
-  diagnostics are published. CLI check/runtime-profile compile paths now also fail on syntax
+  diagnostics are published. HIR lowering preserves both source-level inner
+  attributes on `HirModule` and flow-level outer attributes on `HirFlow`, so
+  semantic and runtime-plan layers do not need to reparse syntax items to see
+  attribute policy. CLI check/runtime-profile compile paths now also fail on syntax
   lints whose default severity is `error`, so
   `identity::decl_binding_mismatch` no longer reports as an error while still
   exiting successfully. Entity declaration identity linting treats a surface
@@ -871,7 +874,9 @@ Current high-confidence state:
   the module tail, and declaration identity style/errors. Outer attributes
   attach to the following supported item, while source-level inner attributes
   such as `#![generated(...)]` and `#![allow(...)]` are preserved on
-  `TypedSyntaxTree::attrs()` and participate in file-wide syntax lint policy.
+  `TypedSyntaxTree::attrs()` and `HirModule::attributes()`, and flow outer
+  attributes are preserved on `HirFlow::attributes()`. These attributes
+  participate in file-wide syntax lint policy.
   Further hierarchy checks should build on this pass rather than parser
   diagnostics.
 - `pro_review12.md` P0-P2 work is partially implemented: syntax/checking now

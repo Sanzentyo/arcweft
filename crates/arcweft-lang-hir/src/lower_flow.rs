@@ -24,6 +24,7 @@ pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         .map(|item| lower_flow_item_with_context(item, &mut context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HirFlow {
+        attributes: flow.attrs().to_vec(),
         kind: flow.kind(),
         id,
         name: flow.name().map(str::to_owned),

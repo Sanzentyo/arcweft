@@ -1,10 +1,13 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::items::{FunctionItem, Item, TypedSyntaxTree};
+use arcweft_lang_syntax::ast::items::{Attribute, FunctionItem, Item, TypedSyntaxTree};
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
-    let mut state = HirLoweringState::default();
+    let mut state = HirLoweringState {
+        attributes: tree.attrs().to_vec(),
+        ..HirLoweringState::default()
+    };
 
     for item in tree.items() {
         state.lower_item(item);
@@ -14,6 +17,7 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
 
 #[derive(Default)]
 struct HirLoweringState {
+    attributes: Vec<Attribute>,
     flows: Vec<crate::model::HirFlow>,
     functions: Vec<HirFunction>,
     declarations: Vec<HirTopLevelDecl>,
@@ -129,6 +133,7 @@ impl HirLoweringState {
     fn finish(self) -> Result<HirModule, Vec<HirLowerError>> {
         if self.errors.is_empty() {
             Ok(HirModule {
+                attributes: self.attributes,
                 flows: self.flows,
                 functions: self.functions,
                 declarations: self.declarations,
@@ -149,5 +154,54 @@ fn lower_function(function: &FunctionItem) -> HirFunction {
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),
         value: function.body_value().cloned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lower_to_hir;
+    use arcweft_lang_syntax::parser::parse_source;
+
+    #[test]
+    fn lowering_preserves_flow_attributes() {
+        let tree = parse_source(
+            r#"
+#[allow(id::flow_module_mismatch)]
+flow @flow.opening opening {
+    return "done"
+}
+"#,
+        )
+        .into_typed_tree();
+
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let flow = hir.flows().first().expect("flow lowers");
+        assert_eq!(flow.attributes().len(), 1);
+        assert_eq!(flow.attributes()[0].name(), "allow");
+        assert_eq!(
+            flow.attributes()[0].args(),
+            Some("id::flow_module_mismatch")
+        );
+        assert!(flow.has_attribute("allow"));
+    }
+
+    #[test]
+    fn lowering_preserves_source_inner_attributes() {
+        let tree = parse_source(
+            r#"
+#![generated(tool)]
+
+flow @flow.opening opening {
+    return "done"
+}
+"#,
+        )
+        .into_typed_tree();
+
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        assert_eq!(hir.attributes().len(), 1);
+        assert_eq!(hir.attributes()[0].name(), "generated");
+        assert_eq!(hir.attributes()[0].args(), Some("tool"));
+        assert!(hir.has_attribute("generated"));
     }
 }
