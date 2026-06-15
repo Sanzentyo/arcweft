@@ -921,20 +921,29 @@ mod tests {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
-        let source = "flow @.opening opening {\n    alice: hi[p]\n}\n";
+        let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
         let actions = source_code_actions(&uri, source);
         assert!(
             actions
                 .iter()
                 .any(|action| action.title == "Expand Arcweft sugar")
         );
+        assert!(actions.iter().any(|action| {
+            action.title == "Canonicalize inferred rich-text tags"
+                && action
+                    .command
+                    .as_ref()
+                    .is_some_and(|command| command.command == "arcweft.canonicalRichText")
+        }));
         assert!(
             actions
                 .iter()
                 .any(|action| action.title == "Materialize inferred Arcweft ID")
         );
         let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper);
-        assert!(mapped_actions.iter().any(|action| action.edit.is_some()));
+        assert!(mapped_actions.iter().any(|action| {
+            action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()
+        }));
         let hints = inferred_id_inlay_hints_with_mapper(source, &TestMapper);
         assert!(hints.iter().any(|hint| {
             matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == "@flow.opening")

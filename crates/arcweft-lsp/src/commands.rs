@@ -2,6 +2,7 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArcweftCommand {
     ExpandSugar,
+    CanonicalRichText,
     MaterializeId,
     GenerateProofStub,
     GenerateUnsafeAudit,
@@ -15,6 +16,7 @@ impl ArcweftCommand {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ExpandSugar => "arcweft.expandSugar",
+            Self::CanonicalRichText => "arcweft.canonicalRichText",
             Self::MaterializeId => "arcweft.materializeId",
             Self::GenerateProofStub => "arcweft.generateProofStub",
             Self::GenerateUnsafeAudit => "arcweft.generateUnsafeAudit",
@@ -25,9 +27,10 @@ impl ArcweftCommand {
     }
 
     /// All command ids advertised by the MVP server.
-    pub const fn all() -> [Self; 7] {
+    pub const fn all() -> [Self; 8] {
         [
             Self::ExpandSugar,
+            Self::CanonicalRichText,
             Self::MaterializeId,
             Self::GenerateProofStub,
             Self::GenerateUnsafeAudit,

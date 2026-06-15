@@ -27,6 +27,13 @@
   - `parent::path` → `super::path`
   - preserve the callee kind when expanding dialogue sugar, so lexical speaker
     presets are not rewritten into forced `.say(...)` calls
+- Rich-text canonicalization code action:
+  - command/action id: `arcweft.canonicalRichText`
+  - rewrites inferred dot selectors such as `[.shake]...[/]` into explicit
+    family tags such as `[effect .shake]...[/effect]`
+  - rewrites unknown dot selectors to `[mark .name]`
+  - does not expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand,
+    `[page]`, or speaker-line sugar
 - ID code actions:
   - materialize dialogue `id=@.suffix` and `text_key=@.suffix` options as
     normalized `@say...` / `@text...` IDs

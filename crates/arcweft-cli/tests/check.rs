@@ -24972,6 +24972,31 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 }
 
 #[test]
+fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
+    let source =
+        "flow @flow.opening opening {\n    alice: hi $(name)[.shake amp=2px]there[/][page]\n}\n";
+    let path = temp_arcw("fmt-canonical-rich-text", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--canonical-rich-text")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt --canonical-rich-text should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("$(name)"));
+    assert!(stdout.contains("[effect .shake amp=2px]there[/effect]"));
+    assert!(stdout.contains("[page]"));
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
     let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
     let path = temp_arcw("ids-materialize", source);

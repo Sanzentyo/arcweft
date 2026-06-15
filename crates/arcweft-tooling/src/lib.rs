@@ -189,6 +189,13 @@ pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
             edit: Some(edit),
         });
     }
+    for edit in rich_text_canonical_edits(source) {
+        actions.push(ToolingCodeAction {
+            id: "arcweft.canonicalRichText".to_owned(),
+            label: "Canonicalize inferred rich-text tags".to_owned(),
+            edit: Some(edit),
+        });
+    }
     if let Ok(report) = materialize_ids(source) {
         actions.extend(report.edits.into_iter().map(|edit| ToolingCodeAction {
             id: "arcweft.materializeId".to_owned(),
@@ -1653,6 +1660,22 @@ mod tests {
                 .contains("[effect .shake amp=2px pattern=a,b,c]there[/effect]")
         );
         assert!(report.output.contains("[page]"));
+    }
+
+    #[test]
+    fn source_code_actions_include_canonical_rich_text_edits() {
+        let source = "flow @flow.opening opening {\n    alice: [.vertical_rl]縦[/]\n}\n";
+        let actions = source_code_actions(source);
+
+        let action = actions
+            .iter()
+            .find(|action| action.id == "arcweft.canonicalRichText")
+            .expect("canonical rich-text action");
+        let edit = action.edit.as_ref().expect("canonical action has edit");
+
+        assert_eq!(action.label, "Canonicalize inferred rich-text tags");
+        assert_eq!(&source[edit.start..edit.end], "[.vertical_rl]");
+        assert_eq!(edit.replacement, "[layout .vertical_rl]");
     }
 
     #[test]

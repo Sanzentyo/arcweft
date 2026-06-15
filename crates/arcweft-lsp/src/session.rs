@@ -518,6 +518,36 @@ mod tests {
     }
 
     #[test]
+    fn code_actions_include_canonical_rich_text_rewrite() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(
+            &mut session,
+            uri.clone(),
+            "flow @flow.opening opening {\n    alice: [.shake amp=2px]hi[/]\n}\n",
+        );
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri },
+                range: Range::new(Position::new(0, 0), Position::new(10, 0)),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        assert!(actions.iter().any(|action| {
+            matches!(
+                action,
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Canonicalize inferred rich-text tags"
+                        && action.edit.is_some()
+            )
+        }));
+    }
+
+    #[test]
     fn execute_command_can_return_workspace_edit_from_tooling_edit_argument() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());
