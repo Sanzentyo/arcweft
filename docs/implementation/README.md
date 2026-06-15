@@ -855,9 +855,11 @@ Current high-confidence state:
   ordinary effects, `out`, and line `cancel on` rules. Unsupported executable
   flow items fail lowering explicitly instead of being converted to `Noop`.
 - `arcw plan <file.arcw> [--json]` now exposes lowered line task graph metadata
-  for CLI, LSP, and Agent inspection. Runtime parallel conflicts are also
-  surfaced as verifier obligations so direct verifier users can see the same
-  class of graph conflict as `arcw check`.
+  plus the runtime-plan `line_display_catalog` for CLI, LSP, and Agent
+  inspection. The catalog carries rich-text nodes, base styles, and
+  provenance-aware `style_contributions` with source value ranges. Runtime
+  parallel conflicts are also surfaced as verifier obligations so direct
+  verifier users can see the same class of graph conflict as `arcw check`.
 - `arcw run <file.arcw> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` now
   performs a deterministic dry run through the Phase 2.0 headless runtime slice and
   reports per-step flow events, effects, host requests, diagnostics, stop reason,

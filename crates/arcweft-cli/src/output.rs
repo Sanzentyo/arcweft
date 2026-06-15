@@ -14,11 +14,12 @@ use arcweft_lang_sema::check::{
     TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
 };
 use arcweft_lang_syntax::cst::SyntaxParseStats;
+use arcweft_render_text::LineDisplaySpec;
 use arcweft_runtime_host::{
     HostSystemInfo, NativeTaskStats, RuntimeExecutorPureCompileStatsSummary,
     RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
 };
-use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan};
+use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan_with_stats};
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{
@@ -44,6 +45,7 @@ pub(crate) struct CheckReport {
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
+    pub(crate) line_display_catalog: Vec<LineDisplaySpec>,
     pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
     pub(crate) sources: Vec<RuntimeSourcePlanSummary>,
     pub(crate) verifier_diagnostics: usize,
@@ -157,17 +159,23 @@ impl RuntimePlanReport {
                 backend: BackendKind::Emit,
             },
         );
-        let runtime_plan = lower_runtime_plan(&checked.hir).ok();
+        let runtime_report = lower_runtime_plan_with_stats(&checked.hir).ok();
         Self {
             lines: checked
                 .line_task_groups
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
-            streams: runtime_plan
+            line_display_catalog: runtime_report
                 .as_ref()
-                .map(|plan| {
-                    plan.stream_plans
+                .map(|report| report.line_display_catalog.lines().to_vec())
+                .unwrap_or_default(),
+            streams: runtime_report
+                .as_ref()
+                .map(|report| {
+                    report
+                        .plan
+                        .stream_plans
                         .iter()
                         .map(|stream| RuntimeStreamPlanSummary {
                             id: stream.id.0.clone(),
@@ -179,10 +187,12 @@ impl RuntimePlanReport {
                         .collect()
                 })
                 .unwrap_or_default(),
-            sources: runtime_plan
+            sources: runtime_report
                 .as_ref()
-                .map(|plan| {
-                    plan.source_plans
+                .map(|report| {
+                    report
+                        .plan
+                        .source_plans
                         .iter()
                         .map(|source| RuntimeSourcePlanSummary {
                             id: source.id.0.clone(),

@@ -23454,19 +23454,30 @@ flow @flow.audit audit {
 fn plan_json_lists_runtime_task_graph() {
     let path = temp_arcw(
         "runtime-plan",
-        r#"
+        r##"
+pub dialogue defaults @dialogue.defaults {
+    rich_text {
+        ruby {
+            size = 14px
+        }
+    }
+}
+
 pub surface character @character.alice Alice as alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
 }
 
 flow @flow.plan plan {
-    @<character.alice>.say[待って。[mark .release][p]]
+    alice: |[待](ま)って。[mark .release][p]
     with:
         thread motion:
             wait(0.1s)
         on mark(.release):
             log.info("release")
 }
-"#,
+"##,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -23487,6 +23498,37 @@ flow @flow.plan plan {
             && stdout.contains("\"child_tasks\": 2")
             && stdout.contains("mark .release"),
         "plan JSON should include runtime graph metadata: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("plan output is structured JSON");
+    let line_display = json["line_display_catalog"]
+        .as_array()
+        .and_then(|catalog| catalog.first())
+        .expect("plan JSON includes line display catalog");
+    let contributions = line_display["style_contributions"]
+        .as_array()
+        .expect("line display includes style contributions");
+    assert!(
+        contributions.iter().any(|contribution| {
+            contribution["layer"] == "dialogue_defaults"
+                && contribution["path"] == "rich_text.ruby.size"
+                && contribution["value"] == "14px"
+                && contribution["source"]["kind"] == "source_file"
+                && contribution["source"]["range"]["start"].is_number()
+                && contribution["source"]["range"]["end"].is_number()
+        }),
+        "plan JSON should include dialogue defaults provenance: {stdout}"
+    );
+    assert!(
+        contributions.iter().any(|contribution| {
+            contribution["layer"] == "character_dialogue_style"
+                && contribution["path"] == "text_color"
+                && contribution["value"] == "rgb(\"#202122\")"
+                && contribution["source"]["kind"] == "source_file"
+                && contribution["source"]["range"]["start"].is_number()
+                && contribution["source"]["range"]["end"].is_number()
+        }),
+        "plan JSON should include character dialogue_style provenance: {stdout}"
     );
 }
 

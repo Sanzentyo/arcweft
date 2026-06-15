@@ -207,9 +207,13 @@ runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
 `arcw check`, then prints a compact line/task summary. JSON output contains each
 line plan's flow id, line id, callee, root node kind, child task count, effect
 count, trigger labels, cleanup-stack counts, and verifier diagnostic/obligation
-counts. JSON also includes generation metadata for `source` and `stream`
-declarations: entity id, item/error type text, source policy, handler count,
-stream op count, and stream yield count.
+counts. JSON also includes `line_display_catalog`, the render-text sidecar
+lowered with the runtime plan. Each display spec includes resolved rich-text
+nodes, base styles, inline host events, and `style_contributions` with cascade
+layer, assignment operator, source kind, value, active/shadowed state, and
+source value ranges where available. Generation metadata for `source` and
+`stream` declarations is also included: entity id, item/error type text, source
+policy, handler count, stream op count, and stream yield count.
 
 ```bash
 arcw plan game/routes/opening.arcw
