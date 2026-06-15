@@ -10,8 +10,8 @@ use super::{
     is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
     parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
-    parse_stmt_with_stats, parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label,
-    split_call_head, split_leading_ident,
+    parse_stmt_with_stats_and_base, parse_thread_block, parse_unsafe_lifetime_block,
+    parse_with_brace_label, split_call_head, split_leading_ident,
 };
 use std::borrow::Cow;
 use std::ops::Range;
@@ -173,9 +173,11 @@ impl<'a> Parser<'a> {
                         && !self.has_multiline_await_with(indent)
                 {
                     let stmt = self.consume_stmt_text_with_continuations(indent);
-                    return Some(FlowItem::Stmt(parse_stmt_with_stats(
+                    let base = line.start + line.text.len() - line.text.trim_start().len();
+                    return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
                         stmt.trim(),
                         &mut self.syntax_stats,
+                        base,
                     )));
                 }
                 if let Some(item) = self.parse_let_flow_item(kind, indent) {
@@ -184,9 +186,11 @@ impl<'a> Parser<'a> {
             }
             CstFlowItemKind::TypedStmt => {
                 let stmt = self.consume_stmt_text_with_continuations(indent);
-                return Some(FlowItem::Stmt(parse_stmt_with_stats(
+                let base = line.start + line.text.len() - line.text.trim_start().len();
+                return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
                     stmt.trim(),
                     &mut self.syntax_stats,
+                    base,
                 )));
             }
             CstFlowItemKind::Include | CstFlowItemKind::AwaitWith | CstFlowItemKind::Other => {}
@@ -198,9 +202,11 @@ impl<'a> Parser<'a> {
         // annotation and must not be reinterpreted as speaker-line sugar.
         if is_typed_stmt(trimmed) || trimmed.starts_with("let ") {
             let stmt = self.consume_stmt_text_with_continuations(indent);
-            return Some(FlowItem::Stmt(parse_stmt_with_stats(
+            let base = line.start + line.text.len() - line.text.trim_start().len();
+            return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
                 stmt.trim(),
                 &mut self.syntax_stats,
+                base,
             )));
         }
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {

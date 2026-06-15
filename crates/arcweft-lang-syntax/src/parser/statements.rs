@@ -67,6 +67,8 @@ impl Parser<'_> {
             pattern,
             ty,
             expr: super::parse_block_expr(&body),
+            expr_source: None,
+            expr_range: None,
         })
     }
 
@@ -97,6 +99,8 @@ impl Parser<'_> {
                 statements,
                 value: value.map(Box::new),
             },
+            expr_source: None,
+            expr_range: None,
         })
     }
 
@@ -127,19 +131,29 @@ impl Parser<'_> {
                 statements,
                 value: value.map(Box::new),
             },
+            expr_source: None,
+            expr_range: None,
         })
     }
 }
 
 pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
-    parse_stmt_inner(trimmed, None)
+    parse_stmt_inner(trimmed, None, None)
 }
 
-pub(super) fn parse_stmt_with_stats(trimmed: &str, stats: &mut SyntaxParseStats) -> Stmt {
-    parse_stmt_inner(trimmed, Some(stats))
+pub(super) fn parse_stmt_with_stats_and_base(
+    trimmed: &str,
+    stats: &mut SyntaxParseStats,
+    base: usize,
+) -> Stmt {
+    parse_stmt_inner(trimmed, Some(stats), Some(base))
 }
 
-fn parse_stmt_inner(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> Stmt {
+fn parse_stmt_inner(
+    trimmed: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Stmt {
     match classify_stmt(trimmed) {
         CstStmtKind::LifetimeSet => {
             let Some((target, expr)) =
@@ -155,7 +169,7 @@ fn parse_stmt_inner(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> 
         CstStmtKind::Wait => {
             wait_stmt_source(trimmed).map_or_else(|| raw_stmt(trimmed), parse_wait_stmt)
         }
-        CstStmtKind::Let => parse_let_stmt(trimmed, stats),
+        CstStmtKind::Let => parse_let_stmt(trimmed, stats, base),
         CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
             parse_braced_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
@@ -187,16 +201,27 @@ pub(super) fn raw_stmt(source: &str) -> Stmt {
     ))
 }
 
-fn parse_let_stmt(trimmed: &str, stats: Option<&mut SyntaxParseStats>) -> Stmt {
+fn parse_let_stmt(
+    trimmed: &str,
+    stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Stmt {
     let Some(rest) = trimmed.strip_prefix("let ") else {
         return raw_stmt(trimmed);
     };
     if let Some((pattern, expr)) = split_top_level_binding(rest) {
         let (pattern, ty) = parse_binding_pattern(pattern);
+        let expr = expr.trim();
+        let expr_start = trimmed
+            .len()
+            .checked_sub(expr.len())
+            .and_then(|start| base.map(|base| base + start));
         Stmt::Let {
             pattern,
             ty,
-            expr: parse_expr_with_inline_line_plan_with_stats(expr.trim(), stats),
+            expr: parse_expr_with_inline_line_plan_with_stats(expr, stats),
+            expr_source: Some(expr.to_owned()),
+            expr_range: expr_start.map(|start| TextRange::new(start, start + expr.len())),
         }
     } else {
         raw_stmt(trimmed)

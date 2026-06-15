@@ -121,7 +121,15 @@ impl Parser<'_> {
         }
 
         let (pattern, ty) = parse_binding_pattern(pattern);
-        Some(Stmt::Let { pattern, ty, expr })
+        let expr_start =
+            start.start + expr_offset + expr_source.len() - expr_source.trim_start().len();
+        Some(Stmt::Let {
+            pattern,
+            ty,
+            expr,
+            expr_source: Some(expr_source.to_owned()),
+            expr_range: Some(TextRange::new(expr_start, expr_start + expr_source.len())),
+        })
     }
 
     pub(super) fn parse_content_call_or_speaker_line(&mut self) -> Option<FlowItem> {

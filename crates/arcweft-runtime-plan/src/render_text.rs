@@ -3,7 +3,7 @@
 use crate::labels::expr_label;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_lang_hir::model::{HirDialogue, HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::ast::common::Visibility;
+use arcweft_lang_hir::syntax::ast::common::{TextRange, Visibility};
 use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem, DialogueTag,
     DialogueToken, LineArg,
@@ -404,12 +404,14 @@ impl DialogueSpeakerPreset {
 pub(crate) fn speaker_preset_from_let(
     pattern: &Pattern,
     expr: &Expr,
+    expr_source: Option<&str>,
+    expr_range: Option<&TextRange>,
 ) -> Option<(String, DialogueSpeakerPreset)> {
     let name = pattern_ident(pattern)?;
     let Expr::Call { callee, args } = expr else {
         return None;
     };
-    let defaults = speaker_preset_defaults(name, args);
+    let defaults = speaker_preset_defaults(name, args, expr_source, expr_range);
     Some((
         name.to_owned(),
         DialogueSpeakerPreset {
@@ -437,11 +439,23 @@ fn pattern_ident(pattern: &Pattern) -> Option<&str> {
     }
 }
 
-fn speaker_preset_defaults(name: &str, args: &[CallArg]) -> DialogueStyleDefaults {
+fn speaker_preset_defaults(
+    name: &str,
+    args: &[CallArg],
+    expr_source: Option<&str>,
+    expr_range: Option<&TextRange>,
+) -> DialogueStyleDefaults {
     let mut defaults = DialogueStyleDefaults::default();
+    let arg_ranges = speaker_preset_arg_ranges(expr_source, expr_range);
     for arg in args {
         if let CallArg::Named { name: path, value } = arg {
-            append_speaker_preset_arg(&mut defaults, name, path, value);
+            append_speaker_preset_arg(
+                &mut defaults,
+                name,
+                path,
+                value,
+                arg_ranges.get(path).copied(),
+            );
         }
     }
     defaults
@@ -452,6 +466,7 @@ fn append_speaker_preset_arg(
     preset_name: &str,
     path: &str,
     value: &Expr,
+    range: Option<RichTextSourceRange>,
 ) {
     let policy = inline_default_from_named_expr(path, value);
     if let Some(policy) = policy.clone() {
@@ -474,7 +489,7 @@ fn append_speaker_preset_arg(
                 .map(|(path, value)| RichTextStyleContribution {
                     path,
                     layer: RichTextCascadeLayer::SpeakerPreset,
-                    source: source_file(Some(preset_name.to_owned()), None),
+                    source: source_file(Some(preset_name.to_owned()), range),
                     op: RichTextAssignOp::Replace,
                     value,
                     style_index,
@@ -857,11 +872,70 @@ fn raw_call_parts(raw: &str) -> Option<(&str, &str)> {
         .then(|| (raw[..open].trim(), raw[open + '('.len_utf8()..close].trim()))
 }
 
+fn speaker_preset_arg_ranges(
+    expr_source: Option<&str>,
+    expr_range: Option<&TextRange>,
+) -> BTreeMap<String, RichTextSourceRange> {
+    let (Some(expr_source), Some(expr_range)) = (expr_source, expr_range) else {
+        return BTreeMap::new();
+    };
+    let Some(args_range) = raw_call_args_source_range(expr_source) else {
+        return BTreeMap::new();
+    };
+    let raw_args_source = &expr_source[args_range.clone()];
+    raw_call_arg_ranges(raw_args_source)
+        .into_iter()
+        .filter_map(|arg_range| {
+            let arg_text = &raw_args_source[arg_range.clone()];
+            let leading = arg_text.len() - arg_text.trim_start().len();
+            let trimmed = arg_text.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let equals = find_top_level_raw_punctuation(trimmed, '=')?;
+            let name = trimmed[..equals].trim();
+            let value = &trimmed[equals + '='.len_utf8()..];
+            let value_leading = value.len() - value.trim_start().len();
+            let value = value.trim();
+            if name.is_empty() || value.is_empty() {
+                return None;
+            }
+            let value_start = args_range.start
+                + arg_range.start
+                + leading
+                + equals
+                + '='.len_utf8()
+                + value_leading;
+            Some((
+                name.to_owned(),
+                RichTextSourceRange {
+                    start: expr_range.start() + value_start,
+                    end: expr_range.start() + value_start + value.len(),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn raw_call_args_source_range(raw: &str) -> Option<Range<usize>> {
+    let open = find_top_level_raw_punctuation(raw, '(')?;
+    let close = raw.rfind(')')?;
+    (close > open && raw[close + ')'.len_utf8()..].trim().is_empty())
+        .then(|| open + '('.len_utf8()..close)
+}
+
 fn raw_call_args(source: &str) -> Vec<&str> {
     split_top_level_raw(source, ',')
         .into_iter()
         .map(str::trim)
         .filter(|arg| !arg.is_empty())
+        .collect()
+}
+
+fn raw_call_arg_ranges(source: &str) -> Vec<Range<usize>> {
+    split_top_level_raw_ranges(source, ',')
+        .into_iter()
+        .filter(|range| !source[range.clone()].trim().is_empty())
         .collect()
 }
 
@@ -895,6 +969,33 @@ fn split_top_level_raw(source: &str, delimiter: char) -> Vec<&str> {
     }
     parts.push(&source[start..]);
     parts
+}
+
+fn split_top_level_raw_ranges(source: &str, delimiter: char) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth = depth.saturating_sub(1),
+            _ if ch == delimiter && !in_string && depth == 0 => {
+                ranges.push(start..offset);
+                start = offset + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    ranges.push(start..source.len());
+    ranges
 }
 
 fn find_top_level_raw_punctuation(source: &str, needle: char) -> Option<usize> {

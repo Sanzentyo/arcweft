@@ -233,6 +233,8 @@ pub enum Stmt {
         pattern: Pattern,
         ty: Option<TypeRef>,
         expr: Expr,
+        expr_source: Option<String>,
+        expr_range: Option<TextRange>,
     },
     /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
     LetElse {

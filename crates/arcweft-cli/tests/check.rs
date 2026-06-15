@@ -23570,7 +23570,7 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
             path: "text_color",
             value: "\"#404142\"",
             active: Some(false),
-            requires_range: false,
+            requires_range: true,
             context: "speaker preset",
         },
     );

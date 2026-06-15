@@ -1389,10 +1389,19 @@ impl FlowRuntimeLowerer<'_> {
     }
 
     fn register_speaker_preset(&mut self, stmt: &Stmt) {
-        let Stmt::Let { pattern, expr, .. } = stmt else {
+        let Stmt::Let {
+            pattern,
+            expr,
+            expr_source,
+            expr_range,
+            ..
+        } = stmt
+        else {
             return;
         };
-        let Some((name, preset)) = speaker_preset_from_let(pattern, expr) else {
+        let Some((name, preset)) =
+            speaker_preset_from_let(pattern, expr, expr_source.as_deref(), expr_range.as_ref())
+        else {
             return;
         };
         if let Some(scope) = self.speaker_preset_scopes.last_mut() {
@@ -1870,7 +1879,8 @@ mod tests {
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
     use arcweft_render_text::{
-        InlineFailurePolicy, RichTextCascadeLayer, RichTextColor, RichTextStyle,
+        InlineFailurePolicy, RichTextCascadeLayer, RichTextColor, RichTextSettingSource,
+        RichTextStyle,
     };
 
     #[test]
@@ -1973,8 +1983,7 @@ flow @flow.main main {
 
     #[test]
     fn speaker_preset_styles_join_dialogue_cascade() {
-        let parsed = parse_source(
-            r##"
+        let source = r##"
 pub dialogue defaults @dialogue.defaults {
     text_color = rgb("#101112")
 }
@@ -1991,8 +2000,13 @@ flow @flow.main main {
 
     alice_worried(text_color=rgb("#505152")): Hello #[missing][p]
 }
-"##,
-        );
+"##;
+        let preset_value = r##"rich_text_style(text=text_style(color=rgb("#404142")))"##;
+        let preset_value_start = source
+            .find(preset_value)
+            .expect("preset value is present in fixture");
+        let preset_value_end = preset_value_start + preset_value.len();
+        let parsed = parse_source(source);
         let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
         let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
         let spec = report
@@ -2051,6 +2065,13 @@ flow @flow.main main {
                 && contribution.value == "rgb(\"#404142\")"
                 && contribution.active
                 && contribution.style_index == Some(3)
+                && matches!(
+                    &contribution.source,
+                    RichTextSettingSource::SourceFile {
+                        range: Some(range),
+                        ..
+                    } if range.start == preset_value_start && range.end == preset_value_end
+                )
         }));
         assert!(spec.style_contributions.iter().any(|contribution| {
             contribution.layer == RichTextCascadeLayer::SpeakerPreset

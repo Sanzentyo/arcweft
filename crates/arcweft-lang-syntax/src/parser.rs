@@ -60,7 +60,8 @@ use line_plan::{
 };
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
-    parse_scope_head, parse_stmt, parse_stmt_with_stats, parse_unsafe_lifetime_block, raw_stmt,
+    parse_scope_head, parse_stmt, parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block,
+    raw_stmt,
 };
 
 /// Parses an Arcweft source string.

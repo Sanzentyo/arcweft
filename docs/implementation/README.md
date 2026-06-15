@@ -123,10 +123,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   targets now resolve through the same cascade, defaulting to `textbox.0`, and
   textbox `rich_text` / `dialogue_style` blocks contribute
   `DialogueWindowTheme` values between selected dialogue defaults and character
-  `dialogue_style`. The current HIR does not yet retain source ranges for `let`
-  expression arguments, so speaker preset contribution ranges are intentionally
-  absent until statement expression spans are preserved. Selection-scoped code
-  actions can extract active non-line
+  `dialogue_style`. Flow `let` statements now retain their expression source
+  text and byte range when parsed from source, so speaker preset contributions
+  expose source value ranges through runtime-plan JSON, LSP definition, and LSP
+  reference features. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, and can lift selected defaults into the matching character's
   `dialogue_style` block when the character declaration is in the current

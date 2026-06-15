@@ -41,7 +41,9 @@ impl TypeChecker<'_> {
         self.stats.statements += 1;
         self.check_seq_stmt_policy(stmt);
         match stmt {
-            Stmt::Let { pattern, ty, expr } => self.check_let_stmt(pattern, ty.as_ref(), expr),
+            Stmt::Let {
+                pattern, ty, expr, ..
+            } => self.check_let_stmt(pattern, ty.as_ref(), expr),
             Stmt::LetElse {
                 pattern,
                 ty,

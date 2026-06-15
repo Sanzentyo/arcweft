@@ -75,6 +75,8 @@ impl Parser<'_> {
                 then_branch: Box::new(parse_block_expr(&then_body)),
                 else_branch: Some(Box::new(parse_block_expr(&else_body))),
             },
+            expr_source: None,
+            expr_range: None,
         })
     }
 
@@ -115,6 +117,8 @@ impl Parser<'_> {
                 then_branch: Box::new(parse_block_expr(&then_body)),
                 else_branch: Some(Box::new(parse_block_expr(&else_body))),
             },
+            expr_source: None,
+            expr_range: None,
         })
     }
 
@@ -143,6 +147,8 @@ impl Parser<'_> {
                 scrutinee: Box::new(parse_expr_lossy(scrutinee)),
                 arms: parse_match_expr_arms(&body),
             },
+            expr_source: None,
+            expr_range: None,
         })
     }
 

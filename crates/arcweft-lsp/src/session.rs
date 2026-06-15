@@ -1143,7 +1143,8 @@ pub character alice {
 }
 
 flow opening {
-    alice: hi[p]
+    let alice_side = alice(rich_text=rich_text_style(text=text_style(color=rgb("#303132"))))
+    alice_side: hi[p]
 }
 "##;
         let mut session = ArcweftLspSession::new(&LspConfig::default());
@@ -1177,6 +1178,10 @@ flow opening {
         assert!(locations.iter().any(|location| {
             location.range.start == position_of(source, "rgb(\"#202122\")")
                 && location.range.end == position_of(source, "\n    }\n}\n\nflow")
+        }));
+        assert!(locations.iter().any(|location| {
+            location.range.start == position_of(source, "rich_text_style")
+                && location.range.end == position_of(source, ")\n    alice_side")
         }));
     }
 
