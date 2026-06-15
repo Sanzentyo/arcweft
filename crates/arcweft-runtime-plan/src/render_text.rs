@@ -9,6 +9,7 @@ use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueToken, LineArg,
 };
 use arcweft_lang_hir::syntax::ast::items::{EntityDeclItem, EntityDeclKind};
+use arcweft_lang_hir::syntax::ast::pattern::Pattern;
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, parse_expr};
 use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LineDisplayArg,
@@ -31,10 +32,17 @@ pub(crate) struct DialogueDisplayDefaults {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-struct DialogueStyleDefaults {
+pub(crate) struct DialogueStyleDefaults {
     base_styles: Vec<RichTextStyle>,
     style_contributions: Vec<RichTextStyleContribution>,
     default_inline_failure_policy: Option<InlineFailurePolicy>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DialogueSpeakerPreset {
+    name: String,
+    callee: String,
+    defaults: DialogueStyleDefaults,
 }
 
 impl DialogueDisplayDefaults {
@@ -159,12 +167,23 @@ fn dialogue_defaults_label(item: &DialogueDefaultsItem) -> String {
         .map_or_else(|| "<anonymous>".to_owned(), |id| format!("@{}", id.body()))
 }
 
+#[cfg(test)]
 pub(crate) fn lower_dialogue_display(
     line: RuntimeLineId,
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
 ) -> LineDisplaySpec {
-    let default_inline_failure_policy = lower_effective_inline_failure_policy(dialogue, defaults);
+    lower_dialogue_display_with_speaker_presets(line, dialogue, defaults, &[])
+}
+
+pub(crate) fn lower_dialogue_display_with_speaker_presets(
+    line: RuntimeLineId,
+    dialogue: &HirDialogue,
+    defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
+) -> LineDisplaySpec {
+    let default_inline_failure_policy =
+        lower_effective_inline_failure_policy(dialogue, defaults, speaker_presets);
     LineDisplaySpec {
         line,
         callee: dialogue.callee().to_owned(),
@@ -173,9 +192,13 @@ pub(crate) fn lower_dialogue_display(
         voice: dialogue.voice().map(expr_label),
         look: dialogue.look().map(expr_label),
         style: dialogue.style().map(expr_label),
-        base_styles: lower_effective_dialogue_base_styles(dialogue, defaults),
+        base_styles: lower_effective_dialogue_base_styles(dialogue, defaults, speaker_presets),
         default_inline_failure_policy: default_inline_failure_policy.clone(),
-        style_contributions: lower_effective_dialogue_style_contributions(dialogue, defaults),
+        style_contributions: lower_effective_dialogue_style_contributions(
+            dialogue,
+            defaults,
+            speaker_presets,
+        ),
         args: dialogue
             .args()
             .iter()
@@ -200,11 +223,21 @@ pub(crate) fn lower_dialogue_display(
 fn lower_effective_dialogue_base_styles(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
 ) -> Vec<RichTextStyle> {
     let mut styles = defaults.global.base_styles.clone();
-    if let Some(character) = defaults.character_for_callee(dialogue.callee()) {
+    let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    let character_callee = preset_chain
+        .first()
+        .map_or_else(|| dialogue.callee(), |preset| preset.callee());
+    if let Some(character) = defaults.character_for_callee(character_callee) {
         styles.extend(character.base_styles.clone());
     }
+    styles.extend(
+        preset_chain
+            .iter()
+            .flat_map(|preset| preset.defaults.base_styles.clone()),
+    );
     styles.extend(
         dialogue
             .style()
@@ -229,11 +262,22 @@ fn lower_effective_dialogue_base_styles(
 fn lower_effective_inline_failure_policy(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
 ) -> Option<InlineFailurePolicy> {
+    let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    let character_callee = preset_chain
+        .first()
+        .map_or_else(|| dialogue.callee(), |preset| preset.callee());
     lower_default_inline_failure_policy(dialogue.args())
         .or_else(|| {
+            preset_chain
+                .into_iter()
+                .rev()
+                .find_map(|preset| preset.defaults.default_inline_failure_policy.clone())
+        })
+        .or_else(|| {
             defaults
-                .character_for_callee(dialogue.callee())
+                .character_for_callee(character_callee)
                 .and_then(|character| character.default_inline_failure_policy.clone())
         })
         .or_else(|| defaults.global.default_inline_failure_policy.clone())
@@ -242,13 +286,21 @@ fn lower_effective_inline_failure_policy(
 fn lower_effective_dialogue_style_contributions(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
 ) -> Vec<RichTextStyleContribution> {
     let mut contributions = Vec::new();
     let mut base_offset = 0usize;
 
     append_style_contributions(&mut contributions, &defaults.global, &mut base_offset);
-    if let Some(character) = defaults.character_for_callee(dialogue.callee()) {
+    let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    let character_callee = preset_chain
+        .first()
+        .map_or_else(|| dialogue.callee(), |preset| preset.callee());
+    if let Some(character) = defaults.character_for_callee(character_callee) {
         append_style_contributions(&mut contributions, character, &mut base_offset);
+    }
+    for preset in preset_chain {
+        append_style_contributions(&mut contributions, &preset.defaults, &mut base_offset);
     }
 
     if let Some(style) = dialogue.style() {
@@ -265,6 +317,7 @@ fn lower_effective_dialogue_style_contributions(
                 styles: &styles,
                 has_policy,
                 source,
+                layer: RichTextCascadeLayer::LineOptions,
             },
         );
     }
@@ -282,6 +335,7 @@ fn lower_effective_dialogue_style_contributions(
                 styles: &styles,
                 has_policy,
                 source,
+                layer: RichTextCascadeLayer::LineOptions,
             },
         );
     }
@@ -299,12 +353,138 @@ fn lower_effective_dialogue_style_contributions(
                 styles: &styles,
                 has_policy,
                 source,
+                layer: RichTextCascadeLayer::LineOptions,
             },
         );
     }
 
     mark_shadowed_style_contributions(&mut contributions);
     contributions
+}
+
+impl DialogueSpeakerPreset {
+    fn callee(&self) -> &str {
+        &self.callee
+    }
+}
+
+pub(crate) fn speaker_preset_from_let(
+    pattern: &Pattern,
+    expr: &Expr,
+) -> Option<(String, DialogueSpeakerPreset)> {
+    let name = pattern_ident(pattern)?;
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let defaults = speaker_preset_defaults(name, args);
+    Some((
+        name.to_owned(),
+        DialogueSpeakerPreset {
+            name: name.to_owned(),
+            callee: expr_label(callee),
+            defaults,
+        },
+    ))
+}
+
+fn pattern_ident(pattern: &Pattern) -> Option<&str> {
+    match pattern {
+        Pattern::Ident(name)
+        | Pattern::MutIdent(name)
+        | Pattern::Typed { name, .. }
+        | Pattern::Whole { name, .. } => Some(name),
+        Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Variant { .. }
+        | Pattern::Discard
+        | Pattern::Tuple(_)
+        | Pattern::Record { .. }
+        | Pattern::BracketSeq { .. }
+        | Pattern::Raw(_) => None,
+    }
+}
+
+fn speaker_preset_defaults(name: &str, args: &[CallArg]) -> DialogueStyleDefaults {
+    let mut defaults = DialogueStyleDefaults::default();
+    for arg in args {
+        if let CallArg::Named { name: path, value } = arg {
+            append_speaker_preset_arg(&mut defaults, name, path, value);
+        }
+    }
+    defaults
+}
+
+fn append_speaker_preset_arg(
+    defaults: &mut DialogueStyleDefaults,
+    preset_name: &str,
+    path: &str,
+    value: &Expr,
+) {
+    let policy = inline_default_from_named_expr(path, value);
+    if let Some(policy) = policy.clone() {
+        defaults.default_inline_failure_policy = Some(policy);
+    }
+
+    let style_index = defaults.base_styles.len();
+    let styles = display_styles_from_named_expr(path, value);
+    let active = policy.is_some() || !styles.is_empty();
+    let style_index = (!styles.is_empty()).then_some(style_index);
+    defaults.base_styles.extend(styles);
+    defaults
+        .style_contributions
+        .extend(
+            style_assignment_paths(path, value)
+                .into_iter()
+                .map(|(path, value)| RichTextStyleContribution {
+                    path,
+                    layer: RichTextCascadeLayer::SpeakerPreset,
+                    source: source_file(Some(preset_name.to_owned()), None),
+                    op: RichTextAssignOp::Replace,
+                    value,
+                    style_index,
+                    active,
+                    shadowed_by: None,
+                }),
+        );
+}
+
+fn speaker_preset_chain<'a>(
+    callee: &str,
+    speaker_presets: &'a [DialogueSpeakerPreset],
+) -> Vec<&'a DialogueSpeakerPreset> {
+    let mut chain = Vec::new();
+    push_speaker_preset_chain(callee, speaker_presets, &mut chain, &mut Vec::new());
+    chain.reverse();
+    chain
+}
+
+fn push_speaker_preset_chain<'a>(
+    callee: &str,
+    speaker_presets: &'a [DialogueSpeakerPreset],
+    chain: &mut Vec<&'a DialogueSpeakerPreset>,
+    seen: &mut Vec<String>,
+) {
+    if seen.iter().any(|item| item == callee) {
+        return;
+    }
+    seen.push(callee.to_owned());
+    let Some(preset) = speaker_presets.iter().rev().find(|preset| {
+        preset.callee() != callee && preset_names(callee).any(|name| name == preset.name)
+    }) else {
+        return;
+    };
+    chain.push(preset);
+    push_speaker_preset_chain(preset.callee(), speaker_presets, chain, seen);
+}
+
+fn preset_names(callee: &str) -> impl Iterator<Item = &str> {
+    std::iter::once(callee.trim()).chain(
+        callee
+            .trim()
+            .strip_suffix(".say")
+            .into_iter()
+            .map(str::trim),
+    )
 }
 
 impl DialogueStyleDefaults {
@@ -488,6 +668,7 @@ struct LineOptionContribution<'a> {
     styles: &'a [RichTextStyle],
     has_policy: bool,
     source: RichTextSettingSource,
+    layer: RichTextCascadeLayer,
 }
 
 fn append_line_option_contributions(
@@ -507,7 +688,7 @@ fn append_line_option_contributions(
             .into_iter()
             .map(|(path, value)| RichTextStyleContribution {
                 path,
-                layer: RichTextCascadeLayer::LineOptions,
+                layer: input.layer,
                 source: input.source.clone(),
                 op: RichTextAssignOp::Replace,
                 value,

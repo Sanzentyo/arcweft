@@ -7,7 +7,10 @@ use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
 use crate::pure::{PureHelperCandidate, lower_pure_helper_candidates};
-use crate::render_text::{DialogueDisplayDefaults, lower_dialogue_display};
+use crate::render_text::{
+    DialogueDisplayDefaults, DialogueSpeakerPreset, lower_dialogue_display_with_speaker_presets,
+    speaker_preset_from_let,
+};
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use arcweft_core::effect::LineEffectRequest;
@@ -1214,6 +1217,7 @@ pub(crate) fn lower_runtime_flows(
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
+        speaker_preset_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
     };
@@ -1243,6 +1247,7 @@ struct FlowRuntimeLowerer<'a> {
     line_task_groups: Vec<LineTaskGroup>,
     line_display_catalog: LineDisplayCatalog,
     display_defaults: DialogueDisplayDefaults,
+    speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
 }
@@ -1277,6 +1282,18 @@ impl FlowRuntimeLowerer<'_> {
         items: &[HirFlowItem],
         flow_index: usize,
     ) -> Vec<FlowOp> {
+        self.speaker_preset_scopes.push(BTreeMap::new());
+        let ops = self.lower_flow_items_in_scope(flow_id, items, flow_index);
+        self.speaker_preset_scopes.pop();
+        ops
+    }
+
+    fn lower_flow_items_in_scope(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        items: &[HirFlowItem],
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
         let mut ops = Vec::new();
         for item in items {
             match item {
@@ -1297,6 +1314,7 @@ impl FlowRuntimeLowerer<'_> {
                     ops.push(self.lower_await(Some(pattern), await_with));
                 }
                 HirFlowItem::Stmt(stmt) => {
+                    self.register_speaker_preset(stmt);
                     ops.extend(self.lower_flow_stmt(stmt));
                 }
                 HirFlowItem::Thread(thread) => {
@@ -1370,6 +1388,25 @@ impl FlowRuntimeLowerer<'_> {
         ops
     }
 
+    fn register_speaker_preset(&mut self, stmt: &Stmt) {
+        let Stmt::Let { pattern, expr, .. } = stmt else {
+            return;
+        };
+        let Some((name, preset)) = speaker_preset_from_let(pattern, expr) else {
+            return;
+        };
+        if let Some(scope) = self.speaker_preset_scopes.last_mut() {
+            scope.insert(name, preset);
+        }
+    }
+
+    fn active_speaker_presets(&self) -> Vec<DialogueSpeakerPreset> {
+        self.speaker_preset_scopes
+            .iter()
+            .flat_map(|scope| scope.values().cloned())
+            .collect()
+    }
+
     fn lower_scope_expr(&mut self, pattern: &Pattern, scope: &HirScopeExpr) -> FlowOp {
         FlowOp::LetScope {
             pattern: lower_runtime_pattern(pattern),
@@ -1438,11 +1475,14 @@ impl FlowRuntimeLowerer<'_> {
             || RuntimeLineId(format!("{}.line.{task_group}", flow_id.0)),
             |id| RuntimeLineId(id.body().to_owned()),
         );
-        self.line_display_catalog.push(lower_dialogue_display(
-            line.clone(),
-            dialogue,
-            &self.display_defaults,
-        ));
+        let active_speaker_presets = self.active_speaker_presets();
+        self.line_display_catalog
+            .push(lower_dialogue_display_with_speaker_presets(
+                line.clone(),
+                dialogue,
+                &self.display_defaults,
+                &active_speaker_presets,
+            ));
         let _ = flow_index;
         FlowOp::Dialogue { line, task_group }
     }
@@ -1829,7 +1869,9 @@ mod tests {
     };
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
-    use arcweft_render_text::{RichTextColor, RichTextStyle};
+    use arcweft_render_text::{
+        InlineFailurePolicy, RichTextCascadeLayer, RichTextColor, RichTextStyle,
+    };
 
     #[test]
     fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
@@ -1927,6 +1969,103 @@ flow @flow.main main {
                 }
             }]
         );
+    }
+
+    #[test]
+    fn speaker_preset_styles_join_dialogue_cascade() {
+        let parsed = parse_source(
+            r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+character @character.alice Alice as alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
+}
+
+flow @flow.main main {
+    let alice_side = alice(rich_text=rich_text_style(text=text_style(color=rgb("#303132"))), inline_error=InlineFailure.fallback("preset"))
+    let alice_worried = alice_side(rich_text=rich_text_style(text=text_style(color=rgb("#404142"))))
+
+    alice_worried(text_color=rgb("#505152")): Hello #[missing][p]
+}
+"##,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
+        let spec = report
+            .line_display_catalog
+            .lines()
+            .first()
+            .expect("line display spec");
+
+        assert_eq!(
+            spec.base_styles,
+            vec![
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 16,
+                        green: 17,
+                        blue: 18,
+                    }
+                },
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 32,
+                        green: 33,
+                        blue: 34,
+                    }
+                },
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 48,
+                        green: 49,
+                        blue: 50,
+                    }
+                },
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 64,
+                        green: 65,
+                        blue: 66,
+                    }
+                },
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 80,
+                        green: 81,
+                        blue: 82,
+                    }
+                },
+            ]
+        );
+        assert!(matches!(
+            spec.default_inline_failure_policy,
+            Some(InlineFailurePolicy::Fallback { .. })
+        ));
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::SpeakerPreset
+                && contribution.path == "rich_text.text.color"
+                && contribution.value == "rgb(\"#404142\")"
+                && contribution.active
+                && contribution.style_index == Some(3)
+        }));
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::SpeakerPreset
+                && contribution.path == "rich_text.text.color"
+                && contribution.value == "rgb(\"#303132\")"
+                && !contribution.active
+                && contribution.shadowed_by.is_some()
+        }));
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::LineOptions
+                && contribution.path == "text_color"
+                && contribution.value == "rgb(\"#505152\")"
+                && contribution.active
+                && contribution.style_index == Some(4)
+        }));
     }
 
     #[test]
