@@ -22192,6 +22192,74 @@ fn mcp_content_metadata(block: &serde_json::Value, parse_message: &str) -> serde
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: native observe-before-capture coverage"]
+fn agent_mcp_stdio_captures_profile_selected_source_without_prior_observe() {
+    let dir = temp_dir("agent-mcp-profile-capture");
+    let src_dir = dir.join("src");
+    fs::create_dir_all(&src_dir).expect("create profiled MCP capture source dir");
+    fs::write(src_dir.join("main.arcw"), profiled_observe_source())
+        .expect("write profiled MCP capture source");
+    let manifest_path = dir.join("arcw.toml");
+    fs::write(&manifest_path, profiled_observe_manifest())
+        .expect("write profiled MCP capture manifest");
+
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.capture",
+                "arguments": {
+                    "manifest": manifest_path.display().to_string(),
+                    "profile": "mobile",
+                    "format": "png",
+                    "layer": "dialogue",
+                    "steps": 4,
+                    "max_ops": 128
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.session.info",
+                "arguments": {}
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    fs::remove_dir_all(&dir).expect("remove profiled MCP capture fixture");
+    assert!(
+        output.status.success(),
+        "profiled agent mcp capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+    assert_mcp_png_capture_content(&responses[1], "profiled MCP capture metadata is JSON");
+    let capture = mcp_content_metadata(
+        &responses[1]["result"]["content"][0],
+        "profiled MCP capture metadata is JSON",
+    );
+    assert_eq!(capture["image"]["renderer"], "native");
+    assert_eq!(capture["image"]["scope"]["kind"], "layer");
+    assert_eq!(capture["image"]["scope"]["id"], "dialogue");
+    assert!(capture["image"]["content_pixels"].as_u64().unwrap() > 0);
+
+    let session = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "profiled MCP capture session info is JSON",
+    );
+    assert_eq!(session["observed"], true);
+    assert_eq!(session["source"], "main.arcw");
+    assert_eq!(session["latest_capture"]["scope"]["kind"], "layer");
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_without_prior_observe() {
     let path = temp_arcw(

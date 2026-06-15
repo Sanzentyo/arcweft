@@ -162,6 +162,7 @@ Representative exact tests:
 | Test | Time |
 | --- | ---: |
 | `agent_mcp_stdio_lists_resource_templates_before_observe` | 1.212s including harness startup; test body 0.05s |
+| `agent_mcp_stdio_captures_profile_selected_source_without_prior_observe` | 2.80s test body for profile-selected observe-before-capture |
 | `agent_observe_native_renderer_writes_framebuffer_png` | 2.038s |
 | `agent_observe_native_renderer_writes_rich_text_layer_png_crop` | 1.663s |
 | `agent_mcp_stdio_observes_and_reads_rich_text_child_image` | 3.43s test body after lazy MCP resource listing |
