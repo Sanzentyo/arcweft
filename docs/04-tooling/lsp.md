@@ -92,7 +92,9 @@ LSP features use that shared index:
 - hover shows the winning value and cascade contributors for fields such as
   `rich_text.ruby.size`
 - go to definition on an effective style field jumps to the winning assignment
-  value range
+  value range; when the winner comes from a profile-selected dialogue defaults
+  profile, the result also includes the manifest value that selected that
+  defaults profile
 - peek cascade shows shadowed and unset layers
 - find all contributors lists declarations and inline spans that can affect the
   field in the current entry profile

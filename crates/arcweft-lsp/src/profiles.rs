@@ -8,8 +8,10 @@ use arcweft_launch::{LaunchProfileError, LaunchProfileManifest, ResolvedLaunchPr
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use arcweft_rust_abi::{ArcweftRustAbiError, ArcweftRustManifest};
 use arcweft_verify_lsp::{ArcweftLspContext, ArcweftLspProfileContextBuilder};
+use lsp_types::Uri;
 use std::{
     fmt, fs,
+    ops::Range,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -23,7 +25,16 @@ pub struct LspProfile {
     declared_manifests: Vec<AdapterManifest>,
     runner: RuntimeHostRunnerKind,
     dialogue_defaults: Option<String>,
+    dialogue_defaults_selection: Option<ProfileSourceSelection>,
     diagnostics: Vec<LspProfileDiagnostic>,
+}
+
+/// Source location of a launch-profile-selected setting.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileSourceSelection {
+    path: PathBuf,
+    source: String,
+    value_range: Range<usize>,
 }
 
 impl LspProfile {
@@ -34,6 +45,7 @@ impl LspProfile {
             declared_manifests: Vec::new(),
             runner,
             dialogue_defaults: None,
+            dialogue_defaults_selection: None,
             diagnostics: Vec::new(),
         }
     }
@@ -45,6 +57,7 @@ impl LspProfile {
             declared_manifests: Vec::new(),
             runner,
             dialogue_defaults: None,
+            dialogue_defaults_selection: None,
             diagnostics: Vec::new(),
         }
     }
@@ -72,6 +85,11 @@ impl LspProfile {
     /// Dialogue defaults profile selected by the launch profile, if any.
     pub fn dialogue_defaults(&self) -> Option<&str> {
         self.dialogue_defaults.as_deref()
+    }
+
+    /// Source location of the launch profile's `dialogue_defaults` selection.
+    pub fn dialogue_defaults_selection(&self) -> Option<&ProfileSourceSelection> {
+        self.dialogue_defaults_selection.as_ref()
     }
 
     /// Builds a Sans I/O LSP context for helper calls.
@@ -202,7 +220,14 @@ impl LspProfileResolver {
                 &standard_registry.adapter_ids(),
             )
             .map_err(LspProfileLoadError::ProfileResolve)?;
-        Ok(self.profile_from_resolved(&profile, manifest_dir, profile_id, standard_registry))
+        Ok(self.profile_from_resolved(
+            &profile,
+            manifest_dir,
+            &manifest_path,
+            &source,
+            profile_id,
+            standard_registry,
+        ))
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -217,6 +242,8 @@ impl LspProfileResolver {
         &self,
         profile: &ResolvedLaunchProfile,
         manifest_dir: &Path,
+        manifest_path: &Path,
+        manifest_source: &str,
         profile_id: &str,
         standard_registry: AdapterRegistry,
     ) -> LspProfile {
@@ -246,6 +273,9 @@ impl LspProfileResolver {
             declared_manifests,
             runner: self.runner,
             dialogue_defaults: profile.dialogue_defaults().map(str::to_owned),
+            dialogue_defaults_selection: profile.dialogue_defaults().and_then(|selected| {
+                dialogue_defaults_selection(manifest_path, manifest_source, profile_id, selected)
+            }),
             diagnostics,
         }
     }
@@ -255,6 +285,97 @@ impl LspProfileResolver {
         profile.diagnostics.push(diagnostic);
         profile
     }
+}
+
+impl ProfileSourceSelection {
+    /// Manifest path containing the selected setting.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Manifest source text used to compute `value_range`.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Byte range of the selected value inside `source`.
+    pub fn value_range(&self) -> Range<usize> {
+        self.value_range.clone()
+    }
+
+    /// File URI for the manifest source.
+    pub fn uri(&self) -> Option<Uri> {
+        file_uri_from_path(&self.path)
+    }
+}
+
+fn dialogue_defaults_selection(
+    manifest_path: &Path,
+    source: &str,
+    profile_id: &str,
+    selected: &str,
+) -> Option<ProfileSourceSelection> {
+    let table = profile_table_range(source, profile_id)?;
+    let value_range = key_value_string_range(&source[table.clone()], "dialogue_defaults", selected)
+        .map(|range| table.start + range.start..table.start + range.end)?;
+    Some(ProfileSourceSelection {
+        path: manifest_path.to_path_buf(),
+        source: source.to_owned(),
+        value_range,
+    })
+}
+
+fn profile_table_range(source: &str, profile_id: &str) -> Option<Range<usize>> {
+    let wanted = format!("[profiles.{profile_id}]");
+    let quoted = format!("[profiles.\"{profile_id}\"]");
+    let mut body_start = None;
+    let mut cursor = 0usize;
+    for line in source.split_inclusive('\n') {
+        let line_start = cursor;
+        let line_end = cursor + line.len();
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if let Some(start) = body_start {
+                return Some(start..line_start);
+            }
+            if trimmed == wanted || trimmed == quoted {
+                body_start = Some(line_end);
+            }
+        }
+        cursor = line_end;
+    }
+    body_start.map(|start| start..source.len())
+}
+
+fn key_value_string_range(source: &str, key: &str, selected: &str) -> Option<Range<usize>> {
+    let mut cursor = 0usize;
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        let leading = line.len() - trimmed.len();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let rest_leading = rest.len() - rest.trim_start().len();
+            let rest = rest.trim_start();
+            if let Some(value) = rest.strip_prefix('=') {
+                let value_leading = value.len() - value.trim_start().len();
+                let value = value.trim_start();
+                if let Some(quoted) = value.strip_prefix('"')
+                    && let Some(close) = quoted.find('"')
+                    && &quoted[..close] == selected
+                {
+                    let start = cursor
+                        + leading
+                        + key.len()
+                        + rest_leading
+                        + '='.len_utf8()
+                        + value_leading
+                        + '"'.len_utf8();
+                    return Some(start..start + selected.len());
+                }
+            }
+        }
+        cursor += line.len();
+    }
+    None
 }
 
 impl LspProfileDiagnostic {
@@ -450,6 +571,22 @@ fn file_path_from_uri(uri: &lsp_types::Uri) -> Option<PathBuf> {
     Some(normalize_file_uri_path(&path))
 }
 
+fn file_uri_from_path(path: &Path) -> Option<Uri> {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let body = if normalized
+        .as_bytes()
+        .get(1)
+        .is_some_and(|byte| *byte == b':')
+    {
+        format!("/{normalized}")
+    } else {
+        normalized
+    };
+    format!("file://{}", percent_encode_file_path(&body))
+        .parse()
+        .ok()
+}
+
 fn normalize_file_uri_path(path: &str) -> PathBuf {
     let without_leading_windows_slash = path
         .strip_prefix('/')
@@ -477,12 +614,37 @@ fn percent_decode(input: &str) -> Option<String> {
     String::from_utf8(output).ok()
 }
 
+fn percent_encode_file_path(input: &str) -> String {
+    input
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                vec![char::from(byte)]
+            }
+            _ => {
+                let mut encoded = ['%'; 3];
+                encoded[1] = hex_digit(byte >> 4);
+                encoded[2] = hex_digit(byte & 0x0f);
+                encoded.to_vec()
+            }
+        })
+        .collect()
+}
+
 fn hex_value(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
         b'a'..=b'f' => Some(byte - b'a' + 10),
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
+    }
+}
+
+fn hex_digit(value: u8) -> char {
+    match value {
+        0..=9 => char::from(b'0' + value),
+        10..=15 => char::from(b'A' + value - 10),
+        _ => '?',
     }
 }
 
@@ -680,6 +842,40 @@ rust_metadata = ["target/arcweft/bad.json"]
         assert_eq!(diagnostic.resource(), Some("target/arcweft/bad.json"));
         assert!(!diagnostic.message().contains(":/"));
         assert!(!diagnostic.message().contains(":\\"));
+    }
+
+    #[test]
+    fn resolves_dialogue_defaults_selection_source_range() {
+        let project = TestProject::new("lsp-profile-dialogue-defaults-selection");
+        let manifest = r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.mobile"
+
+[profiles.other]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+dialogue_defaults = "dialogue.defaults.debug"
+"#;
+        project.write("arcw.toml", manifest);
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+
+        let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+        let selection = profile
+            .dialogue_defaults_selection()
+            .expect("dialogue defaults source selection");
+        let range = selection.value_range();
+
+        assert_eq!(
+            &selection.source()[range.clone()],
+            "dialogue.defaults.mobile"
+        );
+        assert_eq!(selection.path(), project.path("arcw.toml").as_path());
+        assert!(selection.uri().is_some());
     }
 
     struct TestProject {
