@@ -5377,6 +5377,18 @@ fn compile_profile_runtime_plan(
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
         let lints = lint_id_policy(&tree);
+        for lint in &lints {
+            eprintln!(
+                "{}[{} {}]: {}",
+                lint.severity().label(),
+                lint.code().stable_code(),
+                lint.code().domain_name(),
+                lint.message()
+            );
+        }
+        if has_error_lints(&lints) {
+            return Err(ExitCode::FAILURE);
+        }
         Ok::<usize, ExitCode>(count_warning_lints(&lints))
     })?;
     let hir = profile_lower_hir(&tree, phases)?;
@@ -8989,6 +9001,9 @@ fn load_and_check_with_env(
             lint.message()
         );
     }
+    if has_error_lints(&lints) {
+        return Err(ExitCode::FAILURE);
+    }
 
     let hir = profile_lower_hir(&tree, &mut phases)?;
 
@@ -9017,13 +9032,14 @@ fn load_and_check_with_env(
 fn count_warning_lints(lints: &[SyntaxLint]) -> usize {
     lints
         .iter()
-        .filter(|lint| {
-            matches!(
-                lint.severity(),
-                SyntaxLintSeverity::Error | SyntaxLintSeverity::Warning
-            )
-        })
+        .filter(|lint| matches!(lint.severity(), SyntaxLintSeverity::Warning))
         .count()
+}
+
+fn has_error_lints(lints: &[SyntaxLint]) -> bool {
+    lints
+        .iter()
+        .any(|lint| matches!(lint.severity(), SyntaxLintSeverity::Error))
 }
 
 #[derive(Args, Clone, Debug)]

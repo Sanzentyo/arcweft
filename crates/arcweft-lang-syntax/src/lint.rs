@@ -124,7 +124,7 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
             }
         }
         Item::EntityDecl(item) => {
-            if let Some(name) = item.name() {
+            if let Some(name) = item.surface_alias().or_else(|| item.name()) {
                 lint_decl_identity(
                     item.kind().keyword(),
                     item.id().body(),
@@ -433,6 +433,19 @@ source @source.http_requests local_requests: Source<HttpRequest, HttpError> {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn surface_alias_is_decl_identity_name() {
+        let codes = lint_codes(
+            r"
+pub surface character @character.alice Alice as alice {
+}
+",
+        );
+
+        assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+        assert!(codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
     }
 
     #[test]

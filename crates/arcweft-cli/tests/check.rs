@@ -23178,6 +23178,59 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn check_rejects_decl_binding_mismatch_lint_error() {
+    let path = temp_arcw(
+        "decl-binding-mismatch",
+        r"
+flow @flow.opening start {
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    assert!(
+        !output.status.success(),
+        "decl binding mismatch should fail check, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("error[AWF0102 identity::decl_binding_mismatch]"));
+}
+
+#[test]
+fn check_allows_redundant_decl_identity_warning() {
+    let path = temp_arcw(
+        "redundant-decl-identity-warning",
+        r"
+flow @flow.opening opening {
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    assert!(
+        output.status.success(),
+        "redundant declaration identity is a warning, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("warning[AWF0101 style::redundant_decl_identity]")
+    );
+}
+
+#[test]
 fn check_json_reports_compiler_pipeline_summary() {
     let path = temp_arcw(
         "valid-json",

@@ -175,7 +175,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `documentChanges` when supported and `changes` otherwise. It resolves
   declaration-identity syntax lints through attached attributes, including
   `#[allow(id::flow_module_mismatch)]` on flows, before LSP diagnostics are
-  published. It resolves
+  published. CLI check/runtime-profile compile paths now also fail on syntax
+  lints whose default severity is `error`, so
+  `identity::decl_binding_mismatch` no longer reports as an error while still
+  exiting successfully. Entity declaration identity linting treats a surface
+  alias such as `character @character.alice Alice as alice` as the declaration
+  name for ID comparison instead of comparing against the display label. It resolves
   `arcw.toml` near opened documents, caches profile metadata per document URI,
   refreshes profile metadata on open, save, watched-file, and configuration
   notifications, loads project-local adapter manifests and Rust ABI JSON into
