@@ -7,8 +7,8 @@ use arcweft_glyphon::{
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextFontFamily, RichTextNode, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextShaderRef, RichTextStyle, RichTextTransformOrigin,
-    RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
+    RichTextPresentation, RichTextRange, RichTextShaderRef, RichTextStateScope, RichTextStyle,
+    RichTextTransformOrigin, RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
 };
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
@@ -1397,6 +1397,9 @@ fn apply_builtin_descriptor(
 ) {
     match effect.id.as_str() {
         "wave" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return;
+            }
             let amplitude = param_milli(effect, "amp").unwrap_or(Milli(4000)).as_f32();
             let period = param_milli(effect, "period")
                 .unwrap_or(Milli(12000))
@@ -1416,6 +1419,9 @@ fn apply_builtin_descriptor(
             placement.y += direction[1] * delta;
         }
         "shake" | "jitter" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return;
+            }
             let amplitude = param_milli(effect, "amp").unwrap_or(Milli(2000)).as_f32();
             let speed = param_milli(effect, "speed")
                 .unwrap_or(Milli(16000))
@@ -1426,12 +1432,19 @@ fn apply_builtin_descriptor(
             } else {
                 time_seconds * speed
             };
-            let noise =
-                deterministic_noise(noise_seed, line_id, placement.glyph_index, time_bucket);
+            let noise = deterministic_noise(
+                noise_seed,
+                line_id,
+                shake_noise_index(effect.state_scope, placement),
+                time_bucket,
+            );
             placement.x += (noise[0] * 2.0 - 1.0) * amplitude;
             placement.y += (noise[1] * 2.0 - 1.0) * amplitude;
         }
         "arc" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return;
+            }
             let radius = param_milli(effect, "radius")
                 .unwrap_or(Milli(120_000))
                 .as_f32();
@@ -1444,6 +1457,9 @@ fn apply_builtin_descriptor(
             placement.rotate_degrees += angle.to_degrees() + 90.0;
         }
         "typewriter" => {
+            if !effect_applies_to_glyph_mask(effect) {
+                return;
+            }
             let cps = param_milli(effect, "cps").unwrap_or(Milli(28000)).as_f32();
             let visible = (time_seconds * cps).floor() as usize;
             if placement.glyph_index >= visible.min(glyph_count) {
@@ -1451,6 +1467,34 @@ fn apply_builtin_descriptor(
             }
         }
         _ => {}
+    }
+}
+
+const fn effect_applies_to_glyph_transform(effect: &RichTextEffectDescriptor) -> bool {
+    matches!(
+        effect.phase,
+        RichTextEffectPhase::BeforeLayout
+            | RichTextEffectPhase::LayoutTransform
+            | RichTextEffectPhase::GlyphTransform
+    )
+}
+
+const fn effect_applies_to_glyph_mask(effect: &RichTextEffectDescriptor) -> bool {
+    matches!(effect.phase, RichTextEffectPhase::GlyphMask)
+}
+
+const fn shake_noise_index(scope: RichTextStateScope, placement: &NativeGlyphPlacement) -> usize {
+    match scope {
+        RichTextStateScope::Glyph => placement.glyph_index,
+        RichTextStateScope::Run => placement.run_index,
+        RichTextStateScope::Line
+        | RichTextStateScope::Sentence
+        | RichTextStateScope::Paragraph
+        | RichTextStateScope::Document
+        | RichTextStateScope::DialogueLine
+        | RichTextStateScope::Speaker
+        | RichTextStateScope::Window
+        | RichTextStateScope::Global => 0,
     }
 }
 
@@ -3787,6 +3831,9 @@ fn glyph_alpha_for_time(
         if effect.id != "typewriter" {
             continue;
         }
+        if !effect_applies_to_glyph_mask(effect) {
+            continue;
+        }
         let cps = param_milli(effect, "cps")
             .unwrap_or(Milli(28000))
             .as_f32()
@@ -3810,6 +3857,9 @@ fn presentation_alpha_for_visibility_time(
         .clamp(0.0, 1.0);
     for effect in &presentation.effects {
         if effect.id != "typewriter" {
+            continue;
+        }
+        if !effect_applies_to_glyph_mask(effect) {
             continue;
         }
         let cps = param_milli(effect, "cps")
@@ -4218,6 +4268,79 @@ mod tests {
             f64::from(glyph_bounds.bbox.x) > f64::from(layout_bbox_x + 4.0),
             "observed glyph bbox should follow transformed glyph placement: {glyph_bounds:?}"
         );
+    }
+
+    #[test]
+    fn native_builtin_effect_respects_phase_and_state_scope() {
+        let run_scope = RichTextEffectDescriptor {
+            id: "shake".to_owned(),
+            params: BTreeMap::from([
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Milli { value: Milli(1000) },
+                ),
+                (
+                    "speed".to_owned(),
+                    RichTextParam::Milli { value: Milli::ZERO },
+                ),
+                ("seed".to_owned(), RichTextParam::Int { value: 7 }),
+            ]),
+            target: RichTextEffectTarget::TextBox,
+            phase: RichTextEffectPhase::GlyphTransform,
+            state_scope: RichTextStateScope::Run,
+        };
+        let mut first = test_native_glyph_placement(0, 0);
+        let mut second = test_native_glyph_placement(0, 1);
+        apply_builtin_descriptor("line.scope", &run_scope, 2, 1.0, &mut first);
+        apply_builtin_descriptor("line.scope", &run_scope, 2, 1.0, &mut second);
+        assert_eq!(
+            (first.x, first.y),
+            (second.x, second.y),
+            "run-scoped shake should move glyphs in the same run together"
+        );
+
+        let glyph_scope = RichTextEffectDescriptor {
+            state_scope: RichTextStateScope::Glyph,
+            ..run_scope.clone()
+        };
+        let mut first = test_native_glyph_placement(0, 0);
+        let mut second = test_native_glyph_placement(0, 1);
+        apply_builtin_descriptor("line.scope", &glyph_scope, 2, 1.0, &mut first);
+        apply_builtin_descriptor("line.scope", &glyph_scope, 2, 1.0, &mut second);
+        assert_ne!(
+            (first.x, first.y),
+            (second.x, second.y),
+            "glyph-scoped shake should keep per-glyph jitter"
+        );
+
+        let host_event_phase = RichTextEffectDescriptor {
+            phase: RichTextEffectPhase::HostEvent,
+            ..run_scope
+        };
+        let mut placement = test_native_glyph_placement(0, 0);
+        apply_builtin_descriptor("line.scope", &host_event_phase, 1, 1.0, &mut placement);
+        assert_eq!(
+            (placement.x, placement.y),
+            (0.0, 0.0),
+            "host_event phase should not apply glyph placement"
+        );
+    }
+
+    fn test_native_glyph_placement(run_index: usize, glyph_index: usize) -> NativeGlyphPlacement {
+        NativeGlyphPlacement {
+            run_index,
+            glyph_index,
+            range: glyph_index..glyph_index + 1,
+            x: 0.0,
+            y: 0.0,
+            rotate_degrees: 0.0,
+            skew_x_degrees: 0.0,
+            skew_y_degrees: 0.0,
+            vertical_form: GlyphVerticalForm::None,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            opacity: 1.0,
+        }
     }
 
     #[test]
