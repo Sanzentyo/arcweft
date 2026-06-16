@@ -97,6 +97,11 @@ placement effects instead of only inheriting reveal alpha. Native ruby element
 observation also applies the same presentation to its reported base and
 annotation geometry before converting layout rects to viewport bboxes, keeping
 Agent object crops aligned with transformed ruby captures.
+The deterministic native visual plan exposes renderer diagnostics and can be
+built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
+registered custom IDs run against `TextEffectGlyphContext`, and missing custom
+registries or unsupported custom phases are reported instead of being silently
+reinterpreted as builtins.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

@@ -20,7 +20,7 @@ use glyphon::{
     TextRenderer, Vector, Viewport, Weight,
     cosmic_text::{FeatureTag, FontFeatures},
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -169,6 +169,25 @@ pub struct NativeFrameDebugRegion {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct NativeVisualPlan {
     pub pages: Vec<NativeVisualPage>,
+    pub diagnostics: Vec<NativeVisualDiagnostic>,
+}
+
+/// Diagnostic produced while resolving a native rich-text visual plan.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct NativeVisualDiagnostic {
+    pub severity: NativeVisualDiagnosticSeverity,
+    pub code: String,
+    pub message: String,
+    pub effect_id: Option<String>,
+}
+
+/// Native visual-plan diagnostic severity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeVisualDiagnosticSeverity {
+    Info,
+    Warning,
+    Error,
 }
 
 /// One rendered text page in native visual coordinates.
@@ -315,14 +334,119 @@ impl RichTextEffectRegistry {
             .insert(id.into(), RegisteredTextEffect::Lambda(Box::new(effect)));
     }
 
-    pub fn apply_host_effect(&mut self, id: &str, ctx: &mut TextEffectGlyphContext<'_>) {
+    pub fn contains(&self, id: &str) -> bool {
+        self.effects.contains_key(id)
+    }
+
+    pub fn apply_host_effect(&mut self, id: &str, ctx: &mut TextEffectGlyphContext<'_>) -> bool {
         let Some(effect) = self.effects.get_mut(id) else {
-            return;
+            return false;
         };
         match effect {
             RegisteredTextEffect::Class(effect) => effect.apply_glyph(ctx),
             RegisteredTextEffect::Lambda(effect) => effect(ctx),
         }
+        true
+    }
+}
+
+struct NativeEffectExecution<'a> {
+    registry: Option<&'a mut RichTextEffectRegistry>,
+    state: &'a mut RichTextStateStore,
+    diagnostics: Vec<NativeVisualDiagnostic>,
+    seen_diagnostics: BTreeSet<String>,
+}
+
+impl<'a> NativeEffectExecution<'a> {
+    fn new(
+        registry: Option<&'a mut RichTextEffectRegistry>,
+        state: &'a mut RichTextStateStore,
+    ) -> Self {
+        Self {
+            registry,
+            state,
+            diagnostics: Vec::new(),
+            seen_diagnostics: BTreeSet::new(),
+        }
+    }
+
+    fn into_diagnostics(self) -> Vec<NativeVisualDiagnostic> {
+        self.diagnostics
+    }
+
+    fn apply_custom_effect(
+        &mut self,
+        line_id: &str,
+        effect: &RichTextEffectDescriptor,
+        glyph_count: usize,
+        time_seconds: f32,
+        placement: &mut NativeGlyphPlacement,
+    ) {
+        if !effect_applies_to_renderer_glyph(effect) {
+            self.push_diagnostic(
+                "unsupported_custom_effect_phase",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` uses unsupported native glyph phase {:?}",
+                    effect.id, effect.phase
+                ),
+            );
+            return;
+        }
+        let Some(registry) = self.registry.as_deref_mut() else {
+            self.push_diagnostic(
+                "missing_custom_effect_registry",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` has no native effect registry",
+                    effect.id
+                ),
+            );
+            return;
+        };
+        if !registry.contains(&effect.id) {
+            self.push_diagnostic(
+                "missing_custom_effect",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` is not registered in the native effect registry",
+                    effect.id
+                ),
+            );
+            return;
+        }
+        let mut ctx = TextEffectGlyphContext {
+            time_seconds,
+            line_id,
+            run_index: placement.run_index,
+            glyph_index: placement.glyph_index,
+            glyph_count,
+            state: self.state,
+            placement,
+        };
+        registry.apply_host_effect(&effect.id, &mut ctx);
+    }
+
+    fn push_diagnostic(
+        &mut self,
+        code: &str,
+        severity: NativeVisualDiagnosticSeverity,
+        effect: &RichTextEffectDescriptor,
+        message: String,
+    ) {
+        let key = format!("{code}:{}:{:?}", effect.id, effect.phase);
+        if !self.seen_diagnostics.insert(key) {
+            return;
+        }
+        self.diagnostics.push(NativeVisualDiagnostic {
+            severity,
+            code: code.to_owned(),
+            message,
+            effect_id: Some(effect.id.clone()),
+        });
     }
 }
 
@@ -815,14 +939,43 @@ pub fn capture_frame_color_regions_at_page(
 
 /// Builds a deterministic native visual plan for a rich-text frame.
 pub fn visual_plan_from_frame(frame: &LineDisplayFrame, time_seconds: f32) -> NativeVisualPlan {
-    let pages = display_map_page_ranges(frame)
+    let mut state = RichTextStateStore::default();
+    visual_plan_from_frame_with_effects(frame, time_seconds, None, &mut state)
+}
+
+/// Builds a deterministic native visual plan using renderer-local custom effects.
+pub fn visual_plan_from_frame_with_effect_registry(
+    frame: &LineDisplayFrame,
+    time_seconds: f32,
+    registry: &mut RichTextEffectRegistry,
+    state: &mut RichTextStateStore,
+) -> NativeVisualPlan {
+    visual_plan_from_frame_with_effects(frame, time_seconds, Some(registry), state)
+}
+
+fn visual_plan_from_frame_with_effects(
+    frame: &LineDisplayFrame,
+    time_seconds: f32,
+    registry: Option<&mut RichTextEffectRegistry>,
+    state: &mut RichTextStateStore,
+) -> NativeVisualPlan {
+    let mut effects = NativeEffectExecution::new(registry, state);
+    let mut pages = Vec::new();
+    let page_ranges = display_map_page_ranges(frame)
         .into_iter()
         .enumerate()
-        .filter_map(|(page_index, page_range)| {
-            visual_page_from_range(frame, page_index, page_range, time_seconds)
-        })
-        .collect();
-    NativeVisualPlan { pages }
+        .collect::<Vec<_>>();
+    for (page_index, page_range) in page_ranges {
+        if let Some(page) =
+            visual_page_from_range(frame, page_index, page_range, time_seconds, &mut effects)
+        {
+            pages.push(page);
+        }
+    }
+    NativeVisualPlan {
+        pages,
+        diagnostics: effects.into_diagnostics(),
+    }
 }
 
 /// Test-facing helper for deterministic visual-plan snapshots.
@@ -838,6 +991,7 @@ fn visual_page_from_range(
     page_index: usize,
     page_range: Range<usize>,
     time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
 ) -> Option<NativeVisualPage> {
     let page_layout = layout_page_range(
         frame,
@@ -853,8 +1007,13 @@ fn visual_page_from_range(
         return None;
     }
     let runs = native_visual_runs_from_layout(&page_layout, page_range.start);
-    let glyphs =
-        native_glyph_placements_from_layout(&page_layout, &runs, page_range.start, time_seconds);
+    let glyphs = native_glyph_placements_from_layout(
+        &page_layout,
+        &runs,
+        page_range.start,
+        time_seconds,
+        effects,
+    );
     let shaders = runs
         .iter()
         .flat_map(|run| run.presentation.shaders.iter().map(resolve_shader_filter))
@@ -993,6 +1152,7 @@ fn native_glyph_placements_from_layout(
     runs: &[NativeVisualRun],
     page_start: usize,
     time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
 ) -> Vec<NativeGlyphPlacement> {
     let mut run_counts = BTreeMap::<usize, usize>::new();
     for glyph in &page_layout.layout.glyphs {
@@ -1026,11 +1186,12 @@ fn native_glyph_placements_from_layout(
             let run = runs
                 .iter()
                 .find(|run| run.source_run_index == source_run_index)?;
-            apply_presentation_to_placement(
+            apply_presentation_to_placement_with_effects(
                 &page_layout.frame.line.0,
                 run,
                 *run_counts.get(&glyph.run_index).unwrap_or(&1),
                 time_seconds,
+                effects,
                 &mut placement,
             );
             Some(placement)
@@ -1526,18 +1687,20 @@ const fn glyph_orientation_degrees(orientation: GlyphOrientation) -> f32 {
     }
 }
 
-fn apply_presentation_to_placement(
+fn apply_presentation_to_placement_with_effects(
     line_id: &str,
     run: &NativeVisualRun,
     glyph_count: usize,
     time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
     placement: &mut NativeGlyphPlacement,
 ) {
-    apply_presentation_effects_to_placement(
+    apply_presentation_effects_to_placement_with_execution(
         line_id,
         &run.presentation,
         glyph_count,
         time_seconds,
+        effects,
         placement,
     );
 }
@@ -1566,6 +1729,33 @@ fn apply_presentation_effects_to_placement(
     }
 }
 
+fn apply_presentation_effects_to_placement_with_execution(
+    line_id: &str,
+    presentation: &RichTextPresentation,
+    glyph_count: usize,
+    time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
+    placement: &mut NativeGlyphPlacement,
+) {
+    if let Some(transform) = &presentation.transform {
+        placement.x += transform.translate.x.as_f32();
+        placement.y += transform.translate.y.as_f32();
+        placement.rotate_degrees += transform.rotate.as_degrees_f32();
+        placement.scale_x *= transform.scale.x.as_f32();
+        placement.scale_y *= transform.scale.y.as_f32();
+        placement.skew_x_degrees += transform.skew.x.as_f32();
+        placement.skew_y_degrees += transform.skew.y.as_f32();
+    }
+    if let Some(opacity) = presentation.opacity {
+        placement.opacity *= opacity.as_f32();
+    }
+    for effect in &presentation.effects {
+        if !apply_builtin_descriptor(line_id, effect, glyph_count, time_seconds, placement) {
+            effects.apply_custom_effect(line_id, effect, glyph_count, time_seconds, placement);
+        }
+    }
+}
+
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn apply_builtin_descriptor(
     line_id: &str,
@@ -1573,11 +1763,11 @@ fn apply_builtin_descriptor(
     glyph_count: usize,
     time_seconds: f32,
     placement: &mut NativeGlyphPlacement,
-) {
+) -> bool {
     match effect.id.as_str() {
         "wave" => {
             if !effect_applies_to_glyph_transform(effect) {
-                return;
+                return true;
             }
             let amplitude = param_milli(effect, "amp").unwrap_or(Milli(4000)).as_f32();
             let period = param_milli(effect, "period")
@@ -1599,7 +1789,7 @@ fn apply_builtin_descriptor(
         }
         "shake" | "jitter" => {
             if !effect_applies_to_glyph_transform(effect) {
-                return;
+                return true;
             }
             let amplitude = param_milli(effect, "amp").unwrap_or(Milli(2000)).as_f32();
             let speed = param_milli(effect, "speed")
@@ -1622,7 +1812,7 @@ fn apply_builtin_descriptor(
         }
         "arc" => {
             if !effect_applies_to_glyph_transform(effect) {
-                return;
+                return true;
             }
             let radius = param_milli(effect, "radius")
                 .unwrap_or(Milli(120_000))
@@ -1637,7 +1827,7 @@ fn apply_builtin_descriptor(
         }
         "typewriter" => {
             if !effect_applies_to_glyph_mask(effect) {
-                return;
+                return true;
             }
             let cps = param_milli(effect, "cps").unwrap_or(Milli(28000)).as_f32();
             let visible = (time_seconds * cps).floor() as usize;
@@ -1645,8 +1835,9 @@ fn apply_builtin_descriptor(
                 placement.opacity = 0.0;
             }
         }
-        _ => {}
+        _ => return false,
     }
+    true
 }
 
 const fn effect_applies_to_glyph_transform(effect: &RichTextEffectDescriptor) -> bool {
@@ -1660,6 +1851,16 @@ const fn effect_applies_to_glyph_transform(effect: &RichTextEffectDescriptor) ->
 
 const fn effect_applies_to_glyph_mask(effect: &RichTextEffectDescriptor) -> bool {
     matches!(effect.phase, RichTextEffectPhase::GlyphMask)
+}
+
+const fn effect_applies_to_renderer_glyph(effect: &RichTextEffectDescriptor) -> bool {
+    matches!(
+        effect.phase,
+        RichTextEffectPhase::BeforeLayout
+            | RichTextEffectPhase::LayoutTransform
+            | RichTextEffectPhase::GlyphTransform
+            | RichTextEffectPhase::GlyphMask
+    )
 }
 
 const fn shake_noise_index(scope: RichTextStateScope, placement: &NativeGlyphPlacement) -> usize {
@@ -6465,5 +6666,98 @@ mod tests {
         assert!(glyph.x.abs() < f32::EPSILON);
         assert!(glyph.y.abs() > 0.1);
         assert_eq!(plan.pages[0].runs[0].presentation.effects[0].id, "wave");
+    }
+
+    #[test]
+    fn custom_effect_registry_updates_native_visual_plan_glyphs() {
+        let frame = custom_effect_test_frame(".nudge");
+        let mut registry = RichTextEffectRegistry::default();
+        registry.insert_lambda(".nudge", |ctx| {
+            ctx.placement.x += 11.0;
+            ctx.state.set(
+                RichTextStateScopeKey::Glyph {
+                    line: ctx.line_id.to_owned(),
+                    run_index: ctx.run_index,
+                    glyph_index: ctx.glyph_index,
+                },
+                "nudge.applied",
+                SharedTextValue::Bool(true),
+            );
+        });
+        let mut state = RichTextStateStore::default();
+
+        let plan =
+            visual_plan_from_frame_with_effect_registry(&frame, 0.0, &mut registry, &mut state);
+        let glyph = plan.pages[0].glyphs.first().expect("glyph placement");
+
+        assert!(glyph.x > 10.5 && glyph.x < 11.5);
+        assert!(plan.diagnostics.is_empty());
+        assert_eq!(
+            state.get(
+                &RichTextStateScopeKey::Glyph {
+                    line: "say.test.custom.effect".to_owned(),
+                    run_index: 0,
+                    glyph_index: 0,
+                },
+                "nudge.applied",
+            ),
+            Some(&SharedTextValue::Bool(true))
+        );
+    }
+
+    #[test]
+    fn native_visual_plan_reports_missing_custom_effect_registry() {
+        let frame = custom_effect_test_frame(".sparkle");
+
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert_eq!(
+            plan.diagnostics[0].severity,
+            NativeVisualDiagnosticSeverity::Warning
+        );
+        assert_eq!(plan.diagnostics[0].code, "missing_custom_effect_registry");
+        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some(".sparkle"));
+        assert!(
+            plan.pages[0].glyphs[0].x.abs() < f32::EPSILON,
+            "missing custom effects should no-op instead of being reinterpreted"
+        );
+    }
+
+    fn custom_effect_test_frame(id: &str) -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.custom.effect".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: id.to_owned(),
+                            params: BTreeMap::new(),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Glyph,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
     }
 }
