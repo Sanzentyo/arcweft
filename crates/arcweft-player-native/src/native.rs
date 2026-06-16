@@ -493,6 +493,8 @@ pub struct NativeOffscreenCaptureSession {
     queue: wgpu::Queue,
     format: TextureFormat,
     renderer: NativeOffscreenTextRenderer,
+    effect_registry: RichTextEffectRegistry,
+    effect_state: RichTextStateStore,
 }
 
 impl NativeOffscreenCaptureSession {
@@ -506,7 +508,19 @@ impl NativeOffscreenCaptureSession {
             queue,
             format,
             renderer,
+            effect_registry: RichTextEffectRegistry::default(),
+            effect_state: RichTextStateStore::default(),
         })
+    }
+
+    /// Mutable registry used by custom rich-text effects during offscreen capture.
+    pub fn effect_registry_mut(&mut self) -> &mut RichTextEffectRegistry {
+        &mut self.effect_registry
+    }
+
+    /// Mutable state store shared by custom rich-text effects during offscreen capture.
+    pub fn effect_state_mut(&mut self) -> &mut RichTextStateStore {
+        &mut self.effect_state
     }
 
     /// Renders the first page of a rich-text frame at a viewport origin.
@@ -789,8 +803,16 @@ impl NativeOffscreenCaptureSession {
         target: NativeRenderTarget,
         clear: wgpu::Color,
     ) -> Result<Vec<u8>, NativeWindowError> {
-        self.renderer
-            .prepare(&self.device, &self.queue, rich_text, layout, target)?;
+        let mut effects =
+            NativeEffectExecution::new(Some(&mut self.effect_registry), &mut self.effect_state);
+        self.renderer.prepare(
+            &self.device,
+            &self.queue,
+            rich_text,
+            layout,
+            target,
+            Some(&mut effects),
+        )?;
         let texture = self.renderer.render_texture_with_clear(
             &self.device,
             &self.queue,
@@ -1386,6 +1408,15 @@ fn native_glyph_placements_for_layout(
     layout: &LaidOutText,
     time_seconds: f32,
 ) -> Vec<NativeGlyphPlacement> {
+    native_glyph_placements_for_layout_with_effects(line_key, layout, time_seconds, None)
+}
+
+fn native_glyph_placements_for_layout_with_effects(
+    line_key: &str,
+    layout: &LaidOutText,
+    time_seconds: f32,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
+) -> Vec<NativeGlyphPlacement> {
     let glyph_count_by_run =
         layout
             .glyphs
@@ -1415,13 +1446,24 @@ fn native_glyph_placements_for_layout(
                 scale_y: 1.0,
                 opacity: 1.0,
             };
-            apply_presentation_effects_to_placement(
-                line_key,
-                &glyph.presentation,
-                glyph_count,
-                time_seconds,
-                &mut placement,
-            );
+            if let Some(effects) = effects.as_deref_mut() {
+                apply_presentation_effects_to_placement_with_execution(
+                    line_key,
+                    &glyph.presentation,
+                    glyph_count,
+                    time_seconds,
+                    effects,
+                    &mut placement,
+                );
+            } else {
+                apply_presentation_effects_to_placement(
+                    line_key,
+                    &glyph.presentation,
+                    glyph_count,
+                    time_seconds,
+                    &mut placement,
+                );
+            }
             *run_glyph_index += 1;
             placement
         })
@@ -3468,6 +3510,7 @@ impl NativeOffscreenTextRenderer {
         rich_text: &WindowRichText,
         layout: NativeRenderLayout<'_>,
         target: NativeRenderTarget,
+        mut effects: Option<&mut NativeEffectExecution<'_>>,
     ) -> Result<(), NativeWindowError> {
         prepare_window_text_buffers(
             &mut self.font_system,
@@ -3516,12 +3559,22 @@ impl NativeOffscreenTextRenderer {
             layout.layout,
             target.time_seconds,
         );
-        apply_text_transforms_to_glyph_area(
-            &mut glyph_area,
-            &rich_text.text,
-            layout.layout,
-            target.time_seconds,
-        );
+        if let Some(effects) = effects.as_deref_mut() {
+            apply_text_transforms_to_glyph_area_with_effects(
+                &mut glyph_area,
+                &rich_text.text,
+                layout.layout,
+                target.time_seconds,
+                effects,
+            );
+        } else {
+            apply_text_transforms_to_glyph_area(
+                &mut glyph_area,
+                &rich_text.text,
+                layout.layout,
+                target.time_seconds,
+            );
+        }
         let ruby_glyph_areas = ruby_glyph_areas(
             &self.ruby_buffers,
             &rich_text.text,
@@ -3529,6 +3582,7 @@ impl NativeOffscreenTextRenderer {
             target.height,
             target.time_seconds,
             target.force_alpha_mask,
+            effects,
         );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -3726,6 +3780,7 @@ fn ruby_glyph_areas(
     height: u32,
     time_seconds: f32,
     force_alpha_mask: bool,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> Vec<OwnedGlyphArea> {
     let bounds = native_text_bounds(width, height);
     ruby_buffers
@@ -3756,7 +3811,17 @@ fn ruby_glyph_areas(
             let color = color.into_glyphon();
             area.set_default_color(color);
             area.set_color_for_all_glyphs(color);
-            apply_ruby_transforms_to_glyph_area(&mut area, line_key, ruby, time_seconds);
+            if let Some(effects) = effects.as_deref_mut() {
+                apply_ruby_transforms_to_glyph_area_with_effects(
+                    &mut area,
+                    line_key,
+                    ruby,
+                    time_seconds,
+                    effects,
+                );
+            } else {
+                apply_ruby_transforms_to_glyph_area(&mut area, line_key, ruby, time_seconds);
+            }
             area
         })
         .collect()
@@ -3767,6 +3832,32 @@ fn apply_ruby_transforms_to_glyph_area(
     line_key: &str,
     ruby: &WindowRubyBuffer,
     time_seconds: f32,
+) {
+    apply_ruby_transforms_to_glyph_area_inner(glyph_area, line_key, ruby, time_seconds, None);
+}
+
+fn apply_ruby_transforms_to_glyph_area_with_effects(
+    glyph_area: &mut OwnedGlyphArea,
+    line_key: &str,
+    ruby: &WindowRubyBuffer,
+    time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
+) {
+    apply_ruby_transforms_to_glyph_area_inner(
+        glyph_area,
+        line_key,
+        ruby,
+        time_seconds,
+        Some(effects),
+    );
+}
+
+fn apply_ruby_transforms_to_glyph_area_inner(
+    glyph_area: &mut OwnedGlyphArea,
+    line_key: &str,
+    ruby: &WindowRubyBuffer,
+    time_seconds: f32,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
 ) {
     let glyph_count = glyph_area.len().max(1);
     for (glyph_index, instance) in glyph_area.glyphs_mut().iter_mut().enumerate() {
@@ -3785,13 +3876,24 @@ fn apply_ruby_transforms_to_glyph_area(
             scale_y: 1.0,
             opacity: 1.0,
         };
-        apply_presentation_effects_to_placement(
-            line_key,
-            &ruby.presentation,
-            glyph_count,
-            time_seconds,
-            &mut placement,
-        );
+        if let Some(effects) = effects.as_deref_mut() {
+            apply_presentation_effects_to_placement_with_execution(
+                line_key,
+                &ruby.presentation,
+                glyph_count,
+                time_seconds,
+                effects,
+                &mut placement,
+            );
+        } else {
+            apply_presentation_effects_to_placement(
+                line_key,
+                &ruby.presentation,
+                glyph_count,
+                time_seconds,
+                &mut placement,
+            );
+        }
 
         let affine = ruby_glyph_presentation_affine(&placement, &ruby.presentation, instance);
         instance.origin = Point::new(placement.x, placement.y);
@@ -4198,7 +4300,30 @@ fn apply_text_transforms_to_glyph_area(
     time_seconds: f32,
 ) {
     let transforms = native_glyph_placements_for_layout(line_key, layout, time_seconds);
+    apply_text_transform_placements_to_glyph_area(glyph_area, layout, &transforms);
+}
 
+fn apply_text_transforms_to_glyph_area_with_effects(
+    glyph_area: &mut OwnedGlyphArea,
+    line_key: &str,
+    layout: &LaidOutText,
+    time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
+) {
+    let transforms = native_glyph_placements_for_layout_with_effects(
+        line_key,
+        layout,
+        time_seconds,
+        Some(effects),
+    );
+    apply_text_transform_placements_to_glyph_area(glyph_area, layout, &transforms);
+}
+
+fn apply_text_transform_placements_to_glyph_area(
+    glyph_area: &mut OwnedGlyphArea,
+    layout: &LaidOutText,
+    transforms: &[NativeGlyphPlacement],
+) {
     for instance in glyph_area.glyphs_mut() {
         let Some(placement) = transforms.get(instance.metadata) else {
             continue;
@@ -4450,6 +4575,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             state.surface_config.height,
             60.0,
             false,
+            None,
         );
         let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
         glyph_areas.push(glyph_area.as_glyph_area());
@@ -4975,7 +5101,7 @@ mod tests {
             NativeTextOrigin::default(),
         );
         let ruby_glyph_areas =
-            ruby_glyph_areas(&ruby_buffers, &rich_text.text, 800, 600, 60.0, false);
+            ruby_glyph_areas(&ruby_buffers, &rich_text.text, 800, 600, 60.0, false, None);
         assert_eq!(ruby_glyph_areas.len(), 1);
         assert!(!ruby_glyph_areas[0].is_empty());
         assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
@@ -5127,8 +5253,15 @@ mod tests {
                 600,
                 NativeTextOrigin::default(),
             );
-            let ruby_glyph_areas =
-                ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 60.0, false);
+            let ruby_glyph_areas = ruby_glyph_areas(
+                &ruby_buffers,
+                &page.rich_text.text,
+                800,
+                600,
+                60.0,
+                false,
+                None,
+            );
             assert_vertical_ruby_glyph_areas_align_toward_base(
                 writing_mode,
                 &layout,
@@ -5276,8 +5409,15 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas =
-            ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 60.0, false);
+        let ruby_glyph_areas = ruby_glyph_areas(
+            &ruby_buffers,
+            &page.rich_text.text,
+            800,
+            600,
+            60.0,
+            false,
+            None,
+        );
         assert_ruby_continuation_track(&ruby_buffers, continuation_moves_right);
         assert_vertical_ruby_glyph_placement(&ruby_buffers[0].placement, &layout);
         assert_eq!(ruby_glyph_areas.len(), 2);
@@ -5335,6 +5475,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn ruby_glyph_areas_apply_typewriter_visibility_alpha() {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.vertical.ruby.typewriter.alpha".to_owned()),
@@ -5409,8 +5550,24 @@ mod tests {
             NativeTextOrigin::default(),
         );
 
-        let hidden = ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 0.0, false);
-        let visible = ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 4.0, false);
+        let hidden = ruby_glyph_areas(
+            &ruby_buffers,
+            &page.rich_text.text,
+            800,
+            600,
+            0.0,
+            false,
+            None,
+        );
+        let visible = ruby_glyph_areas(
+            &ruby_buffers,
+            &page.rich_text.text,
+            800,
+            600,
+            4.0,
+            false,
+            None,
+        );
 
         assert!(!hidden.is_empty());
         assert!(
@@ -5540,8 +5697,15 @@ mod tests {
                 horizontal_align,
             ),
         };
-        let after_areas =
-            ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 0.0, false);
+        let after_areas = ruby_glyph_areas(
+            &ruby_buffers,
+            &page.rich_text.text,
+            800,
+            600,
+            0.0,
+            false,
+            None,
+        );
 
         let before = before_area.glyphs()[0].origin;
         let after = &after_areas[0].glyphs()[0];
@@ -6911,6 +7075,32 @@ mod tests {
         assert!(
             plan.pages[0].glyphs[0].x.abs() < f32::EPSILON,
             "missing custom effects should no-op instead of being reinterpreted"
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_custom_effect_registry_for_submitted_glyphs() {
+        let frame = custom_effect_test_frame(".nudge");
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut shifted = NativeOffscreenCaptureSession::new().expect("shifted session");
+        shifted
+            .effect_registry_mut()
+            .insert_lambda(".nudge", |ctx| {
+                ctx.placement.x += 48.0;
+            });
+        let shifted_capture = shifted
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("shifted capture");
+
+        let baseline_bbox = baseline_capture.content_bbox.expect("baseline content");
+        let shifted_bbox = shifted_capture.content_bbox.expect("shifted content");
+        assert!(
+            shifted_bbox.x > baseline_bbox.x + 32,
+            "custom effect registry should move submitted glyph pixels: {baseline_bbox:?} -> {shifted_bbox:?}"
         );
     }
 

@@ -105,7 +105,11 @@ The deterministic native visual plan exposes renderer diagnostics and can be
 built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
 registered custom IDs run against `TextEffectGlyphContext`, and missing custom
 registries or unsupported custom phases are reported instead of being silently
-reinterpreted as builtins.
+reinterpreted as builtins. `NativeOffscreenCaptureSession` also owns a mutable
+effect registry and shared state store; custom registered placement effects run
+when preparing submitted glyphs for framebuffer, color, object-id, and mask
+captures, so registry-backed custom effects are visible in actual native image
+output rather than only in plan snapshots.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base
