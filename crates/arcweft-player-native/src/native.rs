@@ -6786,7 +6786,7 @@ mod tests {
                                 RichTextParam::Milli { value: Milli::ONE },
                             )]),
                             target: RichTextEffectTarget::Run,
-                            phase: RichTextEffectPhase::GlyphTransform,
+                            phase: RichTextEffectPhase::GlyphMask,
                             state_scope: arcweft_render_text::RichTextStateScope::Run,
                         },
                     },
