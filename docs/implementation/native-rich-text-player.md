@@ -101,6 +101,10 @@ placement effects instead of only inheriting reveal alpha. Native ruby element
 observation also applies the same presentation to its reported base and
 annotation geometry before converting layout rects to viewport bboxes, keeping
 Agent object crops aligned with transformed ruby captures.
+Builtin wave effects use the descriptor target when choosing their phase index:
+`target=glyph` evaluates per glyph, while `target=run` and broader targets move
+the target as one placement group. Shake and jitter continue to use
+`state_scope` for deterministic grouping.
 The deterministic native visual plan exposes renderer diagnostics and can be
 built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
 registered custom IDs run against `TextEffectGlyphContext`, and missing custom

@@ -228,4 +228,6 @@ typewriter masking for `glyph_mask`, and registry-dispatched custom placement
 effects for observe, visual-plan, and framebuffer capture paths. Color,
 offscreen shader, post-process, and host-event phases remain separate renderer
 capabilities and must be diagnosed if a placement-only path is asked to execute
-them.
+them. For builtin wave placement, `target=glyph` evaluates the phase per glyph,
+while `target=run` and broader targets evaluate the placement as one group;
+shake and jitter grouping is controlled by `state_scope`.

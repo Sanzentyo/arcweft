@@ -1945,9 +1945,8 @@ fn apply_builtin_descriptor(
             let direction = param_vec2(effect, "dir")
                 .or_else(|| axis_direction(effect))
                 .unwrap_or([0.0, 1.0]);
-            let t = (usize_to_f32_saturating(placement.glyph_index) / period
-                + time_seconds * speed
-                + phase)
+            let target_index = effect_target_wave_index(effect.target, placement);
+            let t = (usize_to_f32_saturating(target_index) / period + time_seconds * speed + phase)
                 * std::f32::consts::TAU;
             let delta = amplitude * t.sin();
             placement.x += direction[0] * delta;
@@ -2004,6 +2003,21 @@ fn apply_builtin_descriptor(
         _ => return false,
     }
     true
+}
+
+const fn effect_target_wave_index(
+    target: RichTextEffectTarget,
+    placement: &NativeGlyphPlacement,
+) -> usize {
+    match target {
+        RichTextEffectTarget::Glyph => placement.glyph_index,
+        RichTextEffectTarget::Run => placement.run_index,
+        RichTextEffectTarget::Document
+        | RichTextEffectTarget::Line
+        | RichTextEffectTarget::Sentence
+        | RichTextEffectTarget::TextBox
+        | RichTextEffectTarget::Screen => 0,
+    }
 }
 
 const fn effect_applies_to_glyph_transform(effect: &RichTextEffectDescriptor) -> bool {
@@ -5057,6 +5071,46 @@ mod tests {
             (first.x, first.y),
             (second.x, second.y),
             "glyph-scoped shake should keep per-glyph jitter"
+        );
+
+        let run_target_wave = RichTextEffectDescriptor {
+            id: "wave".to_owned(),
+            params: BTreeMap::from([
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Milli { value: Milli(1000) },
+                ),
+                (
+                    "period".to_owned(),
+                    RichTextParam::Milli { value: Milli(4000) },
+                ),
+            ]),
+            target: RichTextEffectTarget::Run,
+            phase: RichTextEffectPhase::GlyphTransform,
+            state_scope: RichTextStateScope::Run,
+        };
+        let mut first = test_native_glyph_placement(0, 0);
+        let mut second = test_native_glyph_placement(0, 1);
+        apply_builtin_descriptor("line.scope", &run_target_wave, 2, 0.0, &mut first);
+        apply_builtin_descriptor("line.scope", &run_target_wave, 2, 0.0, &mut second);
+        assert_eq!(
+            (first.x, first.y),
+            (second.x, second.y),
+            "run-targeted wave should move a run as one target"
+        );
+
+        let glyph_target_wave = RichTextEffectDescriptor {
+            target: RichTextEffectTarget::Glyph,
+            ..run_target_wave
+        };
+        let mut first = test_native_glyph_placement(0, 0);
+        let mut second = test_native_glyph_placement(0, 1);
+        apply_builtin_descriptor("line.scope", &glyph_target_wave, 2, 0.0, &mut first);
+        apply_builtin_descriptor("line.scope", &glyph_target_wave, 2, 0.0, &mut second);
+        assert_ne!(
+            (first.x, first.y),
+            (second.x, second.y),
+            "glyph-targeted wave should evaluate per glyph"
         );
 
         let host_event_phase = RichTextEffectDescriptor {
