@@ -93,7 +93,10 @@ as wave/shake/arc to the actual submitted glyph instances, including broad
 effect targets after they have been resolved onto a run's presentation. Ruby
 annotation GlyphAreas use the same submitted-glyph presentation path, so ruby
 placement follows translate, rotate, scale, skew, origin pivots, and builtin
-placement effects instead of only inheriting reveal alpha.
+placement effects instead of only inheriting reveal alpha. Native ruby element
+observation also applies the same presentation to its reported base and
+annotation geometry before converting layout rects to viewport bboxes, keeping
+Agent object crops aligned with transformed ruby captures.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

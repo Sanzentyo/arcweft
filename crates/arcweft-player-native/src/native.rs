@@ -1109,11 +1109,13 @@ fn native_element_bounds_from_layout_at(
             let index = *page_layout.ruby_indices.get(ruby.ruby_index)?;
             Some((
                 index,
-                NativeRubyLayoutGeometry {
-                    object: ruby.base_bounds.union(ruby.ruby_bounds),
-                    base: ruby.base_bounds,
-                    annotation: ruby.ruby_bounds,
-                },
+                transformed_ruby_geometry(
+                    &page_layout.frame.line.0,
+                    &page_layout.frame.text,
+                    index,
+                    ruby,
+                    time_seconds,
+                ),
             ))
         })
         .fold(
@@ -1287,6 +1289,183 @@ fn transform_glyph_local_point(
         placement.x + matrix_a.mul_add(x, matrix_c.mul_add(y, matrix_e)),
         placement.y + matrix_b.mul_add(x, matrix_d.mul_add(y, matrix_f)),
     )
+}
+
+fn transformed_ruby_geometry(
+    line_key: &str,
+    text: &str,
+    source_index: usize,
+    ruby: &arcweft_text_layout::LaidOutRuby,
+    time_seconds: f32,
+) -> NativeRubyLayoutGeometry {
+    let base_count = text
+        .get(ruby.base_range.start..ruby.base_range.end)
+        .map_or(1, |base| base.chars().count().max(1));
+    let ruby_count = ruby.ruby.chars().count().max(1);
+    let base = transformed_ruby_sequence_bounds(
+        line_key,
+        &ruby.presentation,
+        source_index,
+        ruby.base_bounds,
+        ruby.writing_mode,
+        base_count,
+        time_seconds,
+    );
+    let annotation = transformed_ruby_sequence_bounds(
+        line_key,
+        &ruby.presentation,
+        source_index,
+        ruby.ruby_bounds,
+        ruby.writing_mode,
+        ruby_count,
+        time_seconds,
+    );
+    NativeRubyLayoutGeometry {
+        object: base.union(annotation),
+        base,
+        annotation,
+    }
+}
+
+fn transformed_ruby_sequence_bounds(
+    line_key: &str,
+    presentation: &RichTextPresentation,
+    source_index: usize,
+    bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+    glyph_count: usize,
+    time_seconds: f32,
+) -> LayoutRect {
+    (0..glyph_count)
+        .map(|glyph_index| {
+            let cell = ruby_sequence_cell(bounds, writing_mode, glyph_count, glyph_index);
+            transformed_presentation_rect(
+                line_key,
+                presentation,
+                source_index,
+                glyph_index,
+                glyph_count,
+                cell,
+                time_seconds,
+            )
+        })
+        .reduce(LayoutRect::union)
+        .unwrap_or(bounds)
+}
+
+fn ruby_sequence_cell(
+    bounds: LayoutRect,
+    writing_mode: RichTextWritingMode,
+    glyph_count: usize,
+    glyph_index: usize,
+) -> LayoutRect {
+    let glyph_count = usize_to_f32_saturating(glyph_count).max(1.0);
+    match writing_mode {
+        RichTextWritingMode::HorizontalTb => {
+            let width = (bounds.width / glyph_count).max(1.0);
+            LayoutRect::new(
+                bounds.x + width * usize_to_f32_saturating(glyph_index),
+                bounds.y,
+                width,
+                bounds.height,
+            )
+        }
+        RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
+            let height = (bounds.height / glyph_count).max(1.0);
+            LayoutRect::new(
+                bounds.x,
+                bounds.y + height * usize_to_f32_saturating(glyph_index),
+                bounds.width,
+                height,
+            )
+        }
+    }
+}
+
+fn transformed_presentation_rect(
+    line_key: &str,
+    presentation: &RichTextPresentation,
+    source_index: usize,
+    glyph_index: usize,
+    glyph_count: usize,
+    rect: LayoutRect,
+    time_seconds: f32,
+) -> LayoutRect {
+    let mut placement = NativeGlyphPlacement {
+        run_index: source_index,
+        glyph_index,
+        range: glyph_index..glyph_index + 1,
+        x: rect.x,
+        y: rect.y,
+        rotate_degrees: 0.0,
+        skew_x_degrees: 0.0,
+        skew_y_degrees: 0.0,
+        vertical_form: GlyphVerticalForm::None,
+        scale_x: 1.0,
+        scale_y: 1.0,
+        opacity: 1.0,
+    };
+    apply_presentation_effects_to_placement(
+        line_key,
+        presentation,
+        glyph_count,
+        time_seconds,
+        &mut placement,
+    );
+    let affine = presentation_affine(
+        &placement,
+        0.0,
+        layout_rect_transform_pivot(presentation, rect),
+    );
+    transformed_local_rect(rect.width, rect.height, &placement, affine)
+}
+
+fn transformed_local_rect(
+    width: f32,
+    height: f32,
+    placement: &NativeGlyphPlacement,
+    affine: Option<[f32; 6]>,
+) -> LayoutRect {
+    let corners = [
+        transform_glyph_local_point(0.0, 0.0, placement, affine),
+        transform_glyph_local_point(width, 0.0, placement, affine),
+        transform_glyph_local_point(width, height, placement, affine),
+        transform_glyph_local_point(0.0, height, placement, affine),
+    ];
+    let min_x = corners
+        .iter()
+        .map(|point| point.x)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = corners
+        .iter()
+        .map(|point| point.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = corners
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::INFINITY, f32::min);
+    let max_y = corners
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    LayoutRect::new(
+        min_x,
+        min_y,
+        (max_x - min_x).max(1.0),
+        (max_y - min_y).max(1.0),
+    )
+}
+
+fn layout_rect_transform_pivot(presentation: &RichTextPresentation, rect: LayoutRect) -> Vector {
+    let Some(transform) = &presentation.transform else {
+        return Vector::new(0.0, 0.0);
+    };
+    match transform.origin {
+        RichTextTransformOrigin::BaselineStart => Vector::new(0.0, 0.0),
+        RichTextTransformOrigin::BaselineCenter
+        | RichTextTransformOrigin::Center
+        | RichTextTransformOrigin::GlyphCenter => Vector::new(rect.width * 0.5, rect.height * 0.5),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -5067,6 +5246,94 @@ mod tests {
                 || affine.values[4].abs() > 0.01
                 || affine.values[5].abs() > 0.01,
             "ruby skew/rotation/scale/origin should produce a non-identity affine: {affine:?}"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn native_ruby_element_bounds_follow_transform_and_builtin_translation() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.ruby.transform.bounds".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Transform {
+                        transform: RichTextTransform {
+                            translate: RichTextVec2::new(Milli(5000), Milli(-2000)),
+                            target: RichTextEffectTarget::TextBox,
+                            ..RichTextTransform::default()
+                        },
+                    },
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "wave".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Milli { value: Milli(3000) },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Vec2 {
+                                        value: RichTextVec2::new(Milli::ONE, Milli::ZERO),
+                                    },
+                                ),
+                                (
+                                    "phase".to_owned(),
+                                    RichTextParam::Milli { value: Milli(250) },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::TextBox,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "揺".to_owned(),
+                    ruby: "ゆれ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "transform".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page_layout = layout_page_range(
+            &frame,
+            0.."揺".len(),
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("page layout resolves");
+        let layout_annotation_x = page_layout.layout.ruby[0].ruby_bounds.x;
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0);
+        let ruby_bounds = bounds
+            .iter()
+            .find_map(|bounds| match bounds.element {
+                NativeFrameElement::Ruby { .. } => bounds.ruby.as_ref(),
+                _ => None,
+            })
+            .expect("ruby element bounds are reported");
+        assert!(
+            f64::from(ruby_bounds.annotation_bbox.x) > f64::from(layout_annotation_x + 7.0),
+            "observed ruby annotation bbox should follow translate plus wave: layout x={layout_annotation_x}, observed={:?}",
+            ruby_bounds.annotation_bbox
         );
     }
 
