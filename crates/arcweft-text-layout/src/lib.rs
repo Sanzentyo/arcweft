@@ -182,7 +182,7 @@ fn ruby_metrics_from_presentation(
         gap: presentation
             .layout
             .as_ref()
-            .and_then(|layout| positive_milli(layout.ruby_gap))
+            .and_then(|layout| nonnegative_milli(layout.ruby_gap))
             .unwrap_or(DEFAULT_RUBY_GAP),
         overhang: presentation
             .layout
@@ -201,6 +201,12 @@ fn positive_milli(value: Option<arcweft_render_text::Milli>) -> Option<f32> {
     value
         .map(arcweft_render_text::Milli::as_f32)
         .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn nonnegative_milli(value: Option<arcweft_render_text::Milli>) -> Option<f32> {
+    value
+        .map(arcweft_render_text::Milli::as_f32)
+        .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 /// Strictness preset for JLREQ punctuation pair planning.
@@ -342,15 +348,14 @@ pub fn layout_frame(
         let glyph_start = out.glyphs.len();
         match writing_mode {
             RichTextWritingMode::HorizontalTb => {
-                layout_horizontal_run(
-                    &mut out.glyphs,
+                let context = HorizontalRunLayoutContext {
                     run_index,
-                    range.start,
-                    text,
-                    &run.presentation,
-                    run_config,
-                    &mut state,
-                );
+                    range_start: range.start,
+                    presentation: &run.presentation,
+                    ruby_annotations: &frame.display_map.ruby_annotations,
+                    config: run_config,
+                };
+                layout_horizontal_run(&mut out.glyphs, text, context, &mut state);
             }
             RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
                 let context = RunLayoutContext {
@@ -528,32 +533,58 @@ impl LayoutCursor {
     }
 }
 
-fn layout_horizontal_run(
-    glyphs: &mut Vec<LaidOutGlyph>,
+#[derive(Clone, Copy)]
+struct HorizontalRunLayoutContext<'a> {
     run_index: usize,
     range_start: usize,
-    text: &str,
-    presentation: &RichTextPresentation,
+    presentation: &'a RichTextPresentation,
+    ruby_annotations: &'a [RichTextRubyAnnotation],
     config: TextLayoutConfig,
+}
+
+fn layout_horizontal_run(
+    glyphs: &mut Vec<LaidOutGlyph>,
+    text: &str,
+    context: HorizontalRunLayoutContext<'_>,
     state: &mut TextLayoutState,
 ) {
     let cursor = &mut state.horizontal;
-    for (offset, ch) in text.char_indices() {
+    let char_indices = text.char_indices().collect::<Vec<_>>();
+    let mut char_index = 0usize;
+    while let Some((offset, ch)) = char_indices.get(char_index).copied() {
         if ch == '\n' {
-            cursor.x = config.origin.x;
-            cursor.y += config.line_advance;
+            cursor.x = context.config.origin.x;
+            cursor.y += context.config.line_advance;
+            char_index += 1;
             continue;
         }
-        let width = horizontal_advance(ch, config.font_size);
-        if horizontal_cluster_should_wrap(cursor.x, width, config) {
-            cursor.x = config.origin.x;
-            cursor.y += config.line_advance;
+        let absolute_start = context.range_start + offset;
+        if let Some(annotation) = horizontal_ruby_annotation_starting_at(
+            context.ruby_annotations,
+            context.range_start,
+            text,
+            absolute_start,
+        ) {
+            let base_end = annotation.base_range.end;
+            let next_index = layout_horizontal_ruby_base(glyphs, text, annotation, context, cursor);
+            char_index = char_indices
+                .iter()
+                .position(|(candidate_offset, _)| {
+                    context.range_start + *candidate_offset >= base_end
+                })
+                .unwrap_or(next_index);
+            continue;
         }
-        let start = range_start + offset;
+        let width = horizontal_advance(ch, context.config.font_size);
+        if horizontal_cluster_should_wrap(cursor.x, width, context.config) {
+            cursor.x = context.config.origin.x;
+            cursor.y += context.config.line_advance;
+        }
+        let start = context.range_start + offset;
         let end = start + ch.len_utf8();
-        let bounds = horizontal_glyph_bounds(cursor.x, cursor.y, width, config);
+        let bounds = horizontal_glyph_bounds(cursor.x, cursor.y, width, context.config);
         glyphs.push(LaidOutGlyph {
-            run_index,
+            run_index: context.run_index,
             range: RichTextRange::new(start, end),
             text: ch.to_string(),
             origin: LayoutPoint::new(cursor.x, cursor.y),
@@ -562,10 +593,77 @@ fn layout_horizontal_run(
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
             vertical_form: GlyphVerticalForm::None,
-            presentation: presentation.clone(),
+            presentation: context.presentation.clone(),
         });
         cursor.x += width;
+        char_index += 1;
     }
+}
+
+fn horizontal_ruby_annotation_starting_at<'a>(
+    annotations: &'a [RichTextRubyAnnotation],
+    range_start: usize,
+    text: &str,
+    absolute_start: usize,
+) -> Option<&'a RichTextRubyAnnotation> {
+    let range_end = range_start + text.len();
+    annotations.iter().find(|annotation| {
+        annotation.base_range.start == absolute_start
+            && annotation.base_range.start < annotation.base_range.end
+            && annotation.base_range.end <= range_end
+            && text
+                .get(
+                    (annotation.base_range.start - range_start)
+                        ..(annotation.base_range.end - range_start),
+                )
+                .is_some_and(|base| !base.contains('\n'))
+    })
+}
+
+fn layout_horizontal_ruby_base(
+    glyphs: &mut Vec<LaidOutGlyph>,
+    text: &str,
+    annotation: &RichTextRubyAnnotation,
+    context: HorizontalRunLayoutContext<'_>,
+    cursor: &mut LayoutCursor,
+) -> usize {
+    let base_start = annotation.base_range.start - context.range_start;
+    let base_end = annotation.base_range.end - context.range_start;
+    let Some(base_text) = text.get(base_start..base_end) else {
+        return 0;
+    };
+    let base_width = horizontal_text_advance(base_text, context.config.font_size);
+    let metrics = ruby_metrics(annotation, context.config);
+    let allocation_width = horizontal_ruby_base_allocation_width(
+        base_width,
+        ruby_text_extent(&annotation.ruby, metrics.font_size),
+        context.config,
+    );
+    if horizontal_cluster_should_wrap(cursor.x, allocation_width, context.config) {
+        cursor.x = context.config.origin.x;
+        cursor.y += context.config.line_advance;
+    }
+    let mut glyph_x = cursor.x + (allocation_width - base_width).max(0.0) * 0.5;
+    for (offset, ch) in base_text.char_indices() {
+        let width = horizontal_advance(ch, context.config.font_size);
+        let start = context.range_start + base_start + offset;
+        let end = start + ch.len_utf8();
+        glyphs.push(LaidOutGlyph {
+            run_index: context.run_index,
+            range: RichTextRange::new(start, end),
+            text: ch.to_string(),
+            origin: LayoutPoint::new(glyph_x, cursor.y),
+            advance: LayoutSize::new(width, 0.0),
+            bounds: horizontal_glyph_bounds(glyph_x, cursor.y, width, context.config),
+            writing_mode: RichTextWritingMode::HorizontalTb,
+            orientation: GlyphOrientation::Upright,
+            vertical_form: GlyphVerticalForm::None,
+            presentation: context.presentation.clone(),
+        });
+        glyph_x += width;
+    }
+    cursor.x += allocation_width;
+    text[..base_end].chars().count()
 }
 
 fn horizontal_glyph_bounds(
@@ -577,6 +675,13 @@ fn horizontal_glyph_bounds(
     let height = config.font_size.max(1.0).min(config.line_advance.max(1.0));
     let y = line_y + (config.line_advance - height).max(0.0) * 0.5;
     LayoutRect::new(x, y, width.max(1.0), height)
+}
+
+fn horizontal_text_advance(text: &str, font_size: f32) -> f32 {
+    text.chars()
+        .filter(|ch| *ch != '\n')
+        .map(|ch| horizontal_advance(ch, font_size))
+        .sum()
 }
 
 fn horizontal_cluster_should_wrap(cursor_x: f32, width: f32, config: TextLayoutConfig) -> bool {
@@ -1820,13 +1925,21 @@ fn expand_horizontal_ruby_base(
     ruby_width: f32,
     config: TextLayoutConfig,
 ) -> LayoutRect {
-    let width = ruby_width.max(base_bounds.width).min(config.size.width);
+    let width = horizontal_ruby_base_allocation_width(base_bounds.width, ruby_width, config);
     let max_right = config.origin.x + config.size.width;
     let centered_x = base_bounds.x + (base_bounds.width - width) * 0.5;
     let x = centered_x
         .max(config.origin.x)
         .min((max_right - width).max(config.origin.x));
     LayoutRect::new(x, base_bounds.y, width, base_bounds.height)
+}
+
+fn horizontal_ruby_base_allocation_width(
+    base_width: f32,
+    ruby_width: f32,
+    config: TextLayoutConfig,
+) -> f32 {
+    ruby_width.max(base_width).min(config.size.width)
 }
 
 fn expand_vertical_ruby_base(
@@ -6272,6 +6385,21 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_ruby_gap_accepts_zero_override() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+        frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+            ruby_gap: Some(Milli(0)),
+            ..RichTextLayout::default()
+        });
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        let base = layout.ruby[0].base_bounds;
+        let annotation = layout.ruby[0].ruby_bounds;
+        assert_f32_eq(base.y - annotation.bottom(), 0.0);
+    }
+
+    #[test]
     fn horizontal_ruby_collision_shifts_adjacent_annotations() {
         let mut frame = frame_with_run("夢星", RichTextPresentation::default());
         push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
@@ -6310,6 +6438,40 @@ mod tests {
             layout.ruby[0].ruby_bounds.width,
         );
         assert_f32_eq(layout.ruby[0].ruby_bounds.x, layout.ruby[0].base_bounds.x);
+    }
+
+    #[test]
+    fn long_horizontal_ruby_reserves_inline_advance_before_following_text() {
+        let mut frame = frame_with_run("政を", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "政".len(), "まつりごと");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 1);
+        assert!(
+            layout.glyphs[1].bounds.x >= layout.ruby[0].base_bounds.right(),
+            "following body glyph should start after the expanded long-ruby base"
+        );
+        assert_f32_eq(
+            layout.glyphs[0].bounds.x + layout.glyphs[0].bounds.width * 0.5,
+            layout.ruby[0].base_bounds.x + layout.ruby[0].base_bounds.width * 0.5,
+        );
+    }
+
+    #[test]
+    fn short_horizontal_ruby_centers_over_wide_base() {
+        let base = "中央の帝国将官たち";
+        let mut frame = frame_with_run(base, RichTextPresentation::default());
+        push_ruby(&mut frame, 0, base.len(), "ぐん");
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        assert_eq!(layout.ruby.len(), 1);
+        let base_center = layout.ruby[0].base_bounds.x + layout.ruby[0].base_bounds.width * 0.5;
+        let ruby_center = layout.ruby[0].ruby_bounds.x + layout.ruby[0].ruby_bounds.width * 0.5;
+        assert_f32_eq(base_center, ruby_center);
+        assert!(
+            layout.ruby[0].ruby_bounds.width < layout.ruby[0].base_bounds.width,
+            "short ruby should remain centered instead of expanding the base"
+        );
     }
 
     #[test]
