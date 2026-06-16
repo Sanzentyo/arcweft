@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Arcweft HTML Ruby Baseline</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      background: #000;
+    }
+
+    .stage {
+      box-sizing: border-box;
+      width: 1120px;
+      height: 180px;
+      padding: 24px;
+      background: #000;
+      color: rgb(217 242 255);
+      font-family: "Yu Gothic", "YuGothic", "Meiryo", sans-serif;
+      font-size: 29px;
+      font-weight: 400;
+      line-height: 42px;
+    }
+
+    ruby {
+      ruby-position: over;
+    }
+
+    rt {
+      color: rgb(170 190 220);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 13px;
+    }
+
+    .reference {
+      box-sizing: border-box;
+      width: 880px;
+      height: 90px;
+      margin-top: 24px;
+      padding: 8px 16px;
+      background: #fff;
+      color: #111;
+      font-family: serif;
+      font-size: 38px;
+      line-height: 54px;
+    }
+
+    .reference rt {
+      color: #111;
+      font-size: 16px;
+      line-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="aw-like">
+    極端ルビ:
+    <ruby id="long"><rb id="long-rb">政</rb><rt id="long-rt">まつりごと</rt></ruby>を行うため、<ruby id="short"><rb id="short-rb">中央の帝国将官たち</rb><rt id="short-rt">ぐん</rt></ruby>が集まる。
+  </div>
+  <div class="reference" id="ref-like">
+    <ruby><rb>政</rb><rt>まつりごと</rt></ruby>を行うため、中央の帝国将官たちが
+  </div>
+</body>
+</html>
