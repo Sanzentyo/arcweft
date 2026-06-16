@@ -1,0 +1,161 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arcweft issue 015 vertical ruby and punctuation baseline</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: "Yu Gothic", "YuGothic", "Meiryo", sans-serif;
+    background: #20262f;
+    color: #d9f2ff;
+  }
+
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #20262f;
+  }
+
+  .stage {
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    gap: 24px;
+    align-items: start;
+  }
+
+  .label {
+    margin: 0 0 8px;
+    color: #a9b8c8;
+    font-size: 13px;
+  }
+
+  .sample {
+    box-sizing: border-box;
+    padding: 24px;
+    background: #000;
+    border: 1px solid #324050;
+    overflow: hidden;
+  }
+
+  .narrow {
+    width: 360px;
+    height: 208px;
+  }
+
+  .tall {
+    width: 360px;
+    height: 900px;
+  }
+
+  .line {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 29px;
+    line-height: 42px;
+  }
+
+  .narrow .line {
+    height: 160px;
+  }
+
+  .tall .line {
+    height: 840px;
+  }
+
+  ruby {
+    ruby-position: over;
+  }
+
+  rt {
+    color: rgb(170 190 220);
+    font-size: 13px;
+  }
+
+  .tight-rt rt {
+    line-height: 13px;
+  }
+
+  .mark {
+    outline: 1px solid rgb(255 180 60 / 55%);
+    outline-offset: 0;
+  }
+</style>
+
+<div class="stage">
+  <section>
+    <p class="label">HTML narrow, browser rt line-height</p>
+    <div class="sample narrow">
+      <div class="line" id="narrow-normal">
+        縦極端ルビ:
+        <ruby id="narrow-long"><rb id="narrow-long-rb">政</rb><rt id="narrow-long-rt">まつりごと</rt></ruby>を行うため、<ruby id="narrow-short"><rb id="narrow-short-rb">中央の帝国将官たち</rb><rt id="narrow-short-rt">ぐん</rt></ruby>が集まる。
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="label">HTML tall, browser rt line-height</p>
+    <div class="sample tall">
+      <div class="line" id="tall-normal">
+        縦極端ルビ:
+        <ruby id="tall-long"><rb id="tall-long-rb">政</rb><rt id="tall-long-rt">まつりごと</rt></ruby>を行うため、<ruby id="tall-short"><rb id="tall-short-rb">中央の帝国将官たち</rb><rt id="tall-short-rt">ぐん</rt></ruby>が集まる。
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="label">HTML tall, rt line-height 13px</p>
+    <div class="sample tall tight-rt">
+      <div class="line" id="tall-tight">
+        縦極端ルビ:
+        <ruby id="tight-long"><rb id="tight-long-rb">政</rb><rt id="tight-long-rt">まつりごと</rt></ruby>を行うため、<ruby id="tight-short"><rb id="tight-short-rb">中央の帝国将官たち</rb><rt id="tight-short-rt"><span id="tight-gu" class="mark">ぐ</span><span id="tight-n" class="mark">ん</span></rt></ruby>が集まる<span id="tight-period" class="mark">。</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  globalThis.arcweftIssue015Metrics = () => {
+    const ids = [
+      "narrow-normal",
+      "narrow-long-rb",
+      "narrow-long-rt",
+      "narrow-short-rb",
+      "narrow-short-rt",
+      "tall-normal",
+      "tall-long-rb",
+      "tall-long-rt",
+      "tall-short-rb",
+      "tall-short-rt",
+      "tall-tight",
+      "tight-long-rb",
+      "tight-long-rt",
+      "tight-short-rb",
+      "tight-short-rt",
+      "tight-gu",
+      "tight-n",
+      "tight-period",
+    ];
+    const rects = Object.fromEntries(ids.map((id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return [id, {
+        x: Math.round(r.x * 1000) / 1000,
+        y: Math.round(r.y * 1000) / 1000,
+        width: Math.round(r.width * 1000) / 1000,
+        height: Math.round(r.height * 1000) / 1000,
+        right: Math.round(r.right * 1000) / 1000,
+        bottom: Math.round(r.bottom * 1000) / 1000,
+      }];
+    }));
+    const centerY = (id) => Math.round((rects[id].y + rects[id].height * 0.5) * 1000) / 1000;
+    return {
+      rects,
+      centers: {
+        tallShortBase: centerY("tall-short-rb"),
+        tallShortRuby: centerY("tall-short-rt"),
+        tightShortBase: centerY("tight-short-rb"),
+        tightShortRuby: centerY("tight-short-rt"),
+        tightGu: centerY("tight-gu"),
+        tightN: centerY("tight-n"),
+      },
+    };
+  };
+</script>

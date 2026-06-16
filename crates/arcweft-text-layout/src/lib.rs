@@ -679,7 +679,7 @@ fn horizontal_glyph_bounds(
 
 fn vertical_glyph_bounds(column_x: f32, glyph_y: f32, config: TextLayoutConfig) -> LayoutRect {
     let width = config.font_size.max(1.0).min(config.line_advance.max(1.0));
-    LayoutRect::new(column_x, glyph_y, width, config.line_advance.max(1.0))
+    LayoutRect::new(column_x, glyph_y, width, config.font_size.max(1.0))
 }
 
 fn horizontal_text_advance(text: &str, font_size: f32) -> f32 {
@@ -1103,12 +1103,12 @@ fn vertical_column_segment_cost(
     }
 
     let remaining = (capacity - used).max(0.0);
-    let capacity = capacity.max(context.config.line_advance);
+    let capacity = capacity.max(context.config.font_size);
     let badness = 100.0 * (remaining / capacity).powi(3);
     let overflow_penalty =
-        ((overflow - allowed_overhang).max(0.0) / context.config.line_advance).powi(2) * 10_000.0;
+        ((overflow - allowed_overhang).max(0.0) / context.config.font_size).powi(2) * 10_000.0;
     let allowed_overhang_penalty = if overhang_uses_linebreak_continuation {
-        (overflow.min(allowed_overhang) / context.config.line_advance).powi(2) * 50.0
+        (overflow.min(allowed_overhang) / context.config.font_size).powi(2) * 50.0
     } else {
         0.0
     };
@@ -1259,7 +1259,7 @@ fn vertical_column_segment_overhang_allowance(
     clusters[suffix_start..=last_cluster_index]
         .iter()
         .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
-        .map(|_| config.line_advance)
+        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
         .sum()
 }
 
@@ -1657,7 +1657,7 @@ fn vertical_cluster_origin_y(
 ) -> f32 {
     let column_end = config.origin.y + config.size.height;
     if jlreq_punctuation::is_hanging_cluster(grapheme)
-        && cursor_y + config.line_advance > column_end
+        && cursor_y + config.font_size > column_end
         && cursor_y > config.origin.y
     {
         (column_end - advance).max(config.origin.y)
@@ -1744,7 +1744,7 @@ fn vertical_cluster_required_inline_extent(
             ruby_text_extent(&annotation.ruby, ruby_metrics(annotation, config).font_size)
                 .max(base_cluster_extent)
         })
-        .fold(config.line_advance, f32::max)
+        .fold(config.font_size, f32::max)
         .min(config.size.height)
 }
 
@@ -1793,7 +1793,7 @@ fn vertical_cluster_span_advance(clusters: &[VerticalCluster], config: TextLayou
         .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
         .map(|cluster| vertical_cluster_advance(&cluster.text, config))
         .sum::<f32>()
-        .max(config.line_advance)
+        .max(config.font_size)
 }
 
 fn vertical_ruby_base_allocation_height(
@@ -1825,9 +1825,9 @@ fn vertical_inter_character_ruby_extent_after(
 
 fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
     if jlreq_punctuation::is_compressible_cluster(grapheme) {
-        config.line_advance * 0.5
+        config.font_size * 0.5
     } else {
-        config.line_advance
+        config.font_size
     }
 }
 
@@ -1869,7 +1869,7 @@ fn vertical_ruby_base_cluster_extent(
         })
         .map(|cluster| vertical_cluster_advance(&cluster.text, config))
         .sum::<f32>()
-        .max(config.line_advance)
+        .max(config.font_size)
 }
 
 fn layout_ruby(
@@ -2691,7 +2691,7 @@ mod tests {
             vertical_presentation(RichTextWritingMode::VerticalRl),
         );
         let config = TextLayoutConfig {
-            size: LayoutSize::new(120.0, 84.0),
+            size: LayoutSize::new(120.0, 60.0),
             ..TextLayoutConfig::default()
         };
         let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -2699,7 +2699,7 @@ mod tests {
         assert_f32_eq(layout.glyphs[0].origin.x, 102.0);
         assert_f32_eq(layout.glyphs[0].origin.y, 24.0);
         assert_f32_eq(layout.glyphs[1].origin.x, 102.0);
-        assert_f32_eq(layout.glyphs[1].origin.y, 66.0);
+        assert_f32_eq(layout.glyphs[1].origin.y, 54.0);
         assert!(layout.glyphs[2].origin.x < layout.glyphs[1].origin.x);
         assert_f32_eq(layout.glyphs[2].origin.y, 24.0);
     }
@@ -2711,7 +2711,7 @@ mod tests {
             vertical_presentation(RichTextWritingMode::VerticalLr),
         );
         let config = TextLayoutConfig {
-            size: LayoutSize::new(120.0, 84.0),
+            size: LayoutSize::new(120.0, 60.0),
             ..TextLayoutConfig::default()
         };
         let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -2719,7 +2719,7 @@ mod tests {
         assert_f32_eq(layout.glyphs[0].origin.x, 24.0);
         assert_f32_eq(layout.glyphs[0].origin.y, 24.0);
         assert_f32_eq(layout.glyphs[1].origin.x, 24.0);
-        assert_f32_eq(layout.glyphs[1].origin.y, 66.0);
+        assert_f32_eq(layout.glyphs[1].origin.y, 54.0);
         assert!(layout.glyphs[2].origin.x > layout.glyphs[1].origin.x);
         assert_f32_eq(layout.glyphs[2].origin.y, 24.0);
     }
@@ -2837,7 +2837,7 @@ mod tests {
         ] {
             let frame = frame_with_run(text, vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 126.0),
+                size: LayoutSize::new(210.0, 90.0),
                 ..TextLayoutConfig::default()
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -3426,7 +3426,7 @@ mod tests {
             ] {
                 let frame = frame_with_run(text, vertical_presentation(writing_mode));
                 let config = TextLayoutConfig {
-                    size: LayoutSize::new(210.0, 84.0),
+                    size: LayoutSize::new(210.0, 60.0),
                     ..TextLayoutConfig::default()
                 };
                 let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -3512,7 +3512,7 @@ mod tests {
         ] {
             let frame = frame_with_run(text, vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 84.0),
+                size: LayoutSize::new(210.0, 60.0),
                 ..TextLayoutConfig::default()
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -3670,11 +3670,11 @@ mod tests {
         assert_f32_eq(layout.glyphs[2].origin.x, layout.glyphs[1].origin.x);
         assert_f32_eq(
             layout.glyphs[2].origin.y,
-            config.origin.y + config.size.height - config.line_advance * 0.5,
+            config.origin.y + config.size.height - config.font_size * 0.5,
         );
         assert_f32_eq(
             layout.glyphs[2].bounds.bottom(),
-            config.origin.y + config.size.height + config.line_advance * 0.5,
+            config.origin.y + config.size.height + config.font_size * 0.5,
         );
         assert!(
             layout.glyphs[2].bounds.bottom() > config.origin.y + config.size.height,
@@ -3989,7 +3989,7 @@ mod tests {
         ] {
             let frame = frame_with_run(text, vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 168.0),
+                size: LayoutSize::new(210.0, 90.0),
                 ..TextLayoutConfig::default()
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -4003,7 +4003,7 @@ mod tests {
             let comma = nth_laid_out_glyph(&layout, "、", 0);
             let mountain = nth_laid_out_glyph(&layout, "山", 0);
             assert_vertical_layout_after(fire, comma, "comma should follow body text");
-            assert_f32_eq(comma.advance.height, config.line_advance * 0.5);
+            assert_f32_eq(comma.advance.height, config.font_size * 0.5);
             assert_next_vertical_layout_column(
                 comma,
                 mountain,
@@ -4046,11 +4046,10 @@ mod tests {
                 small_kana,
                 "small kana should stay out of a paragraph column head",
             );
-            assert_next_vertical_layout_column(
+            assert_vertical_layout_after(
                 small_kana,
                 next_kana,
-                next_column_moves_right,
-                "text after an overhanging small kana should continue in the next paragraph column",
+                "text after a small kana should continue in the same paragraph column when it fits",
             );
 
             assert_vertical_paragraph_dash_suffix(&layout, next_column_moves_right);
@@ -4094,9 +4093,9 @@ mod tests {
     #[test]
     fn vertical_paragraph_plan_keeps_strict_closing_opening_pair_inside_class_mix() {
         let text = "天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終";
-        for (writing_mode, next_column_moves_right) in [
-            (RichTextWritingMode::VerticalRl, false),
-            (RichTextWritingMode::VerticalLr, true),
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
         ] {
             let frame = frame_with_run(text, vertical_presentation(writing_mode));
             let loose_config = TextLayoutConfig {
@@ -4112,11 +4111,10 @@ mod tests {
             let loose = layout_frame(&frame, loose_config).expect("loose layout succeeds");
             let loose_full_stop = nth_laid_out_glyph(&loose, "。", 0);
             let loose_open = nth_laid_out_glyph(&loose, "「", 0);
-            assert_next_vertical_layout_column(
+            assert_vertical_layout_after(
                 loose_full_stop,
                 loose_open,
-                next_column_moves_right,
-                "loose paragraph class mix may break between closing and opening punctuation",
+                "loose paragraph class mix may keep adjacent closing/opening punctuation when it fits",
             );
 
             let strict = layout_frame(&frame, strict_config).expect("strict layout succeeds");
@@ -5636,7 +5634,7 @@ mod tests {
             let mut frame = frame_with_run(text, vertical_presentation(writing_mode));
             push_ruby(&mut frame, dream_start, dream_end, "ゆめ");
             let config = TextLayoutConfig {
-                size: LayoutSize::new(260.0, 147.0),
+                size: LayoutSize::new(260.0, 105.0),
                 jlreq_strictness: JlreqStrictness::Strict,
                 ..TextLayoutConfig::default()
             };
@@ -5692,7 +5690,7 @@ mod tests {
             ];
             push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
             let config = TextLayoutConfig {
-                size: LayoutSize::new(260.0, 147.0),
+                size: LayoutSize::new(260.0, 105.0),
                 jlreq_strictness: JlreqStrictness::Strict,
                 ..TextLayoutConfig::default()
             };
@@ -5731,7 +5729,7 @@ mod tests {
         ] {
             let frame = frame_with_split_runs(text, split_at, vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(260.0, 147.0),
+                size: LayoutSize::new(260.0, 105.0),
                 jlreq_strictness: JlreqStrictness::Strict,
                 ..TextLayoutConfig::default()
             };
@@ -5761,7 +5759,7 @@ mod tests {
         ] {
             let frame = frame_with_run("天地。\n「人外", vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 147.0),
+                size: LayoutSize::new(210.0, 105.0),
                 jlreq_strictness: JlreqStrictness::Strict,
                 ..TextLayoutConfig::default()
             };
@@ -5831,7 +5829,7 @@ mod tests {
         let frame = frame_with_run(text, presentation);
         let clusters = vertical_clusters(text, RichTextVerticalLatinMode::Mixed);
         let loose_config = TextLayoutConfig {
-            size: LayoutSize::new(260.0, 147.0),
+            size: LayoutSize::new(260.0, 105.0),
             jlreq_strictness: JlreqStrictness::Loose,
             ..TextLayoutConfig::default()
         };
@@ -5897,7 +5895,7 @@ mod tests {
         let frame = frame_with_run(text, presentation);
         let clusters = vertical_clusters(text, RichTextVerticalLatinMode::Mixed);
         let loose_config = TextLayoutConfig {
-            size: LayoutSize::new(260.0, 147.0),
+            size: LayoutSize::new(260.0, 105.0),
             jlreq_strictness: JlreqStrictness::Loose,
             ..TextLayoutConfig::default()
         };
@@ -6057,14 +6055,14 @@ mod tests {
 
         assert_eq!(layout.glyphs.len(), 5);
         assert_eq!(layout.glyphs[2].text, "、");
-        assert_f32_eq(layout.glyphs[2].advance.height, config.line_advance * 0.5);
+        assert_f32_eq(layout.glyphs[2].advance.height, config.font_size * 0.5);
         assert_f32_eq(
             layout.glyphs[2].origin.y,
-            column_end - config.line_advance * 0.5,
+            column_end - config.font_size * 0.5,
         );
         assert_f32_eq(
             layout.glyphs[2].bounds.bottom(),
-            column_end + config.line_advance * 0.5,
+            column_end + config.font_size * 0.5,
         );
         assert_eq!(layout.glyphs[3].text, "人");
         assert!(
@@ -6100,7 +6098,7 @@ mod tests {
                 let person = nth_laid_out_glyph(&layout, "人", 0);
 
                 assert_eq!(punctuation.text, mark);
-                assert_f32_eq(punctuation.advance.height, config.line_advance * 0.5);
+                assert_f32_eq(punctuation.advance.height, config.font_size * 0.5);
                 assert_f32_eq(punctuation.origin.x, layout.glyphs[1].origin.x);
                 assert!(
                     punctuation.bounds.bottom() > config.origin.y + config.size.height,
@@ -6123,7 +6121,7 @@ mod tests {
             vertical_presentation(RichTextWritingMode::VerticalRl),
         );
         let config = TextLayoutConfig {
-            size: LayoutSize::new(160.0, 126.0),
+            size: LayoutSize::new(160.0, 90.0),
             ..TextLayoutConfig::default()
         };
         let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -6131,10 +6129,10 @@ mod tests {
         assert_eq!(layout.glyphs.len(), 4);
         assert_eq!(layout.glyphs[1].text, "、");
         assert_eq!(layout.glyphs[2].text, "。");
-        assert_f32_eq(layout.glyphs[1].advance.height, config.line_advance * 0.5);
-        assert_f32_eq(layout.glyphs[2].advance.height, config.line_advance * 0.5);
-        assert_f32_eq(layout.glyphs[1].bounds.height, config.line_advance);
-        assert_f32_eq(layout.glyphs[2].bounds.height, config.line_advance);
+        assert_f32_eq(layout.glyphs[1].advance.height, config.font_size * 0.5);
+        assert_f32_eq(layout.glyphs[2].advance.height, config.font_size * 0.5);
+        assert_f32_eq(layout.glyphs[1].bounds.height, config.font_size);
+        assert_f32_eq(layout.glyphs[2].bounds.height, config.font_size);
         assert_eq!(layout.glyphs[3].text, "人");
         assert_f32_eq(layout.glyphs[3].origin.x, layout.glyphs[0].origin.x);
         assert!(
@@ -6151,7 +6149,7 @@ mod tests {
         ] {
             let frame = frame_with_run("天、。・人", vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(160.0, 168.0),
+                size: LayoutSize::new(160.0, 120.0),
                 ..TextLayoutConfig::default()
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -6167,8 +6165,8 @@ mod tests {
                 "consecutive compressed punctuation should leave the following text in the same column",
             );
             for punctuation in [comma, period, middle_dot] {
-                assert_f32_eq(punctuation.advance.height, config.line_advance * 0.5);
-                assert_f32_eq(punctuation.bounds.height, config.line_advance);
+                assert_f32_eq(punctuation.advance.height, config.font_size * 0.5);
+                assert_f32_eq(punctuation.bounds.height, config.font_size);
             }
             assert_vertical_layout_after(body, comma, "comma should follow body text");
             assert_vertical_layout_after(comma, period, "full stop should follow comma");
@@ -6588,7 +6586,7 @@ mod tests {
 
         assert_f32_eq(glyph.origin.x, glyph.bounds.x);
         assert_f32_eq(glyph.bounds.width, config.font_size);
-        assert_f32_eq(glyph.bounds.height, config.line_advance);
+        assert_f32_eq(glyph.bounds.height, config.font_size);
     }
 
     #[test]
