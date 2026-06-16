@@ -723,11 +723,14 @@ fn layout_vertical_run(
     let column_plan =
         plan_vertical_columns(&clusters, context, *cursor, previous_cluster.as_deref());
     let mut next_previous_cluster = previous_cluster;
-    for (cluster_index, cluster) in clusters.iter().enumerate() {
+    let mut cluster_index = 0usize;
+    while cluster_index < clusters.len() {
+        let cluster = &clusters[cluster_index];
         if is_vertical_line_break_cluster(&cluster.text) {
             cursor.x += column_step;
             cursor.y = config.origin.y;
             next_previous_cluster = None;
+            cluster_index += 1;
             continue;
         }
         let start = context.range_start + cluster.range.start;
@@ -737,24 +740,33 @@ fn layout_vertical_run(
             cursor.x += column_step;
             cursor.y = config.origin.y;
         }
+        if let Some((next_cluster_index, previous_cluster)) = layout_vertical_side_ruby_base(
+            glyphs,
+            &clusters,
+            cluster_index,
+            cursor,
+            writing_mode,
+            context,
+        ) {
+            next_previous_cluster = previous_cluster;
+            cluster_index = next_cluster_index;
+            continue;
+        }
         let advance = vertical_cluster_advance(&cluster.text, config);
         let glyph_y = vertical_cluster_origin_y(&cluster.text, cursor.y, advance, config);
-        let bounds = vertical_glyph_bounds(cursor.x, glyph_y, config);
-        glyphs.push(LaidOutGlyph {
-            run_index: context.run_index,
+        push_vertical_glyph(
+            glyphs,
+            cluster,
             range,
-            text: cluster.text.clone(),
-            origin: LayoutPoint::new(cursor.x, glyph_y),
-            advance: LayoutSize::new(0.0, advance),
-            bounds,
+            cursor.x,
+            glyph_y,
             writing_mode,
-            orientation: cluster.orientation,
-            vertical_form: cluster.vertical_form,
-            presentation: context.presentation.clone(),
-        });
+            context,
+        );
         cursor.y += advance;
         cursor.y += vertical_inter_character_ruby_extent_after(range, context);
         next_previous_cluster = Some(cluster.text.clone());
+        cluster_index += 1;
     }
     match writing_mode {
         RichTextWritingMode::VerticalRl => {
@@ -767,6 +779,76 @@ fn layout_vertical_run(
             unreachable!("horizontal runs use layout_horizontal_run")
         }
     }
+}
+
+fn layout_vertical_side_ruby_base(
+    glyphs: &mut Vec<LaidOutGlyph>,
+    clusters: &[VerticalCluster],
+    cluster_index: usize,
+    cursor: &mut LayoutCursor,
+    writing_mode: RichTextWritingMode,
+    context: RunLayoutContext<'_>,
+) -> Option<(usize, Option<String>)> {
+    let annotation = vertical_side_ruby_annotation_starting_at(
+        context.ruby_annotations,
+        context.range_start,
+        clusters,
+        cluster_index,
+    )?;
+    let base_span =
+        vertical_ruby_base_cluster_span(annotation, context.range_start, clusters, cluster_index);
+    let base_extent = vertical_cluster_span_advance(&clusters[base_span.clone()], context.config);
+    let metrics = ruby_metrics(annotation, context.config);
+    let allocation_extent = vertical_ruby_base_allocation_height(
+        base_extent,
+        ruby_text_extent(&annotation.ruby, metrics.font_size),
+        context.config,
+    );
+    let mut previous_cluster = None;
+    let mut glyph_y = cursor.y + (allocation_extent - base_extent).max(0.0) * 0.5;
+    for base_cluster in &clusters[base_span.clone()] {
+        let base_range = RichTextRange::new(
+            context.range_start + base_cluster.range.start,
+            context.range_start + base_cluster.range.end,
+        );
+        push_vertical_glyph(
+            glyphs,
+            base_cluster,
+            base_range,
+            cursor.x,
+            glyph_y,
+            writing_mode,
+            context,
+        );
+        glyph_y += vertical_cluster_advance(&base_cluster.text, context.config);
+        previous_cluster = Some(base_cluster.text.clone());
+    }
+    cursor.y += allocation_extent;
+    Some((base_span.end, previous_cluster))
+}
+
+fn push_vertical_glyph(
+    glyphs: &mut Vec<LaidOutGlyph>,
+    cluster: &VerticalCluster,
+    range: RichTextRange,
+    column_x: f32,
+    glyph_y: f32,
+    writing_mode: RichTextWritingMode,
+    context: RunLayoutContext<'_>,
+) {
+    let advance = vertical_cluster_advance(&cluster.text, context.config);
+    glyphs.push(LaidOutGlyph {
+        run_index: context.run_index,
+        range,
+        text: cluster.text.clone(),
+        origin: LayoutPoint::new(column_x, glyph_y),
+        advance: LayoutSize::new(0.0, advance),
+        bounds: vertical_glyph_bounds(column_x, glyph_y, context.config),
+        writing_mode,
+        orientation: cluster.orientation,
+        vertical_form: cluster.vertical_form,
+        presentation: context.presentation.clone(),
+    });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -996,6 +1078,9 @@ fn vertical_column_segment_cost(
     {
         return None;
     }
+    if vertical_column_splits_side_ruby_base(clusters, column_start, column_end, context) {
+        return None;
+    }
 
     let capacity = context.config.origin.y + context.config.size.height - column_start_y;
     let used = vertical_column_segment_required_extent(clusters, column_start, column_end, context);
@@ -1040,6 +1125,33 @@ fn vertical_column_segment_cost(
     Some(badness + overflow_penalty + allowed_overhang_penalty + break_penalty)
 }
 
+fn vertical_column_splits_side_ruby_base(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+    context: RunLayoutContext<'_>,
+) -> bool {
+    (0..clusters.len()).any(|cluster_index| {
+        let Some(annotation) = vertical_side_ruby_annotation_starting_at(
+            context.ruby_annotations,
+            context.range_start,
+            clusters,
+            cluster_index,
+        ) else {
+            return false;
+        };
+        let span = vertical_ruby_base_cluster_span(
+            annotation,
+            context.range_start,
+            clusters,
+            cluster_index,
+        );
+        span.start < column_end
+            && column_start < span.end
+            && (column_start > span.start || column_end < span.end)
+    })
+}
+
 fn vertical_column_pair_break_penalty(
     clusters: &[VerticalCluster],
     column_start: usize,
@@ -1073,11 +1185,38 @@ fn vertical_column_segment_required_extent(
 ) -> f32 {
     let mut cursor = 0.0f32;
     let mut required = 0.0f32;
-    for cluster in &clusters[column_start..column_end] {
+    let mut cluster_index = column_start;
+    while cluster_index < column_end {
+        let cluster = &clusters[cluster_index];
         let range = RichTextRange::new(
             context.range_start + cluster.range.start,
             context.range_start + cluster.range.end,
         );
+        if let Some(annotation) = vertical_side_ruby_annotation_starting_at(
+            context.ruby_annotations,
+            context.range_start,
+            clusters,
+            cluster_index,
+        ) {
+            let span = vertical_ruby_base_cluster_span(
+                annotation,
+                context.range_start,
+                clusters,
+                cluster_index,
+            );
+            let allocation_extent = vertical_ruby_base_allocation_height(
+                vertical_cluster_span_advance(&clusters[span.clone()], context.config),
+                ruby_text_extent(
+                    &annotation.ruby,
+                    ruby_metrics(annotation, context.config).font_size,
+                ),
+                context.config,
+            );
+            required = required.max(cursor + allocation_extent);
+            cursor += allocation_extent;
+            cluster_index = span.end.min(column_end);
+            continue;
+        }
         let required_inline_extent = vertical_cluster_required_inline_extent(
             range,
             context.range_start,
@@ -1088,6 +1227,7 @@ fn vertical_column_segment_required_extent(
         required = required.max(cursor + required_inline_extent);
         cursor += vertical_cluster_advance(&cluster.text, context.config);
         cursor += vertical_inter_character_ruby_extent_after(range, context);
+        cluster_index += 1;
     }
     required.max(cursor)
 }
@@ -1595,13 +1735,73 @@ fn vertical_cluster_required_inline_extent(
             )
         })
         .map(|annotation| {
-            let base_cluster_extent =
-                vertical_ruby_base_cluster_count(annotation.base_range, range_start, clusters)
-                    * config.line_advance;
-            ruby_text_extent(&annotation.ruby, config.ruby_font_size).max(base_cluster_extent)
+            let base_cluster_extent = vertical_ruby_base_cluster_extent(
+                annotation.base_range,
+                range_start,
+                clusters,
+                config,
+            );
+            ruby_text_extent(&annotation.ruby, ruby_metrics(annotation, config).font_size)
+                .max(base_cluster_extent)
         })
         .fold(config.line_advance, f32::max)
         .min(config.size.height)
+}
+
+fn vertical_side_ruby_annotation_starting_at<'a>(
+    ruby_annotations: &'a [RichTextRubyAnnotation],
+    range_start: usize,
+    clusters: &[VerticalCluster],
+    cluster_index: usize,
+) -> Option<&'a RichTextRubyAnnotation> {
+    let cluster = clusters.get(cluster_index)?;
+    let absolute_start = range_start + cluster.range.start;
+    let range_end = range_start + clusters.last().map_or(0, |cluster| cluster.range.end);
+    ruby_annotations.iter().find(|annotation| {
+        annotation.base_range.start == absolute_start
+            && annotation.base_range.start < annotation.base_range.end
+            && annotation.base_range.end <= range_end
+            && !matches!(
+                ruby_position(annotation),
+                RichTextRubyPosition::InterCharacter
+            )
+    })
+}
+
+fn vertical_ruby_base_cluster_span(
+    annotation: &RichTextRubyAnnotation,
+    range_start: usize,
+    clusters: &[VerticalCluster],
+    cluster_index: usize,
+) -> Range<usize> {
+    let mut end = cluster_index;
+    while let Some(cluster) = clusters.get(end) {
+        if is_vertical_line_break_cluster(&cluster.text) {
+            break;
+        }
+        end += 1;
+        if range_start + cluster.range.end >= annotation.base_range.end {
+            break;
+        }
+    }
+    cluster_index..end.max(cluster_index + 1).min(clusters.len())
+}
+
+fn vertical_cluster_span_advance(clusters: &[VerticalCluster], config: TextLayoutConfig) -> f32 {
+    clusters
+        .iter()
+        .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
+        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
+        .sum::<f32>()
+        .max(config.line_advance)
+}
+
+fn vertical_ruby_base_allocation_height(
+    base_extent: f32,
+    ruby_extent: f32,
+    config: TextLayoutConfig,
+) -> f32 {
+    ruby_extent.max(base_extent).min(config.size.height)
 }
 
 fn vertical_inter_character_ruby_extent_after(
@@ -1653,12 +1853,13 @@ fn vertical_cluster_has_jlreq_separation_prohibited_before(
         })
 }
 
-fn vertical_ruby_base_cluster_count(
+fn vertical_ruby_base_cluster_extent(
     base_range: RichTextRange,
     range_start: usize,
     clusters: &[VerticalCluster],
+    config: TextLayoutConfig,
 ) -> f32 {
-    let count = clusters
+    clusters
         .iter()
         .filter(|cluster| {
             let start = range_start + cluster.range.start;
@@ -1666,9 +1867,9 @@ fn vertical_ruby_base_cluster_count(
             ranges_overlap(RichTextRange::new(start, end), base_range)
                 && !is_vertical_line_break_cluster(&cluster.text)
         })
-        .count()
-        .max(1);
-    usize_to_f32(count)
+        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
+        .sum::<f32>()
+        .max(config.line_advance)
 }
 
 fn layout_ruby(
@@ -6492,6 +6693,67 @@ mod tests {
     }
 
     #[test]
+    fn long_vertical_ruby_reserves_inline_advance_before_following_text() {
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let mut frame = frame_with_run("政を", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "政".len(), "まつりごと");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(160.0, 160.0),
+                ruby_font_size: 13.0,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            assert_eq!(layout.glyphs.len(), 2);
+            assert_eq!(layout.ruby.len(), 1);
+            assert!(
+                layout.ruby[0].base_bounds.height > layout.glyphs[0].bounds.height,
+                "long {writing_mode:?} ruby should expand base allocation along inline progression"
+            );
+            assert!(
+                layout.glyphs[1].bounds.y >= layout.ruby[0].base_bounds.bottom(),
+                "following {writing_mode:?} body glyph should start after the expanded ruby base"
+            );
+            assert_f32_eq(
+                layout.glyphs[0].bounds.y + layout.glyphs[0].bounds.height * 0.5,
+                layout.ruby[0].base_bounds.y + layout.ruby[0].base_bounds.height * 0.5,
+            );
+        }
+    }
+
+    #[test]
+    fn short_vertical_ruby_centers_beside_tall_base() {
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let base = "中央の帝国将官たち";
+            let mut frame = frame_with_run(base, vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, base.len(), "ぐん");
+            let config = TextLayoutConfig {
+                size: LayoutSize::new(240.0, 520.0),
+                ruby_font_size: 13.0,
+                ..TextLayoutConfig::default()
+            };
+            let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+            assert_eq!(layout.ruby.len(), 1);
+            let base_center =
+                layout.ruby[0].base_bounds.y + layout.ruby[0].base_bounds.height * 0.5;
+            let ruby_center =
+                layout.ruby[0].ruby_bounds.y + layout.ruby[0].ruby_bounds.height * 0.5;
+            assert_f32_eq(base_center, ruby_center);
+            assert!(
+                layout.ruby[0].ruby_bounds.height < layout.ruby[0].base_bounds.height,
+                "short {writing_mode:?} ruby should remain centered instead of expanding the base"
+            );
+        }
+    }
+
+    #[test]
     fn horizontal_ruby_uses_limited_overhang_after_base_expansion() {
         let mut frame = frame_with_run("夢", RichTextPresentation::default());
         push_ruby(&mut frame, 0, "夢".len(), "ながいよみか");
@@ -6771,9 +7033,12 @@ mod tests {
                 next_column_moves_right,
                 "long ruby base allocation should force the annotated cluster to the next column",
             );
-            assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
             assert_eq!(layout.ruby.len(), 1);
             assert_f32_eq(layout.ruby[0].base_bounds.y, config.origin.y);
+            assert_f32_eq(
+                layout.glyphs[1].bounds.y + layout.glyphs[1].bounds.height * 0.5,
+                layout.ruby[0].base_bounds.y + layout.ruby[0].base_bounds.height * 0.5,
+            );
             assert!(
                 layout.ruby[0].base_bounds.bottom() <= config.origin.y + config.size.height,
                 "expanded {writing_mode:?} ruby base should fit inside the column after feedback"
