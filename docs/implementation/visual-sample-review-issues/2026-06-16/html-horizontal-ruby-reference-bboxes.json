@@ -1,0 +1,218 @@
+[
+  {
+    "case": "henna-yume",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 90,
+      "x": 101,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 90,
+      "x": 101,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 90,
+      "x": 101,
+      "y": 47
+    },
+    "text": "変な夢"
+  },
+  {
+    "case": "akumu",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 230,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 60,
+      "x": 230,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 230,
+      "y": 47
+    },
+    "text": "悪夢"
+  },
+  {
+    "case": "hoshikage",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 328,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 60,
+      "x": 328,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 328,
+      "y": 47
+    },
+    "text": "星影"
+  },
+  {
+    "case": "tokeitou",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 90,
+      "x": 427,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 90,
+      "x": 427,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 90,
+      "x": 427,
+      "y": 47
+    },
+    "text": "時の塔"
+  },
+  {
+    "case": "yume",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 30,
+      "x": 555,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 30,
+      "x": 555,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 30,
+      "x": 555,
+      "y": 47
+    },
+    "text": "夢"
+  },
+  {
+    "case": "himitsu",
+    "rb": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 624,
+      "y": 47
+    },
+    "rt": {
+      "bottom": 52,
+      "height": 17,
+      "width": 60,
+      "x": 624,
+      "y": 35
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666667938232422,
+    "ruby": {
+      "bottom": 86,
+      "height": 39,
+      "width": 60,
+      "x": 624,
+      "y": 47
+    },
+    "text": "秘密"
+  },
+  {
+    "case": "matsurigoto",
+    "rb": {
+      "bottom": 174,
+      "height": 39,
+      "width": 64,
+      "x": 154,
+      "y": 135
+    },
+    "rt": {
+      "bottom": 140,
+      "height": 17,
+      "width": 64,
+      "x": 154,
+      "y": 123
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666660308837891,
+    "ruby": {
+      "bottom": 174,
+      "height": 39,
+      "width": 51,
+      "x": 161,
+      "y": 135
+    },
+    "text": "政"
+  },
+  {
+    "case": "gun",
+    "rb": {
+      "bottom": 174,
+      "height": 39,
+      "width": 270,
+      "x": 400,
+      "y": 135
+    },
+    "rt": {
+      "bottom": 140,
+      "height": 17,
+      "width": 270,
+      "x": 400,
+      "y": 123
+    },
+    "rtBottomToRbTop": -5,
+    "rtBottomToRbTopRaw": -4.666660308837891,
+    "ruby": {
+      "bottom": 174,
+      "height": 39,
+      "width": 270,
+      "x": 400,
+      "y": 135
+    },
+    "text": "中央の帝国将官たち"
+  }
+]

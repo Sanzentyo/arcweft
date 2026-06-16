@@ -2,7 +2,8 @@
 
 use arcweft_glyphon::{
     GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, VerticalGlyphHorizontalAlign,
-    glyph_area_from_layout, glyph_area_from_shaped_buffer, vertical_glyph_area_from_shaped_buffer,
+    glyph_area_from_layout, horizontal_glyph_area_from_shaped_buffer,
+    vertical_glyph_area_from_shaped_buffer,
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
@@ -3090,7 +3091,9 @@ struct WindowRubyBuffer {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RubyGlyphPlacement {
-    Horizontal,
+    Horizontal {
+        line_height: f32,
+    },
     Vertical {
         cell_width: f32,
         vertical_advance: f32,
@@ -3229,7 +3232,9 @@ fn build_ruby_buffers(
                     let ruby_char_count = segment.ruby.chars().count().max(1);
                     let placement =
                         if matches!(segment.writing_mode, RichTextWritingMode::HorizontalTb) {
-                            RubyGlyphPlacement::Horizontal
+                            RubyGlyphPlacement::Horizontal {
+                                line_height: segment.ruby_bounds.height,
+                            }
                         } else {
                             RubyGlyphPlacement::Vertical {
                                 cell_width: segment.ruby_bounds.width,
@@ -3282,7 +3287,9 @@ fn build_ruby_buffers(
             source_index: ruby_index,
             left,
             top,
-            placement: RubyGlyphPlacement::Horizontal,
+            placement: RubyGlyphPlacement::Horizontal {
+                line_height: annotation.style.ruby_metrics().font_size,
+            },
             color: annotation.style.color,
             presentation: annotation.presentation.clone(),
         });
@@ -3884,10 +3891,13 @@ fn ruby_glyph_areas(
         .iter()
         .map(|ruby| {
             let mut area = match ruby.placement {
-                RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
-                    &ruby.buffer,
-                    ruby_glyph_area_options(bounds, ruby.left, ruby.top, force_alpha_mask),
-                ),
+                RubyGlyphPlacement::Horizontal { line_height } => {
+                    horizontal_glyph_area_from_shaped_buffer(
+                        &ruby.buffer,
+                        ruby_glyph_area_options(bounds, ruby.left, ruby.top, force_alpha_mask),
+                        line_height,
+                    )
+                }
                 RubyGlyphPlacement::Vertical {
                     cell_width,
                     vertical_advance,
@@ -5244,6 +5254,19 @@ mod tests {
         assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
         assert!((ruby_glyph_areas[0].as_glyph_area().top - 0.0).abs() < f32::EPSILON);
         assert!(ruby_glyph_areas[0].glyphs()[0].origin.x >= layout.ruby[0].ruby_bounds.x.floor());
+        if matches!(
+            layout.ruby[0].writing_mode,
+            RichTextWritingMode::HorizontalTb
+        ) {
+            let glyph_y = ruby_glyph_areas[0].glyphs()[0].origin.y;
+            assert!(
+                glyph_y >= layout.ruby[0].ruby_bounds.y && glyph_y < layout.ruby[0].base_bounds.y,
+                "horizontal ruby glyph y should stay in the annotation track toward the base: glyph={:?}, ruby={:?}, base={:?}",
+                ruby_glyph_areas[0].glyphs()[0].origin,
+                layout.ruby[0].ruby_bounds,
+                layout.ruby[0].base_bounds,
+            );
+        }
     }
 
     #[test]
@@ -5818,10 +5841,18 @@ mod tests {
 
         let bounds = native_text_bounds(800, 600);
         let before_area = match ruby_buffers[0].placement {
-            RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
-                &ruby_buffers[0].buffer,
-                ruby_glyph_area_options(bounds, ruby_buffers[0].left, ruby_buffers[0].top, false),
-            ),
+            RubyGlyphPlacement::Horizontal { line_height } => {
+                horizontal_glyph_area_from_shaped_buffer(
+                    &ruby_buffers[0].buffer,
+                    ruby_glyph_area_options(
+                        bounds,
+                        ruby_buffers[0].left,
+                        ruby_buffers[0].top,
+                        false,
+                    ),
+                    line_height,
+                )
+            }
             RubyGlyphPlacement::Vertical {
                 cell_width,
                 vertical_advance,

@@ -1,0 +1,79 @@
+{
+  "note": "HTML measured in Chromium via <ruby><rb><rt>; Arcweft measured from agent observe rich_text_ref bboxes after horizontal ruby HTML-overlap layout.",
+  "htmlReference": [
+    {
+      "case": "henna-yume",
+      "text": "変な夢",
+      "rtBottomToRbTopRaw": -4.666667938232422,
+      "rtBottomToRbTop": -5
+    },
+    {
+      "case": "matsurigoto",
+      "text": "政",
+      "rtBottomToRbTopRaw": -4.666660308837891,
+      "rtBottomToRbTop": -5
+    },
+    {
+      "case": "gun",
+      "text": "中央の帝国将官たち",
+      "rtBottomToRbTopRaw": -4.666660308837891,
+      "rtBottomToRbTop": -5
+    }
+  ],
+  "arcweft": [
+    {
+      "text": "変な夢 (へんなゆめ)",
+      "base": {
+        "x": 213,
+        "bottom": 428,
+        "height": 30,
+        "width": 90,
+        "y": 398
+      },
+      "ruby": {
+        "x": 225,
+        "bottom": 402,
+        "height": 13,
+        "width": 65,
+        "y": 389
+      },
+      "rubyBottomToBaseTop": -4
+    },
+    {
+      "text": "政 (まつりごと)",
+      "base": {
+        "x": 273,
+        "bottom": 418,
+        "height": 30,
+        "width": 65,
+        "y": 388
+      },
+      "ruby": {
+        "x": 273,
+        "bottom": 392,
+        "height": 13,
+        "width": 65,
+        "y": 379
+      },
+      "rubyBottomToBaseTop": -4
+    },
+    {
+      "text": "中央の帝国将官たち (ぐん)",
+      "base": {
+        "x": 518,
+        "bottom": 418,
+        "height": 30,
+        "width": 270,
+        "y": 388
+      },
+      "ruby": {
+        "x": 640,
+        "bottom": 392,
+        "height": 13,
+        "width": 26,
+        "y": 379
+      },
+      "rubyBottomToBaseTop": -4
+    }
+  ]
+}

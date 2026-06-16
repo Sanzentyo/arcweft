@@ -84,9 +84,15 @@ Ruby-specific fields mean:
 |---|---|
 | `position` | Default ruby track: `over`, `under`, `inter_character`, or `auto` |
 | `size` | Annotation font size |
-| `gap` | Distance between base text and annotation track |
+| `gap` | Extra separation from the default ruby track; for horizontal over-ruby, `0px` keeps the CSS/HTML-like natural overlap between the annotation bbox and base bbox instead of forcing the boxes to merely touch |
 | `overhang` | Maximum annotation overhang allowed beyond the base allocation |
 | `collision_gap` | Separation between adjacent ruby annotations or continuation tracks |
+
+Horizontal over-ruby is compared against browser `<ruby><rb><rt>` behavior.
+With a 30px base font, 13px ruby font, and `line-height: 1`, Chromium places the
+`rt` bbox about 4.67px into the `rb` bbox. Arcweft models this as a
+`0.36em` annotation overlap before applying the explicit ruby `gap`, so
+authoring `gap = 0px` remains close to standard HTML ruby placement.
 
 ### Horizontal wrapping
 

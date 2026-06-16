@@ -101,6 +101,15 @@ placement effects instead of only inheriting reveal alpha. Native ruby element
 observation also applies the same presentation to its reported base and
 annotation geometry before converting layout rects to viewport bboxes, keeping
 Agent object crops aligned with transformed ruby captures.
+Horizontal ruby annotations are also adapted through an absolute GlyphArea path:
+their inline x positions still come from glyphon shaping, while y placement uses
+the Arcweft ruby annotation track plus glyphon baseline offset and the layout
+ruby line height. This keeps horizontal ruby pixels close to the body text and
+aligned with observed ruby bboxes instead of drifting through an independent
+TextArea baseline. The horizontal ruby track is calibrated against a Chromium
+`<ruby><rb><rt>` reference: a 30px base with 13px ruby text produces about
+4.67px of annotation/base bbox overlap, so Arcweft applies a 0.36em natural
+overlap before adding any explicit ruby gap.
 Builtin wave effects use the descriptor target when choosing their phase index:
 `target=glyph` evaluates per glyph, while `target=run` and broader targets move
 the target as one placement group. Shake and jitter continue to use

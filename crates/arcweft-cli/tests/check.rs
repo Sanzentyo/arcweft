@@ -18797,10 +18797,10 @@ flow @flow.main main {
     let capture_width = json["images"][0]["width"].as_u64().unwrap();
     let capture_height = json["images"][0]["height"].as_u64().unwrap();
     assert_eq!(capture_width, 1088);
-    assert_eq!(capture_height, 126);
+    assert_eq!(capture_height, 124);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
     assert_eq!(json["images"][0]["crop_origin"]["x"], 96);
-    assert_eq!(json["images"][0]["crop_origin"]["y"], 546);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 548);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
     assert!(content_pixels < capture_width * capture_height);
@@ -21523,7 +21523,7 @@ flow @flow.main main {
     let capture_width = json["images"][0]["width"].as_u64().unwrap();
     let capture_height = json["images"][0]["height"].as_u64().unwrap();
     assert_eq!(capture_width, 1088);
-    assert_eq!(capture_height, 126);
+    assert_eq!(capture_height, 124);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
     assert!(
@@ -21593,7 +21593,7 @@ flow @flow.main main {
     let capture_width = json["images"][0]["width"].as_u64().unwrap();
     let capture_height = json["images"][0]["height"].as_u64().unwrap();
     assert_eq!(capture_width, 1088);
-    assert_eq!(capture_height, 126);
+    assert_eq!(capture_height, 124);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
     assert!(
@@ -22685,7 +22685,7 @@ flow @flow.main main {
     let capture_width = metadata["image"]["width"].as_u64().unwrap();
     let capture_height = metadata["image"]["height"].as_u64().unwrap();
     assert_eq!(capture_width, 1088);
-    assert_eq!(capture_height, 126);
+    assert_eq!(capture_height, 124);
     assert_eq!(metadata["image"]["composition"], "isolated_regions");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(

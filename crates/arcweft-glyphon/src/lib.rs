@@ -228,6 +228,61 @@ pub fn glyph_area_from_shaped_buffer(
     }
 }
 
+/// Adapts an already-shaped glyphon text buffer to horizontally laid absolute
+/// `GlyphArea` instances.
+///
+/// This is used for horizontal ruby annotations whose annotation box is owned
+/// by Arcweft layout. Unlike glyphon's normal `TextArea` path, placement starts
+/// from the annotation box and preserves glyphon's physical glyph offset, so
+/// native pixels, observe geometry, and object crops agree without an
+/// independent TextArea baseline.
+pub fn horizontal_glyph_area_from_shaped_buffer(
+    buffer: &Buffer,
+    options: GlyphonAreaOptions,
+    cell_height: f32,
+) -> OwnedGlyphArea {
+    let cell_height = cell_height.max(1.0);
+    let glyphs = buffer
+        .layout_runs()
+        .filter(|_| is_absolute_y_visible(options.top, cell_height, options))
+        .flat_map(|run| {
+            run.glyphs.iter().map(move |glyph| {
+                let physical = glyph.physical((0.0, 0.0), options.scale);
+                #[allow(clippy::cast_precision_loss)]
+                let origin_x = options.left + physical.x as f32;
+                #[allow(clippy::cast_precision_loss)]
+                let origin_y = options.top + physical.y as f32;
+                GlyphInstance {
+                    source: GlyphSource::Text {
+                        cache_key: physical.cache_key,
+                    },
+                    origin: Point::new(origin_x, origin_y),
+                    advance: Vector::new(glyph.w * options.scale, 0.0),
+                    ink_bounds: Rect::new(0.0, 0.0, glyph.w * options.scale, cell_height),
+                    transform: GlyphTransform::Identity,
+                    color: glyph.color_opt,
+                    metadata: glyph.metadata,
+                    cluster: Some(TextCluster {
+                        start: glyph.start,
+                        end: glyph.end,
+                        index: u32::try_from(glyph.start).unwrap_or(u32::MAX),
+                    }),
+                }
+            })
+        })
+        .collect();
+
+    OwnedGlyphArea {
+        glyphs,
+        left: 0.0,
+        top: 0.0,
+        scale: 1.0,
+        bounds: options.bounds,
+        default_color: options.default_color,
+        force_alpha_mask: options.force_alpha_mask,
+    }
+}
+
 /// Adapts an already-shaped glyphon text buffer to vertically stacked absolute
 /// `GlyphArea` instances.
 ///
@@ -311,6 +366,15 @@ fn is_buffer_run_visible(line_top: f32, line_height: f32, options: GlyphonAreaOp
     #[allow(clippy::cast_precision_loss)]
     let bounds_bottom = options.bounds.bottom as f32;
     start_y <= bounds_bottom && bounds_top <= end_y
+}
+
+fn is_absolute_y_visible(top: f32, height: f32, options: GlyphonAreaOptions) -> bool {
+    let end_y = top + height;
+    #[allow(clippy::cast_precision_loss)]
+    let bounds_top = options.bounds.top as f32;
+    #[allow(clippy::cast_precision_loss)]
+    let bounds_bottom = options.bounds.bottom as f32;
+    top <= bounds_bottom && bounds_top <= end_y
 }
 
 fn append_glyph_instances(
@@ -876,6 +940,54 @@ mod tests {
         assert_f32_eq(area.as_glyph_area().top, 0.0);
         assert!(area.glyphs()[0].origin.x >= 12.0);
         assert!(area.glyphs()[0].origin.y >= 34.0);
+    }
+
+    #[test]
+    fn shaped_buffer_can_map_to_horizontal_ruby_box_instances() {
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(16.0, 20.0));
+        buffer.set_size(&mut font_system, Some(400.0), Some(100.0));
+        let attrs = Attrs::new().family(Family::SansSerif);
+        buffer.set_rich_text(
+            &mut font_system,
+            [("ゆめ", attrs.clone())],
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        let area = horizontal_glyph_area_from_shaped_buffer(
+            &buffer,
+            GlyphonAreaOptions {
+                left: 70.0,
+                top: 30.0,
+                bounds: TextBounds {
+                    left: 0,
+                    top: 0,
+                    right: 400,
+                    bottom: 200,
+                },
+                default_color: Color::rgb(170, 190, 220),
+                ..GlyphonAreaOptions::default()
+            },
+            14.0,
+        );
+
+        assert!(area.len() >= 2);
+        assert_f32_eq(area.as_glyph_area().left, 0.0);
+        assert_f32_eq(area.as_glyph_area().top, 0.0);
+        assert!(area.glyphs()[1].origin.x > area.glyphs()[0].origin.x);
+        assert!(
+            area.glyphs()
+                .iter()
+                .all(|glyph| glyph.origin.y >= 30.0 && glyph.origin.y < 50.0)
+        );
+        assert!(
+            area.glyphs()
+                .iter()
+                .all(|glyph| { (glyph.ink_bounds.height() - 14.0).abs() < f32::EPSILON })
+        );
     }
 
     #[test]

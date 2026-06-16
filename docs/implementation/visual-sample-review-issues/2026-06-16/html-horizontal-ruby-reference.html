@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Horizontal ruby reference</title>
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 960px;
+    height: 540px;
+    background: #000;
+    color: #d9f2ff;
+    font-family: "Yu Gothic", "Meiryo", sans-serif;
+    font-size: 30px;
+    line-height: 1;
+  }
+
+  .frame {
+    box-sizing: border-box;
+    width: 960px;
+    height: 540px;
+    padding: 36px 24px;
+  }
+
+  .line {
+    margin: 0 0 42px;
+    white-space: nowrap;
+  }
+
+  ruby {
+    ruby-position: over;
+  }
+
+  rt {
+    color: #d9f2ff;
+    font-size: 13px;
+    line-height: 1;
+  }
+</style>
+<main class="frame">
+  <p class="line" id="ordinary">
+    ルビ:
+    <ruby data-case="henna-yume"><rb>変な夢</rb><rt>へんなゆめ</rt></ruby>、
+    <ruby data-case="akumu"><rb>悪夢</rb><rt>あくむ</rt></ruby>、
+    <ruby data-case="hoshikage"><rb>星影</rb><rt>ほしかげ</rt></ruby>、
+    <ruby data-case="tokeitou"><rb>時の塔</rb><rt>時計塔</rt></ruby>、
+    <ruby data-case="yume"><rb>夢</rb><rt>ゆめ</rt></ruby>、
+    <ruby data-case="himitsu"><rb>秘密</rb><rt>ひみつ</rt></ruby>。
+  </p>
+  <p class="line" id="extreme">
+    極端ルビ:
+    <ruby data-case="matsurigoto"><rb>政</rb><rt>まつりごと</rt></ruby>を行うため、
+    <ruby data-case="gun"><rb>中央の帝国将官たち</rb><rt>ぐん</rt></ruby>が集まる。
+  </p>
+</main>

@@ -27,6 +27,7 @@ pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation};
 
 const DEFAULT_RUBY_GAP: f32 = 2.0;
+const HORIZONTAL_RUBY_HTML_OVERLAP_EM: f32 = 0.36;
 
 /// Text layout failed before geometry could be produced.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -2399,10 +2400,15 @@ fn horizontal_ruby_track_y(
     annotation: &RichTextRubyAnnotation,
     metrics: RubyMetrics,
 ) -> f32 {
+    let natural_overlap = horizontal_ruby_html_overlap(metrics);
     match ruby_position(annotation) {
         RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap,
-        _ => (base_bounds.y - metrics.font_size - metrics.gap).max(0.0),
+        _ => (base_bounds.y - metrics.font_size - metrics.gap + natural_overlap).max(0.0),
     }
+}
+
+fn horizontal_ruby_html_overlap(metrics: RubyMetrics) -> f32 {
+    metrics.font_size * HORIZONTAL_RUBY_HTML_OVERLAP_EM
 }
 
 fn ruby_position(annotation: &RichTextRubyAnnotation) -> RichTextRubyPosition {
@@ -6888,18 +6894,26 @@ mod tests {
     }
 
     #[test]
-    fn default_horizontal_ruby_gap_matches_engine_default() {
+    fn default_horizontal_ruby_gap_applies_after_html_overlap() {
         let mut frame = frame_with_run("夢", RichTextPresentation::default());
         push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
         let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
 
         let base = layout.ruby[0].base_bounds;
         let annotation = layout.ruby[0].ruby_bounds;
-        assert_f32_eq(base.y - annotation.bottom(), DEFAULT_RUBY_GAP);
+        let metrics = ruby_metrics_from_presentation(
+            &layout.ruby[0].presentation,
+            TextLayoutConfig::default(),
+        );
+        assert_f32_near(
+            base.y - annotation.bottom(),
+            DEFAULT_RUBY_GAP - horizontal_ruby_html_overlap(metrics),
+            0.001,
+        );
     }
 
     #[test]
-    fn horizontal_ruby_gap_accepts_zero_override() {
+    fn horizontal_ruby_zero_gap_matches_html_like_overlap() {
         let mut frame = frame_with_run("夢", RichTextPresentation::default());
         push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
         frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
@@ -6910,7 +6924,15 @@ mod tests {
 
         let base = layout.ruby[0].base_bounds;
         let annotation = layout.ruby[0].ruby_bounds;
-        assert_f32_eq(base.y - annotation.bottom(), 0.0);
+        let metrics = ruby_metrics_from_presentation(
+            &layout.ruby[0].presentation,
+            TextLayoutConfig::default(),
+        );
+        assert_f32_near(
+            base.y - annotation.bottom(),
+            -horizontal_ruby_html_overlap(metrics),
+            0.001,
+        );
     }
 
     #[test]
@@ -7234,7 +7256,14 @@ mod tests {
         let base = layout.ruby[0].base_bounds;
         let annotation = layout.ruby[0].ruby_bounds;
         assert_f32_eq(annotation.height, 10.0);
-        assert_f32_eq(annotation.y, base.y - 11.0);
+        assert_f32_eq(
+            annotation.y,
+            base.y - 10.0 - 1.0
+                + horizontal_ruby_html_overlap(ruby_metrics_from_presentation(
+                    &layout.ruby[0].presentation,
+                    TextLayoutConfig::default(),
+                )),
+        );
         assert!(
             annotation.x >= base.x - 3.0,
             "overhang should constrain annotation start near the base: {annotation:?}"
@@ -7504,6 +7533,13 @@ mod tests {
         assert!(
             (actual - expected).abs() < f32::EPSILON,
             "expected {actual} to equal {expected}"
+        );
+    }
+
+    fn assert_f32_near(actual: f32, expected: f32, tolerance: f32) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected {actual} to be within {tolerance} of {expected}"
         );
     }
 }
