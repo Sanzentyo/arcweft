@@ -46,6 +46,8 @@
 - [Entries and Capabilities](01-language/entries-and-capabilities.md)
 - [Localization for Dialogue](01-language/localization-dialogue.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](01-language/dialogue-control-tags-and-ruby.md)
+- [Rich Text Effects and Transforms](03-presentation/rich-text-effects-transforms.md)
+- [Agent Observe and Capture Contract](04-tooling/agent-observe-capture-contract.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](01-language/dialogue-calls-scopes-cancellation.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](01-language/dialogue-line-handles-and-returns.md)
 - [Dialogue Windows, Character Styles, and Read-State Hooks](01-language/dialogue-windows-and-hooks.md)

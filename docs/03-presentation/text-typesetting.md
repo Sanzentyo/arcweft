@@ -13,6 +13,11 @@ TypesetBlock:
 
 ## RichText
 
+Rich-text layout, transform, effect, shader, and capture semantics are split
+across this document,
+[Rich Text Effects and Transforms](rich-text-effects-transforms.md), and
+[Agent Observe and Capture Contract](../04-tooling/agent-observe-capture-contract.md).
+
 ```arcw
 alice.say()[
 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。
@@ -148,7 +153,10 @@ pub struct TypesetCacheKey {
 
 ## Agent observation
 
-Text run ごとに bbox/source/ruby/style を返せる。
+Text run ごとに bbox/source/ruby/style/presentation を返せる。画像取得、
+layer/object/rich-text child capture、raw RGBA/PNG、座標変換の契約は
+[Agent Observe and Capture Contract](../04-tooling/agent-observe-capture-contract.md)
+に従う。
 
 ```rust
 pub struct TextRunObservation {
@@ -157,6 +165,7 @@ pub struct TextRunObservation {
     pub baseline: f32,
     pub ruby: Option<String>,
     pub style: TextStyleSummary,
+    pub presentation: RichTextPresentationSummary,
     pub source: Option<SourceAnchor>,
 }
 ```

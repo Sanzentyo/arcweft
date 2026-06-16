@@ -19,6 +19,8 @@ Runtime observation now has two Phase 2.0 headless slices:
 
 The shared diagnostic/action schema produced by `arcweft-verify` and consumed by
 CLI/LSP remains the connection point for future Agent tools.
+The normative image, scope, URI, raw RGBA, and coordinate-space contract is
+defined in [Agent Observe and Capture Contract](agent-observe-capture-contract.md).
 `arcweft-agent-protocol` owns the current observation JSON data types used by
 the CLI slice and intended for future MCP resources/tools.
 `arcweft-agent-mcp` maps those resources to MCP `resources/read` and tool-result
