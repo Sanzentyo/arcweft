@@ -805,7 +805,7 @@ fn layout_vertical_side_ruby_base(
         context.config,
     );
     let mut previous_cluster = None;
-    let mut glyph_y = cursor.y + (allocation_extent - base_extent).max(0.0) * 0.5;
+    let mut glyph_y = cursor.y;
     for base_cluster in &clusters[base_span.clone()] {
         let base_range = RichTextRange::new(
             context.range_start + base_cluster.range.start,
@@ -6717,10 +6717,7 @@ mod tests {
                 layout.glyphs[1].bounds.y >= layout.ruby[0].base_bounds.bottom(),
                 "following {writing_mode:?} body glyph should start after the expanded ruby base"
             );
-            assert_f32_eq(
-                layout.glyphs[0].bounds.y + layout.glyphs[0].bounds.height * 0.5,
-                layout.ruby[0].base_bounds.y + layout.ruby[0].base_bounds.height * 0.5,
-            );
+            assert_f32_eq(layout.glyphs[0].bounds.y, layout.ruby[0].base_bounds.y);
         }
     }
 
@@ -7035,10 +7032,7 @@ mod tests {
             );
             assert_eq!(layout.ruby.len(), 1);
             assert_f32_eq(layout.ruby[0].base_bounds.y, config.origin.y);
-            assert_f32_eq(
-                layout.glyphs[1].bounds.y + layout.glyphs[1].bounds.height * 0.5,
-                layout.ruby[0].base_bounds.y + layout.ruby[0].base_bounds.height * 0.5,
-            );
+            assert_f32_eq(layout.glyphs[1].origin.y, config.origin.y);
             assert!(
                 layout.ruby[0].base_bounds.bottom() <= config.origin.y + config.size.height,
                 "expanded {writing_mode:?} ruby base should fit inside the column after feedback"
