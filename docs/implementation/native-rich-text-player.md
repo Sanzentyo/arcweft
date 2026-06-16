@@ -90,7 +90,11 @@ presentation data is available to native debug/capture paths through
 The glyphon-backed native renderer now applies post-layout translate, rotate,
 scale, skew, pivot-origin affine transforms, and builtin placement effects such
 as wave/shake/arc to the actual submitted glyph instances, including broad
-effect targets after they have been resolved onto a run's presentation. Ruby
+effect targets after they have been resolved onto a run's presentation. Glyph
+affines resolve `target=glyph`, `target=run`, and broad line/textbox/screen
+targets against the corresponding layout bounds before converting the pivot to
+glyph-local coordinates, so center-origin rotation and scaling act on the
+requested group instead of each glyph independently. Ruby
 annotation GlyphAreas use the same submitted-glyph presentation path, so ruby
 placement follows translate, rotate, scale, skew, origin pivots, and builtin
 placement effects instead of only inheriting reveal alpha. Native ruby element

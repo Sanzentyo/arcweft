@@ -6,9 +6,10 @@ use arcweft_glyphon::{
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
-    RichTextEffectDescriptor, RichTextEffectPhase, RichTextFontFamily, RichTextNode, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextShaderRef, RichTextStateScope, RichTextStyle,
-    RichTextTransformOrigin, RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
+    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
+    RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
+    RichTextStateScope, RichTextStyle, RichTextTransformOrigin, RichTextWritingMode,
+    parse_decimal_milli, presentation_from_styles,
 };
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
@@ -1333,7 +1334,7 @@ fn native_transformed_glyph_bounds(
         .glyphs
         .iter()
         .zip(placements.iter())
-        .map(|(glyph, placement)| transformed_glyph_bounds(glyph, placement))
+        .map(|(glyph, placement)| transformed_glyph_bounds(glyph, placement, &page_layout.layout))
         .collect::<Vec<_>>();
     let run_bounds = page_layout
         .layout
@@ -1402,8 +1403,12 @@ fn native_glyph_placements_for_layout(
         .collect()
 }
 
-fn transformed_glyph_bounds(glyph: &LaidOutGlyph, placement: &NativeGlyphPlacement) -> LayoutRect {
-    let affine = glyph_presentation_affine(placement, glyph);
+fn transformed_glyph_bounds(
+    glyph: &LaidOutGlyph,
+    placement: &NativeGlyphPlacement,
+    layout: &LaidOutText,
+) -> LayoutRect {
+    let affine = glyph_presentation_affine(placement, glyph, layout);
     let local_left = glyph.bounds.x - glyph.origin.x;
     let local_top = glyph.bounds.y - glyph.origin.y;
     let local_right = local_left + glyph.bounds.width;
@@ -4169,7 +4174,7 @@ fn apply_text_transforms_to_glyph_area(
             instance.origin.x + placement.x - glyph.origin.x,
             instance.origin.y + placement.y - glyph.origin.y,
         );
-        if let Some(affine) = glyph_presentation_affine(placement, glyph) {
+        if let Some(affine) = glyph_presentation_affine(placement, glyph, layout) {
             let current = glyph_transform_affine(instance.transform);
             instance.transform =
                 GlyphTransform::Affine(Affine2::new(compose_affine(affine, current)));
@@ -4180,9 +4185,14 @@ fn apply_text_transforms_to_glyph_area(
 fn glyph_presentation_affine(
     placement: &NativeGlyphPlacement,
     glyph: &LaidOutGlyph,
+    layout: &LaidOutText,
 ) -> Option<[f32; 6]> {
     let base_rotation = glyph_orientation_degrees(glyph.orientation);
-    presentation_affine(placement, base_rotation, glyph_transform_pivot(glyph))
+    presentation_affine(
+        placement,
+        base_rotation,
+        glyph_transform_pivot(glyph, layout),
+    )
 }
 
 fn ruby_glyph_presentation_affine(
@@ -4228,18 +4238,41 @@ fn presentation_affine(
     Some([matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f])
 }
 
-fn glyph_transform_pivot(glyph: &LaidOutGlyph) -> Vector {
+fn glyph_transform_pivot(glyph: &LaidOutGlyph, layout: &LaidOutText) -> Vector {
     let Some(transform) = &glyph.presentation.transform else {
         return Vector::new(0.0, 0.0);
     };
+    let target_bounds = transform_target_bounds(transform.target, glyph, layout);
     match transform.origin {
-        RichTextTransformOrigin::BaselineStart => Vector::new(0.0, 0.0),
-        RichTextTransformOrigin::BaselineCenter => {
-            Vector::new(glyph.advance.width * 0.5, glyph.advance.height * 0.5)
-        }
-        RichTextTransformOrigin::Center | RichTextTransformOrigin::GlyphCenter => {
-            Vector::new(glyph.bounds.width * 0.5, glyph.bounds.height * 0.5)
-        }
+        RichTextTransformOrigin::BaselineStart => Vector::new(
+            target_bounds.x - glyph.origin.x,
+            target_bounds.y - glyph.origin.y,
+        ),
+        RichTextTransformOrigin::BaselineCenter
+        | RichTextTransformOrigin::Center
+        | RichTextTransformOrigin::GlyphCenter => Vector::new(
+            target_bounds.x + target_bounds.width * 0.5 - glyph.origin.x,
+            target_bounds.y + target_bounds.height * 0.5 - glyph.origin.y,
+        ),
+    }
+}
+
+fn transform_target_bounds(
+    target: RichTextEffectTarget,
+    glyph: &LaidOutGlyph,
+    layout: &LaidOutText,
+) -> LayoutRect {
+    match target {
+        RichTextEffectTarget::Glyph => glyph.bounds,
+        RichTextEffectTarget::Run => layout
+            .runs
+            .get(glyph.run_index)
+            .map_or(glyph.bounds, |run| run.bounds),
+        RichTextEffectTarget::Document
+        | RichTextEffectTarget::Line
+        | RichTextEffectTarget::Sentence
+        | RichTextEffectTarget::TextBox
+        | RichTextEffectTarget::Screen => layout.bounds.unwrap_or(glyph.bounds),
     }
 }
 
@@ -4438,8 +4471,8 @@ mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_render_text::{
-        LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextEffectTarget, RichTextLayout,
-        RichTextTransform, RichTextVec2, RichTextWritingMode, RuntimeLineContext,
+        LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextLayout, RichTextTransform,
+        RichTextVec2, RichTextWritingMode, RuntimeLineContext,
     };
 
     fn styled_ruby_test_frame() -> LineDisplayFrame {
@@ -4791,6 +4824,56 @@ mod tests {
             (placement.x, placement.y),
             (0.0, 0.0),
             "host_event phase should not apply glyph placement"
+        );
+    }
+
+    #[test]
+    fn glyph_presentation_affine_uses_transform_target_bounds_for_center_pivot() {
+        let transform = RichTextTransform {
+            rotate: RichTextAngle {
+                degrees: Milli(180_000),
+            },
+            origin: RichTextTransformOrigin::Center,
+            target: RichTextEffectTarget::TextBox,
+            ..RichTextTransform::default()
+        };
+        let presentation = RichTextPresentation {
+            transform: Some(transform),
+            ..RichTextPresentation::default()
+        };
+        let glyph = LaidOutGlyph {
+            run_index: 0,
+            range: RichTextRange::new(0, 1),
+            text: "A".to_owned(),
+            origin: LayoutPoint::new(0.0, 0.0),
+            advance: LayoutSize::new(10.0, 0.0),
+            bounds: LayoutRect::new(0.0, 0.0, 10.0, 10.0),
+            writing_mode: RichTextWritingMode::HorizontalTb,
+            orientation: GlyphOrientation::Upright,
+            vertical_form: GlyphVerticalForm::None,
+            presentation,
+        };
+        let layout = LaidOutText {
+            glyphs: vec![glyph.clone()],
+            runs: vec![arcweft_text_layout::LaidOutRun {
+                run_index: 0,
+                range: RichTextRange::new(0, 1),
+                bounds: LayoutRect::new(0.0, 0.0, 10.0, 10.0),
+                writing_mode: RichTextWritingMode::HorizontalTb,
+                presentation: glyph.presentation.clone(),
+            }],
+            ruby: Vec::new(),
+            bounds: Some(LayoutRect::new(0.0, 0.0, 30.0, 10.0)),
+        };
+        let mut placement = test_native_glyph_placement(0, 0);
+        placement.rotate_degrees = 180.0;
+
+        let affine =
+            glyph_presentation_affine(&placement, &glyph, &layout).expect("affine resolves");
+
+        assert!(
+            affine[4] > 29.5 && affine[4] < 30.5,
+            "textbox center pivot should translate around x=15, not glyph-local center: {affine:?}"
         );
     }
 
