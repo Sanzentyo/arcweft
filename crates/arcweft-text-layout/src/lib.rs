@@ -5,9 +5,10 @@
 //! renderer-specific buffers.
 
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextJlreqStrictness, RichTextPresentation, RichTextRange,
+    LineDisplayFrame, Milli, RichTextEffectDescriptor, RichTextEffectPhase,
+    RichTextJlreqStrictness, RichTextParam, RichTextPresentation, RichTextRange,
     RichTextRubyAnnotation, RichTextRubyPosition, RichTextTextSource, RichTextVerticalLatinMode,
-    RichTextWritingMode,
+    RichTextWritingMode, parse_decimal_milli,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -140,6 +141,8 @@ pub struct TextLayoutConfig {
     pub writing_mode: RichTextWritingMode,
     /// JLREQ punctuation pair strictness used by vertical column planning.
     pub jlreq_strictness: JlreqStrictness,
+    /// Effect time used by layout-phase rich-text effects.
+    pub effect_time_seconds: f32,
 }
 
 impl Default for TextLayoutConfig {
@@ -152,6 +155,7 @@ impl Default for TextLayoutConfig {
             ruby_font_size: 14.0,
             writing_mode: RichTextWritingMode::HorizontalTb,
             jlreq_strictness: JlreqStrictness::Normal,
+            effect_time_seconds: 0.0,
         }
     }
 }
@@ -533,6 +537,137 @@ impl LayoutCursor {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct LayoutEffectReserve {
+    x: f32,
+    y: f32,
+}
+
+impl LayoutEffectReserve {
+    fn union(self, other: Self) -> Self {
+        Self {
+            x: self.x.max(other.x),
+            y: self.y.max(other.y),
+        }
+    }
+}
+
+fn layout_phase_effect_reserve(presentation: &RichTextPresentation) -> LayoutEffectReserve {
+    presentation
+        .effects
+        .iter()
+        .filter(|effect| {
+            matches!(
+                effect.phase,
+                RichTextEffectPhase::BeforeLayout | RichTextEffectPhase::LayoutTransform
+            )
+        })
+        .map(layout_builtin_effect_reserve)
+        .fold(LayoutEffectReserve::default(), LayoutEffectReserve::union)
+}
+
+fn layout_builtin_effect_reserve(effect: &RichTextEffectDescriptor) -> LayoutEffectReserve {
+    match effect.id.as_str() {
+        "wave" => {
+            let amplitude = effect_param_milli(effect, "amp")
+                .unwrap_or(Milli(4000))
+                .as_f32()
+                .abs();
+            let direction = effect_param_vec2(effect, "dir")
+                .or_else(|| effect_axis_direction(effect))
+                .unwrap_or([0.0, 1.0]);
+            LayoutEffectReserve {
+                x: amplitude * direction[0].abs(),
+                y: amplitude * direction[1].abs(),
+            }
+        }
+        "shake" | "jitter" => {
+            let amplitude = effect_param_milli(effect, "amp")
+                .unwrap_or(Milli(2000))
+                .as_f32()
+                .abs();
+            LayoutEffectReserve {
+                x: amplitude,
+                y: amplitude,
+            }
+        }
+        "arc" => {
+            let radius = effect_param_milli(effect, "radius")
+                .unwrap_or(Milli(120_000))
+                .as_f32()
+                .abs();
+            LayoutEffectReserve {
+                x: radius,
+                y: radius,
+            }
+        }
+        _ => LayoutEffectReserve::default(),
+    }
+}
+
+fn effect_param_milli(effect: &RichTextEffectDescriptor, name: &str) -> Option<Milli> {
+    effect_param_as_milli(effect.params.get(name)?)
+}
+
+fn effect_param_vec2(effect: &RichTextEffectDescriptor, name: &str) -> Option<[f32; 2]> {
+    effect_param_as_vec2(effect.params.get(name)?)
+}
+
+fn effect_param_as_milli(param: &RichTextParam) -> Option<Milli> {
+    match param {
+        RichTextParam::Milli { value } => Some(*value),
+        RichTextParam::Int { value } => {
+            Some(Milli(i32::try_from(*value).ok()?.saturating_mul(1000)))
+        }
+        RichTextParam::Raw { value } | RichTextParam::Text { value } => {
+            parse_raw_effect_milli(value)
+        }
+        _ => None,
+    }
+}
+
+fn effect_param_as_vec2(param: &RichTextParam) -> Option<[f32; 2]> {
+    match param {
+        RichTextParam::Vec2 { value } => Some([value.x.as_f32(), value.y.as_f32()]),
+        RichTextParam::Raw { value } | RichTextParam::Text { value } => {
+            parse_raw_effect_vec2(value)
+        }
+        _ => None,
+    }
+}
+
+fn parse_raw_effect_milli(value: &str) -> Option<Milli> {
+    let trimmed = value.trim();
+    let numeric = trimmed
+        .strip_suffix("px")
+        .or_else(|| trimmed.strip_suffix("deg"))
+        .or_else(|| trimmed.strip_suffix("ch"))
+        .unwrap_or(trimmed)
+        .trim();
+    parse_decimal_milli(numeric)
+}
+
+fn parse_raw_effect_vec2(value: &str) -> Option<[f32; 2]> {
+    let (x, y) = value.split_once(',')?;
+    Some([
+        parse_raw_effect_milli(x)?.as_f32(),
+        parse_raw_effect_milli(y)?.as_f32(),
+    ])
+}
+
+fn effect_axis_direction(effect: &RichTextEffectDescriptor) -> Option<[f32; 2]> {
+    match effect.params.get("axis")? {
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value } => match value.as_str() {
+            "x" | ".x" => Some([1.0, 0.0]),
+            "y" | ".y" => Some([0.0, 1.0]),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HorizontalRunLayoutContext<'a> {
     run_index: usize,
@@ -575,27 +710,36 @@ fn layout_horizontal_run(
                 .unwrap_or(next_index);
             continue;
         }
+        let reserve = layout_phase_effect_reserve(context.presentation);
         let width = horizontal_advance(ch, context.config.font_size);
-        if horizontal_cluster_should_wrap(cursor.x, width, context.config) {
+        let allocation_width = horizontal_layout_advance(width, reserve);
+        if horizontal_cluster_should_wrap(cursor.x, allocation_width, context.config) {
             cursor.x = context.config.origin.x;
             cursor.y += context.config.line_advance;
         }
         let start = context.range_start + offset;
         let end = start + ch.len_utf8();
-        let bounds = horizontal_glyph_bounds(cursor.x, cursor.y, width, context.config);
+        let origin_x = cursor.x + reserve.x;
+        let bounds = horizontal_glyph_bounds_with_reserve(
+            origin_x,
+            cursor.y,
+            width,
+            context.config,
+            reserve,
+        );
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range: RichTextRange::new(start, end),
             text: ch.to_string(),
-            origin: LayoutPoint::new(cursor.x, cursor.y),
-            advance: LayoutSize::new(width, 0.0),
+            origin: LayoutPoint::new(origin_x, cursor.y),
+            advance: LayoutSize::new(allocation_width, 0.0),
             bounds,
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
             vertical_form: GlyphVerticalForm::None,
             presentation: context.presentation.clone(),
         });
-        cursor.x += width;
+        cursor.x += allocation_width;
         char_index += 1;
     }
 }
@@ -632,7 +776,8 @@ fn layout_horizontal_ruby_base(
     let Some(base_text) = text.get(base_start..base_end) else {
         return 0;
     };
-    let base_width = horizontal_text_advance(base_text, context.config.font_size);
+    let reserve = layout_phase_effect_reserve(context.presentation);
+    let base_width = horizontal_text_layout_advance(base_text, context.config.font_size, reserve);
     let metrics = ruby_metrics(annotation, context.config);
     let allocation_width = horizontal_ruby_base_allocation_width(
         base_width,
@@ -646,21 +791,29 @@ fn layout_horizontal_ruby_base(
     let mut glyph_x = cursor.x + (allocation_width - base_width).max(0.0) * 0.5;
     for (offset, ch) in base_text.char_indices() {
         let width = horizontal_advance(ch, context.config.font_size);
+        let allocation_width = horizontal_layout_advance(width, reserve);
         let start = context.range_start + base_start + offset;
         let end = start + ch.len_utf8();
+        let origin_x = glyph_x + reserve.x;
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range: RichTextRange::new(start, end),
             text: ch.to_string(),
-            origin: LayoutPoint::new(glyph_x, cursor.y),
-            advance: LayoutSize::new(width, 0.0),
-            bounds: horizontal_glyph_bounds(glyph_x, cursor.y, width, context.config),
+            origin: LayoutPoint::new(origin_x, cursor.y),
+            advance: LayoutSize::new(allocation_width, 0.0),
+            bounds: horizontal_glyph_bounds_with_reserve(
+                origin_x,
+                cursor.y,
+                width,
+                context.config,
+                reserve,
+            ),
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
             vertical_form: GlyphVerticalForm::None,
             presentation: context.presentation.clone(),
         });
-        glyph_x += width;
+        glyph_x += allocation_width;
     }
     cursor.x += allocation_width;
     text[..base_end].chars().count()
@@ -677,15 +830,48 @@ fn horizontal_glyph_bounds(
     LayoutRect::new(x, y, width.max(1.0), height)
 }
 
+fn horizontal_glyph_bounds_with_reserve(
+    x: f32,
+    line_y: f32,
+    width: f32,
+    config: TextLayoutConfig,
+    reserve: LayoutEffectReserve,
+) -> LayoutRect {
+    let mut bounds = horizontal_glyph_bounds(x, line_y, width, config);
+    bounds.x -= reserve.x;
+    bounds.y -= reserve.y;
+    bounds.width += reserve.x * 2.0;
+    bounds.height += reserve.y * 2.0;
+    bounds
+}
+
 fn vertical_glyph_bounds(column_x: f32, glyph_y: f32, config: TextLayoutConfig) -> LayoutRect {
     let width = config.font_size.max(1.0).min(config.line_advance.max(1.0));
     LayoutRect::new(column_x, glyph_y, width, config.font_size.max(1.0))
 }
 
-fn horizontal_text_advance(text: &str, font_size: f32) -> f32 {
+fn vertical_glyph_bounds_with_reserve(
+    column_x: f32,
+    glyph_y: f32,
+    config: TextLayoutConfig,
+    reserve: LayoutEffectReserve,
+) -> LayoutRect {
+    let mut bounds = vertical_glyph_bounds(column_x, glyph_y, config);
+    bounds.x -= reserve.x;
+    bounds.y -= reserve.y;
+    bounds.width += reserve.x * 2.0;
+    bounds.height += reserve.y * 2.0;
+    bounds
+}
+
+fn horizontal_layout_advance(width: f32, reserve: LayoutEffectReserve) -> f32 {
+    width + reserve.x * 2.0
+}
+
+fn horizontal_text_layout_advance(text: &str, font_size: f32, reserve: LayoutEffectReserve) -> f32 {
     text.chars()
         .filter(|ch| *ch != '\n')
-        .map(|ch| horizontal_advance(ch, font_size))
+        .map(|ch| horizontal_layout_advance(horizontal_advance(ch, font_size), reserve))
         .sum()
 }
 
@@ -752,8 +938,10 @@ fn layout_vertical_run(
             cluster_index = next_cluster_index;
             continue;
         }
-        let advance = vertical_cluster_advance(&cluster.text, config);
-        let glyph_y = vertical_cluster_origin_y(&cluster.text, cursor.y, advance, config);
+        let reserve = layout_phase_effect_reserve(context.presentation);
+        let advance = vertical_cluster_layout_advance(&cluster.text, config, reserve);
+        let glyph_y =
+            vertical_cluster_origin_y(&cluster.text, cursor.y + reserve.y, advance, config);
         push_vertical_glyph(
             glyphs,
             cluster,
@@ -797,7 +985,9 @@ fn layout_vertical_side_ruby_base(
     )?;
     let base_span =
         vertical_ruby_base_cluster_span(annotation, context.range_start, clusters, cluster_index);
-    let base_extent = vertical_cluster_span_advance(&clusters[base_span.clone()], context.config);
+    let reserve = layout_phase_effect_reserve(context.presentation);
+    let base_extent =
+        vertical_cluster_span_layout_advance(&clusters[base_span.clone()], context.config, reserve);
     let metrics = ruby_metrics(annotation, context.config);
     let allocation_extent = vertical_ruby_base_allocation_height(
         base_extent,
@@ -816,11 +1006,11 @@ fn layout_vertical_side_ruby_base(
             base_cluster,
             base_range,
             cursor.x,
-            glyph_y,
+            glyph_y + reserve.y,
             writing_mode,
             context,
         );
-        glyph_y += vertical_cluster_advance(&base_cluster.text, context.config);
+        glyph_y += vertical_cluster_layout_advance(&base_cluster.text, context.config, reserve);
         previous_cluster = Some(base_cluster.text.clone());
     }
     cursor.y += allocation_extent;
@@ -836,14 +1026,15 @@ fn push_vertical_glyph(
     writing_mode: RichTextWritingMode,
     context: RunLayoutContext<'_>,
 ) {
-    let advance = vertical_cluster_advance(&cluster.text, context.config);
+    let reserve = layout_phase_effect_reserve(context.presentation);
+    let advance = vertical_cluster_layout_advance(&cluster.text, context.config, reserve);
     glyphs.push(LaidOutGlyph {
         run_index: context.run_index,
         range,
         text: cluster.text.clone(),
         origin: LayoutPoint::new(column_x, glyph_y),
         advance: LayoutSize::new(0.0, advance),
-        bounds: vertical_glyph_bounds(column_x, glyph_y, context.config),
+        bounds: vertical_glyph_bounds_with_reserve(column_x, glyph_y, context.config, reserve),
         writing_mode,
         orientation: cluster.orientation,
         vertical_form: cluster.vertical_form,
@@ -1186,6 +1377,7 @@ fn vertical_column_segment_required_extent(
     let mut cursor = 0.0f32;
     let mut required = 0.0f32;
     let mut cluster_index = column_start;
+    let reserve = layout_phase_effect_reserve(context.presentation);
     while cluster_index < column_end {
         let cluster = &clusters[cluster_index];
         let range = RichTextRange::new(
@@ -1205,7 +1397,11 @@ fn vertical_column_segment_required_extent(
                 cluster_index,
             );
             let allocation_extent = vertical_ruby_base_allocation_height(
-                vertical_cluster_span_advance(&clusters[span.clone()], context.config),
+                vertical_cluster_span_layout_advance(
+                    &clusters[span.clone()],
+                    context.config,
+                    reserve,
+                ),
                 ruby_text_extent(
                     &annotation.ruby,
                     ruby_metrics(annotation, context.config).font_size,
@@ -1225,7 +1421,7 @@ fn vertical_column_segment_required_extent(
             context.config,
         );
         required = required.max(cursor + required_inline_extent);
-        cursor += vertical_cluster_advance(&cluster.text, context.config);
+        cursor += vertical_cluster_layout_advance(&cluster.text, context.config, reserve);
         cursor += vertical_inter_character_ruby_extent_after(range, context);
         cluster_index += 1;
     }
@@ -1787,11 +1983,15 @@ fn vertical_ruby_base_cluster_span(
     cluster_index..end.max(cluster_index + 1).min(clusters.len())
 }
 
-fn vertical_cluster_span_advance(clusters: &[VerticalCluster], config: TextLayoutConfig) -> f32 {
+fn vertical_cluster_span_layout_advance(
+    clusters: &[VerticalCluster],
+    config: TextLayoutConfig,
+    reserve: LayoutEffectReserve,
+) -> f32 {
     clusters
         .iter()
         .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
-        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
+        .map(|cluster| vertical_cluster_layout_advance(&cluster.text, config, reserve))
         .sum::<f32>()
         .max(config.font_size)
 }
@@ -1829,6 +2029,14 @@ fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
     } else {
         config.font_size
     }
+}
+
+fn vertical_cluster_layout_advance(
+    grapheme: &str,
+    config: TextLayoutConfig,
+    reserve: LayoutEffectReserve,
+) -> f32 {
+    vertical_cluster_advance(grapheme, config) + reserve.y * 2.0
 }
 
 fn vertical_cluster_has_jlreq_separation_prohibited_before(
@@ -2542,7 +2750,7 @@ mod tests {
     use arcweft_render_text::{
         LineDisplayFrame, Milli, RichTextDisplayMap, RichTextEffectDescriptor, RichTextEffectPhase,
         RichTextEffectTarget, RichTextJlreqStrictness, RichTextLayout, RichTextParam,
-        RichTextStateScope, RichTextTextRun, RichTextTextSource,
+        RichTextStateScope, RichTextTextRun, RichTextTextSource, RichTextVec2,
     };
     use std::collections::BTreeMap;
 
@@ -2667,6 +2875,49 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_layout_transform_effect_reserves_inline_advance_for_wrapping() {
+        let presentation = RichTextPresentation {
+            effects: vec![RichTextEffectDescriptor {
+                id: "wave".to_owned(),
+                params: BTreeMap::from([
+                    (
+                        "amp".to_owned(),
+                        RichTextParam::Milli {
+                            value: Milli(10000),
+                        },
+                    ),
+                    (
+                        "dir".to_owned(),
+                        RichTextParam::Vec2 {
+                            value: RichTextVec2::new(Milli::ONE, Milli::ZERO),
+                        },
+                    ),
+                ]),
+                target: RichTextEffectTarget::Run,
+                phase: RichTextEffectPhase::LayoutTransform,
+                state_scope: RichTextStateScope::Run,
+            }],
+            ..RichTextPresentation::default()
+        };
+        let frame = frame_with_run("AA", presentation);
+        let config = TextLayoutConfig {
+            origin: LayoutPoint::new(0.0, 0.0),
+            size: LayoutSize::new(54.0, 120.0),
+            font_size: 30.0,
+            line_advance: 42.0,
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert!(
+            layout.glyphs[1].origin.y > layout.glyphs[0].origin.y,
+            "layout_transform wave should reserve inline motion before wrapping"
+        );
+        assert!(layout.glyphs[0].advance.width > horizontal_advance('A', config.font_size));
+    }
+
+    #[test]
     fn horizontal_layout_wraps_across_style_run_boundary() {
         let frame = frame_with_split_runs("AAAA", 2, RichTextPresentation::default());
         let config = TextLayoutConfig {
@@ -2722,6 +2973,53 @@ mod tests {
         assert_f32_eq(layout.glyphs[1].origin.y, 54.0);
         assert!(layout.glyphs[2].origin.x > layout.glyphs[1].origin.x);
         assert_f32_eq(layout.glyphs[2].origin.y, 24.0);
+    }
+
+    #[test]
+    fn vertical_layout_transform_effect_reserves_inline_advance_for_column_breaking() {
+        let presentation = RichTextPresentation {
+            layout: Some(RichTextLayout {
+                writing_mode: RichTextWritingMode::VerticalRl,
+                ..RichTextLayout::default()
+            }),
+            effects: vec![RichTextEffectDescriptor {
+                id: "wave".to_owned(),
+                params: BTreeMap::from([
+                    (
+                        "amp".to_owned(),
+                        RichTextParam::Milli {
+                            value: Milli(10000),
+                        },
+                    ),
+                    (
+                        "dir".to_owned(),
+                        RichTextParam::Vec2 {
+                            value: RichTextVec2::new(Milli::ZERO, Milli::ONE),
+                        },
+                    ),
+                ]),
+                target: RichTextEffectTarget::Run,
+                phase: RichTextEffectPhase::LayoutTransform,
+                state_scope: RichTextStateScope::Run,
+            }],
+            ..RichTextPresentation::default()
+        };
+        let frame = frame_with_run("天地", presentation);
+        let config = TextLayoutConfig {
+            origin: LayoutPoint::new(0.0, 0.0),
+            size: LayoutSize::new(120.0, 70.0),
+            font_size: 30.0,
+            line_advance: 42.0,
+            ..TextLayoutConfig::default()
+        };
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 2);
+        assert!(
+            layout.glyphs[1].origin.x < layout.glyphs[0].origin.x,
+            "layout_transform wave should reserve vertical inline motion before column breaking"
+        );
+        assert!(layout.glyphs[0].advance.height > config.font_size);
     }
 
     #[test]

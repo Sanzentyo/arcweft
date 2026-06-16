@@ -106,6 +106,12 @@ built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
 registered custom IDs run against `TextEffectGlyphContext`, and missing custom
 registries or unsupported custom phases are reported instead of being silently
 reinterpreted as builtins.
+For `before_layout` and `layout_transform` builtin placement effects,
+`arcweft-text-layout` reserves the deterministic displacement envelope in
+horizontal advances, vertical column planning, glyph bounds, and ruby base
+allocation before native glyph submission. The native renderer still applies the
+time-specific placement offset when drawing, while layout/ruby planning now
+accounts for the space those layout-phase effects can occupy.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

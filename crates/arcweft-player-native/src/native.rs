@@ -536,7 +536,13 @@ impl NativeOffscreenCaptureSession {
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
-            native_text_layout_config(width, height, viewport.left, viewport.top),
+            native_text_layout_config_at(
+                width,
+                height,
+                viewport.left,
+                viewport.top,
+                viewport.time_seconds,
+            ),
         )?;
         let Some(page) = page_from_display_map_range(frame, page_range) else {
             return Err(NativeWindowError::EmptyPages);
@@ -686,7 +692,13 @@ impl NativeOffscreenCaptureSession {
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
-            native_text_layout_config(width, height, origin.left, origin.top),
+            native_text_layout_config_at(
+                width,
+                height,
+                origin.left,
+                origin.top,
+                viewport.time_seconds,
+            ),
         )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
@@ -733,7 +745,13 @@ impl NativeOffscreenCaptureSession {
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
-            native_text_layout_config(width, height, origin.left, origin.top),
+            native_text_layout_config_at(
+                width,
+                height,
+                origin.left,
+                origin.top,
+                viewport.time_seconds,
+            ),
         )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
@@ -884,7 +902,7 @@ pub fn measure_frame_elements_at_page_with_time(
     let page_layout = layout_page_range(
         frame,
         page_range,
-        native_text_layout_config(width.max(1), height.max(1), left, top),
+        native_text_layout_config_at(width.max(1), height.max(1), left, top, time_seconds),
     )?;
     Ok(native_element_bounds_from_layout_at(
         &page_layout,
@@ -1014,6 +1032,7 @@ fn visual_page_from_range(
         TextLayoutConfig {
             origin: LayoutPoint::new(0.0, 0.0),
             size: LayoutSize::new(720.0, 360.0),
+            effect_time_seconds: time_seconds,
             ..TextLayoutConfig::default()
         },
     )
@@ -1658,12 +1677,23 @@ impl NativeRubyLayoutGeometry {
 }
 
 fn native_text_layout_config(width: u32, height: u32, left: f32, top: f32) -> TextLayoutConfig {
+    native_text_layout_config_at(width, height, left, top, 0.0)
+}
+
+fn native_text_layout_config_at(
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    effect_time_seconds: f32,
+) -> TextLayoutConfig {
     TextLayoutConfig {
         origin: LayoutPoint::new(left, top),
         size: LayoutSize::new(
             (surface_extent_f32(width) - left).max(1.0),
             (surface_extent_f32(height) - top).max(1.0),
         ),
+        effect_time_seconds,
         ..TextLayoutConfig::default()
     }
 }
