@@ -523,6 +523,36 @@ impl NativeOffscreenCaptureSession {
         &mut self.effect_state
     }
 
+    /// Measures first-page rich-text element bounds with this session's custom effects.
+    pub fn measure_frame_elements_at(
+        &mut self,
+        frame: &LineDisplayFrame,
+        width: u32,
+        height: u32,
+        left: f32,
+        top: f32,
+    ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+        self.measure_frame_elements_in(
+            frame,
+            NativeCaptureViewport::new(width, height, left, top, 0),
+        )
+    }
+
+    /// Measures rich-text element bounds with this session's custom effects.
+    pub fn measure_frame_elements_in(
+        &mut self,
+        frame: &LineDisplayFrame,
+        viewport: NativeCaptureViewport,
+    ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+        measure_frame_elements_at_page_with_effects(
+            frame,
+            viewport,
+            viewport.time_seconds,
+            Some(&mut self.effect_registry),
+            &mut self.effect_state,
+        )
+    }
+
     /// Renders the first page of a rich-text frame at a viewport origin.
     pub fn capture_frame_rgba_at(
         &mut self,
@@ -920,17 +950,58 @@ pub fn measure_frame_elements_at_page_with_time(
     page_index: usize,
     time_seconds: f32,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
-    let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
+    let mut state = RichTextStateStore::default();
+    measure_frame_elements_at_page_with_effects(
+        frame,
+        NativeCaptureViewport::new(width, height, left, top, page_index),
+        time_seconds,
+        None,
+        &mut state,
+    )
+}
+
+/// Measures native rich-text element bounds using renderer-local custom effects.
+pub fn measure_frame_elements_with_effect_registry(
+    frame: &LineDisplayFrame,
+    viewport: NativeCaptureViewport,
+    registry: &mut RichTextEffectRegistry,
+    state: &mut RichTextStateStore,
+) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    measure_frame_elements_at_page_with_effects(
+        frame,
+        viewport,
+        viewport.time_seconds,
+        Some(registry),
+        state,
+    )
+}
+
+fn measure_frame_elements_at_page_with_effects(
+    frame: &LineDisplayFrame,
+    viewport: NativeCaptureViewport,
+    time_seconds: f32,
+    registry: Option<&mut RichTextEffectRegistry>,
+    state: &mut RichTextStateStore,
+) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+    let mut effects = NativeEffectExecution::new(registry, state);
     let page_layout = layout_page_range(
         frame,
         page_range,
-        native_text_layout_config_at(width.max(1), height.max(1), left, top, time_seconds),
+        native_text_layout_config_at(
+            viewport.width.max(1),
+            viewport.height.max(1),
+            viewport.left,
+            viewport.top,
+            time_seconds,
+        ),
     )?;
     Ok(native_element_bounds_from_layout_at(
         &page_layout,
-        width.max(1),
-        height.max(1),
+        viewport.width.max(1),
+        viewport.height.max(1),
         time_seconds,
+        Some(&mut effects),
     ))
 }
 
@@ -1260,8 +1331,10 @@ fn native_element_bounds_from_layout_at(
     width: u32,
     height: u32,
     time_seconds: f32,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> Vec<NativeFrameElementBounds> {
-    let transformed = native_transformed_glyph_bounds(page_layout, time_seconds);
+    let transformed =
+        native_transformed_glyph_bounds(page_layout, time_seconds, effects.as_deref_mut());
     let mut bounds = page_layout
         .layout
         .runs
@@ -1324,6 +1397,7 @@ fn native_element_bounds_from_layout_at(
                     index,
                     ruby,
                     time_seconds,
+                    effects.as_deref_mut(),
                 ),
             ))
         })
@@ -1370,11 +1444,13 @@ struct NativeTransformedGlyphBounds {
 fn native_transformed_glyph_bounds(
     page_layout: &NativePageLayout,
     time_seconds: f32,
+    effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> NativeTransformedGlyphBounds {
-    let placements = native_glyph_placements_for_layout(
+    let placements = native_glyph_placements_for_layout_with_effects(
         &page_layout.frame.line.0,
         &page_layout.layout,
         time_seconds,
+        effects,
     );
     let glyph_bounds = page_layout
         .layout
@@ -1530,29 +1606,27 @@ fn transformed_ruby_geometry(
     source_index: usize,
     ruby: &arcweft_text_layout::LaidOutRuby,
     time_seconds: f32,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> NativeRubyLayoutGeometry {
     let base_count = text
         .get(ruby.base_range.start..ruby.base_range.end)
         .map_or(1, |base| base.chars().count().max(1));
     let ruby_count = ruby.ruby.chars().count().max(1);
-    let base = transformed_ruby_sequence_bounds(
+    let base_ctx = RubySequenceTransformContext {
         line_key,
-        &ruby.presentation,
+        presentation: &ruby.presentation,
         source_index,
-        ruby.base_bounds,
-        ruby.writing_mode,
-        base_count,
+        writing_mode: ruby.writing_mode,
+        glyph_count: base_count,
         time_seconds,
-    );
-    let annotation = transformed_ruby_sequence_bounds(
-        line_key,
-        &ruby.presentation,
-        source_index,
-        ruby.ruby_bounds,
-        ruby.writing_mode,
-        ruby_count,
-        time_seconds,
-    );
+    };
+    let annotation_ctx = RubySequenceTransformContext {
+        glyph_count: ruby_count,
+        ..base_ctx
+    };
+    let base =
+        transformed_ruby_sequence_bounds(ruby.base_bounds, &base_ctx, effects.as_deref_mut());
+    let annotation = transformed_ruby_sequence_bounds(ruby.ruby_bounds, &annotation_ctx, effects);
     NativeRubyLayoutGeometry {
         object: base.union(annotation),
         base,
@@ -1560,30 +1634,31 @@ fn transformed_ruby_geometry(
     }
 }
 
-fn transformed_ruby_sequence_bounds(
-    line_key: &str,
-    presentation: &RichTextPresentation,
+#[derive(Clone, Copy)]
+struct RubySequenceTransformContext<'a> {
+    line_key: &'a str,
+    presentation: &'a RichTextPresentation,
     source_index: usize,
-    bounds: LayoutRect,
     writing_mode: RichTextWritingMode,
     glyph_count: usize,
     time_seconds: f32,
+}
+
+fn transformed_ruby_sequence_bounds(
+    bounds: LayoutRect,
+    ctx: &RubySequenceTransformContext<'_>,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> LayoutRect {
-    (0..glyph_count)
-        .map(|glyph_index| {
-            let cell = ruby_sequence_cell(bounds, writing_mode, glyph_count, glyph_index);
-            transformed_presentation_rect(
-                line_key,
-                presentation,
-                source_index,
-                glyph_index,
-                glyph_count,
-                cell,
-                time_seconds,
-            )
-        })
-        .reduce(LayoutRect::union)
-        .unwrap_or(bounds)
+    let mut out = None;
+    for glyph_index in 0..ctx.glyph_count {
+        let cell = ruby_sequence_cell(bounds, ctx.writing_mode, ctx.glyph_count, glyph_index);
+        let transformed =
+            transformed_presentation_rect(ctx, glyph_index, cell, effects.as_deref_mut());
+        out = Some(out.map_or(transformed, |existing: LayoutRect| {
+            existing.union(transformed)
+        }));
+    }
+    out.unwrap_or(bounds)
 }
 
 fn ruby_sequence_cell(
@@ -1616,16 +1691,13 @@ fn ruby_sequence_cell(
 }
 
 fn transformed_presentation_rect(
-    line_key: &str,
-    presentation: &RichTextPresentation,
-    source_index: usize,
+    ctx: &RubySequenceTransformContext<'_>,
     glyph_index: usize,
-    glyph_count: usize,
     rect: LayoutRect,
-    time_seconds: f32,
+    effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> LayoutRect {
     let mut placement = NativeGlyphPlacement {
-        run_index: source_index,
+        run_index: ctx.source_index,
         glyph_index,
         range: glyph_index..glyph_index + 1,
         x: rect.x,
@@ -1638,17 +1710,28 @@ fn transformed_presentation_rect(
         scale_y: 1.0,
         opacity: 1.0,
     };
-    apply_presentation_effects_to_placement(
-        line_key,
-        presentation,
-        glyph_count,
-        time_seconds,
-        &mut placement,
-    );
+    if let Some(effects) = effects {
+        apply_presentation_effects_to_placement_with_execution(
+            ctx.line_key,
+            ctx.presentation,
+            ctx.glyph_count,
+            ctx.time_seconds,
+            effects,
+            &mut placement,
+        );
+    } else {
+        apply_presentation_effects_to_placement(
+            ctx.line_key,
+            ctx.presentation,
+            ctx.glyph_count,
+            ctx.time_seconds,
+            &mut placement,
+        );
+    }
     let affine = presentation_affine(
         &placement,
         0.0,
-        layout_rect_transform_pivot(presentation, rect),
+        layout_rect_transform_pivot(ctx.presentation, rect),
     );
     transformed_local_rect(rect.width, rect.height, &placement, affine)
 }
@@ -4922,7 +5005,7 @@ mod tests {
             text_run_indices: (0..layout.runs.len()).collect(),
             ruby_indices: Vec::new(),
         };
-        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0);
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0, None);
         let glyph_bounds = bounds
             .iter()
             .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
@@ -5806,7 +5889,7 @@ mod tests {
         )
         .expect("page layout resolves");
         let layout_annotation_x = page_layout.layout.ruby[0].ruby_bounds.x;
-        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0);
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0, None);
         let ruby_bounds = bounds
             .iter()
             .find_map(|bounds| match bounds.element {
@@ -5945,7 +6028,7 @@ mod tests {
             .expect("page layout resolves");
             assert!(layout.layout.ruby.len() > 1);
 
-            let bounds = native_element_bounds_from_layout_at(&layout, 220, 120, 0.0);
+            let bounds = native_element_bounds_from_layout_at(&layout, 220, 120, 0.0, None);
             let ruby_bounds = bounds
                 .iter()
                 .filter(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
@@ -6004,7 +6087,7 @@ mod tests {
         )
         .expect("page layout resolves");
         assert!(page_layout.layout.ruby.len() > 1);
-        let bounds = native_element_bounds_from_layout_at(&page_layout, 220, 120, 0.0);
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 220, 120, 0.0, None);
         let ruby = bounds
             .iter()
             .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
@@ -7104,6 +7187,81 @@ mod tests {
         );
     }
 
+    #[test]
+    fn measure_frame_elements_uses_custom_effect_registry_for_glyph_bounds() {
+        let frame = custom_effect_test_frame(".nudge");
+        let baseline =
+            measure_frame_elements_at_page_with_time(&frame, 800, 600, 96.0, 572.0, 0, 0.0)
+                .expect("baseline bounds");
+
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        session
+            .effect_registry_mut()
+            .insert_lambda(".nudge", |ctx| {
+                ctx.placement.x += 40.0;
+            });
+        let shifted = session
+            .measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("registry bounds");
+
+        let baseline_glyph = baseline
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
+            .expect("baseline glyph");
+        let shifted_glyph = shifted
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
+            .expect("shifted glyph");
+        assert!(
+            shifted_glyph.bbox.x > baseline_glyph.bbox.x + 28,
+            "custom effect registry should move observed glyph bounds: {:?} -> {:?}",
+            baseline_glyph.bbox,
+            shifted_glyph.bbox
+        );
+    }
+
+    #[test]
+    fn measure_frame_elements_uses_custom_effect_registry_for_ruby_bounds() {
+        let frame = custom_effect_ruby_test_frame(".nudge");
+        let baseline =
+            measure_frame_elements_at_page_with_time(&frame, 800, 600, 96.0, 572.0, 0, 0.0)
+                .expect("baseline bounds");
+
+        let mut registry = RichTextEffectRegistry::default();
+        registry.insert_lambda(".nudge", |ctx| {
+            ctx.placement.y -= 32.0;
+        });
+        let mut state = RichTextStateStore::default();
+        let shifted = measure_frame_elements_with_effect_registry(
+            &frame,
+            NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0),
+            &mut registry,
+            &mut state,
+        )
+        .expect("registry ruby bounds");
+
+        let baseline_ruby = baseline
+            .iter()
+            .find_map(|bounds| {
+                matches!(bounds.element, NativeFrameElement::Ruby { .. })
+                    .then_some(bounds.ruby.as_ref())?
+            })
+            .expect("baseline ruby geometry");
+        let shifted_ruby = shifted
+            .iter()
+            .find_map(|bounds| {
+                matches!(bounds.element, NativeFrameElement::Ruby { .. })
+                    .then_some(bounds.ruby.as_ref())?
+            })
+            .expect("shifted ruby geometry");
+        assert!(
+            shifted_ruby.annotation_bbox.y + 20 < baseline_ruby.annotation_bbox.y,
+            "custom effect registry should move observed ruby annotation bounds: {:?} -> {:?}",
+            baseline_ruby.annotation_bbox,
+            shifted_ruby.annotation_bbox
+        );
+    }
+
     fn custom_effect_test_frame(id: &str) -> LineDisplayFrame {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.custom.effect".to_owned()),
@@ -7131,6 +7289,44 @@ mod tests {
                 },
                 RichTextNode::Text {
                     text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
+    }
+
+    fn custom_effect_ruby_test_frame(id: &str) -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.custom.ruby.effect".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: id.to_owned(),
+                            params: BTreeMap::new(),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Glyph,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "夢".to_owned(),
+                    ruby: "ゆめ".to_owned(),
                 },
                 RichTextNode::StyleEnd {
                     name: "/".to_owned(),

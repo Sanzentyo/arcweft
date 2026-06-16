@@ -2418,7 +2418,8 @@ fn target_attr(attrs: &BTreeMap<String, String>) -> RichTextEffectTarget {
 
 fn state_scope_attr(attrs: &BTreeMap<String, String>) -> RichTextStateScope {
     match attrs
-        .get("state")
+        .get("state_scope")
+        .or_else(|| attrs.get("state"))
         .or_else(|| attrs.get("scope"))
         .map(String::as_str)
     {
@@ -2783,7 +2784,7 @@ flow @flow.main main {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.sparkle amp=2px dir=0,1 pattern=a,b,c seed=dialogue]BC[/]D[p]
+    alice: A[.sparkle amp=2px dir=0,1 pattern=a,b,c seed=dialogue target=glyph phase=layout_transform state_scope=global]BC[/]D[p]
 }
 ",
         );
@@ -2824,6 +2825,9 @@ flow @flow.main main {
             .expect("effect presentation");
 
         assert_eq!(effect.id, "sparkle");
+        assert_eq!(effect.target, RichTextEffectTarget::Glyph);
+        assert_eq!(effect.phase, RichTextEffectPhase::LayoutTransform);
+        assert_eq!(effect.state_scope, RichTextStateScope::Global);
         assert_eq!(
             effect.params.get("amp"),
             Some(&RichTextParam::Milli { value: Milli(2000) })

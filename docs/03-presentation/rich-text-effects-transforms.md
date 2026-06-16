@@ -80,6 +80,9 @@ Renderer conformance is explicit:
 
 Unsupported transform fields must be visible in Agent observation metadata and
 should produce diagnostics when a capture claims exact visual conformance.
+The native rich-text placement renderer claims visual conformance for
+post-layout translate, rotate, scale, skew, origin, and target semantics on body
+glyphs and ruby annotation glyphs.
 
 ---
 
@@ -191,7 +194,7 @@ Agent observation must expose the effective presentation needed to debug text:
 
 - layout mode, direction, vertical latin mode, JLREQ strictness, and ruby
   typography fields
-- transform descriptor, including unsupported fields
+- full transform descriptor
 - effect descriptors with id, params, target, phase, and state scope
 - shader refs with id, params, and phase
 - source ranges and ruby base/annotation bboxes
@@ -219,3 +222,10 @@ renderer has not implemented every operation:
 Unsupported rendering behavior is reported as diagnostics or profile metadata.
 It must not introduce alternate syntax, compatibility aliases, or hidden
 fallback semantics.
+The native rich-text placement renderer currently supports builtin placement
+effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
+typewriter masking for `glyph_mask`, and registry-dispatched custom placement
+effects for observe, visual-plan, and framebuffer capture paths. Color,
+offscreen shader, post-process, and host-event phases remain separate renderer
+capabilities and must be diagnosed if a placement-only path is asked to execute
+them.

@@ -109,7 +109,11 @@ reinterpreted as builtins. `NativeOffscreenCaptureSession` also owns a mutable
 effect registry and shared state store; custom registered placement effects run
 when preparing submitted glyphs for framebuffer, color, object-id, and mask
 captures, so registry-backed custom effects are visible in actual native image
-output rather than only in plan snapshots.
+output rather than only in plan snapshots. The same session can measure native
+element bounds through `measure_frame_elements_in`, and the standalone
+`measure_frame_elements_with_effect_registry` API accepts an explicit
+registry/state pair. This keeps glyph and ruby observe bboxes aligned with
+registry-backed captures instead of reporting builtin-only debug geometry.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base
