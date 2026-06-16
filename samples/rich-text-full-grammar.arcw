@@ -75,6 +75,10 @@ flow rich_text_full_grammar {
         極端ルビ: |[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。[p]
     ]
 
+    alice.say(id=@say.full.001.vertical_extreme, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=13px, gap=0px)), inline_error=InlineFailure.fallback("?"))[
+        縦極端ルビ: [.vertical_rl jlreq=normal]|[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。[/][p]
+    ]
+
     bob.say(id=@say.full.002, voice=auto, inline_error=InlineFailure.fallback("?"))[
         補間: #[player_name]、$(debug_label)、#[fmt(score, style="number")]点、#[fmt(score, fallback="?")]、#[fmt(score, on_error=.discard)]。[p]
     ]

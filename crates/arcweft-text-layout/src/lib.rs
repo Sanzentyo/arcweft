@@ -677,6 +677,11 @@ fn horizontal_glyph_bounds(
     LayoutRect::new(x, y, width.max(1.0), height)
 }
 
+fn vertical_glyph_bounds(column_x: f32, glyph_y: f32, config: TextLayoutConfig) -> LayoutRect {
+    let width = config.font_size.max(1.0).min(config.line_advance.max(1.0));
+    LayoutRect::new(column_x, glyph_y, width, config.line_advance.max(1.0))
+}
+
 fn horizontal_text_advance(text: &str, font_size: f32) -> f32 {
     text.chars()
         .filter(|ch| *ch != '\n')
@@ -734,7 +739,7 @@ fn layout_vertical_run(
         }
         let advance = vertical_cluster_advance(&cluster.text, config);
         let glyph_y = vertical_cluster_origin_y(&cluster.text, cursor.y, advance, config);
-        let bounds = LayoutRect::new(cursor.x, glyph_y, config.line_advance, config.line_advance);
+        let bounds = vertical_glyph_bounds(cursor.x, glyph_y, config);
         glyphs.push(LaidOutGlyph {
             run_index: context.run_index,
             range,
@@ -6371,6 +6376,18 @@ mod tests {
             glyph.bounds.y,
             config.origin.y + (config.line_advance - config.font_size) * 0.5,
         );
+    }
+
+    #[test]
+    fn vertical_glyph_bounds_track_font_size_inside_line_advance() {
+        let frame = frame_with_run("夢", vertical_presentation(RichTextWritingMode::VerticalRl));
+        let config = TextLayoutConfig::default();
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+        let glyph = &layout.glyphs[0];
+
+        assert_f32_eq(glyph.origin.x, glyph.bounds.x);
+        assert_f32_eq(glyph.bounds.width, config.font_size);
+        assert_f32_eq(glyph.bounds.height, config.line_advance);
     }
 
     #[test]

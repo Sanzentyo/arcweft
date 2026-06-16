@@ -127,6 +127,17 @@ pub struct ResolvedGlyph {
     pub offset: Vector,
 }
 
+/// Horizontal alignment inside one vertical ruby annotation cell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerticalGlyphHorizontalAlign {
+    /// Align glyph ink to the left edge of the annotation cell.
+    Start,
+    /// Center glyph ink in the annotation cell.
+    Center,
+    /// Align glyph ink to the right edge of the annotation cell.
+    End,
+}
+
 /// Adapts Arcweft layout geometry to a glyphon `GlyphArea`.
 ///
 /// The resolver boundary keeps font shaping and cache-key ownership in the
@@ -222,6 +233,7 @@ pub fn vertical_glyph_area_from_shaped_buffer(
     options: GlyphonAreaOptions,
     cell_width: f32,
     vertical_advance: f32,
+    horizontal_align: VerticalGlyphHorizontalAlign,
 ) -> OwnedGlyphArea {
     let cell_width = cell_width.max(1.0);
     let vertical_advance = vertical_advance.max(1.0);
@@ -234,7 +246,12 @@ pub fn vertical_glyph_area_from_shaped_buffer(
                 .map(move |(glyph_index, glyph)| {
                     let physical = glyph.physical((0.0, 0.0), options.scale);
                     let glyph_width = glyph.w * options.scale;
-                    let origin_x = options.left + (cell_width - glyph_width).max(0.0) * 0.5;
+                    let origin_x = options.left
+                        + vertical_glyph_horizontal_align_offset(
+                            cell_width,
+                            glyph_width,
+                            horizontal_align,
+                        );
                     let origin_y = options.top + (usize_to_f32(glyph_index) * vertical_advance);
                     GlyphInstance {
                         source: GlyphSource::Text {
@@ -264,6 +281,19 @@ pub fn vertical_glyph_area_from_shaped_buffer(
         bounds: options.bounds,
         default_color: options.default_color,
         force_alpha_mask: options.force_alpha_mask,
+    }
+}
+
+fn vertical_glyph_horizontal_align_offset(
+    cell_width: f32,
+    glyph_width: f32,
+    horizontal_align: VerticalGlyphHorizontalAlign,
+) -> f32 {
+    let spare = (cell_width - glyph_width).max(0.0);
+    match horizontal_align {
+        VerticalGlyphHorizontalAlign::Start => 0.0,
+        VerticalGlyphHorizontalAlign::Center => spare * 0.5,
+        VerticalGlyphHorizontalAlign::End => spare,
     }
 }
 
@@ -908,6 +938,7 @@ mod tests {
             },
             14.0,
             14.0,
+            VerticalGlyphHorizontalAlign::Center,
         );
 
         assert!(area.len() >= 2);
@@ -917,6 +948,62 @@ mod tests {
         assert!(area.glyphs()[1].origin.x < area.glyphs()[0].origin.x + 14.0);
         assert_f32_eq(area.glyphs()[0].advance.x, 0.0);
         assert_f32_eq(area.glyphs()[0].advance.y, 14.0);
+    }
+
+    #[test]
+    fn vertical_shaped_buffer_can_align_ruby_ink_to_cell_edges() {
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(13.0, 13.0));
+        buffer.set_size(&mut font_system, Some(400.0), Some(100.0));
+        let attrs = Attrs::new().family(Family::SansSerif);
+        buffer.set_rich_text(
+            &mut font_system,
+            [("ま", attrs.clone())],
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        let options = GlyphonAreaOptions {
+            left: 70.0,
+            top: 30.0,
+            bounds: TextBounds {
+                left: 0,
+                top: 0,
+                right: 400,
+                bottom: 200,
+            },
+            default_color: Color::rgb(170, 190, 220),
+            ..GlyphonAreaOptions::default()
+        };
+        let start = vertical_glyph_area_from_shaped_buffer(
+            &buffer,
+            options,
+            30.0,
+            13.0,
+            VerticalGlyphHorizontalAlign::Start,
+        );
+        let center = vertical_glyph_area_from_shaped_buffer(
+            &buffer,
+            options,
+            30.0,
+            13.0,
+            VerticalGlyphHorizontalAlign::Center,
+        );
+        let end = vertical_glyph_area_from_shaped_buffer(
+            &buffer,
+            options,
+            30.0,
+            13.0,
+            VerticalGlyphHorizontalAlign::End,
+        );
+
+        assert!(!start.is_empty());
+        assert_f32_eq(start.glyphs()[0].origin.x, 70.0);
+        assert!(center.glyphs()[0].origin.x >= start.glyphs()[0].origin.x);
+        assert!(end.glyphs()[0].origin.x >= center.glyphs()[0].origin.x);
+        assert!(end.glyphs()[0].origin.x <= 100.0);
     }
 
     #[test]

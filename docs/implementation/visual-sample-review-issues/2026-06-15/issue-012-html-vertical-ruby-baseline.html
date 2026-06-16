@@ -1,0 +1,127 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arcweft issue 012 vertical ruby baseline</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: "Yu Gothic", "YuGothic", "Meiryo", sans-serif;
+  }
+
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #20262f;
+    color: #d9f2ff;
+  }
+
+  .stage {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+  }
+
+  .sample {
+    width: 360px;
+    height: 520px;
+    box-sizing: border-box;
+    padding: 24px;
+    background: #000;
+    border: 1px solid #324050;
+    overflow: hidden;
+  }
+
+  .line {
+    height: 460px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 29px;
+    line-height: 42px;
+  }
+
+  ruby {
+    ruby-position: over;
+  }
+
+  rt {
+    font-size: 13px;
+    line-height: 13px;
+    color: rgb(170 190 220);
+  }
+
+  .reference {
+    background: #fff;
+    color: #111;
+    font-family: serif;
+  }
+
+  .reference rt {
+    color: #111;
+  }
+
+  .label {
+    margin: 0 0 8px;
+    color: #a9b8c8;
+    font-size: 13px;
+  }
+</style>
+
+<div class="stage">
+  <section>
+    <p class="label">Arcweft-like vertical-rl, 29px body, 13px ruby</p>
+    <div class="sample" id="aw-stage">
+      <div class="line" id="aw-line">
+        縦極端ルビ:
+        <ruby id="aw-long"><rb id="aw-long-rb">政</rb><rt id="aw-long-rt">まつりごと</rt></ruby>を行うため、<ruby id="aw-short"><rb id="aw-short-rb">中央の帝国将官たち</rb><rt id="aw-short-rt">ぐん</rt></ruby>が集まる。
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="label">Reference-style vertical-rl, serif</p>
+    <div class="sample reference" id="ref-stage">
+      <div class="line" id="ref-line">
+        <ruby id="ref-long"><rb id="ref-long-rb">政</rb><rt id="ref-long-rt">まつりごと</rt></ruby>を行うため、中央の帝国将官たちが集まる。
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  globalThis.arcweftVerticalRubyMetrics = () => {
+    const ids = [
+      "aw-stage",
+      "aw-line",
+      "aw-long-rb",
+      "aw-long-rt",
+      "aw-short-rb",
+      "aw-short-rt",
+      "ref-stage",
+      "ref-line",
+      "ref-long-rb",
+      "ref-long-rt",
+    ];
+    const rects = Object.fromEntries(ids.map((id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return [id, {
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+        right: r.right,
+        bottom: r.bottom,
+      }];
+    }));
+    const sideGap = (rb, rt) => Math.min(
+      Math.abs(rects[rb].x - rects[rt].right),
+      Math.abs(rects[rt].x - rects[rb].right),
+    );
+    return {
+      rects,
+      sideGaps: {
+        awLong: sideGap("aw-long-rb", "aw-long-rt"),
+        awShort: sideGap("aw-short-rb", "aw-short-rt"),
+        refLong: sideGap("ref-long-rb", "ref-long-rt"),
+      },
+    };
+  };
+</script>

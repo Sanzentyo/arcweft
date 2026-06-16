@@ -1,8 +1,8 @@
 //! Minimal native window renderer for rich-text player frames.
 
 use arcweft_glyphon::{
-    GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, glyph_area_from_layout,
-    glyph_area_from_shaped_buffer, vertical_glyph_area_from_shaped_buffer,
+    GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, VerticalGlyphHorizontalAlign,
+    glyph_area_from_layout, glyph_area_from_shaped_buffer, vertical_glyph_area_from_shaped_buffer,
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
@@ -2313,6 +2313,7 @@ enum RubyGlyphPlacement {
     Vertical {
         cell_width: f32,
         vertical_advance: f32,
+        horizontal_align: VerticalGlyphHorizontalAlign,
     },
 }
 
@@ -2453,6 +2454,7 @@ fn build_ruby_buffers(
                                 cell_width: segment.ruby_bounds.width,
                                 vertical_advance: segment.ruby_bounds.height
                                     / usize_to_f32_saturating(ruby_char_count),
+                                horizontal_align: vertical_ruby_glyph_horizontal_align(segment),
                             }
                         };
                     build_ruby_buffer(
@@ -3083,11 +3085,13 @@ fn ruby_glyph_areas(
                 RubyGlyphPlacement::Vertical {
                     cell_width,
                     vertical_advance,
+                    horizontal_align,
                 } => vertical_glyph_area_from_shaped_buffer(
                     &ruby.buffer,
                     ruby_glyph_area_options(bounds, ruby.left, ruby.top, force_alpha_mask),
                     cell_width,
                     vertical_advance,
+                    horizontal_align,
                 ),
             };
             let mut color = ruby.color;
@@ -3101,6 +3105,18 @@ fn ruby_glyph_areas(
             area
         })
         .collect()
+}
+
+fn vertical_ruby_glyph_horizontal_align(
+    segment: &arcweft_text_layout::LaidOutRuby,
+) -> VerticalGlyphHorizontalAlign {
+    if segment.ruby_bounds.x >= segment.base_bounds.right() {
+        VerticalGlyphHorizontalAlign::Start
+    } else if segment.ruby_bounds.right() <= segment.base_bounds.x {
+        VerticalGlyphHorizontalAlign::End
+    } else {
+        VerticalGlyphHorizontalAlign::Center
+    }
 }
 
 fn ruby_glyph_area_options(
@@ -3992,35 +4008,78 @@ mod tests {
                 600,
                 NativeTextOrigin::default(),
             );
-            assert_eq!(ruby_buffers.len(), 1);
-            assert!(matches!(
-                ruby_buffers[0].placement,
-                RubyGlyphPlacement::Vertical { .. }
-            ));
-            assert_eq!(layout.ruby[0].writing_mode, writing_mode);
-            match writing_mode {
-                RichTextWritingMode::VerticalRl => {
-                    assert!(
-                        layout.ruby[0].ruby_bounds.x >= layout.ruby[0].base_bounds.right(),
-                        "vertical_rl ruby should render on the right annotation track"
-                    );
-                }
-                RichTextWritingMode::VerticalLr => {
-                    assert!(
-                        layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
-                        "vertical_lr ruby should render on the left annotation track"
-                    );
-                }
-                RichTextWritingMode::HorizontalTb => unreachable!("test uses vertical modes"),
-            }
             let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
-            assert_eq!(ruby_glyph_areas.len(), 1);
-            assert!(
-                ruby_glyph_areas[0]
-                    .glyphs()
-                    .iter()
-                    .all(|glyph| glyph.origin.x >= layout.ruby[0].ruby_bounds.x.floor())
+            assert_vertical_ruby_glyph_areas_align_toward_base(
+                writing_mode,
+                &layout,
+                &ruby_buffers,
+                &ruby_glyph_areas,
             );
+        }
+    }
+
+    fn assert_vertical_ruby_glyph_areas_align_toward_base(
+        writing_mode: RichTextWritingMode,
+        layout: &LaidOutText,
+        ruby_buffers: &[WindowRubyBuffer],
+        ruby_glyph_areas: &[OwnedGlyphArea],
+    ) {
+        assert_eq!(ruby_buffers.len(), 1);
+        assert!(matches!(
+            ruby_buffers[0].placement,
+            RubyGlyphPlacement::Vertical { .. }
+        ));
+        assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+        match writing_mode {
+            RichTextWritingMode::VerticalRl => {
+                assert!(
+                    layout.ruby[0].ruby_bounds.x >= layout.ruby[0].base_bounds.right(),
+                    "vertical_rl ruby should render on the right annotation track"
+                );
+                assert!(matches!(
+                    ruby_buffers[0].placement,
+                    RubyGlyphPlacement::Vertical {
+                        horizontal_align: VerticalGlyphHorizontalAlign::Start,
+                        ..
+                    }
+                ));
+            }
+            RichTextWritingMode::VerticalLr => {
+                assert!(
+                    layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
+                    "vertical_lr ruby should render on the left annotation track"
+                );
+                assert!(matches!(
+                    ruby_buffers[0].placement,
+                    RubyGlyphPlacement::Vertical {
+                        horizontal_align: VerticalGlyphHorizontalAlign::End,
+                        ..
+                    }
+                ));
+            }
+            RichTextWritingMode::HorizontalTb => unreachable!("test uses vertical modes"),
+        }
+        assert_eq!(ruby_glyph_areas.len(), 1);
+        assert!(
+            ruby_glyph_areas[0]
+                .glyphs()
+                .iter()
+                .all(|glyph| glyph.origin.x >= layout.ruby[0].ruby_bounds.x.floor())
+        );
+        let first_ruby_glyph = &ruby_glyph_areas[0].glyphs()[0];
+        match writing_mode {
+            RichTextWritingMode::VerticalRl => assert!(
+                (first_ruby_glyph.origin.x - layout.ruby[0].ruby_bounds.x).abs() <= 1.0,
+                "vertical_rl ruby glyph ink should align toward the base-side track edge"
+            ),
+            RichTextWritingMode::VerticalLr => assert!(
+                (first_ruby_glyph.origin.x + first_ruby_glyph.ink_bounds.width()
+                    - layout.ruby[0].ruby_bounds.right())
+                .abs()
+                    <= 1.0,
+                "vertical_lr ruby glyph ink should align toward the base-side track edge"
+            ),
+            RichTextWritingMode::HorizontalTb => unreachable!("test uses vertical modes"),
         }
     }
 
@@ -4119,6 +4178,7 @@ mod tests {
         let RubyGlyphPlacement::Vertical {
             cell_width: w,
             vertical_advance: advance,
+            horizontal_align: _,
         } = *placement
         else {
             panic!("vertical layout ruby should use vertical glyph placement");
