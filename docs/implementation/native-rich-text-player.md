@@ -148,6 +148,10 @@ cells are checked against the same visibility/readback rule. Ruby annotation
 GlyphAreas use the annotation presentation as well, so ruby object masks can be
 captured before and after reveal without changing the observed ruby base and
 annotation bboxes.
+Native measurement now also has a time-aware page API, and Agent observe/crop
+paths pass `capture_time` through it, so animated glyph-transform bboxes used
+for rich-text child objects, textbox capture refs, and scoped native crops track
+the same effect time as the rendered framebuffer.
 The interactive window path shares the same layout-backed body/ruby GlyphArea
 model: window page construction is covered for a `vertical_lr` line containing
 side-track ruby plus a 4-digit text-combine-upright cluster, and the test adapts

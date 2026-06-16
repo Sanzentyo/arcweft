@@ -2918,14 +2918,8 @@ fn agent_native_object_is_visible_on_page(
     if !object.role.starts_with("rich_text_") {
         return Ok(true);
     }
-    agent_native_rich_text_child_rect(
-        capture_width,
-        capture_height,
-        context.objects,
-        object,
-        context.page_index,
-    )
-    .map(|rect| rect.is_some())
+    agent_native_rich_text_child_rect(capture_width, capture_height, context, object)
+        .map(|rect| rect.is_some())
 }
 
 struct AgentNativeDebugCapture {
@@ -3219,13 +3213,8 @@ fn agent_native_object_rect(
         return agent_native_textbox_rect(capture_width, capture_height, context, object);
     }
     if object.role.starts_with("rich_text_")
-        && let Some(rect) = agent_native_rich_text_child_rect(
-            capture_width,
-            capture_height,
-            context.objects,
-            object,
-            context.page_index,
-        )?
+        && let Some(rect) =
+            agent_native_rich_text_child_rect(capture_width, capture_height, context, object)?
     {
         return Ok(rect);
     }
@@ -3254,13 +3243,14 @@ fn agent_native_textbox_rect(
         textbox.bbox.height,
     );
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = match arcweft_player_native::native::measure_frame_elements_at_page(
+    let bounds = match arcweft_player_native::native::measure_frame_elements_at_page_with_time(
         &textbox.rich_text,
         capture_width,
         capture_height,
         left,
         top,
         context.page_index,
+        context.capture_time_seconds,
     ) {
         Ok(bounds) => bounds,
         Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => return Ok(rect),
@@ -3286,24 +3276,24 @@ fn agent_native_textbox_rect(
 fn agent_native_rich_text_child_rect(
     capture_width: u32,
     capture_height: u32,
-    objects: &[AgentObservedObject],
+    context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-    page_index: usize,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let Some(element) = agent_native_element_for_object(object) else {
         return Ok(None);
     };
-    let Some(textbox) = agent_native_textbox_for_rich_text_child(objects, object) else {
+    let Some(textbox) = agent_native_textbox_for_rich_text_child(context.objects, object) else {
         return Ok(None);
     };
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = arcweft_player_native::native::measure_frame_elements_at_page(
+    let bounds = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
         &textbox.rich_text,
         capture_width,
         capture_height,
         left,
         top,
-        page_index,
+        context.page_index,
+        context.capture_time_seconds,
     )
     .map_err(|error| {
         eprintln!("error: native text layout measurement failed: {error}");
@@ -3948,11 +3938,17 @@ fn agent_observed_objects_for_flow_event(
             message: error.to_string(),
         })?;
     let mut textbox = agent_textbox_object(step, textbox_index, frame, viewport, options);
-    if let Some(capture_bbox) = agent_native_textbox_capture_bbox_for_page(&textbox, viewport, 0) {
+    if let Some(capture_bbox) = agent_native_textbox_capture_bbox_for_page(
+        &textbox,
+        viewport,
+        0,
+        options.capture_time_seconds,
+    ) {
         textbox.capture_refs =
             agent_object_capture_refs_for_page("cli", step, &textbox.id, &capture_bbox, 0);
     }
-    let native_bounds = agent_native_rich_text_element_bboxes(&textbox, viewport);
+    let native_bounds =
+        agent_native_rich_text_element_bboxes(&textbox, viewport, options.capture_time_seconds);
     let children = agent_rich_text_child_objects(step, textbox_index, &textbox, &native_bounds);
     let mut objects = Vec::with_capacity(1 + children.len());
     objects.push(textbox);
@@ -4478,17 +4474,19 @@ fn agent_rich_text_child_objects(
 fn agent_native_rich_text_element_bboxes(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
+    time_seconds: f32,
 ) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentNativeRichTextElementBounds> {
     let (left, top) = agent_native_text_origin(textbox);
     let mut bboxes = BTreeMap::new();
     for page_index in 0.. {
-        let bounds = match arcweft_player_native::native::measure_frame_elements_at_page(
+        let bounds = match arcweft_player_native::native::measure_frame_elements_at_page_with_time(
             &textbox.rich_text,
             viewport.width,
             viewport.height,
             left,
             top,
             page_index,
+            time_seconds,
         ) {
             Ok(bounds) => bounds,
             Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => break,
@@ -4511,15 +4509,17 @@ fn agent_native_textbox_capture_bbox_for_page(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
     page_index: usize,
+    time_seconds: f32,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
-    let Ok(bounds) = arcweft_player_native::native::measure_frame_elements_at_page(
+    let Ok(bounds) = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
         &textbox.rich_text,
         viewport.width,
         viewport.height,
         left,
         top,
         page_index,
+        time_seconds,
     ) else {
         return None;
     };

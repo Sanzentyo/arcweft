@@ -867,16 +867,30 @@ pub fn measure_frame_elements_at_page(
     top: f32,
     page_index: usize,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    measure_frame_elements_at_page_with_time(frame, width, height, left, top, page_index, 0.0)
+}
+
+/// Measures native rich-text element bounds for a rendered page at an effect time.
+pub fn measure_frame_elements_at_page_with_time(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+    time_seconds: f32,
+) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let page_range = display_map_non_empty_page_range_at(frame, page_index)?;
     let page_layout = layout_page_range(
         frame,
         page_range,
         native_text_layout_config(width.max(1), height.max(1), left, top),
     )?;
-    Ok(native_element_bounds_from_layout(
+    Ok(native_element_bounds_from_layout_at(
         &page_layout,
         width.max(1),
         height.max(1),
+        time_seconds,
     ))
 }
 
@@ -1198,14 +1212,6 @@ fn native_glyph_placements_from_layout(
             Some(placement)
         })
         .collect()
-}
-
-fn native_element_bounds_from_layout(
-    page_layout: &NativePageLayout,
-    width: u32,
-    height: u32,
-) -> Vec<NativeFrameElementBounds> {
-    native_element_bounds_from_layout_at(page_layout, width, height, 0.0)
 }
 
 fn native_element_bounds_from_layout_at(
@@ -4760,7 +4766,7 @@ mod tests {
             text_run_indices: (0..layout.runs.len()).collect(),
             ruby_indices: Vec::new(),
         };
-        let bounds = native_element_bounds_from_layout(&page_layout, 800, 600);
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 800, 600, 0.0);
         let glyph_bounds = bounds
             .iter()
             .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
@@ -5622,6 +5628,77 @@ mod tests {
     }
 
     #[test]
+    fn measure_frame_elements_with_time_follows_glyph_transform_effects() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.measure.time.wave".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "wave".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Milli {
+                                        value: Milli(10000),
+                                    },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Vec2 {
+                                        value: RichTextVec2::new(Milli::ONE, Milli::ZERO),
+                                    },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let at_zero =
+            measure_frame_elements_at_page_with_time(&frame, 800, 600, 96.0, 572.0, 0, 0.0)
+                .expect("zero-time bounds resolve");
+        let at_quarter =
+            measure_frame_elements_at_page_with_time(&frame, 800, 600, 96.0, 572.0, 0, 0.25)
+                .expect("quarter-time bounds resolve");
+        let zero_glyph = at_zero
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
+            .expect("zero glyph bounds");
+        let quarter_glyph = at_quarter
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
+            .expect("quarter glyph bounds");
+
+        assert!(
+            quarter_glyph.bbox.x > zero_glyph.bbox.x + 8,
+            "time-aware native measurement should follow wave placement: {zero_glyph:?} -> {quarter_glyph:?}"
+        );
+    }
+
+    #[test]
     fn native_bounds_union_overheight_ruby_segments_by_object_index() {
         for writing_mode in [
             RichTextWritingMode::VerticalRl,
@@ -5674,7 +5751,7 @@ mod tests {
             .expect("page layout resolves");
             assert!(layout.layout.ruby.len() > 1);
 
-            let bounds = native_element_bounds_from_layout(&layout, 220, 120);
+            let bounds = native_element_bounds_from_layout_at(&layout, 220, 120, 0.0);
             let ruby_bounds = bounds
                 .iter()
                 .filter(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
@@ -5733,7 +5810,7 @@ mod tests {
         )
         .expect("page layout resolves");
         assert!(page_layout.layout.ruby.len() > 1);
-        let bounds = native_element_bounds_from_layout(&page_layout, 220, 120);
+        let bounds = native_element_bounds_from_layout_at(&page_layout, 220, 120, 0.0);
         let ruby = bounds
             .iter()
             .find(|bounds| matches!(bounds.element, NativeFrameElement::Ruby { index: 0 }))
