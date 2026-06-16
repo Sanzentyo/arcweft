@@ -1043,15 +1043,30 @@ fn native_element_bounds_from_layout(
     width: u32,
     height: u32,
 ) -> Vec<NativeFrameElementBounds> {
+    native_element_bounds_from_layout_at(page_layout, width, height, 0.0)
+}
+
+fn native_element_bounds_from_layout_at(
+    page_layout: &NativePageLayout,
+    width: u32,
+    height: u32,
+    time_seconds: f32,
+) -> Vec<NativeFrameElementBounds> {
+    let transformed = native_transformed_glyph_bounds(page_layout, time_seconds);
     let mut bounds = page_layout
         .layout
         .runs
         .iter()
         .filter_map(|run| {
             let index = *page_layout.text_run_indices.get(run.run_index)?;
+            let bounds = transformed
+                .run_bounds
+                .get(&run.run_index)
+                .copied()
+                .unwrap_or(run.bounds);
             Some(NativeFrameElementBounds {
                 element: NativeFrameElement::TextRun { index },
-                bbox: native_bbox_from_layout_rect(run.bounds, width, height)?,
+                bbox: native_bbox_from_layout_rect(bounds, width, height)?,
                 glyph: None,
                 ruby: None,
             })
@@ -1066,13 +1081,18 @@ fn native_element_bounds_from_layout(
             .filter_map(|(index, glyph)| {
                 let range_start = page_layout.page_start + glyph.range.start;
                 let range_end = page_layout.page_start + glyph.range.end;
+                let bounds = transformed
+                    .glyph_bounds
+                    .get(index)
+                    .copied()
+                    .unwrap_or(glyph.bounds);
                 Some(NativeFrameElementBounds {
                     element: NativeFrameElement::GlyphCluster {
                         index,
                         range_start,
                         range_end,
                     },
-                    bbox: native_bbox_from_layout_rect(glyph.bounds, width, height)?,
+                    bbox: native_bbox_from_layout_rect(bounds, width, height)?,
                     glyph: Some(NativeGlyphClusterMetadata {
                         orientation: glyph.orientation.into(),
                         vertical_form: glyph.vertical_form.into(),
@@ -1128,6 +1148,145 @@ fn native_element_bounds_from_layout(
             }),
     );
     bounds
+}
+
+#[derive(Clone, Debug, Default)]
+struct NativeTransformedGlyphBounds {
+    glyph_bounds: Vec<LayoutRect>,
+    run_bounds: BTreeMap<usize, LayoutRect>,
+}
+
+fn native_transformed_glyph_bounds(
+    page_layout: &NativePageLayout,
+    time_seconds: f32,
+) -> NativeTransformedGlyphBounds {
+    let placements = native_glyph_placements_for_layout(
+        &page_layout.frame.line.0,
+        &page_layout.layout,
+        time_seconds,
+    );
+    let glyph_bounds = page_layout
+        .layout
+        .glyphs
+        .iter()
+        .zip(placements.iter())
+        .map(|(glyph, placement)| transformed_glyph_bounds(glyph, placement))
+        .collect::<Vec<_>>();
+    let run_bounds = page_layout
+        .layout
+        .glyphs
+        .iter()
+        .zip(glyph_bounds.iter())
+        .fold(
+            BTreeMap::<usize, LayoutRect>::new(),
+            |mut out, (glyph, bounds)| {
+                out.entry(glyph.run_index)
+                    .and_modify(|existing| *existing = existing.union(*bounds))
+                    .or_insert(*bounds);
+                out
+            },
+        );
+    NativeTransformedGlyphBounds {
+        glyph_bounds,
+        run_bounds,
+    }
+}
+
+fn native_glyph_placements_for_layout(
+    line_key: &str,
+    layout: &LaidOutText,
+    time_seconds: f32,
+) -> Vec<NativeGlyphPlacement> {
+    let glyph_count_by_run =
+        layout
+            .glyphs
+            .iter()
+            .fold(BTreeMap::<usize, usize>::new(), |mut counts, glyph| {
+                *counts.entry(glyph.run_index).or_default() += 1;
+                counts
+            });
+    let mut glyph_index_by_run = BTreeMap::<usize, usize>::new();
+    layout
+        .glyphs
+        .iter()
+        .map(|glyph| {
+            let run_glyph_index = glyph_index_by_run.entry(glyph.run_index).or_default();
+            let glyph_count = *glyph_count_by_run.get(&glyph.run_index).unwrap_or(&1);
+            let mut placement = NativeGlyphPlacement {
+                run_index: glyph.run_index,
+                glyph_index: *run_glyph_index,
+                range: glyph.range.start..glyph.range.end,
+                x: glyph.origin.x,
+                y: glyph.origin.y,
+                rotate_degrees: glyph_orientation_degrees(glyph.orientation),
+                skew_x_degrees: 0.0,
+                skew_y_degrees: 0.0,
+                vertical_form: glyph.vertical_form,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                opacity: 1.0,
+            };
+            apply_presentation_effects_to_placement(
+                line_key,
+                &glyph.presentation,
+                glyph_count,
+                time_seconds,
+                &mut placement,
+            );
+            *run_glyph_index += 1;
+            placement
+        })
+        .collect()
+}
+
+fn transformed_glyph_bounds(glyph: &LaidOutGlyph, placement: &NativeGlyphPlacement) -> LayoutRect {
+    let affine = glyph_presentation_affine(placement, glyph);
+    let local_left = glyph.bounds.x - glyph.origin.x;
+    let local_top = glyph.bounds.y - glyph.origin.y;
+    let local_right = local_left + glyph.bounds.width;
+    let local_bottom = local_top + glyph.bounds.height;
+    let corners = [
+        transform_glyph_local_point(local_left, local_top, placement, affine),
+        transform_glyph_local_point(local_right, local_top, placement, affine),
+        transform_glyph_local_point(local_right, local_bottom, placement, affine),
+        transform_glyph_local_point(local_left, local_bottom, placement, affine),
+    ];
+    let min_x = corners
+        .iter()
+        .map(|point| point.x)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = corners
+        .iter()
+        .map(|point| point.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = corners
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::INFINITY, f32::min);
+    let max_y = corners
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    LayoutRect::new(
+        min_x,
+        min_y,
+        (max_x - min_x).max(1.0),
+        (max_y - min_y).max(1.0),
+    )
+}
+
+fn transform_glyph_local_point(
+    x: f32,
+    y: f32,
+    placement: &NativeGlyphPlacement,
+    affine: Option<[f32; 6]>,
+) -> LayoutPoint {
+    let [matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f] =
+        affine.unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    LayoutPoint::new(
+        placement.x + matrix_a.mul_add(x, matrix_c.mul_add(y, matrix_e)),
+        placement.y + matrix_b.mul_add(x, matrix_d.mul_add(y, matrix_f)),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -3524,50 +3683,10 @@ fn apply_text_transforms_to_glyph_area(
     layout: &LaidOutText,
     time_seconds: f32,
 ) {
-    let glyph_count_by_run =
-        layout
-            .glyphs
-            .iter()
-            .fold(BTreeMap::<usize, usize>::new(), |mut counts, glyph| {
-                *counts.entry(glyph.run_index).or_default() += 1;
-                counts
-            });
-    let mut glyph_index_by_run = BTreeMap::<usize, usize>::new();
-    let transforms = layout
-        .glyphs
-        .iter()
-        .enumerate()
-        .map(|(layout_glyph_index, glyph)| {
-            let run_glyph_index = glyph_index_by_run.entry(glyph.run_index).or_default();
-            let glyph_count = *glyph_count_by_run.get(&glyph.run_index).unwrap_or(&1);
-            let mut placement = NativeGlyphPlacement {
-                run_index: glyph.run_index,
-                glyph_index: *run_glyph_index,
-                range: glyph.range.start..glyph.range.end,
-                x: glyph.origin.x,
-                y: glyph.origin.y,
-                rotate_degrees: glyph_orientation_degrees(glyph.orientation),
-                skew_x_degrees: 0.0,
-                skew_y_degrees: 0.0,
-                vertical_form: glyph.vertical_form,
-                scale_x: 1.0,
-                scale_y: 1.0,
-                opacity: 1.0,
-            };
-            apply_presentation_effects_to_placement(
-                line_key,
-                &glyph.presentation,
-                glyph_count,
-                time_seconds,
-                &mut placement,
-            );
-            *run_glyph_index += 1;
-            (layout_glyph_index, placement)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let transforms = native_glyph_placements_for_layout(line_key, layout, time_seconds);
 
     for instance in glyph_area.glyphs_mut() {
-        let Some(placement) = transforms.get(&instance.metadata) else {
+        let Some(placement) = transforms.get(instance.metadata) else {
             continue;
         };
         let Some(glyph) = layout.glyphs.get(instance.metadata) else {
@@ -3599,7 +3718,7 @@ fn glyph_presentation_affine(
         return None;
     }
 
-    let radians = placement.rotate_degrees.to_radians();
+    let radians = (placement.rotate_degrees - base_rotation).to_radians();
     let (sin, cos) = radians.sin_cos();
     let skew_x = placement.skew_x_degrees.to_radians().tan();
     let skew_y = placement.skew_y_degrees.to_radians().tan();
@@ -4055,6 +4174,7 @@ mod tests {
         )
         .expect("glyph area resolves");
         let before = glyph_area.glyphs()[0].origin;
+        let layout_bbox_x = layout.glyphs[0].bounds.x;
 
         apply_text_transforms_to_glyph_area(&mut glyph_area, &page.rich_text.text, &layout, 0.0);
 
@@ -4080,6 +4200,23 @@ mod tests {
                 || affine.values[4].abs() > 0.01
                 || affine.values[5].abs() > 0.01,
             "skew/rotation/scale/origin should produce a non-identity affine: {affine:?}"
+        );
+
+        let page_layout = NativePageLayout {
+            frame: page_layout_frame.clone(),
+            page_start: 0,
+            layout: layout.clone(),
+            text_run_indices: (0..layout.runs.len()).collect(),
+            ruby_indices: Vec::new(),
+        };
+        let bounds = native_element_bounds_from_layout(&page_layout, 800, 600);
+        let glyph_bounds = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::GlyphCluster { .. }))
+            .expect("glyph cluster bounds are reported");
+        assert!(
+            f64::from(glyph_bounds.bbox.x) > f64::from(layout_bbox_x + 4.0),
+            "observed glyph bbox should follow transformed glyph placement: {glyph_bounds:?}"
         );
     }
 
