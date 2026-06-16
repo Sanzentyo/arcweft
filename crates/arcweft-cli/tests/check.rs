@@ -3328,6 +3328,10 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
         .find(|object| object["role"] == "rich_text_run" && object["text"] == " 2026 ABC。")
         .expect("vertical text-combine run object is observed");
     assert_eq!(digit_run["rich_text_ref"]["source"], "text");
+    assert_eq!(
+        digit_run["rich_text_ref"]["presentation"]["layout"]["writing_mode"],
+        "vertical_lr"
+    );
     assert_rich_text_hit_region_matches_bbox(digit_run, "text_run", 8, 20);
     assert!(
         digit_run["bbox"]["height"].as_u64().unwrap()
@@ -21009,6 +21013,14 @@ flow @flow.main main {
     );
     let hidden_cluster = find_rich_text_cluster_object(&hidden, "吾", 0, 3);
     let visible_cluster = find_rich_text_cluster_object(&visible, "吾", 0, 3);
+    assert_eq!(
+        hidden_cluster["rich_text_ref"]["presentation"]["effects"][0]["id"],
+        "typewriter"
+    );
+    assert_eq!(
+        hidden_cluster["rich_text_ref"]["presentation"]["effects"][0]["phase"],
+        "glyph_mask"
+    );
     assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
     assert_eq!(
         hidden["images"][0]["crop_origin"],
@@ -21415,6 +21427,14 @@ fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
 ) -> &'a serde_json::Value {
     let hidden_ruby = find_rich_text_ruby_object(hidden, 0);
     let visible_ruby = find_rich_text_ruby_object(visible, 0);
+    assert_eq!(
+        visible_ruby["rich_text_ref"]["presentation"]["effects"][0]["id"],
+        "typewriter"
+    );
+    assert_eq!(
+        visible_ruby["rich_text_ref"]["presentation"]["effects"][0]["phase"],
+        "glyph_mask"
+    );
     assert_eq!(hidden_ruby["bbox"], visible_ruby["bbox"]);
     assert_eq!(
         hidden_ruby["rich_text_ref"]["ruby_base_bbox"],

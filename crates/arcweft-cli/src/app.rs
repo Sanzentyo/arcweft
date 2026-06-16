@@ -4584,6 +4584,7 @@ fn agent_rich_text_run_object(
                 node_index: run.node_index,
                 source: Some(run.source),
                 ruby: None,
+                presentation: Some(run.presentation.clone()),
                 orientation: None,
                 vertical_form: None,
                 ruby_base_bbox: None,
@@ -4634,6 +4635,7 @@ fn agent_rich_text_ruby_object(
                 node_index: ruby.node_index,
                 source: None,
                 ruby: Some(ruby.ruby.clone()),
+                presentation: Some(ruby.presentation.clone()),
                 orientation: None,
                 vertical_form: None,
                 ruby_base_bbox: bbox.ruby.as_ref().map(|ruby| ruby.base_bbox.clone()),
@@ -4699,6 +4701,7 @@ fn agent_rich_text_cluster_objects(
                         node_index: run.node_index,
                         source: Some(run.source),
                         ruby: None,
+                        presentation: Some(run.presentation.clone()),
                         orientation: bounds
                             .glyph
                             .map(|glyph| agent_glyph_orientation_from_native(glyph.orientation)),

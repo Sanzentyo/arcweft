@@ -5,7 +5,9 @@
 //! transport-local JSON shapes.
 
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
-use arcweft_render_text::{LineDisplayFrame, RichTextRange, RichTextTextSource};
+use arcweft_render_text::{
+    LineDisplayFrame, RichTextPresentation, RichTextRange, RichTextTextSource,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
@@ -409,6 +411,8 @@ pub struct AgentRichTextElementRef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ruby: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<RichTextPresentation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub orientation: Option<AgentGlyphOrientation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vertical_form: Option<AgentGlyphVerticalForm>,
@@ -615,8 +619,11 @@ mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_render_text::{
-        RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextStyleContribution,
+        RichTextAssignOp, RichTextCascadeLayer, RichTextEffectDescriptor, RichTextEffectPhase,
+        RichTextEffectTarget, RichTextPresentation, RichTextSettingSource, RichTextStateScope,
+        RichTextStyleContribution,
     };
+    use std::collections::BTreeMap;
 
     fn test_capture_refs() -> AgentObjectCaptureRefs {
         AgentObjectCaptureRefs {
@@ -874,6 +881,16 @@ mod tests {
             node_index: 0,
             source: Some(RichTextTextSource::Text),
             ruby: None,
+            presentation: Some(RichTextPresentation {
+                effects: vec![RichTextEffectDescriptor {
+                    id: "shake".to_owned(),
+                    params: BTreeMap::default(),
+                    target: RichTextEffectTarget::default(),
+                    phase: RichTextEffectPhase::GlyphTransform,
+                    state_scope: RichTextStateScope::default(),
+                }],
+                ..RichTextPresentation::default()
+            }),
             orientation: None,
             vertical_form: None,
             ruby_base_bbox: None,
@@ -926,6 +943,14 @@ mod tests {
         );
         assert_eq!(json["objects"][0]["rich_text_ref"]["kind"], "text_run");
         assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
+        assert_eq!(
+            json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["id"],
+            "shake"
+        );
+        assert_eq!(
+            json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["phase"],
+            "glyph_transform"
+        );
         assert_eq!(
             json["objects"][0]["rich_text"]["style_contributions"][0]["path"],
             "rich_text.ruby.size"
