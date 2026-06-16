@@ -87,6 +87,10 @@ resolved transforms, vertical layout hints, builtin glyph effects, and shader
 filter references without creating a compatibility renderer. The same
 presentation data is available to native debug/capture paths through
 `LineDisplayFrame::display_map`.
+The glyphon-backed native renderer now applies post-layout translate, rotate,
+scale, skew, pivot-origin affine transforms, and builtin placement effects such
+as wave/shake/arc to the actual submitted glyph instances, including broad
+effect targets after they have been resolved onto a run's presentation.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

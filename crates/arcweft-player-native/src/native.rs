@@ -6,17 +6,18 @@ use arcweft_glyphon::{
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
-    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
-    RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
-    RichTextStyle, RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
+    RichTextEffectDescriptor, RichTextEffectPhase, RichTextFontFamily, RichTextNode, RichTextParam,
+    RichTextPresentation, RichTextRange, RichTextShaderRef, RichTextStyle, RichTextTransformOrigin,
+    RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
 };
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
     LayoutSize, TextLayoutConfig, layout_frame,
 };
 use glyphon::{
-    Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
-    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector, Viewport, Weight,
+    Affine2, Attrs, Buffer, Cache, Color, Family, FontSystem, GlyphTransform, Metrics, Point,
+    Resolution, Shaping, Style, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector,
+    Viewport, Weight,
     cosmic_text::{FeatureTag, FontFeatures},
 };
 use std::collections::BTreeMap;
@@ -198,6 +199,8 @@ pub struct NativeGlyphPlacement {
     pub x: f32,
     pub y: f32,
     pub rotate_degrees: f32,
+    pub skew_x_degrees: f32,
+    pub skew_y_degrees: f32,
     pub vertical_form: GlyphVerticalForm,
     pub scale_x: f32,
     pub scale_y: f32,
@@ -1012,6 +1015,8 @@ fn native_glyph_placements_from_layout(
                 x: glyph.origin.x,
                 y: glyph.origin.y,
                 rotate_degrees: glyph_orientation_degrees(glyph.orientation),
+                skew_x_degrees: 0.0,
+                skew_y_degrees: 0.0,
                 vertical_form: glyph.vertical_form,
                 scale_x: 1.0,
                 scale_y: 1.0,
@@ -1190,17 +1195,35 @@ fn apply_presentation_to_placement(
     time_seconds: f32,
     placement: &mut NativeGlyphPlacement,
 ) {
-    if let Some(transform) = &run.presentation.transform {
+    apply_presentation_effects_to_placement(
+        line_id,
+        &run.presentation,
+        glyph_count,
+        time_seconds,
+        placement,
+    );
+}
+
+fn apply_presentation_effects_to_placement(
+    line_id: &str,
+    presentation: &RichTextPresentation,
+    glyph_count: usize,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    if let Some(transform) = &presentation.transform {
         placement.x += transform.translate.x.as_f32();
         placement.y += transform.translate.y.as_f32();
         placement.rotate_degrees += transform.rotate.as_degrees_f32();
         placement.scale_x *= transform.scale.x.as_f32();
         placement.scale_y *= transform.scale.y.as_f32();
+        placement.skew_x_degrees += transform.skew.x.as_f32();
+        placement.skew_y_degrees += transform.skew.y.as_f32();
     }
-    if let Some(opacity) = run.presentation.opacity {
+    if let Some(opacity) = presentation.opacity {
         placement.opacity *= opacity.as_f32();
     }
-    for effect in &run.presentation.effects {
+    for effect in &presentation.effects {
         apply_builtin_descriptor(line_id, effect, glyph_count, time_seconds, placement);
     }
 }
@@ -1213,12 +1236,6 @@ fn apply_builtin_descriptor(
     time_seconds: f32,
     placement: &mut NativeGlyphPlacement,
 ) {
-    if !matches!(
-        effect.target,
-        RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
-    ) {
-        return;
-    }
     match effect.id.as_str() {
         "wave" => {
             let amplitude = param_milli(effect, "amp").unwrap_or(Milli(4000)).as_f32();
@@ -2870,6 +2887,12 @@ impl NativeOffscreenTextRenderer {
             layout.layout,
             target.time_seconds,
         );
+        apply_text_transforms_to_glyph_area(
+            &mut glyph_area,
+            &rich_text.text,
+            layout.layout,
+            target.time_seconds,
+        );
         let ruby_glyph_areas = ruby_glyph_areas(
             &self.ruby_buffers,
             target.width,
@@ -3495,6 +3518,140 @@ fn apply_text_colors_to_glyph_area(
     }
 }
 
+fn apply_text_transforms_to_glyph_area(
+    glyph_area: &mut OwnedGlyphArea,
+    line_key: &str,
+    layout: &LaidOutText,
+    time_seconds: f32,
+) {
+    let glyph_count_by_run =
+        layout
+            .glyphs
+            .iter()
+            .fold(BTreeMap::<usize, usize>::new(), |mut counts, glyph| {
+                *counts.entry(glyph.run_index).or_default() += 1;
+                counts
+            });
+    let mut glyph_index_by_run = BTreeMap::<usize, usize>::new();
+    let transforms = layout
+        .glyphs
+        .iter()
+        .enumerate()
+        .map(|(layout_glyph_index, glyph)| {
+            let run_glyph_index = glyph_index_by_run.entry(glyph.run_index).or_default();
+            let glyph_count = *glyph_count_by_run.get(&glyph.run_index).unwrap_or(&1);
+            let mut placement = NativeGlyphPlacement {
+                run_index: glyph.run_index,
+                glyph_index: *run_glyph_index,
+                range: glyph.range.start..glyph.range.end,
+                x: glyph.origin.x,
+                y: glyph.origin.y,
+                rotate_degrees: glyph_orientation_degrees(glyph.orientation),
+                skew_x_degrees: 0.0,
+                skew_y_degrees: 0.0,
+                vertical_form: glyph.vertical_form,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                opacity: 1.0,
+            };
+            apply_presentation_effects_to_placement(
+                line_key,
+                &glyph.presentation,
+                glyph_count,
+                time_seconds,
+                &mut placement,
+            );
+            *run_glyph_index += 1;
+            (layout_glyph_index, placement)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for instance in glyph_area.glyphs_mut() {
+        let Some(placement) = transforms.get(&instance.metadata) else {
+            continue;
+        };
+        let Some(glyph) = layout.glyphs.get(instance.metadata) else {
+            continue;
+        };
+        instance.origin = Point::new(
+            instance.origin.x + placement.x - glyph.origin.x,
+            instance.origin.y + placement.y - glyph.origin.y,
+        );
+        if let Some(affine) = glyph_presentation_affine(placement, glyph) {
+            let current = glyph_transform_affine(instance.transform);
+            instance.transform =
+                GlyphTransform::Affine(Affine2::new(compose_affine(affine, current)));
+        }
+    }
+}
+
+fn glyph_presentation_affine(
+    placement: &NativeGlyphPlacement,
+    glyph: &LaidOutGlyph,
+) -> Option<[f32; 6]> {
+    let base_rotation = glyph_orientation_degrees(glyph.orientation);
+    let has_transform = (placement.rotate_degrees - base_rotation).abs() > f32::EPSILON
+        || placement.skew_x_degrees.abs() > f32::EPSILON
+        || placement.skew_y_degrees.abs() > f32::EPSILON
+        || (placement.scale_x - 1.0).abs() > f32::EPSILON
+        || (placement.scale_y - 1.0).abs() > f32::EPSILON;
+    if !has_transform {
+        return None;
+    }
+
+    let radians = placement.rotate_degrees.to_radians();
+    let (sin, cos) = radians.sin_cos();
+    let skew_x = placement.skew_x_degrees.to_radians().tan();
+    let skew_y = placement.skew_y_degrees.to_radians().tan();
+    let scaled_a = placement.scale_x;
+    let scaled_b = skew_y * placement.scale_x;
+    let scaled_c = skew_x * placement.scale_y;
+    let scaled_d = placement.scale_y;
+    let matrix_a = cos.mul_add(scaled_a, -sin * scaled_b);
+    let matrix_b = sin.mul_add(scaled_a, cos * scaled_b);
+    let matrix_c = cos.mul_add(scaled_c, -sin * scaled_d);
+    let matrix_d = sin.mul_add(scaled_c, cos * scaled_d);
+    let pivot = glyph_transform_pivot(glyph);
+    let matrix_e = pivot.x - matrix_a.mul_add(pivot.x, matrix_c * pivot.y);
+    let matrix_f = pivot.y - matrix_b.mul_add(pivot.x, matrix_d * pivot.y);
+    Some([matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f])
+}
+
+fn glyph_transform_pivot(glyph: &LaidOutGlyph) -> Vector {
+    let Some(transform) = &glyph.presentation.transform else {
+        return Vector::new(0.0, 0.0);
+    };
+    match transform.origin {
+        RichTextTransformOrigin::BaselineStart => Vector::new(0.0, 0.0),
+        RichTextTransformOrigin::BaselineCenter => {
+            Vector::new(glyph.advance.width * 0.5, glyph.advance.height * 0.5)
+        }
+        RichTextTransformOrigin::Center | RichTextTransformOrigin::GlyphCenter => {
+            Vector::new(glyph.bounds.width * 0.5, glyph.bounds.height * 0.5)
+        }
+    }
+}
+
+fn glyph_transform_affine(transform: GlyphTransform) -> [f32; 6] {
+    match transform {
+        GlyphTransform::Identity => [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        GlyphTransform::Rotate90Cw => [0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
+        GlyphTransform::Rotate90Ccw => [0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
+        GlyphTransform::Affine(affine) => affine.values,
+    }
+}
+
+fn compose_affine(left: [f32; 6], right: [f32; 6]) -> [f32; 6] {
+    [
+        left[0].mul_add(right[0], left[2] * right[1]),
+        left[1].mul_add(right[0], left[3] * right[1]),
+        left[0].mul_add(right[2], left[2] * right[3]),
+        left[1].mul_add(right[2], left[3] * right[3]),
+        left[0].mul_add(right[4], left[2].mul_add(right[5], left[4])),
+        left[1].mul_add(right[4], left[3].mul_add(right[5], left[5])),
+    ]
+}
+
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn glyph_alpha_for_time(
     glyph: &LaidOutGlyph,
@@ -3508,12 +3665,7 @@ fn glyph_alpha_for_time(
         .map_or(1.0, Milli::as_f32)
         .clamp(0.0, 1.0);
     for effect in &glyph.presentation.effects {
-        if effect.id != "typewriter"
-            || !matches!(
-                effect.target,
-                RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
-            )
-        {
+        if effect.id != "typewriter" {
             continue;
         }
         let cps = param_milli(effect, "cps")
@@ -3538,12 +3690,7 @@ fn presentation_alpha_for_visibility_time(
         .map_or(1.0, Milli::as_f32)
         .clamp(0.0, 1.0);
     for effect in &presentation.effects {
-        if effect.id != "typewriter"
-            || !matches!(
-                effect.target,
-                RichTextEffectTarget::Run | RichTextEffectTarget::Glyph
-            )
-        {
+        if effect.id != "typewriter" {
             continue;
         }
         let cps = param_milli(effect, "cps")
@@ -3590,6 +3737,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             return Err(());
         };
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
+        apply_text_transforms_to_glyph_area(&mut glyph_area, &state.rich_text.text, layout, 60.0);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             state.surface_config.width,
@@ -3653,7 +3801,8 @@ mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_render_text::{
-        LineDisplaySpec, RichTextDocument, RichTextLayout, RichTextWritingMode, RuntimeLineContext,
+        LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextEffectTarget, RichTextLayout,
+        RichTextTransform, RichTextVec2, RichTextWritingMode, RuntimeLineContext,
     };
 
     fn styled_ruby_test_frame() -> LineDisplayFrame {
@@ -3809,6 +3958,128 @@ mod tests {
             &buffer,
             rich_text,
             &pages,
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn native_glyph_area_applies_transform_affine_and_builtin_translation() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.transform.glyph-area".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Transform {
+                        transform: RichTextTransform {
+                            translate: RichTextVec2::new(Milli(5000), Milli(-2000)),
+                            rotate: RichTextAngle {
+                                degrees: Milli(10000),
+                            },
+                            scale: RichTextVec2::new(Milli(1200), Milli(900)),
+                            skew: RichTextVec2::new(Milli(10000), Milli::ZERO),
+                            origin: RichTextTransformOrigin::Center,
+                            target: RichTextEffectTarget::TextBox,
+                        },
+                    },
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "wave".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Milli { value: Milli(3000) },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Vec2 {
+                                        value: RichTextVec2::new(Milli::ONE, Milli::ZERO),
+                                    },
+                                ),
+                                (
+                                    "phase".to_owned(),
+                                    RichTextParam::Milli { value: Milli(250) },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::TextBox,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "揺".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "transform".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let pages = WindowPage::from_frame(&frame);
+        let page = &pages[0];
+        let page_layout_frame = page.layout_frame.as_ref().expect("layout frame");
+        let layout = layout_frame(
+            page_layout_frame,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let mut glyph_area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(800, 600),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .expect("glyph area resolves");
+        let before = glyph_area.glyphs()[0].origin;
+
+        apply_text_transforms_to_glyph_area(&mut glyph_area, &page.rich_text.text, &layout, 0.0);
+
+        let after = &glyph_area.glyphs()[0];
+        assert!(
+            after.origin.x > before.x + 7.5 && after.origin.x < before.x + 8.5,
+            "translate x plus wave should move the glyph by about 8px: {before:?} -> {:?}",
+            after.origin
+        );
+        assert!(
+            after.origin.y < before.y - 1.5 && after.origin.y > before.y - 2.5,
+            "translate y should move the glyph by about -2px: {before:?} -> {:?}",
+            after.origin
+        );
+        let GlyphTransform::Affine(affine) = after.transform else {
+            panic!("presentation transform should become a glyph affine: {after:?}");
+        };
+        assert!(
+            (affine.values[0] - 1.0).abs() > 0.01
+                || affine.values[1].abs() > 0.01
+                || affine.values[2].abs() > 0.01
+                || (affine.values[3] - 1.0).abs() > 0.01
+                || affine.values[4].abs() > 0.01
+                || affine.values[5].abs() > 0.01,
+            "skew/rotation/scale/origin should produce a non-identity affine: {affine:?}"
         );
     }
 

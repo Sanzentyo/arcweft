@@ -82,6 +82,12 @@ impl OwnedGlyphArea {
         &self.glyphs
     }
 
+    /// Mutable access for renderer adapters that need to apply presentation
+    /// effects after Arcweft layout has been mapped to glyphon instances.
+    pub fn glyphs_mut(&mut self) -> &mut [GlyphInstance] {
+        &mut self.glyphs
+    }
+
     /// Assigns an explicit color to every glyph instance emitted for one
     /// Arcweft layout glyph index.
     pub fn set_color_for_layout_glyph(&mut self, glyph_index: usize, color: Color) {
