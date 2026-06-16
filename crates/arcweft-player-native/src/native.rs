@@ -15,9 +15,9 @@ use arcweft_text_layout::{
     LayoutSize, TextLayoutConfig, layout_frame,
 };
 use glyphon::{
-    Affine2, Attrs, Buffer, Cache, Color, Family, FontSystem, GlyphTransform, Metrics, Point,
-    Resolution, Shaping, Style, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Vector,
-    Viewport, Weight,
+    Affine2, Attrs, Buffer, Cache, Color, Family, FontSystem, GlyphInstance, GlyphTransform,
+    Metrics, Point, Resolution, Shaping, Style, SwashCache, TextArea, TextAtlas, TextBounds,
+    TextRenderer, Vector, Viewport, Weight,
     cosmic_text::{FeatureTag, FontFeatures},
 };
 use std::collections::BTreeMap;
@@ -2520,6 +2520,7 @@ struct WindowState {
 
 struct WindowRubyBuffer {
     buffer: Buffer,
+    source_index: usize,
     left: f32,
     top: f32,
     placement: RubyGlyphPlacement,
@@ -2686,6 +2687,7 @@ fn build_ruby_buffers(
                             top: segment.ruby_bounds.y,
                             placement,
                             presentation: &annotation.presentation,
+                            source_index: ruby_index,
                             width,
                             height,
                         },
@@ -2717,6 +2719,7 @@ fn build_ruby_buffers(
         };
         buffers.push(WindowRubyBuffer {
             buffer,
+            source_index: ruby_index,
             left,
             top,
             placement: RubyGlyphPlacement::Horizontal,
@@ -2744,6 +2747,7 @@ fn build_ruby_buffer(
     buffer.shape_until_scroll(font_system, false);
     WindowRubyBuffer {
         buffer,
+        source_index: spec.source_index,
         left: spec.left,
         top: spec.top,
         placement: spec.placement,
@@ -2759,6 +2763,7 @@ struct RubyBufferSpec<'a> {
     top: f32,
     placement: RubyGlyphPlacement,
     presentation: &'a RichTextPresentation,
+    source_index: usize,
     width: u32,
     height: u32,
 }
@@ -3098,6 +3103,7 @@ impl NativeOffscreenTextRenderer {
         );
         let ruby_glyph_areas = ruby_glyph_areas(
             &self.ruby_buffers,
+            &rich_text.text,
             target.width,
             target.height,
             target.time_seconds,
@@ -3294,6 +3300,7 @@ fn window_text_areas<'a>(
 
 fn ruby_glyph_areas(
     ruby_buffers: &[WindowRubyBuffer],
+    line_key: &str,
     width: u32,
     height: u32,
     time_seconds: f32,
@@ -3328,9 +3335,51 @@ fn ruby_glyph_areas(
             let color = color.into_glyphon();
             area.set_default_color(color);
             area.set_color_for_all_glyphs(color);
+            apply_ruby_transforms_to_glyph_area(&mut area, line_key, ruby, time_seconds);
             area
         })
         .collect()
+}
+
+fn apply_ruby_transforms_to_glyph_area(
+    glyph_area: &mut OwnedGlyphArea,
+    line_key: &str,
+    ruby: &WindowRubyBuffer,
+    time_seconds: f32,
+) {
+    let glyph_count = glyph_area.len().max(1);
+    for (glyph_index, instance) in glyph_area.glyphs_mut().iter_mut().enumerate() {
+        let original_origin = instance.origin;
+        let mut placement = NativeGlyphPlacement {
+            run_index: ruby.source_index,
+            glyph_index,
+            range: glyph_index..glyph_index + 1,
+            x: original_origin.x,
+            y: original_origin.y,
+            rotate_degrees: 0.0,
+            skew_x_degrees: 0.0,
+            skew_y_degrees: 0.0,
+            vertical_form: GlyphVerticalForm::None,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            opacity: 1.0,
+        };
+        apply_presentation_effects_to_placement(
+            line_key,
+            &ruby.presentation,
+            glyph_count,
+            time_seconds,
+            &mut placement,
+        );
+
+        let affine = ruby_glyph_presentation_affine(&placement, &ruby.presentation, instance);
+        instance.origin = Point::new(placement.x, placement.y);
+        if let Some(affine) = affine {
+            let current = glyph_transform_affine(instance.transform);
+            instance.transform =
+                GlyphTransform::Affine(Affine2::new(compose_affine(affine, current)));
+        }
+    }
 }
 
 fn vertical_ruby_glyph_horizontal_align(
@@ -3753,6 +3802,26 @@ fn glyph_presentation_affine(
     glyph: &LaidOutGlyph,
 ) -> Option<[f32; 6]> {
     let base_rotation = glyph_orientation_degrees(glyph.orientation);
+    presentation_affine(placement, base_rotation, glyph_transform_pivot(glyph))
+}
+
+fn ruby_glyph_presentation_affine(
+    placement: &NativeGlyphPlacement,
+    presentation: &RichTextPresentation,
+    glyph: &GlyphInstance,
+) -> Option<[f32; 6]> {
+    presentation_affine(
+        placement,
+        0.0,
+        ruby_glyph_transform_pivot(presentation, glyph),
+    )
+}
+
+fn presentation_affine(
+    placement: &NativeGlyphPlacement,
+    base_rotation: f32,
+    pivot: Vector,
+) -> Option<[f32; 6]> {
     let has_transform = (placement.rotate_degrees - base_rotation).abs() > f32::EPSILON
         || placement.skew_x_degrees.abs() > f32::EPSILON
         || placement.skew_y_degrees.abs() > f32::EPSILON
@@ -3774,7 +3843,6 @@ fn glyph_presentation_affine(
     let matrix_b = sin.mul_add(scaled_a, cos * scaled_b);
     let matrix_c = cos.mul_add(scaled_c, -sin * scaled_d);
     let matrix_d = sin.mul_add(scaled_c, cos * scaled_d);
-    let pivot = glyph_transform_pivot(glyph);
     let matrix_e = pivot.x - matrix_a.mul_add(pivot.x, matrix_c * pivot.y);
     let matrix_f = pivot.y - matrix_b.mul_add(pivot.x, matrix_d * pivot.y);
     Some([matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f])
@@ -3792,6 +3860,25 @@ fn glyph_transform_pivot(glyph: &LaidOutGlyph) -> Vector {
         RichTextTransformOrigin::Center | RichTextTransformOrigin::GlyphCenter => {
             Vector::new(glyph.bounds.width * 0.5, glyph.bounds.height * 0.5)
         }
+    }
+}
+
+fn ruby_glyph_transform_pivot(
+    presentation: &RichTextPresentation,
+    glyph: &GlyphInstance,
+) -> Vector {
+    let Some(transform) = &presentation.transform else {
+        return Vector::new(0.0, 0.0);
+    };
+    match transform.origin {
+        RichTextTransformOrigin::BaselineStart => Vector::new(0.0, 0.0),
+        RichTextTransformOrigin::BaselineCenter => {
+            Vector::new(glyph.advance.x * 0.5, glyph.advance.y * 0.5)
+        }
+        RichTextTransformOrigin::Center | RichTextTransformOrigin::GlyphCenter => Vector::new(
+            glyph.ink_bounds.width() * 0.5,
+            glyph.ink_bounds.height() * 0.5,
+        ),
     }
 }
 
@@ -3909,6 +3996,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         apply_text_transforms_to_glyph_area(&mut glyph_area, &state.rich_text.text, layout, 60.0);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
+            &state.rich_text.text,
             state.surface_config.width,
             state.surface_config.height,
             60.0,
@@ -4387,7 +4475,8 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
+        let ruby_glyph_areas =
+            ruby_glyph_areas(&ruby_buffers, &rich_text.text, 800, 600, 60.0, false);
         assert_eq!(ruby_glyph_areas.len(), 1);
         assert!(!ruby_glyph_areas[0].is_empty());
         assert!((ruby_glyph_areas[0].as_glyph_area().left - 0.0).abs() < f32::EPSILON);
@@ -4539,7 +4628,8 @@ mod tests {
                 600,
                 NativeTextOrigin::default(),
             );
-            let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
+            let ruby_glyph_areas =
+                ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 60.0, false);
             assert_vertical_ruby_glyph_areas_align_toward_base(
                 writing_mode,
                 &layout,
@@ -4687,7 +4777,8 @@ mod tests {
             600,
             NativeTextOrigin::default(),
         );
-        let ruby_glyph_areas = ruby_glyph_areas(&ruby_buffers, 800, 600, 60.0, false);
+        let ruby_glyph_areas =
+            ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 60.0, false);
         assert_ruby_continuation_track(&ruby_buffers, continuation_moves_right);
         assert_vertical_ruby_glyph_placement(&ruby_buffers[0].placement, &layout);
         assert_eq!(ruby_glyph_areas.len(), 2);
@@ -4819,8 +4910,8 @@ mod tests {
             NativeTextOrigin::default(),
         );
 
-        let hidden = ruby_glyph_areas(&ruby_buffers, 800, 600, 0.0, false);
-        let visible = ruby_glyph_areas(&ruby_buffers, 800, 600, 4.0, false);
+        let hidden = ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 0.0, false);
+        let visible = ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 4.0, false);
 
         assert!(!hidden.is_empty());
         assert!(
@@ -4834,6 +4925,148 @@ mod tests {
                 .iter()
                 .flat_map(OwnedGlyphArea::glyphs)
                 .all(|glyph| glyph.color == Some(Color::rgba(170, 190, 220, 255)))
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn ruby_glyph_areas_apply_transform_affine_and_builtin_translation() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.ruby.transform.glyph-area".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Transform {
+                        transform: RichTextTransform {
+                            translate: RichTextVec2::new(Milli(5000), Milli(-2000)),
+                            rotate: RichTextAngle {
+                                degrees: Milli(10000),
+                            },
+                            scale: RichTextVec2::new(Milli(1200), Milli(900)),
+                            skew: RichTextVec2::new(Milli(10000), Milli::ZERO),
+                            origin: RichTextTransformOrigin::Center,
+                            target: RichTextEffectTarget::TextBox,
+                        },
+                    },
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "wave".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Milli { value: Milli(3000) },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Vec2 {
+                                        value: RichTextVec2::new(Milli::ONE, Milli::ZERO),
+                                    },
+                                ),
+                                (
+                                    "phase".to_owned(),
+                                    RichTextParam::Milli { value: Milli(250) },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::TextBox,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Ruby {
+                    base: "揺".to_owned(),
+                    ruby: "ゆれ".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "transform".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("page exists");
+        let layout = layout_frame(
+            page.layout_frame.as_ref().expect("layout frame"),
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let ruby_buffers = build_ruby_buffers(
+            &mut font_system,
+            &buffer,
+            &page.rich_text,
+            Some(&layout),
+            800,
+            600,
+            NativeTextOrigin::default(),
+        );
+        assert!(!ruby_buffers.is_empty());
+
+        let bounds = native_text_bounds(800, 600);
+        let before_area = match ruby_buffers[0].placement {
+            RubyGlyphPlacement::Horizontal => glyph_area_from_shaped_buffer(
+                &ruby_buffers[0].buffer,
+                ruby_glyph_area_options(bounds, ruby_buffers[0].left, ruby_buffers[0].top, false),
+            ),
+            RubyGlyphPlacement::Vertical {
+                cell_width,
+                vertical_advance,
+                horizontal_align,
+            } => vertical_glyph_area_from_shaped_buffer(
+                &ruby_buffers[0].buffer,
+                ruby_glyph_area_options(bounds, ruby_buffers[0].left, ruby_buffers[0].top, false),
+                cell_width,
+                vertical_advance,
+                horizontal_align,
+            ),
+        };
+        let after_areas =
+            ruby_glyph_areas(&ruby_buffers, &page.rich_text.text, 800, 600, 0.0, false);
+
+        let before = before_area.glyphs()[0].origin;
+        let after = &after_areas[0].glyphs()[0];
+        assert!(
+            after.origin.x > before.x + 7.5 && after.origin.x < before.x + 8.5,
+            "ruby translate x plus wave should move the glyph by about 8px: {before:?} -> {:?}",
+            after.origin
+        );
+        assert!(
+            after.origin.y < before.y - 1.5 && after.origin.y > before.y - 2.5,
+            "ruby translate y should move the glyph by about -2px: {before:?} -> {:?}",
+            after.origin
+        );
+        let GlyphTransform::Affine(affine) = after.transform else {
+            panic!("ruby presentation transform should become a glyph affine: {after:?}");
+        };
+        assert!(
+            (affine.values[0] - 1.0).abs() > 0.01
+                || affine.values[1].abs() > 0.01
+                || affine.values[2].abs() > 0.01
+                || (affine.values[3] - 1.0).abs() > 0.01
+                || affine.values[4].abs() > 0.01
+                || affine.values[5].abs() > 0.01,
+            "ruby skew/rotation/scale/origin should produce a non-identity affine: {affine:?}"
         );
     }
 

@@ -90,7 +90,10 @@ presentation data is available to native debug/capture paths through
 The glyphon-backed native renderer now applies post-layout translate, rotate,
 scale, skew, pivot-origin affine transforms, and builtin placement effects such
 as wave/shake/arc to the actual submitted glyph instances, including broad
-effect targets after they have been resolved onto a run's presentation.
+effect targets after they have been resolved onto a run's presentation. Ruby
+annotation GlyphAreas use the same submitted-glyph presentation path, so ruby
+placement follows translate, rotate, scale, skew, origin pivots, and builtin
+placement effects instead of only inheriting reveal alpha.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.
