@@ -18572,6 +18572,92 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     assert_full_grammar_sample_vertical_lr_cluster_readback(&source_path, &json);
 }
 
+#[test]
+fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs() {
+    let source_path = workspace_root().join("samples/rich-text-full-grammar.arcw");
+    let json = observe_native_rich_text_layer_report(&source_path);
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert!(
+        json["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "full-grammar sample should render without native diagnostics: {json}"
+    );
+
+    for line in [
+        "say.full.001",
+        "say.full.001.extreme",
+        "say.full.001.vertical_extreme",
+        "say.full.002",
+        "say.full.003",
+        "say.full.004",
+        "say.full.005",
+        "say.full.006",
+        "say.full.007",
+        "say.full.008",
+        "say.full.009",
+    ] {
+        find_textbox_object_by_rich_text_line(&json, line);
+    }
+
+    let inferred = find_textbox_object_by_rich_text_line(&json, "say.full.005");
+    assert!(rich_text_text_run_has_effect(inferred, "wave"));
+    assert!(rich_text_text_run_has_effect(inferred, "shake"));
+    assert!(rich_text_text_run_has_effect(inferred, "typewriter"));
+    assert!(rich_text_text_run_has_effect(inferred, "arc"));
+    assert!(
+        rich_text_text_run_effect_count(inferred, "sparkle") >= 2,
+        "custom and .host-dispatched sparkle effects should both survive lowering: {inferred}"
+    );
+    assert!(rich_text_text_run_has_transform(
+        inferred,
+        |transform| transform["translate"]["x"] == 4000
+            && transform["translate"]["y"] == -2000
+            && transform["origin"] == "baseline_start"
+            && transform["target"] == "glyph",
+    ));
+    assert!(rich_text_text_run_has_transform(
+        inferred,
+        |transform| transform["rotate"]["degrees"] == 8000
+            && transform["origin"] == "center"
+            && transform["target"] == "run",
+    ));
+    assert!(rich_text_text_run_has_transform(
+        inferred,
+        |transform| transform["scale"]["x"] == 1200
+            && transform["scale"]["y"] == 1200
+            && transform["origin"] == "baseline_center"
+            && transform["target"] == "run",
+    ));
+
+    let explicit = find_textbox_object_by_rich_text_line(&json, "say.full.006");
+    assert!(rich_text_text_run_has_transform(
+        explicit,
+        |transform| transform["skew"]["x"] == 2000
+            && transform["skew"]["y"] == 0
+            && transform["origin"] == "glyph_center"
+            && transform["target"] == "glyph",
+    ));
+    assert!(rich_text_text_run_has_effect(explicit, "jitter"));
+    assert!(rich_text_text_run_has_shader(explicit, "soft_glow"));
+
+    let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
+    assert_eq!(cue["text"], "cue: 代替");
+    let raw_short = find_textbox_object_by_rich_text_line(&json, "say.full.008");
+    assert!(
+        raw_short["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("[p]や#[expr]をそのまま表示")),
+        "raw shorthand text should render literally: {raw_short}"
+    );
+    let raw_block = find_textbox_object_by_rich_text_line(&json, "say.full.009");
+    assert!(
+        raw_block["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("[.shake]") && text.contains("#[player_name]")),
+        "raw block text should keep rich-text tags and interpolation literally: {raw_block}"
+    );
+}
+
 fn assert_windows_fonts_sample_vertical_cluster_readback(
     source_path: &Path,
     json: &serde_json::Value,
@@ -31196,6 +31282,63 @@ fn find_textbox_object(report: &serde_json::Value) -> &serde_json::Value {
         .iter()
         .find(|object| object["role"] == "textbox")
         .unwrap_or_else(|| panic!("textbox object should be observed: {report}"))
+}
+
+fn find_textbox_object_by_rich_text_line<'a>(
+    report: &'a serde_json::Value,
+    line: &str,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "textbox" && object["rich_text"]["line"] == line)
+        .unwrap_or_else(|| {
+            panic!("textbox object for rich-text line `{line}` should be observed: {report}")
+        })
+}
+
+fn rich_text_text_runs(textbox: &serde_json::Value) -> &[serde_json::Value] {
+    textbox["rich_text"]["display_map"]["text_runs"]
+        .as_array()
+        .unwrap_or_else(|| panic!("textbox display_map should expose text_runs: {textbox}"))
+}
+
+fn rich_text_text_run_has_effect(textbox: &serde_json::Value, id: &str) -> bool {
+    rich_text_text_run_effect_count(textbox, id) > 0
+}
+
+fn rich_text_text_run_effect_count(textbox: &serde_json::Value, id: &str) -> usize {
+    rich_text_text_runs(textbox)
+        .iter()
+        .flat_map(|run| {
+            run["presentation"]["effects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+        .filter(|effect| effect["id"] == id)
+        .count()
+}
+
+fn rich_text_text_run_has_shader(textbox: &serde_json::Value, id: &str) -> bool {
+    rich_text_text_runs(textbox).iter().any(|run| {
+        run["presentation"]["shaders"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|shader| shader["id"] == id)
+    })
+}
+
+fn rich_text_text_run_has_transform(
+    textbox: &serde_json::Value,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> bool {
+    rich_text_text_runs(textbox).iter().any(|run| {
+        let transform = &run["presentation"]["transform"];
+        !transform.is_null() && predicate(transform)
+    })
 }
 
 fn assert_object_capture_ref_matches_image(
