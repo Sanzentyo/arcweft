@@ -846,18 +846,29 @@ fn horizontal_glyph_bounds_with_reserve(
     bounds
 }
 
-fn vertical_glyph_bounds(column_x: f32, glyph_y: f32, config: TextLayoutConfig) -> LayoutRect {
+fn vertical_glyph_bounds(
+    column_x: f32,
+    glyph_y: f32,
+    cluster: &VerticalCluster,
+    config: TextLayoutConfig,
+) -> LayoutRect {
     let width = config.font_size.max(1.0).min(config.line_advance.max(1.0));
-    LayoutRect::new(column_x, glyph_y, width, config.font_size.max(1.0))
+    let height = if cluster_is_sideways_latin_run(cluster) {
+        vertical_cluster_advance(cluster, config)
+    } else {
+        config.font_size.max(1.0)
+    };
+    LayoutRect::new(column_x, glyph_y, width, height)
 }
 
 fn vertical_glyph_bounds_with_reserve(
     column_x: f32,
     glyph_y: f32,
+    cluster: &VerticalCluster,
     config: TextLayoutConfig,
     reserve: LayoutEffectReserve,
 ) -> LayoutRect {
-    let mut bounds = vertical_glyph_bounds(column_x, glyph_y, config);
+    let mut bounds = vertical_glyph_bounds(column_x, glyph_y, cluster, config);
     bounds.x -= reserve.x;
     bounds.y -= reserve.y;
     bounds.width += reserve.x * 2.0;
@@ -940,7 +951,7 @@ fn layout_vertical_run(
             continue;
         }
         let reserve = layout_phase_effect_reserve(context.presentation);
-        let advance = vertical_cluster_layout_advance(&cluster.text, config, reserve);
+        let advance = vertical_cluster_layout_advance(cluster, config, reserve);
         let glyph_y =
             vertical_cluster_origin_y(&cluster.text, cursor.y + reserve.y, advance, config);
         push_vertical_glyph(
@@ -1011,7 +1022,7 @@ fn layout_vertical_side_ruby_base(
             writing_mode,
             context,
         );
-        glyph_y += vertical_cluster_layout_advance(&base_cluster.text, context.config, reserve);
+        glyph_y += vertical_cluster_layout_advance(base_cluster, context.config, reserve);
         previous_cluster = Some(base_cluster.text.clone());
     }
     cursor.y += allocation_extent;
@@ -1028,14 +1039,20 @@ fn push_vertical_glyph(
     context: RunLayoutContext<'_>,
 ) {
     let reserve = layout_phase_effect_reserve(context.presentation);
-    let advance = vertical_cluster_layout_advance(&cluster.text, context.config, reserve);
+    let advance = vertical_cluster_layout_advance(cluster, context.config, reserve);
     glyphs.push(LaidOutGlyph {
         run_index: context.run_index,
         range,
         text: cluster.text.clone(),
         origin: LayoutPoint::new(column_x, glyph_y),
         advance: LayoutSize::new(0.0, advance),
-        bounds: vertical_glyph_bounds_with_reserve(column_x, glyph_y, context.config, reserve),
+        bounds: vertical_glyph_bounds_with_reserve(
+            column_x,
+            glyph_y,
+            cluster,
+            context.config,
+            reserve,
+        ),
         writing_mode,
         orientation: cluster.orientation,
         vertical_form: cluster.vertical_form,
@@ -1293,6 +1310,18 @@ fn vertical_column_segment_cost(
     if column_end < segment_end && overflow > allowed_overhang + f32::EPSILON {
         return None;
     }
+    if column_end == segment_end
+        && overflow > allowed_overhang + f32::EPSILON
+        && vertical_column_segment_has_valid_overflow_avoiding_break(
+            clusters,
+            column_start,
+            column_end,
+            context,
+            column_start_y,
+        )
+    {
+        return None;
+    }
 
     let remaining = (capacity - used).max(0.0);
     let capacity = capacity.max(context.config.font_size);
@@ -1315,6 +1344,36 @@ fn vertical_column_segment_cost(
         0.0
     };
     Some(badness + overflow_penalty + allowed_overhang_penalty + break_penalty)
+}
+
+fn vertical_column_segment_has_valid_overflow_avoiding_break(
+    clusters: &[VerticalCluster],
+    column_start: usize,
+    column_end: usize,
+    context: RunLayoutContext<'_>,
+    column_start_y: f32,
+) -> bool {
+    let capacity = context.config.origin.y + context.config.size.height - column_start_y;
+    (column_start + 1..column_end).any(|break_index| {
+        if !vertical_cluster_can_start_column(
+            break_index,
+            clusters,
+            context.config.jlreq_strictness,
+        ) || vertical_column_ends_with_line_end_prohibited(column_start, break_index, clusters)
+            || vertical_column_splits_side_ruby_base(clusters, column_start, break_index, context)
+        {
+            return false;
+        }
+        let used =
+            vertical_column_segment_required_extent(clusters, column_start, break_index, context);
+        let allowed_overhang = vertical_column_segment_overhang_allowance(
+            clusters,
+            column_start,
+            break_index,
+            context.config,
+        );
+        (used - capacity).max(0.0) <= allowed_overhang + f32::EPSILON
+    })
 }
 
 fn vertical_column_splits_side_ruby_base(
@@ -1422,7 +1481,7 @@ fn vertical_column_segment_required_extent(
             context.config,
         );
         required = required.max(cursor + required_inline_extent);
-        cursor += vertical_cluster_layout_advance(&cluster.text, context.config, reserve);
+        cursor += vertical_cluster_layout_advance(cluster, context.config, reserve);
         cursor += vertical_inter_character_ruby_extent_after(range, context);
         cluster_index += 1;
     }
@@ -1443,6 +1502,9 @@ fn vertical_column_segment_overhang_allowance(
 
     let mut suffix_start = last_cluster_index + 1;
     for cluster_index in (column_start.saturating_add(1)..=last_cluster_index).rev() {
+        if vertical_cluster_requires_previous_as_latin_word_or_unit(cluster_index, clusters) {
+            return 0.0;
+        }
         if vertical_cluster_requires_previous_in_column(cluster_index, clusters, config) {
             suffix_start = cluster_index;
         } else {
@@ -1456,7 +1518,7 @@ fn vertical_column_segment_overhang_allowance(
     clusters[suffix_start..=last_cluster_index]
         .iter()
         .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
-        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
+        .map(|cluster| vertical_cluster_advance(cluster, config))
         .sum()
 }
 
@@ -1505,6 +1567,14 @@ fn vertical_cluster_requires_previous_in_column(
         clusters,
         config.jlreq_strictness,
     )
+}
+
+fn vertical_cluster_requires_previous_as_latin_word_or_unit(
+    cluster_index: usize,
+    clusters: &[VerticalCluster],
+) -> bool {
+    latin_word_sequence_requires_previous(cluster_index, clusters)
+        || numeric_unit_symbol_sequence_requires_previous(cluster_index, clusters)
 }
 
 fn vertical_cluster_requires_previous_by_linebreak_only(
@@ -1824,6 +1894,7 @@ fn vertical_cluster_can_start_column(
         && !jlreq_punctuation::is_line_head_prohibited_cluster(&cluster.text)
         && !ascii_number_separator_sequence_requires_previous(cluster_index, clusters)
         && !numeric_abbreviation_sequence_requires_previous(cluster_index, clusters)
+        && !numeric_unit_symbol_sequence_requires_previous(cluster_index, clusters)
         && !latin_word_sequence_requires_previous(cluster_index, clusters)
         && !sub_superscript_object_sequence_requires_previous(cluster_index, clusters)
         && !reference_mark_sequence_requires_previous(cluster_index, clusters)
@@ -1992,7 +2063,7 @@ fn vertical_cluster_span_layout_advance(
     clusters
         .iter()
         .filter(|cluster| !is_vertical_line_break_cluster(&cluster.text))
-        .map(|cluster| vertical_cluster_layout_advance(&cluster.text, config, reserve))
+        .map(|cluster| vertical_cluster_layout_advance(cluster, config, reserve))
         .sum::<f32>()
         .max(config.font_size)
 }
@@ -2024,20 +2095,27 @@ fn vertical_inter_character_ruby_extent_after(
         .sum()
 }
 
-fn vertical_cluster_advance(grapheme: &str, config: TextLayoutConfig) -> f32 {
-    if jlreq_punctuation::is_compressible_cluster(grapheme) {
+fn vertical_cluster_advance(cluster: &VerticalCluster, config: TextLayoutConfig) -> f32 {
+    if jlreq_punctuation::is_compressible_cluster(&cluster.text) {
         config.font_size * 0.5
+    } else if cluster_is_sideways_latin_run(cluster) {
+        horizontal_text_layout_advance(
+            &cluster.text,
+            config.font_size,
+            LayoutEffectReserve::default(),
+        )
+        .max(config.font_size)
     } else {
         config.font_size
     }
 }
 
 fn vertical_cluster_layout_advance(
-    grapheme: &str,
+    cluster: &VerticalCluster,
     config: TextLayoutConfig,
     reserve: LayoutEffectReserve,
 ) -> f32 {
-    vertical_cluster_advance(grapheme, config) + reserve.y * 2.0
+    vertical_cluster_advance(cluster, config) + reserve.y * 2.0
 }
 
 fn vertical_cluster_has_jlreq_separation_prohibited_before(
@@ -2076,7 +2154,7 @@ fn vertical_ruby_base_cluster_extent(
             ranges_overlap(RichTextRange::new(start, end), base_range)
                 && !is_vertical_line_break_cluster(&cluster.text)
         })
-        .map(|cluster| vertical_cluster_advance(&cluster.text, config))
+        .map(|cluster| vertical_cluster_advance(cluster, config))
         .sum::<f32>()
         .max(config.font_size)
 }
@@ -2645,6 +2723,28 @@ fn vertical_clusters(
             });
             continue;
         }
+        if is_sideways_latin_run_grapheme(grapheme, vertical_latin) {
+            let mut end = offset + grapheme.len();
+            let mut value = grapheme.to_owned();
+            let break_allowed_before = break_offsets.contains(&offset);
+            index += 1;
+            while let Some((next_offset, next)) = graphemes.get(index).copied() {
+                if !is_sideways_latin_run_grapheme(next, vertical_latin) {
+                    break;
+                }
+                value.push_str(next);
+                end = next_offset + next.len();
+                index += 1;
+            }
+            clusters.push(VerticalCluster {
+                range: offset..end,
+                text: value,
+                orientation: GlyphOrientation::SidewaysCw,
+                vertical_form: GlyphVerticalForm::None,
+                break_allowed_before,
+            });
+            continue;
+        }
         index += 1;
         let orientation = vertical_orientation(grapheme, vertical_latin);
         clusters.push(VerticalCluster {
@@ -2656,6 +2756,26 @@ fn vertical_clusters(
         });
     }
     clusters
+}
+
+fn is_sideways_latin_run_grapheme(
+    grapheme: &str,
+    vertical_latin: RichTextVerticalLatinMode,
+) -> bool {
+    is_latin_or_greek_alphabetic_cluster_text(grapheme)
+        && matches!(
+            vertical_orientation(grapheme, vertical_latin),
+            GlyphOrientation::SidewaysCw
+        )
+}
+
+fn cluster_is_sideways_latin_run(cluster: &VerticalCluster) -> bool {
+    cluster.orientation == GlyphOrientation::SidewaysCw
+        && cluster.text.graphemes(true).count() > 1
+        && cluster
+            .text
+            .graphemes(true)
+            .all(is_latin_or_greek_alphabetic_cluster_text)
 }
 
 fn line_break_offsets(text: &str) -> HashSet<usize> {
@@ -3072,6 +3192,33 @@ mod tests {
     }
 
     #[test]
+    fn vertical_mixed_groups_sideways_latin_runs() {
+        let frame = frame_with_run(
+            "吾ABC12Ａ",
+            vertical_presentation(RichTextWritingMode::VerticalRl),
+        );
+        let config = TextLayoutConfig::default();
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 4);
+        assert_eq!(layout.glyphs[0].text, "吾");
+        assert_eq!(layout.glyphs[1].text, "ABC");
+        assert_eq!(layout.glyphs[1].orientation, GlyphOrientation::SidewaysCw);
+        assert_eq!(layout.glyphs[1].vertical_form, GlyphVerticalForm::None);
+        assert!(
+            layout.glyphs[1].advance.height > config.font_size,
+            "sideways Latin run should use horizontal shaping advance as vertical inline extent"
+        );
+        assert_eq!(layout.glyphs[2].text, "12");
+        assert_eq!(
+            layout.glyphs[2].orientation,
+            GlyphOrientation::TextCombineUpright
+        );
+        assert_eq!(layout.glyphs[3].text, "Ａ");
+        assert_eq!(layout.glyphs[3].orientation, GlyphOrientation::Upright);
+    }
+
+    #[test]
     fn vertical_layout_uses_grapheme_clusters_for_mixed_orientation() {
         let text = "e\u{301}👨‍👩‍👧‍👦A";
         let frame = frame_with_run(text, vertical_presentation(RichTextWritingMode::VerticalRl));
@@ -3452,7 +3599,7 @@ mod tests {
                 unit,
                 "Latin temperature unit tail should stay with the degree suffix",
             );
-            assert_next_vertical_layout_column(
+            assert_vertical_layout_column_restart(
                 unit,
                 next_body,
                 next_column_moves_right,
@@ -3635,16 +3782,11 @@ mod tests {
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-            let unit_start = nth_laid_out_glyph(&layout, "k", 0);
-            let unit_end = nth_laid_out_glyph(&layout, "g", 0);
+            let unit = nth_laid_out_glyph(&layout, "kg", 0);
             let next_body = nth_laid_out_glyph(&layout, "人", 0);
-            assert_vertical_layout_after(
-                unit_start,
-                unit_end,
-                "letters inside a Latin unit symbol should stay attached",
-            );
+            assert_eq!(unit.orientation, GlyphOrientation::SidewaysCw);
             assert_next_vertical_layout_column(
-                unit_end,
+                unit,
                 next_body,
                 next_column_moves_right,
                 "body text after a Latin unit symbol should continue in the next column",
@@ -3663,22 +3805,11 @@ mod tests {
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
 
-            let first = nth_laid_out_glyph(&layout, "W", 0);
-            let second = nth_laid_out_glyph(&layout, "e", 0);
-            let third = nth_laid_out_glyph(&layout, "b", 0);
+            let word = nth_laid_out_glyph(&layout, "Web", 0);
             let next_body = nth_laid_out_glyph(&layout, "人", 0);
-            assert_vertical_layout_after(
-                first,
-                second,
-                "letters inside a non-hyphenated Western word should stay attached",
-            );
-            assert_vertical_layout_after(
-                second,
-                third,
-                "last letter inside a non-hyphenated Western word should stay attached",
-            );
-            assert_next_vertical_layout_column(
-                third,
+            assert_eq!(word.orientation, GlyphOrientation::SidewaysCw);
+            assert_vertical_layout_column_restart(
+                word,
                 next_body,
                 next_column_moves_right,
                 "body text after a Western word should continue in the next column",
@@ -3695,17 +3826,15 @@ mod tests {
         ] {
             let frame = frame_with_run(text, vertical_presentation(writing_mode));
             let config = TextLayoutConfig {
-                size: LayoutSize::new(210.0, 84.0),
+                size: LayoutSize::new(210.0, 180.0),
                 ..TextLayoutConfig::default()
             };
             let layout = layout_frame(&frame, config).expect("layout succeeds");
 
             let body = nth_laid_out_glyph(&layout, "天", 0);
-            let first = nth_laid_out_glyph(&layout, "W", 0);
-            let before_hyphen = nth_laid_out_glyph(&layout, "b", 0);
+            let first = nth_laid_out_glyph(&layout, "Web", 0);
             let hyphen = nth_laid_out_glyph(&layout, "-", 0);
-            let after_hyphen = nth_laid_out_glyph(&layout, "T", 0);
-            let last = nth_laid_out_glyph(&layout, "t", 0);
+            let after_hyphen = nth_laid_out_glyph(&layout, "Test", 0);
             let next_body = nth_laid_out_glyph(&layout, "人", 0);
             assert_vertical_layout_column_restart(
                 body,
@@ -3714,7 +3843,7 @@ mod tests {
                 "hyphenated Western word should start as one object after body text",
             );
             assert_vertical_layout_after(
-                before_hyphen,
+                first,
                 hyphen,
                 "word-internal hyphen should stay attached to the preceding letters",
             );
@@ -3724,7 +3853,7 @@ mod tests {
                 "letters after a word-internal hyphen should stay attached",
             );
             assert_next_vertical_layout_column(
-                last,
+                after_hyphen,
                 next_body,
                 next_column_moves_right,
                 "body text after a hyphenated Western word should continue in the next column",
@@ -3741,7 +3870,7 @@ mod tests {
             ] {
                 let frame = frame_with_run(text, vertical_presentation(writing_mode));
                 let config = TextLayoutConfig {
-                    size: LayoutSize::new(210.0, 60.0),
+                    size: LayoutSize::new(210.0, 90.0),
                     ..TextLayoutConfig::default()
                 };
                 let layout = layout_frame(&frame, config).expect("layout succeeds");
@@ -3792,23 +3921,16 @@ mod tests {
             let layout = layout_frame(&frame, config).expect("layout succeeds");
 
             let body = nth_laid_out_glyph(&layout, "天", 0);
-            let first = nth_laid_out_glyph(&layout, "c", 0);
-            let before_accent = nth_laid_out_glyph(&layout, "f", 0);
-            let accented = nth_laid_out_glyph(&layout, "é", 0);
+            let word = nth_laid_out_glyph(&layout, "café", 0);
             let next_body = nth_laid_out_glyph(&layout, "人", 0);
             assert_vertical_layout_column_restart(
                 body,
-                first,
+                word,
                 next_column_moves_right,
                 "accented Latin word should start as one Western word after body text",
             );
-            assert_vertical_layout_after(
-                before_accent,
-                accented,
-                "accented Latin grapheme should stay attached to preceding Latin letters",
-            );
-            assert_next_vertical_layout_column(
-                accented,
+            assert_vertical_layout_column_restart(
+                word,
                 next_body,
                 next_column_moves_right,
                 "body text after an accented Latin word should continue in the next column",
@@ -3833,22 +3955,16 @@ mod tests {
             let layout = layout_frame(&frame, config).expect("layout succeeds");
 
             let body = nth_laid_out_glyph(&layout, "天", 0);
-            let greek_unit = nth_laid_out_glyph(&layout, "μ", 0);
-            let latin_unit = nth_laid_out_glyph(&layout, "m", 0);
+            let unit = nth_laid_out_glyph(&layout, "μm", 0);
             let next_body = nth_laid_out_glyph(&layout, "人", 0);
             assert_vertical_layout_column_restart(
                 body,
-                greek_unit,
+                unit,
                 next_column_moves_right,
                 "Greek+Latin SI unit symbol should start as one unit after body text",
             );
-            assert_vertical_layout_after(
-                greek_unit,
-                latin_unit,
-                "Latin unit suffix should stay attached to the preceding Greek unit symbol",
-            );
-            assert_next_vertical_layout_column(
-                latin_unit,
+            assert_vertical_layout_column_restart(
+                unit,
                 next_body,
                 next_column_moves_right,
                 "body text after a Greek+Latin SI unit symbol should continue in the next column",
@@ -3858,23 +3974,21 @@ mod tests {
 
     #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_numeric_unit_symbols_unbroken() {
-        for (text, first_unit, second_unit) in [("天3kg人", "k", "g"), ("天3μm人", "μ", "m")]
-        {
+        for (text, unit_text) in [("天3kg人", "kg"), ("天3μm人", "μm")] {
             for (writing_mode, next_column_moves_right) in [
                 (RichTextWritingMode::VerticalRl, false),
                 (RichTextWritingMode::VerticalLr, true),
             ] {
                 let frame = frame_with_run(text, vertical_presentation(writing_mode));
                 let config = TextLayoutConfig {
-                    size: LayoutSize::new(210.0, 84.0),
+                    size: LayoutSize::new(210.0, 90.0),
                     ..TextLayoutConfig::default()
                 };
                 let layout = layout_frame(&frame, config).expect("layout succeeds");
 
                 let body = nth_laid_out_glyph(&layout, "天", 0);
                 let digits = nth_laid_out_glyph(&layout, "3", 0);
-                let unit_start = nth_laid_out_glyph(&layout, first_unit, 0);
-                let unit_end = nth_laid_out_glyph(&layout, second_unit, 0);
+                let unit = nth_laid_out_glyph(&layout, unit_text, 0);
                 let next_body = nth_laid_out_glyph(&layout, "人", 0);
                 assert_vertical_layout_column_restart(
                     body,
@@ -3884,16 +3998,11 @@ mod tests {
                 );
                 assert_vertical_layout_after(
                     digits,
-                    unit_start,
+                    unit,
                     "unit symbol should stay attached to the preceding digit",
                 );
-                assert_vertical_layout_after(
-                    unit_start,
-                    unit_end,
-                    "letters inside a numeric unit symbol should stay attached",
-                );
-                assert_next_vertical_layout_column(
-                    unit_end,
+                assert_vertical_layout_column_restart(
+                    unit,
                     next_body,
                     next_column_moves_right,
                     "body text after a numeric unit symbol should continue in the next column",
@@ -4484,19 +4593,8 @@ mod tests {
                 "{writing_mode:?} published JLREQ paragraph with a plain Western word should require a multi-column plan: {layout:?}"
             );
 
-            let first = nth_laid_out_glyph(&layout, "W", 0);
-            let second = nth_laid_out_glyph(&layout, "e", 0);
-            let last = nth_laid_out_glyph(&layout, "b", 0);
-            assert_vertical_layout_after(
-                first,
-                second,
-                "plain Western word should keep leading letters together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                second,
-                last,
-                "plain Western word should keep its final letter attached inside a paragraph class mix",
-            );
+            let word = nth_laid_out_glyph(&layout, "Web", 0);
+            assert_eq!(word.orientation, GlyphOrientation::SidewaysCw);
 
             let person = nth_laid_out_glyph(&layout, "人", 0);
             let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
@@ -4539,26 +4637,11 @@ mod tests {
                 "{writing_mode:?} published JLREQ paragraph with a hyphenated Western word should require a multi-column plan: {layout:?}"
             );
 
-            let first = nth_laid_out_glyph(&layout, "W", 0);
-            let second = nth_laid_out_glyph(&layout, "e", 0);
-            let before_hyphen = nth_laid_out_glyph(&layout, "b", 0);
+            let first = nth_laid_out_glyph(&layout, "Web", 0);
             let hyphen = nth_laid_out_glyph(&layout, "-", 0);
-            let after_hyphen = nth_laid_out_glyph(&layout, "T", 0);
-            let after_hyphen_second = nth_laid_out_glyph(&layout, "e", 1);
-            let after_hyphen_third = nth_laid_out_glyph(&layout, "s", 0);
-            let last = nth_laid_out_glyph(&layout, "t", 0);
+            let after_hyphen = nth_laid_out_glyph(&layout, "Test", 0);
             assert_vertical_layout_after(
                 first,
-                second,
-                "hyphenated Western word should keep its leading letters together inside a paragraph",
-            );
-            assert_vertical_layout_after(
-                second,
-                before_hyphen,
-                "hyphenated Western word should keep letters before the hyphen together inside a paragraph",
-            );
-            assert_vertical_layout_after(
-                before_hyphen,
                 hyphen,
                 "word-internal hyphen should stay attached inside a paragraph class mix",
             );
@@ -4567,22 +4650,6 @@ mod tests {
                 after_hyphen,
                 "letters after a word-internal hyphen should stay attached inside a paragraph class mix",
             );
-            assert_vertical_layout_after(
-                after_hyphen,
-                after_hyphen_second,
-                "letters after a word-internal hyphen should stay together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                after_hyphen_second,
-                after_hyphen_third,
-                "letters after a word-internal hyphen should stay together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                after_hyphen_third,
-                last,
-                "final letter after a word-internal hyphen should stay attached inside a paragraph class mix",
-            );
-
             let person = nth_laid_out_glyph(&layout, "人", 0);
             let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
             let strict_open = nth_laid_out_glyph(&layout, "「", 0);
@@ -4691,25 +4758,8 @@ mod tests {
                 "{writing_mode:?} published JLREQ paragraph with an accented Latin word should require a multi-column plan: {layout:?}"
             );
 
-            let first = nth_laid_out_glyph(&layout, "c", 0);
-            let second = nth_laid_out_glyph(&layout, "a", 0);
-            let before_accent = nth_laid_out_glyph(&layout, "f", 0);
-            let accented = nth_laid_out_glyph(&layout, "é", 0);
-            assert_vertical_layout_after(
-                first,
-                second,
-                "accented Latin word should keep its leading letters together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                second,
-                before_accent,
-                "accented Latin word should keep letters before the accent together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                before_accent,
-                accented,
-                "accented Latin grapheme should stay attached to preceding Latin letters inside a paragraph class mix",
-            );
+            let word = nth_laid_out_glyph(&layout, "café", 0);
+            assert_eq!(word.orientation, GlyphOrientation::SidewaysCw);
 
             let person = nth_laid_out_glyph(&layout, "人", 0);
             let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
@@ -4753,25 +4803,8 @@ mod tests {
                 "{writing_mode:?} published JLREQ paragraph with a decomposed accented Latin word should require a multi-column plan: {layout:?}"
             );
 
-            let first = nth_laid_out_glyph(&layout, "c", 0);
-            let second = nth_laid_out_glyph(&layout, "a", 0);
-            let before_accent = nth_laid_out_glyph(&layout, "f", 0);
-            let decomposed_accented = nth_laid_out_glyph(&layout, "e\u{301}", 0);
-            assert_vertical_layout_after(
-                first,
-                second,
-                "decomposed accented Latin word should keep its leading letters together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                second,
-                before_accent,
-                "decomposed accented Latin word should keep letters before the accent together inside a paragraph class mix",
-            );
-            assert_vertical_layout_after(
-                before_accent,
-                decomposed_accented,
-                "decomposed accented Latin grapheme should stay attached to preceding Latin letters inside a paragraph class mix",
-            );
+            let word = nth_laid_out_glyph(&layout, "cafe\u{301}", 0);
+            assert_eq!(word.orientation, GlyphOrientation::SidewaysCw);
 
             let person = nth_laid_out_glyph(&layout, "人", 0);
             let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
@@ -5071,17 +5104,15 @@ mod tests {
 
     #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_unit_symbol_inside_class_mix() {
-        for (text, first_unit, second_unit, description) in [
+        for (text, unit_text, description) in [
             (
                 "天地春夏秋冬kg人。「川」あっいおーえ―中・外………終",
-                "k",
-                "g",
+                "kg",
                 "Latin unit symbol",
             ),
             (
                 "天地春夏秋冬μm人。「川」あっいおーえ―中・外………終",
-                "μ",
-                "m",
+                "μm",
                 "Greek+Latin unit symbol",
             ),
         ] {
@@ -5101,13 +5132,8 @@ mod tests {
                     "{writing_mode:?} published JLREQ paragraph with a {description} should require a multi-column plan: {layout:?}"
                 );
 
-                let first_unit = nth_laid_out_glyph(&layout, first_unit, 0);
-                let second_unit = nth_laid_out_glyph(&layout, second_unit, 0);
-                assert_vertical_layout_after(
-                    first_unit,
-                    second_unit,
-                    "unit symbol tail should stay attached inside a paragraph class mix",
-                );
+                let unit = nth_laid_out_glyph(&layout, unit_text, 0);
+                assert_eq!(unit.orientation, GlyphOrientation::SidewaysCw);
 
                 let person = nth_laid_out_glyph(&layout, "人", 0);
                 let strict_full_stop = nth_laid_out_glyph(&layout, "。", 0);
@@ -5134,17 +5160,15 @@ mod tests {
 
     #[test]
     fn vertical_paragraph_plan_keeps_published_jlreq_numeric_unit_inside_class_mix() {
-        for (text, first_unit, second_unit, description) in [
+        for (text, unit_text, description) in [
             (
                 "天地春夏秋冬3kg人。「川」あっいおーえ―中・外………終",
-                "k",
-                "g",
+                "kg",
                 "numeric Latin unit",
             ),
             (
                 "天地春夏秋冬3μm人。「川」あっいおーえ―中・外………終",
-                "μ",
-                "m",
+                "μm",
                 "numeric Greek+Latin unit",
             ),
         ] {
@@ -5165,17 +5189,11 @@ mod tests {
                 );
 
                 let digit = nth_laid_out_glyph(&layout, "3", 0);
-                let first_unit = nth_laid_out_glyph(&layout, first_unit, 0);
-                let second_unit = nth_laid_out_glyph(&layout, second_unit, 0);
+                let unit = nth_laid_out_glyph(&layout, unit_text, 0);
                 assert_vertical_layout_after(
                     digit,
-                    first_unit,
+                    unit,
                     "numeric unit symbol should stay attached to the preceding digit inside a paragraph class mix",
-                );
-                assert_vertical_layout_after(
-                    first_unit,
-                    second_unit,
-                    "unit symbol tail should stay attached inside a paragraph class mix",
                 );
 
                 let person = nth_laid_out_glyph(&layout, "人", 0);

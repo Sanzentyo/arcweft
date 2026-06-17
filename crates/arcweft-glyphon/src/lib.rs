@@ -388,6 +388,10 @@ fn append_glyph_instances(
         append_text_combine_instances(instances, glyph_index, glyph, resolved, origin_offset);
         return;
     }
+    if glyph.orientation == GlyphOrientation::SidewaysCw && resolved.len() > 1 {
+        append_sideways_run_instances(instances, glyph_index, glyph, resolved, origin_offset);
+        return;
+    }
     let is_multi_glyph_cluster = resolved.len() > 1;
     for resolved in resolved.iter().copied() {
         let origin = Point::new(
@@ -418,6 +422,29 @@ fn append_glyph_instances(
             origin,
             advance,
             ink_bounds,
+            origin_offset,
+        ));
+    }
+}
+
+fn append_sideways_run_instances(
+    instances: &mut Vec<GlyphInstance>,
+    glyph_index: usize,
+    glyph: &LaidOutGlyph,
+    resolved: &[ResolvedGlyph],
+    origin_offset: Vector,
+) {
+    let cell_width = glyph.bounds.width.max(1.0);
+    for glyph_resolved in resolved.iter().copied() {
+        let advance_y = glyph_resolved.advance.x.max(1.0);
+        let origin = Point::new(glyph.origin.x, glyph.origin.y + glyph_resolved.offset.x);
+        instances.push(glyph_instance(
+            glyph_index,
+            glyph,
+            glyph_resolved.cache_key,
+            origin,
+            Vector::new(0.0, advance_y),
+            Rect::new(0.0, 0.0, cell_width, advance_y),
             origin_offset,
         ));
     }
@@ -639,6 +666,54 @@ mod tests {
                 index: 1
             })
         );
+    }
+
+    #[test]
+    fn maps_sideways_latin_run_offsets_to_vertical_progression() {
+        let layout = LaidOutText {
+            glyphs: vec![LaidOutGlyph {
+                run_index: 0,
+                range: arcweft_render_text::RichTextRange::new(0, 3),
+                text: "ABC".to_owned(),
+                origin: LayoutPoint::new(10.0, 20.0),
+                advance: LayoutSize::new(0.0, 48.0),
+                bounds: LayoutRect::new(10.0, 20.0, 30.0, 48.0),
+                writing_mode: arcweft_render_text::RichTextWritingMode::VerticalRl,
+                orientation: GlyphOrientation::SidewaysCw,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: arcweft_render_text::RichTextPresentation::default(),
+            }],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+
+        let area =
+            glyph_area_from_layout(&layout, GlyphonAreaOptions::default(), |_index, _glyph| {
+                vec![
+                    fake_resolved_glyph_with_offset(0, 16.0, 0.0, 0.0),
+                    fake_resolved_glyph_with_offset(1, 16.0, 16.0, 0.0),
+                    fake_resolved_glyph_with_offset(2, 16.0, 32.0, 0.0),
+                ]
+            })
+            .expect("area adapts");
+
+        assert_eq!(area.len(), 3);
+        for glyph in area.glyphs() {
+            assert_eq!(glyph.transform, GlyphTransform::Rotate90Cw);
+            assert_f32_eq(glyph.origin.x, 10.0);
+            assert_eq!(
+                glyph.cluster,
+                Some(TextCluster {
+                    start: 0,
+                    end: 3,
+                    index: 0
+                })
+            );
+        }
+        assert_f32_eq(area.glyphs()[0].origin.y, 20.0);
+        assert_f32_eq(area.glyphs()[1].origin.y, 36.0);
+        assert_f32_eq(area.glyphs()[2].origin.y, 52.0);
     }
 
     #[test]

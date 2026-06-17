@@ -108,6 +108,11 @@ the concrete choices to follow when turning that package into production code.
   `RotatedAlternate` before resolving glyphon cache keys, using the active
   rich-text font family, weight, style, and size metrics instead of a fixed
   renderer default.
+  Consecutive Latin/Greek graphemes that resolve to sideways orientation are
+  grouped into one sideways run cluster, sized by horizontal shaping advance,
+  and submitted with shaped x offsets mapped into vertical progression before
+  the engine-side `Rotate90Cw` transform. Fullwidth Latin that resolves upright
+  remains a normal upright cluster.
   Native Agent coverage also observes decomposed-kana and emoji ZWJ graphemes as
   single `rich_text_cluster` objects with their full source byte ranges and
   reads those objects back through raw mask/object-id crops in both vertical

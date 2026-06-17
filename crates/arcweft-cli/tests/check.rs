@@ -18560,6 +18560,18 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         30,
     );
 
+    let sideways_latin = find_rich_text_cluster_object(&json, "ABC", 51, 54);
+    assert_eq!(
+        sideways_latin["rich_text_ref"]["orientation"],
+        "sideways_cw"
+    );
+    assert_eq!(sideways_latin["rich_text_ref"]["vertical_form"], "none");
+    assert!(
+        sideways_latin["bbox"]["height"].as_u64().unwrap()
+            > sideways_latin["bbox"]["width"].as_u64().unwrap(),
+        "vertical sideways Latin should be observed as one rotated run-shaped cluster: {sideways_latin}"
+    );
+
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
     assert_eq!(vertical_lr["rich_text"]["line"], "say.full.005");
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);

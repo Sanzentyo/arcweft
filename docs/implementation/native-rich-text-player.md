@@ -44,6 +44,13 @@ horizontal advances, so Agent object crops, mask/object-id captures, and LLM
 debug geometry align with the submitted pixels. The adjustment is bounded to one
 run and one line and resets around ruby bases, so long-ruby base allocation and
 vertical layout continue to come from `arcweft-text-layout`.
+For vertical mixed text, consecutive Latin/Greek graphemes that resolve to
+sideways orientation are now one layout cluster rather than per-character
+clusters. `arcweft-text-layout` gives that cluster a vertical inline extent
+based on its horizontal shaping advance, and the glyphon adapter maps the
+resolved horizontal glyph offsets into vertical progression before applying the
+engine-side `Rotate90Cw` transform. This matches the long-term sideways-run
+policy without introducing a separate compatibility renderer.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence
