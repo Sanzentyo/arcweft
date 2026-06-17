@@ -144,8 +144,11 @@ registry-backed captures instead of reporting builtin-only debug geometry.
 Native framebuffer, color-region, object-id, and mask captures preserve
 renderer diagnostics from glyph submission. `arcw agent observe --json --image
 ...` appends those diagnostics to the Agent report, so missing custom native
-effect implementations such as an unregistered `.sparkle` span are visible to
-LLM/debugger tooling instead of becoming silent no-op captures.
+effect implementations are visible to LLM/debugger tooling instead of becoming
+silent no-op captures. Offscreen capture sessions and the native window renderer
+install the native default host effect registry, which currently provides a
+deterministic `sparkle` glyph effect for samples and smoke captures while still
+reporting unknown custom IDs through diagnostics.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

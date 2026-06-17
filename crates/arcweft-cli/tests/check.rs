@@ -18876,7 +18876,7 @@ fn agent_observe_native_renderer_reports_custom_effect_diagnostics() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.sparkle amp=2px]custom effect[/][p]
+    alice: [.unknown_custom_effect amp=2px]custom effect[/][p]
 }
 ",
     );

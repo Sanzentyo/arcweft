@@ -298,6 +298,7 @@ impl RichTextStateStore {
 
 /// Per-glyph effect context supplied to renderer-local effect implementations.
 pub struct TextEffectGlyphContext<'a> {
+    pub effect: &'a RichTextEffectDescriptor,
     pub time_seconds: f32,
     pub line_id: &'a str,
     pub run_index: usize,
@@ -358,6 +359,18 @@ impl RichTextEffectRegistry {
         }
         true
     }
+}
+
+/// Builds the default native host effect registry used by native renderers.
+pub fn native_default_effect_registry() -> RichTextEffectRegistry {
+    let mut registry = RichTextEffectRegistry::default();
+    register_native_default_text_effects(&mut registry);
+    registry
+}
+
+/// Registers native host effects that are available without external adapters.
+pub fn register_native_default_text_effects(registry: &mut RichTextEffectRegistry) {
+    registry.insert_lambda("sparkle", native_sparkle_effect);
 }
 
 struct NativeEffectExecution<'a> {
@@ -429,6 +442,7 @@ impl<'a> NativeEffectExecution<'a> {
             return;
         }
         let mut ctx = TextEffectGlyphContext {
+            effect,
             time_seconds,
             line_id,
             run_index: placement.run_index,
@@ -517,7 +531,7 @@ impl NativeOffscreenCaptureSession {
             queue,
             format,
             renderer,
-            effect_registry: RichTextEffectRegistry::default(),
+            effect_registry: native_default_effect_registry(),
             effect_state: RichTextStateStore::default(),
         })
     }
@@ -2033,6 +2047,33 @@ fn apply_builtin_descriptor(
     true
 }
 
+fn native_sparkle_effect(ctx: &mut TextEffectGlyphContext<'_>) {
+    if !effect_applies_to_renderer_glyph(ctx.effect) {
+        return;
+    }
+    let amplitude = param_milli(ctx.effect, "amp")
+        .unwrap_or(Milli(1600))
+        .as_f32()
+        .max(0.0);
+    let cycles_per_second = param_milli(ctx.effect, "speed")
+        .unwrap_or(Milli(2200))
+        .as_f32()
+        .max(0.001);
+    let sparkle_seed = param_seed(ctx.effect, "seed").unwrap_or(0x51A7_61E5);
+    let noise = deterministic_noise(sparkle_seed, ctx.line_id, ctx.glyph_index, 0.0);
+    let ordinal = usize_to_f32_saturating(ctx.glyph_index);
+    let phase =
+        (ctx.time_seconds * cycles_per_second + noise[0] + ordinal * 0.071) * std::f32::consts::TAU;
+    let shimmer = (phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+    let drift = (phase * 0.73 + noise[1] * std::f32::consts::TAU).cos();
+
+    ctx.placement.x += drift * amplitude * 0.18;
+    ctx.placement.y -= shimmer * amplitude * 0.35;
+    ctx.placement.scale_x *= 1.0 + shimmer * 0.035;
+    ctx.placement.scale_y *= 1.0 + shimmer * 0.035;
+    ctx.placement.opacity *= (0.82 + shimmer * 0.18).clamp(0.0, 1.0);
+}
+
 const fn effect_target_wave_index(
     target: RichTextEffectTarget,
     placement: &NativeGlyphPlacement,
@@ -3208,6 +3249,8 @@ struct WindowState {
     rich_text: WindowRichText,
     layout_frame: Option<LineDisplayFrame>,
     layout: Option<LaidOutText>,
+    effect_registry: RichTextEffectRegistry,
+    effect_state: RichTextStateStore,
     window: Arc<dyn Window>,
 }
 
@@ -3289,6 +3332,8 @@ impl WindowState {
             rich_text: page.rich_text.clone(),
             layout_frame: page.layout_frame.clone(),
             layout: None,
+            effect_registry: native_default_effect_registry(),
+            effect_state: RichTextStateStore::default(),
             window,
         };
         state.set_page(page);
@@ -4939,7 +4984,15 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         };
         apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout, &cache_keys);
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
-        apply_text_transforms_to_glyph_area(&mut glyph_area, &state.rich_text.text, layout, 60.0);
+        let mut effects =
+            NativeEffectExecution::new(Some(&mut state.effect_registry), &mut state.effect_state);
+        apply_text_transforms_to_glyph_area_with_effects(
+            &mut glyph_area,
+            &state.rich_text.text,
+            layout,
+            60.0,
+            &mut effects,
+        );
         let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
@@ -4948,7 +5001,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             state.surface_config.height,
             60.0,
             false,
-            None,
+            Some(&mut effects),
         );
         let ruby_shader_glyph_areas =
             shader_glow_glyph_areas_for_ruby(&ruby_glyph_areas, &state.ruby_buffers);
@@ -7694,6 +7747,52 @@ mod tests {
     }
 
     #[test]
+    fn native_default_effect_registry_applies_sparkle_params() {
+        let frame = custom_effect_test_frame_with_params(
+            "sparkle",
+            BTreeMap::from([
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Raw {
+                        value: "2px".to_owned(),
+                    },
+                ),
+                (
+                    "seed".to_owned(),
+                    RichTextParam::Raw {
+                        value: "custom".to_owned(),
+                    },
+                ),
+            ]),
+        );
+        let mut registry = native_default_effect_registry();
+        let mut state = RichTextStateStore::default();
+
+        let plan =
+            visual_plan_from_frame_with_effect_registry(&frame, 0.25, &mut registry, &mut state);
+        let glyph = plan.pages[0].glyphs.first().expect("glyph placement");
+
+        assert!(plan.diagnostics.is_empty());
+        assert!(
+            glyph.y < -0.05 || (glyph.scale_x - 1.0).abs() > 0.005 || glyph.opacity < 0.99,
+            "sparkle should visibly alter glyph placement or mask state: {glyph:?}"
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_default_sparkle_registry_without_diagnostics() {
+        let frame = custom_effect_test_frame("sparkle");
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+
+        let capture = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("sparkle capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(capture.content_pixels > 0);
+    }
+
+    #[test]
     fn native_capture_uses_custom_effect_registry_for_submitted_glyphs() {
         let frame = custom_effect_test_frame(".nudge");
         let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
@@ -7795,6 +7894,13 @@ mod tests {
     }
 
     fn custom_effect_test_frame(id: &str) -> LineDisplayFrame {
+        custom_effect_test_frame_with_params(id, BTreeMap::new())
+    }
+
+    fn custom_effect_test_frame_with_params(
+        id: &str,
+        params: BTreeMap<String, RichTextParam>,
+    ) -> LineDisplayFrame {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.custom.effect".to_owned()),
             callee: "alice".to_owned(),
@@ -7812,7 +7918,7 @@ mod tests {
                     style: RichTextStyle::Effect {
                         effect: RichTextEffectDescriptor {
                             id: id.to_owned(),
-                            params: BTreeMap::new(),
+                            params,
                             target: RichTextEffectTarget::Run,
                             phase: RichTextEffectPhase::GlyphTransform,
                             state_scope: RichTextStateScope::Glyph,
