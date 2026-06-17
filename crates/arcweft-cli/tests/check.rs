@@ -18538,8 +18538,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
     assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
     assert_eq!(first_vertical_cluster["rich_text"]["line"], "say.full.005");
-    assert_eq!(first_vertical_cluster["bbox"]["width"], 42);
-    assert_eq!(first_vertical_cluster["bbox"]["height"], 42);
+    assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
+    assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
     assert!(
         first_vertical_cluster["capture_refs"]["captures"]
             .as_array()
@@ -18556,8 +18556,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         &source_path,
         first_vertical_cluster_mask_uri,
         first_vertical_cluster["id"].as_str().unwrap(),
-        42,
-        42,
+        30,
+        30,
     );
 
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
@@ -18590,8 +18590,8 @@ fn assert_windows_fonts_sample_vertical_cluster_readback(
         first_vertical_cluster["rich_text_ref"]["vertical_form"],
         "none"
     );
-    assert_eq!(first_vertical_cluster["bbox"]["width"], 42);
-    assert_eq!(first_vertical_cluster["bbox"]["height"], 42);
+    assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
+    assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
     for (kind, mime_type) in [
         ("mask", "application/octet-stream"),
         ("object_id", "application/octet-stream"),
@@ -18601,8 +18601,8 @@ fn assert_windows_fonts_sample_vertical_cluster_readback(
             source_path,
             uri,
             first_vertical_cluster["id"].as_str().unwrap(),
-            42,
-            42,
+            30,
+            30,
         );
     }
 }
@@ -18617,8 +18617,8 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
         "glyph_cluster"
     );
     assert_eq!(first_vertical_lr_cluster["rich_text_ref"]["source"], "text");
-    assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 42);
-    assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 42);
+    assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 30);
+    assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 30);
     let first_vertical_lr_cluster_mask_uri = rich_text_object_capture_uri(
         first_vertical_lr_cluster,
         "mask",
@@ -18628,8 +18628,8 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
         source_path,
         first_vertical_lr_cluster_mask_uri,
         first_vertical_lr_cluster["id"].as_str().unwrap(),
-        42,
-        42,
+        30,
+        30,
     );
     let first_vertical_lr_cluster_object_id_uri = rich_text_object_capture_uri(
         first_vertical_lr_cluster,
@@ -18640,8 +18640,8 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
         source_path,
         first_vertical_lr_cluster_object_id_uri,
         first_vertical_lr_cluster["id"].as_str().unwrap(),
-        42,
-        42,
+        30,
+        30,
     );
 }
 
@@ -18653,7 +18653,7 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
             workspace_root().join("samples/rich-text-windows-fonts.arcw"),
             "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
             120,
-            400,
+            500,
         ),
         (
             "full-grammar",

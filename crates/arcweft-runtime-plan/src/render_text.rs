@@ -2378,7 +2378,12 @@ fn effect_from_selector(selector: &str, attrs: &str) -> RichTextEffectDescriptor
         id: selector.to_owned(),
         params: attrs
             .iter()
-            .filter(|(key, _)| !matches!(key.as_str(), "target" | "phase" | "state" | "scope"))
+            .filter(|(key, _)| {
+                !matches!(
+                    key.as_str(),
+                    "target" | "phase" | "state" | "scope" | "state_scope"
+                )
+            })
             .map(|(key, value)| (key.clone(), param_from_value(value)))
             .collect(),
         target: target_attr(&attrs),
@@ -2881,6 +2886,10 @@ flow @flow.main main {
             Some(&RichTextParam::Raw {
                 value: "dialogue".to_owned()
             })
+        );
+        assert!(
+            !effect.params.contains_key("state_scope"),
+            "state_scope is descriptor metadata and should not be forwarded as a custom effect param"
         );
         let plain_run = frame
             .display_map
