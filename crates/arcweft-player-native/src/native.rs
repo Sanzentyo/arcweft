@@ -2807,7 +2807,8 @@ impl NativeTextStyle {
     fn attrs_with_metrics(&self, metrics_for_size: fn(u16) -> Metrics) -> Attrs<'_> {
         let mut attrs = Attrs::new()
             .family(self.family.as_glyphon_family())
-            .color(self.color.into_glyphon());
+            .color(self.color.into_glyphon())
+            .font_features(native_text_font_features());
         if self.weight == NativeTextWeight::Bold {
             attrs = attrs.weight(Weight::BOLD);
         }
@@ -4165,6 +4166,14 @@ fn vertical_form_font_features(vertical_form: GlyphVerticalForm) -> FontFeatures
     features
 }
 
+fn native_text_font_features() -> FontFeatures {
+    let mut features = FontFeatures::new();
+    features
+        .disable(FeatureTag::new(b"liga"))
+        .disable(FeatureTag::new(b"clig"));
+    features
+}
+
 fn cache_keys_for_layout_glyph(
     glyph_index: usize,
     range: RichTextRange,
@@ -4897,6 +4906,24 @@ mod tests {
             &buffer,
             rich_text,
             &pages,
+        );
+    }
+
+    #[test]
+    fn native_text_features_disable_standard_ligatures_for_cluster_mapping() {
+        let features = native_text_font_features();
+
+        assert!(
+            features
+                .features
+                .iter()
+                .any(|feature| feature.tag == FeatureTag::new(b"liga") && feature.value == 0)
+        );
+        assert!(
+            features
+                .features
+                .iter()
+                .any(|feature| feature.tag == FeatureTag::new(b"clig") && feature.value == 0)
         );
     }
 

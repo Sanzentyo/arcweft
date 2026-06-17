@@ -27,6 +27,14 @@ rich-text frames include `display_map` metadata that
 maps text runs and ruby annotations back to byte ranges in the displayed text; those text runs and
 ruby annotations are also emitted as `dialogue.rich_text` child objects with `rich_text_ref`
 metadata and their own crop URIs.
+Native text shaping disables standard/contextual ligatures for submitted body
+and ruby buffers. The current layout model maps styled/rich-text source ranges
+to per-character layout glyphs before native shaping, so ligature clusters such
+as `ffi` would otherwise overlap several source-local glyph slots and be drawn
+more than once. The long-term target is shaping-aware cluster layout; until
+then, disabling `liga`/`clig` keeps Latin words such as `offset`, `effect`, and
+`serif` readable in Japanese rich-text/effect samples without adding a renderer
+compatibility path.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence
@@ -175,6 +183,12 @@ cells are checked against the same visibility/readback rule. Ruby annotation
 GlyphAreas use the annotation presentation as well, so ruby object masks can be
 captured before and after reveal without changing the observed ruby base and
 annotation bboxes.
+For animation/debugging workflows that need a deterministic runtime state, the
+same Agent path accepts `--capture-step N` and MCP `capture_step`. This overrides
+the normal `--steps` loop, advances observation through exactly `N` runtime
+steps even if the flow has already reached `Done`, and records that value in
+`images[].capture_step`. Use `capture_step` to choose the dialogue/runtime state
+and `capture_time` to choose the visual-effect time inside that state.
 Native measurement now also has a time-aware page API, and Agent observe/crop
 paths pass `capture_time` through it, so animated glyph-transform bboxes used
 for rich-text child objects, textbox capture refs, and scoped native crops track
@@ -253,6 +267,7 @@ Inspect the same rich-text display frame through the Agent Debug Bus CLI slice:
 ```bash
 cargo run -p arcweft-cli -- agent observe path/to/file.arcw --json --image overlay
 cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image png --out native.png --json
+cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image png --capture-step 12 --capture-time 0.35 --out native-step-12.png --json
 cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image png --page 1 --object object.dialogue.0.0.run.1 --out page-1-run.png --json
 cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image png --layer dialogue --out dialogue.png --json
 cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image png --capture object-id --layer dialogue --out object-id.png --json

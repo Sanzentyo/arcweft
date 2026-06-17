@@ -1,0 +1,11 @@
+# Visual Sample Review Issues 2026-06-17
+
+This directory keeps native rich-text capture evidence for the ongoing
+`samples/rich-text-full-grammar.arcw` review. Large full observation JSON files
+are intentionally not checked in; regenerate them with the commands below when
+object metadata needs to be inspected.
+
+| ID | Finding | Evidence | Reproduction |
+| --- | --- | --- | --- |
+| `SVR-2026-06-17-001` | Native shaping with default ligatures made Latin text in rich-text/effect samples look broken. The layout model currently maps styled source ranges to per-character glyph slots before native shaping; ligature clusters such as `ffi` could overlap multiple slots and be submitted repeatedly. Native body/ruby shaping now disables `liga`/`clig`, fixing duplicated words such as `offfset`/`efffect` while leaving a shaping-aware horizontal layout as a remaining improvement. | Before: [`full-grammar-effects-object-step16.png`](full-grammar-effects-object-step16.png); after: [`full-grammar-effects-object-after-latin.png`](full-grammar-effects-object-after-latin.png). | `cargo run -p arcweft-cli --quiet -- agent observe samples\rich-text-full-grammar.arcw --image png --out docs\implementation\visual-sample-review-issues\2026-06-17\full-grammar-effects-object-after-latin.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.6 --capture-time 0.25` |
+| `SVR-2026-06-17-002` | Font-family and shader sample lines still expose the broader non-shaped horizontal layout limitation: Latin advances are now proportional enough to avoid the previous wide debug spacing, but exact native glyph advances are not yet fed back into the Sans I/O layout. | Before: [`full-grammar-shader-object-step16.png`](full-grammar-shader-object-step16.png); after: [`full-grammar-decoration-object-after-latin.png`](full-grammar-decoration-object-after-latin.png). | `cargo run -p arcweft-cli --quiet -- agent observe samples\rich-text-full-grammar.arcw --image png --out docs\implementation\visual-sample-review-issues\2026-06-17\full-grammar-decoration-object-after-latin.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.5 --capture-time 0.25` |

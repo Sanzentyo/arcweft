@@ -18815,6 +18815,60 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_capture_step_metadata() {
+    let path = temp_arcw(
+        "agent-observe-native-capture-step",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Step pinned capture[p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-capture-step");
+    let png_path = dir.join("native-step.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--capture-step")
+        .arg("3")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes capture-step native PNG");
+
+    assert!(
+        output.status.success(),
+        "native capture-step crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native capture-step report is JSON");
+    assert_eq!(json["steps"], 3);
+    assert_eq!(json["images"][0]["capture_step"], 3);
+    assert_eq!(json["images"][0]["kind"], "color");
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["written"], "native-step.png");
+    let bytes = fs::read(&png_path).expect("read native capture-step PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    fs::remove_file(&path).expect("remove temp native capture-step source");
+    fs::remove_dir_all(&dir).expect("remove temp native capture-step dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-layer",

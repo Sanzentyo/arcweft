@@ -280,6 +280,8 @@ pub struct AgentImageResource {
     pub composition: AgentImageComposition,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub capture_step: usize,
     pub uri: String,
     pub mime_type: String,
     pub width: u32,
@@ -693,6 +695,7 @@ mod tests {
             },
             composition: AgentImageComposition::MaskAttachment,
             page: 0,
+            capture_step: 0,
             uri: "arcweft://session/cli/frame/7/object.object.dialogue.0.0.mask.rgba".to_owned(),
             mime_type: "application/octet-stream".to_owned(),
             width: 3,
@@ -744,6 +747,7 @@ mod tests {
                 scope: AgentImageScope::Viewport,
                 composition: AgentImageComposition::Framebuffer,
                 page: 0,
+                capture_step: 0,
                 uri: "arcweft://session/cli/frame/7/color.png".to_owned(),
                 mime_type: "image/png".to_owned(),
                 width: 1280,
@@ -809,6 +813,7 @@ mod tests {
                 scope: AgentImageScope::Viewport,
                 composition: AgentImageComposition::OverlayVector,
                 page: 0,
+                capture_step: 0,
                 uri: "arcweft://session/cli/frame/1/overlay.svg".to_owned(),
                 mime_type: "image/svg+xml".to_owned(),
                 width: 1280,

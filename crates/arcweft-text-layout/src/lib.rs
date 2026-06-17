@@ -2547,8 +2547,19 @@ fn valid_range(
 }
 
 fn horizontal_advance(ch: char, font_size: f32) -> f32 {
-    if ch.is_ascii() {
-        font_size * 0.55
+    if ch.is_ascii_whitespace() {
+        font_size * 0.33
+    } else if matches!(
+        ch,
+        'i' | 'j' | 'l' | 'I' | '!' | '|' | '.' | ',' | ':' | ';'
+    ) {
+        font_size * 0.28
+    } else if matches!(ch, 'm' | 'w' | 'M' | 'W') {
+        font_size * 0.82
+    } else if ch.is_ascii_alphanumeric() {
+        font_size * 0.54
+    } else if ch.is_ascii_punctuation() {
+        font_size * 0.36
     } else {
         font_size
     }
@@ -6879,6 +6890,23 @@ mod tests {
             glyph.bounds.y,
             config.origin.y + (config.line_advance - config.font_size) * 0.5,
         );
+    }
+
+    #[test]
+    fn horizontal_latin_uses_proportional_deterministic_advance() {
+        let frame = frame_with_run("ialwm.", RichTextPresentation::default());
+        let config = TextLayoutConfig::default();
+        let layout = layout_frame(&frame, config).expect("layout succeeds");
+
+        assert_eq!(layout.glyphs.len(), 6);
+        assert!(layout.glyphs[0].advance.width < layout.glyphs[3].advance.width);
+        assert!(layout.glyphs[5].advance.width < layout.glyphs[1].advance.width);
+        let total = layout
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.advance.width)
+            .sum::<f32>();
+        assert!(total < config.font_size * 6.0);
     }
 
     #[test]

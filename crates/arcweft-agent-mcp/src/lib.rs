@@ -156,6 +156,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels." },
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels for layout-sensitive rich-text debugging." },
                     "steps": { "type": "integer", "minimum": 1 },
+                    "capture_step": { "type": "integer", "minimum": 1, "description": "Observe and capture the rendered frame after this many runtime steps. Overrides steps when supplied." },
                     "max_ops": { "type": "integer", "minimum": 1 }
                 },
                 "anyOf": [
@@ -189,6 +190,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "entry": { "type": "string" },
                     "flow": { "type": "string" },
                     "steps": { "type": "integer", "minimum": 1 },
+                    "capture_step": { "type": "integer", "minimum": 1, "description": "Observe before capturing after this many runtime steps. Overrides steps when supplied." },
                     "max_ops": { "type": "integer", "minimum": 1 },
                     "uri": { "type": "string", "description": "Optional arcweft:// image resource URI from resources/list or resources/templates/list. When supplied, it selects format, capture kind, and viewport/layer/object scope." },
                     "format": { "type": "string", "enum": ["png", "raw-rgba"], "default": "png" },
@@ -814,6 +816,8 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_eq!(properties["capture_step"]["type"], "integer");
+        assert_eq!(properties["capture_step"]["minimum"], 1);
         assert_eq!(properties["viewport_width"]["type"], "integer");
         assert_eq!(properties["viewport_width"]["minimum"], 1);
         assert_eq!(properties["viewport_height"]["type"], "integer");
@@ -839,6 +843,8 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_eq!(properties["capture_step"]["type"], "integer");
+        assert_eq!(properties["capture_step"]["minimum"], 1);
         assert_eq!(properties["viewport_width"]["type"], "integer");
         assert_eq!(properties["viewport_width"]["minimum"], 1);
         assert_eq!(properties["viewport_height"]["type"], "integer");

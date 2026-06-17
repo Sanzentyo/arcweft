@@ -235,7 +235,7 @@ pub fn glyph_area_from_shaped_buffer(
 /// by Arcweft layout. Unlike glyphon's normal `TextArea` path, placement starts
 /// from the annotation box and preserves glyphon's physical glyph offset, so
 /// native pixels, observe geometry, and object crops agree without an
-/// independent TextArea baseline.
+/// independent `TextArea` baseline.
 pub fn horizontal_glyph_area_from_shaped_buffer(
     buffer: &Buffer,
     options: GlyphonAreaOptions,

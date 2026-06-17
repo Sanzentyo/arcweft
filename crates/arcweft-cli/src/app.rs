@@ -2139,6 +2139,7 @@ fn agent_mcp_capture_request(
         capture_kind,
         scope,
         page,
+        capture_step: report.steps,
         capture_time_seconds,
     })
 }
@@ -2226,6 +2227,7 @@ fn agent_mcp_observe_options(arguments: &serde_json::Value) -> Result<AgentObser
         math_backend: None,
         math_wgpu_min_elements: None,
         steps: agent_mcp_usize_argument(arguments, "steps").unwrap_or(8),
+        capture_step: agent_mcp_usize_argument(arguments, "capture_step"),
         mode: CliRuntimeStepMode::Drain,
         max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(64),
         values: Vec::new(),
@@ -2435,7 +2437,11 @@ fn agent_observe_command(
 }
 
 fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), ExitCode> {
-    if options.steps == 0 {
+    if options.capture_step == Some(0) {
+        eprintln!("error: --capture-step must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    if agent_observe_effective_steps(options) == 0 {
         eprintln!("error: --steps must be greater than zero");
         return Err(ExitCode::from(2));
     }
@@ -2487,6 +2493,10 @@ fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), E
         return Err(ExitCode::from(2));
     }
     Ok(())
+}
+
+fn agent_observe_effective_steps(options: &AgentObserveOptions) -> usize {
+    options.capture_step.unwrap_or(options.steps)
 }
 
 fn agent_observe_resource_by_uri(
@@ -2573,6 +2583,7 @@ struct AgentCaptureReadRequest {
     capture_kind: AgentObserveCaptureKind,
     scope: AgentCaptureScope,
     page: usize,
+    capture_step: usize,
     capture_time_seconds: f32,
 }
 
@@ -2625,6 +2636,7 @@ fn agent_capture_request_from_uri(
         capture_kind,
         scope,
         page,
+        capture_step: report.steps,
         capture_time_seconds: 60.0,
     })
 }
@@ -2735,6 +2747,7 @@ fn agent_native_capture_image_with_session(
         scope: agent_image_scope_for_capture_scope(&request.scope),
         composition: capture.composition,
         page: request.page,
+        capture_step: request.capture_step,
         uri: request.uri.clone(),
         mime_type: mime_type.to_owned(),
         width: capture.width,
@@ -3852,7 +3865,9 @@ fn run_agent_observation(
     let mut diagnostics = Vec::new();
     let mut task_request_count = 0usize;
     let mut tick = 0usize;
-    for step_index in 0..options.steps {
+    let effective_steps = agent_observe_effective_steps(options);
+    let force_capture_step = options.capture_step.is_some();
+    for step_index in 0..effective_steps {
         tick = step_index;
         let result = executor.step_with_root_bindings(
             RuntimeStepInput {
@@ -3891,7 +3906,7 @@ fn run_agent_observation(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        if done {
+        if done && !force_capture_step {
             break;
         }
         if let Some(host) = host.as_mut() {
@@ -4157,6 +4172,7 @@ fn agent_observe_image_output(
                 )),
                 composition: AgentImageComposition::OverlayVector,
                 page: 0,
+                capture_step: report.steps,
                 uri: uri.clone(),
                 mime_type: "image/svg+xml".to_owned(),
                 width: report.viewport.width,
@@ -4203,6 +4219,7 @@ fn agent_capture_request_for_options(
         capture_kind,
         scope: agent_capture_scope_for_options(options),
         page: options.page.unwrap_or(0),
+        capture_step: report.steps,
         capture_time_seconds: options.capture_time_seconds,
     }
 }
@@ -9164,6 +9181,8 @@ struct AgentObserveOptions {
     math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 8)]
     steps: usize,
+    #[arg(long = "capture-step")]
+    capture_step: Option<usize>,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
     mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 64)]
