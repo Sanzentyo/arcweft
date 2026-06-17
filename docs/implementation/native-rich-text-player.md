@@ -141,6 +141,13 @@ horizontal advances, vertical column planning, glyph bounds, and ruby base
 allocation before native glyph submission. The native renderer still applies the
 time-specific placement offset when drawing, while layout/ruby planning now
 accounts for the space those layout-phase effects can occupy.
+The native renderer also maps `[effect .shader id=soft_glow ...]` to
+deterministic glyph-area glow passes submitted before the main glyph pass. The
+resolved shader remains visible in the native visual plan, but it now also
+changes actual native framebuffer/debug captures instead of being metadata-only.
+Unknown shader IDs are not reinterpreted by the native renderer; they remain
+host-resolved shader references until a concrete native/filter implementation
+is added.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

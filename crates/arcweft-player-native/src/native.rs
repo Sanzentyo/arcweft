@@ -2070,6 +2070,110 @@ fn resolve_shader_filter(shader: &RichTextShaderRef) -> NativeResolvedShaderFilt
     }
 }
 
+fn shader_glow_glyph_areas_for_text(
+    glyph_area: &OwnedGlyphArea,
+    layout: &LaidOutText,
+) -> Vec<OwnedGlyphArea> {
+    shader_glow_glyph_areas(glyph_area, |metadata| {
+        layout
+            .glyphs
+            .get(metadata)
+            .and_then(|glyph| soft_glow_shader(&glyph.presentation.shaders))
+    })
+}
+
+fn shader_glow_glyph_areas_for_ruby(
+    ruby_glyph_areas: &[OwnedGlyphArea],
+    ruby_buffers: &[WindowRubyBuffer],
+) -> Vec<OwnedGlyphArea> {
+    ruby_glyph_areas
+        .iter()
+        .zip(ruby_buffers)
+        .flat_map(|(glyph_area, ruby)| {
+            let shader = soft_glow_shader(&ruby.presentation.shaders);
+            shader_glow_glyph_areas(glyph_area, move |_metadata| shader.clone())
+        })
+        .collect()
+}
+
+fn shader_glow_glyph_areas(
+    glyph_area: &OwnedGlyphArea,
+    shader_for_metadata: impl Fn(usize) -> Option<NativeResolvedShaderFilter>,
+) -> Vec<OwnedGlyphArea> {
+    [
+        SoftGlowPass::Forward,
+        SoftGlowPass::Backward,
+        SoftGlowPass::SideA,
+        SoftGlowPass::SideB,
+    ]
+    .into_iter()
+    .filter_map(|pass| {
+        let mut area = glyph_area.clone();
+        let mut has_visible_shader_glyph = false;
+        area.set_default_color(Color::rgba(0, 0, 0, 0));
+        for glyph in area.glyphs_mut() {
+            let Some(shader) = shader_for_metadata(glyph.metadata) else {
+                glyph.color = Some(Color::rgba(0, 0, 0, 0));
+                continue;
+            };
+            let offset = soft_glow_offset(&shader, pass);
+            glyph.origin.x += offset[0];
+            glyph.origin.y += offset[1];
+            glyph.color = Some(soft_glow_color(&shader, pass));
+            has_visible_shader_glyph = true;
+        }
+        has_visible_shader_glyph.then_some(area)
+    })
+    .collect()
+}
+
+#[derive(Clone, Copy)]
+enum SoftGlowPass {
+    Forward,
+    Backward,
+    SideA,
+    SideB,
+}
+
+fn soft_glow_shader(shaders: &[RichTextShaderRef]) -> Option<NativeResolvedShaderFilter> {
+    shaders
+        .iter()
+        .find(|shader| shader.id == "soft_glow")
+        .map(resolve_shader_filter)
+}
+
+fn soft_glow_offset(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> [f32; 2] {
+    let direction = normalize_shader_direction(shader.direction);
+    let side = [-direction[1], direction[0]];
+    let radius = (shader.amount * 6.0).clamp(1.0, 12.0);
+    match pass {
+        SoftGlowPass::Forward => [direction[0] * radius, direction[1] * radius],
+        SoftGlowPass::Backward => [direction[0] * radius * -0.5, direction[1] * radius * -0.5],
+        SoftGlowPass::SideA => [side[0] * radius * 0.5, side[1] * radius * 0.5],
+        SoftGlowPass::SideB => [side[0] * radius * -0.5, side[1] * radius * -0.5],
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn soft_glow_color(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> Color {
+    let alpha_scale = match pass {
+        SoftGlowPass::Forward => 72.0,
+        SoftGlowPass::Backward => 44.0,
+        SoftGlowPass::SideA | SoftGlowPass::SideB => 32.0,
+    };
+    let alpha = (shader.amount * alpha_scale).round().clamp(8.0, 96.0) as u8;
+    Color::rgba(155, 205, 255, alpha)
+}
+
+fn normalize_shader_direction(direction: [f32; 2]) -> [f32; 2] {
+    let length = direction[0].hypot(direction[1]);
+    if length <= f32::EPSILON {
+        [0.0, 1.0]
+    } else {
+        [direction[0] / length, direction[1] / length]
+    }
+}
+
 fn param_milli(effect: &RichTextEffectDescriptor, name: &str) -> Option<Milli> {
     param_as_milli(effect.params.get(name)?)
 }
@@ -3680,6 +3784,7 @@ impl NativeOffscreenTextRenderer {
                 target.time_seconds,
             );
         }
+        let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout.layout);
         let ruby_glyph_areas = ruby_glyph_areas(
             &self.ruby_buffers,
             &rich_text.text,
@@ -3689,9 +3794,14 @@ impl NativeOffscreenTextRenderer {
             target.force_alpha_mask,
             effects,
         );
-        let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
-        glyph_areas.push(glyph_area.as_glyph_area());
-        glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
+        let ruby_shader_glyph_areas =
+            shader_glow_glyph_areas_for_ruby(&ruby_glyph_areas, &self.ruby_buffers);
+        let glyph_areas = native_glyph_area_submission_list(
+            &text_shader_glyph_areas,
+            &glyph_area,
+            &ruby_shader_glyph_areas,
+            &ruby_glyph_areas,
+        );
         self.text_renderer
             .prepare_text_and_glyph_areas(
                 device,
@@ -4039,6 +4149,34 @@ fn ruby_glyph_area_options(
         force_alpha_mask,
         ..GlyphonAreaOptions::default()
     }
+}
+
+fn native_glyph_area_submission_list<'a>(
+    text_shader_glyph_areas: &'a [OwnedGlyphArea],
+    text_glyph_area: &'a OwnedGlyphArea,
+    ruby_shader_glyph_areas: &'a [OwnedGlyphArea],
+    ruby_glyph_areas: &'a [OwnedGlyphArea],
+) -> Vec<glyphon::GlyphArea<'a>> {
+    let mut glyph_areas = Vec::with_capacity(
+        text_shader_glyph_areas
+            .len()
+            .saturating_add(ruby_shader_glyph_areas.len())
+            .saturating_add(1)
+            .saturating_add(ruby_glyph_areas.len()),
+    );
+    glyph_areas.extend(
+        text_shader_glyph_areas
+            .iter()
+            .map(OwnedGlyphArea::as_glyph_area),
+    );
+    glyph_areas.push(text_glyph_area.as_glyph_area());
+    glyph_areas.extend(
+        ruby_shader_glyph_areas
+            .iter()
+            .map(OwnedGlyphArea::as_glyph_area),
+    );
+    glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
+    glyph_areas
 }
 
 fn native_text_bounds(width: u32, height: u32) -> TextBounds {
@@ -4684,6 +4822,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         };
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
         apply_text_transforms_to_glyph_area(&mut glyph_area, &state.rich_text.text, layout, 60.0);
+        let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             &state.rich_text.text,
@@ -4693,9 +4832,14 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             false,
             None,
         );
-        let mut glyph_areas = Vec::with_capacity(1 + ruby_glyph_areas.len());
-        glyph_areas.push(glyph_area.as_glyph_area());
-        glyph_areas.extend(ruby_glyph_areas.iter().map(OwnedGlyphArea::as_glyph_area));
+        let ruby_shader_glyph_areas =
+            shader_glow_glyph_areas_for_ruby(&ruby_glyph_areas, &state.ruby_buffers);
+        let glyph_areas = native_glyph_area_submission_list(
+            &text_shader_glyph_areas,
+            &glyph_area,
+            &ruby_shader_glyph_areas,
+            &ruby_glyph_areas,
+        );
         state
             .text_renderer
             .prepare_text_and_glyph_areas(
@@ -4924,6 +5068,92 @@ mod tests {
                 .features
                 .iter()
                 .any(|feature| feature.tag == FeatureTag::new(b"clig") && feature.value == 0)
+        );
+    }
+
+    #[test]
+    fn soft_glow_shader_adds_native_glyph_passes() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.shader.soft_glow".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Shader {
+                        shader: RichTextShaderRef {
+                            id: "soft_glow".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amount".to_owned(),
+                                    RichTextParam::Milli { value: Milli::ONE },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: "1,0".to_owned(),
+                                    },
+                                ),
+                            ]),
+                            phase: RichTextEffectPhase::RunOffscreenPass,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("window page");
+        let page_layout_frame = page.layout_frame.as_ref().expect("layout frame");
+        let layout = layout_frame(
+            page_layout_frame,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let glyph_area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(800, 600),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .expect("glyph area resolves");
+
+        let glow_areas = shader_glow_glyph_areas_for_text(&glyph_area, &layout);
+
+        assert_eq!(glow_areas.len(), 4);
+        assert_eq!(glow_areas[0].len(), glyph_area.len());
+        assert!(
+            glow_areas[0].glyphs()[0].origin.x > glyph_area.glyphs()[0].origin.x + 5.5,
+            "forward glow pass should offset along shader dir"
+        );
+        assert_eq!(
+            glow_areas[0].glyphs()[0].color,
+            Some(Color::rgba(155, 205, 255, 72))
         );
     }
 
