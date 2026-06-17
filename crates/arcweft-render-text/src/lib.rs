@@ -544,6 +544,14 @@ impl RuntimeLineContext {
             .find(|binding| binding.name == name)
             .map(|binding| &binding.value)
     }
+
+    fn condition_is_truthy(&self, expr: &str) -> bool {
+        match expr.trim() {
+            "" | "false" => false,
+            "true" => true,
+            name => self.get(name).is_some_and(runtime_value_is_truthy),
+        }
+    }
 }
 
 impl LineDisplaySpec {
@@ -566,6 +574,7 @@ struct LineDisplayFrameResolver<'a> {
     inline_failures: Vec<InlineTextFailure>,
     unresolved: Vec<String>,
     active_styles: Vec<RichTextStyle>,
+    conditional_stack: Vec<ConditionalBranch>,
 }
 
 impl<'a> LineDisplayFrameResolver<'a> {
@@ -580,6 +589,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
             inline_failures: Vec::new(),
             unresolved: Vec::new(),
             active_styles: Vec::new(),
+            conditional_stack: Vec::new(),
         }
     }
 
@@ -595,6 +605,15 @@ impl<'a> LineDisplayFrameResolver<'a> {
         node_index: usize,
         node: &RichTextNode,
     ) -> Result<(), LineDisplayError> {
+        if let RichTextNode::HostEvent(event @ DialogueHostEvent::Conditional { .. }) = node {
+            self.push_conditional_event(event, node_index);
+            return Ok(());
+        }
+
+        if !self.is_conditionally_active() {
+            return Ok(());
+        }
+
         match node {
             RichTextNode::Text { text } => {
                 self.push_text_node(text, node_index, node);
@@ -744,6 +763,39 @@ impl<'a> LineDisplayFrameResolver<'a> {
         });
     }
 
+    fn push_conditional_event(&mut self, event: &DialogueHostEvent, node_index: usize) {
+        self.push_host_event(event, node_index);
+        let DialogueHostEvent::Conditional { name, attrs } = event else {
+            return;
+        };
+
+        match name.as_str() {
+            "if" => {
+                let parent_active = self.is_conditionally_active();
+                self.conditional_stack.push(ConditionalBranch {
+                    parent_active,
+                    condition_matches: parent_active && self.context.condition_is_truthy(attrs),
+                    in_else: false,
+                });
+            }
+            "else" => {
+                if let Some(branch) = self.conditional_stack.last_mut() {
+                    branch.in_else = true;
+                }
+            }
+            "endif" => {
+                self.conditional_stack.pop();
+            }
+            _ => {}
+        }
+    }
+
+    fn is_conditionally_active(&self) -> bool {
+        self.conditional_stack
+            .last()
+            .is_none_or(|branch| branch.is_active())
+    }
+
     fn push_visible_text(
         &mut self,
         value: &str,
@@ -779,6 +831,24 @@ impl<'a> LineDisplayFrameResolver<'a> {
             inline_failures: self.inline_failures,
             unresolved: self.unresolved,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ConditionalBranch {
+    parent_active: bool,
+    condition_matches: bool,
+    in_else: bool,
+}
+
+impl ConditionalBranch {
+    const fn is_active(self) -> bool {
+        self.parent_active
+            && if self.in_else {
+                !self.condition_matches
+            } else {
+                self.condition_matches
+            }
     }
 }
 
@@ -981,6 +1051,28 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Tuple(_) => "(...)".to_owned(),
         RuntimeValue::Record(_) => "{...}".to_owned(),
         RuntimeValue::Variant { name, .. } => format!(".{name}"),
+    }
+}
+
+fn runtime_value_is_truthy(value: &RuntimeValue) -> bool {
+    match value {
+        RuntimeValue::Unit => false,
+        RuntimeValue::Bool(value) => *value,
+        RuntimeValue::Int(value) => value.try_into_i64().is_some_and(|value| value != 0),
+        RuntimeValue::UInt(value) => value.try_into_i64().is_some_and(|value| value != 0),
+        RuntimeValue::F32(value) => value.is_finite() && *value != 0.0,
+        RuntimeValue::F64(value) => value.is_finite() && *value != 0.0,
+        RuntimeValue::MatrixF32(_)
+        | RuntimeValue::MatrixF64(_)
+        | RuntimeValue::TensorF32(_)
+        | RuntimeValue::TensorF64(_)
+        | RuntimeValue::Variant { .. } => true,
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => !value.is_empty(),
+        RuntimeValue::Char(value) => *value != '\0',
+        RuntimeValue::Duration(value) => value.as_nanos() != 0,
+        RuntimeValue::Seq(value) => !value.is_empty(),
+        RuntimeValue::Tuple(value) => !value.is_empty(),
+        RuntimeValue::Record(value) => !value.is_empty(),
     }
 }
 
@@ -1208,6 +1300,141 @@ mod tests {
             .expect("fallback source frame resolves");
 
         assert_eq!(frame.text, "score|fmt(score, style = \"number\")");
+    }
+
+    #[test]
+    fn local_text_conditionals_render_only_selected_branch() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.opening.conditional".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "if".to_owned(),
+                    attrs: "flag".to_owned(),
+                }),
+                RichTextNode::Text {
+                    text: "yes".to_owned(),
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "else".to_owned(),
+                    attrs: String::new(),
+                }),
+                RichTextNode::Text {
+                    text: "no".to_owned(),
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "endif".to_owned(),
+                    attrs: String::new(),
+                }),
+                RichTextNode::Text {
+                    text: "Z".to_owned(),
+                },
+            ]),
+        };
+
+        let true_frame = spec
+            .resolve_frame(&RuntimeLineContext::new(vec![RuntimeBinding {
+                name: "flag".to_owned(),
+                value: RuntimeValue::Bool(true),
+            }]))
+            .expect("true branch resolves");
+        let false_frame = spec
+            .resolve_frame(&RuntimeLineContext::new(vec![RuntimeBinding {
+                name: "flag".to_owned(),
+                value: RuntimeValue::Bool(false),
+            }]))
+            .expect("false branch resolves");
+        let missing_frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("missing condition resolves as false");
+
+        assert_eq!(true_frame.text, "AyesZ");
+        assert_eq!(false_frame.text, "AnoZ");
+        assert_eq!(missing_frame.text, "AnoZ");
+        assert_eq!(true_frame.host_events.len(), 3);
+        assert_eq!(false_frame.host_events.len(), 3);
+    }
+
+    #[test]
+    fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.opening.conditional_gated".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "if".to_owned(),
+                    attrs: "flag".to_owned(),
+                }),
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::from_tag("color", "#ff0000"),
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Voice {
+                    attrs: "hidden".to_owned(),
+                }),
+                RichTextNode::Interpolation {
+                    expr: "missing".to_owned(),
+                    fallback_source: "missing".to_owned(),
+                    on_error: InlineFailurePolicy::FailLine,
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "else".to_owned(),
+                    attrs: String::new(),
+                }),
+                RichTextNode::Text {
+                    text: "shown".to_owned(),
+                },
+                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
+                    name: "endif".to_owned(),
+                    attrs: String::new(),
+                }),
+                RichTextNode::Text {
+                    text: " plain".to_owned(),
+                },
+            ]),
+        };
+
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::new(vec![RuntimeBinding {
+                name: "flag".to_owned(),
+                value: RuntimeValue::Bool(false),
+            }]))
+            .expect("inactive interpolation does not fail the line");
+
+        assert_eq!(frame.text, "shown plain");
+        assert!(
+            frame
+                .host_events
+                .iter()
+                .all(|event| matches!(event, DialogueHostEvent::Conditional { .. }))
+        );
+        assert!(frame.inline_failures.is_empty());
+        assert!(frame.unresolved.is_empty());
+        assert!(frame.display_map.text_runs.iter().all(|run| {
+            !run.styles
+                .iter()
+                .any(|style| matches!(style, RichTextStyle::Color { .. }))
+        }));
     }
 
     #[test]
