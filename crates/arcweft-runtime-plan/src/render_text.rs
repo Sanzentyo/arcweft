@@ -2336,6 +2336,7 @@ fn jlreq_strictness_attr(attrs: &BTreeMap<String, String>) -> RichTextJlreqStric
 }
 
 fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
+    let raw_attrs = attrs;
     let attrs = parse_attrs(attrs);
     let mut transform = RichTextTransform::default();
     match selector {
@@ -2346,7 +2347,7 @@ fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
             );
         }
         "rotate" => {
-            transform.rotate = angle_from_attrs_map(&attrs, "deg").unwrap_or_default();
+            transform.rotate = transform_angle_attr(&attrs, raw_attrs).unwrap_or_default();
             transform.origin = RichTextTransformOrigin::Center;
         }
         "scale" => {
@@ -2489,10 +2490,28 @@ fn angle_from_attrs(attrs: &str, name: &str) -> Option<RichTextAngle> {
     angle_from_attrs_map(&parse_attrs(attrs), name)
 }
 
+fn transform_angle_attr(
+    attrs: &BTreeMap<String, String>,
+    raw_attrs: &str,
+) -> Option<RichTextAngle> {
+    angle_from_attrs_map(attrs, "angle")
+        .or_else(|| angle_from_attrs_map(attrs, "deg"))
+        .or_else(|| positional_angle_attr(raw_attrs))
+}
+
 fn angle_from_attrs_map(attrs: &BTreeMap<String, String>, name: &str) -> Option<RichTextAngle> {
     attrs.get(name).map(|value| RichTextAngle {
         degrees: parse_milli_token(value),
     })
+}
+
+fn positional_angle_attr(raw_attrs: &str) -> Option<RichTextAngle> {
+    raw_attrs
+        .split_whitespace()
+        .find(|item| !item.contains('='))
+        .map(|value| RichTextAngle {
+            degrees: parse_milli_token(value),
+        })
 }
 
 fn milli_attr(attrs: &BTreeMap<String, String>, name: &str) -> Option<Milli> {
@@ -2906,6 +2925,76 @@ flow @flow.main main {
             .expect("plain text run after explicit selector end");
 
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn rotate_transform_selector_accepts_named_and_positional_angles() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.rotate angle=8deg]BC[/]D[transform .rotate 10deg]EF[/transform]G[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.transform.rotate".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+
+        let named_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .expect("named rotate run");
+        let positional_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "EF")
+            })
+            .expect("positional rotate run");
+
+        let named_transform = named_run
+            .presentation
+            .transform
+            .as_ref()
+            .expect("named rotate transform");
+        let positional_transform = positional_run
+            .presentation
+            .transform
+            .as_ref()
+            .expect("positional rotate transform");
+
+        assert_eq!(named_transform.rotate.degrees, Milli(8000));
+        assert_eq!(named_transform.origin, RichTextTransformOrigin::Center);
+        assert_eq!(positional_transform.rotate.degrees, Milli(10000));
+        assert_eq!(positional_transform.origin, RichTextTransformOrigin::Center);
     }
 
     #[test]
