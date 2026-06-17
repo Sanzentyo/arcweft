@@ -141,6 +141,11 @@ element bounds through `measure_frame_elements_in`, and the standalone
 `measure_frame_elements_with_effect_registry` API accepts an explicit
 registry/state pair. This keeps glyph and ruby observe bboxes aligned with
 registry-backed captures instead of reporting builtin-only debug geometry.
+Native framebuffer, color-region, object-id, and mask captures preserve
+renderer diagnostics from glyph submission. `arcw agent observe --json --image
+...` appends those diagnostics to the Agent report, so missing custom native
+effect implementations such as an unregistered `.sparkle` span are visible to
+LLM/debugger tooling instead of becoming silent no-op captures.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

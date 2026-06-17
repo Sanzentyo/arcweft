@@ -18869,6 +18869,66 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_custom_effect_diagnostics() {
+    let path = temp_arcw(
+        "agent-observe-native-custom-effect-diagnostic",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.sparkle amp=2px]custom effect[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-custom-effect-diagnostic");
+    let png_path = dir.join("native-custom-effect.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports native custom effect diagnostics");
+
+    assert!(
+        output.status.success(),
+        "native custom effect diagnostic capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native custom effect report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_some_and(|diagnostics| {
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic["severity"] == "warning"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("missing_custom_effect"))
+            })
+        }),
+        "native custom effect capture should surface renderer diagnostics: {json}"
+    );
+    let bytes = fs::read(&png_path).expect("read native custom effect PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    fs::remove_file(&path).expect("remove temp native custom effect source");
+    fs::remove_dir_all(&dir).expect("remove temp native custom effect dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-layer",

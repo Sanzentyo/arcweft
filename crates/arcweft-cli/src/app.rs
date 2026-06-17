@@ -2669,8 +2669,8 @@ fn agent_native_capture_resource(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
 ) -> Result<AgentResource, ExitCode> {
-    let (image, bytes) = agent_native_capture_image(report, request)?;
-    Ok(report.image_resource(&image, &bytes))
+    let result = agent_native_capture_image(report, request)?;
+    Ok(report.image_resource(&result.image, &result.bytes))
 }
 
 fn agent_native_capture_resource_with_session(
@@ -2678,14 +2678,20 @@ fn agent_native_capture_resource_with_session(
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
 ) -> Result<AgentResource, ExitCode> {
-    let (image, bytes) = agent_native_capture_image_with_session(report, request, native_session)?;
-    Ok(report.image_resource(&image, &bytes))
+    let result = agent_native_capture_image_with_session(report, request, native_session)?;
+    Ok(report.image_resource(&result.image, &result.bytes))
+}
+
+struct AgentNativeCaptureImageResult {
+    image: AgentImageResource,
+    bytes: Vec<u8>,
+    capture: AgentRasterCapture,
 }
 
 fn agent_native_capture_image(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
-) -> Result<(AgentImageResource, Vec<u8>), ExitCode> {
+) -> Result<AgentNativeCaptureImageResult, ExitCode> {
     let mut native_session = arcweft_player_native::native::NativeOffscreenCaptureSession::new()
         .map_err(|error| {
             eprintln!("error: native capture failed: {error}");
@@ -2698,7 +2704,7 @@ fn agent_native_capture_image_with_session(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
-) -> Result<(AgentImageResource, Vec<u8>), ExitCode> {
+) -> Result<AgentNativeCaptureImageResult, ExitCode> {
     let Some(textbox) = agent_native_textbox_for_capture(report, &request.scope) else {
         eprintln!("error: native renderer requires an observed textbox frame");
         return Err(ExitCode::from(2));
@@ -2759,7 +2765,11 @@ fn agent_native_capture_image_with_session(
         content_pixels: Some(stats.content_pixels),
         written: None,
     };
-    Ok((image, bytes))
+    Ok(AgentNativeCaptureImageResult {
+        image,
+        bytes,
+        capture,
+    })
 }
 
 fn agent_native_textbox_for_capture<'a>(
@@ -2827,6 +2837,7 @@ fn agent_native_scoped_capture(
         composition: AgentImageComposition::Framebuffer,
         background: [0, 0, 0, 255],
         rgba: capture.rgba.clone(),
+        diagnostics: capture.diagnostics.clone(),
     };
     let selected = agent_capture_objects_for_scope(context.objects, scope)?;
     let selected = agent_native_capture_objects_for_page(
@@ -2859,6 +2870,7 @@ fn agent_native_scoped_capture(
                     composition: AgentImageComposition::IsolatedRegions,
                     background: [0, 0, 0, 0],
                     rgba,
+                    diagnostics: isolated.diagnostics,
                 };
                 let (x, y, width, height) =
                     agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
@@ -2878,6 +2890,7 @@ fn agent_native_scoped_capture(
         composition: debug.composition,
         background: [0, 0, 0, 0],
         rgba: debug.capture.rgba,
+        diagnostics: debug.capture.diagnostics,
     };
     if !matches!(scope, AgentCaptureScope::Viewport) {
         let (x, y, width, height) =
@@ -3067,6 +3080,7 @@ fn agent_native_masked_framebuffer_capture(
         [0, 0, 0, 0],
         AgentImageComposition::MaskedFramebufferCrop,
     );
+    masked.diagnostics.clone_from(&capture.diagnostics);
     for object in selected {
         let (x, y, width, height) =
             agent_native_object_rect(capture.width, capture.height, context, object)?;
@@ -3431,6 +3445,7 @@ fn agent_crop_raster_capture(
         agent_cropped_composition(source.composition),
     );
     crop.crop_origin = Some(agent_crop_origin(source.crop_origin, x, y));
+    crop.diagnostics.clone_from(&source.diagnostics);
     let source_width = usize::try_from(source.width).unwrap_or(0);
     let crop_width = usize::try_from(width).unwrap_or(0);
     let row_bytes = crop_width.saturating_mul(4);
@@ -4079,6 +4094,7 @@ struct AgentRasterCapture {
     composition: AgentImageComposition,
     background: [u8; 4],
     rgba: Vec<u8>,
+    diagnostics: Vec<arcweft_player_native::native::NativeVisualDiagnostic>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -4103,6 +4119,7 @@ impl AgentRasterCapture {
             composition,
             background: color,
             rgba,
+            diagnostics: Vec::new(),
         }
     }
 
@@ -4192,7 +4209,12 @@ fn agent_observe_image_output(
         }
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
-            let (mut image, bytes) = agent_native_capture_image(report, &request)?;
+            let capture_result = agent_native_capture_image(report, &request)?;
+            report.diagnostics.extend(agent_native_visual_diagnostics(
+                report.steps,
+                &capture_result.capture.diagnostics,
+            ));
+            let (mut image, bytes) = (capture_result.image, capture_result.bytes);
             image.written = options.out.as_deref().map(report_path);
             report.render_hash.clone_from(&image.hash);
             let uri = image.uri.clone();
@@ -4200,6 +4222,33 @@ fn agent_observe_image_output(
             Ok(Some(AgentImageOutput { uri, bytes }))
         }
     }
+}
+
+fn agent_native_visual_diagnostics(
+    step: usize,
+    diagnostics: &[arcweft_player_native::native::NativeVisualDiagnostic],
+) -> Vec<AgentDiagnostic> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| AgentDiagnostic {
+            step,
+            severity: match diagnostic.severity {
+                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Error => {
+                    AgentDiagnosticSeverity::Error
+                }
+                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Warning => {
+                    AgentDiagnosticSeverity::Warning
+                }
+                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Info => {
+                    AgentDiagnosticSeverity::Info
+                }
+            },
+            message: format!(
+                "native rich-text {}: {}",
+                diagnostic.code, diagnostic.message
+            ),
+        })
+        .collect()
 }
 
 fn agent_capture_request_for_options(
@@ -9390,6 +9439,7 @@ mod tests {
             rgba: [9, 8, 7, 255].repeat(32),
             content_bbox: None,
             content_pixels: 0,
+            diagnostics: Vec::new(),
         };
         let objects = vec![
             test_observed_object("object.ui.left", 1, 1, 2, 2),
@@ -9438,6 +9488,7 @@ mod tests {
             rgba: [0, 0, 0, 255].repeat(32 * 24),
             content_bbox: None,
             content_pixels: 0,
+            diagnostics: Vec::new(),
         };
         let objects = vec![test_observed_object("object.ui.panel", 4, 5, 7, 6)];
         let selected = objects.iter().collect::<Vec<_>>();
@@ -9482,6 +9533,7 @@ mod tests {
                     composition: object_id.composition,
                     background: [0, 0, 0, 0],
                     rgba: object_id.capture.rgba.clone(),
+                    diagnostics: Vec::new(),
                 },
                 4,
                 5,
@@ -9508,6 +9560,7 @@ mod tests {
                     composition: mask.composition,
                     background: [0, 0, 0, 0],
                     rgba: mask.capture.rgba,
+                    diagnostics: Vec::new(),
                 },
                 10,
                 10,

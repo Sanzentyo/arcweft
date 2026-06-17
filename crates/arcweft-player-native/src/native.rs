@@ -70,6 +70,8 @@ pub struct NativeFrameCapture {
     pub content_bbox: Option<NativeFrameContentBBox>,
     /// Count of pixels that differ from the clear background.
     pub content_pixels: u64,
+    /// Renderer diagnostics produced while preparing the captured glyph areas.
+    pub diagnostics: Vec<NativeVisualDiagnostic>,
 }
 
 /// Pixel-space bounds of non-background framebuffer content.
@@ -79,6 +81,12 @@ pub struct NativeFrameContentBBox {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeRenderReadback {
+    rgba: Vec<u8>,
+    diagnostics: Vec<NativeVisualDiagnostic>,
 }
 
 /// Native rich-text element kinds addressable by Agent debug captures.
@@ -632,21 +640,31 @@ impl NativeOffscreenCaptureSession {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let background = [0, 0, 0, 0];
-        let mut rgba = self
+        let mut readback = self
             .capture_debug_text_regions_rgba_at(frame, viewport, regions)?
-            .unwrap_or_else(|| solid_rgba(width, height, background));
+            .unwrap_or_else(|| NativeRenderReadback {
+                rgba: solid_rgba(width, height, background),
+                diagnostics: Vec::new(),
+            });
         for region in regions {
             if region.element.is_none() {
-                fill_native_rect(&mut rgba, width, height, region.fallback_bbox, region.color);
+                fill_native_rect(
+                    &mut readback.rgba,
+                    width,
+                    height,
+                    region.fallback_bbox,
+                    region.color,
+                );
             }
         }
-        let stats = native_frame_content_stats(&rgba, width, height, background);
+        let stats = native_frame_content_stats(&readback.rgba, width, height, background);
         Ok(NativeFrameCapture {
             width,
             height,
-            rgba,
+            rgba: readback.rgba,
             content_bbox: stats.content_bbox,
             content_pixels: stats.content_pixels,
+            diagnostics: readback.diagnostics,
         })
     }
 
@@ -677,16 +695,20 @@ impl NativeOffscreenCaptureSession {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let background = [0, 0, 0, 0];
-        let rgba = self
+        let readback = self
             .capture_color_text_regions_rgba_at(frame, viewport, regions)?
-            .unwrap_or_else(|| solid_rgba(width, height, background));
-        let stats = native_frame_content_stats(&rgba, width, height, background);
+            .unwrap_or_else(|| NativeRenderReadback {
+                rgba: solid_rgba(width, height, background),
+                diagnostics: Vec::new(),
+            });
+        let stats = native_frame_content_stats(&readback.rgba, width, height, background);
         Ok(NativeFrameCapture {
             width,
             height,
-            rgba,
+            rgba: readback.rgba,
             content_bbox: stats.content_bbox,
             content_pixels: stats.content_pixels,
+            diagnostics: readback.diagnostics,
         })
     }
 
@@ -699,7 +721,7 @@ impl NativeOffscreenCaptureSession {
         origin: NativeTextOrigin,
         time_seconds: f32,
     ) -> Result<NativeFrameCapture, NativeWindowError> {
-        let rgba = self.render_rich_text_rgba_with_clear(
+        let readback = self.render_rich_text_rgba_with_clear(
             rich_text,
             layout,
             NativeRenderTarget {
@@ -711,13 +733,14 @@ impl NativeOffscreenCaptureSession {
             },
             wgpu::Color::BLACK,
         )?;
-        let stats = native_frame_content_stats(&rgba, width, height, [0, 0, 0, 255]);
+        let stats = native_frame_content_stats(&readback.rgba, width, height, [0, 0, 0, 255]);
         Ok(NativeFrameCapture {
             width,
             height,
-            rgba,
+            rgba: readback.rgba,
             content_bbox: stats.content_bbox,
             content_pixels: stats.content_pixels,
+            diagnostics: readback.diagnostics,
         })
     }
 
@@ -726,7 +749,7 @@ impl NativeOffscreenCaptureSession {
         frame: &LineDisplayFrame,
         viewport: NativeCaptureViewport,
         regions: &[NativeFrameDebugRegion],
-    ) -> Result<Option<Vec<u8>>, NativeWindowError> {
+    ) -> Result<Option<NativeRenderReadback>, NativeWindowError> {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let origin = NativeTextOrigin {
@@ -753,7 +776,7 @@ impl NativeOffscreenCaptureSession {
         else {
             return Ok(None);
         };
-        let mut rgba = self.render_rich_text_rgba_with_clear(
+        let mut readback = self.render_rich_text_rgba_with_clear(
             &rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
             NativeRenderTarget {
@@ -770,8 +793,8 @@ impl NativeOffscreenCaptureSession {
                 a: 0.0,
             },
         )?;
-        clear_transparent_rgb(&mut rgba);
-        Ok(Some(rgba))
+        clear_transparent_rgb(&mut readback.rgba);
+        Ok(Some(readback))
     }
 
     fn capture_color_text_regions_rgba_at(
@@ -779,7 +802,7 @@ impl NativeOffscreenCaptureSession {
         frame: &LineDisplayFrame,
         viewport: NativeCaptureViewport,
         regions: &[NativeFrameDebugRegion],
-    ) -> Result<Option<Vec<u8>>, NativeWindowError> {
+    ) -> Result<Option<NativeRenderReadback>, NativeWindowError> {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let origin = NativeTextOrigin {
@@ -806,7 +829,7 @@ impl NativeOffscreenCaptureSession {
         else {
             return Ok(None);
         };
-        let mut rgba = self.render_rich_text_rgba_with_clear(
+        let mut readback = self.render_rich_text_rgba_with_clear(
             &rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
             NativeRenderTarget {
@@ -823,8 +846,8 @@ impl NativeOffscreenCaptureSession {
                 a: 0.0,
             },
         )?;
-        clear_transparent_rgb(&mut rgba);
-        Ok(Some(rgba))
+        clear_transparent_rgb(&mut readback.rgba);
+        Ok(Some(readback))
     }
 
     fn render_rich_text_rgba_with_clear(
@@ -833,7 +856,7 @@ impl NativeOffscreenCaptureSession {
         layout: NativeRenderLayout<'_>,
         target: NativeRenderTarget,
         clear: wgpu::Color,
-    ) -> Result<Vec<u8>, NativeWindowError> {
+    ) -> Result<NativeRenderReadback, NativeWindowError> {
         let mut effects =
             NativeEffectExecution::new(Some(&mut self.effect_registry), &mut self.effect_state);
         self.renderer.prepare(
@@ -852,13 +875,17 @@ impl NativeOffscreenCaptureSession {
             self.format,
             clear,
         )?;
-        readback_texture_rgba(
+        let rgba = readback_texture_rgba(
             &self.device,
             &self.queue,
             &texture,
             target.width,
             target.height,
-        )
+        )?;
+        Ok(NativeRenderReadback {
+            rgba,
+            diagnostics: effects.into_diagnostics(),
+        })
     }
 }
 
