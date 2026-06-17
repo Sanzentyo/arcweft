@@ -51,6 +51,12 @@ based on its horizontal shaping advance, and the glyphon adapter maps the
 resolved horizontal glyph offsets into vertical progression before applying the
 engine-side `Rotate90Cw` transform. This matches the long-term sideways-run
 policy without introducing a separate compatibility renderer.
+The native shader path currently resolves `soft_glow` as deterministic
+additional glyph passes submitted before the main text/ruby glyph areas. Agent
+observe coverage now checks the full grammar sample by reading the `shader`
+run's raw RGBA object crop and requiring visible blue-tinted glow pixels, so the
+shader construct is guarded as rendered output rather than only display-map
+metadata.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence

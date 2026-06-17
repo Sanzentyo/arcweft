@@ -18651,6 +18651,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     ));
     assert!(rich_text_text_run_has_effect(explicit, "jitter"));
     assert!(rich_text_text_run_has_shader(explicit, "soft_glow"));
+    assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
     assert_eq!(cue["text"], "cue: 代替");
@@ -18741,6 +18742,81 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
         30,
         30,
     );
+}
+
+fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serde_json::Value) {
+    let shader_run = find_rich_text_run_object(json, "shader");
+    assert_eq!(shader_run["rich_text"]["line"], "say.full.006");
+    let object_id = shader_run["id"]
+        .as_str()
+        .expect("shader run object id is reported");
+    let dir = temp_dir("agent-observe-full-grammar-soft-glow-shader");
+    let raw_path = dir.join("full-grammar-soft-glow-shader.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("color")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--page")
+        .arg("0")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe writes full grammar soft-glow raw crop");
+    assert!(
+        output.status.success(),
+        "full grammar soft-glow raw crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("soft-glow raw report is JSON");
+    let image = &report["images"][0];
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["scope"]["kind"], "object");
+    assert_eq!(image["scope"]["id"], object_id);
+    assert_eq!(image["mime_type"], "application/octet-stream");
+    assert_eq!(image["written"], "full-grammar-soft-glow-shader.rgba");
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+
+    let bytes = fs::read(&raw_path).expect("read full grammar soft-glow raw crop");
+    let width = image["width"].as_u64().unwrap();
+    let height = image["height"].as_u64().unwrap();
+    assert_eq!(
+        bytes.len() as u64,
+        width.saturating_mul(height).saturating_mul(4),
+        "raw crop length should match image metadata"
+    );
+    let blue_glow_pixels = count_soft_glow_blue_pixels(&bytes);
+    assert!(
+        blue_glow_pixels > 32,
+        "soft_glow shader should add visible blue-tinted pixels, got {blue_glow_pixels}: image={image}"
+    );
+
+    fs::remove_file(&raw_path).expect("remove full grammar soft-glow raw crop");
+    fs::remove_dir_all(&dir).expect("remove full grammar soft-glow temp dir");
+}
+
+fn count_soft_glow_blue_pixels(rgba: &[u8]) -> usize {
+    rgba.chunks_exact(4)
+        .filter(|pixel| {
+            let [red, green, blue, alpha] = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            alpha > 0 && blue > red.saturating_add(20) && blue > green.saturating_add(5)
+        })
+        .count()
 }
 
 #[test]
