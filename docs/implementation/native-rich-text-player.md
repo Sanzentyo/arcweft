@@ -62,7 +62,11 @@ forces observe to run to the requested runtime step, and unless an explicit
 `--capture-time` is supplied the renderer uses that step as deterministic effect
 time. Full grammar coverage reads the `typewriter` run's raw mask crop at
 `--capture-step 1` and compares it with the same step plus `--capture-time 0`,
-proving animated glyph-mask effects can be inspected after a specified step.
+proving animated glyph-mask effects can be inspected after a specified step. It
+also reads object-scoped raw RGBA color crops for `.wave`, `.shake`,
+`.sparkle`, and `.host id=sparkle`, proving native glyph-transform and
+host-dispatched effects change observable pixels at requested debug samples
+rather than only surviving as display-map metadata.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence

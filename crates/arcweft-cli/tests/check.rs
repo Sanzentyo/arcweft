@@ -18641,6 +18641,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
             && transform["target"] == "run",
     ));
     assert_full_grammar_typewriter_capture_step_readback(&source_path, &json);
+    assert_full_grammar_animated_effect_readbacks(&source_path, &json);
 
     let explicit = find_textbox_object_by_rich_text_line(&json, "say.full.006");
     assert!(rich_text_text_run_has_transform(
@@ -18846,6 +18847,177 @@ fn observe_full_grammar_typewriter_run_mask_at(
         "raw crop length should match image metadata"
     );
     (json, bytes)
+}
+
+fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serde_json::Value) {
+    let dir = temp_dir("agent-observe-full-grammar-animated-effects");
+
+    let wave_run = find_rich_text_run_object(json, "wave");
+    assert_eq!(wave_run["rich_text"]["line"], "say.full.005");
+    let wave_object_id = wave_run["id"].as_str().unwrap();
+    let wave_early_path = dir.join("full-grammar-wave-time-0125.rgba");
+    let wave_late_path = dir.join("full-grammar-wave-time-0375.rgba");
+    let (wave_early, wave_early_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &wave_early_path,
+        wave_object_id,
+        &["--capture-step", "1", "--capture-time", "0.125"],
+    );
+    let (wave_late, wave_late_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &wave_late_path,
+        wave_object_id,
+        &["--capture-step", "1", "--capture-time", "0.375"],
+    );
+    assert_eq!(wave_early["steps"], 1);
+    assert_eq!(wave_late["steps"], 1);
+    assert_eq!(wave_early["capture_time_millis"], 125);
+    assert_eq!(wave_late["capture_time_millis"], 375);
+    assert_eq!(wave_early["images"][0]["capture_step"], 1);
+    assert_eq!(wave_late["images"][0]["capture_step"], 1);
+    assert_full_grammar_color_captures_differ(
+        "wave glyph-transform",
+        &wave_early,
+        &wave_early_bytes,
+        &wave_late,
+        &wave_late_bytes,
+    );
+
+    let shake_run = find_rich_text_run_object(json, "shake");
+    assert_eq!(shake_run["rich_text"]["line"], "say.full.005");
+    assert_full_grammar_step_motion_differs(
+        source_path,
+        &dir,
+        "shake",
+        shake_run["id"].as_str().unwrap(),
+    );
+
+    let sparkle_run = find_rich_text_run_object(json, "custom effect");
+    assert_eq!(sparkle_run["rich_text"]["line"], "say.full.005");
+    assert_full_grammar_step_motion_differs(
+        source_path,
+        &dir,
+        "custom-sparkle",
+        sparkle_run["id"].as_str().unwrap(),
+    );
+
+    let host_run = find_rich_text_run_object(json, "host");
+    assert_eq!(host_run["rich_text"]["line"], "say.full.005");
+    assert_full_grammar_step_motion_differs(
+        source_path,
+        &dir,
+        "host-sparkle",
+        host_run["id"].as_str().unwrap(),
+    );
+
+    fs::remove_dir_all(&dir).expect("remove full grammar animated effects temp dir");
+}
+
+fn assert_full_grammar_step_motion_differs(
+    source_path: &Path,
+    dir: &Path,
+    label: &str,
+    object_id: &str,
+) {
+    let step_1_path = dir.join(format!("full-grammar-{label}-step-1.rgba"));
+    let step_2_path = dir.join(format!("full-grammar-{label}-step-2.rgba"));
+    let (step_1, step_1_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &step_1_path,
+        object_id,
+        &["--capture-step", "1"],
+    );
+    let (step_2, step_2_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &step_2_path,
+        object_id,
+        &["--capture-step", "2"],
+    );
+    assert_eq!(step_1["steps"], 1);
+    assert_eq!(step_2["steps"], 2);
+    assert_eq!(step_1["capture_time_millis"], 1000);
+    assert_eq!(step_2["capture_time_millis"], 2000);
+    assert_eq!(step_1["images"][0]["capture_step"], 1);
+    assert_eq!(step_2["images"][0]["capture_step"], 2);
+    assert_eq!(step_1["images"][0]["capture_time_millis"], 1000);
+    assert_eq!(step_2["images"][0]["capture_time_millis"], 2000);
+    assert_full_grammar_color_captures_differ(
+        label,
+        &step_1,
+        &step_1_bytes,
+        &step_2,
+        &step_2_bytes,
+    );
+}
+
+fn observe_full_grammar_run_color_at(
+    source_path: &Path,
+    raw_path: &Path,
+    object_id: &str,
+    timing_args: &[&str],
+) -> (serde_json::Value, Vec<u8>) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("color")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--page")
+        .arg("0")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--max-ops")
+        .arg("128");
+    command.args(timing_args);
+    let output = command
+        .output()
+        .expect("arcw agent observe writes full grammar animated effect raw crop");
+    assert!(
+        output.status.success(),
+        "full grammar animated effect raw crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animated effect raw report is JSON");
+    let image = &json["images"][0];
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["scope"]["kind"], "object");
+    assert_eq!(image["scope"]["id"], object_id);
+    assert_eq!(image["composition"], "isolated_regions");
+    assert_eq!(image["mime_type"], "application/octet-stream");
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+
+    let bytes = fs::read(raw_path).expect("read full grammar animated effect raw crop");
+    let width = image["width"].as_u64().unwrap();
+    let height = image["height"].as_u64().unwrap();
+    assert_eq!(
+        bytes.len() as u64,
+        width.saturating_mul(height).saturating_mul(4),
+        "raw crop length should match image metadata"
+    );
+    (json, bytes)
+}
+
+fn assert_full_grammar_color_captures_differ(
+    label: &str,
+    first: &serde_json::Value,
+    first_bytes: &[u8],
+    second: &serde_json::Value,
+    second_bytes: &[u8],
+) {
+    assert_ne!(
+        first_bytes, second_bytes,
+        "{label} color raw captures should differ between animation samples: first={first}, second={second}"
+    );
 }
 
 fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serde_json::Value) {
