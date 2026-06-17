@@ -38,9 +38,12 @@ compatibility path.
 For ordinary horizontal, non-ruby text runs, native submission now also feeds
 glyphon shaped advances back into glyph origins before applying transforms.
 This keeps Latin words such as `serif`, `style`, and `transform` from inheriting
-the Sans I/O fallback width table in the actual framebuffer. The adjustment is
-bounded to one run and one line and resets around ruby bases, so long-ruby base
-allocation and vertical layout continue to come from `arcweft-text-layout`.
+the Sans I/O fallback width table in the actual framebuffer. Native visual-plan
+glyph placements and measured text-run/glyph-cluster bounds use the same shaped
+horizontal advances, so Agent object crops, mask/object-id captures, and LLM
+debug geometry align with the submitted pixels. The adjustment is bounded to one
+run and one line and resets around ruby bases, so long-ruby base allocation and
+vertical layout continue to come from `arcweft-text-layout`.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence

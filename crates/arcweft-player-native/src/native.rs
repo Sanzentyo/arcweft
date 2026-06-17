@@ -1199,6 +1199,7 @@ fn visual_page_from_range(
 struct NativePageLayout {
     frame: LineDisplayFrame,
     page_start: usize,
+    config: TextLayoutConfig,
     layout: LaidOutText,
     text_run_indices: Vec<usize>,
     ruby_indices: Vec<usize>,
@@ -1216,6 +1217,7 @@ fn layout_page_range(
     Ok(NativePageLayout {
         frame: page_frame,
         page_start,
+        config,
         layout,
         text_run_indices,
         ruby_indices,
@@ -1329,7 +1331,7 @@ fn native_glyph_placements_from_layout(
     }
 
     let mut next_glyph_indices = BTreeMap::<usize, usize>::new();
-    page_layout
+    let mut placements = page_layout
         .layout
         .glyphs
         .iter()
@@ -1365,7 +1367,14 @@ fn native_glyph_placements_from_layout(
             );
             Some(placement)
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let shaped_metrics = shaped_horizontal_glyph_metrics(page_layout);
+    apply_shaped_horizontal_origins_to_placements(
+        &mut placements,
+        &page_layout.layout,
+        &shaped_metrics,
+    );
+    placements
 }
 
 fn native_element_bounds_from_layout_at(
@@ -1488,18 +1497,32 @@ fn native_transformed_glyph_bounds(
     time_seconds: f32,
     effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> NativeTransformedGlyphBounds {
-    let placements = native_glyph_placements_for_layout_with_effects(
+    let mut placements = native_glyph_placements_for_layout_with_effects(
         &page_layout.frame.line.0,
         &page_layout.layout,
         time_seconds,
         effects,
     );
+    let shaped_metrics = shaped_horizontal_glyph_metrics(page_layout);
+    apply_shaped_horizontal_origins_to_placements(
+        &mut placements,
+        &page_layout.layout,
+        &shaped_metrics,
+    );
     let glyph_bounds = page_layout
         .layout
         .glyphs
         .iter()
+        .enumerate()
         .zip(placements.iter())
-        .map(|(glyph, placement)| transformed_glyph_bounds(glyph, placement, &page_layout.layout))
+        .map(|((glyph_index, glyph), placement)| {
+            transformed_glyph_bounds(
+                glyph,
+                placement,
+                &page_layout.layout,
+                shaped_metrics.advance(glyph_index),
+            )
+        })
         .collect::<Vec<_>>();
     let run_bounds = page_layout
         .layout
@@ -1592,11 +1615,12 @@ fn transformed_glyph_bounds(
     glyph: &LaidOutGlyph,
     placement: &NativeGlyphPlacement,
     layout: &LaidOutText,
+    width_override: Option<f32>,
 ) -> LayoutRect {
     let affine = glyph_presentation_affine(placement, glyph, layout);
     let local_left = glyph.bounds.x - glyph.origin.x;
     let local_top = glyph.bounds.y - glyph.origin.y;
-    let local_right = local_left + glyph.bounds.width;
+    let local_right = local_left + width_override.unwrap_or(glyph.bounds.width);
     let local_bottom = local_top + glyph.bounds.height;
     let corners = [
         transform_glyph_local_point(local_left, local_top, placement, affine),
@@ -4423,6 +4447,114 @@ fn apply_shaped_horizontal_origins_to_glyph_area(
     }
 }
 
+#[derive(Clone, Debug)]
+struct ShapedHorizontalGlyphMetrics {
+    origins: Vec<Option<f32>>,
+    advances: Vec<Option<f32>>,
+}
+
+impl ShapedHorizontalGlyphMetrics {
+    fn empty(glyph_count: usize) -> Self {
+        Self {
+            origins: vec![None; glyph_count],
+            advances: vec![None; glyph_count],
+        }
+    }
+
+    fn origin(&self, glyph_index: usize) -> Option<f32> {
+        self.origins.get(glyph_index).copied().flatten()
+    }
+
+    fn advance(&self, glyph_index: usize) -> Option<f32> {
+        self.advances.get(glyph_index).copied().flatten()
+    }
+}
+
+fn shaped_horizontal_glyph_metrics(page_layout: &NativePageLayout) -> ShapedHorizontalGlyphMetrics {
+    let Some(page) = WindowPage::from_frame(&page_layout.frame)
+        .into_iter()
+        .next()
+    else {
+        return ShapedHorizontalGlyphMetrics::empty(page_layout.layout.glyphs.len());
+    };
+    let (width, height) = text_buffer_extents_for_layout_config(page_layout.config);
+    let mut font_system = FontSystem::new();
+    let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+    prepare_window_text_buffers(
+        &mut font_system,
+        &mut buffer,
+        &page.rich_text,
+        width,
+        height,
+    );
+    let cache_keys = layout_glyph_cache_keys(
+        &mut font_system,
+        &buffer,
+        &page.rich_text,
+        &page_layout.layout,
+    );
+    shaped_horizontal_glyph_metrics_from_cache(&page_layout.layout, &cache_keys)
+}
+
+fn shaped_horizontal_glyph_metrics_from_cache(
+    layout: &LaidOutText,
+    cache_keys: &LayoutGlyphCacheKeys,
+) -> ShapedHorizontalGlyphMetrics {
+    let mut metrics = ShapedHorizontalGlyphMetrics::empty(layout.glyphs.len());
+    let mut run_cursor = ShapedHorizontalRunCursor::default();
+    for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
+        if !is_shaped_horizontal_origin_candidate(glyph, layout) {
+            run_cursor.reset();
+            continue;
+        }
+        if run_cursor.starts_new_segment(glyph) {
+            run_cursor.start_segment(glyph);
+        }
+        let shaped_origin_x = run_cursor.cursor_x;
+        let shaped_advance =
+            shaped_horizontal_advance_for_layout_glyph(glyph_index, glyph, cache_keys)
+                .unwrap_or(glyph.advance.width);
+        metrics.origins[glyph_index] = Some(shaped_origin_x);
+        metrics.advances[glyph_index] = Some(shaped_advance.max(1.0));
+        run_cursor.cursor_x = shaped_origin_x + shaped_advance.max(1.0);
+    }
+    metrics
+}
+
+fn apply_shaped_horizontal_origins_to_placements(
+    placements: &mut [NativeGlyphPlacement],
+    layout: &LaidOutText,
+    metrics: &ShapedHorizontalGlyphMetrics,
+) {
+    for (glyph_index, (glyph, placement)) in
+        layout.glyphs.iter().zip(placements.iter_mut()).enumerate()
+    {
+        let Some(shaped_origin_x) = metrics.origin(glyph_index) else {
+            continue;
+        };
+        placement.x += shaped_origin_x - glyph.origin.x;
+    }
+}
+
+fn text_buffer_extents_for_layout_config(config: TextLayoutConfig) -> (u32, u32) {
+    (
+        text_buffer_extent_from_f32(config.origin.x + config.size.width),
+        text_buffer_extent_from_f32(config.origin.y + config.size.height),
+    )
+}
+
+fn text_buffer_extent_from_f32(value: f32) -> u32 {
+    if !value.is_finite() || value <= 1.0 {
+        return 1;
+    }
+    let value = f64::from(value).ceil();
+    if value >= f64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        value.to_string().parse().unwrap_or(u32::MAX)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct ShapedHorizontalRunCursor {
     run_index: Option<usize>,
@@ -5401,6 +5533,73 @@ mod tests {
     }
 
     #[test]
+    fn native_measurement_uses_shaped_horizontal_latin_spacing() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.shaped.latin.measure".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "serif".to_owned(),
+            }]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+        let page_layout = layout_page_range(
+            &frame,
+            page_range,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let heuristic_span =
+            page_layout.layout.glyphs[4].origin.x - page_layout.layout.glyphs[0].origin.x;
+
+        let bounds = measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("native bounds resolve");
+        let first = bounds
+            .iter()
+            .find(|bounds| {
+                matches!(
+                    bounds.element,
+                    NativeFrameElement::GlyphCluster {
+                        index: 0,
+                        range_start: 0,
+                        range_end: 1
+                    }
+                )
+            })
+            .expect("first glyph cluster");
+        let last = bounds
+            .iter()
+            .find(|bounds| {
+                matches!(
+                    bounds.element,
+                    NativeFrameElement::GlyphCluster {
+                        index: 4,
+                        range_start: 4,
+                        range_end: 5
+                    }
+                )
+            })
+            .expect("last glyph cluster");
+
+        let measured_span = last.bbox.x.saturating_sub(first.bbox.x);
+        assert!(
+            f32::from(u16::try_from(measured_span).unwrap_or(u16::MAX)) < heuristic_span - 4.0,
+            "measurement should be tighter than Sans I/O heuristic: measured={measured_span}px heuristic={heuristic_span}"
+        );
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn native_glyph_area_applies_transform_affine_and_builtin_translation() {
         let spec = LineDisplaySpec {
@@ -5525,6 +5724,7 @@ mod tests {
         let page_layout = NativePageLayout {
             frame: page_layout_frame.clone(),
             page_start: 0,
+            config: native_text_layout_config(800, 600, 96.0, 572.0),
             layout: layout.clone(),
             text_run_indices: (0..layout.runs.len()).collect(),
             ruby_indices: Vec::new(),
