@@ -144,6 +144,10 @@ Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as
 structured values globally; renderer builtins interpret only the parameter names
 they own, such as `dir=0,1` for a wave direction.
+`.host` is the explicit host-dispatched effect selector. Its `id`, `effect`, or
+`name` parameter selects the renderer registry id, so `[.host id=sparkle]...[/]`
+canonicalizes as an effect span and lowers to the same registry effect id as
+`[effect .sparkle]...[/effect]` while keeping the authoring surface explicit.
 
 Layout selectors accept `jlreq=loose|normal|strict` to choose the vertical
 Japanese punctuation-pair planning preset for that span. Omitting it keeps the

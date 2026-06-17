@@ -19023,6 +19023,60 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_dispatches_host_effect_registry() {
+    let path = temp_arcw(
+        "agent-observe-native-host-effect-registry",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.host id=sparkle amp=2px seed=custom]host effect[/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-host-effect-registry");
+    let png_path = dir.join("native-host-effect.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe dispatches host effect registry");
+
+    assert!(
+        output.status.success(),
+        "native host effect capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native host effect report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "registered host effect should not emit diagnostics: {json}"
+    );
+    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    let bytes = fs::read(&png_path).expect("read native host effect PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    fs::remove_file(&path).expect("remove temp native host effect source");
+    fs::remove_dir_all(&dir).expect("remove temp native host effect dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-layer",

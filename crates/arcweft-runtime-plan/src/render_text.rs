@@ -2374,22 +2374,36 @@ fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
 
 fn effect_from_selector(selector: &str, attrs: &str) -> RichTextEffectDescriptor {
     let attrs = parse_attrs(attrs);
+    let id = effect_descriptor_id(selector, &attrs);
     RichTextEffectDescriptor {
-        id: selector.to_owned(),
+        id,
         params: attrs
             .iter()
-            .filter(|(key, _)| {
-                !matches!(
-                    key.as_str(),
-                    "target" | "phase" | "state" | "scope" | "state_scope"
-                )
-            })
+            .filter(|(key, _)| !is_effect_descriptor_metadata_attr(selector, key))
             .map(|(key, value)| (key.clone(), param_from_value(value)))
             .collect(),
         target: target_attr(&attrs),
         phase: phase_attr(&attrs).unwrap_or_else(|| default_effect_phase(selector)),
         state_scope: state_scope_attr(&attrs),
     }
+}
+
+fn effect_descriptor_id(selector: &str, attrs: &BTreeMap<String, String>) -> String {
+    if selector == "host" {
+        return attrs
+            .get("id")
+            .or_else(|| attrs.get("effect"))
+            .or_else(|| attrs.get("name"))
+            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| selector.to_owned());
+    }
+    selector.to_owned()
+}
+
+fn is_effect_descriptor_metadata_attr(selector: &str, key: &str) -> bool {
+    matches!(key, "target" | "phase" | "state" | "scope" | "state_scope")
+        || (selector == "host" && matches!(key, "id" | "effect" | "name"))
 }
 
 fn shader_from_attrs(attrs: &str) -> RichTextShaderRef {
@@ -2903,6 +2917,88 @@ flow @flow.main main {
             })
             .expect("plain text run after inferred close");
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn host_effect_selector_resolves_registry_id_from_metadata_attrs() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.host id=sparkle amp=2px target=glyph]BC[/]D[p]
+    alice: X[effect .host name=.nudge amount=3px]YZ[/effect]Q[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let defaults = DialogueDisplayDefaults::from_module(&hir);
+        let dialogues = hir
+            .flows()
+            .first()
+            .expect("flow exists")
+            .body()
+            .iter()
+            .filter_map(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let inferred = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.host.inferred".to_owned()),
+            dialogues[0],
+            &defaults,
+        )
+        .resolve_frame(&RuntimeLineContext::default())
+        .expect("inferred host frame resolves");
+        let inferred_effect = inferred
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                inferred
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .and_then(|run| run.presentation.effects.first())
+            .expect("inferred host effect");
+
+        assert_eq!(inferred_effect.id, "sparkle");
+        assert_eq!(inferred_effect.target, RichTextEffectTarget::Glyph);
+        assert_eq!(
+            inferred_effect.params.get("amp"),
+            Some(&RichTextParam::Milli { value: Milli(2000) })
+        );
+        assert!(!inferred_effect.params.contains_key("id"));
+
+        let explicit = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.host.explicit".to_owned()),
+            dialogues[1],
+            &defaults,
+        )
+        .resolve_frame(&RuntimeLineContext::default())
+        .expect("explicit host frame resolves");
+        let explicit_effect = explicit
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                explicit
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "YZ")
+            })
+            .and_then(|run| run.presentation.effects.first())
+            .expect("explicit host effect");
+
+        assert_eq!(explicit_effect.id, "nudge");
+        assert_eq!(
+            explicit_effect.params.get("amount"),
+            Some(&RichTextParam::Milli { value: Milli(3000) })
+        );
+        assert!(!explicit_effect.params.contains_key("name"));
     }
 
     #[test]

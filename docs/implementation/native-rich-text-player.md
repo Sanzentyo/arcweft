@@ -156,7 +156,10 @@ effect implementations are visible to LLM/debugger tooling instead of becoming
 silent no-op captures. Offscreen capture sessions and the native window renderer
 install the native default host effect registry, which currently provides a
 deterministic `sparkle` glyph effect for samples and smoke captures while still
-reporting unknown custom IDs through diagnostics.
+reporting unknown custom IDs through diagnostics. Surface `.host` selectors use
+their `id`, `effect`, or `name` metadata as the registry id before native
+dispatch, so `[.host id=sparkle]...[/]` reaches the same default registry entry
+as an explicit custom effect descriptor with id `sparkle`.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

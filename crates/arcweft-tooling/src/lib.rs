@@ -2418,7 +2418,7 @@ mod tests {
 
     #[test]
     fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
-        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.sparkle amp=2px pattern=a,b,c]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
+        let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword][.sparkle amp=2px pattern=a,b,c]there[/][.host id=sparkle amp=1px]hosted[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
         let report = format_source(
             source,
             FormatOptions {
@@ -2434,6 +2434,11 @@ mod tests {
             report
                 .output
                 .contains("[effect .sparkle amp=2px pattern=a,b,c]there[/effect]")
+        );
+        assert!(
+            report
+                .output
+                .contains("[effect .host id=sparkle amp=1px]hosted[/effect]")
         );
         assert!(
             report

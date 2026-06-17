@@ -147,10 +147,13 @@ request.
 source in dialogue text. Common parameters are `id`, `amount`, `dir`, `phase`,
 and registry-specific raw tokens.
 
-`.host` and unknown custom effect ids are registry-dispatched. If no registry
-entry exists, the descriptor is preserved and observation reports it; rendering
-may no-op with a diagnostic, but must not silently reinterpret it as a different
-builtin.
+`.host` and unknown custom effect ids are registry-dispatched. `.host` is the
+explicit host-dispatched form; its `id`, `effect`, or `name` parameter names the
+renderer registry entry and is descriptor metadata rather than a custom
+parameter. For example, `[.host id=sparkle]...[/]` lowers to an effect descriptor
+with id `sparkle`. If no registry entry exists, the descriptor is preserved and
+observation reports it; rendering may no-op with a diagnostic, but must not
+silently reinterpret it as a different builtin.
 
 ---
 
