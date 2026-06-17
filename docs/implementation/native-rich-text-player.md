@@ -99,6 +99,11 @@ presentation on text runs and ruby annotations. Effect parameters keep
 non-trivial authoring values as raw tokens; native builtins interpret only
 known parameters at the renderer boundary, such as `dir=0,1` for wave direction
 or raw string seeds for deterministic shake jitter.
+Transform lowering preserves authored `target` and `origin` fields. Rotation
+spans accept named `angle=...` / `deg=...` values and positional angle tokens,
+and `origin=baseline_start|baseline_center|center|glyph_center` is carried into
+the native placement pivot calculation instead of being collapsed to the
+selector default.
 The native crate exposes a deterministic `NativeVisualPlan` that applies
 resolved transforms, vertical layout hints, builtin glyph effects, and shader
 filter references without creating a compatibility renderer. The same

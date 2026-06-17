@@ -2366,6 +2366,9 @@ fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
         _ => {}
     }
     transform.target = target_attr(&attrs);
+    if let Some(origin) = transform_origin_attr(&attrs) {
+        transform.origin = origin;
+    }
     transform
 }
 
@@ -2414,6 +2417,16 @@ fn target_attr(attrs: &BTreeMap<String, String>) -> RichTextEffectTarget {
         Some("textbox" | "box") => RichTextEffectTarget::TextBox,
         Some("screen") => RichTextEffectTarget::Screen,
         _ => RichTextEffectTarget::Run,
+    }
+}
+
+fn transform_origin_attr(attrs: &BTreeMap<String, String>) -> Option<RichTextTransformOrigin> {
+    match attrs.get("origin").map(String::as_str)? {
+        "baseline_start" | "start" => Some(RichTextTransformOrigin::BaselineStart),
+        "baseline_center" => Some(RichTextTransformOrigin::BaselineCenter),
+        "center" => Some(RichTextTransformOrigin::Center),
+        "glyph_center" | "glyph" => Some(RichTextTransformOrigin::GlyphCenter),
+        _ => None,
     }
 }
 
@@ -2934,7 +2947,7 @@ flow @flow.main main {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.rotate angle=8deg]BC[/]D[transform .rotate 10deg]EF[/transform]G[p]
+    alice: A[.rotate angle=8deg origin=baseline_start target=glyph]BC[/]D[transform .rotate 10deg origin=glyph_center target=textbox]EF[/transform]G[p]
 }
 ",
         );
@@ -2992,9 +3005,17 @@ flow @flow.main main {
             .expect("positional rotate transform");
 
         assert_eq!(named_transform.rotate.degrees, Milli(8000));
-        assert_eq!(named_transform.origin, RichTextTransformOrigin::Center);
+        assert_eq!(
+            named_transform.origin,
+            RichTextTransformOrigin::BaselineStart
+        );
+        assert_eq!(named_transform.target, RichTextEffectTarget::Glyph);
         assert_eq!(positional_transform.rotate.degrees, Milli(10000));
-        assert_eq!(positional_transform.origin, RichTextTransformOrigin::Center);
+        assert_eq!(
+            positional_transform.origin,
+            RichTextTransformOrigin::GlyphCenter
+        );
+        assert_eq!(positional_transform.target, RichTextEffectTarget::TextBox);
     }
 
     #[test]
