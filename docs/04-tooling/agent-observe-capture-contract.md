@@ -55,7 +55,11 @@ resources rather than synthetic replacement renderers.
 `capture_time` is an observation/capture input in seconds. It affects
 visibility-only effects such as typewriter reveal. It must not change source
 ranges, object identity, or layout geometry unless the effect phase is
-explicitly pre-layout.
+explicitly pre-layout. When a deterministic `capture_step` is supplied and
+`capture_time` is omitted, native image capture derives the visual-effect time
+from that step number in seconds. Image resources expose non-zero visual time as
+`capture_time_millis` so debuggers can distinguish state step and effect time
+without parsing command arguments.
 
 ---
 

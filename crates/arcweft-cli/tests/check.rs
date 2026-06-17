@@ -18869,6 +18869,97 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_capture_step_defaults_capture_time_for_typewriter() {
+    let path = temp_arcw(
+        "agent-observe-native-capture-step-typewriter-time",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-capture-step-typewriter-time");
+    let step_path = dir.join("native-step-typewriter-mask.rgba");
+    let explicit_zero_path = dir.join("native-step-typewriter-zero-mask.rgba");
+
+    let step_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.0.0.3")
+        .arg("--out")
+        .arg(&step_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--capture-step")
+        .arg("2")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes capture-step typewriter mask");
+    assert!(
+        step_output.status.success(),
+        "capture-step typewriter mask should succeed, stderr: {}",
+        String::from_utf8_lossy(&step_output.stderr)
+    );
+    let step_json: serde_json::Value = serde_json::from_slice(&step_output.stdout)
+        .expect("capture-step typewriter report is JSON");
+    assert_eq!(step_json["steps"], 2);
+    assert_eq!(step_json["images"][0]["capture_step"], 2);
+    assert_eq!(step_json["images"][0]["capture_time_millis"], 2000);
+    assert!(step_json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    let zero_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg("object.dialogue.0.0.cluster.0.0.3")
+        .arg("--out")
+        .arg(&explicit_zero_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--capture-step")
+        .arg("2")
+        .arg("--capture-time")
+        .arg("0")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes explicit zero typewriter mask");
+    assert!(
+        zero_output.status.success(),
+        "explicit zero typewriter mask should succeed, stderr: {}",
+        String::from_utf8_lossy(&zero_output.stderr)
+    );
+    let zero_json: serde_json::Value = serde_json::from_slice(&zero_output.stdout)
+        .expect("explicit zero typewriter report is JSON");
+    assert_eq!(zero_json["steps"], 2);
+    assert_eq!(zero_json["images"][0]["capture_step"], 2);
+    assert_eq!(
+        zero_json["images"][0]["capture_time_millis"],
+        serde_json::Value::Null
+    );
+    assert_eq!(zero_json["images"][0]["content_pixels"], 0);
+
+    fs::remove_file(&path).expect("remove temp native capture-step typewriter source");
+    fs::remove_dir_all(&dir).expect("remove temp native capture-step typewriter dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_custom_effect_diagnostics() {
     let path = temp_arcw(
         "agent-observe-native-custom-effect-diagnostic",

@@ -208,8 +208,12 @@ For animation/debugging workflows that need a deterministic runtime state, the
 same Agent path accepts `--capture-step N` and MCP `capture_step`. This overrides
 the normal `--steps` loop, advances observation through exactly `N` runtime
 steps even if the flow has already reached `Done`, and records that value in
-`images[].capture_step`. Use `capture_step` to choose the dialogue/runtime state
-and `capture_time` to choose the visual-effect time inside that state.
+`images[].capture_step`. If `--capture-time` / MCP `capture_time` is omitted,
+the native capture uses `capture_step` seconds as the deterministic visual
+effect time; an explicit capture time still overrides that default. Image
+metadata records non-zero visual time as `images[].capture_time_millis`.
+Use `capture_step` to choose the dialogue/runtime state and `capture_time` to
+choose the visual-effect time inside that state when those should differ.
 Native measurement now also has a time-aware page API, and Agent observe/crop
 paths pass `capture_time` through it, so animated glyph-transform bboxes used
 for rich-text child objects, textbox capture refs, and scoped native crops track
