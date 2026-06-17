@@ -57,6 +57,12 @@ observe coverage now checks the full grammar sample by reading the `shader`
 run's raw RGBA object crop and requiring visible blue-tinted glow pixels, so the
 shader construct is guarded as rendered output rather than only display-map
 metadata.
+Step-pinned capture is part of the same native/debug surface: `--capture-step`
+forces observe to run to the requested runtime step, and unless an explicit
+`--capture-time` is supplied the renderer uses that step as deterministic effect
+time. Full grammar coverage reads the `typewriter` run's raw mask crop at
+`--capture-step 1` and compares it with the same step plus `--capture-time 0`,
+proving animated glyph-mask effects can be inspected after a specified step.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence

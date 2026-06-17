@@ -18640,6 +18640,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
             && transform["origin"] == "baseline_center"
             && transform["target"] == "run",
     ));
+    assert_full_grammar_typewriter_capture_step_readback(&source_path, &json);
 
     let explicit = find_textbox_object_by_rich_text_line(&json, "say.full.006");
     assert!(rich_text_text_run_has_transform(
@@ -18742,6 +18743,109 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
         30,
         30,
     );
+}
+
+fn assert_full_grammar_typewriter_capture_step_readback(
+    source_path: &Path,
+    json: &serde_json::Value,
+) {
+    let typewriter_run = find_rich_text_run_object(json, "typewriter");
+    assert_eq!(typewriter_run["rich_text"]["line"], "say.full.005");
+    let object_id = typewriter_run["id"]
+        .as_str()
+        .expect("typewriter run object id is reported");
+    let dir = temp_dir("agent-observe-full-grammar-typewriter-capture-step");
+    let step_path = dir.join("full-grammar-typewriter-step-mask.rgba");
+    let zero_path = dir.join("full-grammar-typewriter-zero-mask.rgba");
+
+    let (step_json, step_bytes) = observe_full_grammar_typewriter_run_mask_at(
+        source_path,
+        &step_path,
+        object_id,
+        &["--capture-step", "1"],
+    );
+    assert_eq!(step_json["steps"], 1);
+    assert_eq!(step_json["capture_time_millis"], 1000);
+    assert_eq!(step_json["images"][0]["capture_step"], 1);
+    assert_eq!(step_json["images"][0]["capture_time_millis"], 1000);
+    assert!(step_json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+
+    let (zero_json, zero_bytes) = observe_full_grammar_typewriter_run_mask_at(
+        source_path,
+        &zero_path,
+        object_id,
+        &["--capture-step", "1", "--capture-time", "0"],
+    );
+    assert_eq!(zero_json["steps"], 1);
+    assert_eq!(zero_json["capture_time_millis"], 0);
+    assert_eq!(zero_json["images"][0]["capture_step"], 1);
+    assert_eq!(
+        zero_json["images"][0]["capture_time_millis"],
+        serde_json::Value::Null
+    );
+    assert_eq!(zero_json["images"][0]["content_pixels"], 0);
+    assert_ne!(
+        step_bytes, zero_bytes,
+        "full grammar typewriter raw masks should differ between capture-step default time and explicit zero capture-time"
+    );
+
+    fs::remove_file(&step_path).expect("remove full grammar typewriter step raw crop");
+    fs::remove_file(&zero_path).expect("remove full grammar typewriter zero raw crop");
+    fs::remove_dir_all(&dir).expect("remove full grammar typewriter capture-step temp dir");
+}
+
+fn observe_full_grammar_typewriter_run_mask_at(
+    source_path: &Path,
+    raw_path: &Path,
+    object_id: &str,
+    timing_args: &[&str],
+) -> (serde_json::Value, Vec<u8>) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
+        .arg("agent")
+        .arg("observe")
+        .arg(source_path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg("mask")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--page")
+        .arg("0")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--max-ops")
+        .arg("128");
+    command.args(timing_args);
+    let output = command
+        .output()
+        .expect("arcw agent observe writes full grammar typewriter raw crop");
+    assert!(
+        output.status.success(),
+        "full grammar typewriter raw crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("typewriter raw report is JSON");
+    assert_eq!(json["images"][0]["kind"], "mask");
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["scope"]["kind"], "object");
+    assert_eq!(json["images"][0]["scope"]["id"], object_id);
+    assert_eq!(json["images"][0]["composition"], "mask_attachment");
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    let bytes = fs::read(raw_path).expect("read full grammar typewriter raw crop");
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    assert_eq!(
+        bytes.len() as u64,
+        width.saturating_mul(height).saturating_mul(4),
+        "raw crop length should match image metadata"
+    );
+    (json, bytes)
 }
 
 fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serde_json::Value) {
