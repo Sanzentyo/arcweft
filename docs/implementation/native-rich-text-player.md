@@ -273,6 +273,11 @@ model: window page construction is covered for a `vertical_lr` line containing
 side-track ruby plus a 4-digit text-combine-upright cluster, and the test adapts
 that page-local layout source into the same body and ruby GlyphAreas used by the
 window renderer.
+The window renderer also keeps a page-local animation clock. When the current
+page contains rich-text effect descriptors, the event loop continuously requests
+redraws and passes elapsed page time into glyph color, transform, ruby, and
+custom-effect execution. This keeps live window playback aligned with
+`--capture-time` debug captures instead of showing a fixed sampled frame.
 Image resources include non-zero `page` metadata. Rich-text child objects also
 record their rendered page in `rich_text_ref.page`, and their `capture_refs`
 append `?page=N` for non-zero pages while also exposing `capture_refs[].page`

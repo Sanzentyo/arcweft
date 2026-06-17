@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc;
+use std::time::Instant;
 use thiserror::Error;
 use wgpu::{
     BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoderDescriptor,
@@ -2412,6 +2413,25 @@ impl WindowPage {
     }
 }
 
+fn window_page_has_timed_effects(page: &WindowPage) -> bool {
+    page.layout_frame.as_ref().is_some_and(|frame| {
+        frame
+            .display_map
+            .text_runs
+            .iter()
+            .any(|run| presentation_has_timed_effects(&run.presentation))
+            || frame
+                .display_map
+                .ruby_annotations
+                .iter()
+                .any(|ruby| presentation_has_timed_effects(&ruby.presentation))
+    })
+}
+
+fn presentation_has_timed_effects(presentation: &RichTextPresentation) -> bool {
+    !presentation.effects.is_empty()
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct WindowRichText {
     text: String,
@@ -3275,6 +3295,8 @@ struct WindowState {
     layout: Option<LaidOutText>,
     effect_registry: RichTextEffectRegistry,
     effect_state: RichTextStateStore,
+    animation_started_at: Instant,
+    has_timed_effects: bool,
     window: Arc<dyn Window>,
 }
 
@@ -3358,6 +3380,8 @@ impl WindowState {
             layout: None,
             effect_registry: native_default_effect_registry(),
             effect_state: RichTextStateStore::default(),
+            animation_started_at: Instant::now(),
+            has_timed_effects: false,
             window,
         };
         state.set_page(page);
@@ -3367,8 +3391,14 @@ impl WindowState {
     fn set_page(&mut self, page: &WindowPage) {
         self.rich_text = page.rich_text.clone();
         self.layout_frame.clone_from(&page.layout_frame);
+        self.animation_started_at = Instant::now();
+        self.has_timed_effects = window_page_has_timed_effects(page);
         self.prepare_rich_text();
         self.window.request_redraw();
+    }
+
+    fn effect_time_seconds(&self) -> f32 {
+        self.animation_started_at.elapsed().as_secs_f32()
     }
 
     fn prepare_rich_text(&mut self) {
@@ -3720,6 +3750,14 @@ impl ApplicationHandler for Application {
             WindowEvent::RedrawRequested => redraw(state),
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if let Some(state) = self.window_state.as_ref()
+            && state.has_timed_effects
+        {
+            state.window.request_redraw();
         }
     }
 }
@@ -5090,6 +5128,7 @@ fn scaled_alpha(base: u8, factor: u8) -> u8 {
 }
 
 fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
+    let time_seconds = state.effect_time_seconds();
     state.viewport.update(
         &state.queue,
         Resolution {
@@ -5117,14 +5156,14 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             return Err(());
         };
         apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout, &cache_keys);
-        apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
+        apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, time_seconds);
         let mut effects =
             NativeEffectExecution::new(Some(&mut state.effect_registry), &mut state.effect_state);
         apply_text_transforms_to_glyph_area_with_effects(
             &mut glyph_area,
             &state.rich_text.text,
             layout,
-            60.0,
+            time_seconds,
             &mut effects,
         );
         let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout);
@@ -5133,7 +5172,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             &state.rich_text.text,
             state.surface_config.width,
             state.surface_config.height,
-            60.0,
+            time_seconds,
             false,
             Some(&mut effects),
         );
