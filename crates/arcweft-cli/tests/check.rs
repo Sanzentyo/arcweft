@@ -18857,6 +18857,7 @@ flow @flow.main main {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("native capture-step report is JSON");
     assert_eq!(json["steps"], 3);
+    assert_eq!(json["capture_time_millis"], 3000);
     assert_eq!(json["images"][0]["capture_step"], 3);
     assert_eq!(json["images"][0]["kind"], "color");
     assert_eq!(json["images"][0]["renderer"], "native");
@@ -18913,6 +18914,7 @@ flow @flow.main main {
     let step_json: serde_json::Value = serde_json::from_slice(&step_output.stdout)
         .expect("capture-step typewriter report is JSON");
     assert_eq!(step_json["steps"], 2);
+    assert_eq!(step_json["capture_time_millis"], 2000);
     assert_eq!(step_json["images"][0]["capture_step"], 2);
     assert_eq!(step_json["images"][0]["capture_time_millis"], 2000);
     assert!(step_json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
@@ -18948,6 +18950,7 @@ flow @flow.main main {
     let zero_json: serde_json::Value = serde_json::from_slice(&zero_output.stdout)
         .expect("explicit zero typewriter report is JSON");
     assert_eq!(zero_json["steps"], 2);
+    assert_eq!(zero_json["capture_time_millis"], 0);
     assert_eq!(zero_json["images"][0]["capture_step"], 2);
     assert_eq!(
         zero_json["images"][0]["capture_time_millis"],

@@ -2082,8 +2082,8 @@ fn agent_mcp_capture_request(
         return Ok(request);
     }
     let page = agent_mcp_capture_page(arguments)?;
-    let capture_time_seconds = agent_mcp_capture_time_argument(arguments, "arcweft.capture")?
-        .unwrap_or_else(|| agent_capture_time_seconds_from_step(report.steps));
+    let capture_time_seconds =
+        agent_mcp_capture_time_seconds(arguments, report, "arcweft.capture")?;
     let image_kind = arguments
         .get("format")
         .and_then(serde_json::Value::as_str)
@@ -2147,6 +2147,21 @@ fn agent_mcp_capture_request(
 
 fn agent_mcp_capture_page(arguments: &serde_json::Value) -> Result<usize, String> {
     agent_mcp_page_argument(arguments, "arcweft.capture")
+}
+
+fn agent_mcp_capture_time_seconds(
+    arguments: &serde_json::Value,
+    report: &AgentObservationReport,
+    tool: &str,
+) -> Result<f32, String> {
+    Ok(
+        agent_mcp_capture_time_argument(arguments, tool)?.unwrap_or_else(|| {
+            agent_mcp_usize_argument(arguments, "capture_step").map_or_else(
+                || agent_report_capture_time_seconds(report),
+                agent_capture_time_seconds_from_step,
+            )
+        }),
+    )
 }
 
 fn agent_mcp_page_argument(arguments: &serde_json::Value, tool: &str) -> Result<usize, String> {
@@ -2511,6 +2526,20 @@ fn agent_observe_capture_time_seconds(options: &AgentObserveOptions) -> f32 {
         })
 }
 
+fn agent_observe_report_capture_time_millis(options: &AgentObserveOptions) -> Option<u32> {
+    (options.capture_time_seconds.is_some() || options.capture_step.is_some())
+        .then(|| agent_capture_time_millis(agent_observe_capture_time_seconds(options)))
+}
+
+fn agent_report_capture_time_seconds(report: &AgentObservationReport) -> f32 {
+    report.capture_time_millis.map_or(60.0, |millis| {
+        (f64::from(millis) / 1000.0)
+            .to_string()
+            .parse()
+            .unwrap_or(f32::MAX)
+    })
+}
+
 fn agent_capture_time_seconds_from_step(step: usize) -> f32 {
     f32::from(u16::try_from(step).unwrap_or(u16::MAX))
 }
@@ -2531,7 +2560,12 @@ fn agent_observe_resource_by_uri(
     report: &AgentObservationReport,
     uri: &str,
 ) -> Result<AgentResource, ExitCode> {
-    agent_observe_resource_by_uri_with_page_and_time(report, uri, None, 60.0)
+    agent_observe_resource_by_uri_with_page_and_time(
+        report,
+        uri,
+        None,
+        agent_report_capture_time_seconds(report),
+    )
 }
 
 fn agent_observe_resource_by_uri_with_page_and_time(
@@ -2665,7 +2699,7 @@ fn agent_capture_request_from_uri(
         scope,
         page,
         capture_step: report.steps,
-        capture_time_seconds: agent_capture_time_seconds_from_step(report.steps),
+        capture_time_seconds: agent_report_capture_time_seconds(report),
     })
 }
 
@@ -4017,7 +4051,7 @@ fn finish_agent_observation_report(
     executor: &RuntimeExecutorInstance,
     source_path: &Path,
     trace: AgentObservationTrace,
-    _options: &AgentObserveOptions,
+    options: &AgentObserveOptions,
 ) -> AgentObservationReport {
     let AgentObservationTrace {
         viewport,
@@ -4101,6 +4135,7 @@ fn finish_agent_observation_report(
         events: observations.events.clone(),
         diagnostics,
         steps: tick + 1,
+        capture_time_millis: agent_observe_report_capture_time_millis(options),
         task_requests: task_request_count,
         final_status: status,
         overlay_svg: None,
@@ -9321,6 +9356,46 @@ enum AgentObserveCaptureKind {
 mod tests {
     use super::*;
 
+    fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObservationReport {
+        AgentObservationReport {
+            status: "ok".to_owned(),
+            session_id: "cli".to_owned(),
+            tick: 3,
+            frame_id: "frame.3".to_owned(),
+            state_hash: "state".to_owned(),
+            render_hash: "render".to_owned(),
+            source: "test.arcw".to_owned(),
+            viewport: AgentViewport {
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+            },
+            images: Vec::new(),
+            layers: Vec::new(),
+            objects: Vec::new(),
+            actions: Vec::new(),
+            ui_tree: AgentUiTree {
+                root: "ui.root".to_owned(),
+                children: Vec::new(),
+            },
+            scene_graph: Vec::new(),
+            audio_state: AgentAudioState {
+                active_voices: Vec::new(),
+                pending_events: Vec::new(),
+            },
+            logs: Vec::new(),
+            signals: Vec::new(),
+            metrics: Vec::new(),
+            events: Vec::new(),
+            diagnostics: Vec::new(),
+            steps: 3,
+            capture_time_millis,
+            task_requests: 0,
+            final_status: "done".to_owned(),
+            overlay_svg: None,
+        }
+    }
+
     fn test_line_display_frame() -> LineDisplayFrame {
         LineDisplayFrame {
             line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
@@ -9413,6 +9488,70 @@ mod tests {
             agent_rich_text_page_for_range(&frame, RichTextRange::new(1, 4)),
             0
         );
+    }
+
+    fn assert_seconds_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < f32::EPSILON,
+            "expected {expected} seconds, got {actual}"
+        );
+    }
+
+    #[test]
+    fn mcp_capture_time_prefers_explicit_time_then_capture_step_then_report_time() {
+        let report = test_agent_observation_report(Some(2500));
+
+        assert_seconds_close(
+            agent_mcp_capture_time_seconds(
+                &serde_json::json!({"capture_time": 0.125, "capture_step": 9}),
+                &report,
+                "arcweft.capture",
+            )
+            .expect("explicit capture time is valid"),
+            0.125,
+        );
+        assert_seconds_close(
+            agent_mcp_capture_time_seconds(
+                &serde_json::json!({"capture_step": 9}),
+                &report,
+                "arcweft.capture",
+            )
+            .expect("capture step time is valid"),
+            9.0,
+        );
+        assert_seconds_close(
+            agent_mcp_capture_time_seconds(&serde_json::json!({}), &report, "arcweft.capture")
+                .expect("report capture time is valid"),
+            2.5,
+        );
+        assert_seconds_close(
+            agent_mcp_capture_time_seconds(
+                &serde_json::json!({}),
+                &test_agent_observation_report(None),
+                "arcweft.capture",
+            )
+            .expect("default capture time is valid"),
+            60.0,
+        );
+    }
+
+    #[test]
+    fn uri_capture_request_preserves_report_capture_time() {
+        let report = test_agent_observation_report(Some(2000));
+        let request = agent_capture_request_from_uri(
+            &report,
+            "arcweft://session/cli/frame/3/object.object.dialogue.0.0.mask.rgba",
+        )
+        .expect("object mask URI should parse");
+
+        assert_eq!(request.capture_step, 3);
+        assert_seconds_close(request.capture_time_seconds, 2.0);
+        assert_eq!(request.image_kind, AgentObserveImageKind::RawRgba);
+        assert_eq!(request.capture_kind, AgentObserveCaptureKind::Mask);
+        let AgentCaptureScope::Object(object_id) = request.scope else {
+            panic!("request should target an object scope");
+        };
+        assert_eq!(object_id, "object.dialogue.0.0");
     }
 
     fn test_observed_object(

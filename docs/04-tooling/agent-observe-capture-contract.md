@@ -59,7 +59,10 @@ explicitly pre-layout. When a deterministic `capture_step` is supplied and
 `capture_time` is omitted, native image capture derives the visual-effect time
 from that step number in seconds. Image resources expose non-zero visual time as
 `capture_time_millis` so debuggers can distinguish state step and effect time
-without parsing command arguments.
+without parsing command arguments. Observation reports also include optional
+root-level `capture_time_millis` when the frame was observed with an explicit
+`capture_time` or step-derived visual-effect time, so subsequent capture or URI
+readback can reproduce the same animation state.
 
 ---
 

@@ -458,6 +458,9 @@ resolved text frame while rendered glyph alpha can vary by capture time. When
 `--capture-step` / MCP `capture_step` is supplied without an explicit capture
 time, native image capture uses that step number as the default visual-effect
 time in seconds and records the non-zero value in `images[].capture_time_millis`.
+Observation reports also keep optional root-level `capture_time_millis` for
+explicit or step-derived visual time, allowing later `arcweft.capture` and URI
+readback to reproduce the same animation state.
 `resources/templates/list` returns the corresponding URI template families,
 including the color special cases where layer/object color captures omit the
 `.color` suffix.

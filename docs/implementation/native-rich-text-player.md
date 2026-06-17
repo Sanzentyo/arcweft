@@ -220,6 +220,10 @@ steps even if the flow has already reached `Done`, and records that value in
 the native capture uses `capture_step` seconds as the deterministic visual
 effect time; an explicit capture time still overrides that default. Image
 metadata records non-zero visual time as `images[].capture_time_millis`.
+Observation reports also retain optional root-level `capture_time_millis` for
+explicit or step-derived visual time, so later MCP capture calls and Agent URI
+readback use the same animation state instead of recomputing a time from the
+completed step count.
 Use `capture_step` to choose the dialogue/runtime state and `capture_time` to
 choose the visual-effect time inside that state when those should differ.
 Native measurement now also has a time-aware page API, and Agent observe/crop

@@ -35,6 +35,8 @@ pub struct AgentObservationReport {
     pub events: Vec<RuntimeEvent>,
     pub diagnostics: Vec<AgentDiagnostic>,
     pub steps: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_time_millis: Option<u32>,
     pub task_requests: usize,
     pub final_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -789,6 +791,7 @@ mod tests {
             events: Vec::new(),
             diagnostics: Vec::new(),
             steps: 1,
+            capture_time_millis: None,
             task_requests: 0,
             final_status: "done Return(\"ok\")".to_owned(),
             overlay_svg: Some("<svg/>".to_owned()),
@@ -881,6 +884,7 @@ mod tests {
                 message: "ready".to_owned(),
             }],
             steps: 1,
+            capture_time_millis: None,
             task_requests: 0,
             final_status: "done Return(\"ok\")".to_owned(),
             overlay_svg: None,
