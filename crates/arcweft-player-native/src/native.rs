@@ -3762,6 +3762,7 @@ impl NativeOffscreenTextRenderer {
             |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
         )
         .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+        apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout.layout, &cache_keys);
         apply_text_colors_to_glyph_area(
             &mut glyph_area,
             rich_text,
@@ -4327,6 +4328,95 @@ fn cache_keys_for_layout_glyph(
     ))
 }
 
+fn apply_shaped_horizontal_origins_to_glyph_area(
+    glyph_area: &mut OwnedGlyphArea,
+    layout: &LaidOutText,
+    cache_keys: &LayoutGlyphCacheKeys,
+) {
+    let mut run_cursor = ShapedHorizontalRunCursor::default();
+    for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
+        if !is_shaped_horizontal_origin_candidate(glyph, layout) {
+            run_cursor.reset();
+            continue;
+        }
+        if run_cursor.starts_new_segment(glyph) {
+            run_cursor.start_segment(glyph);
+        }
+        let shaped_origin_x = run_cursor.cursor_x;
+        let shaped_advance =
+            shaped_horizontal_advance_for_layout_glyph(glyph_index, glyph, cache_keys)
+                .unwrap_or(glyph.advance.width);
+        offset_glyph_area_metadata_x(glyph_area, glyph_index, shaped_origin_x - glyph.origin.x);
+        run_cursor.cursor_x = shaped_origin_x + shaped_advance.max(1.0);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct ShapedHorizontalRunCursor {
+    run_index: Option<usize>,
+    line_y: f32,
+    cursor_x: f32,
+}
+
+impl ShapedHorizontalRunCursor {
+    fn reset(&mut self) {
+        self.run_index = None;
+    }
+
+    fn starts_new_segment(&self, glyph: &LaidOutGlyph) -> bool {
+        self.run_index != Some(glyph.run_index) || (self.line_y - glyph.origin.y).abs() > 0.5
+    }
+
+    fn start_segment(&mut self, glyph: &LaidOutGlyph) {
+        self.run_index = Some(glyph.run_index);
+        self.line_y = glyph.origin.y;
+        self.cursor_x = glyph.origin.x;
+    }
+}
+
+fn is_shaped_horizontal_origin_candidate(glyph: &LaidOutGlyph, layout: &LaidOutText) -> bool {
+    glyph.writing_mode == RichTextWritingMode::HorizontalTb
+        && glyph.orientation == GlyphOrientation::Upright
+        && glyph.vertical_form == GlyphVerticalForm::None
+        && !layout
+            .ruby
+            .iter()
+            .any(|ruby| ranges_overlap(glyph.range, ruby.base_range))
+}
+
+fn shaped_horizontal_advance_for_layout_glyph(
+    glyph_index: usize,
+    glyph: &LaidOutGlyph,
+    cache_keys: &LayoutGlyphCacheKeys,
+) -> Option<f32> {
+    let advance = cache_keys_for_layout_glyph(glyph_index, glyph.range, cache_keys)
+        .iter()
+        .map(|resolved| resolved.advance.x.max(0.0))
+        .sum::<f32>();
+    (advance > 0.0).then_some(advance)
+}
+
+fn offset_glyph_area_metadata_x(
+    glyph_area: &mut OwnedGlyphArea,
+    glyph_index: usize,
+    offset_x: f32,
+) {
+    if offset_x.abs() <= f32::EPSILON {
+        return;
+    }
+    for glyph in glyph_area
+        .glyphs_mut()
+        .iter_mut()
+        .filter(|glyph| glyph.metadata == glyph_index)
+    {
+        glyph.origin.x += offset_x;
+    }
+}
+
+const fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
+    left.start < right.end && right.start < left.end
+}
+
 fn normalize_resolved_glyph_offsets(
     resolved: impl IntoIterator<Item = ResolvedGlyph>,
 ) -> Vec<ResolvedGlyph> {
@@ -4820,6 +4910,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         ) else {
             return Err(());
         };
+        apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout, &cache_keys);
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, 60.0);
         apply_text_transforms_to_glyph_area(&mut glyph_area, &state.rich_text.text, layout, 60.0);
         let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout);
@@ -5154,6 +5245,78 @@ mod tests {
         assert_eq!(
             glow_areas[0].glyphs()[0].color,
             Some(Color::rgba(155, 205, 255, 72))
+        );
+    }
+
+    #[test]
+    fn shaped_horizontal_origins_compact_latin_submission_spacing() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.shaped.latin".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "serif".to_owned(),
+            }]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("window page");
+        let page_layout_frame = page.layout_frame.as_ref().expect("layout frame");
+        let layout = layout_frame(
+            page_layout_frame,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let mut glyph_area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(800, 600),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .expect("glyph area resolves");
+        let heuristic_span = layout.glyphs[4].origin.x - layout.glyphs[0].origin.x;
+
+        apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, &layout, &cache_keys);
+
+        let first = glyph_area
+            .glyphs()
+            .iter()
+            .find(|glyph| glyph.metadata == 0)
+            .expect("first glyph")
+            .origin
+            .x;
+        let last = glyph_area
+            .glyphs()
+            .iter()
+            .find(|glyph| glyph.metadata == 4)
+            .expect("last glyph")
+            .origin
+            .x;
+        assert!(
+            last - first < heuristic_span - 4.0,
+            "native shaped advance should compact Latin submission spacing: shaped={} heuristic={}",
+            last - first,
+            heuristic_span
         );
     }
 
