@@ -4223,9 +4223,11 @@ fn apply_ruby_transforms_to_glyph_area_inner(
 fn vertical_ruby_glyph_horizontal_align(
     segment: &arcweft_text_layout::LaidOutRuby,
 ) -> VerticalGlyphHorizontalAlign {
-    if segment.ruby_bounds.x >= segment.base_bounds.right() {
+    let ruby_center = segment.ruby_bounds.x + segment.ruby_bounds.width * 0.5;
+    let base_center = segment.base_bounds.x + segment.base_bounds.width * 0.5;
+    if ruby_center > base_center {
         VerticalGlyphHorizontalAlign::Start
-    } else if segment.ruby_bounds.right() <= segment.base_bounds.x {
+    } else if ruby_center < base_center {
         VerticalGlyphHorizontalAlign::End
     } else {
         VerticalGlyphHorizontalAlign::Center
@@ -6143,10 +6145,12 @@ mod tests {
             RubyGlyphPlacement::Vertical { .. }
         ));
         assert_eq!(layout.ruby[0].writing_mode, writing_mode);
+        let ruby_center = layout.ruby[0].ruby_bounds.x + layout.ruby[0].ruby_bounds.width * 0.5;
+        let base_center = layout.ruby[0].base_bounds.x + layout.ruby[0].base_bounds.width * 0.5;
         match writing_mode {
             RichTextWritingMode::VerticalRl => {
                 assert!(
-                    layout.ruby[0].ruby_bounds.x >= layout.ruby[0].base_bounds.right(),
+                    ruby_center > base_center,
                     "vertical_rl ruby should render on the right annotation track"
                 );
                 assert!(matches!(
@@ -6159,7 +6163,7 @@ mod tests {
             }
             RichTextWritingMode::VerticalLr => {
                 assert!(
-                    layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
+                    ruby_center < base_center,
                     "vertical_lr ruby should render on the left annotation track"
                 );
                 assert!(matches!(

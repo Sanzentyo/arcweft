@@ -3414,26 +3414,26 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
 
     assert_rich_text_cluster_metadata(json, "吾", 0, 3, "upright", "none");
     assert_rich_text_cluster_metadata(json, "2026", 9, 13, "text_combine_upright", "none");
-    assert_rich_text_cluster_metadata(json, "A", 13, 14, "sideways_cw", "none");
+    assert_rich_text_cluster_metadata(json, "ABC", 13, 16, "sideways_cw", "none");
     assert_rich_text_cluster_metadata(json, "縦", 29, 32, "upright", "none");
     assert_rich_text_cluster_metadata(json, "2026", 38, 42, "text_combine_upright", "none");
-    assert_rich_text_cluster_metadata(json, "X", 42, 43, "sideways_cw", "none");
+    assert_rich_text_cluster_metadata(json, "XYZ", 42, 45, "sideways_cw", "none");
 
     let rl_start = find_rich_text_cluster_object(json, "吾", 0, 3);
     let rl_text_combine = find_rich_text_cluster_object(json, "2026", 9, 13);
     let lr_start = find_rich_text_cluster_object(json, "縦", 29, 32);
     let lr_text_combine = find_rich_text_cluster_object(json, "2026", 38, 42);
-    let lr_after_text_combine = find_rich_text_cluster_object(json, "X", 42, 43);
+    let lr_after_text_combine = find_rich_text_cluster_object(json, "XYZ", 42, 45);
     assert_rich_text_hit_region_matches_bbox(rl_text_combine, "glyph_cluster", 9, 13);
     assert_rich_text_hit_region_matches_bbox(lr_text_combine, "glyph_cluster", 38, 42);
     assert_rich_text_object_has_mask_capture(lr_text_combine, "vertical goal-clear text-combine");
     assert!(
-        agent_json_bbox_x(&rl_text_combine["bbox"]) < agent_json_bbox_x(&rl_start["bbox"]),
-        "vertical_rl progression should move later column content left: {rl_text_combine}"
+        agent_json_bbox_y(&rl_text_combine["bbox"]) > agent_json_bbox_y(&rl_start["bbox"]),
+        "vertical_rl inline progression should move later same-column content down: {rl_text_combine}"
     );
     assert!(
-        agent_json_bbox_x(&lr_after_text_combine["bbox"]) > agent_json_bbox_x(&lr_start["bbox"]),
-        "vertical_lr progression should move later column content right: {lr_after_text_combine}"
+        agent_json_bbox_y(&lr_after_text_combine["bbox"]) > agent_json_bbox_y(&lr_start["bbox"]),
+        "vertical_lr inline progression should move later same-column content down: {lr_after_text_combine}"
     );
 
     let rl_ruby = find_rich_text_ruby_object(json, 0);
@@ -3449,8 +3449,8 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
         6,
     );
     assert!(
-        agent_json_bbox_x(&rl_ruby["rich_text_ref"]["ruby_annotation_bbox"])
-            > agent_json_bbox_x(&rl_ruby["rich_text_ref"]["ruby_base_bbox"]),
+        agent_json_bbox_center_x_twice(&rl_ruby["rich_text_ref"]["ruby_annotation_bbox"])
+            > agent_json_bbox_center_x_twice(&rl_ruby["rich_text_ref"]["ruby_base_bbox"]),
         "vertical_rl ruby annotation should be on the right side of its base: {rl_ruby}"
     );
 
@@ -3467,8 +3467,8 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
         35,
     );
     assert!(
-        agent_json_bbox_x(&lr_ruby["rich_text_ref"]["ruby_annotation_bbox"])
-            < agent_json_bbox_x(&lr_ruby["rich_text_ref"]["ruby_base_bbox"]),
+        agent_json_bbox_center_x_twice(&lr_ruby["rich_text_ref"]["ruby_annotation_bbox"])
+            < agent_json_bbox_center_x_twice(&lr_ruby["rich_text_ref"]["ruby_base_bbox"]),
         "vertical_lr ruby annotation should be on the left side of its base: {lr_ruby}"
     );
 }
@@ -4028,12 +4028,12 @@ fn assert_native_vertical_ruby_under_object<'report>(
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     if annotation_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "{writing_mode} ruby_under annotation should render on the right side of the base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "{writing_mode} ruby_under annotation should render on the left side of the base: {ruby}"
         );
     }
@@ -4245,12 +4245,12 @@ flow @flow.main main {{
     );
     if ruby_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr long ruby annotation should be on the left side of the base: {ruby}"
         );
     }
@@ -4287,7 +4287,7 @@ flow @flow.main main {
     let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     assert!(
-        agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+        agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
         "short vertical_rl ruby annotation should stay on the right side of the base: {ruby}"
     );
     assert!(
@@ -4329,12 +4329,12 @@ flow @flow.main main {{
         let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
         if ruby_on_right {
             assert!(
-                agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+                agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
                 "vertical_rl ruby annotation should be on the right side of the base: {ruby}"
             );
         } else {
             assert!(
-                agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+                agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
                 "vertical_lr ruby annotation should be on the left side of the base: {ruby}"
             );
         }
@@ -17929,12 +17929,12 @@ fn assert_native_strict_jlreq_ruby_text_combine_objects(
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     if ruby_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl strict JLREQ ruby annotation should stay on the right side: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr strict JLREQ ruby annotation should stay on the left side: {ruby}"
         );
     }
@@ -20270,7 +20270,7 @@ fn assert_native_vertical_lr_ruby_geometry(json: &serde_json::Value) -> &serde_j
     let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     assert!(
-        agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+        agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
         "vertical_lr ruby annotation should render on the left side of the base: {ruby}"
     );
     assert!(
@@ -20370,12 +20370,12 @@ flow @flow.main main {{
     );
     if ruby_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr long ruby annotation should be on the left side of the base: {ruby}"
         );
     }
@@ -20473,12 +20473,12 @@ flow @flow.main main {{
     );
     if ruby_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl long ruby annotation should be on the right side of the base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr long ruby annotation should be on the left side of the base: {ruby}"
         );
     }
@@ -20626,12 +20626,12 @@ fn assert_native_overheight_vertical_ruby_geometry<'a>(
     );
     if ruby_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_right(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl over-height ruby annotation should stay on the right side of the base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_right(annotation) <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr over-height ruby annotation should stay on the left side of the base: {ruby}"
         );
     }
@@ -21486,7 +21486,7 @@ fn opaque_pixel_count(bytes: &[u8]) -> usize {
 fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
     let source_path = vertical_goal_clear_smoke_fixture_path();
     let dir = temp_dir("agent-observe-native-vertical-goal-clear-smoke-raw-crops");
-    let object_id = "object.dialogue.0.0.cluster.19.38.42";
+    let object_id = "object.dialogue.0.0.cluster.17.38.42";
 
     let hidden_mask_path = dir.join("vertical-goal-clear-hidden-mask.rgba");
     let visible_mask_path = dir.join("vertical-goal-clear-visible-mask.rgba");
@@ -21616,12 +21616,12 @@ fn assert_vertical_goal_clear_ruby_raw_crop(
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     if ruby_index == 0 {
         assert!(
-            agent_json_bbox_x(annotation) > agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "{description} annotation should stay on the right side of its base: {ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_x(annotation) < agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "{description} annotation should stay on the left side of its base: {ruby}"
         );
     }
@@ -22169,13 +22169,12 @@ fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
     let annotation = &visible_ruby["rich_text_ref"]["ruby_annotation_bbox"];
     if ruby_annotation_on_right {
         assert!(
-            agent_json_bbox_x(annotation) >= agent_json_bbox_x(base) + agent_json_bbox_width(base),
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
             "vertical_rl typewriter ruby annotation should stay on the right side of the base: {visible_ruby}"
         );
     } else {
         assert!(
-            agent_json_bbox_x(annotation) + agent_json_bbox_width(annotation)
-                <= agent_json_bbox_x(base),
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
             "vertical_lr typewriter ruby annotation should stay on the left side of the base: {visible_ruby}"
         );
     }
@@ -31908,6 +31907,12 @@ fn agent_json_bbox_height(bbox: &serde_json::Value) -> u64 {
 
 fn agent_json_bbox_width(bbox: &serde_json::Value) -> u64 {
     bbox["width"].as_u64().expect("bbox width is reported")
+}
+
+fn agent_json_bbox_center_x_twice(bbox: &serde_json::Value) -> u64 {
+    agent_json_bbox_x(bbox)
+        .saturating_mul(2)
+        .saturating_add(agent_json_bbox_width(bbox))
 }
 
 fn agent_json_bbox_right(bbox: &serde_json::Value) -> u64 {

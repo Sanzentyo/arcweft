@@ -28,6 +28,7 @@ use vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientat
 
 const DEFAULT_RUBY_GAP: f32 = 2.0;
 const HORIZONTAL_RUBY_HTML_OVERLAP_EM: f32 = 0.36;
+const VERTICAL_RUBY_HTML_OVERLAP_EM: f32 = 0.46;
 
 /// Text layout failed before geometry could be produced.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -2456,6 +2457,7 @@ fn vertical_ruby_track_x(
     config: TextLayoutConfig,
     metrics: RubyMetrics,
 ) -> f32 {
+    let natural_overlap = vertical_ruby_html_overlap(metrics);
     let x = match (writing_mode, ruby_position(annotation)) {
         (RichTextWritingMode::VerticalRl, RichTextRubyPosition::Under)
         | (
@@ -2463,10 +2465,10 @@ fn vertical_ruby_track_x(
             RichTextRubyPosition::Auto
             | RichTextRubyPosition::Over
             | RichTextRubyPosition::InterCharacter,
-        ) => base_bounds.x - metrics.font_size - metrics.gap,
+        ) => base_bounds.x - metrics.font_size - metrics.gap + natural_overlap,
         (RichTextWritingMode::VerticalRl | RichTextWritingMode::HorizontalTb, _)
         | (RichTextWritingMode::VerticalLr, RichTextRubyPosition::Under) => {
-            base_bounds.right() + metrics.gap
+            base_bounds.right() + metrics.gap - natural_overlap
         }
     };
     x.max(config.origin.x)
@@ -2480,13 +2482,17 @@ fn horizontal_ruby_track_y(
 ) -> f32 {
     let natural_overlap = horizontal_ruby_html_overlap(metrics);
     match ruby_position(annotation) {
-        RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap,
+        RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap - natural_overlap,
         _ => (base_bounds.y - metrics.font_size - metrics.gap + natural_overlap).max(0.0),
     }
 }
 
 fn horizontal_ruby_html_overlap(metrics: RubyMetrics) -> f32 {
     metrics.font_size * HORIZONTAL_RUBY_HTML_OVERLAP_EM
+}
+
+fn vertical_ruby_html_overlap(metrics: RubyMetrics) -> f32 {
+    metrics.font_size * VERTICAL_RUBY_HTML_OVERLAP_EM
 }
 
 fn ruby_position(annotation: &RichTextRubyAnnotation) -> RichTextRubyPosition {
@@ -6982,6 +6988,30 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_ruby_under_zero_gap_matches_html_like_overlap() {
+        let mut frame = frame_with_run("夢", RichTextPresentation::default());
+        push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+        frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+            ruby_gap: Some(Milli(0)),
+            ruby_position: RichTextRubyPosition::Under,
+            ..RichTextLayout::default()
+        });
+        let layout = layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+        let base = layout.ruby[0].base_bounds;
+        let annotation = layout.ruby[0].ruby_bounds;
+        let metrics = ruby_metrics_from_presentation(
+            &layout.ruby[0].presentation,
+            TextLayoutConfig::default(),
+        );
+        assert_f32_near(
+            annotation.y - base.bottom(),
+            -horizontal_ruby_html_overlap(metrics),
+            0.001,
+        );
+    }
+
+    #[test]
     fn horizontal_ruby_collision_shifts_adjacent_annotations() {
         let mut frame = frame_with_run("夢星", RichTextPresentation::default());
         push_ruby(&mut frame, 0, "夢".len(), "ながいよみ");
@@ -7182,7 +7212,8 @@ mod tests {
             "long vertical ruby should expand the base allocation along inline progression"
         );
         assert!(
-            layout.ruby[0].ruby_bounds.right() <= layout.ruby[0].base_bounds.x,
+            layout.ruby[0].ruby_bounds.x + layout.ruby[0].ruby_bounds.width * 0.5
+                < layout.ruby[0].base_bounds.x + layout.ruby[0].base_bounds.width * 0.5,
             "vertical_lr ruby annotation should be placed on the left side of the base"
         );
     }
@@ -7205,15 +7236,74 @@ mod tests {
 
             let base = layout.ruby[0].base_bounds;
             let annotation = layout.ruby[0].ruby_bounds;
+            let base_center = base.x + base.width * 0.5;
+            let annotation_center = annotation.x + annotation.width * 0.5;
             if under_moves_right {
                 assert!(
-                    annotation.x >= base.right(),
+                    annotation_center > base_center,
                     "{writing_mode:?} ruby_under should place annotation on the right side of the base"
                 );
             } else {
                 assert!(
-                    annotation.right() <= base.x,
+                    annotation_center < base_center,
                     "{writing_mode:?} ruby_under should place annotation on the left side of the base"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vertical_ruby_side_tracks_apply_html_like_overlap() {
+        for (writing_mode, position, expected_right_side) in [
+            (
+                RichTextWritingMode::VerticalRl,
+                RichTextRubyPosition::Over,
+                true,
+            ),
+            (
+                RichTextWritingMode::VerticalRl,
+                RichTextRubyPosition::Under,
+                false,
+            ),
+            (
+                RichTextWritingMode::VerticalLr,
+                RichTextRubyPosition::Over,
+                false,
+            ),
+            (
+                RichTextWritingMode::VerticalLr,
+                RichTextRubyPosition::Under,
+                true,
+            ),
+        ] {
+            let mut frame = frame_with_run("夢", vertical_presentation(writing_mode));
+            push_ruby(&mut frame, 0, "夢".len(), "ゆめ");
+            frame.display_map.ruby_annotations[0].presentation.layout = Some(RichTextLayout {
+                writing_mode,
+                ruby_gap: Some(Milli(0)),
+                ruby_position: position,
+                ..RichTextLayout::default()
+            });
+            let layout =
+                layout_frame(&frame, TextLayoutConfig::default()).expect("layout succeeds");
+
+            let base = layout.ruby[0].base_bounds;
+            let annotation = layout.ruby[0].ruby_bounds;
+            let metrics = ruby_metrics_from_presentation(
+                &layout.ruby[0].presentation,
+                TextLayoutConfig::default(),
+            );
+            if expected_right_side {
+                assert_f32_near(
+                    annotation.x - base.right(),
+                    -vertical_ruby_html_overlap(metrics),
+                    0.001,
+                );
+            } else {
+                assert_f32_near(
+                    base.x - annotation.right(),
+                    -vertical_ruby_html_overlap(metrics),
+                    0.001,
                 );
             }
         }
@@ -7340,9 +7430,9 @@ mod tests {
                 "{writing_mode:?} ruby annotation should stay inside the layout width: {annotation:?}"
             );
             if annotation_on_right {
-                assert!(annotation.x >= base.right());
+                assert!(annotation.x + annotation.width * 0.5 > base.x + base.width * 0.5);
             } else {
-                assert!(annotation.right() <= base.x);
+                assert!(annotation.x + annotation.width * 0.5 < base.x + base.width * 0.5);
             }
         }
     }

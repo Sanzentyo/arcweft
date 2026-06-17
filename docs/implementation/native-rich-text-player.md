@@ -154,7 +154,11 @@ aligned with observed ruby bboxes instead of drifting through an independent
 TextArea baseline. The horizontal ruby track is calibrated against a Chromium
 `<ruby><rb><rt>` reference: a 30px base with 13px ruby text produces about
 4.67px of annotation/base bbox overlap, so Arcweft applies a 0.36em natural
-overlap before adding any explicit ruby gap.
+overlap before adding any explicit ruby gap. The same model applies to
+horizontal `ruby_under` and vertical side-track ruby: `ruby_gap` remains an
+author-controlled extra gap, while the default zero-gap placement allows the
+small natural annotation/base bbox overlap observed in Chromium ruby rendering
+instead of forcing a hard separated rectangle.
 Builtin wave effects use the descriptor target when choosing their phase index:
 `target=glyph` evaluates per glyph, while `target=run` and broader targets move
 the target as one placement group. Shake and jitter continue to use
@@ -256,6 +260,14 @@ Native measurement now also has a time-aware page API, and Agent observe/crop
 paths pass `capture_time` through it, so animated glyph-transform bboxes used
 for rich-text child objects, textbox capture refs, and scoped native crops track
 the same effect time as the rendered framebuffer.
+Object-scoped native captures can also resolve rich-text child object IDs that
+are absent from the current observation object list because a visibility effect
+has hidden their pixels. The CLI derives the parent textbox and native
+`TextRun`/`Ruby`/`GlyphCluster` element from the object ID, measures that element
+for the requested page/time, and uses the resulting geometry for color,
+object-id, and mask crops. This keeps typewriter-hidden glyph clusters
+addressable for deterministic before/after animation debugging without
+accepting removed or mismatched object IDs.
 The interactive window path shares the same layout-backed body/ruby GlyphArea
 model: window page construction is covered for a `vertical_lr` line containing
 side-track ruby plus a 4-digit text-combine-upright cluster, and the test adapts

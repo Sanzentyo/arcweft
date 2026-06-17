@@ -2840,14 +2840,18 @@ fn agent_native_textbox_for_capture<'a>(
     scope: &AgentCaptureScope,
 ) -> Option<&'a AgentObservedObject> {
     if let AgentCaptureScope::Object(object_id) = scope {
-        let object = report
-            .objects
-            .iter()
-            .find(|object| object.id == *object_id)?;
-        if object.role == "textbox" {
-            return Some(object);
+        if let Some(object) = report.objects.iter().find(|object| object.id == *object_id) {
+            if object.role == "textbox" {
+                return Some(object);
+            }
+            if let Some(parent_id) = agent_rich_text_child_parent_object_id(&object.id) {
+                return report
+                    .objects
+                    .iter()
+                    .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id);
+            }
         }
-        if let Some(parent_id) = agent_rich_text_child_parent_object_id(&object.id) {
+        if let Some(parent_id) = agent_rich_text_child_parent_object_id(object_id) {
             return report
                 .objects
                 .iter()
@@ -2902,8 +2906,8 @@ fn agent_native_scoped_capture(
         rgba: capture.rgba.clone(),
         diagnostics: capture.diagnostics.clone(),
     };
-    let selected = agent_capture_objects_for_scope(context.objects, scope)?;
-    let selected = agent_native_capture_objects_for_page(
+    let selected = agent_native_capture_targets_for_scope(context, scope)?;
+    let selected = agent_native_capture_targets_for_page(
         capture.width,
         capture.height,
         context,
@@ -2915,7 +2919,7 @@ fn agent_native_scoped_capture(
             if matches!(scope, AgentCaptureScope::Layer(_))
                 && selected
                     .iter()
-                    .any(|object| !object.role.starts_with("rich_text_"))
+                    .any(|target| !target.role().starts_with("rich_text_"))
             {
                 let (x, y, width, height) =
                     agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
@@ -2971,26 +2975,63 @@ fn make_nontransparent_pixels_opaque(rgba: &mut [u8]) {
     }
 }
 
-fn agent_native_capture_objects_for_page<'a>(
+#[derive(Clone)]
+enum AgentNativeCaptureTarget<'a> {
+    Observed(&'a AgentObservedObject),
+    RichTextElement {
+        id: String,
+        role: &'static str,
+        parent: &'a AgentObservedObject,
+        element: arcweft_player_native::native::NativeFrameElement,
+    },
+}
+
+impl AgentNativeCaptureTarget<'_> {
+    fn id(&self) -> &str {
+        match self {
+            AgentNativeCaptureTarget::Observed(object) => &object.id,
+            AgentNativeCaptureTarget::RichTextElement { id, .. } => id,
+        }
+    }
+
+    fn role(&self) -> &str {
+        match self {
+            AgentNativeCaptureTarget::Observed(object) => &object.role,
+            AgentNativeCaptureTarget::RichTextElement { role, .. } => role,
+        }
+    }
+
+    fn observed(&self) -> Option<&AgentObservedObject> {
+        match self {
+            AgentNativeCaptureTarget::Observed(object) => Some(object),
+            AgentNativeCaptureTarget::RichTextElement { .. } => None,
+        }
+    }
+}
+
+fn agent_native_capture_targets_for_page<'a>(
     capture_width: u32,
     capture_height: u32,
     context: AgentNativeCaptureContext<'a>,
     scope: &AgentCaptureScope,
-    selected: Vec<&'a AgentObservedObject>,
-) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    selected: Vec<AgentNativeCaptureTarget<'a>>,
+) -> Result<Vec<AgentNativeCaptureTarget<'a>>, ExitCode> {
     if !matches!(scope, AgentCaptureScope::Layer(_)) {
         return Ok(selected);
     }
     selected
         .into_iter()
-        .filter_map(|object| {
+        .filter_map(|target| {
+            let Some(object) = target.observed() else {
+                return Some(Ok(target));
+            };
             match agent_native_object_is_visible_on_page(
                 capture_width,
                 capture_height,
                 context,
                 object,
             ) {
-                Ok(true) => Some(Ok(object)),
+                Ok(true) => Some(Ok(target)),
                 Ok(false) => None,
                 Err(error) => Some(Err(error)),
             }
@@ -3019,16 +3060,16 @@ struct AgentNativeDebugCapture {
 fn agent_native_color_capture(
     capture: &arcweft_player_native::native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
-    selected: &[&AgentObservedObject],
+    selected: &[AgentNativeCaptureTarget<'_>],
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<arcweft_player_native::native::NativeFrameCapture>, ExitCode> {
     let mut regions = Vec::new();
-    for object in selected {
-        let object_regions = agent_native_regions_for_object(
+    for target in selected {
+        let object_regions = agent_native_regions_for_target(
             capture.width,
             capture.height,
             context,
-            object,
+            target,
             [0, 0, 0, 0],
         )?;
         if object_regions.iter().any(|region| region.element.is_none()) {
@@ -3069,24 +3110,24 @@ fn agent_native_color_capture(
 fn agent_native_debug_capture(
     capture: &arcweft_player_native::native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
-    selected: &[&AgentObservedObject],
+    selected: &[AgentNativeCaptureTarget<'_>],
     capture_kind: AgentObserveCaptureKind,
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentNativeDebugCapture, ExitCode> {
     let mut regions = Vec::new();
-    for object in selected {
+    for target in selected {
         let color = match capture_kind {
             AgentObserveCaptureKind::Color => {
                 unreachable!("native geometry capture is debug-only")
             }
-            AgentObserveCaptureKind::ObjectId => agent_object_id_color(&object.id),
+            AgentObserveCaptureKind::ObjectId => agent_object_id_color(target.id()),
             AgentObserveCaptureKind::Mask => [255, 255, 255, 255],
         };
-        regions.extend(agent_native_regions_for_object(
+        regions.extend(agent_native_regions_for_target(
             capture.width,
             capture.height,
             context,
-            object,
+            target,
             color,
         )?);
     }
@@ -3135,7 +3176,7 @@ fn agent_native_debug_capture(
 fn agent_native_masked_framebuffer_capture(
     capture: &arcweft_player_native::native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
-    selected: &[&AgentObservedObject],
+    selected: &[AgentNativeCaptureTarget<'_>],
 ) -> Result<AgentRasterCapture, ExitCode> {
     let mut masked = AgentRasterCapture::new(
         capture.width,
@@ -3144,9 +3185,9 @@ fn agent_native_masked_framebuffer_capture(
         AgentImageComposition::MaskedFramebufferCrop,
     );
     masked.diagnostics.clone_from(&capture.diagnostics);
-    for object in selected {
+    for target in selected {
         let (x, y, width, height) =
-            agent_native_object_rect(capture.width, capture.height, context, object)?;
+            agent_native_target_rect(capture.width, capture.height, context, target)?;
         agent_copy_native_framebuffer_rect(&mut masked, capture, x, y, width, height);
     }
     let (x, y, width, height) =
@@ -3194,22 +3235,22 @@ fn agent_copy_native_framebuffer_rect(
     }
 }
 
-fn agent_native_regions_for_object(
+fn agent_native_regions_for_target(
     capture_width: u32,
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
-    object: &AgentObservedObject,
+    target: &AgentNativeCaptureTarget<'_>,
     color: [u8; 4],
 ) -> Result<Vec<arcweft_player_native::native::NativeFrameDebugRegion>, ExitCode> {
     let (x, y, width, height) =
-        agent_native_object_rect(capture_width, capture_height, context, object)?;
+        agent_native_target_rect(capture_width, capture_height, context, target)?;
     let fallback_bbox = arcweft_player_native::native::NativeFrameContentBBox {
         x,
         y,
         width,
         height,
     };
-    let elements = agent_native_elements_for_object(object);
+    let elements = agent_native_elements_for_target(target);
     if elements.is_empty() {
         return Ok(vec![
             arcweft_player_native::native::NativeFrameDebugRegion {
@@ -3229,6 +3270,15 @@ fn agent_native_regions_for_object(
             },
         )
         .collect())
+}
+
+fn agent_native_elements_for_target(
+    target: &AgentNativeCaptureTarget<'_>,
+) -> Vec<arcweft_player_native::native::NativeFrameElement> {
+    match target {
+        AgentNativeCaptureTarget::Observed(object) => agent_native_elements_for_object(object),
+        AgentNativeCaptureTarget::RichTextElement { element, .. } => vec![*element],
+    }
 }
 
 fn agent_native_elements_for_object(
@@ -3266,15 +3316,15 @@ fn agent_native_scope_rect(
     capture_width: u32,
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
-    selected: &[&AgentObservedObject],
+    selected: &[AgentNativeCaptureTarget<'_>],
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     let mut min_x = capture_width;
     let mut min_y = capture_height;
     let mut max_x = 0_u32;
     let mut max_y = 0_u32;
-    for object in selected {
+    for target in selected {
         let (x, y, width, height) =
-            agent_native_object_rect(capture_width, capture_height, context, object)?;
+            agent_native_target_rect(capture_width, capture_height, context, target)?;
         min_x = min_x.min(x);
         min_y = min_y.min(y);
         max_x = max_x.max(x.saturating_add(width));
@@ -3291,6 +3341,35 @@ fn agent_native_scope_rect(
         .min(capture_height.saturating_sub(y))
         .max(1);
     Ok((x, y, width, height))
+}
+
+fn agent_native_target_rect(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    target: &AgentNativeCaptureTarget<'_>,
+) -> Result<(u32, u32, u32, u32), ExitCode> {
+    match target {
+        AgentNativeCaptureTarget::Observed(object) => {
+            agent_native_object_rect(capture_width, capture_height, context, object)
+        }
+        AgentNativeCaptureTarget::RichTextElement {
+            parent, element, ..
+        } => agent_native_rich_text_element_rect(
+            capture_width,
+            capture_height,
+            context,
+            parent,
+            *element,
+        )?
+        .ok_or_else(|| {
+            eprintln!(
+                "error: no native layout bounds match resource object {}",
+                target.id()
+            );
+            ExitCode::from(2)
+        }),
+    }
 }
 
 fn agent_native_object_rect(
@@ -3375,6 +3454,16 @@ fn agent_native_rich_text_child_rect(
     let Some(textbox) = agent_native_textbox_for_rich_text_child(context.objects, object) else {
         return Ok(None);
     };
+    agent_native_rich_text_element_rect(capture_width, capture_height, context, textbox, element)
+}
+
+fn agent_native_rich_text_element_rect(
+    capture_width: u32,
+    capture_height: u32,
+    context: AgentNativeCaptureContext<'_>,
+    textbox: &AgentObservedObject,
+    element: arcweft_player_native::native::NativeFrameElement,
+) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
         &textbox.rich_text,
@@ -3437,17 +3526,47 @@ fn agent_native_element_for_object(
 fn agent_native_element_for_object_id(
     object_id: &str,
 ) -> Option<arcweft_player_native::native::NativeFrameElement> {
+    agent_native_element_and_role_for_object_id(object_id).map(|(element, _)| element)
+}
+
+fn agent_native_element_and_role_for_object_id(
+    object_id: &str,
+) -> Option<(
+    arcweft_player_native::native::NativeFrameElement,
+    &'static str,
+)> {
     if let Some((_, index)) = object_id.rsplit_once(".run.") {
-        return index
-            .parse()
-            .ok()
-            .map(|index| arcweft_player_native::native::NativeFrameElement::TextRun { index });
+        return index.parse().ok().map(|index| {
+            (
+                arcweft_player_native::native::NativeFrameElement::TextRun { index },
+                "rich_text_run",
+            )
+        });
     }
     if let Some((_, index)) = object_id.rsplit_once(".ruby.") {
-        return index
-            .parse()
-            .ok()
-            .map(|index| arcweft_player_native::native::NativeFrameElement::Ruby { index });
+        return index.parse().ok().map(|index| {
+            (
+                arcweft_player_native::native::NativeFrameElement::Ruby { index },
+                "rich_text_ruby",
+            )
+        });
+    }
+    if let Some((_, suffix)) = object_id.split_once(".cluster.") {
+        let mut parts = suffix.split('.');
+        let index = parts.next()?.parse().ok()?;
+        let range_start = parts.next()?.parse().ok()?;
+        let range_end = parts.next()?.parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        return Some((
+            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+                index,
+                range_start,
+                range_end,
+            },
+            "rich_text_cluster",
+        ));
     }
     None
 }
@@ -3582,16 +3701,22 @@ fn agent_content_viewport_bbox(
     })
 }
 
-fn agent_capture_objects_for_scope<'a>(
-    objects: &'a [AgentObservedObject],
+fn agent_native_capture_targets_for_scope<'a>(
+    context: AgentNativeCaptureContext<'a>,
     scope: &AgentCaptureScope,
-) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+) -> Result<Vec<AgentNativeCaptureTarget<'a>>, ExitCode> {
     match scope {
-        AgentCaptureScope::Viewport => Ok(objects.iter().collect()),
+        AgentCaptureScope::Viewport => Ok(context
+            .objects
+            .iter()
+            .map(AgentNativeCaptureTarget::Observed)
+            .collect()),
         AgentCaptureScope::Layer(layer) => {
-            let selected = objects
+            let selected = context
+                .objects
                 .iter()
                 .filter(|object| object.layer == *layer)
+                .map(AgentNativeCaptureTarget::Observed)
                 .collect::<Vec<_>>();
             if selected.is_empty() {
                 eprintln!("error: no observed object matches resource layer {layer}");
@@ -3600,13 +3725,38 @@ fn agent_capture_objects_for_scope<'a>(
             Ok(selected)
         }
         AgentCaptureScope::Object(object_id) => {
-            let Some(object) = objects.iter().find(|object| object.id == *object_id) else {
-                eprintln!("error: no observed object matches resource object {object_id}");
-                return Err(ExitCode::from(2));
-            };
-            Ok(vec![object])
+            if let Some(object) = context
+                .objects
+                .iter()
+                .find(|object| object.id == *object_id)
+            {
+                return Ok(vec![AgentNativeCaptureTarget::Observed(object)]);
+            }
+            if let Some(target) = agent_native_rich_text_target_for_object_id(context, object_id) {
+                return Ok(vec![target]);
+            }
+            eprintln!("error: no observed object matches resource object {object_id}");
+            Err(ExitCode::from(2))
         }
     }
+}
+
+fn agent_native_rich_text_target_for_object_id<'a>(
+    context: AgentNativeCaptureContext<'a>,
+    object_id: &str,
+) -> Option<AgentNativeCaptureTarget<'a>> {
+    let parent_id = agent_rich_text_child_parent_object_id(object_id)?;
+    let parent = context
+        .objects
+        .iter()
+        .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id)?;
+    let (element, role) = agent_native_element_and_role_for_object_id(object_id)?;
+    Some(AgentNativeCaptureTarget::RichTextElement {
+        id: object_id.to_owned(),
+        role,
+        parent,
+        element,
+    })
 }
 
 fn agent_observe_mcp_resource_output(

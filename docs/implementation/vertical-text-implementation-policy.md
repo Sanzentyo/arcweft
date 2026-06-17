@@ -265,7 +265,11 @@ the concrete choices to follow when turning that package into production code.
   track. `ruby_position=auto`/`over` uses the right annotation track for
   `vertical_rl` and the left annotation track for `vertical_lr`; `ruby_under`
   flips those physical sides. This keeps short edge-adjacent ruby annotations
-  inside the layout box without changing the side-of-base semantics.
+  inside the layout box without changing the side-of-base semantics. Track
+  membership is determined by the annotation/base center side, not by requiring
+  their bboxes to be disjoint: CSS/HTML ruby permits a small natural overlap at
+  zero gap, and Arcweft mirrors that for vertical side-track ruby before adding
+  any explicit author `ruby_gap`.
   `ruby_inter_character` is not treated as another side-track variant:
   `arcweft-text-layout` reserves inline advance after the annotated base start,
   places the ruby annotation in that in-column slot, leaves the body column at
@@ -306,6 +310,13 @@ the concrete choices to follow when turning that package into production code.
   readback remains only a verification and capture output path. Native
   offscreen debug and isolated-color captures use the same GlyphArea path as
   normal body rendering, so vertical glyph cluster bboxes, object-id masks, and
+  object-scoped captures stay tied to renderer layout even when a visibility
+  effect makes the selected child fully transparent. For hidden rich-text child
+  IDs, the CLI derives the parent textbox and native glyph/ruby element from the
+  object ID, measures the requested page/time, and crops that stable geometry
+  while the framebuffer/mask content can legitimately contain zero pixels. This
+  is the required contract for step/time animation debugging; stale IDs whose
+  native element/range no longer match still fail instead of being remapped.
   color crops share one placement model instead of falling back to glyphon's
   horizontal TextArea layout. The vendored glyphon `GlyphArea` path now carries
   the area clip rectangle into the vertex stream and discards fragments outside
