@@ -1,0 +1,76 @@
+pub surface character lumi {
+    display = "Lumi"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#eaf6ff")
+                size = 32px
+            }
+        }
+    }
+}
+
+pub surface character iris {
+    display = "Iris"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Meiryo"
+                color = rgb("#ffe6f1")
+                size = 30px
+            }
+        }
+    }
+}
+
+pub textbox animation_panel {
+    rich_text {
+        text {
+            color = "#f2f6ff"
+        }
+        ruby {
+            size = 12px
+            gap = 0px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.animation_panel
+    rich_text {
+        layout {
+            writing_mode = horizontal_tb
+            jlreq = normal
+            vertical_latin = mixed
+        }
+        ruby {
+            size = 12px
+            gap = 0px
+            overhang = 3px
+            collision_gap = 2px
+        }
+    }
+}
+
+entry game {
+    start @flow.rich_text_effects_animation
+}
+
+flow rich_text_effects_animation {
+    lumi.say(id=@say.effects.shader, voice=auto, look=.focus)[
+        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect] と、[.host id=sparkle amp=1.5px seed=shader-demo state_scope=run]host sparkle[/] を同時に表示する。[p]
+    ]
+
+    iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
+        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle state_scope=run]sparkle[/]。[p]
+    ]
+
+    lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[
+        Reveal: [.typewriter cps=5 phase=glyph_mask]一文字ずつ見えるtypewriter[/] と [.rotate angle=5deg origin=center target=run][.scale x=1.18 y=1.18 origin=baseline_center target=run]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"]揺れる縦書きABC2026[/font][/]。[p]
+    ]
+
+    return "rich_text_effects_animation"
+}
