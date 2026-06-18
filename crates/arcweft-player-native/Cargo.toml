@@ -6,8 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+dev-source = ["dep:arcweft-compiler"]
+
 [dependencies]
-arcweft-compiler = { path = "../arcweft-compiler" }
+arcweft-compiler = { path = "../arcweft-compiler", optional = true }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-render-native = { path = "../arcweft-render-native" }

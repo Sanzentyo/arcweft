@@ -210,7 +210,8 @@ arcweft-launch
 - `arcweft-player-native` は native product/player host であり、bundle /
   bytecode execution、scheduler/input/audio/window lifecycle、render-native
   orchestration を所有する。source direct execution は developer mode であり、
-  product player の正本は `.awfb` / bytecode bundle input とする。
+  `dev-source` feature 配下に閉じ込める。product player の正本は `.awfb` /
+  bytecode bundle input とする。
 - UI は最初から細かい public crate family に分割せず、当面は
   `arcweft-ui` が Component registry、generational Entity、retained
   fragment、reactivity、style/layout integration、semantic UI nodes を所有する。

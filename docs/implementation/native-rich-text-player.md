@@ -378,7 +378,7 @@ cargo run -p arcweft-player-native --quiet -- --headless --json target/game.awfb
 Run a source file in explicit developer mode:
 
 ```bash
-cargo run -p arcweft-player-native -- --headless --json --source path/to/file.arcw
+cargo run -p arcweft-player-native --features dev-source -- --headless --json --source path/to/file.arcw
 ```
 
 Bundles carry the line display catalog needed for native window presentation and
@@ -587,7 +587,7 @@ cargo test -p arcweft-cli agent_mcp_stdio_captures_source_ruby_object_id_with_na
 cargo test -p arcweft-cli agent_mcp_stdio_observes_and_reads_rich_text_child_image -- --exact
 cargo clippy -p arcweft-player-native --all-targets --all-features
 cargo run -p arcweft-player-native -- --headless --json target/game.awfb
-cargo run -p arcweft-player-native -- --headless --json --source path/to/file.arcw
+cargo run -p arcweft-player-native --features dev-source -- --headless --json --source path/to/file.arcw
 cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png --capture-width 480 --capture-height 270 target/game.awfb
 ```
 

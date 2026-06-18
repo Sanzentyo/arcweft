@@ -1,6 +1,8 @@
 use arcweft_bundle::ArcweftBundle;
+#[cfg(feature = "dev-source")]
+use arcweft_player_native::compile_source;
 use arcweft_player_native::{
-    NativePlayerCaptureMetadata, NativePlayerProgram, compile_source, load_bundle, run_headless,
+    NativePlayerCaptureMetadata, NativePlayerProgram, load_bundle, run_headless,
 };
 use arcweft_render_native as native;
 use clap::{Parser, ValueEnum};
@@ -65,10 +67,20 @@ fn run(args: &Args) -> Result<(), String> {
 
 fn run_source(args: &Args) -> Result<(), String> {
     ensure_extension(&args.path, "arcw", "--source expects an .arcw source file")?;
-    let source = fs::read_to_string(&args.path)
-        .map_err(|error| format!("failed to read source file: {error}"))?;
-    let program = compile_source(&source).map_err(|error| error.to_string())?;
-    run_program(args, program)
+    #[cfg(not(feature = "dev-source"))]
+    {
+        Err(
+            "--source requires building arcweft-player-native with the dev-source feature"
+                .to_owned(),
+        )
+    }
+    #[cfg(feature = "dev-source")]
+    {
+        let source = fs::read_to_string(&args.path)
+            .map_err(|error| format!("failed to read source file: {error}"))?;
+        let program = compile_source(&source).map_err(|error| error.to_string())?;
+        run_program(args, program)
+    }
 }
 
 fn run_bundle(args: &Args) -> Result<(), String> {

@@ -118,4 +118,4 @@ now mostly dispatch and import wiring. The remaining architectural cuts are:
   carry line display sidecars so native window presentation and capture can
   resolve dialogue frames from bytecode input. The `arcweft-player-native`
   binary treats `.awfb` as its default input; `.arcw` source execution requires
-  the explicit `--source` developer-mode flag.
+  the explicit `--source` developer-mode flag and the `dev-source` feature.

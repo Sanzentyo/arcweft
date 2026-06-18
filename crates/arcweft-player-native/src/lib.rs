@@ -1,6 +1,7 @@
 //! Native/headless rich-text player host for Arcweft.
 
 use arcweft_bundle::ArcweftBundle;
+#[cfg(feature = "dev-source")]
 use arcweft_compiler::compile_source as compile_arcweft_source;
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::plan::FlowEvent;
@@ -47,6 +48,7 @@ pub struct NativePlayerCaptureMetadata {
 /// Native player error.
 #[derive(Debug, Error)]
 pub enum NativePlayerError {
+    #[cfg(feature = "dev-source")]
     #[error(transparent)]
     Compile(#[from] arcweft_compiler::CompileSourceError),
     #[error("failed to decode bundle bytecode: {0}")]
@@ -56,6 +58,7 @@ pub enum NativePlayerError {
 }
 
 /// Compiles source into runtime code plus a line display catalog.
+#[cfg(feature = "dev-source")]
 pub fn compile_source(source: &str) -> Result<NativePlayerProgram, NativePlayerError> {
     let compiled = compile_arcweft_source(source)?;
     Ok(NativePlayerProgram {
@@ -131,6 +134,7 @@ pub fn run_headless(
 }
 
 /// Compiles and runs source until the first display frame is available.
+#[cfg(feature = "dev-source")]
 pub fn first_display_frame(source: &str) -> Result<LineDisplayFrame, NativePlayerError> {
     let program = compile_source(source)?;
     let report = run_headless(program, 64)?;
@@ -184,10 +188,37 @@ fn flow_status_label(status: &FlowFiberStatus) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_text::{DialogueHostEvent, RichTextNode};
 
     #[test]
+    fn headless_player_runs_program_without_source_compiler() {
+        use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.main".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![FlowOp::Return("done".to_owned())],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let report = run_headless(
+            NativePlayerProgram {
+                plan,
+                display: LineDisplayCatalog::default(),
+            },
+            8,
+        )
+        .expect("program runs");
+
+        assert_eq!(report.status, "done:Return(\"done\")");
+    }
+
+    #[cfg(feature = "dev-source")]
+    #[test]
     fn headless_player_resolves_rich_text_frame() {
+        use arcweft_render_text::{DialogueHostEvent, RichTextNode};
+
         let source = r#"
 character @character.alice Alice as alice {}
 
