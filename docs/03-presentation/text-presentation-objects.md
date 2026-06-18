@@ -24,9 +24,10 @@ textbox
           ruby_annotation
 ```
 
-Every observed object must have a stable object id, a viewport bbox, optional
-polygon, object-id capture color, source range, effective presentation metadata,
-and hit-test regions when hit testing is enabled. Renderers may also expose
+Every observed object must have a stable object id, a `parent_id` when it is a
+child of another presentation object, a viewport bbox, optional polygon,
+object-id capture color, source range, effective presentation metadata, and
+hit-test regions when hit testing is enabled. Renderers may also expose
 layer-specific children such as shader passes, IME caret objects, or selection
 handles, but those children must reference the text object they decorate.
 
@@ -164,11 +165,11 @@ target as the decorated run, but its `rich_text_ref.kind` is
 lets LLM/debug tools capture or inspect the proxy span directly without having
 to infer it from a broader `rich_text_run`.
 Image resources produced for the proxy object keep an `image.object` reference
-with the same selected `rich_text_ref`. A raw/PNG mask, object-id, or color crop
-therefore carries the proxy id/type/role/layer/depth, typed params, hit-test
-regions, and source range alongside the pixels. This is the text-object
-equivalent of a sprite or 3D model crop retaining its object identity and
-depth/hit metadata.
+with the same selected `rich_text_ref` and `parent_id`. A raw/PNG mask,
+object-id, or color crop therefore carries the proxy id/type/role/layer/depth,
+typed params, hit-test regions, source range, and containing textbox identity
+alongside the pixels. This is the text-object equivalent of a sprite or 3D model
+crop retaining its object identity and depth/hit metadata.
 
 ## Renderer Boundary
 

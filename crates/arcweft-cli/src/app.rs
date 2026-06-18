@@ -5064,6 +5064,7 @@ fn agent_textbox_object(
     let capture_refs = agent_object_capture_refs("cli", step, &object_id, &bbox);
     AgentObservedObject {
         id: object_id,
+        parent_id: None,
         entity: Some(frame.callee.clone()),
         layer: "dialogue".to_owned(),
         role: "textbox".to_owned(),
@@ -5951,6 +5952,7 @@ fn agent_rich_text_child_object(
 ) -> AgentObservedObject {
     AgentObservedObject {
         id: spec.object_id.to_owned(),
+        parent_id: Some(textbox.id.clone()),
         entity: textbox.entity.clone(),
         layer: "dialogue.rich_text".to_owned(),
         role: spec.role.to_owned(),
@@ -10816,6 +10818,7 @@ mod tests {
         };
         AgentObservedObject {
             id: id.to_owned(),
+            parent_id: None,
             entity: None,
             layer: "ui".to_owned(),
             role: "panel".to_owned(),

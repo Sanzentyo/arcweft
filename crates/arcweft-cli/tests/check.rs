@@ -33729,6 +33729,8 @@ fn assert_full_grammar_text_object_proxy_observed_object(
 ) {
     let proxy_object = find_rich_text_proxy_object(json, "hotspot", "proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
+    let parent_id = rich_text_object_parent_id(proxy_object);
+    assert_eq!(proxy_object["parent_id"], parent_id);
     assert_eq!(proxy_object["text"], "proxy");
     assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy_object["rich_text_ref"]["index"], 0);
@@ -33769,6 +33771,10 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["kind"],
         "text_object_proxy"
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["parent_id"],
+        parent_id
     );
     assert_eq!(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
@@ -33892,6 +33898,8 @@ fn assert_full_grammar_nested_proxy_observed_object(
 ) {
     let proxy_object = find_rich_text_proxy_object(json, proxy_id, "multi proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
+    let parent_id = rich_text_object_parent_id(proxy_object);
+    assert_eq!(proxy_object["parent_id"], parent_id);
     assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy_object["rich_text_ref"]["hit_test"], true);
     assert_eq!(proxy_object["rich_text_ref"]["object_depth"], depth);
@@ -33951,6 +33959,10 @@ fn assert_full_grammar_nested_proxy_observed_object(
     assert_eq!(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["kind"],
         "text_object_proxy"
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["parent_id"],
+        parent_id
     );
     assert_eq!(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
@@ -34494,6 +34506,24 @@ fn rich_text_proxy_hit_region<'a>(
                 "rich-text object should expose text_object_proxy hit region for {proxy_id} {range_start}..{range_end}: {object}"
             )
         })
+}
+
+fn rich_text_object_parent_id(object: &serde_json::Value) -> &str {
+    let object_id = object["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("rich-text object id is reported: {object}"));
+    object_id
+        .split_once(".page.")
+        .or_else(|| object_id.split_once(".line."))
+        .or_else(|| object_id.split_once(".run."))
+        .or_else(|| object_id.split_once(".ruby."))
+        .or_else(|| object_id.split_once(".glyph."))
+        .or_else(|| object_id.split_once(".cluster."))
+        .or_else(|| object_id.split_once(".proxy."))
+        .map_or_else(
+            || panic!("rich-text object id should include a child suffix: {object_id}"),
+            |(parent_id, _)| parent_id,
+        )
 }
 
 fn rich_text_cluster_column_count(report: &serde_json::Value) -> usize {

@@ -197,6 +197,8 @@ pub struct AgentImageMetadata {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentImageObjectRef {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
     pub layer: String,
@@ -426,6 +428,8 @@ pub enum AgentImageKind {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentObservedObject {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
     pub layer: String,
@@ -446,6 +450,7 @@ impl AgentImageObjectRef {
     pub fn from_observed(object: &AgentObservedObject) -> Self {
         Self {
             id: object.id.clone(),
+            parent_id: object.parent_id.clone(),
             entity: object.entity.clone(),
             layer: object.layer.clone(),
             role: object.role.clone(),
@@ -980,6 +985,7 @@ mod tests {
             }],
             objects: vec![AgentObservedObject {
                 id: "object.dialogue.0.0".to_owned(),
+                parent_id: None,
                 entity: Some("alice".to_owned()),
                 layer: "dialogue".to_owned(),
                 role: "textbox".to_owned(),
@@ -1217,6 +1223,7 @@ mod tests {
             object_id: "object.dialogue.0.0.proxy.0.0".to_owned(),
             object: AgentImageObjectRef {
                 id: "object.dialogue.0.0.proxy.0.0".to_owned(),
+                parent_id: Some("object.dialogue.0.0".to_owned()),
                 entity: Some("character.alice".to_owned()),
                 layer: "dialogue.rich_text".to_owned(),
                 role: "rich_text_proxy".to_owned(),
@@ -1279,6 +1286,7 @@ mod tests {
         let mut image = test_raw_mask_image_resource();
         image.object = Some(AgentImageObjectRef {
             id: "object.dialogue.0.0.run.0".to_owned(),
+            parent_id: Some("object.dialogue.0.0".to_owned()),
             entity: Some("character.alice".to_owned()),
             layer: "dialogue".to_owned(),
             role: "rich_text_run".to_owned(),
