@@ -44,7 +44,9 @@ the retained-fragment/display-list boundary through the same `ImageId` path.
 renders them as textured quads into the same offscreen RGBA readback surface
 used by native captures. This is intentionally not a debug raster fallback; it
 is the native renderer's image submission primitive that later UI/Agent paths
-will call.
+will call. `capture_image_debug_quads_rgba` uses the same textured-quad path
+after recoloring non-transparent image pixels, giving object-id and mask capture
+the same alpha-shaped geometry as color image capture.
 
 ## Presentation Rules
 
@@ -65,8 +67,8 @@ will call.
    opacity, transform, and semantic params.
 2. Wire UI `DisplayItemKind::Image` through runtime-host/native renderer
    submission using `UiImageSourceTable` and `capture_image_quads_rgba`.
-3. Make native capture, object-id, mask, Agent observation, hit-test, and MCP
-   image metadata treat image objects the same way rich-text objects are treated.
+3. Make Agent observation, hit-test, MCP image metadata, and CLI capture
+   selection treat image objects the same way rich-text objects are treated.
 4. Add bundle/asset sidecar support so product-player `.awfb` execution can use
    decoded or encoded image payloads without source execution.
 5. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped

@@ -107,6 +107,13 @@ pub struct NativeImageQuad<'a> {
     pub dst: NativeImageRect,
 }
 
+/// Image quad recolored for native mask or object-id capture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeImageDebugQuad<'a> {
+    pub quad: NativeImageQuad<'a>,
+    pub color: [u8; 4],
+}
+
 /// Pixel-space bounds of non-background framebuffer content.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct NativeFrameContentBBox {
@@ -1525,6 +1532,30 @@ impl NativeOffscreenCaptureSession {
         })
     }
 
+    /// Renders image quads recolored for object-id or mask debug captures.
+    pub fn capture_image_debug_quads_rgba(
+        &mut self,
+        quads: &[NativeImageDebugQuad<'_>],
+        width: u32,
+        height: u32,
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let recolored = quads
+            .iter()
+            .map(|quad| recolor_image_debug_quad(*quad))
+            .collect::<Result<Vec<_>, NativeWindowError>>()?;
+        let render_quads = recolored
+            .iter()
+            .zip(quads)
+            .map(|(rgba, source)| NativeImageQuad {
+                width: source.quad.width,
+                height: source.quad.height,
+                rgba,
+                dst: source.quad.dst,
+            })
+            .collect::<Vec<_>>();
+        self.capture_image_quads_rgba(&render_quads, width, height)
+    }
+
     /// Measures first-page rich-text element bounds with this session's custom effects.
     pub fn measure_frame_elements_at(
         &mut self,
@@ -2046,6 +2077,15 @@ pub fn capture_image_quads_rgba(
     height: u32,
 ) -> Result<NativeFrameCapture, NativeWindowError> {
     NativeOffscreenCaptureSession::new()?.capture_image_quads_rgba(quads, width, height)
+}
+
+/// Renders recolored image quads into an offscreen native RGBA framebuffer.
+pub fn capture_image_debug_quads_rgba(
+    quads: &[NativeImageDebugQuad<'_>],
+    width: u32,
+    height: u32,
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    NativeOffscreenCaptureSession::new()?.capture_image_debug_quads_rgba(quads, width, height)
 }
 
 /// Measures first-page rich-text element bounds using the same native text layout as rendering.
@@ -6566,6 +6606,29 @@ fn validate_native_image_quad(quad: NativeImageQuad<'_>) -> Result<(), NativeWin
     Ok(())
 }
 
+fn recolor_image_debug_quad(quad: NativeImageDebugQuad<'_>) -> Result<Vec<u8>, NativeWindowError> {
+    validate_native_image_quad(quad.quad)?;
+    let mut rgba = Vec::with_capacity(quad.quad.rgba.len());
+    for pixel in quad.quad.rgba.chunks_exact(4) {
+        if pixel[3] == 0 {
+            rgba.extend_from_slice(&[0, 0, 0, 0]);
+        } else {
+            rgba.extend_from_slice(&[
+                quad.color[0],
+                quad.color[1],
+                quad.color[2],
+                scaled_alpha_u8(quad.color[3], pixel[3]),
+            ]);
+        }
+    }
+    Ok(rgba)
+}
+
+fn scaled_alpha_u8(color_alpha: u8, source_alpha: u8) -> u8 {
+    let value = u16::from(color_alpha).saturating_mul(u16::from(source_alpha)) / 255;
+    u8::try_from(value).unwrap_or(u8::MAX)
+}
+
 fn image_quad_vertices(quad: NativeImageQuad<'_>, width: u32, height: u32) -> [[f32; 4]; 6] {
     let x0 = pixel_x_to_ndc(quad.dst.x, width);
     let x1 = pixel_x_to_ndc(quad.dst.x + quad.dst.width, width);
@@ -8055,6 +8118,40 @@ mod tests {
         assert_eq!(pixel_at(&capture, 2, 1), [0, 255, 0, 255]);
         assert_eq!(pixel_at(&capture, 1, 2), [0, 0, 255, 255]);
         assert_eq!(pixel_at(&capture, 2, 2), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_capture_renders_image_debug_quad_from_alpha() {
+        let rgba = vec![255, 0, 0, 255, 0, 255, 0, 0];
+        let quad = NativeImageDebugQuad {
+            quad: NativeImageQuad {
+                width: 2,
+                height: 1,
+                rgba: &rgba,
+                dst: NativeImageRect {
+                    x: 1.0,
+                    y: 1.0,
+                    width: 2.0,
+                    height: 1.0,
+                },
+            },
+            color: [40, 80, 120, 255],
+        };
+
+        let capture = capture_image_debug_quads_rgba(&[quad], 4, 3).expect("debug quad renders");
+
+        assert_eq!(capture.content_pixels, 1);
+        assert_eq!(
+            capture.content_bbox,
+            Some(NativeFrameContentBBox {
+                x: 1,
+                y: 1,
+                width: 1,
+                height: 1,
+            })
+        );
+        assert_eq!(pixel_at(&capture, 1, 1), [40, 80, 120, 255]);
+        assert_eq!(pixel_at(&capture, 2, 1), [0, 0, 0, 0]);
     }
 
     fn pixel_at(capture: &NativeFrameCapture, x: u32, y: u32) -> [u8; 4] {
