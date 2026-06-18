@@ -170,7 +170,10 @@ on a non-zero rendered page. The `page` value is also present in metadata.
 Clients should treat URIs as opaque identifiers after discovery. The resource
 metadata is authoritative for renderer, scope, composition, dimensions, and
 coordinate mapping. For object resources, `image.object` is authoritative for
-the object metadata associated with the captured pixels.
+the object metadata associated with the captured pixels. Rich-text object
+captures preserve both the render `layer` and the semantic `object_layer` /
+`object_depth` resolved from `rich_text_ref`, so a saved crop remains
+self-describing when inspected without the original observation object list.
 
 ---
 

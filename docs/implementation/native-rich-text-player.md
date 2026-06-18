@@ -472,7 +472,10 @@ bboxes without decoding the image first.
 Object-scoped image resources also carry `image.object` metadata, including the
 captured object's `rich_text_ref`; CLI `--read-uri` and MCP capture tool-result
 metadata therefore preserve proxy params, source ranges, hit regions, and
-object-layer/depth alongside the returned PNG/raw bytes.
+object-layer/depth alongside the returned PNG/raw bytes. The same metadata also
+copies semantic `object_layer` / `object_depth` onto `image.object` itself while
+leaving `image.object.layer` as the render layer, so a saved object crop remains
+self-describing as a text presentation object.
 
 Inspect the same rich-text display frame through the Agent Debug Bus CLI slice:
 

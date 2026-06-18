@@ -199,6 +199,10 @@ pub struct AgentImageObjectRef {
     pub layer: String,
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_layer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_depth: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
@@ -436,6 +440,14 @@ impl AgentImageObjectRef {
             entity: object.entity.clone(),
             layer: object.layer.clone(),
             role: object.role.clone(),
+            object_layer: object
+                .rich_text_ref
+                .as_ref()
+                .and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
+            object_depth: object
+                .rich_text_ref
+                .as_ref()
+                .and_then(|rich_text_ref| rich_text_ref.object_depth),
             text: object.text.clone(),
             rich_text_ref: object.rich_text_ref.clone(),
         }
@@ -1205,13 +1217,17 @@ mod tests {
             width: 3,
             height: 4,
         };
-        let rich_text_ref = test_rich_text_ref(&bbox);
+        let mut rich_text_ref = test_rich_text_ref(&bbox);
+        rich_text_ref.object_layer = Some("ui".to_owned());
+        rich_text_ref.object_depth = Some(7000);
         let mut image = test_raw_mask_image_resource();
         image.object = Some(AgentImageObjectRef {
             id: "object.dialogue.0.0.run.0".to_owned(),
             entity: Some("character.alice".to_owned()),
             layer: "dialogue".to_owned(),
             role: "rich_text_run".to_owned(),
+            object_layer: Some("ui".to_owned()),
+            object_depth: Some(7000),
             text: Some("Hello".to_owned()),
             rich_text_ref: Some(rich_text_ref.clone()),
         });
@@ -1233,6 +1249,10 @@ mod tests {
                 .and_then(|object| object.rich_text_ref.as_ref()),
             Some(&rich_text_ref)
         );
+        let json = serde_json::to_value(&resource).expect("resource serializes");
+        assert_eq!(json["image"]["object"]["layer"], "dialogue");
+        assert_eq!(json["image"]["object"]["object_layer"], "ui");
+        assert_eq!(json["image"]["object"]["object_depth"], 7000);
     }
 
     #[test]

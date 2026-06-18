@@ -2175,6 +2175,7 @@ flow @flow.main main {
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
 
     assert_agent_observe_captures_presentation_layer(&path);
+    assert_agent_observe_object_image_metadata_carries_object_layer(&path, line, "hud", 7000);
 
     let hit = hit_test_center_of_observed_object(&path, line);
     fs::remove_file(&path).expect("remove temp z-index source");
@@ -2216,6 +2217,58 @@ fn assert_agent_observe_captures_presentation_layer(path: &Path) {
     );
     let layer_png_bytes = fs::read(&layer_png).expect("read rich-text presentation layer PNG");
     assert_eq!(&layer_png_bytes[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+fn assert_agent_observe_object_image_metadata_carries_object_layer(
+    path: &Path,
+    object: &serde_json::Value,
+    object_layer: &str,
+    object_depth: i32,
+) {
+    let object_id = object["id"].as_str().expect("observed object id");
+    let dir = temp_dir("agent-observe-rich-text-object-image-metadata");
+    let object_png = dir.join("object.png");
+    let capture = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(&object_png)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe captures rich-text object image metadata");
+    assert!(
+        capture.status.success(),
+        "agent observe should capture rich-text object image metadata, stderr: {}",
+        String::from_utf8_lossy(&capture.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&capture.stdout).expect("object capture output is JSON");
+    assert_eq!(json["images"][0]["scope"]["kind"], "object");
+    assert_eq!(json["images"][0]["object"]["id"], object_id);
+    assert_eq!(json["images"][0]["object"]["object_layer"], object_layer);
+    assert_eq!(json["images"][0]["object"]["object_depth"], object_depth);
+    assert_eq!(
+        json["images"][0]["object"]["rich_text_ref"]["object_layer"],
+        object_layer
+    );
+    assert_eq!(
+        json["images"][0]["object"]["rich_text_ref"]["object_depth"],
+        object_depth
+    );
+    let object_png_bytes = fs::read(&object_png).expect("read rich-text object PNG");
+    assert_eq!(&object_png_bytes[..8], b"\x89PNG\r\n\x1a\n");
+    fs::remove_dir_all(&dir).expect("remove temp rich-text object metadata dir");
 }
 
 fn inferred_text_proxy_struct_shorthand_source() -> PathBuf {
@@ -24549,6 +24602,18 @@ fn assert_mcp_image_object_rich_text_ref(
     assert_eq!(metadata["image"]["scope"]["id"], object_id);
     assert_eq!(metadata["image"]["object"]["id"], object_id);
     assert_eq!(metadata["image"]["object"]["rich_text_ref"]["kind"], kind);
+    if !metadata["image"]["object"]["rich_text_ref"]["object_layer"].is_null() {
+        assert_eq!(
+            metadata["image"]["object"]["object_layer"],
+            metadata["image"]["object"]["rich_text_ref"]["object_layer"]
+        );
+    }
+    if !metadata["image"]["object"]["rich_text_ref"]["object_depth"].is_null() {
+        assert_eq!(
+            metadata["image"]["object"]["object_depth"],
+            metadata["image"]["object"]["rich_text_ref"]["object_depth"]
+        );
+    }
     assert!(
         metadata["image"]["object"]["rich_text_ref"]["range"]["end"]
             .as_u64()
