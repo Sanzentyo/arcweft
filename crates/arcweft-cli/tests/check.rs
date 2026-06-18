@@ -1837,6 +1837,25 @@ fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
     assert_eq!(run_object["rich_text_ref"]["range"]["start"], 6);
     assert_eq!(run_object["rich_text_ref"]["range"]["end"], 9);
 
+    let glyph_object = objects
+        .iter()
+        .find(|object| object["role"] == "rich_text_glyph" && object["text"] == "H")
+        .expect("individual text glyph is observable as an element");
+    assert_eq!(glyph_object["layer"], "dialogue.rich_text");
+    assert_eq!(glyph_object["rich_text_ref"]["kind"], "text_glyph");
+    assert_eq!(glyph_object["rich_text_ref"]["range"]["start"], 0);
+    assert_eq!(glyph_object["rich_text_ref"]["range"]["end"], 1);
+    assert_rich_text_hit_region_matches_bbox(glyph_object, "text_glyph", 0, 1);
+    assert_agent_observe_object_capture_refs(glyph_object);
+
+    let cluster_object = objects
+        .iter()
+        .find(|object| object["role"] == "rich_text_cluster" && object["text"] == "H")
+        .expect("glyph cluster remains observable as an element");
+    assert_eq!(cluster_object["rich_text_ref"]["kind"], "glyph_cluster");
+    assert_rich_text_hit_region_matches_bbox(cluster_object, "glyph_cluster", 0, 1);
+    assert_agent_observe_object_capture_refs(cluster_object);
+
     let ruby_object = objects
         .iter()
         .find(|object| object["id"] == "object.dialogue.0.0.ruby.0")
@@ -3620,6 +3639,14 @@ fn agent_observe_native_renderer_writes_vertical_grapheme_cluster_raw_crops() {
 }
 
 #[test]
+fn agent_observe_native_renderer_writes_vertical_text_glyph_raw_crops() {
+    assert_native_vertical_text_glyph_raw_crop("vertical_rl", "mask");
+    assert_native_vertical_text_glyph_raw_crop("vertical_rl", "object-id");
+    assert_native_vertical_text_glyph_raw_crop("vertical_lr", "mask");
+    assert_native_vertical_text_glyph_raw_crop("vertical_lr", "object-id");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_vertical_zwj_cluster_metadata() {
     assert_native_vertical_zwj_cluster_metadata("vertical_rl");
     assert_native_vertical_zwj_cluster_metadata("vertical_lr");
@@ -3772,6 +3799,107 @@ fn assert_native_vertical_grapheme_cluster_geometry(
     assert_eq!(kana["rich_text_ref"]["range"]["end"], 6);
     assert_rich_text_object_has_mask_capture(kana, "decomposed kana grapheme cluster");
     kana
+}
+
+fn assert_native_vertical_text_glyph_raw_crop(writing_mode: &str, capture_kind: &str) {
+    let fixture_name = format!("agent-observe-native-{writing_mode}-text-glyph-{capture_kind}");
+    let text = "か\u{3099}A";
+    let path = temp_arcw(
+        &fixture_name,
+        &format!(
+            r"
+character @character.alice Alice as alice {{}}
+
+flow @flow.main main {{
+    alice: [.{writing_mode}]{text}[/][p]
+}}
+"
+        ),
+    );
+    let dir = temp_dir(&fixture_name);
+    let raw_path = dir.join(format!(
+        "native-{writing_mode}-text-glyph-{capture_kind}.rgba"
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg("object.dialogue.0.0.glyph.0.0.6")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe writes native text-glyph raw crop");
+
+    assert!(
+        output.status.success(),
+        "native {writing_mode} text-glyph {capture_kind} crop should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native text-glyph report is JSON");
+    assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
+    assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
+    assert_eq!(
+        json["images"][0]["composition"],
+        if capture_kind == "object-id" {
+            "object_id_attachment"
+        } else {
+            "mask_attachment"
+        }
+    );
+
+    let glyph = assert_native_vertical_text_glyph_geometry(&json);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], glyph["bbox"]["x"]);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], glyph["bbox"]["y"]);
+    assert_eq!(json["images"][0]["width"], glyph["bbox"]["width"]);
+    assert_eq!(json["images"][0]["height"], glyph["bbox"]["height"]);
+
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
+    assert!(content_pixels > 0);
+    assert!(content_pixels < width * height);
+    if capture_kind == "object-id" {
+        assert_raw_object_id_tint(
+            &raw_path,
+            agent_object_id_color_from_json(glyph),
+            content_pixels,
+            &format!("{writing_mode} text-glyph object-id crop"),
+        );
+    } else {
+        let bytes = fs::read(&raw_path).expect("read native text-glyph mask crop");
+        let opaque = opaque_pixel_count(&bytes);
+        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        assert_eq!(opaque as u64, content_pixels);
+        assert!(transparent > 0);
+    }
+
+    fs::remove_file(&path).expect("remove temp native text-glyph source");
+    fs::remove_dir_all(&dir).expect("remove temp native text-glyph dir");
+}
+
+fn assert_native_vertical_text_glyph_geometry(json: &serde_json::Value) -> &serde_json::Value {
+    let glyph = find_rich_text_glyph_object(json, "か\u{3099}", 0, 6);
+    assert_eq!(glyph["rich_text_ref"]["kind"], "text_glyph");
+    assert_eq!(glyph["rich_text_ref"]["orientation"], "upright");
+    assert_eq!(glyph["rich_text_ref"]["vertical_form"], "none");
+    assert_eq!(glyph["rich_text_ref"]["range"]["start"], 0);
+    assert_eq!(glyph["rich_text_ref"]["range"]["end"], 6);
+    assert_rich_text_object_has_mask_capture(glyph, "decomposed kana text glyph");
+    glyph
 }
 
 fn assert_native_vertical_zwj_cluster_metadata(writing_mode: &str) {
@@ -32736,6 +32864,29 @@ fn find_rich_text_cluster_object<'a>(
         .unwrap_or_else(|| {
             panic!(
                 "rich-text cluster `{text}` {range_start}..{range_end} should be observed: {report}"
+            )
+        })
+}
+
+fn find_rich_text_glyph_object<'a>(
+    report: &'a serde_json::Value,
+    text: &str,
+    range_start: u64,
+    range_end: u64,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_glyph"
+                && object["text"] == text
+                && object["rich_text_ref"]["range"]["start"].as_u64() == Some(range_start)
+                && object["rich_text_ref"]["range"]["end"].as_u64() == Some(range_end)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "rich-text glyph `{text}` {range_start}..{range_end} should be observed: {report}"
             )
         })
 }

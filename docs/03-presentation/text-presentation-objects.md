@@ -4,8 +4,8 @@ Arcweft text is a typed presentation object tree, not only a string submitted to
 a renderer. `character.say` and `narrator.say` are high-level facades that create
 the same kind of presentation objects as image, sprite, model, and UI layers.
 The default dialogue facade chooses sensible text-box, line, run, glyph-cluster,
-ruby, object-id, hit-test, depth, and capture behavior, while still preserving
-the authored rich-text surface.
+ruby, glyph, object-id, hit-test, depth, and capture behavior, while still
+preserving the authored rich-text surface.
 
 ## Object Levels
 
@@ -17,6 +17,7 @@ textbox
     line
       run
         proxy_object
+        glyph
         glyph_cluster
         ruby_object
           ruby_base
@@ -134,7 +135,8 @@ metadata remains visible in Agent JSON.
 Agent observe/capture must be able to retrieve:
 
 - the whole text layer as color, raw RGBA, mask, and object-id images
-- individual textbox, run, glyph-cluster, ruby, and proxy-decorated object crops
+- individual textbox, page, line, run, glyph, glyph-cluster, ruby, and
+  proxy-decorated object crops
 - effective presentation metadata, including proxy ids and attributes
 - hit regions and depth ordering metadata
 - a pinned runtime step plus visual `capture_time` for animated text objects

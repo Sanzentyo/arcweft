@@ -341,10 +341,11 @@ observation:
   failures, unresolved interpolation names, object-local capture refs, and
   object-id debug colors. The rich-text frame also includes a `display_map` that
   maps resolved text byte ranges back to text, interpolation, ruby base, and
-  control nodes. Visible rich-text text runs, ruby annotations, and glyph
-  clusters are also emitted as `dialogue.rich_text` child objects with their own
-  bbox, capture refs, and `rich_text_ref` metadata that records the parent
-  display-map element kind, index, byte range, source category, and node index.
+  control nodes. Visible rich-text text runs, text glyphs, ruby annotations,
+  and glyph clusters are also emitted as `dialogue.rich_text` child objects with
+  their own bbox, capture refs, and `rich_text_ref` metadata that records the
+  parent display-map element kind, index, byte range, source category, and node
+  index.
 - `actions` with a semantic `advance_text` target
 - runtime logs, signals, metrics, events, diagnostics, and final fiber status
 
@@ -359,14 +360,15 @@ framebuffer to the selected object rectangles before cropping and reports
 `composition = "masked_framebuffer_crop"`, so layer/object image resources do
 not carry unrelated pixels from outside the selected scope. Rich-text child
 object crops use the native text layout bounds measured from the same glyphon
-layout used for drawing, so ruby, text-run, and glyph-cluster element captures
-can be inspected against the actual framebuffer. It currently requires
-`--image png` or `--image raw-rgba`. With `--capture object-id` or
+layout used for drawing, so ruby, text-run, text-glyph, and glyph-cluster
+element captures can be inspected against the actual framebuffer. It currently
+requires `--image png` or `--image raw-rgba`. With `--capture object-id` or
 `--capture mask`, the native renderer uses the same native scope/layout bounds.
-Text/ruby/glyph-cluster-backed scopes render selected glyphs through the
-offscreen text framebuffer; non-text fallback scopes still emit explicit debug
-geometry. In both cases object-id and mask captures stay aligned with native
-rich-text element crops before non-text renderer ID/mask attachments exist.
+Text/ruby/text-glyph/glyph-cluster-backed scopes render selected glyphs through
+the offscreen text framebuffer; non-text fallback scopes still emit explicit
+debug geometry. In both cases object-id and mask captures stay aligned with
+native rich-text element crops before non-text renderer ID/mask attachments
+exist.
 `--layer LAYER` crops the capture to that layer's observed object bounds.
 `--object OBJECT_ID` crops the capture to one observed object's bbox. Native
 color capture uses resolved display text plus `display_map` ruby annotations,
@@ -476,9 +478,9 @@ native capture path.
 
 The PNG/raw path uses native offscreen readback. It fills the same `images`
 slots for full-viewport, layer-crop, and object-crop color readback, and
-text/ruby/glyph-cluster-backed native object-id/mask captures are rendered
-through the offscreen text framebuffer before optional cropping. Rich-text-only
-native color captures and textbox-parent object/layer color captures report
+text/ruby/text-glyph/glyph-cluster-backed native object-id/mask captures are
+rendered through the offscreen text framebuffer before optional cropping.
+Rich-text-only native color captures and textbox-parent object/layer color captures report
 `composition = "isolated_regions"` because they redraw selected glyph regions
 with original styling before cropping. Native textbox-parent object-id/mask
 captures expand through the rich-text display map, so the image contains glyph

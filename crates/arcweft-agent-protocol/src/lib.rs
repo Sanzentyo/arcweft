@@ -446,6 +446,7 @@ pub enum AgentRichTextElementKind {
     TextPage,
     TextLine,
     TextRun,
+    TextGlyph,
     Ruby,
     GlyphCluster,
     TextObjectProxy,
@@ -474,6 +475,7 @@ pub enum AgentHitRegionKind {
     TextPage,
     TextLine,
     TextRun,
+    TextGlyph,
     GlyphCluster,
     TextObjectProxy,
     RubyObject,
@@ -995,6 +997,11 @@ mod tests {
                 .expect("rich-text element kind serializes"),
             "text_line"
         );
+        assert_eq!(
+            serde_json::to_value(AgentRichTextElementKind::TextGlyph)
+                .expect("rich-text element kind serializes"),
+            "text_glyph"
+        );
         assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
         assert_eq!(
             json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["id"],
@@ -1023,6 +1030,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::TextLine).expect("hit-region kind serializes"),
             "text_line"
+        );
+        assert_eq!(
+            serde_json::to_value(AgentHitRegionKind::TextGlyph)
+                .expect("hit-region kind serializes"),
+            "text_glyph"
         );
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::RubyAnnotation)

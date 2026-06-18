@@ -181,10 +181,12 @@ pixel to the source span that produced it:
 }
 ```
 
-Required rich-text child kinds are `text_run`, `glyph_cluster`, and `ruby`.
-Hit regions distinguish `text_run`, `glyph_cluster`, `ruby_object`,
-`ruby_base`, and `ruby_annotation`. Vertical writing observations also report
-glyph orientation and vertical form when known.
+Required rich-text child kinds are `text_page`, `text_line`, `text_run`,
+`text_glyph`, `glyph_cluster`, `ruby`, and `text_object_proxy`. Hit regions
+distinguish `text_page`, `text_line`, `text_run`, `text_glyph`,
+`glyph_cluster`, `text_object_proxy`, `ruby_object`, `ruby_base`, and
+`ruby_annotation`. Vertical writing observations also report glyph orientation
+and vertical form when known.
 
 The observation should include the effective presentation summary needed to
 debug rich text: layout fields, ruby defaults/overrides, transforms, effects,

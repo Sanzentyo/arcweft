@@ -3581,7 +3581,7 @@ fn agent_native_element_for_object(
         | AgentRichTextElementKind::TextObjectProxy => {
             agent_native_element_for_object_id(&object.id)
         }
-        AgentRichTextElementKind::GlyphCluster => Some(
+        AgentRichTextElementKind::TextGlyph | AgentRichTextElementKind::GlyphCluster => Some(
             arcweft_player_native::native::NativeFrameElement::GlyphCluster {
                 index: rich_text_ref.index,
                 range_start: rich_text_ref.range.start,
@@ -3646,6 +3646,23 @@ fn agent_native_element_and_role_for_object_id(
                 range_end,
             },
             "rich_text_cluster",
+        ));
+    }
+    if let Some((_, suffix)) = object_id.split_once(".glyph.") {
+        let mut parts = suffix.split('.');
+        let index = parts.next()?.parse().ok()?;
+        let range_start = parts.next()?.parse().ok()?;
+        let range_end = parts.next()?.parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        return Some((
+            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+                index,
+                range_start,
+                range_end,
+            },
+            "rich_text_glyph",
         ));
     }
     None
@@ -4854,6 +4871,12 @@ fn agent_rich_text_child_objects(
             children.push(object);
         }
     }
+    children.extend(agent_rich_text_glyph_objects(
+        step,
+        index,
+        textbox,
+        native_bounds,
+    ));
     children.extend(agent_rich_text_cluster_objects(
         step,
         index,
@@ -5265,6 +5288,85 @@ fn agent_rich_text_ruby_object(
             page,
         },
     ))
+}
+
+fn agent_rich_text_glyph_objects(
+    step: usize,
+    index: usize,
+    textbox: &AgentObservedObject,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
+) -> Vec<AgentObservedObject> {
+    native_bounds
+        .iter()
+        .filter_map(|(element, bounds)| {
+            let arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+                index: glyph_index,
+                range_start,
+                range_end,
+            } = *element
+            else {
+                return None;
+            };
+            let range = RichTextRange::new(range_start, range_end);
+            let text = textbox
+                .rich_text
+                .text
+                .get(valid_rich_text_range(range, &textbox.rich_text.text)?)?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            let run = textbox
+                .rich_text
+                .display_map
+                .text_runs
+                .iter()
+                .find(|run| range.start >= run.range.start && range.end <= run.range.end)?;
+            let object_id = format!(
+                "object.dialogue.{step}.{index}.glyph.{glyph_index}.{range_start}.{range_end}"
+            );
+            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            Some(agent_rich_text_child_object(
+                step,
+                textbox,
+                AgentRichTextChildObjectSpec {
+                    object_id: &object_id,
+                    role: "rich_text_glyph",
+                    text: text.to_owned(),
+                    bbox: &bounds.bbox,
+                    rich_text_ref: AgentRichTextElementRef {
+                        kind: AgentRichTextElementKind::TextGlyph,
+                        index: glyph_index,
+                        page,
+                        range,
+                        node_index: run.node_index,
+                        source: Some(run.source),
+                        ruby: None,
+                        presentation: Some(run.presentation.clone()),
+                        orientation: bounds
+                            .glyph
+                            .map(|glyph| agent_glyph_orientation_from_native(glyph.orientation)),
+                        vertical_form: bounds.glyph.map(|glyph| {
+                            agent_glyph_vertical_form_from_native(glyph.vertical_form)
+                        }),
+                        ruby_base_bbox: None,
+                        ruby_annotation_bbox: None,
+                        object_depth: agent_object_depth(&run.presentation),
+                        hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
+                        hit_regions: agent_text_hit_regions(
+                            AgentHitRegionKind::TextGlyph,
+                            &bounds.bbox,
+                            range,
+                            &run.presentation,
+                        ),
+                    },
+                    page,
+                },
+            ))
+        })
+        .collect()
 }
 
 fn agent_rich_text_cluster_objects(

@@ -237,8 +237,9 @@ host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges
 for text/interpolation/ruby/control output, and a semantic `advance_text` action.
-Visible rich-text pages, authored lines, text runs, ruby annotations, and glyph clusters are also
-exposed as `dialogue.rich_text` child objects with their own bbox,
+Visible rich-text pages, authored lines, text runs, text glyphs, ruby
+annotations, and glyph clusters are also exposed as `dialogue.rich_text` child
+objects with their own bbox,
 `capture_refs`, and a structured `rich_text_ref` pointing back to the parent
 display-map element, so an Agent can request a crop such as
 `arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png` when a
@@ -254,9 +255,9 @@ matching `?page=N` query plus `capture_refs[].page` metadata. Child object
 bboxes come from the native text layout metrics used by native image capture
 where an object maps to concrete glyph/ruby elements, so image crop origins and
 observed child bboxes describe the same glyph, ruby, and cluster geometry.
-Glyph-cluster refs also report renderer-facing
-`orientation` and `vertical_form` metadata so debuggers can distinguish sideways
-rotation, text-combine-upright clusters, and requested vertical alternates.
+Text-glyph and glyph-cluster refs also report renderer-facing `orientation` and
+`vertical_form` metadata so debuggers can distinguish sideways rotation,
+text-combine-upright clusters, and requested vertical alternates.
 Ruby refs report `ruby_base_bbox` and `ruby_annotation_bbox` in viewport space
 so adjacent annotation collision avoidance can be inspected without inferring it
 from the union object bbox. If native metrics are unavailable, the child object
