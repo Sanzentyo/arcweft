@@ -160,7 +160,9 @@ as another fallback animation or nondeterministic host code.
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture
 request. Native parameter interpretation treats `delay` as seconds; raw tokens
 with `s` or `ms` suffixes, such as `0.5s` or `500ms`, are accepted by the native
-renderer registry boundary.
+renderer registry boundary. `cursor=true` asks the renderer to expose the next
+unrevealed glyph as a low-alpha ghost preview without changing layout; native
+adapters use `cursor_alpha` / `cursor_opacity` as an optional opacity override.
 
 `.shader` references a renderer shader registry entry. It does not embed shader
 source in dialogue text. Common parameters are `id`, `amount`, `dir`, `phase`,

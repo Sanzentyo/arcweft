@@ -225,7 +225,10 @@ rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`
 suffixes such as `0.5s` or `500ms`, and it affects visual-plan glyph opacity,
 framebuffer alpha, mask capture, and object-id visibility without changing text
-layout geometry.
+layout geometry. `cursor=true` exposes the next unrevealed glyph as a low-alpha
+ghost preview. The preview uses `cursor_alpha` / `cursor_opacity` when present,
+is visible in framebuffer/mask/object-id captures, and still preserves the same
+layout geometry as the fully revealed line.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

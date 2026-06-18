@@ -2559,7 +2559,8 @@ fn apply_builtin_descriptor_inner(
             }
             let visible = typewriter_visible_count(effect, time_seconds, glyph_count);
             if placement.glyph_index >= visible.min(glyph_count) {
-                placement.opacity = 0.0;
+                placement.opacity *=
+                    typewriter_cursor_opacity(effect, placement.glyph_index, visible, glyph_count);
             }
         }
         _ => return false,
@@ -3010,6 +3011,27 @@ fn param_label(effect: &RichTextEffectDescriptor, name: &str) -> Option<String> 
     };
     let label = value.trim().trim_matches('"').trim_matches('\'');
     (!label.is_empty()).then(|| label.trim_start_matches('@').to_owned())
+}
+
+fn param_bool(effect: &RichTextEffectDescriptor, name: &str) -> Option<bool> {
+    match effect.params.get(name)? {
+        RichTextParam::Bool { value } => Some(*value),
+        RichTextParam::Int { value } => Some(*value != 0),
+        RichTextParam::Milli { value } => Some(value.0 != 0),
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value } => match value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .trim_start_matches('.')
+        {
+            "true" | "on" | "yes" | "cursor" | "ghost" | "preview" => Some(true),
+            "false" | "off" | "no" | "none" | "hidden" | "0" => Some(false),
+            _ => None,
+        },
+        RichTextParam::Expr { .. } | RichTextParam::Vec2 { .. } => None,
+    }
 }
 
 fn param_origin(effect: &RichTextEffectDescriptor) -> Option<RichTextTransformOrigin> {
@@ -5901,7 +5923,7 @@ fn glyph_alpha_for_time(
             .max(0.0);
         let visible = typewriter_visible_count_from_cps(effect, time_seconds, glyph_count, cps);
         if glyph_index >= visible.min(glyph_count) {
-            alpha = 0.0;
+            alpha *= typewriter_cursor_opacity(effect, glyph_index, visible, glyph_count);
         }
     }
     (alpha * 255.0).round().clamp(0.0, 255.0) as u8
@@ -5927,8 +5949,9 @@ fn presentation_alpha_for_visibility_time(
             .unwrap_or(Milli(28000))
             .as_f32()
             .max(0.0);
-        if typewriter_visible_count_from_cps(effect, time_seconds, 1, cps) == 0 {
-            alpha = 0.0;
+        let visible = typewriter_visible_count_from_cps(effect, time_seconds, 1, cps);
+        if visible == 0 {
+            alpha *= typewriter_cursor_opacity(effect, 0, visible, 1);
         }
     }
     (alpha * 255.0).round().clamp(0.0, 255.0) as u8
@@ -5960,6 +5983,25 @@ fn typewriter_visible_count_from_cps(
         .max(0.0);
     let elapsed = (time_seconds.max(0.0) - delay).max(0.0);
     ((elapsed * cps).floor() as usize).min(glyph_count)
+}
+
+fn typewriter_cursor_opacity(
+    effect: &RichTextEffectDescriptor,
+    glyph_index: usize,
+    visible_count: usize,
+    glyph_count: usize,
+) -> f32 {
+    if glyph_index != visible_count || visible_count >= glyph_count {
+        return 0.0;
+    }
+    if !param_bool(effect, "cursor").unwrap_or(false) {
+        return 0.0;
+    }
+    param_milli(effect, "cursor_alpha")
+        .or_else(|| param_milli(effect, "cursor_opacity"))
+        .unwrap_or(Milli(350))
+        .as_f32()
+        .clamp(0.0, 1.0)
 }
 
 fn scaled_alpha(base: u8, factor: u8) -> u8 {
@@ -8897,6 +8939,86 @@ mod tests {
 
         assert_eq!(hidden_capture.content_pixels, 0);
         assert!(visible_capture.content_pixels > 0);
+    }
+
+    #[test]
+    fn native_typewriter_cursor_previews_next_glyph_without_relayout() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.typewriter.cursor".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([
+                                ("cps".to_owned(), RichTextParam::Milli { value: Milli::ONE }),
+                                ("cursor".to_owned(), RichTextParam::Bool { value: true }),
+                                (
+                                    "cursor_alpha".to_owned(),
+                                    RichTextParam::Milli { value: Milli(500) },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphMask,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "AB".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let cursor_plan = visual_plan_from_frame_for_test(&frame, 0.0);
+        let later_plan = visual_plan_from_frame_for_test(&frame, 2.0);
+        assert_eq!(
+            cursor_plan.pages[0].glyphs.len(),
+            later_plan.pages[0].glyphs.len()
+        );
+        assert!(
+            cursor_plan.pages[0].glyphs[0].opacity > 0.45
+                && cursor_plan.pages[0].glyphs[0].opacity < 0.55,
+            "cursor should preview the next glyph with configured opacity: {:?}",
+            cursor_plan.pages[0].glyphs[0]
+        );
+        assert!(cursor_plan.pages[0].glyphs[1].opacity.abs() < f32::EPSILON);
+        for (cursor, later) in cursor_plan.pages[0]
+            .glyphs
+            .iter()
+            .zip(&later_plan.pages[0].glyphs)
+        {
+            assert_eq!(cursor.range, later.range);
+            assert!((cursor.x - later.x).abs() < f32::EPSILON);
+            assert!((cursor.y - later.y).abs() < f32::EPSILON);
+        }
+
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        let cursor_capture = session
+            .capture_frame_rgba_in(
+                &frame,
+                NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(0.0),
+            )
+            .expect("cursor typewriter capture resolves");
+        assert!(
+            cursor_capture.content_pixels > 0,
+            "typewriter cursor preview should be visible in framebuffer capture"
+        );
     }
 
     #[test]
