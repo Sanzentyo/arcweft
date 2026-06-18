@@ -411,6 +411,10 @@ ranges, and the capture path that produced them. `content_viewport_bbox` records
 the translated non-background pixel bounds directly, which gives Agent/LLM
 debuggers a stable way to compare a capture against observed rich-text child
 bboxes without decoding the image first.
+Object-scoped image resources also carry `image.object` metadata, including the
+captured object's `rich_text_ref`; CLI `--read-uri` and MCP capture tool-result
+metadata therefore preserve proxy params, source ranges, hit regions, and
+object-layer/depth alongside the returned PNG/raw bytes.
 
 Inspect the same rich-text display frame through the Agent Debug Bus CLI slice:
 

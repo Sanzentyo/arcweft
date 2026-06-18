@@ -676,6 +676,89 @@ mod tests {
     }
 
     #[test]
+    fn image_tool_content_preserves_object_rich_text_ref_metadata() {
+        let metadata: AgentImageMetadata = serde_json::from_value(serde_json::json!({
+            "kind": "mask",
+            "renderer": "native",
+            "scope": { "kind": "object", "id": "object.dialogue.0.0.proxy.0.0" },
+            "composition": "mask_attachment",
+            "width": 12,
+            "height": 8,
+            "pixel_format": "rgba8_unorm",
+            "row_stride_bytes": 48,
+            "content_pixels": 24,
+            "object": {
+                "id": "object.dialogue.0.0.proxy.0.0",
+                "layer": "dialogue.rich_text",
+                "role": "rich_text_proxy",
+                "text": "proxy",
+                "rich_text_ref": {
+                    "kind": "text_object_proxy",
+                    "index": 0,
+                    "range": { "start": 10, "end": 15 },
+                    "node_index": 3,
+                    "presentation": {
+                        "object_proxies": [{
+                            "id": "hotspot",
+                            "type_name": "KeywordHit",
+                            "role": "keyword",
+                            "depth": 4000,
+                            "hit_test": true,
+                            "params": {
+                                "channel": { "kind": "selector", "value": "choice" }
+                            }
+                        }]
+                    },
+                    "object_depth": 4000,
+                    "hit_test": true,
+                    "hit_regions": []
+                }
+            }
+        }))
+        .expect("object image metadata deserializes");
+        let resource = AgentResource {
+            uri: "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba"
+                .to_owned(),
+            kind: AgentResourceKind::Image,
+            mime_type: "application/octet-stream".to_owned(),
+            hash: "hash".to_owned(),
+            image: Some(metadata),
+            body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
+                encoding: AgentBinaryEncoding::Base64,
+                data: "AAAA".to_owned(),
+            }),
+        };
+
+        let tool = tool_result_for_resource(&resource).expect("tool result serializes");
+
+        let [
+            McpContentBlock::Text { text },
+            McpContentBlock::Resource { .. },
+        ] = tool.content.as_slice()
+        else {
+            panic!(
+                "raw image tool result should expose metadata text plus resource blob: {:?}",
+                tool.content
+            );
+        };
+        let json: serde_json::Value =
+            serde_json::from_str(text).expect("metadata text is JSON object");
+        assert_eq!(
+            json["image"]["object"]["id"],
+            "object.dialogue.0.0.proxy.0.0"
+        );
+        assert_eq!(
+            json["image"]["object"]["rich_text_ref"]["kind"],
+            "text_object_proxy"
+        );
+        assert_eq!(
+            json["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"][0]["params"]
+                ["channel"]["value"],
+            "choice"
+        );
+    }
+
+    #[test]
     fn resource_list_and_observe_tool_result_expose_resource_links() {
         let resources = vec![
             AgentResource {

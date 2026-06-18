@@ -121,6 +121,11 @@ capture responses expose the same source range, presentation summary, proxy
 metadata, hit regions, and object-layer/depth metadata that the observation
 object exposed. Clients should use this metadata instead of reparsing the URI or
 walking the whole object list after reading image bytes.
+MCP `arcweft.capture` and `arcweft.resource.read` expose that metadata in the
+JSON text block that accompanies image/blob content. Binary `resources/read`
+contents still carry the MCP blob itself; clients that need image metadata
+should use the Agent tool response or the session resource descriptors rather
+than expecting metadata to be embedded inside the blob content.
 
 ---
 

@@ -23799,6 +23799,26 @@ fn assert_mcp_png_capture_content(response: &serde_json::Value, metadata_context
     assert_eq!(response["result"]["content"][1]["mimeType"], "image/png");
 }
 
+fn assert_mcp_image_object_rich_text_ref(
+    metadata: &serde_json::Value,
+    object_id: &str,
+    kind: &str,
+) {
+    assert_eq!(metadata["image"]["scope"]["kind"], "object");
+    assert_eq!(metadata["image"]["scope"]["id"], object_id);
+    assert_eq!(metadata["image"]["object"]["id"], object_id);
+    assert_eq!(metadata["image"]["object"]["rich_text_ref"]["kind"], kind);
+    assert!(
+        metadata["image"]["object"]["rich_text_ref"]["range"]["end"]
+            .as_u64()
+            .unwrap_or(0)
+            > metadata["image"]["object"]["rich_text_ref"]["range"]["start"]
+                .as_u64()
+                .unwrap_or(0),
+        "MCP image metadata should preserve the captured rich-text source range: {metadata}"
+    );
+}
+
 fn assert_mcp_raw_capture_content(response: &serde_json::Value) {
     assert_eq!(response["result"]["content"][0]["type"], "text");
     let metadata = mcp_content_metadata(
@@ -23809,6 +23829,7 @@ fn assert_mcp_raw_capture_content(response: &serde_json::Value) {
         metadata["uri"],
         "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
     );
+    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
     assert_eq!(metadata["image"]["pixel_format"], "rgba8_unorm");
     assert_eq!(
         metadata["image"]["row_stride_bytes"],
@@ -23875,6 +23896,7 @@ fn assert_mcp_raw_object_id_capture_content(response: &serde_json::Value) {
     );
     assert_eq!(metadata["image"]["kind"], "object_id");
     assert_eq!(metadata["image"]["composition"], "object_id_attachment");
+    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
     assert_eq!(metadata["image"]["pixel_format"], "rgba8_unorm");
     assert_eq!(
         metadata["image"]["row_stride_bytes"],
@@ -24703,6 +24725,7 @@ flow @flow.main main {
     );
     assert_eq!(metadata["image"]["kind"], "object_id");
     assert_eq!(metadata["image"]["composition"], "object_id_attachment");
+    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
     assert!(metadata["image"]["width"].as_u64().unwrap() < 180);
     assert!(metadata["image"]["height"].as_u64().unwrap() < 120);
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
@@ -24754,9 +24777,8 @@ flow @flow.main main {{
         assert_eq!(visible["image"]["kind"], "mask");
         assert_eq!(hidden["image"]["composition"], "mask_attachment");
         assert_eq!(visible["image"]["composition"], "mask_attachment");
-        assert_eq!(hidden["image"]["scope"]["kind"], "object");
-        assert_eq!(hidden["image"]["scope"]["id"], object_id);
-        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "glyph_cluster");
+        assert_mcp_image_object_rich_text_ref(&visible, object_id, "glyph_cluster");
         assert_eq!(
             hidden["image"]["crop_origin"],
             visible["image"]["crop_origin"]
@@ -24819,9 +24841,8 @@ flow @flow.main main {{
         assert_eq!(visible["image"]["kind"], "object_id");
         assert_eq!(hidden["image"]["composition"], "object_id_attachment");
         assert_eq!(visible["image"]["composition"], "object_id_attachment");
-        assert_eq!(hidden["image"]["scope"]["kind"], "object");
-        assert_eq!(hidden["image"]["scope"]["id"], object_id);
-        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "glyph_cluster");
+        assert_mcp_image_object_rich_text_ref(&visible, object_id, "glyph_cluster");
         assert_eq!(
             hidden["image"]["crop_origin"],
             visible["image"]["crop_origin"]
@@ -24881,9 +24902,8 @@ flow @flow.main main {{
         assert_eq!(visible["image"]["kind"], "object_id");
         assert_eq!(hidden["image"]["composition"], "object_id_attachment");
         assert_eq!(visible["image"]["composition"], "object_id_attachment");
-        assert_eq!(hidden["image"]["scope"]["kind"], "object");
-        assert_eq!(hidden["image"]["scope"]["id"], object_id);
-        assert_eq!(visible["image"]["scope"]["id"], object_id);
+        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "ruby");
+        assert_mcp_image_object_rich_text_ref(&visible, object_id, "ruby");
         assert_eq!(
             hidden["image"]["crop_origin"],
             visible["image"]["crop_origin"]
