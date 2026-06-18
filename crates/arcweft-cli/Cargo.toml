@@ -18,7 +18,7 @@ arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-player-native = { path = "../arcweft-player-native" }
+arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }

@@ -29,13 +29,15 @@ Phase 0 / Phase 1 minimal Rust workspace:
   string literals in favor of `VirtualPath` constructors.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
-- `arcweft-render-text` owns the Sans I/O rich text display sidecar model, and
-  `arcweft-player-native` provides the first headless/native rich text player
-  path. The native player can also render the first resolved frame through
-  `wgpu`/`glyphon` into an offscreen texture, read it back as PNG or raw RGBA,
-  and report image-local `content_bbox`, viewport-space
-  `content_viewport_bbox`, and `content_pixels` metadata. See
-  `docs/implementation/native-rich-text-player.md`.
+- `arcweft-render-text` owns the Sans I/O rich text display sidecar model.
+  `arcweft-render-native` owns the `wgpu`/`glyphon` native renderer, offscreen
+  capture, native text geometry, object-id/mask/color readback, and window
+  presentation adapter. `arcweft-player-native` is now the headless/native
+  player host that orchestrates compiled runtime plans and delegates rendering
+  to `arcweft-render-native`. Shared source-to-runtime-plan compilation lives in
+  `arcweft-compiler`, so the player no longer owns parser/HIR/sema/runtime-plan
+  lowering directly. See `docs/implementation/native-rich-text-player.md` and
+  `docs/implementation/native-cli-player-boundaries.md`.
 - `docs/implementation/rich-text-object-goal-audit.md` tracks the current
   requirement/evidence matrix for the rich-text typed-presentation-object goal;
   use it to separate completed evidence from remaining audit risk before

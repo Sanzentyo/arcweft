@@ -1,0 +1,29 @@
+[package]
+name = "arcweft-render-native"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-glyphon = { path = "../arcweft-glyphon" }
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-text-layout = { path = "../arcweft-text-layout" }
+
+glyphon.workspace = true
+pollster.workspace = true
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
+winit.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

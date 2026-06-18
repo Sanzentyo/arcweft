@@ -240,7 +240,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
- "arcweft-player-native",
+ "arcweft-render-native",
  "arcweft-render-text",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-host",
@@ -258,6 +258,19 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-compiler"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-lang-hir",
+ "arcweft-lang-sema",
+ "arcweft-lang-syntax",
+ "arcweft-render-text",
+ "arcweft-runtime-plan",
  "thiserror 2.0.18",
 ]
 
@@ -398,23 +411,15 @@ dependencies = [
 name = "arcweft-player-native"
 version = "0.1.0"
 dependencies = [
+ "arcweft-compiler",
  "arcweft-core",
- "arcweft-glyphon",
- "arcweft-lang-hir",
- "arcweft-lang-sema",
- "arcweft-lang-syntax",
+ "arcweft-render-native",
  "arcweft-render-text",
- "arcweft-runtime-plan",
- "arcweft-text-layout",
  "clap",
- "glyphon",
  "png",
- "pollster",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -429,6 +434,25 @@ name = "arcweft-ref"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+]
+
+[[package]]
+name = "arcweft-render-native"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-glyphon",
+ "arcweft-lang-hir",
+ "arcweft-lang-syntax",
+ "arcweft-render-text",
+ "arcweft-runtime-plan",
+ "arcweft-text-layout",
+ "glyphon",
+ "pollster",
+ "serde",
+ "thiserror 2.0.18",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

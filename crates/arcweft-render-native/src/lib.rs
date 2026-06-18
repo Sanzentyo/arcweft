@@ -1,4 +1,4 @@
-//! Minimal native window renderer for rich-text player frames.
+//! Native wgpu/glyphon renderer and capture adapter for Arcweft presentation frames.
 
 use arcweft_core::{
     plan::{

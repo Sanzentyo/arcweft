@@ -7,24 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-glyphon = { path = "../arcweft-glyphon" }
+arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-core = { path = "../arcweft-core" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
 
 clap = { workspace = true, features = ["derive"] }
-glyphon.workspace = true
 png.workspace = true
-pollster.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
-wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
-winit.workspace = true
 
 [lib]
 path = "src/lib.rs"

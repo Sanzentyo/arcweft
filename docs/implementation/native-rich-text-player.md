@@ -1,13 +1,18 @@
 # Native Rich Text Player MVP
 
 This note records the current implementation state for the first Arcweft rich text player path.
+Native rendering and capture now live in `arcweft-render-native`; the native
+player host delegates to that renderer instead of owning the renderer module
+itself.
 It is implementation-state documentation, not a language specification.
 
 ## Status
 
 Arcweft now has a Sans I/O rich text display model in `crates/arcweft-render-text`.
 Runtime-plan lowering emits a `LineDisplayCatalog` sidecar, and flow execution emits dialogue line
-events with a snapshot of runtime bindings. The native player crate can compile `.arcw` source,
+events with a snapshot of runtime bindings. Shared source compilation is owned
+by `arcweft-compiler`; the native player crate uses that driver for developer
+source execution,
 run the runtime plan headlessly, resolve interpolation from the binding snapshot, and return display
 frames as JSON.
 
@@ -549,9 +554,9 @@ The current MVP was verified with:
 cargo check -p arcweft-player-native -p arcweft-runtime-plan -p arcweft-render-text
 cargo test -p arcweft-agent-protocol -p arcweft-render-text -p arcweft-runtime-plan -p arcweft-player-native
 cargo test -p arcweft-render-text reset_control_clears_active_inline_styles_for_following_runs --lib
-cargo test -p arcweft-player-native native_layout_reports_text_run_and_ruby_element_bounds --lib
-cargo test -p arcweft-player-native native_debug_capture_uses_layout_bounds_for_text_elements --lib
-cargo test -p arcweft-player-native native_color_region_capture_preserves_selected_text_style --lib
+cargo test -p arcweft-render-native native_layout_reports_text_run_and_ruby_element_bounds --lib
+cargo test -p arcweft-render-native native_debug_capture_uses_layout_bounds_for_text_elements --lib
+cargo test -p arcweft-render-native native_color_region_capture_preserves_selected_text_style --lib
 cargo test -p arcweft-cli agent_observe_json_reports_rich_text_display_objects
 cargo test -p arcweft-cli agent_observe_json_reports_rich_text_reset_controls_and_host_markers --test check -- --exact
 cargo test -p arcweft-cli agent_observe_writes_layer_png_and_object_raw_images -- --exact

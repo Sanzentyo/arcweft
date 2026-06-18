@@ -32,6 +32,7 @@ arcweft-device-stream
 arcweft-lang-syntax
 arcweft-lang-hir
 arcweft-lang-sema
+arcweft-compiler
 arcweft-runtime-plan
 arcweft-lang-ir
 arcweft-lang-vm
@@ -76,6 +77,7 @@ arcweft-memo-runtime
 ```text
 arcweft-render
 arcweft-presentation
+arcweft-render-native
 arcweft-layer-core
 arcweft-layer-input
 arcweft-layer-hooks
@@ -86,12 +88,7 @@ arcweft-shader-validate
 arcweft-shader-reflect
 arcweft-shader-precompile
 arcweft-shader-hot-reload
-arcweft-ui-core
-arcweft-ui-reactive
-arcweft-ui-layout
-arcweft-ui-render
-arcweft-ui-style
-arcweft-ui-widgets
+arcweft-ui
 arcweft-ui-servo
 arcweft-ui-dom
 arcweft-vector
@@ -127,6 +124,7 @@ arcweft-controller-core
 arcweft-controller-virtual
 arcweft-controller-gamepad
 arcweft-controller-usb
+arcweft-player-native
 ```
 
 ## Tooling
@@ -186,6 +184,10 @@ arcweft-launch
   `arcweft-tooling`、CLI、LSP は dialogue ID や choice ID を独自 scan
   せず、この context から edit / hint / code action を作る。
 - `arcweft-lang-sema` は name registry、symbol use collection、reference validation、typecheck readiness、minimal type checking を所有する。
+- `arcweft-compiler` は source text から parse / HIR / typecheck /
+  runtime-plan lowering / line display catalog までを束ねる Sans I/O driver
+  API を所有する。CLI の profile / diagnostics / filesystem selection は
+  CLI 側に残し、player host は source developer mode でこの driver を使う。
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。
 - `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
@@ -200,6 +202,20 @@ arcweft-launch
   build/CLI/adapter responsibilities and are read as resolved metadata by the
   transport.
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
+- `arcweft-render-native` は `wgpu` / `winit` / `glyphon`、native
+  offscreen readback、object-id / mask / color capture、native visual
+  geometry、renderer effect / shader / motion registry を所有する adapter
+  crate とする。`arcweft-cli` の Agent observe は product player 全体では
+  なくこの renderer crate へ依存する。
+- `arcweft-player-native` は native product/player host であり、bundle /
+  bytecode execution、scheduler/input/audio/window lifecycle、render-native
+  orchestration を所有する。source direct execution は developer mode であり、
+  product player の正本は `.awfb` / bytecode bundle input とする。
+- UI は最初から細かい public crate family に分割せず、当面は
+  `arcweft-ui` が Component registry、generational Entity、retained
+  fragment、reactivity、style/layout integration、semantic UI nodes を所有する。
+  Raw input routing、LayerTree、HitTree、focus、modal、pointer capture は
+  `arcweft-presentation` 側の Sans I/O data/model とする。
 - `arcweft-launch` は `arcw.toml` launch profiles を typed data と TOML codec
   として所有する Sans I/O crate とする。ファイル探索、current directory、
   process 環境、network binding、adapter execution は CLI / player adapter 側の

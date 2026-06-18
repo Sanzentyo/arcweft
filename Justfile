@@ -24,7 +24,7 @@ test-doc:
     @cargo test --workspace --doc --quiet
 
 test-fast:
-    @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet
+    @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
 
 check-crate crate:
     @cargo check -p {{crate}}
@@ -33,16 +33,16 @@ test-crate crate:
     @cargo test -p {{crate}} --quiet
 
 test-rich-text:
-    @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet
+    @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
     @just test-cli-native
 
 test-rich-text-object-goal:
     @cargo test -p arcweft-agent-protocol -- --nocapture
     @cargo test -p arcweft-agent-mcp -- --nocapture
-    @cargo test -p arcweft-player-native motion -- --nocapture
-    @cargo test -p arcweft-player-native shader -- --nocapture
-    @cargo test -p arcweft-player-native post_process -- --nocapture
-    @cargo test -p arcweft-player-native typewriter -- --nocapture
+    @cargo test -p arcweft-render-native motion -- --nocapture
+    @cargo test -p arcweft-render-native shader -- --nocapture
+    @cargo test -p arcweft-render-native post_process -- --nocapture
+    @cargo test -p arcweft-render-native typewriter -- --nocapture
     @cargo test -p arcweft-cli --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
     @cargo test -p arcweft-cli --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
     @cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
@@ -68,7 +68,7 @@ test-profile:
     @Write-Host "workspace-lib-tests"; Measure-Command { cargo test --workspace --lib --tests --quiet }
     @Write-Host "workspace-doc"; Measure-Command { cargo test --workspace --doc --quiet }
     @Write-Host "workspace-all"; Measure-Command { cargo test --workspace --quiet }
-    @Write-Host "test-fast"; Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet }
+    @Write-Host "test-fast"; Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet }
     @Write-Host "cli-check"; Measure-Command { cargo test -p arcweft-cli --test check --quiet }
     @Write-Host "cli-native"; Measure-Command { just test-cli-native }
     @Write-Host "bench-json"; Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }

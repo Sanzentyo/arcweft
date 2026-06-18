@@ -1,19 +1,13 @@
-//! Native/headless rich-text player adapter for Arcweft.
+//! Native/headless rich-text player host for Arcweft.
 
-pub mod native;
-
-use crate::native::NativeFrameContentBBox;
+use arcweft_compiler::compile_source as compile_arcweft_source;
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::step::{
     RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStopReason,
 };
-use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_sema::check::analyze_types;
-use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_render_native::NativeFrameContentBBox;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
-use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -52,31 +46,18 @@ pub struct NativePlayerCaptureMetadata {
 /// Native player error.
 #[derive(Debug, Error)]
 pub enum NativePlayerError {
-    #[error("parse errors: {0:?}")]
-    Parse(Vec<arcweft_lang_syntax::parser::recovery::ParseError>),
-    #[error("HIR lowering errors: {0:?}")]
-    Hir(Vec<arcweft_lang_hir::model::HirLowerError>),
-    #[error("type errors: {0:?}")]
-    Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
-    #[error("runtime-plan lowering errors: {0:?}")]
-    RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
+    #[error(transparent)]
+    Compile(#[from] arcweft_compiler::CompileSourceError),
     #[error("no display frame was produced")]
     NoDisplayFrame,
 }
 
 /// Compiles source into runtime code plus a line display catalog.
 pub fn compile_source(source: &str) -> Result<NativePlayerProgram, NativePlayerError> {
-    let parsed = parse_source(source.to_owned());
-    if !parsed.errors().is_empty() {
-        return Err(NativePlayerError::Parse(parsed.errors().to_vec()));
-    }
-    let hir = lower_to_hir(parsed.typed_tree()).map_err(NativePlayerError::Hir)?;
-    let type_report = analyze_types(&hir, &TypeCheckEnv::standard());
-    type_report.into_result().map_err(NativePlayerError::Type)?;
-    let report = lower_runtime_plan_with_stats(&hir).map_err(NativePlayerError::RuntimePlan)?;
+    let compiled = compile_arcweft_source(source)?;
     Ok(NativePlayerProgram {
-        plan: report.plan,
-        display: report.line_display_catalog,
+        plan: compiled.plan,
+        display: compiled.display,
     })
 }
 

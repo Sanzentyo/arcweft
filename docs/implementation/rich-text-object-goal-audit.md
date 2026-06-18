@@ -58,10 +58,10 @@ The recipe currently expands to:
 ```bash
 cargo test -p arcweft-agent-protocol -- --nocapture
 cargo test -p arcweft-agent-mcp -- --nocapture
-cargo test -p arcweft-player-native motion -- --nocapture
-cargo test -p arcweft-player-native shader -- --nocapture
-cargo test -p arcweft-player-native post_process -- --nocapture
-cargo test -p arcweft-player-native typewriter -- --nocapture
+cargo test -p arcweft-render-native motion -- --nocapture
+cargo test -p arcweft-render-native shader -- --nocapture
+cargo test -p arcweft-render-native post_process -- --nocapture
+cargo test -p arcweft-render-native typewriter -- --nocapture
 cargo test -p arcweft-cli --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
 cargo test -p arcweft-cli --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
 cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture

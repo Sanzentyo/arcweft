@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/arcweft-core",
+    "crates/arcweft-compiler",
     "crates/arcweft-agent-protocol",
     "crates/arcweft-agent-mcp",
     "crates/arcweft-adt",
@@ -19,6 +20,7 @@ members = [
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
+    "crates/arcweft-render-native",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",
     "crates/arcweft-rust-abi",

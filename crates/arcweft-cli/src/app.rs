@@ -1,3 +1,6 @@
+mod commands;
+
+use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, IdsCommand, JitCommand};
 use crate::output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorTier, RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler,
@@ -112,7 +115,7 @@ use arcweft_verify::{
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -126,71 +129,6 @@ use std::time::Instant;
 
 const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
-
-#[derive(Debug, Parser)]
-#[command(name = "arcw", about = "Arcweft language and runtime tooling")]
-struct Cli {
-    #[command(subcommand)]
-    command: CliCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum CliCommand {
-    Check(CheckOptions),
-    Agent {
-        #[command(subcommand)]
-        command: AgentCommand,
-    },
-    Verify(VerifyOptions),
-    VerifyTypes(VerifyTypesOptions),
-    Unsafe(UnsafeOptions),
-    Plan(PlanOptions),
-    Run(RuntimeRunOptions),
-    Profile(RuntimeProfileOptions),
-    Cli(CliRunOptions),
-    Serve(ServeOptions),
-    Test(ScriptTestOptions),
-    Bench(ScriptBenchOptions),
-    Bundle(BundleOptions),
-    RunBundle(RunBundleOptions),
-    Build {
-        #[command(subcommand)]
-        command: BuildCommand,
-    },
-    ToolchainProfile(ToolchainProfileOptions),
-    Jit {
-        #[command(subcommand)]
-        command: JitCommand,
-    },
-    Fmt(ToolingCommandOptions),
-    Ids {
-        #[command(subcommand)]
-        command: IdsCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum IdsCommand {
-    Materialize(ToolingCommandOptions),
-}
-
-#[derive(Debug, Subcommand)]
-#[allow(clippy::large_enum_variant)]
-enum AgentCommand {
-    Observe(AgentObserveOptions),
-    HitTest(AgentHitTestOptions),
-    Mcp(AgentMcpOptions),
-}
-
-#[derive(Debug, Subcommand)]
-enum JitCommand {
-    Check(JitCheckOptions),
-}
-
-#[derive(Debug, Subcommand)]
-enum BuildCommand {
-    Bundle(BundleOptions),
-}
 
 /// Runs the Arcweft CLI with the standard native adapters.
 pub fn run<I, T>(args: I) -> ExitCode
@@ -1700,12 +1638,12 @@ struct AgentMcpState {
     report: Option<AgentObservationReport>,
     image_output: Option<AgentImageOutput>,
     capture_resources: Vec<AgentResource>,
-    native_capture_session: Option<arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
 }
 
 struct AgentObservationState {
     report: AgentObservationReport,
-    native_session: arcweft_player_native::native::NativeOffscreenCaptureSession,
+    native_session: arcweft_render_native::NativeOffscreenCaptureSession,
 }
 
 #[derive(serde::Deserialize)]
@@ -1944,7 +1882,7 @@ fn agent_mcp_run_observation(
         AgentObservationReport,
         Option<AgentImageOutput>,
         Vec<AgentResource>,
-        arcweft_player_native::native::NativeOffscreenCaptureSession,
+        arcweft_render_native::NativeOffscreenCaptureSession,
     ),
     String,
 > {
@@ -2108,15 +2046,13 @@ fn agent_mcp_capture_resource(
 
 fn agent_mcp_native_capture_session(
     state: &mut AgentMcpState,
-) -> Result<&mut arcweft_player_native::native::NativeOffscreenCaptureSession, ExitCode> {
+) -> Result<&mut arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
     if state.native_capture_session.is_none() {
         state.native_capture_session = Some(
-            arcweft_player_native::native::NativeOffscreenCaptureSession::new().map_err(
-                |error| {
-                    eprintln!("error: native capture failed: {error}");
-                    ExitCode::FAILURE
-                },
-            )?,
+            arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
+                eprintln!("error: native capture failed: {error}");
+                ExitCode::FAILURE
+            })?,
         );
     }
     Ok(state
@@ -2127,13 +2063,13 @@ fn agent_mcp_native_capture_session(
 
 fn agent_native_capture_session_for_hir(
     hir: &arcweft_lang_hir::model::HirModule,
-) -> Result<arcweft_player_native::native::NativeOffscreenCaptureSession, ExitCode> {
-    let mut native_session = arcweft_player_native::native::NativeOffscreenCaptureSession::new()
-        .map_err(|error| {
+) -> Result<arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
+    let mut native_session =
+        arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
             eprintln!("error: native capture failed: {error}");
             ExitCode::FAILURE
         })?;
-    arcweft_player_native::native::register_arcweft_pure_text_motions(
+    arcweft_render_native::register_arcweft_pure_text_motions(
         native_session.motion_registry_mut(),
         hir,
     )
@@ -2141,7 +2077,7 @@ fn agent_native_capture_session_for_hir(
         eprintln!("error: failed to register Arcweft text motion functions: {error}");
         ExitCode::FAILURE
     })?;
-    arcweft_player_native::native::register_arcweft_pure_text_effects(
+    arcweft_render_native::register_arcweft_pure_text_effects(
         native_session.effect_registry_mut(),
         hir,
     )
@@ -2149,7 +2085,7 @@ fn agent_native_capture_session_for_hir(
         eprintln!("error: failed to register Arcweft text effect functions: {error}");
         ExitCode::FAILURE
     })?;
-    arcweft_player_native::native::register_arcweft_pure_text_shaders(
+    arcweft_render_native::register_arcweft_pure_text_shaders(
         native_session.shader_registry_mut(),
         hir,
     )
@@ -2918,7 +2854,7 @@ fn agent_observe_resource_by_uri_with_page_and_time_and_session(
     uri: &str,
     page_override: Option<usize>,
     capture_time_seconds: f32,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentResource, ExitCode> {
     if uri
         == format!(
@@ -3240,7 +3176,7 @@ fn agent_native_capture_resource(
 fn agent_native_capture_resource_with_session(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
-    native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
+    native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
 ) -> Result<AgentResource, ExitCode> {
     let result = agent_native_capture_image_with_session(report, request, native_session)?;
     Ok(report.image_resource(&result.image, &result.bytes))
@@ -3255,8 +3191,8 @@ fn agent_native_capture_image(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
-    let mut native_session = arcweft_player_native::native::NativeOffscreenCaptureSession::new()
-        .map_err(|error| {
+    let mut native_session =
+        arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
             eprintln!("error: native capture failed: {error}");
             ExitCode::FAILURE
         })?;
@@ -3266,7 +3202,7 @@ fn agent_native_capture_image(
 fn agent_native_capture_image_with_session(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
-    native_session: &mut arcweft_player_native::native::NativeOffscreenCaptureSession,
+    native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
     let Some(textbox) = agent_native_textbox_for_capture(report, &request.scope) else {
         eprintln!("error: native renderer requires an observed textbox frame");
@@ -3276,7 +3212,7 @@ fn agent_native_capture_image_with_session(
     let capture = native_session
         .capture_frame_rgba_in(
             &textbox.rich_text,
-            arcweft_player_native::native::NativeCaptureViewport::new(
+            arcweft_render_native::NativeCaptureViewport::new(
                 report.viewport.width,
                 report.viewport.height,
                 left,
@@ -3407,11 +3343,11 @@ struct AgentNativeCaptureContext<'a> {
 }
 
 fn agent_native_scoped_capture(
-    capture: &arcweft_player_native::native::NativeFrameCapture,
+    capture: &arcweft_render_native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
     scope: &AgentCaptureScope,
     capture_kind: AgentObserveCaptureKind,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentRasterCapture, ExitCode> {
     let mut native_session = native_session;
     let full = AgentRasterCapture {
@@ -3528,7 +3464,7 @@ enum AgentNativeCaptureTarget<'a> {
         id: String,
         role: &'static str,
         parent: &'a AgentObservedObject,
-        element: arcweft_player_native::native::NativeFrameElement,
+        element: arcweft_render_native::NativeFrameElement,
     },
 }
 
@@ -3561,7 +3497,7 @@ fn agent_native_capture_targets_for_page<'a>(
     context: AgentNativeCaptureContext<'a>,
     scope: &AgentCaptureScope,
     selected: Vec<AgentNativeCaptureTarget<'a>>,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<Vec<AgentNativeCaptureTarget<'a>>, ExitCode> {
     if !matches!(scope, AgentCaptureScope::Layer(_)) {
         return Ok(selected);
@@ -3593,7 +3529,7 @@ fn agent_native_object_is_visible_on_page(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<bool, ExitCode> {
     if !object.role.starts_with("rich_text_") {
         return Ok(true);
@@ -3609,16 +3545,16 @@ fn agent_native_object_is_visible_on_page(
 }
 
 struct AgentNativeDebugCapture {
-    capture: arcweft_player_native::native::NativeFrameCapture,
+    capture: arcweft_render_native::NativeFrameCapture,
     composition: AgentImageComposition,
 }
 
 fn agent_native_color_capture(
-    capture: &arcweft_player_native::native::NativeFrameCapture,
+    capture: &arcweft_render_native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
-) -> Result<Option<arcweft_player_native::native::NativeFrameCapture>, ExitCode> {
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+) -> Result<Option<arcweft_render_native::NativeFrameCapture>, ExitCode> {
     let mut native_session = native_session;
     let mut regions = Vec::new();
     for target in selected {
@@ -3638,7 +3574,7 @@ fn agent_native_color_capture(
     let capture_result = if let Some(native_session) = native_session {
         native_session.capture_frame_color_regions_in(
             context.frame,
-            arcweft_player_native::native::NativeCaptureViewport::new(
+            arcweft_render_native::NativeCaptureViewport::new(
                 capture.width,
                 capture.height,
                 context.left,
@@ -3649,7 +3585,7 @@ fn agent_native_color_capture(
             &regions,
         )
     } else {
-        arcweft_player_native::native::capture_frame_color_regions_at_page(
+        arcweft_render_native::capture_frame_color_regions_at_page(
             context.frame,
             capture.width,
             capture.height,
@@ -3666,11 +3602,11 @@ fn agent_native_color_capture(
 }
 
 fn agent_native_debug_capture(
-    capture: &arcweft_player_native::native::NativeFrameCapture,
+    capture: &arcweft_render_native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
     capture_kind: AgentObserveCaptureKind,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentNativeDebugCapture, ExitCode> {
     let mut native_session = native_session;
     let mut regions = Vec::new();
@@ -3701,7 +3637,7 @@ fn agent_native_debug_capture(
     let capture_result = if let Some(native_session) = native_session {
         native_session.capture_frame_debug_regions_in(
             context.frame,
-            arcweft_player_native::native::NativeCaptureViewport::new(
+            arcweft_render_native::NativeCaptureViewport::new(
                 capture.width,
                 capture.height,
                 context.left,
@@ -3712,7 +3648,7 @@ fn agent_native_debug_capture(
             &regions,
         )
     } else {
-        arcweft_player_native::native::capture_frame_debug_regions_at_page(
+        arcweft_render_native::capture_frame_debug_regions_at_page(
             context.frame,
             capture.width,
             capture.height,
@@ -3734,10 +3670,10 @@ fn agent_native_debug_capture(
 }
 
 fn agent_native_masked_framebuffer_capture(
-    capture: &arcweft_player_native::native::NativeFrameCapture,
+    capture: &arcweft_render_native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentRasterCapture, ExitCode> {
     let mut native_session = native_session;
     let mut masked = AgentRasterCapture::new(
@@ -3769,7 +3705,7 @@ fn agent_native_masked_framebuffer_capture(
 
 fn agent_copy_native_framebuffer_rect(
     target: &mut AgentRasterCapture,
-    source: &arcweft_player_native::native::NativeFrameCapture,
+    source: &arcweft_render_native::NativeFrameCapture,
     x: u32,
     y: u32,
     width: u32,
@@ -3813,8 +3749,8 @@ fn agent_native_regions_for_target(
     context: AgentNativeCaptureContext<'_>,
     target: &AgentNativeCaptureTarget<'_>,
     color: [u8; 4],
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
-) -> Result<Vec<arcweft_player_native::native::NativeFrameDebugRegion>, ExitCode> {
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+) -> Result<Vec<arcweft_render_native::NativeFrameDebugRegion>, ExitCode> {
     let (x, y, width, height) = agent_native_target_rect(
         capture_width,
         capture_height,
@@ -3822,7 +3758,7 @@ fn agent_native_regions_for_target(
         target,
         native_session,
     )?;
-    let fallback_bbox = arcweft_player_native::native::NativeFrameContentBBox {
+    let fallback_bbox = arcweft_render_native::NativeFrameContentBBox {
         x,
         y,
         width,
@@ -3830,30 +3766,26 @@ fn agent_native_regions_for_target(
     };
     let elements = agent_native_elements_for_target(context, target);
     if elements.is_empty() {
-        return Ok(vec![
-            arcweft_player_native::native::NativeFrameDebugRegion {
-                element: None,
-                fallback_bbox,
-                color,
-            },
-        ]);
+        return Ok(vec![arcweft_render_native::NativeFrameDebugRegion {
+            element: None,
+            fallback_bbox,
+            color,
+        }]);
     }
     Ok(elements
         .into_iter()
-        .map(
-            |element| arcweft_player_native::native::NativeFrameDebugRegion {
-                element: Some(element),
-                fallback_bbox,
-                color,
-            },
-        )
+        .map(|element| arcweft_render_native::NativeFrameDebugRegion {
+            element: Some(element),
+            fallback_bbox,
+            color,
+        })
         .collect())
 }
 
 fn agent_native_elements_for_target(
     context: AgentNativeCaptureContext<'_>,
     target: &AgentNativeCaptureTarget<'_>,
-) -> Vec<arcweft_player_native::native::NativeFrameElement> {
+) -> Vec<arcweft_render_native::NativeFrameElement> {
     match target {
         AgentNativeCaptureTarget::Observed(object) => {
             agent_native_elements_for_object(context, object)
@@ -3865,7 +3797,7 @@ fn agent_native_elements_for_target(
 fn agent_native_elements_for_object(
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-) -> Vec<arcweft_player_native::native::NativeFrameElement> {
+) -> Vec<arcweft_render_native::NativeFrameElement> {
     if object.role == "textbox" {
         return object
             .rich_text
@@ -3873,7 +3805,7 @@ fn agent_native_elements_for_object(
             .text_runs
             .iter()
             .enumerate()
-            .map(|(index, _)| arcweft_player_native::native::NativeFrameElement::TextRun { index })
+            .map(|(index, _)| arcweft_render_native::NativeFrameElement::TextRun { index })
             .chain(
                 object
                     .rich_text
@@ -3881,11 +3813,7 @@ fn agent_native_elements_for_object(
                     .ruby_annotations
                     .iter()
                     .enumerate()
-                    .map(
-                        |(index, _)| arcweft_player_native::native::NativeFrameElement::Ruby {
-                            index,
-                        },
-                    ),
+                    .map(|(index, _)| arcweft_render_native::NativeFrameElement::Ruby { index }),
             )
             .collect();
     }
@@ -3905,7 +3833,7 @@ fn agent_native_elements_for_object(
 fn agent_native_text_range_elements(
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-) -> Vec<arcweft_player_native::native::NativeFrameElement> {
+) -> Vec<arcweft_render_native::NativeFrameElement> {
     let Some(rich_text_ref) = &object.rich_text_ref else {
         return Vec::new();
     };
@@ -3920,7 +3848,7 @@ fn agent_native_text_range_elements(
         .iter()
         .enumerate()
         .filter(move |(_, run)| agent_rich_text_ranges_overlap(run.range, range))
-        .map(|(index, _)| arcweft_player_native::native::NativeFrameElement::TextRun { index })
+        .map(|(index, _)| arcweft_render_native::NativeFrameElement::TextRun { index })
         .chain(
             textbox
                 .rich_text
@@ -3929,9 +3857,7 @@ fn agent_native_text_range_elements(
                 .iter()
                 .enumerate()
                 .filter(move |(_, ruby)| agent_rich_text_ranges_overlap(ruby.base_range, range))
-                .map(
-                    |(index, _)| arcweft_player_native::native::NativeFrameElement::Ruby { index },
-                ),
+                .map(|(index, _)| arcweft_render_native::NativeFrameElement::Ruby { index }),
         )
         .collect()
 }
@@ -3941,7 +3867,7 @@ fn agent_native_scope_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     let mut native_session = native_session;
     let mut min_x = capture_width;
@@ -3979,7 +3905,7 @@ fn agent_native_target_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     target: &AgentNativeCaptureTarget<'_>,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     match target {
         AgentNativeCaptureTarget::Observed(object) => agent_native_object_rect(
@@ -4014,7 +3940,7 @@ fn agent_native_object_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     if object.role == "textbox" {
         return agent_native_textbox_rect(
@@ -4051,7 +3977,7 @@ fn agent_native_textbox_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     textbox: &AgentObservedObject,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     let mut rect = agent_clamped_bbox_rect(
         capture_width,
@@ -4064,7 +3990,7 @@ fn agent_native_textbox_rect(
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = match agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        arcweft_player_native::native::NativeCaptureViewport::new(
+        arcweft_render_native::NativeCaptureViewport::new(
             capture_width,
             capture_height,
             left,
@@ -4075,7 +4001,7 @@ fn agent_native_textbox_rect(
         native_session,
     ) {
         Ok(bounds) => bounds,
-        Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => return Ok(rect),
+        Err(arcweft_render_native::NativeWindowError::EmptyPages) => return Ok(rect),
         Err(error) => {
             eprintln!("error: native text layout measurement failed: {error}");
             return Err(ExitCode::FAILURE);
@@ -4100,7 +4026,7 @@ fn agent_native_rich_text_child_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     if object.rich_text_ref.as_ref().is_some_and(|rich_text_ref| {
         matches!(
@@ -4138,13 +4064,13 @@ fn agent_native_rich_text_element_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     textbox: &AgentObservedObject,
-    element: arcweft_player_native::native::NativeFrameElement,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    element: arcweft_render_native::NativeFrameElement,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        arcweft_player_native::native::NativeCaptureViewport::new(
+        arcweft_render_native::NativeCaptureViewport::new(
             capture_width,
             capture_height,
             left,
@@ -4185,7 +4111,7 @@ fn agent_native_textbox_for_rich_text_child<'a>(
 
 fn agent_native_element_for_object(
     object: &AgentObservedObject,
-) -> Option<arcweft_player_native::native::NativeFrameElement> {
+) -> Option<arcweft_render_native::NativeFrameElement> {
     let Some(rich_text_ref) = &object.rich_text_ref else {
         return agent_native_element_for_object_id(&object.id);
     };
@@ -4196,32 +4122,29 @@ fn agent_native_element_for_object(
         | AgentRichTextElementKind::TextObjectProxy => {
             agent_native_element_for_object_id(&object.id)
         }
-        AgentRichTextElementKind::TextGlyph | AgentRichTextElementKind::GlyphCluster => Some(
-            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+        AgentRichTextElementKind::TextGlyph | AgentRichTextElementKind::GlyphCluster => {
+            Some(arcweft_render_native::NativeFrameElement::GlyphCluster {
                 index: rich_text_ref.index,
                 range_start: rich_text_ref.range.start,
                 range_end: rich_text_ref.range.end,
-            },
-        ),
+            })
+        }
     }
 }
 
 fn agent_native_element_for_object_id(
     object_id: &str,
-) -> Option<arcweft_player_native::native::NativeFrameElement> {
+) -> Option<arcweft_render_native::NativeFrameElement> {
     agent_native_element_and_role_for_object_id(object_id).map(|(element, _)| element)
 }
 
 fn agent_native_element_and_role_for_object_id(
     object_id: &str,
-) -> Option<(
-    arcweft_player_native::native::NativeFrameElement,
-    &'static str,
-)> {
+) -> Option<(arcweft_render_native::NativeFrameElement, &'static str)> {
     if let Some((_, index)) = object_id.rsplit_once(".run.") {
         return index.parse().ok().map(|index| {
             (
-                arcweft_player_native::native::NativeFrameElement::TextRun { index },
+                arcweft_render_native::NativeFrameElement::TextRun { index },
                 "rich_text_run",
             )
         });
@@ -4229,7 +4152,7 @@ fn agent_native_element_and_role_for_object_id(
     if let Some((_, index)) = object_id.rsplit_once(".ruby.") {
         return index.parse().ok().map(|index| {
             (
-                arcweft_player_native::native::NativeFrameElement::Ruby { index },
+                arcweft_render_native::NativeFrameElement::Ruby { index },
                 "rich_text_ruby",
             )
         });
@@ -4242,7 +4165,7 @@ fn agent_native_element_and_role_for_object_id(
             return None;
         }
         return Some((
-            arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+            arcweft_render_native::NativeFrameElement::TextObjectProxy {
                 run_index,
                 proxy_index,
             },
@@ -4258,7 +4181,7 @@ fn agent_native_element_and_role_for_object_id(
             return None;
         }
         return Some((
-            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+            arcweft_render_native::NativeFrameElement::GlyphCluster {
                 index,
                 range_start,
                 range_end,
@@ -4275,7 +4198,7 @@ fn agent_native_element_and_role_for_object_id(
             return None;
         }
         return Some((
-            arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+            arcweft_render_native::NativeFrameElement::GlyphCluster {
                 index,
                 range_start,
                 range_end,
@@ -4800,7 +4723,7 @@ fn run_agent_observation(
     host_config: NativeRunHost<'_>,
     options: &AgentObserveOptions,
     source_path: &Path,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentObservationReport, arcweft_host_adapter::HostAdapterError> {
     let viewport = AgentViewport {
         width: options.viewport_width,
@@ -4896,7 +4819,7 @@ fn agent_observed_objects_for_flow_event(
     event: &FlowEvent,
     viewport: &AgentViewport,
     options: &AgentObserveOptions,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<Vec<AgentObservedObject>, AgentDiagnostic> {
     let capture_time_seconds = agent_observe_capture_time_seconds(options);
     let FlowEvent::DialogueLine { line, bindings } = event else {
@@ -5066,7 +4989,7 @@ struct AgentRasterCapture {
     composition: AgentImageComposition,
     background: [u8; 4],
     rgba: Vec<u8>,
-    diagnostics: Vec<arcweft_player_native::native::NativeVisualDiagnostic>,
+    diagnostics: Vec<arcweft_render_native::NativeVisualDiagnostic>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -5140,7 +5063,7 @@ impl AgentRasterCapture {
 fn agent_observe_image_output(
     report: &mut AgentObservationReport,
     options: &AgentObserveOptions,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<AgentImageOutput>, ExitCode> {
     let Some(image) = options.image else {
         return Ok(None);
@@ -5207,20 +5130,20 @@ fn agent_observe_image_output(
 
 fn agent_native_visual_diagnostics(
     step: usize,
-    diagnostics: &[arcweft_player_native::native::NativeVisualDiagnostic],
+    diagnostics: &[arcweft_render_native::NativeVisualDiagnostic],
 ) -> Vec<AgentDiagnostic> {
     diagnostics
         .iter()
         .map(|diagnostic| AgentDiagnostic {
             step,
             severity: match diagnostic.severity {
-                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Error => {
+                arcweft_render_native::NativeVisualDiagnosticSeverity::Error => {
                     AgentDiagnosticSeverity::Error
                 }
-                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Warning => {
+                arcweft_render_native::NativeVisualDiagnosticSeverity::Warning => {
                     AgentDiagnosticSeverity::Warning
                 }
-                arcweft_player_native::native::NativeVisualDiagnosticSeverity::Info => {
+                arcweft_render_native::NativeVisualDiagnosticSeverity::Info => {
                     AgentDiagnosticSeverity::Info
                 }
             },
@@ -5484,10 +5407,10 @@ fn agent_rich_text_child_objects(
     viewport: &AgentViewport,
     time_seconds: f32,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut children = Vec::new();
     let mut native_session = native_session;
@@ -5586,10 +5509,10 @@ fn agent_rich_text_page_objects(
     viewport: &AgentViewport,
     time_seconds: f32,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut native_session = native_session;
     agent_rich_text_page_ranges(&textbox.rich_text)
@@ -5661,10 +5584,10 @@ fn agent_rich_text_line_objects(
     viewport: &AgentViewport,
     time_seconds: f32,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut native_session = native_session;
     agent_rich_text_line_ranges(&textbox.rich_text)
@@ -5734,16 +5657,16 @@ fn agent_rich_text_line_objects(
 
 fn agent_measure_frame_elements_with_session(
     frame: &LineDisplayFrame,
-    viewport: arcweft_player_native::native::NativeCaptureViewport,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    viewport: arcweft_render_native::NativeCaptureViewport,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<
-    Vec<arcweft_player_native::native::NativeFrameElementBounds>,
-    arcweft_player_native::native::NativeWindowError,
+    Vec<arcweft_render_native::NativeFrameElementBounds>,
+    arcweft_render_native::NativeWindowError,
 > {
     if let Some(native_session) = native_session {
         return native_session.measure_frame_elements_in(frame, viewport);
     }
-    arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+    arcweft_render_native::measure_frame_elements_at_page_with_time(
         frame,
         viewport.width,
         viewport.height,
@@ -5758,15 +5681,15 @@ fn agent_native_rich_text_element_bboxes(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
     time_seconds: f32,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
-) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentNativeRichTextElementBounds> {
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+) -> BTreeMap<arcweft_render_native::NativeFrameElement, AgentNativeRichTextElementBounds> {
     let (left, top) = agent_native_text_origin(textbox);
     let mut bboxes = BTreeMap::new();
     let mut native_session = native_session;
     for page_index in 0.. {
         let bounds = match agent_measure_frame_elements_with_session(
             &textbox.rich_text,
-            arcweft_player_native::native::NativeCaptureViewport::new(
+            arcweft_render_native::NativeCaptureViewport::new(
                 viewport.width,
                 viewport.height,
                 left,
@@ -5777,7 +5700,7 @@ fn agent_native_rich_text_element_bboxes(
             native_session.as_deref_mut(),
         ) {
             Ok(bounds) => bounds,
-            Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => break,
+            Err(arcweft_render_native::NativeWindowError::EmptyPages) => break,
             Err(_) => return BTreeMap::new(),
         };
         for bounds in bounds {
@@ -5798,12 +5721,12 @@ fn agent_native_textbox_capture_bbox_for_page(
     viewport: &AgentViewport,
     page_index: usize,
     time_seconds: f32,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
     let Ok(bounds) = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        arcweft_player_native::native::NativeCaptureViewport::new(
+        arcweft_render_native::NativeCaptureViewport::new(
             viewport.width,
             viewport.height,
             left,
@@ -5830,12 +5753,12 @@ fn agent_native_text_range_capture_bbox_for_page(
     page_index: usize,
     range: RichTextRange,
     time_seconds: f32,
-    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        arcweft_player_native::native::NativeCaptureViewport::new(
+        arcweft_render_native::NativeCaptureViewport::new(
             viewport.width,
             viewport.height,
             left,
@@ -5858,7 +5781,7 @@ fn agent_native_text_range_capture_bbox_for_page(
 #[derive(Clone, Debug)]
 struct AgentNativeRichTextElementBounds {
     bbox: AgentBBox,
-    glyph: Option<arcweft_player_native::native::NativeGlyphClusterMetadata>,
+    glyph: Option<arcweft_render_native::NativeGlyphClusterMetadata>,
     ruby: Option<AgentRubyElementGeometry>,
 }
 
@@ -5875,7 +5798,7 @@ fn agent_rich_text_run_object(
     textbox: &AgentObservedObject,
     run: &RichTextTextRun,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Option<AgentObservedObject> {
@@ -5887,7 +5810,7 @@ fn agent_rich_text_run_object(
         return None;
     }
     let bbox = native_bounds
-        .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
+        .get(&arcweft_render_native::NativeFrameElement::TextRun { index: run_index })
         .map(|bounds| bounds.bbox.clone())?;
     let object_id = agent_rich_text_run_object_id(step, index, run_index);
     let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
@@ -5939,7 +5862,7 @@ fn agent_rich_text_proxy_objects(
     textbox: &AgentObservedObject,
     run: &RichTextTextRun,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
@@ -5963,7 +5886,7 @@ fn agent_rich_text_proxy_objects(
             let presentation = agent_proxy_presentation(&run.presentation, proxy);
             let bbox = native_bounds
                 .get(
-                    &arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+                    &arcweft_render_native::NativeFrameElement::TextObjectProxy {
                         run_index,
                         proxy_index,
                     },
@@ -6021,14 +5944,14 @@ fn agent_rich_text_ruby_object(
     textbox: &AgentObservedObject,
     ruby: &RichTextRubyAnnotation,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Option<AgentObservedObject> {
     let base_range = valid_rich_text_range(ruby.base_range, &textbox.rich_text.text)?;
     let base_text = textbox.rich_text.text.get(base_range)?;
     let bbox = native_bounds
-        .get(&arcweft_player_native::native::NativeFrameElement::Ruby { index: ruby_index })
+        .get(&arcweft_render_native::NativeFrameElement::Ruby { index: ruby_index })
         .cloned()?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
@@ -6075,14 +5998,14 @@ fn agent_rich_text_glyph_objects(
     index: usize,
     textbox: &AgentObservedObject,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
     native_bounds
         .iter()
         .filter_map(|(element, bounds)| {
-            let arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+            let arcweft_render_native::NativeFrameElement::GlyphCluster {
                 index: glyph_index,
                 range_start,
                 range_end,
@@ -6158,14 +6081,14 @@ fn agent_rich_text_cluster_objects(
     index: usize,
     textbox: &AgentObservedObject,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
     native_bounds
         .iter()
         .filter_map(|(element, bounds)| {
-            let arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+            let arcweft_render_native::NativeFrameElement::GlyphCluster {
                 index: cluster_index,
                 range_start,
                 range_end,
@@ -6236,9 +6159,7 @@ fn agent_rich_text_cluster_objects(
         .collect()
 }
 
-fn agent_bbox_from_native(
-    bbox: arcweft_player_native::native::NativeFrameContentBBox,
-) -> AgentBBox {
+fn agent_bbox_from_native(bbox: arcweft_render_native::NativeFrameContentBBox) -> AgentBBox {
     AgentBBox {
         space: AgentCoordinateSpace::Viewport,
         x: bbox.x,
@@ -6382,7 +6303,7 @@ fn agent_ruby_hit_regions(
 }
 
 fn agent_ruby_geometry_from_native(
-    value: arcweft_player_native::native::NativeRubyElementGeometry,
+    value: arcweft_render_native::NativeRubyElementGeometry,
 ) -> AgentRubyElementGeometry {
     AgentRubyElementGeometry {
         base_bbox: agent_bbox_from_native(value.base_bbox),
@@ -6391,32 +6312,28 @@ fn agent_ruby_geometry_from_native(
 }
 
 const fn agent_glyph_orientation_from_native(
-    value: arcweft_player_native::native::NativeGlyphOrientation,
+    value: arcweft_render_native::NativeGlyphOrientation,
 ) -> AgentGlyphOrientation {
     match value {
-        arcweft_player_native::native::NativeGlyphOrientation::Upright => {
-            AgentGlyphOrientation::Upright
-        }
-        arcweft_player_native::native::NativeGlyphOrientation::SidewaysCw => {
+        arcweft_render_native::NativeGlyphOrientation::Upright => AgentGlyphOrientation::Upright,
+        arcweft_render_native::NativeGlyphOrientation::SidewaysCw => {
             AgentGlyphOrientation::SidewaysCw
         }
-        arcweft_player_native::native::NativeGlyphOrientation::TextCombineUpright => {
+        arcweft_render_native::NativeGlyphOrientation::TextCombineUpright => {
             AgentGlyphOrientation::TextCombineUpright
         }
     }
 }
 
 const fn agent_glyph_vertical_form_from_native(
-    value: arcweft_player_native::native::NativeGlyphVerticalForm,
+    value: arcweft_render_native::NativeGlyphVerticalForm,
 ) -> AgentGlyphVerticalForm {
     match value {
-        arcweft_player_native::native::NativeGlyphVerticalForm::None => {
-            AgentGlyphVerticalForm::None
-        }
-        arcweft_player_native::native::NativeGlyphVerticalForm::UprightAlternate => {
+        arcweft_render_native::NativeGlyphVerticalForm::None => AgentGlyphVerticalForm::None,
+        arcweft_render_native::NativeGlyphVerticalForm::UprightAlternate => {
             AgentGlyphVerticalForm::UprightAlternate
         }
-        arcweft_player_native::native::NativeGlyphVerticalForm::RotatedAlternate => {
+        arcweft_render_native::NativeGlyphVerticalForm::RotatedAlternate => {
             AgentGlyphVerticalForm::RotatedAlternate
         }
     }
@@ -6553,7 +6470,7 @@ fn agent_rich_text_range_proxy_hit_regions(
     frame: &LineDisplayFrame,
     range: RichTextRange,
     native_bounds: &BTreeMap<
-        arcweft_player_native::native::NativeFrameElement,
+        arcweft_render_native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentHitRegion> {
@@ -6576,7 +6493,7 @@ fn agent_rich_text_range_proxy_hit_regions(
                 .filter_map(move |(proxy_index, proxy)| {
                     native_bounds
                         .get(
-                            &arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+                            &arcweft_render_native::NativeFrameElement::TextObjectProxy {
                                 run_index,
                                 proxy_index,
                             },
@@ -6600,28 +6517,26 @@ fn agent_rich_text_ranges_overlap(left: RichTextRange, right: RichTextRange) -> 
 
 fn agent_native_element_overlaps_range(
     frame: &LineDisplayFrame,
-    element: arcweft_player_native::native::NativeFrameElement,
+    element: arcweft_render_native::NativeFrameElement,
     range: RichTextRange,
 ) -> bool {
     match element {
-        arcweft_player_native::native::NativeFrameElement::TextRun { index } => frame
+        arcweft_render_native::NativeFrameElement::TextRun { index } => frame
             .display_map
             .text_runs
             .get(index)
             .is_some_and(|run| agent_rich_text_ranges_overlap(run.range, range)),
-        arcweft_player_native::native::NativeFrameElement::Ruby { index } => frame
+        arcweft_render_native::NativeFrameElement::Ruby { index } => frame
             .display_map
             .ruby_annotations
             .get(index)
             .is_some_and(|ruby| agent_rich_text_ranges_overlap(ruby.base_range, range)),
-        arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
-            run_index, ..
-        } => frame
+        arcweft_render_native::NativeFrameElement::TextObjectProxy { run_index, .. } => frame
             .display_map
             .text_runs
             .get(run_index)
             .is_some_and(|run| agent_rich_text_ranges_overlap(run.range, range)),
-        arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+        arcweft_render_native::NativeFrameElement::GlyphCluster {
             range_start,
             range_end,
             ..
@@ -11361,7 +11276,7 @@ mod tests {
 
     #[test]
     fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
-        let source = arcweft_player_native::native::NativeFrameCapture {
+        let source = arcweft_render_native::NativeFrameCapture {
             width: 8,
             height: 4,
             rgba: [9, 8, 7, 255].repeat(32),
@@ -11414,7 +11329,7 @@ mod tests {
 
     #[test]
     fn native_non_text_debug_capture_reports_dedicated_attachments() {
-        let source = arcweft_player_native::native::NativeFrameCapture {
+        let source = arcweft_render_native::NativeFrameCapture {
             width: 32,
             height: 24,
             rgba: [0, 0, 0, 255].repeat(32 * 24),
@@ -11451,7 +11366,7 @@ mod tests {
         );
         assert_eq!(
             object_id.capture.content_bbox,
-            Some(arcweft_player_native::native::NativeFrameContentBBox {
+            Some(arcweft_render_native::NativeFrameContentBBox {
                 x: 4,
                 y: 5,
                 width: 7,

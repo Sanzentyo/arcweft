@@ -1,4 +1,5 @@
-use arcweft_player_native::{NativePlayerCaptureMetadata, compile_source, native, run_headless};
+use arcweft_player_native::{NativePlayerCaptureMetadata, compile_source, run_headless};
+use arcweft_render_native as native;
 use clap::{Parser, ValueEnum};
 use std::fs;
 use std::path::PathBuf;
