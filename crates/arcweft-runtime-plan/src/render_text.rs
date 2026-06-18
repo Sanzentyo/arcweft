@@ -2088,16 +2088,18 @@ fn lower_dialogue_token(
     match token {
         DialogueToken::Text(text) => vec![RichTextNode::Text { text: text.clone() }],
         DialogueToken::Raw(text) => {
-            vec![RichTextNode::Control(RichTextControl::Raw {
-                text: text.clone(),
-            })]
+            vec![RichTextNode::Control {
+                control: RichTextControl::Raw { text: text.clone() },
+            }]
         }
         DialogueToken::Tag(tag) => lower_tag(tag, text_proxies),
         DialogueToken::InferredTag(tag) => lower_inferred_tag(tag, text_proxies),
         DialogueToken::Mark(mark) => {
-            vec![RichTextNode::Control(RichTextControl::Mark {
-                name: mark.name().to_owned(),
-            })]
+            vec![RichTextNode::Control {
+                control: RichTextControl::Mark {
+                    name: mark.name().to_owned(),
+                },
+            }]
         }
         DialogueToken::EndTag(name) => {
             vec![RichTextNode::StyleEnd {
@@ -2133,14 +2135,26 @@ fn lower_tag(
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
 ) -> Vec<RichTextNode> {
     match tag.name() {
-        "p" | "page" => vec![RichTextNode::Control(RichTextControl::Page)],
-        "l" | "wait" => vec![RichTextNode::Control(RichTextControl::LineWait)],
-        "r" | "br" | "nl" => vec![RichTextNode::Control(RichTextControl::HardBreak)],
-        "w" => vec![RichTextNode::Control(RichTextControl::TimedWait {
-            value: tag.attrs().to_owned(),
-        })],
-        "clear" | "er" | "cm" => vec![RichTextNode::Control(RichTextControl::Clear)],
-        "reset" => vec![RichTextNode::Control(RichTextControl::Reset)],
+        "p" | "page" => vec![RichTextNode::Control {
+            control: RichTextControl::Page,
+        }],
+        "l" | "wait" => vec![RichTextNode::Control {
+            control: RichTextControl::LineWait,
+        }],
+        "r" | "br" | "nl" => vec![RichTextNode::Control {
+            control: RichTextControl::HardBreak,
+        }],
+        "w" => vec![RichTextNode::Control {
+            control: RichTextControl::TimedWait {
+                value: tag.attrs().to_owned(),
+            },
+        }],
+        "clear" | "er" | "cm" => vec![RichTextNode::Control {
+            control: RichTextControl::Clear,
+        }],
+        "reset" => vec![RichTextNode::Control {
+            control: RichTextControl::Reset,
+        }],
         "em" | "strong" | "color" | "font" | "size" | "speed" | "i" | "italic" | "oblique"
         | "slant" => {
             vec![RichTextNode::StyleStart {
@@ -2195,10 +2209,12 @@ fn lower_tag(
             name: tag.name().to_owned(),
             attrs: tag.attrs().to_owned(),
         }),
-        name => vec![RichTextNode::Control(RichTextControl::Unknown {
-            name: name.to_owned(),
-            attrs: tag.attrs().to_owned(),
-        })],
+        name => vec![RichTextNode::Control {
+            control: RichTextControl::Unknown {
+                name: name.to_owned(),
+                attrs: tag.attrs().to_owned(),
+            },
+        }],
     }
 }
 
@@ -2216,9 +2232,11 @@ fn lower_inferred_tag(
         Some(InferredTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
         Some(InferredTagFamily::Effect) => lower_effect_selector(selector, tag.attrs()),
         Some(InferredTagFamily::Marker) | None => {
-            vec![RichTextNode::Control(RichTextControl::Mark {
-                name: tag.name().to_owned(),
-            })]
+            vec![RichTextNode::Control {
+                control: RichTextControl::Mark {
+                    name: tag.name().to_owned(),
+                },
+            }]
         }
     }
 }

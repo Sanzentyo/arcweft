@@ -1,10 +1,11 @@
 //! Sans I/O bundle data model and deterministic JSON codec.
 
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 1;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
@@ -12,6 +13,7 @@ pub struct ArcweftBundle {
     pub manifest: BundleManifest,
     pub source: BundleSource,
     pub bytecode: BundleBytecodeProgram,
+    pub display: LineDisplayCatalog,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_manifests: Vec<BundleAdapterManifest>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -118,7 +120,12 @@ pub enum BundleCodecError {
 }
 
 impl ArcweftBundle {
-    pub fn new(manifest: BundleManifest, source: BundleSource, bytecode: BytecodeProgram) -> Self {
+    pub fn new(
+        manifest: BundleManifest,
+        source: BundleSource,
+        bytecode: BytecodeProgram,
+        display: LineDisplayCatalog,
+    ) -> Self {
         Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             manifest,
@@ -127,6 +134,7 @@ impl ArcweftBundle {
                 encoding: BundleBytecodeEncoding::StructuredJson,
                 program: bytecode,
             },
+            display,
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
         }
@@ -230,6 +238,7 @@ mod tests {
                 text: "flow @flow.main main { return \"ok\" }".to_owned(),
             },
             BytecodeProgram::default(),
+            LineDisplayCatalog::default(),
         )
         .with_adapter_manifests([BundleAdapterManifest {
             id: "native-file".to_owned(),

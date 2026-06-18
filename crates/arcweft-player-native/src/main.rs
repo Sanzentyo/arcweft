@@ -1,9 +1,8 @@
-use arcweft_player_native::{NativePlayerCaptureMetadata, compile_source, run_headless};
-use arcweft_render_native as native;
-use arcweft_runtime_host::{
-    BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
-    run_bundle_file_with_native_adapters,
+use arcweft_bundle::ArcweftBundle;
+use arcweft_player_native::{
+    NativePlayerCaptureMetadata, NativePlayerProgram, compile_source, load_bundle, run_headless,
 };
+use arcweft_render_native as native;
 use clap::{Parser, ValueEnum};
 use std::fs;
 use std::path::PathBuf;
@@ -64,6 +63,18 @@ fn run(args: &Args) -> Result<(), String> {
     let source = fs::read_to_string(&args.path)
         .map_err(|error| format!("failed to read source file: {error}"))?;
     let program = compile_source(&source).map_err(|error| error.to_string())?;
+    run_program(args, program)
+}
+
+fn run_bundle(args: &Args) -> Result<(), String> {
+    let bytes =
+        fs::read(&args.path).map_err(|error| format!("failed to read bundle file: {error}"))?;
+    let bundle = ArcweftBundle::from_json_slice(&bytes).map_err(|error| error.to_string())?;
+    let program = load_bundle(bundle).map_err(|error| error.to_string())?;
+    run_program(args, program)
+}
+
+fn run_program(args: &Args, program: NativePlayerProgram) -> Result<(), String> {
     if args.headless {
         let mut report = run_headless(program, args.steps).map_err(|error| error.to_string())?;
         if let Some(format) = args.capture {
@@ -106,38 +117,6 @@ fn run(args: &Args) -> Result<(), String> {
     }
     let report = run_headless(program, args.steps).map_err(|error| error.to_string())?;
     native::run_frames_window("Arcweft Player", &report.frames).map_err(|error| error.to_string())
-}
-
-fn run_bundle(args: &Args) -> Result<(), String> {
-    if !args.headless {
-        return Err("--bundle currently requires --headless because .awfb does not yet carry a line display catalog for native window presentation".to_owned());
-    }
-    if args.capture.is_some() {
-        return Err("--bundle cannot be combined with --capture until .awfb carries native display sidecars".to_owned());
-    }
-    let report = run_bundle_file_with_native_adapters(
-        &args.path,
-        &BundleRunnerOptions {
-            steps: args.steps,
-            mode: BundleRunnerStepMode::Drain,
-            executor: BundleRunnerExecutor::BytecodeVm,
-            ..BundleRunnerOptions::default()
-        },
-        &[],
-    )
-    .map_err(|error| error.to_string())?;
-    if args.json {
-        serde_json::to_writer_pretty(std::io::stdout(), &report)
-            .map_err(|error| format!("failed to write JSON: {error}"))?;
-        println!();
-    } else {
-        println!(
-            "{} steps, final_status={}",
-            report.steps.len(),
-            report.final_status
-        );
-    }
-    Ok(())
 }
 
 fn native_capture_bytes(

@@ -36,10 +36,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   player host that orchestrates compiled runtime plans and delegates rendering
   to `arcweft-render-native`. Shared source-to-runtime-plan compilation lives in
   `arcweft-compiler`, so the player no longer owns parser/HIR/sema/runtime-plan
-  lowering directly. The native player can execute `.awfb` bytecode bundles in
-  headless mode without invoking source compilation; native window/capture from
-  bundle input remains blocked on carrying line display sidecars in the bundle
-  format. See `docs/implementation/native-rich-text-player.md` and
+  lowering directly. `.awfb` bundles carry the line display catalog, so the
+  native player can execute bytecode bundles without invoking source
+  compilation while still resolving native window/capture frames. See
+  `docs/implementation/native-rich-text-player.md` and
   `docs/implementation/native-cli-player-boundaries.md`.
 - `docs/implementation/rich-text-object-goal-audit.md` tracks the current
   requirement/evidence matrix for the rich-text typed-presentation-object goal;

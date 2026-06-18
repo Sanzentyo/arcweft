@@ -4551,7 +4551,10 @@ impl WindowPageBuilder {
     }
 
     fn push_node(&mut self, node: &RichTextNode) {
-        if let RichTextNode::Control(RichTextControl::Page | RichTextControl::LineWait) = node {
+        if let RichTextNode::Control {
+            control: RichTextControl::Page | RichTextControl::LineWait,
+        } = node
+        {
             self.flush_page();
             return;
         }
@@ -5407,7 +5410,7 @@ impl WindowRichTextBuilder {
                     self.active_styles.remove(index);
                 }
             }
-            RichTextNode::Control(control) => self.push_control(control),
+            RichTextNode::Control { control } => self.push_control(control),
             RichTextNode::Interpolation { expr, .. } => {
                 self.push_text(expr, self.current_style());
             }
@@ -11227,15 +11230,21 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
                 RichTextNode::Text {
                     text: "one".to_owned(),
                 },
-                RichTextNode::Control(RichTextControl::Page),
+                RichTextNode::Control {
+                    control: RichTextControl::Page,
+                },
                 RichTextNode::Text {
                     text: "two".to_owned(),
                 },
-                RichTextNode::Control(RichTextControl::LineWait),
+                RichTextNode::Control {
+                    control: RichTextControl::LineWait,
+                },
                 RichTextNode::Text {
                     text: "three".to_owned(),
                 },
-                RichTextNode::Control(RichTextControl::Clear),
+                RichTextNode::Control {
+                    control: RichTextControl::Clear,
+                },
                 RichTextNode::Text {
                     text: "four".to_owned(),
                 },

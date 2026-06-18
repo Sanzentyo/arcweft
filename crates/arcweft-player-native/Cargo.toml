@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-compiler = { path = "../arcweft-compiler" }
+arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }

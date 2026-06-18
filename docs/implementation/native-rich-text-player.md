@@ -381,9 +381,9 @@ cargo run -p arcweft-cli --quiet -- bundle path/to/file.arcw --output target/gam
 cargo run -p arcweft-player-native --quiet -- --headless --json --bundle target/game.awfb
 ```
 
-Bundle execution is currently headless-only because `.awfb` does not yet carry
-the line display catalog required for native window presentation and rich-text
-capture.
+Bundles carry the line display catalog needed for native window presentation and
+rich-text capture, so `--bundle` can be combined with the same `--capture`
+options used for source developer mode.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:

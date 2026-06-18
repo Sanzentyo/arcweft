@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
+arcweft-render-text = { path = "../arcweft-render-text" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

@@ -134,7 +134,9 @@ pub enum RichTextNode {
     StyleEnd {
         name: String,
     },
-    Control(RichTextControl),
+    Control {
+        control: RichTextControl,
+    },
     Interpolation {
         expr: String,
         fallback_source: String,
@@ -715,7 +717,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
                 self.push_style_end(name, node);
                 Ok(())
             }
-            RichTextNode::Control(control) => {
+            RichTextNode::Control { control } => {
                 self.push_control_node(control, node_index, node);
                 Ok(())
             }
@@ -1251,10 +1253,14 @@ mod tests {
                     base: "夢".to_owned(),
                     ruby: "ゆめ".to_owned(),
                 },
-                RichTextNode::Control(RichTextControl::HardBreak),
-                RichTextNode::Control(RichTextControl::Raw {
-                    text: "[p]".to_owned(),
-                }),
+                RichTextNode::Control {
+                    control: RichTextControl::HardBreak,
+                },
+                RichTextNode::Control {
+                    control: RichTextControl::Raw {
+                        text: "[p]".to_owned(),
+                    },
+                },
             ]),
         };
         let frame = spec
@@ -1619,7 +1625,9 @@ mod tests {
                 RichTextNode::Text {
                     text: "blue".to_owned(),
                 },
-                RichTextNode::Control(RichTextControl::Reset),
+                RichTextNode::Control {
+                    control: RichTextControl::Reset,
+                },
                 RichTextNode::Text {
                     text: "plain".to_owned(),
                 },

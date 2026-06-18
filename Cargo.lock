@@ -220,6 +220,7 @@ name = "arcweft-bundle"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-render-text",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -411,6 +412,7 @@ dependencies = [
 name = "arcweft-player-native"
 version = "0.1.0"
 dependencies = [
+ "arcweft-bundle",
  "arcweft-compiler",
  "arcweft-core",
  "arcweft-render-native",

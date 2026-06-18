@@ -1,5 +1,6 @@
 //! Native/headless rich-text player host for Arcweft.
 
+use arcweft_bundle::ArcweftBundle;
 use arcweft_compiler::compile_source as compile_arcweft_source;
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::plan::FlowEvent;
@@ -48,6 +49,8 @@ pub struct NativePlayerCaptureMetadata {
 pub enum NativePlayerError {
     #[error(transparent)]
     Compile(#[from] arcweft_compiler::CompileSourceError),
+    #[error("failed to decode bundle bytecode: {0}")]
+    DecodeBytecode(arcweft_core::plan::RuntimePlanError),
     #[error("no display frame was produced")]
     NoDisplayFrame,
 }
@@ -58,6 +61,18 @@ pub fn compile_source(source: &str) -> Result<NativePlayerProgram, NativePlayerE
     Ok(NativePlayerProgram {
         plan: compiled.plan,
         display: compiled.display,
+    })
+}
+
+/// Loads a compiled bundle into the native player without invoking source compilation.
+pub fn load_bundle(bundle: ArcweftBundle) -> Result<NativePlayerProgram, NativePlayerError> {
+    Ok(NativePlayerProgram {
+        plan: bundle
+            .bytecode
+            .program
+            .into_runtime_plan()
+            .map_err(NativePlayerError::DecodeBytecode)?,
+        display: bundle.display,
     })
 }
 

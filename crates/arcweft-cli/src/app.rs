@@ -99,8 +99,8 @@ use arcweft_runtime_host::{
     internal_scheduler_manifest, run_bundle_file_with_native_adapters, runtime_executor_stats,
 };
 use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerOptions, RuntimePlanLowerStats, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options,
+    RuntimePlanLowerOptions, RuntimePlanLowerReport, RuntimePlanLowerStats,
+    lower_runtime_plan_with_options, lower_runtime_plan_with_stats_and_options,
 };
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
@@ -7102,6 +7102,7 @@ struct ProfileCompiledRuntimePlan {
     line_task_groups: usize,
     typecheck_report: TypeCheckReport,
     runtime_plan_stats: RuntimePlanLowerStats,
+    line_display_catalog: LineDisplayCatalog,
     runtime_type_validation_stats: RuntimeTypeValidationStats,
     bytecode: BytecodeProgram,
     bytecode_stats: BytecodeStats,
@@ -7165,16 +7166,9 @@ fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let runtime_plan_report = run_profile_phase(phases, "runtime_plan_lower", || {
-        let runtime_options = runtime_plan_options_for_selection(selection);
-        lower_runtime_plan_with_stats_and_options(&hir, &runtime_options).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })?;
+    let runtime_plan_report = profile_lower_runtime_plan(selection, &hir, phases)?;
     let plan = runtime_plan_report.plan;
+    let line_display_catalog = runtime_plan_report.line_display_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;
     let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
         let report = validate_runtime_plan_types(&plan, &typecheck_report);
@@ -7207,10 +7201,27 @@ fn compile_profile_runtime_plan(
         line_task_groups: line_task_groups.len(),
         typecheck_report,
         runtime_plan_stats,
+        line_display_catalog,
         runtime_type_validation_stats,
         bytecode,
         bytecode_stats,
         aot_stats,
+    })
+}
+
+fn profile_lower_runtime_plan(
+    selection: &SourceSelection,
+    hir: &arcweft_lang_hir::model::HirModule,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<RuntimePlanLowerReport, ExitCode> {
+    run_profile_phase(phases, "runtime_plan_lower", || {
+        let runtime_options = runtime_plan_options_for_selection(selection);
+        lower_runtime_plan_with_stats_and_options(hir, &runtime_options).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
     })
 }
 
@@ -8553,6 +8564,7 @@ fn compile_bundle_artifact(
             text: source,
         },
         compiled.bytecode,
+        compiled.line_display_catalog,
     )
     .with_adapter_manifests(adapter_manifests)
     .with_virtual_files(collect_bundle_virtual_files(
