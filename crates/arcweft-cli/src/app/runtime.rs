@@ -3,12 +3,13 @@ use super::jit::{
     per_iteration_ns, run_jit_check, speedup_x, timing_samples,
 };
 use super::project::{
-    SourceSelection, count_warning_lints, has_error_lints, load_and_check_selection,
-    native_host_policy_for_selection, native_host_policy_for_selection_with_adapter,
-    profile_listen_addr, require_profile_kind, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection,
-    typecheck_env_for_selection,
+    ProfileOptions, SourceSelection, count_warning_lints, has_error_lints,
+    load_and_check_selection, native_host_policy_for_selection,
+    native_host_policy_for_selection_with_adapter, profile_listen_addr, require_profile_kind,
+    resolve_source_selection, runtime_plan_options_for_selection,
+    runtime_pure_config_for_selection, typecheck_env_for_selection,
 };
+use super::shared::{is_arcw_path, print_json};
 use super::{
     AotExecutor, AotProfileStats, AotProgram, AotProgramStats, Args, AssertUnwindSafe,
     BenchSection, BorrowCheckProfileStats, BundleRunnerExecutor, BundleRunnerPhase,
@@ -17,8 +18,8 @@ use super::{
     DenseTensorF32, DenseTensorF64, ExitCode, Expr, FlowFiberStatus, FlowRuntimeId, HostCallPolicy,
     Instant, LaunchKind, LineDisplayCatalog, Literal, NativeAdapterRegistrar,
     NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
-    NativeTaskStats, Path, PathBuf, ProfileOptions, PureHelperCandidate, PureHelperLowerError,
-    RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutor,
+    NativeTaskStats, Path, PathBuf, PureHelperCandidate, PureHelperLowerError, RuntimeBinding,
+    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutor,
     RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimeMathBackend,
     RuntimePlan, RuntimePlanLowerReport, RuntimePlanLowerStats, RuntimePlanProfileStats,
     RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase, RuntimeProfileReport,
@@ -35,9 +36,9 @@ use super::{
     ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus,
     ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, SocketAddr, TypeCheckEnv,
     TypeCheckProfileStats, TypeCheckReport, ValueEnum, analyze_types, catch_unwind,
-    collect_script_tests, flow_status_label, fs, host_system_info, is_arcw_path, lint_id_policy,
+    collect_script_tests, flow_status_label, fs, host_system_info, lint_id_policy,
     lower_line_task_groups, lower_pure_helper_candidates, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options, lower_to_hir, parse_expr, parse_source, print_json,
+    lower_runtime_plan_with_stats_and_options, lower_to_hir, parse_expr, parse_source,
     registry_from_hir, runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values,
     serve_native_http, validate_hir_references, validate_runtime_plan_types,
     validate_typecheck_ready,

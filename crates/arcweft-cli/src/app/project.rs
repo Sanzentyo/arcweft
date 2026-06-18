@@ -1,16 +1,24 @@
 use super::runtime::{
     CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers, parse_runtime_pure_workers,
 };
+use super::shared::is_arcw_path;
 use super::{
-    AdapterManifest, AdapterManifestFile, ArcweftRustManifest, AssertUnwindSafe, ExitCode,
+    AdapterManifest, AdapterManifestFile, ArcweftRustManifest, Args, AssertUnwindSafe, ExitCode,
     HostCallPolicy, LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend,
-    LoweredLineTaskGroup, NativeTaskBridge, Path, PathBuf, ProfileOptions, ResolvedLaunchProfile,
+    LoweredLineTaskGroup, NativeTaskBridge, Path, PathBuf, ResolvedLaunchProfile,
     RuntimeMathBackend, RuntimePlanLowerOptions, RuntimeProfilePhase, RuntimePureAcceleratorConfig,
     RuntimePureBackendMode, RuntimePureWorkerCount, SocketAddr, SyntaxLint, SyntaxLintSeverity,
-    TypeCheckEnv, TypeCheckReport, catch_unwind, fs, is_arcw_path, lint_id_policy,
-    lower_line_task_groups, parse_source, profile_lower_hir, profile_validate_hir,
-    run_profile_phase, standard,
+    TypeCheckEnv, TypeCheckReport, catch_unwind, fs, lint_id_policy, lower_line_task_groups,
+    parse_source, profile_lower_hir, profile_validate_hir, run_profile_phase, standard,
 };
+
+#[derive(Args, Clone, Debug, Default)]
+pub(in crate::app) struct ProfileOptions {
+    #[arg(long)]
+    pub(in crate::app) profile: Option<String>,
+    #[arg(long, default_value = "arcw.toml")]
+    pub(in crate::app) manifest: PathBuf,
+}
 
 #[derive(Clone, Debug)]
 pub(in crate::app) enum SourceSelection {

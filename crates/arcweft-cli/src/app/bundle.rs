@@ -1,5 +1,5 @@
 use super::project::{
-    SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
+    ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
     typecheck_env_for_selection,
 };
 use super::runtime::{
@@ -7,13 +7,14 @@ use super::runtime::{
     report_path, run_profile_phase,
 };
 use super::runtime::{CliRuntimeExecutorTier, CliRuntimeStepMode, parse_runtime_binding_arg};
+use super::shared::print_json;
 use super::{
     AdapterManifest, ArcweftBundle, Args, BundleAdapterHostCall, BundleAdapterManifest,
     BundleLaunchKind, BundleManifest, BundleRunnerError, BundleRunnerOptions, BundleRuntimeSummary,
     BundleSource, BundleVirtualFile, BundleVirtualFileSpace, Component, ExitCode, FlowOp,
     INTERNAL_SCHEDULER_ADAPTER_ID, LaunchKind, NativeAdapterRegistrar, Path, PathBuf,
-    ProfileOptions, RuntimeBinding, RuntimeExecutorTier, RuntimePlan, RuntimeProfilePhase,
-    RuntimePureAcceleratorConfig, fs, internal_scheduler_manifest, print_json,
+    RuntimeBinding, RuntimeExecutorTier, RuntimePlan, RuntimeProfilePhase,
+    RuntimePureAcceleratorConfig, fs, internal_scheduler_manifest,
     run_bundle_file_with_native_adapters, standard,
 };
 

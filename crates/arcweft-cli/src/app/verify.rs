@@ -1,21 +1,22 @@
 use super::project::{
-    CheckedModule, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
-    resolve_source_selection, runtime_plan_options_for_selection,
+    CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
+    native_host_policy_for_selection, resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection,
 };
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
     CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
 };
+use super::shared::print_json;
 use super::{
     Args, BackendKind, BorrowCheckProfileStats, CheckReport, ExitCode, ExternalZ3Backend,
     FlowFiberStatus, NativeAdapterRegistrar, NativeRunHost, OxizBackend, Path, PathBuf,
-    ProfileOptions, RuntimeBinding, RuntimeExecutorInstance, RuntimeExecutorTier, RuntimePlan,
+    RuntimeBinding, RuntimeExecutorInstance, RuntimeExecutorTier, RuntimePlan,
     RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary, SmtBackend,
     TypeCheckProfileStats, VerificationMode, VerificationPolicy, VerificationReport,
     VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
     apply_runtime_entry_selection, emit_smt_lib, flow_status_label, fs,
-    lower_runtime_plan_with_options, print_json, report_path, run_profile_phase,
+    lower_runtime_plan_with_options, report_path, run_profile_phase,
     run_runtime_steps_with_executor, validate_runtime_plan_types, verify_module_with_env,
 };
 

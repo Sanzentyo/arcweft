@@ -84,13 +84,13 @@ conversion now live in `app/bundle.rs`. Runtime command option types, runtime
 value parsers, and runtime step/executor CLI conversion helpers now live in
 `app/runtime.rs`. Tooling command options and source path collection now live in
 `app/tooling.rs`, while verification CLI parsers now live in `app/verify.rs`.
-The primary `app.rs` is smaller, but it still owns a few shared CLI helper
-definitions. The remaining architectural cuts are:
+Launch profile CLI options now live with project selection in `app/project.rs`,
+and small shared helpers now live in `app/shared.rs`. The primary `app.rs` is
+now mostly dispatch and import wiring. The remaining architectural cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing the remaining shared CLI helper definitions next so the primary
-   module becomes dispatch plus shared CLI context instead of a cross-layer
-   implementation sink.
+   prioritizing import-surface cleanup and any remaining dispatch-only
+   simplification without reintroducing cross-layer command logic.
 2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
 3. Move remaining product-player host/task behavior onto `.awfb` execution.

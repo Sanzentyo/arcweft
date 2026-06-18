@@ -1,6 +1,7 @@
+use super::shared::{is_arcw_path, print_json};
 use super::{
     Args, ExitCode, FormatOptions, IdsCommand, Path, PathBuf, ToolingEditReport, format_source, fs,
-    is_arcw_path, materialize_ids, print_json,
+    materialize_ids,
 };
 
 #[derive(Args, Clone, Debug)]

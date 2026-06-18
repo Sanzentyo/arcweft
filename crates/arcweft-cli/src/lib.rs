@@ -16,4 +16,4 @@ pub use arcweft_runtime_host::{
     run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
 
-pub(crate) use app::print_json;
+pub(crate) use app::shared::print_json;

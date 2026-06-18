@@ -4,6 +4,7 @@ mod commands;
 pub(in crate::app) mod jit;
 pub(crate) mod project;
 pub(in crate::app) mod runtime;
+pub(crate) mod shared;
 mod tooling;
 pub(in crate::app) mod verify;
 
@@ -172,26 +173,4 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::Fmt(options) => format_command(&options),
         CliCommand::Ids { command } => ids_command(command),
     }
-}
-
-#[derive(Args, Clone, Debug, Default)]
-struct ProfileOptions {
-    #[arg(long)]
-    profile: Option<String>,
-    #[arg(long, default_value = "arcw.toml")]
-    manifest: PathBuf,
-}
-
-pub(crate) fn print_json<T: serde::Serialize>(value: &T) -> Result<(), ExitCode> {
-    serde_json::to_writer_pretty(std::io::stdout(), value).map_err(|error| {
-        eprintln!("error: failed to write JSON: {error}");
-        ExitCode::FAILURE
-    })?;
-    println!();
-    Ok(())
-}
-
-fn is_arcw_path(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|extension| extension == "arcw")
 }
