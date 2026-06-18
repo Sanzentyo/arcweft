@@ -138,6 +138,12 @@ convert comma-separated values into vectors.
 parameters are `amp`, `dir`, `seed`, `speed`, and `bucket`. The same source,
 frame, capture time, and seed must produce the same capture.
 
+`.spin` applies deterministic time-varying rotation. Common parameters are
+`angle`, `speed`, `phase`, `origin`, and `target`.
+
+`.pulse` applies deterministic time-varying scale. Common parameters are
+`amp`, `amount`, `speed`, `phase`, `origin`, and `target`.
+
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture

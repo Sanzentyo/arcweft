@@ -231,6 +231,10 @@ pub struct NativeGlyphPlacement {
     pub rotate_degrees: f32,
     pub skew_x_degrees: f32,
     pub skew_y_degrees: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affine_origin: Option<RichTextTransformOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affine_target: Option<RichTextEffectTarget>,
     pub vertical_form: GlyphVerticalForm,
     pub scale_x: f32,
     pub scale_y: f32,
@@ -1349,6 +1353,8 @@ fn native_glyph_placements_from_layout(
                 rotate_degrees: glyph_orientation_degrees(glyph.orientation),
                 skew_x_degrees: 0.0,
                 skew_y_degrees: 0.0,
+                affine_origin: None,
+                affine_target: None,
                 vertical_form: glyph.vertical_form,
                 scale_x: 1.0,
                 scale_y: 1.0,
@@ -1583,6 +1589,8 @@ fn native_glyph_placements_for_layout_with_effects(
                 rotate_degrees: glyph_orientation_degrees(glyph.orientation),
                 skew_x_degrees: 0.0,
                 skew_y_degrees: 0.0,
+                affine_origin: None,
+                affine_target: None,
                 vertical_form: glyph.vertical_form,
                 scale_x: 1.0,
                 scale_y: 1.0,
@@ -1772,6 +1780,8 @@ fn transformed_presentation_rect(
         rotate_degrees: 0.0,
         skew_x_degrees: 0.0,
         skew_y_degrees: 0.0,
+        affine_origin: None,
+        affine_target: None,
         vertical_form: GlyphVerticalForm::None,
         scale_x: 1.0,
         scale_y: 1.0,
@@ -1953,6 +1963,8 @@ fn apply_presentation_effects_to_placement(
         placement.scale_y *= transform.scale.y.as_f32();
         placement.skew_x_degrees += transform.skew.x.as_f32();
         placement.skew_y_degrees += transform.skew.y.as_f32();
+        placement.affine_origin = Some(transform.origin);
+        placement.affine_target = Some(transform.target);
     }
     if let Some(opacity) = presentation.opacity {
         placement.opacity *= opacity.as_f32();
@@ -1978,6 +1990,8 @@ fn apply_presentation_effects_to_placement_with_execution(
         placement.scale_y *= transform.scale.y.as_f32();
         placement.skew_x_degrees += transform.skew.x.as_f32();
         placement.skew_y_degrees += transform.skew.y.as_f32();
+        placement.affine_origin = Some(transform.origin);
+        placement.affine_target = Some(transform.target);
     }
     if let Some(opacity) = presentation.opacity {
         placement.opacity *= opacity.as_f32();
@@ -2057,6 +2071,18 @@ fn apply_builtin_descriptor(
             placement.y += radius * angle.sin();
             placement.rotate_degrees += angle.to_degrees() + 90.0;
         }
+        "spin" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return true;
+            }
+            apply_builtin_spin(effect, time_seconds, placement);
+        }
+        "pulse" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return true;
+            }
+            apply_builtin_pulse(effect, time_seconds, placement);
+        }
         "typewriter" => {
             if !effect_applies_to_glyph_mask(effect) {
                 return true;
@@ -2070,6 +2096,50 @@ fn apply_builtin_descriptor(
         _ => return false,
     }
     true
+}
+
+fn apply_builtin_spin(
+    effect: &RichTextEffectDescriptor,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    let angle = param_milli(effect, "angle")
+        .or_else(|| param_milli(effect, "amp"))
+        .unwrap_or(Milli(6000))
+        .as_f32();
+    let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
+    let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
+    let t = (time_seconds * speed + phase) * std::f32::consts::TAU;
+    placement.rotate_degrees += angle * t.sin();
+    apply_effect_affine_pivot(effect, RichTextTransformOrigin::Center, placement);
+}
+
+fn apply_builtin_pulse(
+    effect: &RichTextEffectDescriptor,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    let amplitude = param_milli(effect, "amp")
+        .or_else(|| param_milli(effect, "amount"))
+        .unwrap_or(Milli(80))
+        .as_f32()
+        .max(0.0);
+    let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
+    let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
+    let t = (time_seconds * speed + phase) * std::f32::consts::TAU;
+    let scale = 1.0 + amplitude * (t.sin() * 0.5 + 0.5);
+    placement.scale_x *= scale;
+    placement.scale_y *= scale;
+    apply_effect_affine_pivot(effect, RichTextTransformOrigin::Center, placement);
+}
+
+fn apply_effect_affine_pivot(
+    effect: &RichTextEffectDescriptor,
+    default_origin: RichTextTransformOrigin,
+    placement: &mut NativeGlyphPlacement,
+) {
+    placement.affine_origin = Some(param_origin(effect).unwrap_or(default_origin));
+    placement.affine_target = Some(effect.target);
 }
 
 fn native_sparkle_effect(ctx: &mut TextEffectGlyphContext<'_>) {
@@ -2277,6 +2347,22 @@ fn param_seed(effect: &RichTextEffectDescriptor, name: &str) -> Option<u64> {
 
 fn param_vec2(effect: &RichTextEffectDescriptor, name: &str) -> Option<[f32; 2]> {
     param_as_vec2(effect.params.get(name)?)
+}
+
+fn param_origin(effect: &RichTextEffectDescriptor) -> Option<RichTextTransformOrigin> {
+    let value = match effect.params.get("origin")? {
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value } => value.as_str(),
+        _ => return None,
+    };
+    match value.trim().trim_start_matches('.') {
+        "baseline_start" | "start" => Some(RichTextTransformOrigin::BaselineStart),
+        "baseline_center" => Some(RichTextTransformOrigin::BaselineCenter),
+        "center" => Some(RichTextTransformOrigin::Center),
+        "glyph_center" | "glyph" => Some(RichTextTransformOrigin::GlyphCenter),
+        _ => None,
+    }
 }
 
 fn shader_param_milli(shader: &RichTextShaderRef, name: &str) -> Option<Milli> {
@@ -4224,6 +4310,8 @@ fn apply_ruby_transforms_to_glyph_area_inner(
             rotate_degrees: 0.0,
             skew_x_degrees: 0.0,
             skew_y_degrees: 0.0,
+            affine_origin: None,
+            affine_target: None,
             vertical_form: GlyphVerticalForm::None,
             scale_x: 1.0,
             scale_y: 1.0,
@@ -4940,7 +5028,7 @@ fn glyph_presentation_affine(
     presentation_affine(
         placement,
         base_rotation,
-        glyph_transform_pivot(glyph, layout),
+        glyph_transform_pivot(placement, glyph, layout),
     )
 }
 
@@ -4952,7 +5040,7 @@ fn ruby_glyph_presentation_affine(
     presentation_affine(
         placement,
         0.0,
-        ruby_glyph_transform_pivot(presentation, glyph),
+        ruby_glyph_transform_pivot(placement, presentation, glyph),
     )
 }
 
@@ -4987,12 +5075,21 @@ fn presentation_affine(
     Some([matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f])
 }
 
-fn glyph_transform_pivot(glyph: &LaidOutGlyph, layout: &LaidOutText) -> Vector {
-    let Some(transform) = &glyph.presentation.transform else {
-        return Vector::new(0.0, 0.0);
-    };
-    let target_bounds = transform_target_bounds(transform.target, glyph, layout);
-    match transform.origin {
+fn glyph_transform_pivot(
+    placement: &NativeGlyphPlacement,
+    glyph: &LaidOutGlyph,
+    layout: &LaidOutText,
+) -> Vector {
+    let (origin, target) =
+        if let (Some(origin), Some(target)) = (placement.affine_origin, placement.affine_target) {
+            (origin, target)
+        } else if let Some(transform) = &glyph.presentation.transform {
+            (transform.origin, transform.target)
+        } else {
+            return Vector::new(0.0, 0.0);
+        };
+    let target_bounds = transform_target_bounds(target, glyph, layout);
+    match origin {
         RichTextTransformOrigin::BaselineStart => Vector::new(
             target_bounds.x - glyph.origin.x,
             target_bounds.y - glyph.origin.y,
@@ -5026,13 +5123,18 @@ fn transform_target_bounds(
 }
 
 fn ruby_glyph_transform_pivot(
+    placement: &NativeGlyphPlacement,
     presentation: &RichTextPresentation,
     glyph: &GlyphInstance,
 ) -> Vector {
-    let Some(transform) = &presentation.transform else {
+    let origin = if let Some(origin) = placement.affine_origin {
+        origin
+    } else if let Some(transform) = &presentation.transform {
+        transform.origin
+    } else {
         return Vector::new(0.0, 0.0);
     };
-    match transform.origin {
+    match origin {
         RichTextTransformOrigin::BaselineStart => Vector::new(0.0, 0.0),
         RichTextTransformOrigin::BaselineCenter => {
             Vector::new(glyph.advance.x * 0.5, glyph.advance.y * 0.5)
@@ -5878,6 +5980,72 @@ mod tests {
     }
 
     #[test]
+    fn native_builtin_spin_and_pulse_animate_affine() {
+        let spin = RichTextEffectDescriptor {
+            id: "spin".to_owned(),
+            params: BTreeMap::from([
+                (
+                    "angle".to_owned(),
+                    RichTextParam::Milli { value: Milli(8000) },
+                ),
+                (
+                    "speed".to_owned(),
+                    RichTextParam::Milli { value: Milli::ONE },
+                ),
+                (
+                    "origin".to_owned(),
+                    RichTextParam::Text {
+                        value: "center".to_owned(),
+                    },
+                ),
+            ]),
+            target: RichTextEffectTarget::Run,
+            phase: RichTextEffectPhase::GlyphTransform,
+            state_scope: RichTextStateScope::Run,
+        };
+        let mut spin_early = test_native_glyph_placement(0, 0);
+        let mut spin_late = test_native_glyph_placement(0, 0);
+        apply_builtin_descriptor("line.scope", &spin, 1, 0.125, &mut spin_early);
+        apply_builtin_descriptor("line.scope", &spin, 1, 0.625, &mut spin_late);
+        assert!(
+            (spin_early.rotate_degrees - spin_late.rotate_degrees).abs() > 0.5,
+            "spin should rotate over effect time"
+        );
+        assert_eq!(
+            spin_early.affine_origin,
+            Some(RichTextTransformOrigin::Center)
+        );
+        assert_eq!(spin_early.affine_target, Some(RichTextEffectTarget::Run));
+
+        let pulse = RichTextEffectDescriptor {
+            id: "pulse".to_owned(),
+            params: BTreeMap::from([
+                ("amp".to_owned(), RichTextParam::Milli { value: Milli(160) }),
+                (
+                    "speed".to_owned(),
+                    RichTextParam::Milli { value: Milli::ONE },
+                ),
+            ]),
+            target: RichTextEffectTarget::Run,
+            phase: RichTextEffectPhase::GlyphTransform,
+            state_scope: RichTextStateScope::Run,
+        };
+        let mut pulse_early = test_native_glyph_placement(0, 0);
+        let mut pulse_late = test_native_glyph_placement(0, 0);
+        apply_builtin_descriptor("line.scope", &pulse, 1, 0.25, &mut pulse_early);
+        apply_builtin_descriptor("line.scope", &pulse, 1, 0.75, &mut pulse_late);
+        assert!(
+            (pulse_early.scale_x - pulse_late.scale_x).abs() > 0.05,
+            "pulse should scale over effect time"
+        );
+        assert_eq!(
+            pulse_early.affine_origin,
+            Some(RichTextTransformOrigin::Center)
+        );
+        assert_eq!(pulse_early.affine_target, Some(RichTextEffectTarget::Run));
+    }
+
+    #[test]
     fn glyph_presentation_affine_uses_transform_target_bounds_for_center_pivot() {
         let transform = RichTextTransform {
             rotate: RichTextAngle {
@@ -5937,6 +6105,8 @@ mod tests {
             rotate_degrees: 0.0,
             skew_x_degrees: 0.0,
             skew_y_degrees: 0.0,
+            affine_origin: None,
+            affine_target: None,
             vertical_form: GlyphVerticalForm::None,
             scale_x: 1.0,
             scale_y: 1.0,

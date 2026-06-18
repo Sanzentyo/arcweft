@@ -18763,7 +18763,44 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
         &late_color_bytes,
     );
 
+    assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
+
     fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
+}
+
+fn assert_effects_animation_spin_pulse_run_changes_over_time(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let spin_pulse_run = find_rich_text_run_object(json, "回転して膨らむ文字");
+    for effect in ["spin", "pulse"] {
+        assert_rich_text_run_object_has_effect(spin_pulse_run, effect);
+    }
+    let spin_pulse_object_id = spin_pulse_run["id"]
+        .as_str()
+        .expect("spin/pulse run object id is reported");
+    let spin_pulse_early_path = dir.join("spin-pulse-color-4000.rgba");
+    let spin_pulse_late_path = dir.join("spin-pulse-color-4500.rgba");
+    let (spin_pulse_early, spin_pulse_early_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &spin_pulse_early_path,
+        spin_pulse_object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    let (spin_pulse_late, spin_pulse_late_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &spin_pulse_late_path,
+        spin_pulse_object_id,
+        &["--capture-step", "3", "--capture-time", "4.5"],
+    );
+    assert_full_grammar_color_captures_differ(
+        "spin + pulse affine animation",
+        &spin_pulse_early,
+        &spin_pulse_early_bytes,
+        &spin_pulse_late,
+        &spin_pulse_late_bytes,
+    );
 }
 
 fn assert_windows_fonts_sample_vertical_cluster_readback(

@@ -313,6 +313,8 @@ fn inferred_tag_is_mark(name: &str) -> bool {
             | "wave"
             | "shake"
             | "arc"
+            | "spin"
+            | "pulse"
             | "typewriter"
             | "jitter"
             | "shader"

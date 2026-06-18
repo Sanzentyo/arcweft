@@ -1392,7 +1392,8 @@ fn inferred_rich_text_family(selector: &str, attrs: &str) -> Option<&'static str
         | "ruby_under"
         | "ruby_inter_character" => Some("layout"),
         "offset" | "pos" | "rotate" | "scale" | "skew" => Some("transform"),
-        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => Some("effect"),
+        "wave" | "shake" | "arc" | "spin" | "pulse" | "typewriter" | "jitter" | "shader"
+        | "host" => Some("effect"),
         _ if !attrs.trim().is_empty() => Some("effect"),
         _ => None,
     }

@@ -2130,9 +2130,8 @@ fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily>
         | "ruby_under"
         | "ruby_inter_character" => Some(InferredTagFamily::Layout),
         "offset" | "pos" | "rotate" | "scale" | "skew" => Some(InferredTagFamily::Transform),
-        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => {
-            Some(InferredTagFamily::Effect)
-        }
+        "wave" | "shake" | "arc" | "spin" | "pulse" | "typewriter" | "jitter" | "shader"
+        | "host" => Some(InferredTagFamily::Effect),
         "mark" => Some(InferredTagFamily::Marker),
         _ if !attrs.trim().is_empty() => Some(InferredTagFamily::Effect),
         _ => None,

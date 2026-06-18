@@ -69,7 +69,7 @@ flow rich_text_effects_animation {
     ]
 
     lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[
-        Reveal: [.typewriter cps=5 phase=glyph_mask]一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo state_scope=glyph target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo state_scope=run]重ね掛けtypewriter[/][/][/][/]。さらに [.rotate angle=5deg origin=center target=run][.scale x=1.18 y=1.18 origin=baseline_center target=run]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"]揺れる縦書きABC2026[/font][/]。[p]
+        Reveal: [.typewriter cps=5 phase=glyph_mask]一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo state_scope=glyph target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo state_scope=run]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"]揺れる縦書きABC2026[/font][/]。[p]
     ]
 
     return "rich_text_effects_animation"

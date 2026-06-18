@@ -132,8 +132,8 @@ it to the explicit family end tag, such as `[/effect]`.
 Known selector families are style (`.italic`, `.oblique`), layout
 (`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
 selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
-effect (`.wave`, `.shake`, `.arc`, `.typewriter`, `.jitter`, `.shader`,
-`.host`). Unknown dot selectors without attributes are markers and canonicalize
+effect (`.wave`, `.shake`, `.arc`, `.spin`, `.pulse`, `.typewriter`, `.jitter`,
+`.shader`, `.host`). Unknown dot selectors without attributes are markers and canonicalize
 to `[mark .name]`. If an unknown marker-like selector was accidentally written
 with a following `[/]`, canonical tooling removes that inferred close because
 markers are zero-width, not spans. Unknown dot selectors with attributes

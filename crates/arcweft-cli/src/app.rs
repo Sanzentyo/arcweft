@@ -9764,7 +9764,10 @@ mod tests {
             test_observed_object("object.ui.left", 1, 1, 2, 2),
             test_observed_object("object.ui.right", 5, 1, 2, 2),
         ];
-        let selected = objects.iter().collect::<Vec<_>>();
+        let selected = objects
+            .iter()
+            .map(AgentNativeCaptureTarget::Observed)
+            .collect::<Vec<_>>();
         let frame = test_line_display_frame();
         let context = AgentNativeCaptureContext {
             frame: &frame,
@@ -9810,7 +9813,10 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let objects = vec![test_observed_object("object.ui.panel", 4, 5, 7, 6)];
-        let selected = objects.iter().collect::<Vec<_>>();
+        let selected = objects
+            .iter()
+            .map(AgentNativeCaptureTarget::Observed)
+            .collect::<Vec<_>>();
         let frame = test_resolved_line_display_frame();
         let context = AgentNativeCaptureContext {
             frame: &frame,

@@ -70,9 +70,11 @@ rather than only surviving as display-map metadata.
 The dedicated `rich-text-effects-animation.arcw` regression also captures one
 run carrying `typewriter + wave + shake + sparkle`: its object mask has zero
 visible pixels at `--capture-time 0`, visible pixels at a later pinned sample,
-and object color crops differ between two later samples. This keeps the debug
-surface honest for stacked reveal, glyph-placement, and host-dispatched effects
-instead of only checking each effect family in isolation.
+and object color crops differ between two later samples. It also checks a
+separate `spin + pulse` run, where animated rotation and scale alter the native
+object color crop between pinned samples. This keeps the debug surface honest
+for stacked reveal, glyph-placement, affine animation, and host-dispatched
+effects instead of only checking each effect family in isolation.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence
