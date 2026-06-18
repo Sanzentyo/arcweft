@@ -13,26 +13,23 @@ use self::bundle::{bundle_command, run_bundle_command};
 use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, JitCommand};
 use self::jit::jit_command;
 use self::runtime::{
-    NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, report_path,
-    run_profile_phase, run_runtime_steps_with_executor, runtime_cli_command, runtime_plan_command,
-    runtime_profile_command, runtime_run_command, runtime_serve_command, script_bench_command,
-    script_test_command,
+    runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
+    runtime_serve_command, script_bench_command, script_test_command,
 };
 use self::tooling::{format_command, ids_command};
 use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};
 use crate::output::{
-    AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
-    RuntimeExecutorTier, RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler,
-    RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary,
-    RuntimeRunReport, RuntimeStepRunSummary, RuntimeTypeValidationProfileStats,
-    RuntimeTypeValidationReportSummary, ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary,
-    ScriptBenchMeasurementSummary, ScriptBenchPureHelperBatchSummary,
+    AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, RuntimeExecutorTier,
+    RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
+    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary, RuntimeRunReport,
+    RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, ScriptBenchDeterministicSummary,
+    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary, ScriptBenchPureHelperBatchSummary,
     ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
     ScriptBenchPureHelperRuntimeBatchSummary, ScriptBenchPureHelperStatsSummary,
     ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport,
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestFinalStatus,
     ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, TypeCheckProfileStats,
-    VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
+    flow_status_label,
 };
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
@@ -96,12 +93,7 @@ use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
 };
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
-use arcweft_verify::{
-    BackendKind, RuntimeTypeValidationStats, SmtBackend, VerificationMode, VerificationPolicy,
-    VerificationReport, emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
-};
-use arcweft_verify_oxiz::OxizBackend;
-use arcweft_verify_z3::ExternalZ3Backend;
+use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
 use clap::{Args, Parser, ValueEnum};
 use std::ffi::OsString;
 use std::fs;

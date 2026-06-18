@@ -5,20 +5,29 @@ use super::project::{
 };
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
-    CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
+    CliRuntimeStepMode, NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection,
+    parse_runtime_binding_arg, parse_runtime_pure_workers, report_path, run_profile_phase,
+    run_runtime_steps_with_executor,
 };
 use super::shared::print_json;
-use super::{
-    Args, BackendKind, BorrowCheckProfileStats, CheckReport, ExitCode, ExternalZ3Backend,
-    FlowFiberStatus, NativeAdapterRegistrar, NativeRunHost, OxizBackend, Path, PathBuf,
-    RuntimeBinding, RuntimeExecutorInstance, RuntimeExecutorTier, RuntimePlan,
-    RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary, SmtBackend,
-    TypeCheckProfileStats, VerificationMode, VerificationPolicy, VerificationReport,
-    VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
-    apply_runtime_entry_selection, emit_smt_lib, flow_status_label, fs,
-    lower_runtime_plan_with_options, report_path, run_profile_phase,
-    run_runtime_steps_with_executor, validate_runtime_plan_types, verify_module_with_env,
+use crate::output::{
+    BorrowCheckProfileStats, CheckReport, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
+    RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
+    VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
 };
+use arcweft_core::{engine::FlowFiberStatus, plan::RuntimePlan, value::RuntimeBinding};
+use arcweft_runtime_host::NativeAdapterRegistrar;
+use arcweft_runtime_plan::flow::lower_runtime_plan_with_options;
+use arcweft_verify::{
+    BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
+    emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
+};
+use arcweft_verify_oxiz::OxizBackend;
+use arcweft_verify_z3::ExternalZ3Backend;
+use clap::Args;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 pub(super) fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
