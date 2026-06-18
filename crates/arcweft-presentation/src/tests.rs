@@ -1,4 +1,5 @@
 use super::*;
+use crate::gesture::{GestureArena, GestureKind, GestureOutcome};
 use crate::hit::{HitRecord, HitRect, HitTree};
 use crate::hover::{HoverPath, HoverTransition};
 use crate::input::{
@@ -909,4 +910,105 @@ fn route_fingerprint_captures_routing_state_and_decision() {
     let missed_fingerprint = route_fingerprint(&tree, &hits, &InteractionState::default(), &missed);
     assert_eq!(first.routing_hash(), missed_fingerprint.routing_hash());
     assert_ne!(first.decision_hash(), missed_fingerprint.decision_hash());
+}
+
+#[test]
+fn gesture_arena_completes_small_pointer_sequence_as_tap() {
+    let target = interaction_target("choice.listen");
+    let mut arena = GestureArena::default();
+    arena.begin(
+        PointerId(1),
+        target.clone(),
+        ViewportPoint::new(10.0, 10.0),
+        vec![GestureKind::Tap, GestureKind::Drag],
+    );
+    assert_eq!(
+        arena.update(PointerId(1), ViewportPoint::new(12.0, 11.0)),
+        GestureOutcome::Pending
+    );
+    assert_eq!(
+        arena.end(PointerId(1), ViewportPoint::new(12.0, 11.0)),
+        GestureOutcome::Completed {
+            pointer: PointerId(1),
+            target,
+            winner: Some(GestureKind::Tap)
+        }
+    );
+    assert!(arena.sessions().is_empty());
+}
+
+#[test]
+fn gesture_arena_resolves_drag_after_threshold() {
+    let target = interaction_target("activity.drag");
+    let mut arena = GestureArena::default();
+    arena.begin(
+        PointerId(2),
+        target.clone(),
+        ViewportPoint::new(0.0, 0.0),
+        vec![GestureKind::Tap, GestureKind::Drag],
+    );
+    assert_eq!(
+        arena.update(PointerId(2), ViewportPoint::new(9.0, 0.0)),
+        GestureOutcome::Won {
+            pointer: PointerId(2),
+            target: target.clone(),
+            winner: GestureKind::Drag
+        }
+    );
+    assert_eq!(
+        arena.end(PointerId(2), ViewportPoint::new(12.0, 0.0)),
+        GestureOutcome::Completed {
+            pointer: PointerId(2),
+            target,
+            winner: Some(GestureKind::Drag)
+        }
+    );
+}
+
+#[test]
+fn gesture_arena_axis_scroll_beats_generic_drag() {
+    let target = interaction_target("scroll.panel");
+    let mut arena = GestureArena::default();
+    arena.begin(
+        PointerId(3),
+        target.clone(),
+        ViewportPoint::new(0.0, 0.0),
+        vec![GestureKind::Drag, GestureKind::ScrollY],
+    );
+    assert_eq!(
+        arena.update(PointerId(3), ViewportPoint::new(2.0, 10.0)),
+        GestureOutcome::Won {
+            pointer: PointerId(3),
+            target,
+            winner: GestureKind::ScrollY
+        }
+    );
+}
+
+#[test]
+fn gesture_arena_cancel_reports_current_winner_and_removes_session() {
+    let target = interaction_target("activity.drag");
+    let mut arena = GestureArena::default();
+    arena.begin(
+        PointerId(4),
+        target.clone(),
+        ViewportPoint::new(0.0, 0.0),
+        vec![GestureKind::Drag],
+    );
+    assert!(matches!(
+        arena.update(PointerId(4), ViewportPoint::new(10.0, 0.0)),
+        GestureOutcome::Won {
+            winner: GestureKind::Drag,
+            ..
+        }
+    ));
+    assert_eq!(
+        arena.cancel(PointerId(4)),
+        GestureOutcome::Cancelled {
+            pointer: PointerId(4),
+            target,
+            winner: Some(GestureKind::Drag)
+        }
+    );
+    assert!(arena.sessions().is_empty());
 }

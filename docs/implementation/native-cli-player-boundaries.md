@@ -76,7 +76,11 @@ The unified UI design is adopted as the long-term boundary for future work:
   fixed-point `LayerTransform`; pointer routing maps viewport coordinates into
   layer-local hit bounds before consulting `HitTree`, and non-invertible
   transforms are skipped for pointer hit-testing instead of panicking or
-  creating a fallback router.
+  creating a fallback router. `arcweft_presentation::gesture` now provides the
+  first Sans I/O `GestureArena` boundary for tap, drag, horizontal scroll, and
+  vertical scroll arbitration. It records stable pointer sessions and resolves
+  winners from deterministic movement thresholds without adding per-Activity
+  gesture routers.
 - A future `arcweft-ui` crate will own typed Component descriptors, retained
   fragments, generational Entity storage, reactivity, style, layout integration,
   and semantic UI nodes.
@@ -169,13 +173,13 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
 5. Extend the initial `InputRouter`, `HitTree`, focus/modal/capture state,
-   hover path diff, replay fingerprinting, and local-coordinate transform
-   handling with gesture arena and Activity/TextBox semantic integration on top
-   of the shared presentation input and LayerTree boundaries. Later Component
-   and Activity work must use `ActionBatch`, `HostEventBatch`, routed
-   `InputEvent`, `LayerContent`, `LayerTransform`, `HoverPath`, `RoutingHash`,
-   and `RouteDecision` instead of introducing per-Activity routers,
-   `ActivityViewport`, or `UiEvent` aliases.
+   hover path diff, replay fingerprinting, local-coordinate transform handling,
+   and gesture arena with Activity/TextBox semantic integration on top of the
+   shared presentation input and LayerTree boundaries. Later Component and
+   Activity work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
+   `LayerContent`, `LayerTransform`, `HoverPath`, `GestureArena`,
+   `RoutingHash`, and `RouteDecision` instead of introducing per-Activity
+   routers, `ActivityViewport`, or `UiEvent` aliases.
 
 ## Invariants
 

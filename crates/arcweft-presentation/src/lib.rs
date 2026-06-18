@@ -2,6 +2,7 @@ use arcweft_id::PublicId;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+pub mod gesture;
 pub mod hit;
 pub mod hover;
 pub mod input;
