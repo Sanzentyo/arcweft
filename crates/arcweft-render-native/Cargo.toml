@@ -8,11 +8,11 @@ repository.workspace = true
 
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
+arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-glyphon = { path = "../arcweft-glyphon" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-text-layout = { path = "../arcweft-text-layout" }
 
 glyphon.workspace = true

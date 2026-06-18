@@ -5,6 +5,7 @@
 //! depend on a concrete runtime backend; those responsibilities belong to CLI
 //! and solver adapter crates.
 
+use arcweft_compiler::lower_source_line_tasks;
 use arcweft_lang_hir::model::{
     HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
     HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
@@ -27,7 +28,6 @@ use arcweft_lang_sema::{
         analyze_semantics,
     },
 };
-use arcweft_runtime_plan::line_task::lower_line_task_groups;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use thiserror::Error;
@@ -653,7 +653,7 @@ impl ObligationCollector {
     }
 
     fn collect_runtime_plan_obligations(&mut self, module: &HirModule) {
-        if let Err(errors) = lower_line_task_groups(module) {
+        if let Err(errors) = lower_source_line_tasks(module) {
             for error in errors {
                 self.add_obligation(
                     ProofObligationKind::RuntimeConflict,

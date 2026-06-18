@@ -14,8 +14,20 @@ source text
   -> HIR lowering
   -> type check
   -> runtime-plan lowering
+  -> pure-helper candidate lowering
+  -> line-task lowering
   -> line display catalog
 ```
+
+Tooling and renderer crates obtain compiler artifacts through this boundary
+instead of importing `arcweft-runtime-plan` directly. CLI project loading, CLI
+runtime/JIT paths, LSP effective dialogue cascade queries, verifier runtime
+conflict checks, and native rich-text pure shader/effect/motion exports all use
+`arcweft-compiler` APIs for runtime-plan reports, line-task groups, and
+pure-helper candidates. The only remaining direct runtime-plan dependency
+outside the compiler/runtime-plan crates is a dev-only `arcweft-lang-sema` test
+fixture path; those tests should move to runtime-plan or compiler tests before
+the boundary is considered fully clean.
 
 `arcweft-render-native` owns native rendering and capture:
 
@@ -220,13 +232,16 @@ plus the `dev-source` feature. The remaining architectural cuts are:
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned
    parse/lint/HIR/typecheck functions. Profiled runtime compilation also calls
-   the same compiler-owned phase functions, and CLI runtime, verify-types,
-   run/serve/test, JIT check, and Agent native observe paths now obtain
-   compiler artifacts through `arcweft-compiler`: line task groups,
-   runtime-plan lowering reports/options/stats, and pure-helper candidates all
-   cross the CLI boundary as compiler APIs. CLI modules keep developer-facing
-   phase timing, source selection, diagnostic printing, and runtime execution
-   policy.
+   the same compiler-owned phase functions. CLI runtime, verify-types,
+   run/serve/test, JIT check, Agent native observe, LSP cascade, verifier
+   runtime-conflict analysis, and native rich-text pure shader/effect/motion
+   export paths now obtain compiler artifacts through `arcweft-compiler`: line
+   task groups, runtime-plan lowering reports/options/stats, and pure-helper
+   candidates all cross tool and renderer boundaries as compiler APIs. CLI
+   modules keep developer-facing phase timing, source selection, diagnostic
+   printing, and runtime execution policy. The remaining dev-only sema
+   runtime-plan tests should be moved out of `arcweft-lang-sema` rather than
+   routed through a compiler dependency cycle.
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component

@@ -1,5 +1,8 @@
 //! Native wgpu/glyphon renderer and capture adapter for Arcweft presentation frames.
 
+use arcweft_compiler::{
+    PureHelperCandidate, PureHelperLowerError, lower_source_pure_helper_candidate,
+};
 use arcweft_core::{
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
@@ -21,7 +24,6 @@ use arcweft_render_text::{
     RichTextStateScope, RichTextStyle, RichTextTextRun, RichTextTransformOrigin,
     RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
 };
-use arcweft_runtime_plan::pure::{PureHelperCandidate, PureHelperLowerError};
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
     LayoutSize, TextLayoutConfig, layout_frame,
@@ -770,10 +772,8 @@ pub fn register_arcweft_pure_text_shaders(
                     name: function.name().to_owned(),
                 });
             }
-            let candidate = arcweft_runtime_plan::pure::lower_pure_helper_candidate(
-                function,
-                RuntimePureHelperOrigin::Annotated,
-            )?;
+            let candidate =
+                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
             register_arcweft_pure_text_shader(registry, &candidate)?;
             Ok(exported.saturating_add(1))
         })
@@ -845,10 +845,8 @@ pub fn register_arcweft_pure_text_effects(
                     name: function.name().to_owned(),
                 });
             }
-            let candidate = arcweft_runtime_plan::pure::lower_pure_helper_candidate(
-                function,
-                RuntimePureHelperOrigin::Annotated,
-            )?;
+            let candidate =
+                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
             register_arcweft_pure_text_effect(registry, &candidate)?;
             Ok(exported.saturating_add(1))
         })
@@ -927,10 +925,8 @@ pub fn register_arcweft_pure_text_motions(
                     name: function.name().to_owned(),
                 });
             }
-            let candidate = arcweft_runtime_plan::pure::lower_pure_helper_candidate(
-                function,
-                RuntimePureHelperOrigin::Annotated,
-            )?;
+            let candidate =
+                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
             register_arcweft_pure_text_motion(registry, &candidate)?;
             Ok(exported.saturating_add(1))
         })

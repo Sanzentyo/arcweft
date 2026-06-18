@@ -1,8 +1,8 @@
 //! Source-to-runtime-plan compiler driver for Arcweft.
 
-use arcweft_core::plan::RuntimePlan;
+use arcweft_core::plan::{RuntimePlan, RuntimePureHelperOrigin};
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_hir::model::HirModule;
+use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
@@ -20,10 +20,10 @@ use arcweft_runtime_plan::flow::{
 };
 pub use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_runtime_plan::line_task::lower_line_task_groups;
-use arcweft_runtime_plan::pure::lower_pure_helper_candidates;
 pub use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperCandidateReport, PureHelperLowerError,
 };
+use arcweft_runtime_plan::pure::{lower_pure_helper_candidate, lower_pure_helper_candidates};
 use thiserror::Error;
 
 /// Source compilation result shared by developer tooling and player hosts.
@@ -159,6 +159,14 @@ pub fn lower_source_pure_helper_candidates(
     hir: &HirModule,
 ) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
     lower_pure_helper_candidates(hir)
+}
+
+/// Lowers one checked pure function into a runtime helper candidate.
+pub fn lower_source_pure_helper_candidate(
+    function: &HirFunction,
+    origin: RuntimePureHelperOrigin,
+) -> Result<PureHelperCandidate, PureHelperLowerError> {
+    lower_pure_helper_candidate(function, origin)
 }
 
 /// Compiles an Arcweft source string with the standard type-checking environment.

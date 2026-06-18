@@ -376,13 +376,13 @@ name = "arcweft-lsp"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-compiler",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-render-text",
  "arcweft-runtime-host",
- "arcweft-runtime-plan",
  "arcweft-rust-abi",
  "arcweft-tooling",
  "arcweft-verify",
@@ -444,12 +444,12 @@ dependencies = [
 name = "arcweft-render-native"
 version = "0.1.0"
 dependencies = [
+ "arcweft-compiler",
  "arcweft-core",
  "arcweft-glyphon",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "arcweft-render-text",
- "arcweft-runtime-plan",
  "arcweft-text-layout",
  "glyphon",
  "pollster",
@@ -604,11 +604,11 @@ dependencies = [
 name = "arcweft-verify"
 version = "0.1.0"
 dependencies = [
+ "arcweft-compiler",
  "arcweft-core",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
- "arcweft-runtime-plan",
  "serde",
  "thiserror 2.0.18",
 ]

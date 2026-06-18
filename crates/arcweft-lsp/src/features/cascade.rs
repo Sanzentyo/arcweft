@@ -1,4 +1,5 @@
 use crate::documents::DocumentSnapshot;
+use arcweft_compiler::{RuntimePlanLowerOptions, lower_source_runtime_plan_with_stats_and_options};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_syntax::ast::common::TextRange;
@@ -11,9 +12,6 @@ use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
-};
-use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerOptions, lower_runtime_plan_with_stats_and_options,
 };
 use std::ops::Range;
 
@@ -73,7 +71,7 @@ pub(crate) fn effective_dialogue_cascade_at(
         .map_or_else(RuntimePlanLowerOptions::default, |id| {
             RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
         });
-    let report = lower_runtime_plan_with_stats_and_options(&hir, &runtime_options).ok()?;
+    let report = lower_source_runtime_plan_with_stats_and_options(&hir, &runtime_options).ok()?;
     let spec = report.line_display_catalog.lines().get(dialogue_index)?;
     Some(EffectiveDialogueCascade {
         spec: spec.clone(),
