@@ -121,8 +121,12 @@ The unified UI design is adopted as the long-term boundary for future work:
   the first property-binding invalidation boundary: `PropertyBinding`,
   `PropertyBindingTable`, `UiPropertyKind`, `ValueSourceId`, and `Invalidation`
   distinguish paint-only changes such as opacity, color, and transforms from
-  layout, semantic, and structural fragment changes. Later cuts will extend
-  this crate with reactivity, layout integration, and display-list generation.
+  layout, semantic, and structural fragment changes. `reactive` now adds the
+  first retained dependency boundary: `ReactiveGraph` maps dynamic
+  `ValueSourceId` values to generational UI entities plus coalesced
+  `DirtyFlags`, and `ReactiveInvalidation` reports deterministic source
+  revisions without mutating render-phase state. Later cuts will extend this
+  crate with layout integration and display-list generation.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -204,9 +208,9 @@ plus the `dev-source` feature. The remaining architectural cuts are:
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component
-   descriptor, generational Entity, retained flat fragment, and property
-   invalidation boundaries toward reactivity, layout integration, and
-   display-list generation, without adding public names such as
+   descriptor, generational Entity, retained flat fragment, property
+   invalidation, and reactive dependency boundaries toward layout integration
+   and display-list generation, without adding public names such as
    `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or per-Activity input
    routers.
 4. Keep the unified TextBox model as the current source of truth: canonical

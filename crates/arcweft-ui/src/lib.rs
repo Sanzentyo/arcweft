@@ -3,6 +3,7 @@
 pub mod component;
 pub mod entity;
 pub mod fragment;
+pub mod reactive;
 pub mod semantics;
 pub mod style;
 
@@ -18,6 +19,7 @@ pub use fragment::{
     ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
 };
+pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 pub use style::{
     Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder, Rgba8,
@@ -287,6 +289,73 @@ mod tests {
             )),
             Err(UiError::DuplicatePropertyBinding(UiPropertyId(1)))
         );
+    }
+
+    #[test]
+    fn reactive_graph_coalesces_property_bindings_by_source_and_entity() {
+        let mut store = EntityStore::default();
+        let entity = store
+            .insert(
+                DialogueSkinState {
+                    hovered_nameplate: false,
+                },
+                Some(ComponentId(3)),
+            )
+            .unwrap();
+        let mut bindings = PropertyBindingTableBuilder::default();
+        bindings
+            .push(PropertyBinding::new(
+                UiPropertyId(1),
+                UiPropertyKind::Opacity,
+                ValueSourceId(1),
+            ))
+            .unwrap();
+        bindings
+            .push(PropertyBinding::new(
+                UiPropertyId(2),
+                UiPropertyKind::Rotate,
+                ValueSourceId(1),
+            ))
+            .unwrap();
+        bindings
+            .push(PropertyBinding::new(
+                UiPropertyId(3),
+                UiPropertyKind::Width,
+                ValueSourceId(2),
+            ))
+            .unwrap();
+
+        let mut graph = ReactiveGraph::default();
+        graph.watch_property_table(entity.raw(), &bindings.finish());
+
+        let paint = graph.invalidate(ValueSourceId(1)).unwrap();
+        assert_eq!(paint.source(), ValueSourceId(1));
+        assert_eq!(paint.revision(), Revision(1));
+        assert_eq!(paint.entities().len(), 1);
+        assert_eq!(paint.entities()[0].entity(), entity.raw());
+        assert!(paint.entities()[0].dirty().contains(DirtyFlags::PAINT));
+        assert!(!paint.entities()[0].dirty().contains(DirtyFlags::LAYOUT));
+        assert!(!paint.entities()[0].dirty().contains(DirtyFlags::FRAGMENT));
+
+        let layout = graph.invalidate(ValueSourceId(2)).unwrap();
+        assert_eq!(layout.revision(), Revision(1));
+        assert!(layout.entities()[0].dirty().contains(DirtyFlags::LAYOUT));
+        assert!(!layout.entities()[0].dirty().contains(DirtyFlags::FRAGMENT));
+
+        assert_eq!(
+            graph.invalidate(ValueSourceId(1)).unwrap().revision(),
+            Revision(2)
+        );
+    }
+
+    #[test]
+    fn reactive_graph_returns_empty_invalidation_for_unwatched_sources() {
+        let mut graph = ReactiveGraph::default();
+        let invalidation = graph.invalidate(ValueSourceId(99)).unwrap();
+
+        assert_eq!(invalidation.source(), ValueSourceId(99));
+        assert_eq!(invalidation.revision(), Revision(1));
+        assert!(invalidation.entities().is_empty());
     }
 
     #[test]
