@@ -65,9 +65,10 @@ workspace, so broken image asset records fail before bytecode execution.
 
 `arcweft-agent-protocol` now treats observed object payload as typed content.
 Rich text objects carry `content.kind = "rich_text"` with a `LineDisplayFrame`;
-image objects carry `content.kind = "image"` with asset id, optional active
-frame index, optional pinned local time, and optional intrinsic dimensions; and
-custom objects can use `content.kind = "custom"`. `object_layer` and
+image objects carry `content.kind = "image"` with a source id, optional bundle
+asset id, optional active frame index, optional pinned local time, and optional
+intrinsic dimensions; and custom objects can use `content.kind = "custom"`.
+`object_layer` and
 `object_depth` are generic observed-object metadata instead of deriving only
 from `rich_text_ref`. `AgentImageObjectRef` and the presentation tree preserve
 those fields for image objects that have no rich-text child reference, while
@@ -75,6 +76,14 @@ rich-text objects continue to use their rich-text metadata as a fallback. Agent
 hit-test also accepts generic observed object bounding boxes with
 `AgentHitRegionKind::Object`, so image objects can be selected and can return
 their capture refs without pretending to be rich text.
+
+`arcweft-cli` owns the first Agent adapter bridge from committed UI image
+display items to observed image objects. Given a `UiFrameCommit`,
+`UiImageSourceTable`, and pinned visual time, the adapter resolves the active
+decoded frame, converts the UI layout box to a viewport bbox, and emits
+`content.kind = "image"` with source id, frame index, local time, and intrinsic
+dimensions. This bridge is adapter-side and does not add an Agent dependency to
+`arcweft-runtime-host`.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -105,9 +114,9 @@ same alpha-shaped geometry as color image capture.
 
 1. Wire source/DSL asset declarations to the same bundle image asset ids instead
    of relying only on project asset-root discovery.
-2. Wire Agent native observe to call the runtime-host image item API and UI
-   image display-list bridge, rather than only using direct render-native unit
-   submissions.
+2. Wire the live Agent native observe loop to feed actual runtime UI commits
+   through the UI image item bridge, rather than only covering the adapter path
+   in focused tests.
 3. Make CLI capture selection and MCP image metadata expose typed image content
    fields from actual image presentation objects, including active frame
    metadata.

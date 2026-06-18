@@ -14,11 +14,14 @@ arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
+arcweft-id = { path = "../arcweft-id" }
+arcweft-image = { path = "../arcweft-image" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
@@ -27,6 +30,7 @@ arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-test = { path = "../arcweft-test" }
 arcweft-tooling = { path = "../arcweft-tooling" }
+arcweft-ui = { path = "../arcweft-ui" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }

@@ -25,7 +25,7 @@ use arcweft_agent_protocol::{
     AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
     AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
+    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
     AgentPresentationObjectProxyParamQuery, AgentPresentationTree, AgentPresentationTreeQuery,
     AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
     AgentRichTextElementRef, AgentUiTree, AgentViewport,
@@ -35,6 +35,8 @@ use arcweft_render_text::{
     LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
     RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
 };
+use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
+use arcweft_ui::{LayoutBox, LayoutLength, UiImageSourceTable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{BufRead as _, Write as _};
@@ -327,6 +329,140 @@ mod tests {
             Some("hud.foreground")
         );
         assert!(hit_report.hits[0].rich_text_ref.is_none());
+    }
+
+    #[test]
+    fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
+        use arcweft_id::PublicId;
+        use arcweft_image::{
+            DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
+        };
+        use arcweft_presentation::layer::{
+            LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
+        };
+        use arcweft_runtime_host::UiFrameCommitBuilder;
+        use arcweft_ui::{
+            DisplayList, FragmentKind, ImageId, ImagePlayback, LayoutBox, LayoutLength,
+            LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey, StyleId, UiImageSource,
+            UiImageSourceTable, UiLayerOutput, UiSemanticFragment, ViewFragmentBuilder,
+        };
+
+        fn public_id(value: &str) -> PublicId {
+            PublicId::try_new(value).unwrap()
+        }
+
+        fn layer_id(value: &str) -> LayerId {
+            LayerId::new(public_id(value))
+        }
+
+        let dimensions = ImageDimensions::new(2, 1).unwrap();
+        let image = DecodedImage::new(
+            ImageFormat::Gif,
+            dimensions,
+            ImageRepetition::Infinite,
+            vec![
+                DecodedImageFrame::new(0, dimensions, 100, vec![0, 0, 0, 255, 1, 1, 1, 255])
+                    .unwrap(),
+                DecodedImageFrame::new(1, dimensions, 100, vec![2, 2, 2, 255, 3, 3, 3, 255])
+                    .unwrap(),
+            ],
+        )
+        .unwrap();
+        let mut image_sources = UiImageSourceTable::default();
+        image_sources
+            .insert_with_id(
+                ImageId(7),
+                UiImageSource::new(image).with_playback(ImagePlayback::new(0)),
+            )
+            .unwrap();
+
+        let root = layer_id("layer.root");
+        let hud = layer_id("layer.hud");
+        let mut layers = LayerTree::new(LayerNode::new(
+            root.clone(),
+            LayerKind::Root,
+            LayerOrder {
+                phase: RenderPhase::Background,
+                z: 0,
+                stable_index: 0,
+            },
+        ));
+        layers
+            .insert(
+                LayerNode::new(
+                    hud.clone(),
+                    LayerKind::GameUi,
+                    LayerOrder {
+                        phase: RenderPhase::GameUi,
+                        z: 0,
+                        stable_index: 0,
+                    },
+                )
+                .with_parent(root),
+            )
+            .unwrap();
+
+        let mut fragment = ViewFragmentBuilder::default();
+        let node = fragment
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Image(ImageId(7)),
+                StyleId(0),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = fragment.finish();
+        let layout_tree = LayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = LayoutResults::new(&layout_tree);
+        layouts
+            .set(
+                node,
+                LayoutBox::new(
+                    LayoutPoint::new(LayoutLength(10_500), LayoutLength::px(20)),
+                    LayoutSize::new(LayoutLength(20_100), LayoutLength::px(10)),
+                ),
+            )
+            .unwrap();
+        let output = UiLayerOutput::new(
+            DisplayList::from_fragment(&fragment, &layouts).unwrap(),
+            UiSemanticFragment::default(),
+        );
+        let mut builder = UiFrameCommitBuilder::new(&layers);
+        builder.push_layer(hud, output).unwrap();
+        let commit = builder.finish();
+
+        let objects = agent_image_objects_from_ui_frame(
+            "cli",
+            4,
+            &AgentViewport {
+                width: 320,
+                height: 180,
+                scale: 1.0,
+            },
+            &commit,
+            &image_sources,
+            150,
+        );
+
+        assert_eq!(objects.len(), 1);
+        let object = &objects[0];
+        assert_eq!(object.role, "image");
+        assert_eq!(object.layer, "layer.hud");
+        assert_eq!(object.bbox.x, 10);
+        assert_eq!(object.bbox.y, 20);
+        assert_eq!(object.bbox.width, 21);
+        assert_eq!(object.bbox.height, 10);
+        assert!(object.rich_text_ref.is_none());
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("UI image item should become image object content");
+        };
+        assert_eq!(content.source, "ui.image.7");
+        assert_eq!(content.frame_index, Some(1));
+        assert_eq!(content.local_time_millis, Some(150));
+        assert_eq!(content.intrinsic_width, Some(2));
+        assert_eq!(content.intrinsic_height, Some(1));
     }
 
     #[test]
@@ -4365,6 +4501,109 @@ fn agent_observed_rich_text(object: &AgentObservedObject) -> &LineDisplayFrame {
     object
         .rich_text_frame()
         .expect("observed rich-text object carries rich-text content")
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "wired into live Agent observe once runtime UI commits are exposed to the CLI adapter"
+    )
+)]
+pub(crate) fn agent_image_objects_from_ui_frame(
+    session_id: &str,
+    step: usize,
+    viewport: &AgentViewport,
+    frame: &UiFrameCommit,
+    images: &UiImageSourceTable,
+    visual_time_millis: u64,
+) -> Vec<AgentObservedObject> {
+    frame
+        .image_items()
+        .into_iter()
+        .filter_map(|item| {
+            agent_image_object_from_ui_item(
+                session_id,
+                step,
+                viewport,
+                &item,
+                images,
+                visual_time_millis,
+            )
+        })
+        .collect()
+}
+
+fn agent_image_object_from_ui_item(
+    session_id: &str,
+    step: usize,
+    viewport: &AgentViewport,
+    item: &UiFrameImageItem,
+    images: &UiImageSourceTable,
+    visual_time_millis: u64,
+) -> Option<AgentObservedObject> {
+    let source = images.get(item.image())?;
+    let local_time_millis = source.playback().local_time_millis(visual_time_millis);
+    let frame = source.image().frame_at_time_millis(local_time_millis)?;
+    let bbox = agent_bbox_from_layout(item.layout(), viewport);
+    let object_id = format!(
+        "object.image.{}.{}.{}",
+        agent_uri_component(item.layer().public_id().as_str()),
+        item.node().0,
+        item.image().0
+    );
+    let source_id = format!("ui.image.{}", item.image().0);
+    let dimensions = source.image().dimensions();
+    Some(AgentObservedObject {
+        id: object_id.clone(),
+        parent_id: None,
+        entity: Some(source_id.clone()),
+        layer: item.layer().public_id().as_str().to_owned(),
+        role: "image".to_owned(),
+        visible: true,
+        bbox: bbox.clone(),
+        polygon: bbox.polygon(),
+        capture_refs: agent_object_capture_refs(session_id, step, &object_id, &bbox),
+        object_layer: Some(item.layer().public_id().as_str().to_owned()),
+        object_depth: None,
+        text: None,
+        rich_text_ref: None,
+        content: AgentObservedObjectContent::Image(AgentObservedImageContent {
+            source: source_id,
+            asset: None,
+            frame_index: usize::try_from(frame.index()).ok(),
+            local_time_millis: Some(local_time_millis),
+            intrinsic_width: Some(dimensions.width()),
+            intrinsic_height: Some(dimensions.height()),
+        }),
+    })
+}
+
+fn agent_bbox_from_layout(layout: LayoutBox, viewport: &AgentViewport) -> AgentBBox {
+    let x = agent_layout_length_floor_px(layout.origin.x).min(viewport.width.saturating_sub(1));
+    let y = agent_layout_length_floor_px(layout.origin.y).min(viewport.height.saturating_sub(1));
+    let width = agent_layout_length_ceil_px(layout.size.width)
+        .min(viewport.width.saturating_sub(x))
+        .max(1);
+    let height = agent_layout_length_ceil_px(layout.size.height)
+        .min(viewport.height.saturating_sub(y))
+        .max(1);
+    AgentBBox {
+        space: AgentCoordinateSpace::Viewport,
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn agent_layout_length_floor_px(value: LayoutLength) -> u32 {
+    u32::try_from((i64::from(value.0).max(0)) / 1_000).unwrap_or(u32::MAX)
+}
+
+fn agent_layout_length_ceil_px(value: LayoutLength) -> u32 {
+    let milli = i64::from(value.0).max(0);
+    u32::try_from((milli.saturating_add(999)) / 1_000).unwrap_or(u32::MAX)
 }
 
 fn agent_rich_text_child_objects(

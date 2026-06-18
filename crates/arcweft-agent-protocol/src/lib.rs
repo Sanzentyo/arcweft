@@ -504,7 +504,9 @@ pub enum AgentObservedObjectContent {
 /// Image-specific payload for an observed image presentation object.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentObservedImageContent {
-    pub asset: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2251,7 +2253,8 @@ mod tests {
             text: None,
             rich_text_ref: None,
             content: AgentObservedObjectContent::Image(AgentObservedImageContent {
-                asset: "asset.logo.webp".to_owned(),
+                source: "ui.image.7".to_owned(),
+                asset: Some("asset.logo.webp".to_owned()),
                 frame_index: Some(1),
                 local_time_millis: Some(250),
                 intrinsic_width: Some(64),
