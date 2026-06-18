@@ -904,9 +904,11 @@ a text presentation object span instead, for example
 `[.hotspot type=KeywordHit]...[/]` becomes
 `[object .hotspot type=KeywordHit]...[/object]`. If the selector itself names a
 visible proxy struct, `[.KeywordHit]...[/]` becomes
-`[object .KeywordHit type=KeywordHit]...[/object]`. It does not expand unrelated
-dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or speaker-line
-sugar.
+`[object .KeywordHit type=KeywordHit]...[/object]`; existing parameters are
+preserved while adding the inferred `type`, so `[.HoverHit tone=alert]...[/]`
+becomes `[object .HoverHit type=HoverHit tone=alert]...[/object]`. It does not
+expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or
+speaker-line sugar.
 
 Declaration canonicalization uses the same diagnostic names as LSP. Source-level
 lint names are domain namespaces, while JSON diagnostics and CI logs also carry

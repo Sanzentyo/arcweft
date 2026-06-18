@@ -27241,6 +27241,33 @@ fn fmt_canonical_rich_text_rewrites_text_proxy_inference() {
 }
 
 #[test]
+fn fmt_canonical_rich_text_preserves_nested_proxy_params() {
+    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][p]\n}\n";
+    let path = temp_arcw("fmt-canonical-rich-text-nested-text-proxy", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--canonical-rich-text")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt --canonical-rich-text should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(
+        "[object .hotspot type=KeywordHit channel=inventory][object .HoverHit type=HoverHit tone=alert]multi[/object][/object]"
+    ));
+    assert!(!stdout.contains("[effect .hotspot"));
+    assert!(!stdout.contains("[effect .HoverHit"));
+    assert!(!stdout.contains("[/]"));
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
     let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
     let path = temp_arcw("ids-materialize", source);

@@ -1508,8 +1508,10 @@ fn canonical_object_attrs(
     let proxy_type = inferred_text_proxy_type(selector, attrs, context)?;
     if text_proxy_type_attr(attrs).is_some() {
         Some(attrs.to_owned())
-    } else {
+    } else if attrs.trim().is_empty() {
         Some(format!("type={proxy_type}"))
+    } else {
+        Some(format!("type={proxy_type} {}", attrs.trim()))
     }
 }
 
@@ -2630,6 +2632,31 @@ mod tests {
         );
         assert!(!report.output.contains("[effect .hotspot"));
         assert!(!report.output.contains("[effect .KeywordHit"));
+    }
+
+    #[test]
+    fn canonical_rich_text_expands_nested_inferred_text_proxy_objects() {
+        let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][.sparkle amp=2px]effect[/][p]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(report.output.contains(
+            "[object .hotspot type=KeywordHit channel=inventory][object .HoverHit type=HoverHit tone=alert]multi[/object][/object]"
+        ));
+        assert!(
+            report
+                .output
+                .contains("[effect .sparkle amp=2px]effect[/effect]")
+        );
+        assert!(!report.output.contains("[effect .hotspot"));
+        assert!(!report.output.contains("[effect .HoverHit"));
+        assert!(!report.output.contains("[/]"));
     }
 
     #[test]

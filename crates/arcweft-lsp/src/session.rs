@@ -612,6 +612,52 @@ mod tests {
     }
 
     #[test]
+    fn code_actions_canonical_rich_text_preserve_nested_proxy_params() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let mut session = ArcweftLspSession::new(&LspConfig::default());
+        open_text(
+            &mut session,
+            uri.clone(),
+            "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/]\n}\n",
+        );
+
+        let actions = session
+            .code_actions(&CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range::new(Position::new(0, 0), Position::new(14, 0)),
+                context: CodeActionContext::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .expect("open document actions");
+
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Canonicalize inferred rich-text tags" =>
+                {
+                    Some(action)
+                }
+                CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+            })
+            .expect("canonical rich-text action");
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("workspace edit");
+
+        assert_eq!(edits.len(), 1);
+        assert!(edits[0].new_text.contains(
+            "[object .hotspot type=KeywordHit channel=inventory][object .HoverHit type=HoverHit tone=alert]multi[/object][/object]"
+        ));
+        assert!(!edits[0].new_text.contains("[effect .HoverHit"));
+        assert!(!edits[0].new_text.contains("[/]"));
+    }
+
+    #[test]
     fn code_actions_expand_sugar_respects_decl_identity_attributes() {
         let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
         let mut session = ArcweftLspSession::new(&LspConfig::default());
