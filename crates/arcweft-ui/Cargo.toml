@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-id = { path = "../arcweft-id" }
+arcweft-image = { path = "../arcweft-image" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 thiserror.workspace = true
 
