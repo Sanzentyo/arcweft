@@ -2141,6 +2141,14 @@ fn agent_native_capture_session_for_hir(
         eprintln!("error: failed to register Arcweft text motion functions: {error}");
         ExitCode::FAILURE
     })?;
+    arcweft_player_native::native::register_arcweft_pure_text_effects(
+        native_session.effect_registry_mut(),
+        hir,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to register Arcweft text effect functions: {error}");
+        ExitCode::FAILURE
+    })?;
     Ok(native_session)
 }
 
@@ -3490,7 +3498,7 @@ fn agent_native_scoped_capture(
             capture.height,
             context,
             &selected,
-            native_session.as_deref_mut(),
+            native_session,
         )?;
         return Ok(agent_crop_raster_capture(&full, x, y, width, height));
     }
@@ -3619,7 +3627,7 @@ fn agent_native_color_capture(
         }
         regions.extend(object_regions);
     }
-    let capture_result = if let Some(native_session) = native_session.as_deref_mut() {
+    let capture_result = if let Some(native_session) = native_session {
         native_session.capture_frame_color_regions_in(
             context.frame,
             arcweft_player_native::native::NativeCaptureViewport::new(
@@ -3682,7 +3690,7 @@ fn agent_native_debug_capture(
         AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
         AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
     };
-    let capture_result = if let Some(native_session) = native_session.as_deref_mut() {
+    let capture_result = if let Some(native_session) = native_session {
         native_session.capture_frame_debug_regions_in(
             context.frame,
             arcweft_player_native::native::NativeCaptureViewport::new(
@@ -3746,7 +3754,7 @@ fn agent_native_masked_framebuffer_capture(
         capture.height,
         context,
         selected,
-        native_session.as_deref_mut(),
+        native_session,
     )?;
     Ok(agent_crop_raster_capture(&masked, x, y, width, height))
 }
@@ -4046,14 +4054,16 @@ fn agent_native_textbox_rect(
         textbox.bbox.height,
     );
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = match agent_measure_frame_elements_at_page_with_session(
+    let bounds = match agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        capture_width,
-        capture_height,
-        left,
-        top,
-        context.page_index,
-        context.capture_time_seconds,
+        arcweft_player_native::native::NativeCaptureViewport::new(
+            capture_width,
+            capture_height,
+            left,
+            top,
+            context.page_index,
+        )
+        .with_time_seconds(context.capture_time_seconds),
         native_session,
     ) {
         Ok(bounds) => bounds,
@@ -4124,14 +4134,16 @@ fn agent_native_rich_text_element_rect(
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = agent_measure_frame_elements_at_page_with_session(
+    let bounds = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        capture_width,
-        capture_height,
-        left,
-        top,
-        context.page_index,
-        context.capture_time_seconds,
+        arcweft_player_native::native::NativeCaptureViewport::new(
+            capture_width,
+            capture_height,
+            left,
+            top,
+            context.page_index,
+        )
+        .with_time_seconds(context.capture_time_seconds),
         native_session,
     )
     .map_err(|error| {
@@ -4927,7 +4939,7 @@ fn agent_observed_objects_for_flow_event(
         viewport,
         capture_time_seconds,
         &native_bounds,
-        native_session.as_deref_mut(),
+        native_session,
     );
     let mut objects = Vec::with_capacity(1 + children.len());
     objects.push(textbox);
@@ -5487,7 +5499,7 @@ fn agent_rich_text_child_objects(
         viewport,
         time_seconds,
         native_bounds,
-        native_session.as_deref_mut(),
+        native_session,
     ));
     for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
         if matches!(
@@ -5712,36 +5724,25 @@ fn agent_rich_text_line_objects(
         .collect()
 }
 
-fn agent_measure_frame_elements_at_page_with_session(
+fn agent_measure_frame_elements_with_session(
     frame: &LineDisplayFrame,
-    width: u32,
-    height: u32,
-    left: f32,
-    top: f32,
-    page_index: usize,
-    time_seconds: f32,
+    viewport: arcweft_player_native::native::NativeCaptureViewport,
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<
     Vec<arcweft_player_native::native::NativeFrameElementBounds>,
     arcweft_player_native::native::NativeWindowError,
 > {
     if let Some(native_session) = native_session {
-        return native_session.measure_frame_elements_in(
-            frame,
-            arcweft_player_native::native::NativeCaptureViewport::new(
-                width, height, left, top, page_index,
-            )
-            .with_time_seconds(time_seconds),
-        );
+        return native_session.measure_frame_elements_in(frame, viewport);
     }
     arcweft_player_native::native::measure_frame_elements_at_page_with_time(
         frame,
-        width,
-        height,
-        left,
-        top,
-        page_index,
-        time_seconds,
+        viewport.width,
+        viewport.height,
+        viewport.left,
+        viewport.top,
+        viewport.page_index,
+        viewport.time_seconds,
     )
 }
 
@@ -5755,14 +5756,16 @@ fn agent_native_rich_text_element_bboxes(
     let mut bboxes = BTreeMap::new();
     let mut native_session = native_session;
     for page_index in 0.. {
-        let bounds = match agent_measure_frame_elements_at_page_with_session(
+        let bounds = match agent_measure_frame_elements_with_session(
             &textbox.rich_text,
-            viewport.width,
-            viewport.height,
-            left,
-            top,
-            page_index,
-            time_seconds,
+            arcweft_player_native::native::NativeCaptureViewport::new(
+                viewport.width,
+                viewport.height,
+                left,
+                top,
+                page_index,
+            )
+            .with_time_seconds(time_seconds),
             native_session.as_deref_mut(),
         ) {
             Ok(bounds) => bounds,
@@ -5790,14 +5793,16 @@ fn agent_native_textbox_capture_bbox_for_page(
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
-    let Ok(bounds) = agent_measure_frame_elements_at_page_with_session(
+    let Ok(bounds) = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        viewport.width,
-        viewport.height,
-        left,
-        top,
-        page_index,
-        time_seconds,
+        arcweft_player_native::native::NativeCaptureViewport::new(
+            viewport.width,
+            viewport.height,
+            left,
+            top,
+            page_index,
+        )
+        .with_time_seconds(time_seconds),
         native_session,
     ) else {
         return None;
@@ -5820,14 +5825,16 @@ fn agent_native_text_range_capture_bbox_for_page(
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = agent_measure_frame_elements_at_page_with_session(
+    let bounds = agent_measure_frame_elements_with_session(
         &textbox.rich_text,
-        viewport.width,
-        viewport.height,
-        left,
-        top,
-        page_index,
-        time_seconds,
+        arcweft_player_native::native::NativeCaptureViewport::new(
+            viewport.width,
+            viewport.height,
+            left,
+            top,
+            page_index,
+        )
+        .with_time_seconds(time_seconds),
         native_session,
     )
     .ok()?;

@@ -61,6 +61,12 @@ fn breath_orbit(t: f32, glyph: f32, seed: f32) -> f32 {
     return t + glyph * 0.037f32 + seed * 0.001f32
 }
 
+#[text_effect]
+#[pure]
+fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t * 0.8f32 + glyph * 0.061f32 + seed * 0.0005f32
+}
+
 entry game {
     start @flow.rich_text_effects_animation
 }
@@ -75,7 +81,7 @@ flow rich_text_effects_animation {
     ]
 
     iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
-        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle state_scope=run]sparkle[/]。[r]関数: [.motion fn=breath_orbit amp=5px angle=9deg scale=0.14 speed=0.75 seed=breath origin=glyph_center target=glyph]関数motion[/]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
+        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle state_scope=run]sparkle[/]。[r]関数: [.motion fn=breath_orbit amp=5px angle=9deg scale=0.14 speed=0.75 seed=breath origin=glyph_center target=glyph]関数motion[/]、[.source_drift amp=5px angle=10deg scale=0.12 seed=source-effect shape=elastic target=glyph phase=glyph_transform]関数effect[/]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
     ]
 
     lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[

@@ -20182,6 +20182,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     );
 
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_source_local_effect_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_warm_glow_shader_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_post_process_effect_runs_execute(&source_path, &json, &dir);
@@ -20278,6 +20279,51 @@ fn assert_effects_animation_function_motion_run_changes_over_time(
     );
     assert_full_grammar_color_captures_differ(
         "function-backed motion animation",
+        &early,
+        &early_bytes,
+        &late,
+        &late_bytes,
+    );
+}
+
+fn assert_effects_animation_source_local_effect_run_changes_over_time(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let effect_run = find_rich_text_run_object(json, "関数effect");
+    let effect = assert_rich_text_run_object_has_effect(effect_run, "source_drift");
+    assert_eq!(
+        effect["params"]["shape"]["value"], "elastic",
+        "source-local effect should keep registry-owned raw params: {effect_run}"
+    );
+    let object_id = effect_run["id"]
+        .as_str()
+        .expect("source-local effect run object id is reported");
+    let early_path = dir.join("source-local-effect-color-4000.rgba");
+    let late_path = dir.join("source-local-effect-color-4500.rgba");
+    let (early, early_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &early_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    let (late, late_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &late_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4.5"],
+    );
+    assert!(
+        early["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "source-local text effect should register before native capture: {early}"
+    );
+    assert!(
+        late["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "source-local text effect should register before native capture: {late}"
+    );
+    assert_full_grammar_color_captures_differ(
+        "source-local pure text effect",
         &early,
         &early_bytes,
         &late,

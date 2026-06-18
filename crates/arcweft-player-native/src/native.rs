@@ -640,6 +640,18 @@ pub enum RichTextMotionExportError {
     UnsupportedSignature { name: String },
 }
 
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RichTextEffectExportError {
+    #[error("Arcweft pure helper lowering failed for text effect export: {0}")]
+    PureLower(#[from] PureHelperLowerError),
+    #[error("text effect function `{name}` must be annotated with #[pure]")]
+    MissingPureAttribute { name: String },
+    #[error(
+        "text effect function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
+    )]
+    UnsupportedSignature { name: String },
+}
+
 impl RichTextMotionRegistry {
     pub fn insert_class(
         &mut self,
@@ -676,6 +688,72 @@ impl RichTextMotionRegistry {
     }
 }
 
+pub fn register_arcweft_pure_text_effects(
+    registry: &mut RichTextEffectRegistry,
+    module: &HirModule,
+) -> Result<usize, RichTextEffectExportError> {
+    module
+        .functions()
+        .iter()
+        .filter(|function| {
+            function.has_attribute("text_effect") || function.has_attribute("rich_text_effect")
+        })
+        .try_fold(0usize, |exported, function| {
+            if !function.has_attribute("pure") {
+                return Err(RichTextEffectExportError::MissingPureAttribute {
+                    name: function.name().to_owned(),
+                });
+            }
+            let candidate = arcweft_runtime_plan::pure::lower_pure_helper_candidate(
+                function,
+                RuntimePureHelperOrigin::Annotated,
+            )?;
+            register_arcweft_pure_text_effect(registry, &candidate)?;
+            Ok(exported.saturating_add(1))
+        })
+}
+
+fn register_arcweft_pure_text_effect(
+    registry: &mut RichTextEffectRegistry,
+    candidate: &PureHelperCandidate,
+) -> Result<(), RichTextEffectExportError> {
+    if !arcweft_text_motion_signature_supported(candidate) {
+        return Err(RichTextEffectExportError::UnsupportedSignature {
+            name: candidate.name().to_owned(),
+        });
+    }
+    let helper = runtime_helper_from_pure_candidate(candidate);
+    let mut scratch = VmPureFunctionScratch::default();
+    registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
+        let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
+        let phase = scratch
+            .evaluate_f32_slice(
+                &helper,
+                &[
+                    ctx.time_seconds,
+                    usize_to_f32_saturating(ctx.glyph_index),
+                    seed,
+                ],
+            )
+            .ok()
+            .as_ref()
+            .and_then(runtime_value_as_f32)
+            .filter(|value| value.is_finite())
+            .unwrap_or(ctx.time_seconds);
+        if ctx.effect.phase == RichTextEffectPhase::GlyphColor {
+            apply_pure_text_effect_color(ctx, phase);
+            return;
+        }
+        let effect_seed = param_seed(ctx.effect, "seed").unwrap_or(0)
+            ^ stable_text_hash(&helper.name)
+            ^ u64::try_from(ctx.run_index).unwrap_or(u64::MAX);
+        let noise = deterministic_noise(effect_seed, ctx.line_id, ctx.glyph_index, phase);
+        let sample = sample_parametric_motion(ctx.effect, phase, noise);
+        apply_parametric_motion_sample(ctx.effect, sample, ctx.placement);
+    });
+    Ok(())
+}
+
 pub fn register_arcweft_pure_text_motions(
     registry: &mut RichTextMotionRegistry,
     module: &HirModule,
@@ -710,16 +788,7 @@ fn register_arcweft_pure_text_motion(
             name: candidate.name().to_owned(),
         });
     }
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: candidate.name().to_owned(),
-        input_names: candidate.input_names().to_vec(),
-        input_types: candidate.input_types().to_vec(),
-        output_type: candidate.output_type(),
-        expr: candidate.expr().clone(),
-        scalar_eval_supported: candidate.shape().supports_scalar_eval,
-        origin: candidate.origin(),
-    };
+    let helper = runtime_helper_from_pure_candidate(candidate);
     let mut scratch = VmPureFunctionScratch::default();
     registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
         let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
@@ -740,6 +809,19 @@ fn register_arcweft_pure_text_motion(
         sample_parametric_motion(ctx.effect, phase, ctx.noise)
     });
     Ok(())
+}
+
+fn runtime_helper_from_pure_candidate(candidate: &PureHelperCandidate) -> RuntimePureHelper {
+    RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: candidate.name().to_owned(),
+        input_names: candidate.input_names().to_vec(),
+        input_types: candidate.input_types().to_vec(),
+        output_type: candidate.output_type(),
+        expr: candidate.expr().clone(),
+        scalar_eval_supported: candidate.shape().supports_scalar_eval,
+        origin: candidate.origin(),
+    }
 }
 
 fn arcweft_text_motion_signature_supported(candidate: &PureHelperCandidate) -> bool {
@@ -3227,13 +3309,14 @@ fn apply_builtin_motion(
     let Some(sample) = sample else {
         return;
     };
-    placement.x += amplitude * sample.translate[0];
-    placement.y += amplitude * sample.translate[1];
-    placement.rotate_degrees += angle * sample.rotate;
-    let scale = 1.0 + scale_amplitude * sample.scale.max(0.0);
-    placement.scale_x *= scale;
-    placement.scale_y *= scale;
-    apply_effect_affine_pivot(effect, RichTextTransformOrigin::GlyphCenter, placement);
+    apply_parametric_motion_sample_with_params(
+        effect,
+        sample,
+        amplitude,
+        angle,
+        scale_amplitude,
+        placement,
+    );
 }
 
 fn sample_breath_orbit(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
@@ -3261,6 +3344,63 @@ fn sample_parametric_motion(
         Some("elastic_bloom" | "elastic" | "bloom") => sample_elastic_bloom(phase_time, noise),
         _ => sample_breath_orbit(phase_time, noise),
     }
+}
+
+fn apply_parametric_motion_sample(
+    effect: &RichTextEffectDescriptor,
+    sample: NativeAnimationSample,
+    placement: &mut NativeGlyphPlacement,
+) {
+    let amplitude = param_milli(effect, "amp")
+        .or_else(|| param_milli(effect, "radius"))
+        .unwrap_or(Milli(4000))
+        .as_f32();
+    let angle = param_milli(effect, "angle").unwrap_or(Milli(6000)).as_f32();
+    let scale_amplitude = param_milli(effect, "scale")
+        .or_else(|| param_milli(effect, "scale_amp"))
+        .or_else(|| param_milli(effect, "amount"))
+        .unwrap_or(Milli(80))
+        .as_f32()
+        .max(0.0);
+    apply_parametric_motion_sample_with_params(
+        effect,
+        sample,
+        amplitude,
+        angle,
+        scale_amplitude,
+        placement,
+    );
+}
+
+fn apply_parametric_motion_sample_with_params(
+    effect: &RichTextEffectDescriptor,
+    sample: NativeAnimationSample,
+    amplitude: f32,
+    angle: f32,
+    scale_amplitude: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    placement.x += amplitude * sample.translate[0];
+    placement.y += amplitude * sample.translate[1];
+    placement.rotate_degrees += angle * sample.rotate;
+    let scale = 1.0 + scale_amplitude * sample.scale.max(0.0);
+    placement.scale_x *= scale;
+    placement.scale_y *= scale;
+    apply_effect_affine_pivot(effect, RichTextTransformOrigin::GlyphCenter, placement);
+}
+
+fn apply_pure_text_effect_color(ctx: &mut TextEffectGlyphContext<'_>, phase: f32) {
+    let amount = param_milli(ctx.effect, "amount")
+        .or_else(|| param_milli(ctx.effect, "amp"))
+        .unwrap_or(Milli::ONE)
+        .as_f32()
+        .clamp(0.0, 1.0);
+    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let red = rounded_u8(180.0 + pulse * 75.0);
+    let green = rounded_u8(80.0 + (1.0 - pulse) * 95.0);
+    let blue = rounded_u8(220.0 + pulse * 35.0);
+    let alpha = rounded_u8(amount * 255.0).max(1);
+    ctx.placement.color = Some([red, green, blue, alpha]);
 }
 
 fn sample_elastic_bloom(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
@@ -7694,9 +7834,9 @@ mod tests {
             .expect("frame resolves")
     }
 
-    fn arcweft_text_motion_hir(source: &str) -> arcweft_lang_hir::model::HirModule {
+    fn arcweft_text_registry_hir(source: &str) -> arcweft_lang_hir::model::HirModule {
         let parsed = parse_source(source);
-        lower_to_hir(parsed.typed_tree()).expect("Arcweft text motion source lowers")
+        lower_to_hir(parsed.typed_tree()).expect("Arcweft text registry source lowers")
     }
 
     fn text_motion_context(
@@ -8272,7 +8412,7 @@ mod tests {
 
     #[test]
     fn native_motion_registry_exports_arcweft_pure_text_motion_function() {
-        let hir = arcweft_text_motion_hir(
+        let hir = arcweft_text_registry_hir(
             r"
 #[text_motion]
 #[pure]
@@ -8309,7 +8449,7 @@ fn arc_phase(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_motion_registry_export() {
-        let hir = arcweft_text_motion_hir(
+        let hir = arcweft_text_registry_hir(
             r"
 #[text_motion]
 #[pure]
@@ -8342,6 +8482,90 @@ fn snap_arc(t: f32, glyph: f32, seed: f32) -> f32 {
         assert_ne!(
             baseline_capture.rgba, exported_capture.rgba,
             "Arcweft pure text motion export should alter captured native glyph pixels"
+        );
+    }
+
+    #[test]
+    fn native_effect_registry_exports_arcweft_pure_text_effect_function() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_effect]
+#[pure]
+fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + glyph * 0.125f32 + seed * 0.001f32
+}
+",
+        );
+        let mut registry = RichTextEffectRegistry::default();
+
+        let exported =
+            register_arcweft_pure_text_effects(&mut registry, &hir).expect("effect exports");
+
+        assert_eq!(exported, 1);
+        assert!(registry.contains("source_drift"));
+    }
+
+    #[test]
+    fn native_capture_uses_arcweft_pure_text_effect_registry_export() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_effect]
+#[pure]
+fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + 0.25f32 + glyph * 0.05f32 + seed * 0.001f32
+}
+",
+        );
+        let frame = custom_effect_test_frame_with_params(
+            "source_drift",
+            BTreeMap::from([
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Milli {
+                        value: Milli(48_000),
+                    },
+                ),
+                (
+                    "angle".to_owned(),
+                    RichTextParam::Milli {
+                        value: Milli(8_000),
+                    },
+                ),
+                (
+                    "scale".to_owned(),
+                    RichTextParam::Milli { value: Milli(120) },
+                ),
+                (
+                    "seed".to_owned(),
+                    RichTextParam::Raw {
+                        value: "source-effect".to_owned(),
+                    },
+                ),
+            ]),
+        );
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
+        let export_count = register_arcweft_pure_text_effects(exported.effect_registry_mut(), &hir)
+            .expect("register Arcweft pure text effect");
+        let exported_capture = exported
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("exported capture");
+
+        assert_eq!(export_count, 1);
+        assert!(
+            baseline_capture
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "missing_custom_effect")
+        );
+        assert!(exported_capture.diagnostics.is_empty());
+        assert_ne!(
+            baseline_capture.rgba, exported_capture.rgba,
+            "Arcweft pure text effect export should alter captured native glyph pixels"
         );
     }
 
