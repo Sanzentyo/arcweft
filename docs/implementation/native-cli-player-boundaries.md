@@ -120,27 +120,29 @@ value parsers, and runtime step/executor CLI conversion helpers now live in
 `app/tooling.rs`, while verification CLI parsers now live in `app/verify.rs`.
 Launch profile CLI options now live with project selection in `app/project.rs`,
 and small shared helpers now live in `app/shared.rs`. The primary `app.rs` is
-now mostly dispatch and import wiring. The remaining architectural cuts are:
+now a thin `Cli::parse_from` / command-dispatch entrypoint; command-specific
+types, implementation imports, and runtime/player details live in the
+responsibility modules instead of being re-exported through the app root. The
+native player bundle boundary is also covered by binary-level tests: default
+input must be `.awfb`, and `.arcw` source input requires explicit `--source`
+plus the `dev-source` feature. The remaining architectural cuts are:
 
-1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing import-surface cleanup and any remaining dispatch-only
-   simplification without reintroducing cross-layer command logic.
-2. Continue moving compile-driver behavior toward `arcweft-compiler`.
+1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned
    parse/lint/HIR/typecheck/line-task functions. Profiled runtime compilation
    also calls the same compiler-owned phase functions, while CLI modules keep
    developer-facing phase timing, source selection, and diagnostic printing.
-3. Move remaining product-player host/task behavior onto `.awfb` execution.
+2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
-4. Add the presentation input and future `arcweft-ui` crates according to the
+3. Add the presentation input and future `arcweft-ui` crates according to the
    unified UI design, without adding public names such as `ActivityViewport`,
    `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
-5. Keep the unified TextBox model as the current source of truth: canonical
+4. Keep the unified TextBox model as the current source of truth: canonical
    `@textbox.main`, dialogue `window`, manifest `window`, and generic typed
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-6. Add `ActionBatch` / `HostEventBatch` and routed input boundaries before
+5. Add `ActionBatch` / `HostEventBatch` and routed input boundaries before
    expanding Activity or UI interaction APIs, so later Component and Activity
    work does not grow its own input router.
 
