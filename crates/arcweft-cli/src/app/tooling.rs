@@ -1,8 +1,20 @@
 use super::{
-    ExitCode, FormatOptions, IdsCommand, ToolingCommandOptions, ToolingCommandReport,
-    ToolingEditReport, ToolingFileReport, collect_arcw_paths, format_source, fs, materialize_ids,
-    print_json,
+    ExitCode, FormatOptions, IdsCommand, ToolingCommandOptions, ToolingEditReport,
+    collect_arcw_paths, format_source, fs, materialize_ids, print_json,
 };
+
+#[derive(serde::Serialize)]
+struct ToolingCommandReport {
+    files: Vec<ToolingFileReport>,
+}
+
+#[derive(serde::Serialize)]
+struct ToolingFileReport {
+    path: String,
+    changed: bool,
+    edits: usize,
+    output: Option<String>,
+}
 
 pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
     run_tooling_command(options, |source| {

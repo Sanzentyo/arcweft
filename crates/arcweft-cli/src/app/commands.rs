@@ -1,6 +1,7 @@
 use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions};
+use super::jit::JitCheckOptions;
 use super::{
-    BundleOptions, CheckOptions, CliRunOptions, JitCheckOptions, PlanOptions, RunBundleOptions,
+    BundleOptions, CheckOptions, CliRunOptions, PlanOptions, RunBundleOptions,
     RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions, ScriptTestOptions, ServeOptions,
     ToolchainProfileOptions, ToolingCommandOptions, UnsafeOptions, VerifyOptions,
     VerifyTypesOptions,

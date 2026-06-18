@@ -1,38 +1,40 @@
+use super::jit::{
+    JitBuiltinCase, JitCheckOptions, JitCheckReport, JitCheckTarget, jit_check_input_array,
+    per_iteration_ns, run_jit_check, speedup_x, timing_samples,
+};
 use super::{
     AotExecutor, AotProfileStats, AotProgram, AotProgramStats, AssertUnwindSafe, BenchSection,
     BorrowCheckProfileStats, BundleRunnerPhase, BundleRunnerStepSummary, BundleRuntimeSummary,
     BytecodeProfileStats, BytecodeProgram, BytecodeStats, BytecodeVmExecutor, CallArg,
     CliRunOptions, CliRuntimeExecutorTier, CliRuntimeStepMode, ExitCode, Expr, FlowFiberStatus,
-    FlowRuntimeId, HostCallPolicy, Instant, JitBuiltinCase, JitCheckOptions, JitCheckReport,
-    JitCheckTarget, LaunchKind, LineDisplayCatalog, Literal, NativeAdapterRegistrar,
-    NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
-    NativeTaskStats, Path, PlanOptions, ProfileOptions, PureHelperCandidate, PureHelperLowerError,
-    RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutor,
-    RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlan,
-    RuntimePlanLowerReport, RuntimePlanLowerStats, RuntimePlanProfileStats, RuntimePlanReport,
-    RuntimeProfileCompiler, RuntimeProfileOptions, RuntimeProfilePhase, RuntimeProfileReport,
-    RuntimeProfileRuntime, RuntimePureAccelerator, RuntimePureAcceleratorConfig,
-    RuntimePureCallBackend, RuntimePureCallStats, RuntimePureCallStatsSummary, RuntimePureHelper,
-    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
-    RuntimeRouteSpec, RuntimeRunOptions, RuntimeRunReport, RuntimeStepInput, RuntimeStepOptions,
-    RuntimeStepResult, RuntimeStepRunSummary, RuntimeStepStats, RuntimeTypeValidationProfileStats,
+    FlowRuntimeId, HostCallPolicy, Instant, LaunchKind, LineDisplayCatalog, Literal,
+    NativeAdapterRegistrar, NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge,
+    NativeTaskClassCounts, NativeTaskStats, Path, PlanOptions, ProfileOptions, PureHelperCandidate,
+    PureHelperLowerError, RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeExecutor, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier,
+    RuntimePlan, RuntimePlanLowerReport, RuntimePlanLowerStats, RuntimePlanProfileStats,
+    RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfileOptions, RuntimeProfilePhase,
+    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureAccelerator,
+    RuntimePureAcceleratorConfig, RuntimePureCallBackend, RuntimePureCallStats,
+    RuntimePureCallStatsSummary, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec, RuntimeRunOptions,
+    RuntimeRunReport, RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeStepRunSummary, RuntimeStepStats, RuntimeTypeValidationProfileStats,
     RuntimeTypeValidationStats, RuntimeValue, ScriptBench, ScriptBenchDeterministicSummary,
     ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary, ScriptBenchOptions,
     ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
     ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
     ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus, ScriptTestOptions,
-    ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, ServeOptions, ServePlanReport,
-    ServeRouteReport, ServeRunReport, SocketAddr, SourceSelection, TypeCheckEnv,
-    TypeCheckProfileStats, TypeCheckReport, analyze_types, catch_unwind, collect_script_tests,
-    count_warning_lints, flow_status_label, fs, has_error_lints, host_system_info, is_arcw_path,
-    jit_check_input_array, lint_id_policy, load_and_check_selection, lower_line_task_groups,
-    lower_pure_helper_candidates, lower_runtime_plan_with_options,
+    ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, ServeOptions, SocketAddr,
+    SourceSelection, TypeCheckEnv, TypeCheckProfileStats, TypeCheckReport, analyze_types,
+    catch_unwind, collect_script_tests, count_warning_lints, flow_status_label, fs,
+    has_error_lints, host_system_info, is_arcw_path, lint_id_policy, load_and_check_selection,
+    lower_line_task_groups, lower_pure_helper_candidates, lower_runtime_plan_with_options,
     lower_runtime_plan_with_stats_and_options, lower_to_hir, native_host_policy_for_selection,
-    native_host_policy_for_selection_with_adapter, parse_expr, parse_source, per_iteration_ns,
-    print_json, profile_listen_addr, registry_from_hir, require_profile_kind,
-    resolve_source_selection, run_jit_check, runtime_executor_stats,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection, runtime_sequence_values,
-    serve_native_http, speedup_x, step_options, timing_samples, typecheck_env_for_selection,
+    native_host_policy_for_selection_with_adapter, parse_expr, parse_source, print_json,
+    profile_listen_addr, registry_from_hir, require_profile_kind, resolve_source_selection,
+    runtime_executor_stats, runtime_plan_options_for_selection, runtime_pure_config_for_selection,
+    runtime_sequence_values, serve_native_http, step_options, typecheck_env_for_selection,
     validate_hir_references, validate_runtime_plan_types, validate_typecheck_ready,
 };
 
@@ -679,6 +681,27 @@ pub(in crate::app) struct BundleRunReport {
     pub(in crate::app) native_io: NativeTaskStats,
     pub(in crate::app) steps: Vec<BundleRunnerStepSummary>,
     pub(in crate::app) final_status: String,
+}
+
+#[derive(serde::Serialize)]
+struct ServePlanReport {
+    status: String,
+    entry: String,
+    adapter: String,
+    routes: Vec<ServeRouteReport>,
+}
+
+#[derive(serde::Serialize)]
+struct ServeRouteReport {
+    method: String,
+    path: String,
+    target: String,
+}
+
+#[derive(serde::Serialize)]
+struct ServeRunReport {
+    plan: ServePlanReport,
+    server: super::server_adapter::NativeHttpServerReport,
 }
 
 #[derive(Default)]
