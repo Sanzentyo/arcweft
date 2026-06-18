@@ -60,6 +60,8 @@ static or animated, and can resolve its encoded bytes without filesystem I/O or
 source lowering. Decode remains adapter work through `arcweft-image`. The CLI
 bundler now populates this section from `.arcweft/asset` PNG/JPEG/GIF/WebP
 files while preserving relative virtual paths and avoiding host path leakage.
+`arcw run-bundle` validates these references before materializing the bundle
+workspace, so broken image asset records fail before bytecode execution.
 
 `arcweft-agent-protocol` now treats `object_layer` and `object_depth` as generic
 observed-object metadata instead of deriving them only from `rich_text_ref`.

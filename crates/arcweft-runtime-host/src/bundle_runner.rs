@@ -138,6 +138,8 @@ pub enum BundleRunnerError {
     },
     #[error("failed to decode bundle: {0}")]
     DecodeBundle(arcweft_bundle::BundleCodecError),
+    #[error("invalid bundle image asset: {0}")]
+    InvalidImageAsset(#[source] arcweft_bundle::BundleCodecError),
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(arcweft_core::plan::RuntimePlanError),
     #[error("failed to create bundle workspace: {0}")]
@@ -170,6 +172,9 @@ fn execute_bundle_with_native_adapters(
     adapter_registrars: &[NativeAdapterRegistrar],
     phases: &mut Vec<BundleRunnerPhase>,
 ) -> Result<BundleRunnerReport, BundleRunnerError> {
+    run_bundle_runner_phase(phases, "validate_image_assets", || {
+        validate_bundle_image_assets(bundle)
+    })?;
     let workspace = run_bundle_runner_phase(phases, "materialize_bundle", || {
         MaterializedBundleWorkspace::create(bundle)
     })?;
@@ -210,6 +215,15 @@ fn execute_bundle_with_native_adapters(
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     })
+}
+
+fn validate_bundle_image_assets(bundle: &ArcweftBundle) -> Result<(), BundleRunnerError> {
+    for asset in &bundle.image_assets {
+        bundle
+            .image_asset_bytes(&asset.id)
+            .map_err(BundleRunnerError::InvalidImageAsset)?;
+    }
+    Ok(())
 }
 
 fn run_bundle_runner_phase<T>(
@@ -653,7 +667,10 @@ fn effect_label(effect: &LineEffectRequest) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+    use arcweft_bundle::{
+        ArcweftBundle, BundleImageAnimation, BundleImageAsset, BundleImageFormat, BundleManifest,
+        BundleRuntimeSummary, BundleSource, BundleVirtualFileRef, BundleVirtualFileSpace,
+    };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{FlowOp, RuntimeFlow, RuntimeLineId};
@@ -690,6 +707,41 @@ mod tests {
                 .iter()
                 .all(|step| step.get("flow_events").is_none())
         );
+    }
+
+    #[test]
+    fn bundle_runner_rejects_missing_image_asset_virtual_file() {
+        let bundle = dialogue_bundle().with_image_assets([BundleImageAsset {
+            id: "asset.bg.room".to_owned(),
+            file: BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Asset,
+                path: "bg/room.png".to_owned(),
+            },
+            format: BundleImageFormat::Png,
+            animation: BundleImageAnimation::Static,
+            dimensions: None,
+        }]);
+
+        let error = run_bundle_with_native_adapters(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 1,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect_err("missing image file is rejected before execution");
+
+        assert!(matches!(
+            error,
+            BundleRunnerError::InvalidImageAsset(
+                arcweft_bundle::BundleCodecError::MissingImageFile {
+                    asset_id,
+                    space: BundleVirtualFileSpace::Asset,
+                    path,
+                }
+            ) if asset_id == "asset.bg.room" && path == "bg/room.png"
+        ));
     }
 
     fn dialogue_bundle() -> ArcweftBundle {

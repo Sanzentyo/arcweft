@@ -121,6 +121,10 @@ The CLI bundler derives image asset records for image files under
 PNG/JPEG are marked `static`; GIF/WebP are marked `animated` because they may
 carry multiple frames.
 
+`arcw run-bundle` validates `image_assets[]` before materializing the temporary
+bundle workspace. An image asset whose referenced virtual file is missing is a
+bundle structure error and fails before bytecode execution starts.
+
 Future product bundle slices can replace structured JSON bytecode with a
 compact deterministic binary bytecode section and add graph indexes, entity
 tables, source maps, contracts, shaders, UI, audio, and text resources as typed

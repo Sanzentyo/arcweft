@@ -314,6 +314,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         BundleRunnerError::ConflictingEntrySelection => ExitCode::from(2),
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
+        | BundleRunnerError::InvalidImageAsset(_)
         | BundleRunnerError::DecodeBytecode(_)
         | BundleRunnerError::CreateWorkspace(_)
         | BundleRunnerError::CreateSourceDirectory(_)
