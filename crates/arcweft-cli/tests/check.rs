@@ -18673,6 +18673,99 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     );
 }
 
+#[test]
+fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample() {
+    let source_path = workspace_root().join("samples/rich-text-effects-animation.arcw");
+    let json = observe_native_rich_text_layer_report(&source_path);
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert!(
+        json["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "effects animation sample should render without native diagnostics: {json}"
+    );
+
+    for line in [
+        "say.effects.shader",
+        "say.effects.motion",
+        "say.effects.reveal",
+    ] {
+        find_textbox_object_by_rich_text_line(&json, line);
+    }
+
+    let combo_run = find_rich_text_run_object(&json, "重ね掛けtypewriter");
+    assert_eq!(combo_run["rich_text"]["line"], "say.effects.reveal");
+    for effect in ["typewriter", "wave", "shake", "sparkle"] {
+        assert_rich_text_run_object_has_effect(combo_run, effect);
+    }
+
+    let object_id = combo_run["id"]
+        .as_str()
+        .expect("combined typewriter run object id is reported");
+    let dir = temp_dir("agent-observe-rich-text-effects-animation-combo");
+    let hidden_mask_path = dir.join("combo-hidden-mask.rgba");
+    let visible_mask_path = dir.join("combo-visible-mask.rgba");
+    let early_color_path = dir.join("combo-visible-color-4000.rgba");
+    let late_color_path = dir.join("combo-visible-color-4500.rgba");
+
+    let (hidden_mask, hidden_mask_bytes) = observe_full_grammar_typewriter_run_mask_at(
+        &source_path,
+        &hidden_mask_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "0"],
+    );
+    assert_eq!(hidden_mask["steps"], 3);
+    assert_eq!(hidden_mask["capture_time_millis"], 0);
+    assert_eq!(hidden_mask["images"][0]["capture_step"], 3);
+    assert_eq!(hidden_mask["images"][0]["content_pixels"], 0);
+    assert_eq!(opaque_pixel_count(&hidden_mask_bytes), 0);
+
+    let (visible_mask, visible_mask_bytes) = observe_full_grammar_typewriter_run_mask_at(
+        &source_path,
+        &visible_mask_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert_eq!(visible_mask["steps"], 3);
+    assert_eq!(visible_mask["capture_time_millis"], 4000);
+    assert_eq!(visible_mask["images"][0]["capture_step"], 3);
+    assert!(
+        visible_mask["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        opaque_pixel_count(&visible_mask_bytes) as u64,
+        visible_mask["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+    );
+
+    let (early_color, early_color_bytes) = observe_full_grammar_run_color_at(
+        &source_path,
+        &early_color_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    let (late_color, late_color_bytes) = observe_full_grammar_run_color_at(
+        &source_path,
+        &late_color_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4.5"],
+    );
+    assert_eq!(early_color["capture_time_millis"], 4000);
+    assert_eq!(late_color["capture_time_millis"], 4500);
+    assert_full_grammar_color_captures_differ(
+        "combined typewriter + wave + shake + sparkle",
+        &early_color,
+        &early_color_bytes,
+        &late_color,
+        &late_color_bytes,
+    );
+
+    fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
+}
+
 fn assert_windows_fonts_sample_vertical_cluster_readback(
     source_path: &Path,
     json: &serde_json::Value,
@@ -31747,6 +31840,17 @@ fn find_rich_text_run_object<'a>(
         .iter()
         .find(|object| object["role"] == "rich_text_run" && object["text"] == text)
         .unwrap_or_else(|| panic!("rich-text run `{text}` should be observed: {report}"))
+}
+
+fn assert_rich_text_run_object_has_effect(run: &serde_json::Value, id: &str) {
+    assert!(
+        run["rich_text_ref"]["presentation"]["effects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|effect| effect["id"] == id),
+        "rich-text run object should carry effect `{id}`: {run}"
+    );
 }
 
 fn find_rich_text_cluster_object<'a>(
