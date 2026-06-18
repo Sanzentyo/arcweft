@@ -326,6 +326,8 @@ pub struct RichTextPresentation {
     pub shaders: Vec<RichTextShaderRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_proxies: Vec<RichTextObjectProxy>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, RichTextParam>,
     #[serde(default)]
     pub italic: bool,
     #[serde(default)]
@@ -350,6 +352,7 @@ impl RichTextPresentation {
         self.effects.extend(other.effects);
         self.shaders.extend(other.shaders);
         self.object_proxies.extend(other.object_proxies);
+        self.params.extend(other.params);
         self.italic |= other.italic;
         if other.oblique.is_some() {
             self.oblique = other.oblique;

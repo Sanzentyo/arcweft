@@ -2238,9 +2238,8 @@ enum InferredTagFamily {
 
 fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily> {
     match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "z" | "z_index" => {
-            Some(InferredTagFamily::Style)
-        }
+        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "meta"
+        | "metadata" | "data" | "z" | "z_index" => Some(InferredTagFamily::Style),
         "horizontal_tb"
         | "vertical_rl"
         | "vertical_lr"
@@ -2277,6 +2276,7 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             presentation: RichTextPresentationStyle {
                 opacity: Some(parse_milli_token(&style_scalar_attr(attrs, "opacity"))),
                 layer: None,
+                params: BTreeMap::new(),
                 z_index: None,
             },
         },
@@ -2284,6 +2284,18 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             presentation: RichTextPresentationStyle {
                 opacity: None,
                 layer: style_layer_attr(attrs),
+                params: BTreeMap::new(),
+                z_index: None,
+            },
+        },
+        "meta" | "metadata" | "data" => RichTextStyle::Presentation {
+            presentation: RichTextPresentationStyle {
+                opacity: None,
+                layer: None,
+                params: parse_attrs(attrs)
+                    .into_iter()
+                    .map(|(key, value)| (key, param_from_value(&value)))
+                    .collect(),
                 z_index: None,
             },
         },
@@ -2291,6 +2303,7 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             presentation: RichTextPresentationStyle {
                 opacity: None,
                 layer: None,
+                params: BTreeMap::new(),
                 z_index: parse_z_index_token(&style_scalar_attr(attrs, "z_index")),
             },
         },
@@ -3654,7 +3667,7 @@ flow @flow.main main {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.layer hud][.z_index 7][.opacity 0.5]BC[/][/][/]D[p]
+    alice: A[.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]BC[/][/][/][/]D[p]
 }
 ",
         );
@@ -3692,6 +3705,20 @@ flow @flow.main main {
         assert_eq!(run.presentation.z_index, 7);
         assert_eq!(run.presentation.opacity, Some(Milli(500)));
         assert_eq!(run.presentation.layer.as_deref(), Some("hud"));
+        assert_eq!(
+            run.presentation.params.get("role"),
+            Some(&RichTextParam::Raw {
+                value: "caption".to_owned()
+            })
+        );
+        assert_eq!(
+            run.presentation.params.get("hover"),
+            Some(&RichTextParam::Bool { value: true })
+        );
+        assert_eq!(
+            run.presentation.params.get("weight"),
+            Some(&RichTextParam::Int { value: 2 })
+        );
     }
 
     #[test]

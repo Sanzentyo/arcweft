@@ -106,7 +106,7 @@ flow rich_text_full_grammar {
     ]
 
     narrator.say(id=@say.full.006, voice=auto)[
-        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg origin=glyph_center target=glyph]transform[/transform]、[effect .jitter amp=1px seed=full target=glyph phase=glyph_transform state_scope=glyph]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0 phase=run_offscreen_pass]shader[/effect]、[object .hotspot type=KeywordHit]proxy[/object]、[object .hotspot2 type=KeywordHit channel=inventory][object .hover type=HoverHit depth=7 hit=true tone=alert]multi proxy[/object][/object]、[.KeywordHit channel=typed]typed proxy[/]、[style .layer hud][style .z_index 3][style .opacity 0.8]z depth[/style][/style][/style]。[p]
+        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg origin=glyph_center target=glyph]transform[/transform]、[effect .jitter amp=1px seed=full target=glyph phase=glyph_transform state_scope=glyph]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0 phase=run_offscreen_pass]shader[/effect]、[object .hotspot type=KeywordHit]proxy[/object]、[object .hotspot2 type=KeywordHit channel=inventory][object .hover type=HoverHit depth=7 hit=true tone=alert]multi proxy[/object][/object]、[.KeywordHit channel=typed]typed proxy[/]、[style .layer hud][style .z_index 3][style .opacity 0.8][style .meta role=caption hover=true]z depth[/style][/style][/style][/style]。[p]
     ]
 
     alice.say(id=@say.full.007, voice=auto)[

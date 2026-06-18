@@ -2083,7 +2083,7 @@ fn agent_observe_reports_text_presentation_z_index_depth() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.layer hud][.z_index 7][.opacity 0.5]Depth[/][/][/] plain[p]
+    alice: [.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]Depth[/][/][/][/] plain[p]
 }
 ",
     );
@@ -2111,6 +2111,18 @@ flow @flow.main main {
     assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 7);
     assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 500);
+    assert_eq!(
+        run["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
+    assert_eq!(
+        run["rich_text_ref"]["presentation"]["params"]["hover"]["value"],
+        true
+    );
+    assert_eq!(
+        run["rich_text_ref"]["presentation"]["params"]["weight"]["value"],
+        2
+    );
     assert_eq!(run["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(run["rich_text_ref"]["object_depth"], 7000);
     assert_eq!(run["rich_text_ref"]["hit_test"], false);
@@ -33753,6 +33765,14 @@ fn assert_full_grammar_presentation_scalar_depth(json: &serde_json::Value) {
     assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 3);
     assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 800);
+    assert_eq!(
+        run["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
+    assert_eq!(
+        run["rich_text_ref"]["presentation"]["params"]["hover"]["value"],
+        true
+    );
     assert_eq!(run["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(run["rich_text_ref"]["object_depth"], 3000);
 }

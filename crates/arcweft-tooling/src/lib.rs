@@ -1468,9 +1468,8 @@ fn inferred_rich_text_family(
     context: &DialogueSugarContext,
 ) -> Option<&'static str> {
     match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "z" | "z_index" => {
-            Some("style")
-        }
+        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "meta"
+        | "metadata" | "data" | "z" | "z_index" => Some("style"),
         "horizontal_tb"
         | "vertical_rl"
         | "vertical_lr"

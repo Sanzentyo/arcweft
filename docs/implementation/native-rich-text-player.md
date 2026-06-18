@@ -263,6 +263,11 @@ participates in the same layer/depth-aware object ordering as images, models,
 and custom proxy spans. Proxy objects still keep their own layer/depth metadata;
 when a proxy layer is omitted it inherits the parent presentation layer for
 Agent hit-test reporting.
+Style-family `[style .meta ...]` and inferred `[.meta ...]` spans also lower to
+ordinary `RichTextPresentation.params`. Agent observe serializes those typed
+params inside `rich_text_ref.presentation.params` on runs, glyphs, clusters,
+lines, pages, and ruby objects. This is separate from proxy `params`, which stay
+inside the selected `object_proxies[]` entry and hit-test `proxy_params`.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

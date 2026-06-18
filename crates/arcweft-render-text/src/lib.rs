@@ -3,6 +3,7 @@
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 mod rich_effects;
@@ -238,6 +239,8 @@ pub struct RichTextPresentationStyle {
     pub opacity: Option<Milli>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, RichTextParam>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_index: Option<i16>,
 }
@@ -509,6 +512,7 @@ impl RichTextStyle {
                 presentation: RichTextPresentationStyle {
                     opacity: Some(parse_milli_token(attrs)),
                     layer: None,
+                    params: BTreeMap::new(),
                     z_index: None,
                 },
             },
@@ -516,6 +520,15 @@ impl RichTextStyle {
                 presentation: RichTextPresentationStyle {
                     opacity: None,
                     layer: (!attrs.trim().is_empty()).then(|| attrs.trim().to_owned()),
+                    params: BTreeMap::new(),
+                    z_index: None,
+                },
+            },
+            "meta" | "metadata" | "data" => Self::Presentation {
+                presentation: RichTextPresentationStyle {
+                    opacity: None,
+                    layer: None,
+                    params: parse_presentation_params(attrs),
                     z_index: None,
                 },
             },
@@ -523,6 +536,7 @@ impl RichTextStyle {
                 presentation: RichTextPresentationStyle {
                     opacity: None,
                     layer: None,
+                    params: BTreeMap::new(),
                     z_index: parse_z_index_token(attrs),
                 },
             },
@@ -977,7 +991,7 @@ pub fn canonical_style_name(name: &str) -> &str {
     match name {
         "" | "/" => "/",
         "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "layer" | "object_layer"
-        | "z" | "z_index" | "style" => "style",
+        | "meta" | "metadata" | "data" | "z" | "z_index" | "style" => "style",
         "vertical"
         | "vertical_rl"
         | "vertical_lr"
@@ -1017,6 +1031,7 @@ pub fn presentation_from_styles<'a>(
                     if let Some(layer) = &presentation.layer {
                         out.layer = Some(layer.clone());
                     }
+                    out.params.extend(presentation.params.clone());
                     if let Some(z_index) = presentation.z_index {
                         out.z_index = z_index;
                     }
@@ -1030,6 +1045,51 @@ pub fn presentation_from_styles<'a>(
             }
             out
         })
+}
+
+fn parse_presentation_params(attrs: &str) -> BTreeMap<String, RichTextParam> {
+    attrs
+        .split_whitespace()
+        .filter_map(|item| {
+            let (key, value) = item.split_once('=')?;
+            Some((key.to_owned(), param_from_style_value(value)))
+        })
+        .collect()
+}
+
+fn param_from_style_value(value: &str) -> RichTextParam {
+    let value = value.trim().trim_matches('"');
+    if value == "true" {
+        return RichTextParam::Bool { value: true };
+    }
+    if value == "false" {
+        return RichTextParam::Bool { value: false };
+    }
+    if value.starts_with('.') {
+        return RichTextParam::Selector {
+            value: value.to_owned(),
+        };
+    }
+    if let Ok(value) = value.parse::<i64>() {
+        return RichTextParam::Int { value };
+    }
+    if let Some(value) = parse_style_param_milli(value) {
+        return RichTextParam::Milli { value };
+    }
+    RichTextParam::Raw {
+        value: value.to_owned(),
+    }
+}
+
+fn parse_style_param_milli(value: &str) -> Option<Milli> {
+    let trimmed = value.trim();
+    let numeric = trimmed
+        .strip_suffix("px")
+        .or_else(|| trimmed.strip_suffix("deg"))
+        .or_else(|| trimmed.strip_suffix("ch"))
+        .unwrap_or(trimmed)
+        .trim();
+    parse_decimal_milli(numeric)
 }
 
 fn merge_layout_presentation(out: &mut RichTextPresentation, layout: &RichTextLayout) {
