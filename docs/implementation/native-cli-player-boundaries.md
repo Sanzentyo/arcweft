@@ -24,10 +24,10 @@ instead of importing `arcweft-runtime-plan` directly. CLI project loading, CLI
 runtime/JIT paths, LSP effective dialogue cascade queries, verifier runtime
 conflict checks, and native rich-text pure shader/effect/motion exports all use
 `arcweft-compiler` APIs for runtime-plan reports, line-task groups, and
-pure-helper candidates. The only remaining direct runtime-plan dependency
-outside the compiler/runtime-plan crates is a dev-only `arcweft-lang-sema` test
-fixture path; those tests should move to runtime-plan or compiler tests before
-the boundary is considered fully clean.
+pure-helper candidates. Runtime-plan regression tests live with the
+runtime-plan crate rather than in semantic-analysis tests, so direct
+`arcweft-runtime-plan` imports are confined to `arcweft-compiler` and
+`arcweft-runtime-plan` itself.
 
 `arcweft-render-native` owns native rendering and capture:
 
@@ -239,9 +239,9 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    task groups, runtime-plan lowering reports/options/stats, and pure-helper
    candidates all cross tool and renderer boundaries as compiler APIs. CLI
    modules keep developer-facing phase timing, source selection, diagnostic
-   printing, and runtime execution policy. The remaining dev-only sema
-   runtime-plan tests should be moved out of `arcweft-lang-sema` rather than
-   routed through a compiler dependency cycle.
+   printing, and runtime execution policy. Runtime-plan regression coverage now
+   lives under `arcweft-runtime-plan` tests instead of giving
+   `arcweft-lang-sema` a dev-only runtime-plan dependency.
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component

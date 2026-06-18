@@ -11,18 +11,6 @@ pub(super) use crate::semantic::{
 };
 pub(super) use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
-pub(super) use arcweft_core::{
-    effect::{
-        LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall, RuntimeLog,
-        RuntimeWaitTarget,
-    },
-    line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
-    plan::{FlowOp, FlowRuntimeId},
-    source::{SourceHandlerPlan, SourceOp},
-    stream::StreamOp,
-    time::LogicalDuration,
-    value::{RuntimeExpr, RuntimeValue},
-};
 pub(super) use arcweft_lang_hir::lower::lower_to_hir;
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};
 pub(super) use arcweft_lang_syntax::{
@@ -53,10 +41,6 @@ pub(super) use arcweft_lang_syntax::{
     parser::{parse_source, recovery::ParseError},
     text::{parse_dialogue_text, parse_dialogue_tokens},
     types::{TypeRef, parse_fn_signature, parse_type_ref},
-};
-pub(super) use arcweft_runtime_plan::{
-    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
-    line_task::lower_line_task_groups,
 };
 
 pub(super) fn parse_ok(

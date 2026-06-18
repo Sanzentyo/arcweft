@@ -11,10 +11,6 @@ arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 thiserror.workspace = true
 
-[dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-
 [lib]
 path = "src/lib.rs"
 

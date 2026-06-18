@@ -1,4 +1,36 @@
-use super::support::*;
+use arcweft_core::{
+    effect::{
+        LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall, RuntimeLog,
+        RuntimeWaitTarget,
+    },
+    line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
+    plan::{FlowOp, FlowRuntimeId},
+    source::{SourceHandlerPlan, SourceOp},
+    stream::StreamOp,
+    time::LogicalDuration,
+    value::{RuntimeExpr, RuntimeValue},
+};
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::check::validate_typecheck_ready;
+use arcweft_lang_syntax::{
+    ast::items::TypedSyntaxTree,
+    expr::{Expr, parse_expr},
+    parser::parse_source,
+};
+use arcweft_runtime_plan::{
+    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
+    line_task::lower_line_task_groups,
+};
+
+fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
+    let parsed = parse_source(source);
+    assert!(
+        parsed.errors().is_empty(),
+        "expected source to parse without errors, got {:?}",
+        parsed.errors()
+    );
+    parsed.into_typed_tree()
+}
 
 fn call(callee: &str, args: &[&str]) -> LineEffectRequest {
     LineEffectRequest::Call(RuntimeCall {
@@ -51,6 +83,64 @@ fn canonical_log_signal_metric_are_ordinary_calls() {
             .expect("metric.set parses as ordinary expression"),
         Expr::MethodCall { .. }
     ));
+}
+
+#[test]
+fn runtime_plan_lowers_pure_function_call_from_compile_gap_fixture() {
+    let tree = parse_ok(
+        r#"
+#[pure]
+fn add(a: i32, b: i32) -> i32 { a + b }
+
+flow @flow.main main {
+    let n = add(1, 2)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("pure function call lowers to HIR");
+
+    lower_runtime_plan(&hir).expect("pure function call lowers to runtime plan");
+}
+
+#[test]
+fn entry_selects_runtime_start_flow_from_compile_gap_fixture() {
+    let tree = parse_ok(
+        r#"
+entry game @entry.main { start(@flow.second) }
+flow @flow.first first { return "wrong" }
+flow @flow.second second { return "right" }
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("entry lowers");
+
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with explicit entry");
+    assert!(
+        plan.entry_flow
+            .as_ref()
+            .is_some_and(|id| id.0 == "flow.second")
+    );
+}
+
+#[test]
+fn entry_accepts_bare_start_flow_target_from_compile_gap_fixture() {
+    let tree = parse_ok(
+        r#"
+entry game {
+    start @flow.second
+}
+flow @flow.first first { return "wrong" }
+flow @flow.second second { return "right" }
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("entry lowers");
+
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with bare start entry");
+    assert!(
+        plan.entry_flow
+            .as_ref()
+            .is_some_and(|id| id.0 == "flow.second")
+    );
 }
 
 #[test]

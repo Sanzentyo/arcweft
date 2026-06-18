@@ -13,6 +13,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 
 [lib]

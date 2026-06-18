@@ -345,10 +345,8 @@ dependencies = [
 name = "arcweft-lang-sema"
 version = "0.1.0"
 dependencies = [
- "arcweft-core",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
- "arcweft-runtime-plan",
  "thiserror 2.0.18",
 ]
 
@@ -516,6 +514,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-core",
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-render-text",
  "thiserror 2.0.18",

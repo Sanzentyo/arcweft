@@ -32,7 +32,6 @@ flow @flow.main main {
     let hir = lower_to_hir(&tree).expect("pure function call lowers to HIR");
     assert!(hir.functions()[0].has_attribute("pure"));
     validate_typecheck_ready(&hir).expect("pure function call is typecheck ready");
-    lower_runtime_plan(&hir).expect("pure function call lowers to runtime plan");
 }
 
 #[test]
@@ -45,12 +44,7 @@ flow @flow.second second { return "right" }
 "#,
     );
     let hir = lower_to_hir(&tree).expect("entry lowers");
-    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with explicit entry");
-    assert!(
-        plan.entry_flow
-            .as_ref()
-            .is_some_and(|id| id.0 == "flow.second")
-    );
+    validate_typecheck_ready(&hir).expect("explicit entry is typecheck ready");
 }
 
 #[test]
@@ -66,12 +60,6 @@ flow @flow.second second { return "right" }
     );
     let hir = lower_to_hir(&tree).expect("entry lowers");
     validate_typecheck_ready(&hir).expect("bare start entry is typecheck ready");
-    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with bare start entry");
-    assert!(
-        plan.entry_flow
-            .as_ref()
-            .is_some_and(|id| id.0 == "flow.second")
-    );
 }
 
 #[test]
