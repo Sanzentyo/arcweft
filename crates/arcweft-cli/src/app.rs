@@ -69,17 +69,14 @@ use arcweft_core::{
     },
 };
 use arcweft_host_adapter::HostCallPolicy;
-use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_jit_cranelift::{
     CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend,
 };
-use arcweft_lang_sema::check::{TypeCheckReport, analyze_types, validate_typecheck_ready};
+use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{
     expr::{CallArg, Expr, Literal, parse_expr},
-    lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy},
-    parser::parse_source,
+    lint::{SyntaxLint, SyntaxLintSeverity},
 };
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
@@ -100,7 +97,7 @@ use arcweft_runtime_plan::flow::{
     RuntimePlanLowerOptions, RuntimePlanLowerReport, RuntimePlanLowerStats,
     lower_runtime_plan_with_options, lower_runtime_plan_with_stats_and_options,
 };
-use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
+use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
 };

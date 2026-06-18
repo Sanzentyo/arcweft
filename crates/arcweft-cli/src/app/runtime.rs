@@ -35,13 +35,11 @@ use super::{
     ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
     ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus,
     ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, SocketAddr, TypeCheckEnv,
-    TypeCheckProfileStats, TypeCheckReport, ValueEnum, analyze_types, catch_unwind,
-    collect_script_tests, flow_status_label, fs, host_system_info, lint_id_policy,
-    lower_line_task_groups, lower_pure_helper_candidates, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options, lower_to_hir, parse_expr, parse_source,
-    registry_from_hir, runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values,
-    serve_native_http, validate_hir_references, validate_runtime_plan_types,
-    validate_typecheck_ready,
+    TypeCheckProfileStats, TypeCheckReport, ValueEnum, catch_unwind, collect_script_tests,
+    flow_status_label, fs, host_system_info, lower_pure_helper_candidates,
+    lower_runtime_plan_with_options, lower_runtime_plan_with_stats_and_options, parse_expr,
+    runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values, serve_native_http,
+    validate_runtime_plan_types,
 };
 
 impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
@@ -843,7 +841,10 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         })
     })?;
     let parsed = run_profile_phase(phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| parse_source(source))).map_err(|_| {
+        catch_unwind(AssertUnwindSafe(|| {
+            arcweft_compiler::parse_source_text(source)
+        }))
+        .map_err(|_| {
             eprintln!(
                 "error: parser panicked while profiling {}",
                 selection.path().display()
@@ -860,7 +861,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
-        let lints = lint_id_policy(&tree);
+        let lints = arcweft_compiler::lint_source_tree(&tree);
         for lint in &lints {
             eprintln!(
                 "{}[{} {}]: {}",
@@ -878,7 +879,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     let hir = profile_lower_hir(&tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
-        lower_line_task_groups(&hir).map_err(|errors| {
+        arcweft_compiler::lower_source_line_tasks(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -949,7 +950,7 @@ pub(in crate::app) fn profile_lower_hir(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<arcweft_lang_hir::model::HirModule, ExitCode> {
     run_profile_phase(phases, "lower_hir", || {
-        lower_to_hir(tree).map_err(|errors| {
+        arcweft_compiler::lower_source_tree(tree).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -964,16 +965,15 @@ pub(in crate::app) fn profile_validate_hir(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<TypeCheckReport, ExitCode> {
     run_profile_phase(phases, "resolve", || {
-        let registry = registry_from_hir(hir);
-        validate_hir_references(hir, &registry).map_err(|errors| {
+        arcweft_compiler::resolve_hir_references(hir).map_err(|errors| {
             for error in errors {
-                eprintln!("error: {}", error.message());
+                eprintln!("error: {error}");
             }
             ExitCode::FAILURE
         })
     })?;
     run_profile_phase(phases, "readiness", || {
-        validate_typecheck_ready(hir).map_err(|errors| {
+        arcweft_compiler::validate_hir_typecheck_ready(hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -981,15 +981,12 @@ pub(in crate::app) fn profile_validate_hir(
         })
     })?;
     run_profile_phase(phases, "typecheck", || {
-        let report = analyze_types(hir, env);
-        if report.diagnostics.is_empty() {
-            Ok(report)
-        } else {
-            for error in report.diagnostics {
+        arcweft_compiler::typecheck_hir_with_env(hir, env).map_err(|errors| {
+            for error in errors {
                 eprintln!("error: {}", error.message());
             }
-            Err(ExitCode::FAILURE)
-        }
+            ExitCode::FAILURE
+        })
     })
 }
 
