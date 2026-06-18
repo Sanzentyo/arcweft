@@ -15,9 +15,8 @@ use super::{
     TypeCheckProfileStats, VerificationMode, VerificationPolicy, VerificationReport,
     VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
     apply_runtime_entry_selection, emit_smt_lib, flow_status_label, fs,
-    lower_runtime_plan_with_options, parse_backend_kind, parse_verification_mode, print_json,
-    report_path, run_profile_phase, run_runtime_steps_with_executor, validate_runtime_plan_types,
-    verify_module_with_env,
+    lower_runtime_plan_with_options, print_json, report_path, run_profile_phase,
+    run_runtime_steps_with_executor, validate_runtime_plan_types, verify_module_with_env,
 };
 
 pub(super) fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
@@ -289,6 +288,24 @@ pub(super) fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
         }
     }
     Ok(())
+}
+
+fn parse_verification_mode(value: &str) -> Result<VerificationMode, String> {
+    match value {
+        "dev" => Ok(VerificationMode::Dev),
+        "test" => Ok(VerificationMode::Test),
+        "release" => Ok(VerificationMode::Release),
+        other => Err(format!("unknown verification mode `{other}`")),
+    }
+}
+
+fn parse_backend_kind(value: &str) -> Result<BackendKind, String> {
+    match value {
+        "emit" => Ok(BackendKind::Emit),
+        "oxiz" => Ok(BackendKind::Oxiz),
+        "z3" => Ok(BackendKind::Z3),
+        other => Err(format!("unknown verifier backend `{other}`")),
+    }
 }
 
 #[derive(Args, Clone, Debug)]
