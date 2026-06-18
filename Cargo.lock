@@ -445,8 +445,6 @@ dependencies = [
  "arcweft-compiler",
  "arcweft-core",
  "arcweft-glyphon",
- "arcweft-lang-hir",
- "arcweft-lang-syntax",
  "arcweft-render-text",
  "arcweft-text-layout",
  "glyphon",

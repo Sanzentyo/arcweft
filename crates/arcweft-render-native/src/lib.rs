@@ -1,13 +1,8 @@
 //! Native wgpu/glyphon renderer and capture adapter for Arcweft presentation frames.
 
-use arcweft_compiler::{
-    PureHelperCandidate, PureHelperLowerError, lower_source_pure_helper_candidate,
-};
+use arcweft_compiler::PureHelperCandidate;
 use arcweft_core::{
-    plan::{
-        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-        RuntimePureOutputType,
-    },
+    plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType},
     pure::VmPureFunctionScratch,
     value::RuntimeValue,
 };
@@ -16,7 +11,6 @@ use arcweft_glyphon::{
     glyph_area_from_layout, horizontal_glyph_area_from_shaped_buffer,
     vertical_glyph_area_from_shaped_buffer,
 };
-use arcweft_lang_hir::model::HirModule;
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
@@ -686,10 +680,6 @@ pub struct RichTextMotionRegistry {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RichTextMotionExportError {
-    #[error("Arcweft pure helper lowering failed for text motion export: {0}")]
-    PureLower(#[from] PureHelperLowerError),
-    #[error("text motion function `{name}` must be annotated with #[pure]")]
-    MissingPureAttribute { name: String },
     #[error(
         "text motion function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
     )]
@@ -698,10 +688,6 @@ pub enum RichTextMotionExportError {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RichTextEffectExportError {
-    #[error("Arcweft pure helper lowering failed for text effect export: {0}")]
-    PureLower(#[from] PureHelperLowerError),
-    #[error("text effect function `{name}` must be annotated with #[pure]")]
-    MissingPureAttribute { name: String },
     #[error(
         "text effect function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
     )]
@@ -710,10 +696,6 @@ pub enum RichTextEffectExportError {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RichTextShaderExportError {
-    #[error("Arcweft pure helper lowering failed for text shader export: {0}")]
-    PureLower(#[from] PureHelperLowerError),
-    #[error("text shader function `{name}` must be annotated with #[pure]")]
-    MissingPureAttribute { name: String },
     #[error(
         "text shader function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
     )]
@@ -758,25 +740,12 @@ impl RichTextMotionRegistry {
 
 pub fn register_arcweft_pure_text_shaders(
     registry: &mut RichTextShaderRegistry,
-    module: &HirModule,
+    candidates: &[PureHelperCandidate],
 ) -> Result<usize, RichTextShaderExportError> {
-    module
-        .functions()
-        .iter()
-        .filter(|function| {
-            function.has_attribute("text_shader") || function.has_attribute("rich_text_shader")
-        })
-        .try_fold(0usize, |exported, function| {
-            if !function.has_attribute("pure") {
-                return Err(RichTextShaderExportError::MissingPureAttribute {
-                    name: function.name().to_owned(),
-                });
-            }
-            let candidate =
-                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
-            register_arcweft_pure_text_shader(registry, &candidate)?;
-            Ok(exported.saturating_add(1))
-        })
+    candidates.iter().try_fold(0usize, |exported, candidate| {
+        register_arcweft_pure_text_shader(registry, candidate)?;
+        Ok(exported.saturating_add(1))
+    })
 }
 
 fn register_arcweft_pure_text_shader(
@@ -831,25 +800,12 @@ fn register_arcweft_pure_text_shader(
 
 pub fn register_arcweft_pure_text_effects(
     registry: &mut RichTextEffectRegistry,
-    module: &HirModule,
+    candidates: &[PureHelperCandidate],
 ) -> Result<usize, RichTextEffectExportError> {
-    module
-        .functions()
-        .iter()
-        .filter(|function| {
-            function.has_attribute("text_effect") || function.has_attribute("rich_text_effect")
-        })
-        .try_fold(0usize, |exported, function| {
-            if !function.has_attribute("pure") {
-                return Err(RichTextEffectExportError::MissingPureAttribute {
-                    name: function.name().to_owned(),
-                });
-            }
-            let candidate =
-                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
-            register_arcweft_pure_text_effect(registry, &candidate)?;
-            Ok(exported.saturating_add(1))
-        })
+    candidates.iter().try_fold(0usize, |exported, candidate| {
+        register_arcweft_pure_text_effect(registry, candidate)?;
+        Ok(exported.saturating_add(1))
+    })
 }
 
 fn register_arcweft_pure_text_effect(
@@ -911,25 +867,12 @@ fn register_arcweft_pure_text_effect(
 
 pub fn register_arcweft_pure_text_motions(
     registry: &mut RichTextMotionRegistry,
-    module: &HirModule,
+    candidates: &[PureHelperCandidate],
 ) -> Result<usize, RichTextMotionExportError> {
-    module
-        .functions()
-        .iter()
-        .filter(|function| {
-            function.has_attribute("text_motion") || function.has_attribute("rich_text_motion")
-        })
-        .try_fold(0usize, |exported, function| {
-            if !function.has_attribute("pure") {
-                return Err(RichTextMotionExportError::MissingPureAttribute {
-                    name: function.name().to_owned(),
-                });
-            }
-            let candidate =
-                lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated)?;
-            register_arcweft_pure_text_motion(registry, &candidate)?;
-            Ok(exported.saturating_add(1))
-        })
+    candidates.iter().try_fold(0usize, |exported, candidate| {
+        register_arcweft_pure_text_motion(registry, candidate)?;
+        Ok(exported.saturating_add(1))
+    })
 }
 
 fn register_arcweft_pure_text_motion(
@@ -7662,8 +7605,6 @@ fn usize_to_f32_saturating(value: usize) -> f32 {
 mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
-    use arcweft_lang_hir::lower::lower_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
     use arcweft_render_text::{
         LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextLayout, RichTextObjectProxy,
         RichTextTransform, RichTextVec2, RichTextWritingMode, RuntimeLineContext,
@@ -8299,9 +8240,13 @@ mod tests {
             .expect("frame resolves")
     }
 
-    fn arcweft_text_registry_hir(source: &str) -> arcweft_lang_hir::model::HirModule {
-        let parsed = parse_source(source);
-        lower_to_hir(parsed.typed_tree()).expect("Arcweft text registry source lowers")
+    fn arcweft_text_registry_candidates(
+        source: &str,
+    ) -> arcweft_compiler::TextPureHelperCandidateReport {
+        let compiled = arcweft_compiler::compile_source(source)
+            .expect("Arcweft text registry source compiles");
+        arcweft_compiler::lower_source_text_pure_helper_candidates(&compiled.hir)
+            .expect("Arcweft text registry source exports pure text helpers")
     }
 
     fn text_motion_context(
@@ -8877,7 +8822,7 @@ mod tests {
 
     #[test]
     fn native_motion_registry_exports_arcweft_pure_text_motion_function() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_motion]
 #[pure]
@@ -8888,8 +8833,8 @@ fn arc_phase(t: f32, glyph: f32, seed: f32) -> f32 {
         );
         let mut registry = RichTextMotionRegistry::default();
 
-        let exported =
-            register_arcweft_pure_text_motions(&mut registry, &hir).expect("motion exports");
+        let exported = register_arcweft_pure_text_motions(&mut registry, &candidates.motions)
+            .expect("motion exports");
 
         assert_eq!(exported, 1);
         assert!(registry.contains("arc_phase"));
@@ -8914,7 +8859,7 @@ fn arc_phase(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_motion_registry_export() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_motion]
 #[pure]
@@ -8930,8 +8875,9 @@ fn snap_arc(t: f32, glyph: f32, seed: f32) -> f32 {
             .expect("baseline capture");
 
         let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
-        let export_count = register_arcweft_pure_text_motions(exported.motion_registry_mut(), &hir)
-            .expect("register Arcweft pure text motion");
+        let export_count =
+            register_arcweft_pure_text_motions(exported.motion_registry_mut(), &candidates.motions)
+                .expect("register Arcweft pure text motion");
         let exported_capture = exported
             .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
             .expect("exported capture");
@@ -8952,7 +8898,7 @@ fn snap_arc(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_effect_registry_exports_arcweft_pure_text_effect_function() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_effect]
 #[pure]
@@ -8963,8 +8909,8 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
         );
         let mut registry = RichTextEffectRegistry::default();
 
-        let exported =
-            register_arcweft_pure_text_effects(&mut registry, &hir).expect("effect exports");
+        let exported = register_arcweft_pure_text_effects(&mut registry, &candidates.effects)
+            .expect("effect exports");
 
         assert_eq!(exported, 1);
         assert!(registry.contains("source_drift"));
@@ -8974,7 +8920,7 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_effect_registry_export() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_effect]
 #[pure]
@@ -9016,8 +8962,9 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
             .expect("baseline capture");
 
         let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
-        let export_count = register_arcweft_pure_text_effects(exported.effect_registry_mut(), &hir)
-            .expect("register Arcweft pure text effect");
+        let export_count =
+            register_arcweft_pure_text_effects(exported.effect_registry_mut(), &candidates.effects)
+                .expect("register Arcweft pure text effect");
         let exported_capture = exported
             .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
             .expect("exported capture");
@@ -9038,7 +8985,7 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_effect_post_process_export() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_effect]
 #[pure]
@@ -9069,8 +9016,9 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
             .expect("baseline capture");
 
         let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
-        let export_count = register_arcweft_pure_text_effects(exported.effect_registry_mut(), &hir)
-            .expect("register Arcweft pure text effect");
+        let export_count =
+            register_arcweft_pure_text_effects(exported.effect_registry_mut(), &candidates.effects)
+                .expect("register Arcweft pure text effect");
         let exported_capture = exported
             .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
             .expect("exported capture");
@@ -9091,7 +9039,7 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_shader_registry_exports_arcweft_pure_text_shader_function() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_shader]
 #[pure]
@@ -9102,8 +9050,8 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
         );
         let mut registry = RichTextShaderRegistry::default();
 
-        let exported =
-            register_arcweft_pure_text_shaders(&mut registry, &hir).expect("shader exports");
+        let exported = register_arcweft_pure_text_shaders(&mut registry, &candidates.shaders)
+            .expect("shader exports");
 
         assert_eq!(exported, 1);
         assert!(registry.contains("source_glow"));
@@ -9113,7 +9061,7 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_shader_registry_export() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_shader]
 #[pure]
@@ -9129,8 +9077,9 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
             .expect("baseline capture");
 
         let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
-        let export_count = register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &hir)
-            .expect("register Arcweft pure text shader");
+        let export_count =
+            register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &candidates.shaders)
+                .expect("register Arcweft pure text shader");
         let exported_capture = exported
             .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
             .expect("exported capture");
@@ -9151,7 +9100,7 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
 
     #[test]
     fn native_capture_uses_arcweft_pure_text_shader_post_process_export() {
-        let hir = arcweft_text_registry_hir(
+        let candidates = arcweft_text_registry_candidates(
             r"
 #[text_shader]
 #[pure]
@@ -9167,8 +9116,9 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
             .expect("baseline capture");
 
         let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
-        let export_count = register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &hir)
-            .expect("register Arcweft pure text shader");
+        let export_count =
+            register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &candidates.shaders)
+                .expect("register Arcweft pure text shader");
         let exported_capture = exported
             .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
             .expect("exported capture");

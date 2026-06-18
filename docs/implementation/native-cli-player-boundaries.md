@@ -251,11 +251,13 @@ remaining architectural cuts are:
    run/serve/test, JIT check, Agent native observe, LSP cascade, verifier
    runtime-conflict analysis, and native rich-text pure shader/effect/motion
    export paths now obtain compiler artifacts through `arcweft-compiler`: line
-   task groups, runtime-plan lowering reports/options/stats, and pure-helper
-   candidates all cross tool and renderer boundaries as compiler APIs. CLI
-   modules keep developer-facing phase timing, source selection, diagnostic
-   printing, and runtime execution policy. Runtime-plan regression coverage now
-   lives under `arcweft-runtime-plan` tests instead of giving
+   task groups, runtime-plan lowering reports/options/stats, and categorized
+   text pure-helper candidates all cross tool and renderer boundaries as
+   compiler APIs. `arcweft-render-native` consumes those candidates without a
+   direct HIR or syntax dependency. CLI modules keep developer-facing phase
+   timing, source selection, diagnostic printing, and runtime execution policy.
+   Runtime-plan regression coverage now lives under `arcweft-runtime-plan` tests
+   instead of giving
    `arcweft-lang-sema` a dev-only runtime-plan dependency.
 2. Keep future product-player lifecycle work on the `.awfb`/runtime-host path.
    Input, audio, save/load, and other product host behavior should extend this

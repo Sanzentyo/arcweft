@@ -942,6 +942,13 @@ fn agent_mcp_native_capture_session(
 fn agent_native_capture_session_for_hir(
     hir: &arcweft_lang_hir::model::HirModule,
 ) -> Result<arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
+    let text_helpers =
+        arcweft_compiler::lower_source_text_pure_helper_candidates(hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: failed to lower Arcweft text renderer function: {error}");
+            }
+            ExitCode::FAILURE
+        })?;
     let mut native_session =
         arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
             eprintln!("error: native capture failed: {error}");
@@ -949,7 +956,7 @@ fn agent_native_capture_session_for_hir(
         })?;
     arcweft_render_native::register_arcweft_pure_text_motions(
         native_session.motion_registry_mut(),
-        hir,
+        &text_helpers.motions,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text motion functions: {error}");
@@ -957,7 +964,7 @@ fn agent_native_capture_session_for_hir(
     })?;
     arcweft_render_native::register_arcweft_pure_text_effects(
         native_session.effect_registry_mut(),
-        hir,
+        &text_helpers.effects,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text effect functions: {error}");
@@ -965,7 +972,7 @@ fn agent_native_capture_session_for_hir(
     })?;
     arcweft_render_native::register_arcweft_pure_text_shaders(
         native_session.shader_registry_mut(),
-        hir,
+        &text_helpers.shaders,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text shader functions: {error}");
