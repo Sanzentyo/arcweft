@@ -2,6 +2,7 @@
 
 pub mod component;
 pub mod entity;
+pub mod fragment;
 pub mod semantics;
 
 use thiserror::Error;
@@ -11,6 +12,11 @@ pub use component::{
     ComponentSchemaId, RustComponentId, UiProgramId,
 };
 pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
+pub use fragment::{
+    ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
+    ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
+    ViewFragmentBuilder,
+};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 
 /// Stable key for one retained UI fragment node.
@@ -28,6 +34,8 @@ pub enum UiError {
     StaleEntity(RawEntity),
     #[error("UI entity has a different state type: {0:?}")]
     EntityTypeMismatch(RawEntity),
+    #[error("invalid UI fragment node {0:?}")]
+    InvalidFragmentNode(NodeId),
     #[error("too many UI items")]
     CapacityExceeded,
 }
@@ -72,6 +80,121 @@ mod tests {
             z,
             stable_index: 0,
         }
+    }
+
+    #[test]
+    fn view_fragment_keeps_text_media_component_and_custom_nodes_flat() {
+        let mut entities = EntityStore::default();
+        let component_state = entities
+            .insert(
+                DialogueSkinState {
+                    hovered_nameplate: false,
+                },
+                Some(ComponentId(4)),
+            )
+            .unwrap();
+
+        let mut builder = ViewFragmentBuilder::default();
+        let rich_text = builder
+            .push_node(
+                NodeKey(10),
+                FragmentKind::RichText(RichTextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[EventBinding::new(EventKind::Activate, HandlerId(9))],
+                Some(SemanticSpecId(1)),
+            )
+            .unwrap();
+        let image = builder
+            .push_node(
+                NodeKey(11),
+                FragmentKind::Image(ImageId(2)),
+                StyleId(2),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let nested_component = builder
+            .push_node(
+                NodeKey(12),
+                FragmentKind::Component(component_state.raw()),
+                StyleId(3),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let custom = builder
+            .push_node(
+                NodeKey(13),
+                FragmentKind::Custom(CustomElementId(7)),
+                StyleId(4),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let root = builder
+            .push_node(
+                NodeKey(14),
+                FragmentKind::Container(ContainerKind::Stack),
+                StyleId(5),
+                &[rich_text, image, nested_component, custom],
+                &[],
+                None,
+            )
+            .unwrap();
+
+        let fragment = builder.finish();
+        assert_eq!(fragment.nodes().len(), 5);
+        assert_eq!(
+            fragment.node_children(root),
+            Some([rich_text, image, nested_component, custom].as_slice())
+        );
+        assert_eq!(
+            fragment.node_events(rich_text),
+            Some([EventBinding::new(EventKind::Activate, HandlerId(9))].as_slice())
+        );
+        assert_eq!(fragment.nodes()[rich_text.0 as usize].style(), StyleId(1));
+    }
+
+    #[test]
+    fn view_fragment_rejects_duplicate_keys_and_missing_children() {
+        let mut builder = ViewFragmentBuilder::default();
+        builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(
+            builder.push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(2)),
+                StyleId(1),
+                &[],
+                &[],
+                None
+            ),
+            Err(UiError::DuplicateNodeKey(NodeKey(1)))
+        );
+        assert_eq!(
+            builder.push_node(
+                NodeKey(2),
+                FragmentKind::Container(ContainerKind::Block),
+                StyleId(1),
+                &[NodeId(99)],
+                &[],
+                None
+            ),
+            Err(UiError::InvalidFragmentNode(NodeId(99)))
+        );
     }
 
     #[test]
