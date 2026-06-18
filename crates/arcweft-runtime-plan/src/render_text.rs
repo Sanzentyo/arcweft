@@ -3683,6 +3683,14 @@ flow @flow.main main {
             })
         );
 
+        assert_run_has_effect_without_object_proxy(&frame, "FX", "sparkle");
+    }
+
+    fn assert_run_has_effect_without_object_proxy(
+        frame: &arcweft_render_text::LineDisplayFrame,
+        text: &str,
+        effect_id: &str,
+    ) {
         let effect_run = frame
             .display_map
             .text_runs
@@ -3691,7 +3699,7 @@ flow @flow.main main {
                 frame
                     .text
                     .get(run.range.start..run.range.end)
-                    .is_some_and(|text| text == "FX")
+                    .is_some_and(|run_text| run_text == text)
             })
             .expect("custom effect run remains effect");
         assert!(effect_run.presentation.object_proxies.is_empty());
@@ -3700,7 +3708,82 @@ flow @flow.main main {
                 .presentation
                 .effects
                 .iter()
-                .any(|effect| effect.id == "sparkle")
+                .any(|effect| effect.id == effect_id)
+        );
+    }
+
+    #[test]
+    fn rich_text_proxy_struct_attribute_supplies_object_proxy_defaults() {
+        let parsed = parse_source(
+            r#"
+#[rich_text_proxy(kind="quest", default_hit=true, depth=6, layer=hud, channel=quest)]
+pub struct QuestHit {
+    channel: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.QuestHit state=active]BC[/]D[p]
+}
+"#,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.object.proxy.rich_text_attribute".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let proxy = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .and_then(|run| run.presentation.object_proxies.first())
+            .expect("rich_text_proxy presentation");
+
+        assert_eq!(proxy.id, "QuestHit");
+        assert_eq!(
+            proxy.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("QuestHit", "rich_text_proxy"))
+        );
+        assert_eq!(proxy.type_name.as_deref(), Some("QuestHit"));
+        assert_eq!(proxy.role.as_deref(), Some("quest"));
+        assert_eq!(proxy.layer.as_deref(), Some("hud"));
+        assert_eq!(proxy.depth, Some(Milli(6000)));
+        assert!(proxy.hit_test);
+        assert_eq!(
+            proxy.params.get("channel"),
+            Some(&RichTextParam::Raw {
+                value: "quest".to_owned()
+            })
+        );
+        assert_eq!(
+            proxy.params.get("state"),
+            Some(&RichTextParam::Raw {
+                value: "active".to_owned()
+            })
         );
     }
 

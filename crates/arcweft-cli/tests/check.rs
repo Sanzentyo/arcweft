@@ -2058,8 +2058,16 @@ fn assert_top_hover_rich_text_proxy_hit(top: &serde_json::Value, hover: &serde_j
 }
 
 fn assert_text_proxy_declaration(declaration: &serde_json::Value, struct_name: &str) {
+    assert_text_proxy_declaration_with_attribute(declaration, struct_name, "text_proxy");
+}
+
+fn assert_text_proxy_declaration_with_attribute(
+    declaration: &serde_json::Value,
+    struct_name: &str,
+    attribute: &str,
+) {
     assert_eq!(declaration["struct_name"], struct_name);
-    assert_eq!(declaration["attribute"], "text_proxy");
+    assert_eq!(declaration["attribute"], attribute);
 }
 
 #[test]
@@ -2107,6 +2115,117 @@ fn agent_observe_infers_text_proxy_struct_shorthand() {
         "alert"
     );
     assert_eq!(hit_json["hits"][0]["depth"], 7000);
+}
+
+#[test]
+fn agent_observe_infers_rich_text_proxy_struct_attribute_family() {
+    let path = temp_arcw(
+        "agent-observe-inferred-rich-text-proxy-attribute-family",
+        r#"
+#[rich_text_proxy(kind="quest", default_hit=true, depth=6, layer=hud, channel=quest)]
+pub struct QuestHit {
+    channel: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.QuestHit state=active]Quest[/][p]
+}
+"#,
+    );
+    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe runs rich_text_proxy source");
+    assert!(
+        observe.status.success(),
+        "agent observe for rich_text_proxy should succeed, stderr: {}",
+        String::from_utf8_lossy(&observe.stderr)
+    );
+    let observe_json: serde_json::Value =
+        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+
+    let textbox = find_textbox_object(&observe_json);
+    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| {
+        proxy["id"] == "QuestHit"
+            && proxy["type_name"] == "QuestHit"
+            && proxy["declaration"]["struct_name"] == "QuestHit"
+            && proxy["declaration"]["attribute"] == "rich_text_proxy"
+            && proxy["role"] == "quest"
+            && proxy["layer"] == "hud"
+            && proxy["depth"] == 6000
+            && proxy["hit_test"] == true
+            && proxy["params"]["channel"]["value"] == "quest"
+            && proxy["params"]["state"]["value"] == "active"
+    }));
+
+    let proxy = find_rich_text_proxy_object(&observe_json, "QuestHit", "Quest");
+    assert_eq!(proxy["role"], "rich_text_proxy");
+    assert_eq!(proxy["rich_text_ref"]["kind"], "text_object_proxy");
+    assert_eq!(proxy["rich_text_ref"]["object_layer"], "hud");
+    assert_eq!(proxy["rich_text_ref"]["object_depth"], 6000);
+    assert_text_proxy_declaration_with_attribute(
+        &proxy["rich_text_ref"]["presentation"]["object_proxies"][0]["declaration"],
+        "QuestHit",
+        "rich_text_proxy",
+    );
+
+    let proxy_struct_tree = read_agent_presentation_tree_resource(
+        &path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=QuestHit",
+        "rich-text-proxy-struct",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_struct_tree,
+        |proxy| {
+            proxy["type_name"] == "QuestHit"
+                && proxy["declaration"]["attribute"] == "rich_text_proxy"
+                && proxy["params"]["channel"]["value"] == "quest"
+        }
+    ));
+    let proxy_param_tree = read_agent_presentation_tree_resource(
+        &path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.state=active",
+        "rich-text-proxy-param",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_param_tree,
+        |proxy| {
+            proxy["type_name"] == "QuestHit" && proxy["params"]["state"]["value"] == "active"
+        }
+    ));
+
+    let hit_json = hit_test_center_of_observed_object(&path, proxy);
+    fs::remove_file(&path).expect("remove temp rich_text_proxy source");
+
+    assert_eq!(hit_json["status"], "ok");
+    assert_eq!(hit_json["top_object_id"], proxy["id"]);
+    assert_eq!(hit_json["hits"][0]["role"], "rich_text_proxy");
+    assert_eq!(hit_json["hits"][0]["region"]["kind"], "text_object_proxy");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "QuestHit");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_type"], "QuestHit");
+    assert_text_proxy_declaration_with_attribute(
+        &hit_json["hits"][0]["region"]["proxy_declaration"],
+        "QuestHit",
+        "rich_text_proxy",
+    );
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_role"], "quest");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "hud");
+    assert_eq!(
+        hit_json["hits"][0]["region"]["proxy_params"]["state"]["value"],
+        "active"
+    );
+    assert_eq!(hit_json["hits"][0]["depth"], 6000);
 }
 
 #[test]

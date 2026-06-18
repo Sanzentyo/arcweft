@@ -2636,6 +2636,31 @@ mod tests {
     }
 
     #[test]
+    fn canonical_rich_text_expands_inferred_rich_text_proxy_objects() {
+        let source = "#[rich_text_proxy(kind=\"quest\", default_hit=true)]\npub struct QuestHit {\n    channel: String\n}\n\nflow @flow.opening opening {\n    alice: [.QuestHit channel=main]quest[/][.sparkle amp=2px]effect[/][p]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report
+                .output
+                .contains("[object .QuestHit type=QuestHit channel=main]quest[/object]")
+        );
+        assert!(
+            report
+                .output
+                .contains("[effect .sparkle amp=2px]effect[/effect]")
+        );
+        assert!(!report.output.contains("[effect .QuestHit"));
+    }
+
+    #[test]
     fn canonical_rich_text_expands_nested_inferred_text_proxy_objects() {
         let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][.sparkle amp=2px]effect[/][p]\n}\n";
         let report = format_source(
