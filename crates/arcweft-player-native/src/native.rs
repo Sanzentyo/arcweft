@@ -2538,8 +2538,7 @@ fn apply_builtin_descriptor_inner(
             if !effect_applies_to_glyph_mask(effect) {
                 return true;
             }
-            let cps = param_milli(effect, "cps").unwrap_or(Milli(28000)).as_f32();
-            let visible = (time_seconds * cps).floor() as usize;
+            let visible = typewriter_visible_count(effect, time_seconds, glyph_count);
             if placement.glyph_index >= visible.min(glyph_count) {
                 placement.opacity = 0.0;
             }
@@ -3038,6 +3037,12 @@ fn param_as_vec2(param: &RichTextParam) -> Option<[f32; 2]> {
 
 fn parse_raw_milli(value: &str) -> Option<Milli> {
     let trimmed = value.trim();
+    if let Some(milliseconds) = trimmed.strip_suffix("ms") {
+        return parse_decimal_milli(milliseconds.trim()).map(|value| Milli(value.0 / 1000));
+    }
+    if let Some(seconds) = trimmed.strip_suffix('s') {
+        return parse_decimal_milli(seconds.trim());
+    }
     let numeric = trimmed
         .strip_suffix("px")
         .or_else(|| trimmed.strip_suffix("deg"))
@@ -5858,7 +5863,7 @@ fn glyph_alpha_for_time(
             .unwrap_or(Milli(28000))
             .as_f32()
             .max(0.0);
-        let visible = (time_seconds.max(0.0) * cps).floor() as usize;
+        let visible = typewriter_visible_count_from_cps(effect, time_seconds, glyph_count, cps);
         if glyph_index >= visible.min(glyph_count) {
             alpha = 0.0;
         }
@@ -5886,11 +5891,39 @@ fn presentation_alpha_for_visibility_time(
             .unwrap_or(Milli(28000))
             .as_f32()
             .max(0.0);
-        if (time_seconds.max(0.0) * cps).floor() < 1.0 {
+        if typewriter_visible_count_from_cps(effect, time_seconds, 1, cps) == 0 {
             alpha = 0.0;
         }
     }
     (alpha * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+fn typewriter_visible_count(
+    effect: &RichTextEffectDescriptor,
+    time_seconds: f32,
+    glyph_count: usize,
+) -> usize {
+    let cps = param_milli(effect, "cps")
+        .unwrap_or(Milli(28000))
+        .as_f32()
+        .max(0.0);
+    typewriter_visible_count_from_cps(effect, time_seconds, glyph_count, cps)
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn typewriter_visible_count_from_cps(
+    effect: &RichTextEffectDescriptor,
+    time_seconds: f32,
+    glyph_count: usize,
+    cps: f32,
+) -> usize {
+    let delay = param_milli(effect, "delay")
+        .or_else(|| param_milli(effect, "start"))
+        .unwrap_or_default()
+        .as_f32()
+        .max(0.0);
+    let elapsed = (time_seconds.max(0.0) - delay).max(0.0);
+    ((elapsed * cps).floor() as usize).min(glyph_count)
 }
 
 fn scaled_alpha(base: u8, factor: u8) -> u8 {
@@ -8747,6 +8780,87 @@ mod tests {
 
         assert_eq!(hidden.content_pixels, 0);
         assert!(visible.content_pixels > 0);
+    }
+
+    #[test]
+    fn native_typewriter_delay_offsets_visibility_time() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.typewriter.delay".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "typewriter".to_owned(),
+                            params: BTreeMap::from([
+                                ("cps".to_owned(), RichTextParam::Milli { value: Milli::ONE }),
+                                (
+                                    "delay".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: "500ms".to_owned(),
+                                    },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::Run,
+                            phase: RichTextEffectPhase::GlyphMask,
+                            state_scope: arcweft_render_text::RichTextStateScope::Run,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "AB".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let delayed = visual_plan_from_frame_for_test(&frame, 0.25);
+        let visible = visual_plan_from_frame_for_test(&frame, 2.75);
+        assert_eq!(delayed.pages[0].glyphs.len(), visible.pages[0].glyphs.len());
+        assert!(
+            delayed.pages[0]
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.opacity == 0.0),
+            "delay should hide typewriter glyphs before its start time"
+        );
+        assert!(
+            visible.pages[0]
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.opacity > 0.0),
+            "typewriter glyphs should become visible after delay plus cps time"
+        );
+
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        let hidden_capture = session
+            .capture_frame_rgba_in(
+                &frame,
+                NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(0.25),
+            )
+            .expect("delayed typewriter capture resolves");
+        let visible_capture = session
+            .capture_frame_rgba_in(
+                &frame,
+                NativeCaptureViewport::new(800, 600, 96.0, 572.0, 0).with_time_seconds(2.75),
+            )
+            .expect("visible typewriter capture resolves");
+
+        assert_eq!(hidden_capture.content_pixels, 0);
+        assert!(visible_capture.content_pixels > 0);
     }
 
     #[test]

@@ -220,6 +220,12 @@ Surface `.host` selectors use their `id`, `effect`, or `name` metadata as the
 registry id before native dispatch, so `[.host id=sparkle]...[/]` reaches the
 same default registry entry as an explicit custom effect descriptor with id
 `sparkle`.
+Typewriter `glyph_mask` effects use the same capture-time clock as other native
+rich-text effects and honor `delay` before revealing glyphs. `delay` is
+interpreted as seconds, with renderer-local raw token support for `s` and `ms`
+suffixes such as `0.5s` or `500ms`, and it affects visual-plan glyph opacity,
+framebuffer alpha, mask capture, and object-id visibility without changing text
+layout geometry.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

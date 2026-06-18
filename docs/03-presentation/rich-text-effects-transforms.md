@@ -158,7 +158,9 @@ as another fallback animation or nondeterministic host code.
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture
-request.
+request. Native parameter interpretation treats `delay` as seconds; raw tokens
+with `s` or `ms` suffixes, such as `0.5s` or `500ms`, are accepted by the native
+renderer registry boundary.
 
 `.shader` references a renderer shader registry entry. It does not embed shader
 source in dialogue text. Common parameters are `id`, `amount`, `dir`, `phase`,
@@ -217,7 +219,8 @@ Agent observation must expose the effective presentation needed to debug text:
 - full transform descriptor
 - effect descriptors with id, params, target, phase, and state scope
 - shader refs with id, params, and phase
-- text object proxies with id, type, role, depth, hit-test policy, and params
+- text object proxies with id, type, role, layer, depth, hit-test policy, and
+  params
 - source ranges and ruby base/annotation bboxes
 
 Image capture follows
