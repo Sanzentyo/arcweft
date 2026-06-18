@@ -5159,6 +5159,7 @@ fn agent_rich_text_page_objects(
                 time_seconds,
             )?;
             let range = RichTextRange::new(page_range.start, page_range.end);
+            let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
             let mut hit_regions =
                 vec![agent_hit_region(AgentHitRegionKind::TextPage, &bbox, range)];
             hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
@@ -5183,7 +5184,7 @@ fn agent_rich_text_page_objects(
                         node_index: agent_rich_text_page_node_index(&textbox.rich_text, range),
                         source: None,
                         ruby: None,
-                        presentation: None,
+                        presentation,
                         orientation: None,
                         vertical_form: None,
                         ruby_base_bbox: None,
@@ -5231,6 +5232,7 @@ fn agent_rich_text_line_objects(
                 range,
                 time_seconds,
             )?;
+            let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
             let mut hit_regions =
                 vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)];
             hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
@@ -5255,7 +5257,7 @@ fn agent_rich_text_line_objects(
                         node_index: agent_rich_text_page_node_index(&textbox.rich_text, range),
                         source: None,
                         ruby: None,
-                        presentation: None,
+                        presentation,
                         orientation: None,
                         vertical_form: None,
                         ruby_base_bbox: None,
@@ -5962,6 +5964,22 @@ fn agent_rich_text_page_node_index(frame: &LineDisplayFrame, range: RichTextRang
         .iter()
         .find(|run| agent_rich_text_ranges_overlap(run.range, range))
         .map_or(0, |run| run.node_index)
+}
+
+fn agent_rich_text_range_presentation(
+    frame: &LineDisplayFrame,
+    range: RichTextRange,
+) -> Option<RichTextPresentation> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| agent_rich_text_ranges_overlap(run.range, range))
+        .map(|run| run.presentation.clone())
+        .reduce(|mut accumulated, presentation| {
+            accumulated.merge(presentation);
+            accumulated
+        })
 }
 
 fn agent_rich_text_page_object_depth(

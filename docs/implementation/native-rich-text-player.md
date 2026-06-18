@@ -268,6 +268,11 @@ ordinary `RichTextPresentation.params`. Agent observe serializes those typed
 params inside `rich_text_ref.presentation.params` on runs, glyphs, clusters,
 lines, pages, and ruby objects. This is separate from proxy `params`, which stay
 inside the selected `object_proxies[]` entry and hit-test `proxy_params`.
+Page and line objects build their `rich_text_ref.presentation` by merging the
+overlapping text-run presentations in source order. They therefore preserve the
+same metadata surface as run/glyph/cluster objects for object-scoped capture and
+readback, while their top-level `object_layer` / `object_depth` still select the
+deepest overlapping proxy when one is present.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

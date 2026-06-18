@@ -2127,12 +2127,31 @@ flow @flow.main main {
     assert_eq!(run["rich_text_ref"]["object_depth"], 7000);
     assert_eq!(run["rich_text_ref"]["hit_test"], false);
 
+    let page = observe_json["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "rich_text_page")
+        .expect("rich-text page object is observed");
+    assert_eq!(page["rich_text_ref"]["presentation"]["layer"], "hud");
+    assert_eq!(
+        page["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
+    assert_eq!(page["rich_text_ref"]["object_layer"], "hud");
+    assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
+
     let line = observe_json["objects"]
         .as_array()
         .expect("objects are reported")
         .iter()
         .find(|object| object["role"] == "rich_text_line")
         .expect("rich-text line object is observed");
+    assert_eq!(line["rich_text_ref"]["presentation"]["layer"], "hud");
+    assert_eq!(
+        line["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
     assert_eq!(line["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
     let hit = hit_test_center_of_observed_object(&path, line);
@@ -33787,6 +33806,13 @@ fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serd
         0
     );
     assert_eq!(page_object["rich_text_ref"]["hit_test"], true);
+    assert_eq!(page_object["rich_text_ref"]["presentation"]["layer"], "hud");
+    assert_eq!(
+        page_object["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
+    assert_eq!(page_object["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(page_object["rich_text_ref"]["object_depth"], 7000);
     assert!(
         page_object["text"]
             .as_str()
@@ -33840,6 +33866,13 @@ fn assert_full_grammar_text_line_object_readback(source_path: &Path, json: &serd
         0
     );
     assert_eq!(line_object["rich_text_ref"]["hit_test"], true);
+    assert_eq!(line_object["rich_text_ref"]["presentation"]["layer"], "hud");
+    assert_eq!(
+        line_object["rich_text_ref"]["presentation"]["params"]["role"]["value"],
+        "caption"
+    );
+    assert_eq!(line_object["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(line_object["rich_text_ref"]["object_depth"], 7000);
     assert!(
         line_object["text"]
             .as_str()
