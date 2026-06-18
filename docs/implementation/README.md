@@ -45,6 +45,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   for the `pro_review33` boundary, including the adopted
   `arcweft-unified-ui-activity-input-design.md` constraints, is tracked in
   `docs/implementation/pro-review33-completion-audit.md`.
+- `arcweft-image` owns the first Sans I/O decoded image and animated-image data
+  model. PNG/JPEG/GIF/WebP bytes decode to RGBA8 `DecodedImage` frames, and
+  animated containers expose deterministic `frame_at_time_millis` selection for
+  future native rendering, Agent capture, and hit-test integration. The current
+  policy and remaining wiring cuts are tracked in
+  `docs/implementation/image-animation-policy.md`.
 - `docs/implementation/rich-text-object-goal-audit.md` tracks the current
   requirement/evidence matrix for the rich-text typed-presentation-object goal;
   use it to separate completed evidence from remaining audit risk before
