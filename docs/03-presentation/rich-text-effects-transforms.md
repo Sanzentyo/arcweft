@@ -166,6 +166,14 @@ through their animation-function registry. Unknown names must remain
 observable through renderer diagnostics and must not be silently reinterpreted
 as another fallback animation or nondeterministic host code.
 
+Native adapters can export Arcweft pure functions to that registry with
+`#[text_motion]` plus `#[pure]`. The first supported ABI is deliberately narrow:
+`fn(t: f32, glyph: f32, seed: f32) -> f32`. The return value is a deterministic
+phase sample used by the renderer motion sampler, while authored `.motion`
+parameters such as `amp`, `angle`, `scale`, `shape`, `speed`, and `phase` remain
+renderer-owned presentation parameters. This keeps custom animation debuggable
+without teaching the dialogue parser effect-specific expression grammars.
+
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture

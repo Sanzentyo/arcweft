@@ -182,7 +182,7 @@ pub fn lower_pure_helper_candidates(
     }
 }
 
-fn lower_pure_helper_candidate(
+pub fn lower_pure_helper_candidate(
     function: &HirFunction,
     origin: RuntimePureHelperOrigin,
 ) -> Result<PureHelperCandidate, PureHelperLowerError> {

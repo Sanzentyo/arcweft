@@ -55,6 +55,7 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
+#[text_motion]
 #[pure]
 fn breath_orbit(t: f32, glyph: f32, seed: f32) -> f32 {
     return t + glyph * 0.037f32 + seed * 0.001f32
