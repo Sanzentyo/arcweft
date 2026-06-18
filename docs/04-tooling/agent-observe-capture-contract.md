@@ -256,6 +256,32 @@ authoritative geometry, capture refs, source range, effect/shader params, proxy
 metadata, and hit regions remain in `objects[]` and object-scoped
 `image.object` metadata.
 
+`presentation-tree.json` may be read with query filters when a debugger needs a
+small routing tree for a specific visual feature. Filtering keeps matched object
+nodes and every ancestor required to preserve a valid path from
+`presentation.root`; child lists are pruned to the returned node set. Supported
+keys are:
+
+| Key | Meaning |
+|---|---|
+| `role` | observed object role, such as `rich_text_run` |
+| `rich_text_kind` | rich-text element kind, such as `text_run`, `ruby`, or `text_object_proxy` |
+| `object_layer` | resolved rich-text object layer |
+| `effect` / `effect_id` | presentation effect id |
+| `shader` / `shader_id` | presentation shader id |
+| `motion` / `motion_function_id` | motion function id extracted from `[effect .motion fn=...]` |
+| `proxy` / `object_proxy_id` | custom object proxy id |
+| `has_transform` | `true` / `false` transform presence |
+
+Examples:
+
+```text
+arcweft://session/cli/frame/0/presentation-tree.json?shader=soft_glow
+arcweft://session/cli/frame/0/presentation-tree.json?effect=motion&motion=breath_orbit
+arcweft://session/cli/frame/0/presentation-tree.json?proxy=hotspot
+arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby
+```
+
 ---
 
 ## Rich-text observation

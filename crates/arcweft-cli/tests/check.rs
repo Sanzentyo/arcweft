@@ -3314,6 +3314,43 @@ flow @flow.main main {
         "presentation.root"
     );
 
+    let presentation_tree_filtered_read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reads filtered presentation tree resource");
+
+    assert!(
+        presentation_tree_filtered_read_output.status.success(),
+        "agent observe filtered presentation tree read-uri should succeed, stderr: {}",
+        String::from_utf8_lossy(&presentation_tree_filtered_read_output.stderr)
+    );
+    let presentation_tree_filtered_read: serde_json::Value =
+        serde_json::from_slice(&presentation_tree_filtered_read_output.stdout)
+            .expect("filtered presentation tree read-uri output is JSON");
+    let filtered_nodes = presentation_tree_filtered_read["body"]["body"]["nodes"]
+        .as_array()
+        .expect("filtered presentation tree nodes are returned");
+    assert!(
+        filtered_nodes
+            .iter()
+            .any(|node| node["rich_text_kind"] == "ruby")
+    );
+    assert!(
+        !filtered_nodes
+            .iter()
+            .any(|node| node["rich_text_kind"] == "text_object_proxy")
+    );
+
     let mcp_resource_list_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")

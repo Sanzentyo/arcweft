@@ -29,9 +29,9 @@ use arcweft_agent_protocol::{
     AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
     AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentPresentationTree, AgentResource,
-    AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef,
-    AgentUiTree, AgentViewport,
+    AgentObservedLayer, AgentObservedObject, AgentPresentationTree, AgentPresentationTreeQuery,
+    AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
+    AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
@@ -2831,15 +2831,8 @@ fn agent_observe_resource_by_uri_with_page_and_time(
             .objects_resource()
             .map_err(|error| agent_json_error(&error));
     }
-    if uri
-        == format!(
-            "arcweft://session/{}/frame/{}/presentation-tree.json",
-            report.session_id, report.tick
-        )
-    {
-        return report
-            .presentation_tree_resource()
-            .map_err(|error| agent_json_error(&error));
+    if let Some(resource) = agent_presentation_tree_resource_from_uri(report, uri) {
+        return resource;
     }
     if uri
         == format!(
@@ -2883,6 +2876,103 @@ fn agent_observe_resource_by_uri_with_page_and_time(
         ..request
     };
     agent_observe_capture_resource(report, &request)
+}
+
+fn agent_presentation_tree_resource_from_uri(
+    report: &AgentObservationReport,
+    uri: &str,
+) -> Option<Result<AgentResource, ExitCode>> {
+    let (base_uri, query_string) = uri.split_once('?').unwrap_or((uri, ""));
+    if base_uri
+        != format!(
+            "arcweft://session/{}/frame/{}/presentation-tree.json",
+            report.session_id, report.tick
+        )
+    {
+        return None;
+    }
+
+    if query_string.is_empty() {
+        return Some(
+            report
+                .presentation_tree_resource()
+                .map_err(|error| agent_json_error(&error)),
+        );
+    }
+
+    Some(
+        agent_presentation_tree_query_from_uri(query_string).and_then(|query| {
+            report
+                .filtered_presentation_tree_resource(uri.to_owned(), &query)
+                .map_err(|error| agent_json_error(&error))
+        }),
+    )
+}
+
+fn agent_presentation_tree_query_from_uri(
+    query_string: &str,
+) -> Result<AgentPresentationTreeQuery, ExitCode> {
+    let mut query = AgentPresentationTreeQuery::default();
+    for part in query_string.split('&') {
+        let Some((key, value)) = part.split_once('=') else {
+            eprintln!("error: invalid presentation-tree query segment: {part}");
+            return Err(ExitCode::from(2));
+        };
+        if value.is_empty() {
+            eprintln!("error: presentation-tree query value for `{key}` must not be empty");
+            return Err(ExitCode::from(2));
+        }
+        match key {
+            "role" => query.role = Some(value.to_owned()),
+            "rich_text_kind" => {
+                query.rich_text_kind = Some(agent_rich_text_kind_from_query_value(value)?);
+            }
+            "object_layer" => query.object_layer = Some(value.to_owned()),
+            "effect" | "effect_id" => query.effect_id = Some(value.to_owned()),
+            "shader" | "shader_id" => query.shader_id = Some(value.to_owned()),
+            "motion" | "motion_function" | "motion_function_id" => {
+                query.motion_function_id = Some(value.to_owned());
+            }
+            "proxy" | "object_proxy" | "object_proxy_id" => {
+                query.object_proxy_id = Some(value.to_owned());
+            }
+            "has_transform" => query.has_transform = Some(agent_bool_query_value(value)?),
+            _ => {
+                eprintln!("error: unsupported presentation-tree query key: {key}");
+                return Err(ExitCode::from(2));
+            }
+        }
+    }
+    Ok(query)
+}
+
+fn agent_rich_text_kind_from_query_value(
+    value: &str,
+) -> Result<AgentRichTextElementKind, ExitCode> {
+    match value {
+        "text_page" => Ok(AgentRichTextElementKind::TextPage),
+        "text_line" => Ok(AgentRichTextElementKind::TextLine),
+        "text_run" => Ok(AgentRichTextElementKind::TextRun),
+        "text_glyph" => Ok(AgentRichTextElementKind::TextGlyph),
+        "ruby" => Ok(AgentRichTextElementKind::Ruby),
+        "glyph_cluster" => Ok(AgentRichTextElementKind::GlyphCluster),
+        "text_object_proxy" => Ok(AgentRichTextElementKind::TextObjectProxy),
+        _ => {
+            eprintln!("error: unsupported rich_text_kind query value: {value}");
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+fn agent_bool_query_value(value: &str) -> Result<bool, ExitCode> {
+    match value {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => {
+            eprintln!("error: expected boolean query value, got: {value}");
+            Err(ExitCode::from(2))
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

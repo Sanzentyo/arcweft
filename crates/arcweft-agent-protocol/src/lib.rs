@@ -11,7 +11,7 @@ use arcweft_render_text::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One Agent Debug Bus observation frame.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -79,16 +79,37 @@ impl AgentObservationReport {
 
     /// Builds the MCP-style presentation object tree JSON resource.
     pub fn presentation_tree_resource(&self) -> Result<AgentResource, serde_json::Error> {
-        Ok(AgentResource {
-            uri: format!(
+        self.presentation_tree_resource_with_tree(
+            format!(
                 "arcweft://session/{}/frame/{}/presentation-tree.json",
                 self.session_id, self.tick
             ),
+            &self.presentation_tree,
+        )
+    }
+
+    /// Builds the MCP-style presentation object tree JSON resource with a typed filter.
+    pub fn filtered_presentation_tree_resource(
+        &self,
+        uri: String,
+        query: &AgentPresentationTreeQuery,
+    ) -> Result<AgentResource, serde_json::Error> {
+        let tree = self.presentation_tree.filtered(query);
+        self.presentation_tree_resource_with_tree(uri, &tree)
+    }
+
+    fn presentation_tree_resource_with_tree(
+        &self,
+        uri: String,
+        tree: &AgentPresentationTree,
+    ) -> Result<AgentResource, serde_json::Error> {
+        Ok(AgentResource {
+            uri,
             kind: AgentResourceKind::PresentationTree,
             mime_type: "application/json".to_owned(),
             hash: self.render_hash.clone(),
             image: None,
-            body: AgentResourceBody::Json(serde_json::to_value(&self.presentation_tree)?),
+            body: AgentResourceBody::Json(serde_json::to_value(tree)?),
         })
     }
 
@@ -782,6 +803,19 @@ pub struct AgentPresentationTreeNode {
     pub has_transform: bool,
 }
 
+/// Typed presentation tree filter used by Agent resource readback.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AgentPresentationTreeQuery {
+    pub role: Option<String>,
+    pub rich_text_kind: Option<AgentRichTextElementKind>,
+    pub object_layer: Option<String>,
+    pub effect_id: Option<String>,
+    pub shader_id: Option<String>,
+    pub motion_function_id: Option<String>,
+    pub object_proxy_id: Option<String>,
+    pub has_transform: Option<bool>,
+}
+
 /// Lightweight effect index attached to a presentation tree object node.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentPresentationEffectRef {
@@ -835,6 +869,112 @@ impl AgentPresentationTree {
         }));
 
         Self { root, nodes }
+    }
+
+    /// Returns a pruned tree that keeps matching nodes and their ancestors.
+    #[must_use]
+    pub fn filtered(&self, query: &AgentPresentationTreeQuery) -> Self {
+        if query.is_empty() {
+            return self.clone();
+        }
+
+        let parent_by_id = self
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parent_id
+                    .as_ref()
+                    .map(|parent_id| (node.id.as_str(), parent_id.as_str()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut included = BTreeSet::new();
+        included.insert(self.root.as_str());
+
+        for node in &self.nodes {
+            if query.matches(node) {
+                include_presentation_tree_ancestors(&node.id, &parent_by_id, &mut included);
+            }
+        }
+
+        let nodes = self
+            .nodes
+            .iter()
+            .filter(|node| included.contains(node.id.as_str()))
+            .map(|node| {
+                let mut node = node.clone();
+                node.children
+                    .retain(|child_id| included.contains(child_id.as_str()));
+                node
+            })
+            .collect();
+
+        Self {
+            root: self.root.clone(),
+            nodes,
+        }
+    }
+}
+
+impl AgentPresentationTreeQuery {
+    /// Returns true when the query has no active filter fields.
+    pub fn is_empty(&self) -> bool {
+        self.role.is_none()
+            && self.rich_text_kind.is_none()
+            && self.object_layer.is_none()
+            && self.effect_id.is_none()
+            && self.shader_id.is_none()
+            && self.motion_function_id.is_none()
+            && self.object_proxy_id.is_none()
+            && self.has_transform.is_none()
+    }
+
+    fn matches(&self, node: &AgentPresentationTreeNode) -> bool {
+        self.role
+            .as_ref()
+            .is_none_or(|role| node.role.as_ref() == Some(role))
+            && self
+                .rich_text_kind
+                .is_none_or(|kind| node.rich_text_kind == Some(kind))
+            && self
+                .object_layer
+                .as_ref()
+                .is_none_or(|object_layer| node.object_layer.as_ref() == Some(object_layer))
+            && self
+                .effect_id
+                .as_ref()
+                .is_none_or(|effect_id| node.effects.iter().any(|effect| effect.id == *effect_id))
+            && self
+                .shader_id
+                .as_ref()
+                .is_none_or(|shader_id| node.shaders.iter().any(|shader| shader.id == *shader_id))
+            && self
+                .motion_function_id
+                .as_ref()
+                .is_none_or(|motion_function_id| {
+                    node.motion_function_ids
+                        .iter()
+                        .any(|candidate| candidate == motion_function_id)
+                })
+            && self.object_proxy_id.as_ref().is_none_or(|object_proxy_id| {
+                node.object_proxy_ids
+                    .iter()
+                    .any(|candidate| candidate == object_proxy_id)
+            })
+            && self
+                .has_transform
+                .is_none_or(|has_transform| node.has_transform == has_transform)
+    }
+}
+
+fn include_presentation_tree_ancestors<'a>(
+    node_id: &'a str,
+    parent_by_id: &BTreeMap<&'a str, &'a str>,
+    included: &mut BTreeSet<&'a str>,
+) {
+    if included.insert(node_id)
+        && let Some(parent_id) = parent_by_id.get(node_id)
+    {
+        include_presentation_tree_ancestors(parent_id, parent_by_id, included);
     }
 }
 
@@ -1521,6 +1661,167 @@ mod tests {
         assert_eq!(json["actions"][0]["action"], "advance_text");
         assert_eq!(json["actions"][0]["kind"], "semantic");
         assert_eq!(json["diagnostics"][0]["severity"], "info");
+    }
+
+    #[test]
+    fn presentation_tree_filter_keeps_matching_objects_and_ancestors() {
+        let tree = AgentPresentationTree {
+            root: "presentation.root".to_owned(),
+            nodes: vec![
+                AgentPresentationTreeNode {
+                    id: "presentation.root".to_owned(),
+                    kind: AgentPresentationTreeNodeKind::Root,
+                    parent_id: None,
+                    children: vec!["presentation.layer.dialogue".to_owned()],
+                    layer_id: None,
+                    object_id: None,
+                    role: None,
+                    rich_text_kind: None,
+                    object_layer: None,
+                    object_depth: None,
+                    effects: Vec::new(),
+                    shaders: Vec::new(),
+                    object_proxy_ids: Vec::new(),
+                    motion_function_ids: Vec::new(),
+                    has_transform: false,
+                },
+                AgentPresentationTreeNode {
+                    id: "presentation.layer.dialogue".to_owned(),
+                    kind: AgentPresentationTreeNodeKind::Layer,
+                    parent_id: Some("presentation.root".to_owned()),
+                    children: vec![
+                        "object.dialogue.0.0".to_owned(),
+                        "object.dialogue.0.1".to_owned(),
+                    ],
+                    layer_id: Some("dialogue".to_owned()),
+                    object_id: None,
+                    role: None,
+                    rich_text_kind: None,
+                    object_layer: None,
+                    object_depth: None,
+                    effects: Vec::new(),
+                    shaders: Vec::new(),
+                    object_proxy_ids: Vec::new(),
+                    motion_function_ids: Vec::new(),
+                    has_transform: false,
+                },
+                AgentPresentationTreeNode {
+                    id: "object.dialogue.0.0".to_owned(),
+                    kind: AgentPresentationTreeNodeKind::Object,
+                    parent_id: Some("presentation.layer.dialogue".to_owned()),
+                    children: vec!["object.dialogue.0.0.proxy.0".to_owned()],
+                    layer_id: Some("dialogue.rich_text".to_owned()),
+                    object_id: Some("object.dialogue.0.0".to_owned()),
+                    role: Some("rich_text_run".to_owned()),
+                    rich_text_kind: Some(AgentRichTextElementKind::TextRun),
+                    object_layer: Some("ui".to_owned()),
+                    object_depth: Some(4000),
+                    effects: vec![AgentPresentationEffectRef {
+                        id: "motion".to_owned(),
+                        phase: RichTextEffectPhase::GlyphTransform,
+                    }],
+                    shaders: vec![AgentPresentationShaderRef {
+                        id: "warm_glow".to_owned(),
+                        phase: RichTextEffectPhase::RunOffscreenPass,
+                    }],
+                    object_proxy_ids: Vec::new(),
+                    motion_function_ids: vec!["breath_orbit".to_owned()],
+                    has_transform: true,
+                },
+                AgentPresentationTreeNode {
+                    id: "object.dialogue.0.0.proxy.0".to_owned(),
+                    kind: AgentPresentationTreeNodeKind::Object,
+                    parent_id: Some("object.dialogue.0.0".to_owned()),
+                    children: Vec::new(),
+                    layer_id: Some("dialogue.rich_text".to_owned()),
+                    object_id: Some("object.dialogue.0.0.proxy.0".to_owned()),
+                    role: Some("rich_text_proxy".to_owned()),
+                    rich_text_kind: Some(AgentRichTextElementKind::TextObjectProxy),
+                    object_layer: Some("hit".to_owned()),
+                    object_depth: Some(4100),
+                    effects: Vec::new(),
+                    shaders: Vec::new(),
+                    object_proxy_ids: vec!["hotspot".to_owned()],
+                    motion_function_ids: Vec::new(),
+                    has_transform: false,
+                },
+                AgentPresentationTreeNode {
+                    id: "object.dialogue.0.1".to_owned(),
+                    kind: AgentPresentationTreeNodeKind::Object,
+                    parent_id: Some("presentation.layer.dialogue".to_owned()),
+                    children: Vec::new(),
+                    layer_id: Some("dialogue.rich_text".to_owned()),
+                    object_id: Some("object.dialogue.0.1".to_owned()),
+                    role: Some("rich_text_run".to_owned()),
+                    rich_text_kind: Some(AgentRichTextElementKind::TextRun),
+                    object_layer: Some("ui".to_owned()),
+                    object_depth: None,
+                    effects: Vec::new(),
+                    shaders: Vec::new(),
+                    object_proxy_ids: Vec::new(),
+                    motion_function_ids: Vec::new(),
+                    has_transform: false,
+                },
+            ],
+        };
+
+        let filtered = tree.filtered(&AgentPresentationTreeQuery {
+            shader_id: Some("warm_glow".to_owned()),
+            motion_function_id: Some("breath_orbit".to_owned()),
+            has_transform: Some(true),
+            ..AgentPresentationTreeQuery::default()
+        });
+
+        let node_ids = filtered
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            node_ids,
+            vec![
+                "presentation.root",
+                "presentation.layer.dialogue",
+                "object.dialogue.0.0"
+            ]
+        );
+        assert_eq!(
+            filtered.nodes[1].children,
+            vec!["object.dialogue.0.0".to_owned()]
+        );
+        assert!(filtered.nodes[2].children.is_empty());
+
+        let proxy_filtered = tree.filtered(&AgentPresentationTreeQuery {
+            object_proxy_id: Some("hotspot".to_owned()),
+            rich_text_kind: Some(AgentRichTextElementKind::TextObjectProxy),
+            ..AgentPresentationTreeQuery::default()
+        });
+        let proxy_node_ids = proxy_filtered
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            proxy_node_ids,
+            vec![
+                "presentation.root",
+                "presentation.layer.dialogue",
+                "object.dialogue.0.0",
+                "object.dialogue.0.0.proxy.0"
+            ]
+        );
+        assert_eq!(
+            proxy_filtered.nodes[2].children,
+            vec!["object.dialogue.0.0.proxy.0".to_owned()]
+        );
+
+        let empty_filtered = tree.filtered(&AgentPresentationTreeQuery {
+            shader_id: Some("missing".to_owned()),
+            ..AgentPresentationTreeQuery::default()
+        });
+        assert_eq!(empty_filtered.nodes.len(), 1);
+        assert_eq!(empty_filtered.nodes[0].id, "presentation.root");
+        assert!(empty_filtered.nodes[0].children.is_empty());
     }
 
     #[test]
