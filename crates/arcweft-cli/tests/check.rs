@@ -2236,7 +2236,7 @@ fn agent_observe_reports_text_presentation_z_index_depth() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]Depth[/][/][/][/] plain[p]
+    alice: [.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]Depth|[夢](ゆめ)[r][/][/][/][/] plain[p]
 }
 ",
     );
@@ -2320,16 +2320,69 @@ flow @flow.main main {
 
     assert_agent_observe_captures_presentation_layer(&path);
     assert_agent_observe_object_image_metadata_carries_object_layer(&path, line, "hud", 7000);
+    assert_agent_observe_child_text_object_image_metadata_carries_object_layer(
+        &path,
+        &observe_json,
+        "hud",
+        7000,
+    );
 
-    let hit = hit_test_center_of_observed_object(&path, line);
+    assert_agent_observe_line_hit_test_carries_object_layer(&path, line, "hud", 7000);
     fs::remove_file(&path).expect("remove temp z-index source");
+}
+
+fn assert_agent_observe_line_hit_test_carries_object_layer(
+    path: &Path,
+    line: &serde_json::Value,
+    object_layer: &str,
+    object_depth: i32,
+) {
+    let hit = hit_test_center_of_observed_object(path, line);
     assert_eq!(hit["status"], "ok");
     assert_eq!(hit["top_object_id"], line["id"]);
     assert_eq!(hit["hits"][0]["role"], "rich_text_line");
-    assert_eq!(hit["hits"][0]["layer"], "hud");
+    assert_eq!(hit["hits"][0]["layer"], object_layer);
     assert_agent_hit_capture_refs_match(&hit["hits"][0], line);
-    assert_eq!(hit["hits"][0]["rich_text_ref"]["object_layer"], "hud");
-    assert_eq!(hit["hits"][0]["depth"], 7000);
+    assert_eq!(
+        hit["hits"][0]["rich_text_ref"]["object_layer"],
+        object_layer
+    );
+    assert_eq!(hit["hits"][0]["depth"], object_depth);
+}
+
+fn assert_agent_observe_child_text_object_image_metadata_carries_object_layer(
+    path: &Path,
+    observe_json: &serde_json::Value,
+    object_layer: &str,
+    object_depth: i32,
+) {
+    let glyph = find_rich_text_glyph_object(observe_json, "D", 0, 1);
+    assert_eq!(glyph["rich_text_ref"]["object_layer"], object_layer);
+    assert_eq!(glyph["rich_text_ref"]["object_depth"], object_depth);
+    assert_agent_observe_object_image_metadata_carries_object_layer(
+        path,
+        glyph,
+        object_layer,
+        object_depth,
+    );
+    let cluster = find_rich_text_cluster_object(observe_json, "D", 0, 1);
+    assert_eq!(cluster["rich_text_ref"]["object_layer"], object_layer);
+    assert_eq!(cluster["rich_text_ref"]["object_depth"], object_depth);
+    assert_agent_observe_object_image_metadata_carries_object_layer(
+        path,
+        cluster,
+        object_layer,
+        object_depth,
+    );
+    let ruby = find_rich_text_ruby_object(observe_json, 0);
+    assert_eq!(ruby["rich_text_ref"]["object_layer"], object_layer);
+    assert_eq!(ruby["rich_text_ref"]["object_depth"], object_depth);
+    assert_agent_observe_object_image_metadata_carries_object_layer(
+        path,
+        ruby,
+        object_layer,
+        object_depth,
+    );
 }
 
 fn assert_agent_observe_captures_presentation_layer(path: &Path) {
@@ -2400,6 +2453,7 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
         serde_json::from_slice(&capture.stdout).expect("object capture output is JSON");
     assert_eq!(json["images"][0]["scope"]["kind"], "object");
     assert_eq!(json["images"][0]["object"]["id"], object_id);
+    assert_eq!(json["images"][0]["object"]["role"], object["role"]);
     assert_eq!(json["images"][0]["object"]["bbox"], object["bbox"]);
     assert_eq!(json["images"][0]["object"]["polygon"], object["polygon"]);
     assert_agent_observe_object_capture_refs(&json["images"][0]["object"]);
@@ -2416,6 +2470,18 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
     assert_eq!(
         json["images"][0]["object"]["rich_text_ref"]["object_depth"],
         object_depth
+    );
+    assert_eq!(
+        json["images"][0]["object"]["rich_text_ref"]["kind"],
+        object["rich_text_ref"]["kind"]
+    );
+    assert_eq!(
+        json["images"][0]["object"]["rich_text_ref"]["range"],
+        object["rich_text_ref"]["range"]
+    );
+    assert!(
+        json["images"][0]["content_pixels"].as_u64().unwrap_or(0) > 0,
+        "rich-text object image should contain visible pixels: {json}"
     );
     let object_png_bytes = fs::read(&object_png).expect("read rich-text object PNG");
     assert_eq!(&object_png_bytes[..8], b"\x89PNG\r\n\x1a\n");
