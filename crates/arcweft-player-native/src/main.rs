@@ -189,6 +189,17 @@ impl NativeCaptureFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::{
+        ARCWEFT_BUNDLE_SCHEMA_VERSION, BundleManifest, BundleRuntimeSummary, BundleSource,
+    };
+    use arcweft_core::{
+        bytecode::BytecodeProgram,
+        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
+    };
+    use std::{
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn args_for(path: &str) -> Args {
         Args {
@@ -230,5 +241,70 @@ mod tests {
         let error = run(&args).expect_err("--source must be feature-gated");
 
         assert!(error.contains("dev-source feature"));
+    }
+
+    #[test]
+    fn default_bundle_mode_runs_awfb_without_source_flag() {
+        let path = temp_awfb_path("bundle-mode-runs");
+        let bundle = minimal_bundle();
+        fs::write(&path, bundle.to_json_bytes().expect("bundle encodes"))
+            .expect("bundle fixture writes");
+        let mut args = args_for(path.to_str().expect("temp path is utf8"));
+        args.json = false;
+        args.steps = 8;
+
+        let result = run(&args);
+        let _ = fs::remove_file(&path);
+
+        result.expect("bundle mode runs an .awfb program");
+    }
+
+    fn minimal_bundle() -> ArcweftBundle {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.main".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![FlowOp::Return("done".to_owned())],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let bytecode = BytecodeProgram::from_runtime_plan(plan);
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: "bundle-mode-runs.arcw".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: None,
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: 1,
+                    line_task_groups: 0,
+                    stream_plans: 0,
+                    source_plans: 0,
+                },
+            },
+            BundleSource {
+                label: "bundle-mode-runs.arcw".to_owned(),
+                text: "flow @flow.main main { return \"done\" }".to_owned(),
+            },
+            bytecode,
+            arcweft_render_text::LineDisplayCatalog::default(),
+        )
+    }
+
+    fn temp_awfb_path(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time is after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "arcweft-player-native-{label}-{}-{nanos}-v{ARCWEFT_BUNDLE_SCHEMA_VERSION}.awfb",
+            process::id()
+        ))
     }
 }

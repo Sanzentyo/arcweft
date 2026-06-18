@@ -226,8 +226,9 @@ now a thin `Cli::parse_from` / command-dispatch entrypoint; command-specific
 types, implementation imports, and runtime/player details live in the
 responsibility modules instead of being re-exported through the app root. The
 native player bundle boundary is also covered by binary-level tests: default
-input must be `.awfb`, and `.arcw` source input requires explicit `--source`
-plus the `dev-source` feature. The remaining architectural cuts are:
+input must be `.awfb`, a minimal `.awfb` runs through the headless bundle path,
+and `.arcw` source input requires explicit `--source` plus the `dev-source`
+feature. The remaining architectural cuts are:
 
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned
