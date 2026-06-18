@@ -488,6 +488,10 @@ pub enum RegisteredTextShader {
     Class(Box<dyn RichTextShaderClass>),
     Lambda(ShaderLambda),
     PostProcessLambda(ShaderPostProcessLambda),
+    Combined {
+        glyph: ShaderLambda,
+        post_process: ShaderPostProcessLambda,
+    },
 }
 
 /// Registry that resolves `RichTextShaderRef::id` to native shader passes.
@@ -526,6 +530,21 @@ impl RichTextShaderRegistry {
         );
     }
 
+    pub fn insert_combined_lambda(
+        &mut self,
+        id: impl Into<String>,
+        glyph: impl FnMut(&TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> + Send + 'static,
+        post_process: impl FnMut(&TextShaderPostProcessContext<'_>, &mut [u8]) + Send + 'static,
+    ) {
+        self.shaders.insert(
+            id.into(),
+            RegisteredTextShader::Combined {
+                glyph: Box::new(glyph),
+                post_process: Box::new(post_process),
+            },
+        );
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.shaders.contains_key(id)
     }
@@ -546,6 +565,12 @@ impl RichTextShaderRegistry {
                 RichTextEffectPhase::RunOffscreenPass | RichTextEffectPhase::GlyphColor
             ),
             RegisteredTextShader::PostProcessLambda(_) => phase == RichTextEffectPhase::PostProcess,
+            RegisteredTextShader::Combined { .. } => matches!(
+                phase,
+                RichTextEffectPhase::RunOffscreenPass
+                    | RichTextEffectPhase::GlyphColor
+                    | RichTextEffectPhase::PostProcess
+            ),
         }
     }
 
@@ -559,6 +584,7 @@ impl RichTextShaderRegistry {
             RegisteredTextShader::Class(shader) => shader.glyph_passes(ctx),
             RegisteredTextShader::Lambda(shader) => shader(ctx),
             RegisteredTextShader::PostProcessLambda(_) => Vec::new(),
+            RegisteredTextShader::Combined { glyph, .. } => glyph(ctx),
         })
     }
 
@@ -574,6 +600,10 @@ impl RichTextShaderRegistry {
             RegisteredTextShader::Lambda(_) => false,
             RegisteredTextShader::PostProcessLambda(shader) => {
                 shader(ctx, rgba);
+                true
+            }
+            RegisteredTextShader::Combined { post_process, .. } => {
+                post_process(ctx, rgba);
                 true
             }
         })
@@ -734,24 +764,44 @@ fn register_arcweft_pure_text_shader(
             name: candidate.name().to_owned(),
         });
     }
-    let helper = runtime_helper_from_pure_candidate(candidate);
-    let mut scratch = VmPureFunctionScratch::default();
-    registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
-        let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
-        let time = shader_param_milli(ctx.shader, "time")
-            .or_else(|| shader_param_milli(ctx.shader, "t"))
-            .or_else(|| shader_param_milli(ctx.shader, "phase"))
-            .unwrap_or_default()
-            .as_f32();
-        let phase = scratch
-            .evaluate_f32_slice(&helper, &[time, 0.0, seed])
-            .ok()
-            .as_ref()
-            .and_then(runtime_value_as_f32)
-            .filter(|value| value.is_finite())
-            .unwrap_or(time);
-        pure_text_shader_glyph_passes(ctx.shader, phase)
-    });
+    let glyph_helper = runtime_helper_from_pure_candidate(candidate);
+    let post_process_helper = glyph_helper.clone();
+    let mut glyph_scratch = VmPureFunctionScratch::default();
+    let mut post_process_scratch = VmPureFunctionScratch::default();
+    registry.insert_combined_lambda(
+        candidate.name().to_owned(),
+        move |ctx| {
+            let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
+            let time = shader_param_milli(ctx.shader, "time")
+                .or_else(|| shader_param_milli(ctx.shader, "t"))
+                .or_else(|| shader_param_milli(ctx.shader, "phase"))
+                .unwrap_or_default()
+                .as_f32();
+            let phase = glyph_scratch
+                .evaluate_f32_slice(&glyph_helper, &[time, 0.0, seed])
+                .ok()
+                .as_ref()
+                .and_then(runtime_value_as_f32)
+                .filter(|value| value.is_finite())
+                .unwrap_or(time);
+            pure_text_shader_glyph_passes(ctx.shader, phase)
+        },
+        move |ctx, rgba| {
+            let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
+            let time = shader_param_milli(ctx.shader, "time")
+                .or_else(|| shader_param_milli(ctx.shader, "t"))
+                .or_else(|| shader_param_milli(ctx.shader, "phase"))
+                .map_or(ctx.time_seconds, |value| ctx.time_seconds + value.as_f32());
+            let phase = post_process_scratch
+                .evaluate_f32_slice(&post_process_helper, &[time, 0.0, seed])
+                .ok()
+                .as_ref()
+                .and_then(runtime_value_as_f32)
+                .filter(|value| value.is_finite())
+                .unwrap_or(time);
+            pure_text_shader_post_process(ctx.shader, phase, rgba);
+        },
+    );
     Ok(())
 }
 
@@ -3966,6 +4016,28 @@ fn pure_text_shader_glyph_passes(
         color: [color[0], color[1], color[2], alpha],
     })
     .collect()
+}
+
+fn pure_text_shader_post_process(shader: &RichTextShaderRef, phase: f32, rgba: &mut [u8]) {
+    let resolved = resolve_shader_filter(shader);
+    let amount = resolved.amount.clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return;
+    }
+    let color = shader_param_color(shader, "color").unwrap_or_else(|| {
+        let [red, green, blue, _alpha] = pure_text_shader_color(phase, amount);
+        [red, green, blue]
+    });
+    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let blend = (amount * (0.35 + pulse * 0.65)).clamp(0.0, 1.0);
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+            continue;
+        }
+        pixel[0] = blend_channel(pixel[0], color[0], blend);
+        pixel[1] = blend_channel(pixel[1], color[1], blend);
+        pixel[2] = blend_channel(pixel[2], color[2], blend);
+    }
 }
 
 fn pure_text_shader_color(phase: f32, amount: f32) -> [u8; 4] {
@@ -7878,6 +7950,12 @@ mod tests {
                                     RichTextParam::Milli { value: Milli::ONE },
                                 ),
                                 (
+                                    "color".to_owned(),
+                                    RichTextParam::Text {
+                                        value: "#40b0ff".to_owned(),
+                                    },
+                                ),
+                                (
                                     "dir".to_owned(),
                                     RichTextParam::Raw {
                                         value: "1,0".to_owned(),
@@ -8703,6 +8781,8 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
 
         assert_eq!(exported, 1);
         assert!(registry.contains("source_glow"));
+        assert!(registry.supports_phase("source_glow", RichTextEffectPhase::GlyphColor));
+        assert!(registry.supports_phase("source_glow", RichTextEffectPhase::PostProcess));
     }
 
     #[test]
@@ -8740,6 +8820,44 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
         assert_ne!(
             baseline_capture.rgba, exported_capture.rgba,
             "Arcweft pure text shader export should alter captured native glyph pixels"
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_arcweft_pure_text_shader_post_process_export() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_shader]
+#[pure]
+fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + 0.25f32 + glyph * 0.05f32 + seed * 0.001f32
+}
+",
+        );
+        let frame = shader_test_frame("source_glow", RichTextEffectPhase::PostProcess);
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
+        let export_count = register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &hir)
+            .expect("register Arcweft pure text shader");
+        let exported_capture = exported
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("exported capture");
+
+        assert_eq!(export_count, 1);
+        assert!(
+            baseline_capture
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "missing_shader")
+        );
+        assert!(exported_capture.diagnostics.is_empty());
+        assert_ne!(
+            baseline_capture.rgba, exported_capture.rgba,
+            "Arcweft pure text shader post-process export should alter captured framebuffer pixels"
         );
     }
 

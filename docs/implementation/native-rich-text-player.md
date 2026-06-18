@@ -120,10 +120,13 @@ resolved by the same native registry path as adapter-registered effects rather
 than by a parser special case. Source-local shaders use the same ABI as a first
 native registry boundary: `register_arcweft_pure_text_shaders` exports
 `#[text_shader] #[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` helpers into
-`RichTextShaderRegistry` for `run_offscreen_pass` and `glyph_color` shader refs,
-with shader params such as `time`, `seed`, `amount`, `dir`, and `color` kept as
-registry-owned parameters. Missing motion functions, missing custom effects,
-and missing shader functions are diagnosed instead of being silently
+`RichTextShaderRegistry` for `run_offscreen_pass`, `glyph_color`, and
+`post_process` shader refs, with shader params such as `time`, `seed`, `amount`,
+`dir`, and `color` kept as registry-owned parameters. The same source-local
+shader ID owns both glyph-pass and framebuffer post-process entry points, so a
+sample can exercise phase-specific rendering without registering separate
+adapter-only IDs. Missing motion functions, missing custom effects, and missing
+shader functions are diagnosed instead of being silently
 reinterpreted through a hash fallback. This keeps the debug surface honest for
 stacked reveal, glyph-placement, affine animation, function-backed animation,
 source-local custom effects/shaders, and host-dispatched effects instead of only
