@@ -67,7 +67,8 @@ The unified UI design is adopted as the long-term boundary for future work:
 The current cuts remove the direct CLI dependency on `arcweft-player-native`,
 move renderer tests into `arcweft-render-native`, extract the Clap command
 surface into `app/commands.rs`, and move bundle/run-bundle implementation into
-`app/bundle.rs`. The remaining architectural cuts are:
+`app/bundle.rs`. Tooling commands (`fmt`, `ids materialize`) are now isolated
+in `app/tooling.rs`. The remaining architectural cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
    prioritizing Agent observe/hit-test/native capture next because it is the
