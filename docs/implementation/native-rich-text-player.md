@@ -41,6 +41,10 @@ The page/line primary bbox still describes the broad text object, but its
 `rich_text_ref.object_layer`, `object_depth`, and proxy hit regions expose the
 deepest nested proxy targets inside the range without substituting a fallback
 rectangle.
+Agent hit-test reports the resolved semantic layer on each hit's top-level
+`layer` field, preferring proxy layer, then rich-text object layer, then the
+render layer. This keeps headless input/debug routing aligned with semantic
+text object layers while preserving the original render-layer capture path.
 Native text shaping disables standard/contextual ligatures for submitted body
 and ruby buffers. The current layout model maps styled/rich-text source ranges
 to per-character layout glyphs before native shaping, so ligature clusters such

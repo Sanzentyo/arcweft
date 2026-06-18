@@ -2607,7 +2607,7 @@ fn agent_hit_test_object_hits(
         .map(|region| AgentHitTestHit {
             rank: 0,
             object_id: object.id.clone(),
-            layer: object.layer.clone(),
+            layer: agent_hit_test_layer(object, rich_text_ref, region),
             role: object.role.clone(),
             text: object.text.clone(),
             bbox: object.bbox.clone(),
@@ -2616,6 +2616,18 @@ fn agent_hit_test_object_hits(
             depth: region.depth.or(rich_text_ref.object_depth),
         })
         .collect()
+}
+
+fn agent_hit_test_layer(
+    object: &AgentObservedObject,
+    rich_text_ref: &AgentRichTextElementRef,
+    region: &AgentHitRegion,
+) -> String {
+    region
+        .proxy_layer
+        .clone()
+        .or_else(|| rich_text_ref.object_layer.clone())
+        .unwrap_or_else(|| object.layer.clone())
 }
 
 fn agent_hit_test_hit_order(left: &AgentHitTestHit, right: &AgentHitTestHit) -> std::cmp::Ordering {

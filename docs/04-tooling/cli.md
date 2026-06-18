@@ -336,8 +336,11 @@ usable as real headless hit targets: a deeper `HoverHit` proxy over the same
 visible glyphs ranks before the shallower `KeywordHit` proxy, while both remain
 available for debugging. Proxy layer metadata is reported as
 `rich_text_ref.object_layer` on the object and `region.proxy_layer` on the hit
-region; it remains semantic object metadata and does not rewrite the parent
-framebuffer layer capture.
+region. The hit's top-level `layer` resolves through `region.proxy_layer`,
+`rich_text_ref.object_layer`, then the render layer, so input debuggers can treat
+text proxies and ordinary rich-text spans as image/model-like semantic layer
+targets. Semantic object layers do not rewrite the parent framebuffer layer
+capture.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

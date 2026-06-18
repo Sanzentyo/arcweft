@@ -2016,6 +2016,7 @@ flow @flow.main main {
     assert_eq!(top["region"]["proxy_type"], "HoverHit");
     assert_eq!(top["region"]["proxy_role"], "hover");
     assert_eq!(top["region"]["proxy_layer"], "ui");
+    assert_eq!(top["layer"], "ui");
     assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
     assert_eq!(top["depth"], 7000);
     let keyword_hit = hit_json["hits"]
@@ -2172,6 +2173,7 @@ flow @flow.main main {
     assert_eq!(hit["status"], "ok");
     assert_eq!(hit["top_object_id"], line["id"]);
     assert_eq!(hit["hits"][0]["role"], "rich_text_line");
+    assert_eq!(hit["hits"][0]["layer"], "hud");
     assert_eq!(hit["hits"][0]["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(hit["hits"][0]["depth"], 7000);
 }
