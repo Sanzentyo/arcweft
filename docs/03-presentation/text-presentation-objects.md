@@ -107,6 +107,13 @@ Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
 `text_object_proxy`, the proxy id/type/role, and the resolved local depth. The
 same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
 debuggers can sort text objects with image/model-like presentation objects.
+`arcw agent hit-test` and MCP `arcweft.hit_test` consume those same observed
+regions. They rank hits by resolved depth descending, then by semantic
+specificity (`text_object_proxy` before glyph/cluster/run/line/page regions),
+then by the smaller hit bbox and stable object id. A custom proxy therefore
+behaves like an image/model hit target: it can overlap the same glyph pixels as
+another proxy, carry a higher local depth, and still be returned as the top hit
+without losing the lower-ranked proxy.
 
 Agent observation also emits each authored proxy span as its own
 `rich_text_proxy` observed object. Its object id is rooted at the parent textbox

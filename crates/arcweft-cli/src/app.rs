@@ -25,12 +25,12 @@ use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
     AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
-    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
-    AgentImageMetadata, AgentImageRenderer, AgentImageResource, AgentImageScope,
-    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
-    AgentObservationReport, AgentObservedLayer, AgentObservedObject, AgentResource,
-    AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef,
-    AgentUiTree, AgentViewport,
+    AgentHitTestHit, AgentHitTestReport, AgentImageComposition, AgentImageContentBBox,
+    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageRenderer,
+    AgentImageResource, AgentImageScope, AgentLayerCaptureRef, AgentLayerCaptureRefs,
+    AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport, AgentObservedLayer,
+    AgentObservedObject, AgentResource, AgentResourceBody, AgentRgbaColor,
+    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
@@ -177,6 +177,7 @@ enum IdsCommand {
 #[allow(clippy::large_enum_variant)]
 enum AgentCommand {
     Observe(AgentObserveOptions),
+    HitTest(AgentHitTestOptions),
     Mcp(AgentMcpOptions),
 }
 
@@ -1647,6 +1648,7 @@ fn agent_command(
 ) -> Result<(), ExitCode> {
     match command {
         AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
+        AgentCommand::HitTest(options) => agent_hit_test_command(&options, adapter_registrars),
         AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
     }
 }
@@ -1804,6 +1806,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP capture result: {error}"))
         }
+        "arcweft.hit_test" => {
+            let tool = agent_mcp_call_hit_test(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP hit-test result: {error}"))
+        }
         tool => Err(format!("unsupported Arcweft MCP tool `{tool}`")),
     }
 }
@@ -1871,6 +1878,40 @@ fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResul
         content: vec![McpContentBlock::Text { text }],
         is_error: false,
     })
+}
+
+fn agent_mcp_call_hit_test(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    let x = agent_mcp_u32_argument(arguments, "x", "arcweft.hit_test")?
+        .ok_or_else(|| "arcweft.hit_test requires arguments.x".to_owned())?;
+    let y = agent_mcp_u32_argument(arguments, "y", "arcweft.hit_test")?
+        .ok_or_else(|| "arcweft.hit_test requires arguments.y".to_owned())?;
+    if agent_mcp_arguments_request_observe(arguments) {
+        let (report, image_output, _) = agent_mcp_run_observation(arguments, adapter_registrars)?;
+        state.report = Some(report);
+        state.image_output = image_output;
+        state.capture_resources.clear();
+    }
+    let Some(report) = &state.report else {
+        return Err(
+            "arcweft.hit_test requires a prior arcweft.observe call, arguments.source, or arguments.profile"
+                .to_owned(),
+        );
+    };
+    let hit_test = agent_hit_test_report(report, x, y);
+    let text = serde_json::to_string_pretty(&hit_test)
+        .map_err(|error| format!("failed to serialize hit-test result: {error}"))?;
+    Ok(McpCallToolResult {
+        content: vec![McpContentBlock::Text { text }],
+        is_error: false,
+    })
+}
+
+fn agent_mcp_arguments_request_observe(arguments: &serde_json::Value) -> bool {
+    arguments.get("source").is_some() || arguments.get("profile").is_some()
 }
 
 fn agent_mcp_run_observation(
@@ -2357,46 +2398,7 @@ fn agent_observe_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     validate_agent_observe_options(options)?;
-    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let pure_config = runtime_pure_config_for_selection(
-        &selection,
-        options.pure_backend,
-        options.pure_workers,
-        options.pure_batch_min_len,
-        options.pure_object_artifacts,
-        options.math_backend,
-        options.math_wgpu_min_elements,
-    )?;
-    let checked = load_and_check_selection(&selection, None)?;
-    let host_policy = native_host_policy_for_selection(&selection)?;
-    let runtime_options = runtime_plan_options_for_selection(&selection);
-    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
-        .map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })?;
-    let mut plan = lowered.plan;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    let report = run_agent_observation(
-        &mut executor,
-        &lowered.line_display_catalog,
-        NativeRunHost {
-            source_path: Some(selection.path()),
-            policy: &host_policy,
-            adapter_registrars,
-        },
-        options,
-        selection.path(),
-    )
-    .map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::FAILURE
-    })?;
-    let mut report = report;
+    let mut report = agent_observation_report_for_options(options, adapter_registrars)?;
     let image_output = agent_observe_image_output(&mut report, options)?;
     if let Some(uri) = &options.read_uri {
         let resource = agent_observe_cached_image_resource(&report, image_output.as_ref(), uri)
@@ -2450,6 +2452,224 @@ fn agent_observe_command(
         );
         Ok(())
     }
+}
+
+fn agent_observation_report_for_options(
+    options: &AgentObserveOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentObservationReport, ExitCode> {
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+        options.pure_object_artifacts,
+        options.math_backend,
+        options.math_wgpu_min_elements,
+    )?;
+    let checked = load_and_check_selection(&selection, None)?;
+    let host_policy = native_host_policy_for_selection(&selection)?;
+    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
+        .map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })?;
+    let mut plan = lowered.plan;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
+    run_agent_observation(
+        &mut executor,
+        &lowered.line_display_catalog,
+        NativeRunHost {
+            source_path: Some(selection.path()),
+            policy: &host_policy,
+            adapter_registrars,
+        },
+        options,
+        selection.path(),
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+fn agent_hit_test_command(
+    options: &AgentHitTestOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    validate_agent_hit_test_options(options)?;
+    let observe_options = agent_hit_test_observe_options(options);
+    let report = agent_observation_report_for_options(&observe_options, adapter_registrars)?;
+    let hit_test = agent_hit_test_report(&report, options.x, options.y);
+    if options.json {
+        print_json(&hit_test)
+    } else if let Some(top) = &hit_test.top_object_id {
+        println!(
+            "ok: hit {} at {},{} ({} candidate(s))",
+            top,
+            options.x,
+            options.y,
+            hit_test.hits.len()
+        );
+        Ok(())
+    } else {
+        println!("ok: no hit at {},{}", options.x, options.y);
+        Ok(())
+    }
+}
+
+fn validate_agent_hit_test_options(options: &AgentHitTestOptions) -> Result<(), ExitCode> {
+    let observe_options = agent_hit_test_observe_options(options);
+    validate_agent_observe_options(&observe_options)
+}
+
+fn agent_hit_test_observe_options(options: &AgentHitTestOptions) -> AgentObserveOptions {
+    AgentObserveOptions {
+        path: options.path.clone(),
+        profile: options.profile.clone(),
+        entry: options.entry.clone(),
+        flow: options.flow.clone(),
+        executor: options.executor,
+        pure_backend: options.pure_backend,
+        pure_workers: options.pure_workers,
+        pure_batch_min_len: options.pure_batch_min_len,
+        pure_object_artifacts: options.pure_object_artifacts,
+        math_backend: options.math_backend,
+        math_wgpu_min_elements: options.math_wgpu_min_elements,
+        steps: options.steps,
+        capture_step: options.capture_step,
+        mode: options.mode,
+        max_ops: options.max_ops,
+        values: options.values.clone(),
+        viewport_width: options.viewport_width,
+        viewport_height: options.viewport_height,
+        textbox_height: options.textbox_height,
+        image: None,
+        capture: None,
+        layer: None,
+        object: None,
+        page: None,
+        capture_time_seconds: options.capture_time_seconds,
+        resource: None,
+        read_uri: None,
+        mcp: false,
+        mcp_format: AgentObserveMcpFormat::Read,
+        out: None,
+        json: true,
+    }
+}
+
+fn agent_hit_test_report(report: &AgentObservationReport, x: u32, y: u32) -> AgentHitTestReport {
+    let mut hits = report
+        .objects
+        .iter()
+        .filter(|object| object.visible)
+        .flat_map(|object| agent_hit_test_object_hits(object, x, y))
+        .collect::<Vec<_>>();
+    hits.sort_by(agent_hit_test_hit_order);
+    for (rank, hit) in hits.iter_mut().enumerate() {
+        hit.rank = rank;
+    }
+    AgentHitTestReport {
+        status: "ok".to_owned(),
+        session_id: report.session_id.clone(),
+        frame_id: report.frame_id.clone(),
+        source: report.source.clone(),
+        viewport: report.viewport,
+        x,
+        y,
+        top_object_id: hits.first().map(|hit| hit.object_id.clone()),
+        hits,
+    }
+}
+
+fn agent_hit_test_object_hits(
+    object: &AgentObservedObject,
+    x: u32,
+    y: u32,
+) -> Vec<AgentHitTestHit> {
+    let Some(rich_text_ref) = &object.rich_text_ref else {
+        return Vec::new();
+    };
+    if !rich_text_ref.hit_test {
+        return Vec::new();
+    }
+    rich_text_ref
+        .hit_regions
+        .iter()
+        .filter(|region| agent_bbox_contains(&region.bbox, x, y))
+        .map(|region| AgentHitTestHit {
+            rank: 0,
+            object_id: object.id.clone(),
+            layer: object.layer.clone(),
+            role: object.role.clone(),
+            text: object.text.clone(),
+            bbox: object.bbox.clone(),
+            region: region.clone(),
+            rich_text_ref: Some(rich_text_ref.clone()),
+            depth: region.depth.or(rich_text_ref.object_depth),
+        })
+        .collect()
+}
+
+fn agent_hit_test_hit_order(left: &AgentHitTestHit, right: &AgentHitTestHit) -> std::cmp::Ordering {
+    right
+        .depth
+        .unwrap_or(0)
+        .cmp(&left.depth.unwrap_or(0))
+        .then_with(|| {
+            agent_hit_test_region_priority(left.region.kind)
+                .cmp(&agent_hit_test_region_priority(right.region.kind))
+        })
+        .then_with(|| {
+            agent_hit_test_role_priority(&left.role).cmp(&agent_hit_test_role_priority(&right.role))
+        })
+        .then_with(|| agent_bbox_area(&left.region.bbox).cmp(&agent_bbox_area(&right.region.bbox)))
+        .then_with(|| left.object_id.cmp(&right.object_id))
+}
+
+const fn agent_hit_test_region_priority(kind: AgentHitRegionKind) -> u8 {
+    match kind {
+        AgentHitRegionKind::TextObjectProxy => 0,
+        AgentHitRegionKind::TextGlyph => 10,
+        AgentHitRegionKind::GlyphCluster => 20,
+        AgentHitRegionKind::RubyAnnotation => 30,
+        AgentHitRegionKind::RubyBase => 40,
+        AgentHitRegionKind::RubyObject => 50,
+        AgentHitRegionKind::TextRun => 60,
+        AgentHitRegionKind::TextLine => 70,
+        AgentHitRegionKind::TextPage => 80,
+    }
+}
+
+fn agent_hit_test_role_priority(role: &str) -> u8 {
+    match role {
+        "rich_text_proxy" => 0,
+        "rich_text_glyph" => 10,
+        "rich_text_cluster" => 20,
+        "rich_text_ruby" => 30,
+        "rich_text_run" => 40,
+        "rich_text_line" => 50,
+        "rich_text_page" => 60,
+        _ => 100,
+    }
+}
+
+fn agent_bbox_contains(bbox: &AgentBBox, x: u32, y: u32) -> bool {
+    x >= bbox.x
+        && y >= bbox.y
+        && x < bbox.x.saturating_add(bbox.width)
+        && y < bbox.y.saturating_add(bbox.height)
+}
+
+fn agent_bbox_area(bbox: &AgentBBox) -> u64 {
+    u64::from(bbox.width) * u64::from(bbox.height)
 }
 
 fn validate_agent_observe_options(options: &AgentObserveOptions) -> Result<(), ExitCode> {
@@ -10095,6 +10315,55 @@ struct AgentObserveOptions {
     mcp_format: AgentObserveMcpFormat,
     #[arg(long)]
     out: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct AgentHitTestOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 8)]
+    steps: usize,
+    #[arg(long = "capture-step")]
+    capture_step: Option<usize>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 64)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
+    viewport_width: u32,
+    #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
+    viewport_height: u32,
+    #[arg(long = "textbox-height")]
+    textbox_height: Option<u32>,
+    #[arg(long = "capture-time")]
+    capture_time_seconds: Option<f32>,
+    #[arg(long)]
+    x: u32,
+    #[arg(long)]
+    y: u32,
     #[arg(long)]
     json: bool,
 }

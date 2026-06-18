@@ -1926,6 +1926,101 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_hit_test_reports_depth_sorted_rich_text_proxy() {
+    let path = temp_arcw(
+        "agent-hit-test-rich-text-proxy",
+        r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+pub struct HoverHit {
+    layer: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [object .hotspot type=KeywordHit][object .hover type=HoverHit]Hit[/object][/object][p]
+}
+"#,
+    );
+    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe runs hit-test source");
+    assert!(
+        observe.status.success(),
+        "agent observe for hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&observe.stderr)
+    );
+    let observe_json: serde_json::Value =
+        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+    let hover = find_rich_text_proxy_object(&observe_json, "hover", "Hit");
+    let x = agent_json_bbox_x(&hover["bbox"]) + agent_json_bbox_width(&hover["bbox"]) / 2;
+    let y = agent_json_bbox_y(&hover["bbox"]) + agent_json_bbox_height(&hover["bbox"]) / 2;
+
+    let hit_test = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("hit-test")
+        .arg(&path)
+        .arg("--x")
+        .arg(x.to_string())
+        .arg("--y")
+        .arg(y.to_string())
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent hit-test runs rich text source");
+    fs::remove_file(&path).expect("remove temp agent hit-test source");
+
+    assert!(
+        hit_test.status.success(),
+        "agent hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&hit_test.stderr)
+    );
+    let hit_json: serde_json::Value =
+        serde_json::from_slice(&hit_test.stdout).expect("hit-test output is JSON");
+    assert_eq!(hit_json["status"], "ok");
+    assert_eq!(hit_json["x"], x);
+    assert_eq!(hit_json["y"], y);
+    assert_eq!(hit_json["top_object_id"], hover["id"]);
+    let top = &hit_json["hits"][0];
+    assert_eq!(top["rank"], 0);
+    assert_eq!(top["object_id"], hover["id"]);
+    assert_eq!(top["role"], "rich_text_proxy");
+    assert_eq!(top["region"]["kind"], "text_object_proxy");
+    assert_eq!(top["region"]["proxy_id"], "hover");
+    assert_eq!(top["region"]["proxy_type"], "HoverHit");
+    assert_eq!(top["region"]["proxy_role"], "hover");
+    assert_eq!(top["depth"], 7000);
+    assert!(
+        hit_json["hits"]
+            .as_array()
+            .expect("hits are listed")
+            .iter()
+            .any(|hit| hit["region"]["proxy_id"] == "hotspot" && hit["depth"] == 4000),
+        "shallower nested proxy should remain visible as a lower-ranked hit: {hit_json}"
+    );
+}
+
+#[test]
 fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() {
     let dir = temp_dir("agent-observe-profile-dialogue-defaults");
     let src_dir = dir.join("src");

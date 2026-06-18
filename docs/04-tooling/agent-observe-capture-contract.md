@@ -204,12 +204,14 @@ arcw agent observe game/routes/opening.arcw --image png --out viewport.png --jso
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --out dialogue.png --json
 arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png
+arcw agent hit-test game/routes/opening.arcw --x 520 --y 540 --json
 ```
 
 MCP exposes the same contract through:
 
 - `arcweft.observe`
 - `arcweft.capture`
+- `arcweft.hit_test`
 - `arcweft.resource.read`
 - `arcweft.session.info`
 - `resources/list`

@@ -325,6 +325,17 @@ screen size used by Agent geometry and native PNG/raw framebuffer capture.
 which is useful for layout-sensitive rich-text debugging such as long vertical
 words, ruby collision checks, and page/crop reproduction.
 
+`arcw agent hit-test <file.arcw> --x PX --y PX [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--capture-step N] [--capture-time SECONDS] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--json]`
+runs the same bounded observation path, then resolves the viewport coordinate
+against observed `rich_text_ref.hit_regions`. The JSON result is an
+`AgentHitTestReport` with `top_object_id` and a ranked `hits` array. Hits are
+ordered by resolved depth descending, then by semantic specificity
+(`text_object_proxy` before glyph/cluster/run/line/page regions), then by
+smaller hit bbox and stable object id. This makes nested custom text proxies
+usable as real headless hit targets: a deeper `HoverHit` proxy over the same
+visible glyphs ranks before the shallower `KeywordHit` proxy, while both remain
+available for debugging.
+
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When
 execution emits a dialogue-line event, the command resolves that line against

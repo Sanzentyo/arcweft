@@ -30,17 +30,20 @@ JSON-RPC requests for `initialize`, `tools/list`, `tools/call`, `resources/list`
 `resources/templates/list`, and `resources/read`. `resources/templates/list`
 advertises the stable `arcweft://` URI families for viewport, layer, object, and
 rich-text child captures before a source has been observed. `tools/call`
-supports `arcweft.observe`, `arcweft.capture`, `arcweft.resource.read`, and
-`arcweft.session.info`; the server keeps the latest one-shot observation in
-memory so clients can observe once, inspect the current session/frame/resource
-state, list resources, then either call `arcweft.capture` for a
-viewport/layer/object PNG or raw RGBA image content, or read a specific
-object/layer/rich-text child image URI. `arcweft.capture` can also take a
-listed image `uri` directly, using that URI to infer format, capture kind, and
-viewport/layer/object scope. Passing `source`, or passing `manifest` plus
-`profile`, to `arcweft.capture` runs a bounded observation first and then
-returns the requested capture, which gives LLM debuggers a single-call path for
-"show me this layer/object" workflows while still updating `resources/list`.
+supports `arcweft.observe`, `arcweft.capture`, `arcweft.resource.read`,
+`arcweft.session.info`, and `arcweft.hit_test`; the server keeps the latest
+one-shot observation in memory so clients can observe once, inspect the current
+session/frame/resource state, list resources, then either call
+`arcweft.capture` for a viewport/layer/object PNG or raw RGBA image content,
+call `arcweft.hit_test` for a depth-sorted object hit list at a viewport
+coordinate, or read a specific object/layer/rich-text child image URI.
+`arcweft.capture` can also take a listed image `uri` directly,
+using that URI to infer format, capture kind, and viewport/layer/object scope.
+Passing `source`, or passing `manifest` plus `profile`, to `arcweft.capture` or
+`arcweft.hit_test` runs a bounded observation first and then returns the
+requested result, which gives LLM debuggers a single-call path for "show me this
+layer/object" and "what did I click here" workflows while still updating
+`resources/list`.
 `arcweft.observe` uses the same direct-source versus launch-profile selection
 model as `arcw agent observe`, so project-selected dialogue defaults and adapter
 context are available through MCP without also supplying a source path. Capture

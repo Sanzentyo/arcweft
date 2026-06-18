@@ -136,7 +136,16 @@ pub enum McpContentBlock {
 /// Returns the current Agent Debug Bus tool descriptors.
 pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
-        McpToolDescriptor {
+        agent_observe_tool_descriptor(),
+        agent_resource_read_tool_descriptor(),
+        agent_capture_tool_descriptor(),
+        agent_hit_test_tool_descriptor(),
+        agent_session_info_tool_descriptor(),
+    ]
+}
+
+fn agent_observe_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
             name: "arcweft.observe".to_owned(),
             title: Some("Observe Arcweft".to_owned()),
             description: "Runs a bounded Agent observation and returns resource links for the frame, objects, and optional image capture.".to_owned(),
@@ -164,20 +173,27 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     { "required": ["profile"] }
                 ]
             }),
-        },
-        McpToolDescriptor {
-            name: "arcweft.resource.read".to_owned(),
-            title: Some("Read Arcweft Resource".to_owned()),
-            description: "Reads an arcweft:// Agent Debug Bus resource, including PNG/raw image blobs.".to_owned(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "uri": { "type": "string" }
-                },
-                "required": ["uri"]
-            }),
-        },
-        McpToolDescriptor {
+        }
+}
+
+fn agent_resource_read_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.resource.read".to_owned(),
+        title: Some("Read Arcweft Resource".to_owned()),
+        description: "Reads an arcweft:// Agent Debug Bus resource, including PNG/raw image blobs."
+            .to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "uri": { "type": "string" }
+            },
+            "required": ["uri"]
+        }),
+    }
+}
+
+fn agent_capture_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
             name: "arcweft.capture".to_owned(),
             title: Some("Capture Arcweft Image".to_owned()),
             description: "Captures the latest observed viewport, layer, or object as PNG or raw RGBA image content; with source, observes first and then captures.".to_owned(),
@@ -204,8 +220,39 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels when source is supplied." }
                 }
             }),
-        },
-        McpToolDescriptor {
+        }
+}
+
+fn agent_hit_test_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+            name: "arcweft.hit_test".to_owned(),
+            title: Some("Hit-Test Arcweft".to_owned()),
+            description: "Hit-tests the latest observed Agent frame, or observes a supplied source/profile first, and returns depth-sorted object/region hits for a viewport coordinate.".to_owned(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "source": { "type": "string", "description": "Optional .arcw source to observe before hit-testing. Mutually exclusive with profile." },
+                    "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-hit-test. Defaults to arcw.toml when profile is supplied." },
+                    "profile": { "type": "string", "description": "Optional launch profile to resolve before hit-testing. Mutually exclusive with source." },
+                    "entry": { "type": "string" },
+                    "flow": { "type": "string" },
+                    "steps": { "type": "integer", "minimum": 1 },
+                    "capture_step": { "type": "integer", "minimum": 1, "description": "Observe before hit-testing after this many runtime steps. Overrides steps when supplied." },
+                    "max_ops": { "type": "integer", "minimum": 1 },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native layout time in seconds for animated glyph transforms before hit-testing." },
+                    "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
+                    "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
+                    "textbox_height": { "type": "integer", "minimum": 1 },
+                    "x": { "type": "integer", "minimum": 0 },
+                    "y": { "type": "integer", "minimum": 0 }
+                },
+                "required": ["x", "y"]
+            }),
+        }
+}
+
+fn agent_session_info_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
             name: "arcweft.session.info".to_owned(),
             title: Some("Inspect Arcweft Session".to_owned()),
             description: "Returns the latest Agent Debug Bus session/frame state, available resources, and current image metadata.".to_owned(),
@@ -213,8 +260,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
                 "type": "object",
                 "properties": {}
             }),
-        },
-    ]
+        }
 }
 
 /// Returns the Agent Debug Bus resource templates understood by the current
@@ -779,6 +825,7 @@ mod tests {
                 .any(|tool| tool.name == "arcweft.resource.read")
         );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.capture"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.hit_test"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.session.info"));
     }
 
@@ -851,5 +898,26 @@ mod tests {
         assert_eq!(properties["viewport_height"]["minimum"], 1);
         assert_eq!(properties["textbox_height"]["type"], "integer");
         assert_eq!(properties["textbox_height"]["minimum"], 1);
+    }
+
+    #[test]
+    fn hit_test_tool_schema_requires_viewport_coordinate() {
+        let tools = agent_tool_descriptors();
+        let hit_test = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.hit_test")
+            .expect("hit-test tool is described");
+        let properties = &hit_test.input_schema["properties"];
+
+        assert_eq!(
+            hit_test.input_schema["required"],
+            serde_json::json!(["x", "y"])
+        );
+        assert_eq!(properties["x"]["type"], "integer");
+        assert_eq!(properties["x"]["minimum"], 0);
+        assert_eq!(properties["y"]["type"], "integer");
+        assert_eq!(properties["y"]["minimum"], 0);
+        assert_eq!(properties["capture_time"]["type"], "number");
+        assert_eq!(properties["capture_step"]["minimum"], 1);
     }
 }
