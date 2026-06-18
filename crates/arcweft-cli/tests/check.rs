@@ -19836,11 +19836,44 @@ flow @flow.main main {
     );
 
     let json = observe_native_rich_text_layer_report(&path);
-    fs::remove_file(&path).expect("remove temp structured diagnostics source");
 
     assert_native_rich_text_layer_image_has_content(&json);
     assert_agent_native_visual_diagnostic(&json, "missing_custom_effect", "missing_fx");
     assert_agent_native_visual_diagnostic(&json, "missing_shader", "ghost_glow");
+    assert_agent_native_visual_image_diagnostic(&json, "missing_custom_effect", "missing_fx");
+    assert_agent_native_visual_image_diagnostic(&json, "missing_shader", "ghost_glow");
+
+    let read_uri = "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png";
+    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg(read_uri)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe reads structured diagnostic image URI");
+    fs::remove_file(&path).expect("remove temp structured diagnostics source");
+
+    assert!(
+        read_output.status.success(),
+        "structured diagnostic read-uri should succeed, stderr: {}",
+        String::from_utf8_lossy(&read_output.stderr)
+    );
+    let resource: serde_json::Value =
+        serde_json::from_slice(&read_output.stdout).expect("read-uri resource is JSON");
+    assert_eq!(resource["uri"], read_uri);
+    assert_agent_native_visual_resource_diagnostic(
+        &resource,
+        "missing_custom_effect",
+        "missing_fx",
+    );
+    assert_agent_native_visual_resource_diagnostic(&resource, "missing_shader", "ghost_glow");
 }
 
 fn assert_effects_animation_function_motion_run_changes_over_time(
@@ -34163,7 +34196,31 @@ fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {
 }
 
 fn assert_agent_native_visual_diagnostic(report: &serde_json::Value, code: &str, effect_id: &str) {
-    let diagnostic = report["diagnostics"]
+    assert_agent_native_visual_diagnostic_in(&report["diagnostics"], code, effect_id);
+}
+
+fn assert_agent_native_visual_image_diagnostic(
+    report: &serde_json::Value,
+    code: &str,
+    effect_id: &str,
+) {
+    assert_agent_native_visual_diagnostic_in(&report["images"][0]["diagnostics"], code, effect_id);
+}
+
+fn assert_agent_native_visual_resource_diagnostic(
+    resource: &serde_json::Value,
+    code: &str,
+    effect_id: &str,
+) {
+    assert_agent_native_visual_diagnostic_in(&resource["image"]["diagnostics"], code, effect_id);
+}
+
+fn assert_agent_native_visual_diagnostic_in(
+    diagnostics: &serde_json::Value,
+    code: &str,
+    effect_id: &str,
+) {
+    let diagnostic = diagnostics
         .as_array()
         .expect("diagnostics are reported")
         .iter()
@@ -34173,7 +34230,9 @@ fn assert_agent_native_visual_diagnostic(report: &serde_json::Value, code: &str,
                 && diagnostic["effect_id"] == effect_id
         })
         .unwrap_or_else(|| {
-            panic!("native rich-text diagnostic {code}/{effect_id} should be structured: {report}")
+            panic!(
+                "native rich-text diagnostic {code}/{effect_id} should be structured: {diagnostics}"
+            )
         });
     assert_eq!(diagnostic["severity"], "warning");
     assert!(

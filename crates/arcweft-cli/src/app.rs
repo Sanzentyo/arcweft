@@ -2983,7 +2983,6 @@ fn agent_native_capture_resource_with_session(
 struct AgentNativeCaptureImageResult {
     image: AgentImageResource,
     bytes: Vec<u8>,
-    capture: AgentRasterCapture,
 }
 
 fn agent_native_capture_image(
@@ -3063,13 +3062,10 @@ fn agent_native_capture_image_with_session(
         content_viewport_bbox,
         content_pixels: Some(stats.content_pixels),
         object: agent_image_object_for_capture_scope(report, &request.scope),
+        diagnostics: agent_native_visual_diagnostics(request.capture_step, &capture.diagnostics),
         written: None,
     };
-    Ok(AgentNativeCaptureImageResult {
-        image,
-        bytes,
-        capture,
-    })
+    Ok(AgentNativeCaptureImageResult { image, bytes })
 }
 
 fn agent_image_object_for_capture_scope(
@@ -4374,6 +4370,7 @@ fn agent_capture_ref_resource(
             content_viewport_bbox: None,
             content_pixels: None,
             object: spec.object,
+            diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::Text(String::new()),
     }
@@ -4784,6 +4781,7 @@ fn agent_observe_image_output(
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: agent_image_object_for_capture_scope(report, &scope),
+                diagnostics: Vec::new(),
                 written: options.out.as_deref().map(report_path),
             }];
             report.overlay_svg = Some(overlay_svg.clone());
@@ -4795,10 +4793,9 @@ fn agent_observe_image_output(
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
             let capture_result = agent_native_capture_image(report, &request)?;
-            report.diagnostics.extend(agent_native_visual_diagnostics(
-                report.steps,
-                &capture_result.capture.diagnostics,
-            ));
+            report
+                .diagnostics
+                .extend(capture_result.image.diagnostics.clone());
             let (mut image, bytes) = (capture_result.image, capture_result.bytes);
             image.written = options.out.as_deref().map(report_path);
             report.render_hash.clone_from(&image.hash);

@@ -189,6 +189,8 @@ pub struct AgentImageMetadata {
     pub content_pixels: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<AgentImageObjectRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<AgentDiagnostic>,
 }
 
 /// Observed object metadata preserved on an image resource that captures an object.
@@ -248,6 +250,7 @@ impl AgentImageMetadata {
             content_viewport_bbox: image.content_viewport_bbox,
             content_pixels: image.content_pixels,
             object: image.object.clone(),
+            diagnostics: image.diagnostics.clone(),
         }
     }
 }
@@ -327,6 +330,8 @@ pub struct AgentImageResource {
     pub content_pixels: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<AgentImageObjectRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<AgentDiagnostic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub written: Option<String>,
 }
@@ -852,6 +857,7 @@ mod tests {
             }),
             content_pixels: Some(12),
             object: None,
+            diagnostics: Vec::new(),
             written: None,
         }
     }
@@ -892,6 +898,7 @@ mod tests {
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: None,
+                diagnostics: Vec::new(),
                 written: None,
             }],
             layers: Vec::new(),
@@ -961,6 +968,7 @@ mod tests {
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: None,
+                diagnostics: Vec::new(),
                 written: None,
             }],
             layers: vec![AgentObservedLayer {
@@ -1320,6 +1328,25 @@ mod tests {
     }
 
     #[test]
+    fn image_resource_metadata_preserves_capture_diagnostics() {
+        let report = test_mcp_observation_report();
+        let mut image = test_raw_mask_image_resource();
+        image.diagnostics = vec![AgentDiagnostic {
+            step: 7,
+            severity: AgentDiagnosticSeverity::Warning,
+            source: Some("native_rich_text".to_owned()),
+            code: Some("missing_shader".to_owned()),
+            effect_id: Some("ghost_glow".to_owned()),
+            message: "native rich-text missing_shader: ghost_glow".to_owned(),
+        }];
+
+        let resource = report.image_resource(&image, &[255; 48]);
+        let metadata = resource.image.expect("image metadata is attached");
+
+        assert_eq!(metadata.diagnostics, image.diagnostics);
+    }
+
+    #[test]
     fn observation_report_builds_mcp_style_resources() {
         let report = test_mcp_observation_report();
 
@@ -1357,6 +1384,7 @@ mod tests {
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: None,
+                diagnostics: Vec::new(),
             },
         );
         assert_image_metadata(
@@ -1392,6 +1420,7 @@ mod tests {
                 }),
                 content_pixels: Some(12),
                 object: None,
+                diagnostics: Vec::new(),
             },
         );
         assert_eq!(signals.uri, "arcweft://session/cli/signals.json");

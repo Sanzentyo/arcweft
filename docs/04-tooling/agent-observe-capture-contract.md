@@ -121,6 +121,10 @@ capture responses expose the same source range, presentation summary, proxy
 metadata, hit regions, and object-layer/depth metadata that the observation
 object exposed. Clients should use this metadata instead of reparsing the URI or
 walking the whole object list after reading image bytes.
+Image resources also carry capture-local `diagnostics` when native rendering
+reported missing or unsupported rich-text effects, shaders, or motion functions.
+Those diagnostics are repeated in `image.diagnostics` for resource readback so a
+saved crop remains debuggable without the original observation report.
 MCP `arcweft.capture` and `arcweft.resource.read` expose that metadata in the
 JSON text block that accompanies image/blob content. Binary `resources/read`
 contents still carry the MCP blob itself; clients that need image metadata
@@ -251,7 +255,10 @@ structured debugger fields:
 Native rich-text capture diagnostics must use these structured fields when a
 registered custom effect, shader, or motion function is missing or uses an
 unsupported phase. This lets Agent clients distinguish unsupported visual
-behavior from ordinary runtime errors without parsing `message`.
+behavior from ordinary runtime errors without parsing `message`. Diagnostics
+that were produced while rendering an image must be present both in the
+observation's top-level `diagnostics` array and in that image resource's
+`diagnostics` metadata, including `--read-uri` and MCP resource readback.
 
 ---
 

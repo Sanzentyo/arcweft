@@ -623,6 +623,7 @@ mod tests {
                 }),
                 content_pixels: Some(512),
                 object: None,
+                diagnostics: Vec::new(),
             }),
             body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                 encoding: AgentBinaryEncoding::Base64,
@@ -791,6 +792,7 @@ mod tests {
                     content_viewport_bbox: None,
                     content_pixels: None,
                     object: None,
+                    diagnostics: Vec::new(),
                 }),
                 body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                     encoding: AgentBinaryEncoding::Base64,
