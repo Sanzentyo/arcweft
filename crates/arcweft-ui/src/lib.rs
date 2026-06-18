@@ -3,6 +3,7 @@
 pub mod component;
 pub mod entity;
 pub mod fragment;
+pub mod layout;
 pub mod reactive;
 pub mod semantics;
 pub mod style;
@@ -18,6 +19,10 @@ pub use fragment::{
     ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
     ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
+};
+pub use layout::{
+    LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,
+    LayoutTree,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
@@ -43,6 +48,8 @@ pub enum UiError {
     EntityTypeMismatch(RawEntity),
     #[error("invalid UI fragment node {0:?}")]
     InvalidFragmentNode(NodeId),
+    #[error("missing layout for UI fragment node {0:?}")]
+    MissingLayout(NodeId),
     #[error("duplicate UI property binding {0:?}")]
     DuplicatePropertyBinding(UiPropertyId),
     #[error("too many UI items")]
@@ -202,6 +209,80 @@ mod tests {
                 &[],
                 None
             ),
+            Err(UiError::InvalidFragmentNode(NodeId(99)))
+        );
+    }
+
+    #[test]
+    fn layout_tree_preserves_fragment_node_order_and_child_counts() {
+        let mut builder = ViewFragmentBuilder::default();
+        let text = builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let image = builder
+            .push_node(
+                NodeKey(2),
+                FragmentKind::Image(ImageId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let root = builder
+            .push_node(
+                NodeKey(3),
+                FragmentKind::Container(ContainerKind::Block),
+                StyleId(1),
+                &[text, image],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = builder.finish();
+
+        let tree = LayoutTree::from_fragment(&fragment).unwrap();
+        assert_eq!(tree.len(), 3);
+        assert_eq!(tree.nodes()[text.0 as usize].node(), text);
+        assert_eq!(tree.nodes()[text.0 as usize].kind(), LayoutKind::Text);
+        assert_eq!(tree.nodes()[text.0 as usize].child_count(), 0);
+        assert_eq!(tree.nodes()[image.0 as usize].kind(), LayoutKind::Image);
+        assert_eq!(tree.nodes()[root.0 as usize].kind(), LayoutKind::Container);
+        assert_eq!(tree.nodes()[root.0 as usize].child_count(), 2);
+    }
+
+    #[test]
+    fn layout_results_report_missing_and_invalid_nodes() {
+        let mut builder = ViewFragmentBuilder::default();
+        let text = builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let tree = LayoutTree::from_fragment(&builder.finish()).unwrap();
+        let mut results = LayoutResults::new(&tree);
+
+        assert_eq!(results.require(text), Err(UiError::MissingLayout(text)));
+        let layout = LayoutBox::new(
+            LayoutPoint::new(LayoutLength::px(4), LayoutLength::px(8)),
+            LayoutSize::new(LayoutLength::px(120), LayoutLength::px(24)),
+        );
+        results.set(text, layout).unwrap();
+        assert_eq!(results.require(text), Ok(layout));
+        assert_eq!(
+            results.set(NodeId(99), layout),
             Err(UiError::InvalidFragmentNode(NodeId(99)))
         );
     }

@@ -125,8 +125,12 @@ The unified UI design is adopted as the long-term boundary for future work:
   first retained dependency boundary: `ReactiveGraph` maps dynamic
   `ValueSourceId` values to generational UI entities plus coalesced
   `DirtyFlags`, and `ReactiveInvalidation` reports deterministic source
-  revisions without mutating render-phase state. Later cuts will extend this
-  crate with layout integration and display-list generation.
+  revisions without mutating render-phase state. `layout` now owns the first
+  fragment-to-layout boundary: `LayoutTree` derives layout input from retained
+  fragment node order, and `LayoutResults` stores frame-local boxes while
+  reporting invalid or missing node layouts as structured errors. Later cuts
+  will extend this crate with display-list generation and renderer submission
+  integration.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -209,10 +213,10 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component
    descriptor, generational Entity, retained flat fragment, property
-   invalidation, and reactive dependency boundaries toward layout integration
-   and display-list generation, without adding public names such as
-   `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or per-Activity input
-   routers.
+   invalidation, reactive dependency, and layout boundaries toward display-list
+   generation and renderer submission integration, without adding public names
+   such as `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or per-Activity
+   input routers.
 4. Keep the unified TextBox model as the current source of truth: canonical
    `@textbox.main`, dialogue `window`, manifest `window`, and generic typed
    references. Runtime aliases are not used. Rust dialogue APIs already use
