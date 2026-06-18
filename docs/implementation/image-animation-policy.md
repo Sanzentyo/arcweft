@@ -89,11 +89,13 @@ dimensions. This bridge is adapter-side and does not add an Agent dependency to
 `arcweft-runtime-host`.
 
 Agent native object capture now recognizes typed image objects without walking
-through a parent rich-text textbox. Object-id and mask captures can be produced
-from observed image object geometry. Color capture intentionally fails until
-the live observation frame carries decoded image pixels or a renderer image
-source registry; returning a filled rectangle as color output would mix a debug
-geometry fallback into the product image renderer path.
+through a parent rich-text textbox. When the same observation context carries a
+decoded image frame store, color capture uses the native textured-quad renderer,
+and object-id/mask capture can use the same image alpha through native debug
+quads. Without stored frame pixels, object-id and mask captures can still be
+produced from observed image object geometry, while color capture intentionally
+fails; returning a filled rectangle as color output would mix a debug geometry
+fallback into the product image renderer path.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -128,9 +130,9 @@ same alpha-shaped geometry as color image capture.
 2. Wire the live Agent native observe loop to feed actual runtime UI commits
    through the UI image item bridge, rather than only covering the adapter path
    in focused tests.
-3. Carry decoded image pixels or an image source registry through the live
-   observation frame so image object color capture uses the native textured-quad
-   renderer instead of geometry fallback.
+3. Wire live runtime UI/image commits into the Agent image frame store so CLI
+   read-uri/MCP image color capture uses decoded frames from real samples, not
+   only focused adapter tests.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
 5. Add regression tests for frame selection, decode, native capture pixels,
