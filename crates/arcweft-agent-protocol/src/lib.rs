@@ -489,7 +489,30 @@ pub struct AgentObservedObject {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
-    pub rich_text: LineDisplayFrame,
+    pub content: AgentObservedObjectContent,
+}
+
+/// Renderable payload carried by an observed presentation object.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentObservedObjectContent {
+    RichText { frame: Box<LineDisplayFrame> },
+    Image(AgentObservedImageContent),
+    Custom { object_type: String },
+}
+
+/// Image-specific payload for an observed image presentation object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentObservedImageContent {
+    pub asset: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_time_millis: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsic_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsic_height: Option<u32>,
 }
 
 impl AgentImageObjectRef {
@@ -513,6 +536,15 @@ impl AgentImageObjectRef {
 }
 
 impl AgentObservedObject {
+    pub fn rich_text_frame(&self) -> Option<&LineDisplayFrame> {
+        match &self.content {
+            AgentObservedObjectContent::RichText { frame } => Some(frame.as_ref()),
+            AgentObservedObjectContent::Image(_) | AgentObservedObjectContent::Custom { .. } => {
+                None
+            }
+        }
+    }
+
     pub fn resolved_object_layer(&self) -> Option<String> {
         self.object_layer.clone().or_else(|| {
             self.rich_text_ref
@@ -1554,7 +1586,9 @@ mod tests {
             object_depth: None,
             text: Some("Hello".to_owned()),
             rich_text_ref: Some(test_rich_text_ref(&bbox)),
-            rich_text: test_line_display_frame(),
+            content: AgentObservedObjectContent::RichText {
+                frame: Box::new(test_line_display_frame()),
+            },
         }];
         let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
         AgentObservationReport {
@@ -1734,12 +1768,13 @@ mod tests {
             json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["phase"],
             "glyph_transform"
         );
+        assert_eq!(json["objects"][0]["content"]["kind"], "rich_text");
         assert_eq!(
-            json["objects"][0]["rich_text"]["style_contributions"][0]["path"],
+            json["objects"][0]["content"]["frame"]["style_contributions"][0]["path"],
             "rich_text.ruby.size"
         );
         assert_eq!(
-            json["objects"][0]["rich_text"]["style_contributions"][0]["layer"],
+            json["objects"][0]["content"]["frame"]["style_contributions"][0]["layer"],
             "dialogue_defaults"
         );
         assert_eq!(
@@ -2215,7 +2250,13 @@ mod tests {
             object_depth: Some(2500),
             text: None,
             rich_text_ref: None,
-            rich_text: test_line_display_frame(),
+            content: AgentObservedObjectContent::Image(AgentObservedImageContent {
+                asset: "asset.logo.webp".to_owned(),
+                frame_index: Some(1),
+                local_time_millis: Some(250),
+                intrinsic_width: Some(64),
+                intrinsic_height: Some(32),
+            }),
         };
 
         let image_object = AgentImageObjectRef::from_observed(&object);

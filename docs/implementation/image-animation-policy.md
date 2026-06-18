@@ -63,14 +63,18 @@ files while preserving relative virtual paths and avoiding host path leakage.
 `arcw run-bundle` validates these references before materializing the bundle
 workspace, so broken image asset records fail before bytecode execution.
 
-`arcweft-agent-protocol` now treats `object_layer` and `object_depth` as generic
-observed-object metadata instead of deriving them only from `rich_text_ref`.
-`AgentImageObjectRef` and the presentation tree preserve those fields for image
-objects that have no rich-text child reference, while rich-text objects continue
-to use their rich-text metadata as a fallback. Agent hit-test also accepts
-generic observed object bounding boxes with `AgentHitRegionKind::Object`, so
-image objects can be selected and can return their capture refs without
-pretending to be rich text.
+`arcweft-agent-protocol` now treats observed object payload as typed content.
+Rich text objects carry `content.kind = "rich_text"` with a `LineDisplayFrame`;
+image objects carry `content.kind = "image"` with asset id, optional active
+frame index, optional pinned local time, and optional intrinsic dimensions; and
+custom objects can use `content.kind = "custom"`. `object_layer` and
+`object_depth` are generic observed-object metadata instead of deriving only
+from `rich_text_ref`. `AgentImageObjectRef` and the presentation tree preserve
+those fields for image objects that have no rich-text child reference, while
+rich-text objects continue to use their rich-text metadata as a fallback. Agent
+hit-test also accepts generic observed object bounding boxes with
+`AgentHitRegionKind::Object`, so image objects can be selected and can return
+their capture refs without pretending to be rich text.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -104,8 +108,9 @@ same alpha-shaped geometry as color image capture.
 2. Wire Agent native observe to call the runtime-host image item API and UI
    image display-list bridge, rather than only using direct render-native unit
    submissions.
-3. Make Agent observation, hit-test, MCP image metadata, and CLI capture
-   selection treat image objects the same way rich-text objects are treated.
+3. Make CLI capture selection and MCP image metadata expose typed image content
+   fields from actual image presentation objects, including active frame
+   metadata.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
 5. Add regression tests for frame selection, decode, native capture pixels,

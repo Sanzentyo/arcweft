@@ -25,9 +25,10 @@ use arcweft_agent_protocol::{
     AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
     AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentPresentationObjectProxyParamQuery,
-    AgentPresentationTree, AgentPresentationTreeQuery, AgentResource, AgentResourceBody,
-    AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
+    AgentPresentationObjectProxyParamQuery, AgentPresentationTree, AgentPresentationTreeQuery,
+    AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
+    AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_core::plan::FlowEvent;
 use arcweft_render_text::{
@@ -286,7 +287,9 @@ mod tests {
             object_depth: None,
             text: None,
             rich_text_ref: None,
-            rich_text: test_line_display_frame(),
+            content: AgentObservedObjectContent::RichText {
+                frame: Box::new(test_line_display_frame()),
+            },
         }
     }
 
@@ -2167,7 +2170,7 @@ fn agent_native_capture_image_with_session(
     let (left, top) = agent_native_text_origin(textbox);
     let capture = native_session
         .capture_frame_rgba_in(
-            &textbox.rich_text,
+            agent_observed_rich_text(textbox),
             arcweft_render_native::NativeCaptureViewport::new(
                 report.viewport.width,
                 report.viewport.height,
@@ -2184,7 +2187,7 @@ fn agent_native_capture_image_with_session(
     let capture = agent_native_scoped_capture(
         &capture,
         AgentNativeCaptureContext {
-            frame: &textbox.rich_text,
+            frame: agent_observed_rich_text(textbox),
             left,
             top,
             objects: &report.objects,
@@ -2755,16 +2758,15 @@ fn agent_native_elements_for_object(
     object: &AgentObservedObject,
 ) -> Vec<arcweft_render_native::NativeFrameElement> {
     if object.role == "textbox" {
-        return object
-            .rich_text
+        let frame = agent_observed_rich_text(object);
+        return frame
             .display_map
             .text_runs
             .iter()
             .enumerate()
             .map(|(index, _)| arcweft_render_native::NativeFrameElement::TextRun { index })
             .chain(
-                object
-                    .rich_text
+                frame
                     .display_map
                     .ruby_annotations
                     .iter()
@@ -2797,8 +2799,8 @@ fn agent_native_text_range_elements(
         return Vec::new();
     };
     let range = rich_text_ref.range;
-    textbox
-        .rich_text
+    let frame = agent_observed_rich_text(textbox);
+    frame
         .display_map
         .text_runs
         .iter()
@@ -2806,8 +2808,7 @@ fn agent_native_text_range_elements(
         .filter(move |(_, run)| agent_rich_text_ranges_overlap(run.range, range))
         .map(|(index, _)| arcweft_render_native::NativeFrameElement::TextRun { index })
         .chain(
-            textbox
-                .rich_text
+            frame
                 .display_map
                 .ruby_annotations
                 .iter()
@@ -2945,7 +2946,7 @@ fn agent_native_textbox_rect(
     );
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = match agent_measure_frame_elements_with_session(
-        &textbox.rich_text,
+        agent_observed_rich_text(textbox),
         arcweft_render_native::NativeCaptureViewport::new(
             capture_width,
             capture_height,
@@ -3025,7 +3026,7 @@ fn agent_native_rich_text_element_rect(
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = agent_measure_frame_elements_with_session(
-        &textbox.rich_text,
+        agent_observed_rich_text(textbox),
         arcweft_render_native::NativeCaptureViewport::new(
             capture_width,
             capture_height,
@@ -4354,8 +4355,16 @@ fn agent_textbox_object(
         object_depth: None,
         text: Some(frame.text.clone()),
         rich_text_ref: None,
-        rich_text: frame,
+        content: AgentObservedObjectContent::RichText {
+            frame: Box::new(frame),
+        },
     }
+}
+
+fn agent_observed_rich_text(object: &AgentObservedObject) -> &LineDisplayFrame {
+    object
+        .rich_text_frame()
+        .expect("observed rich-text object carries rich-text content")
 }
 
 fn agent_rich_text_child_objects(
@@ -4390,7 +4399,8 @@ fn agent_rich_text_child_objects(
         native_bounds,
         native_session,
     ));
-    for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
+    let frame = agent_observed_rich_text(textbox);
+    for (run_index, run) in frame.display_map.text_runs.iter().enumerate() {
         if matches!(
             run.source,
             RichTextTextSource::ControlHardBreak | RichTextTextSource::ControlRaw
@@ -4411,13 +4421,7 @@ fn agent_rich_text_child_objects(
             native_bounds,
         ));
     }
-    for (ruby_index, ruby) in textbox
-        .rich_text
-        .display_map
-        .ruby_annotations
-        .iter()
-        .enumerate()
-    {
+    for (ruby_index, ruby) in frame.display_map.ruby_annotations.iter().enumerate() {
         if let Some(object) =
             agent_rich_text_ruby_object(step, index, ruby_index, textbox, ruby, native_bounds)
         {
@@ -4473,14 +4477,15 @@ fn agent_rich_text_page_objects(
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut native_session = native_session;
-    agent_rich_text_page_ranges(&textbox.rich_text)
+    let frame = agent_observed_rich_text(textbox);
+    agent_rich_text_page_ranges(frame)
         .into_iter()
         .enumerate()
         .filter_map(|(page_index, page_range)| {
             if page_range.is_empty() {
                 return None;
             }
-            let page_text = textbox.rich_text.text.get(page_range.clone())?;
+            let page_text = frame.text.get(page_range.clone())?;
             if page_text.trim().is_empty() {
                 return None;
             }
@@ -4492,11 +4497,11 @@ fn agent_rich_text_page_objects(
                 native_session.as_deref_mut(),
             )?;
             let range = RichTextRange::new(page_range.start, page_range.end);
-            let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
+            let presentation = agent_rich_text_range_presentation(frame, range);
             let mut hit_regions =
                 vec![agent_hit_region(AgentHitRegionKind::TextPage, &bbox, range)];
             hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
-                &textbox.rich_text,
+                frame,
                 range,
                 native_bounds,
             ));
@@ -4515,7 +4520,7 @@ fn agent_rich_text_page_objects(
                         index: page_index,
                         page: page_index,
                         range,
-                        node_index: agent_rich_text_page_node_index(&textbox.rich_text, range),
+                        node_index: agent_rich_text_page_node_index(frame, range),
                         source: None,
                         ruby: None,
                         presentation,
@@ -4523,8 +4528,8 @@ fn agent_rich_text_page_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        object_layer: agent_rich_text_range_object_layer(&textbox.rich_text, range),
-                        object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
+                        object_layer: agent_rich_text_range_object_layer(frame, range),
+                        object_depth: agent_rich_text_page_object_depth(frame, range),
                         hit_test: true,
                         hit_regions,
                     },
@@ -4548,19 +4553,21 @@ fn agent_rich_text_line_objects(
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut native_session = native_session;
-    agent_rich_text_line_ranges(&textbox.rich_text)
+    agent_rich_text_line_ranges(agent_observed_rich_text(textbox))
         .into_iter()
         .enumerate()
         .filter_map(|(line_index, line_range)| {
             if line_range.is_empty() {
                 return None;
             }
-            let line_text = textbox.rich_text.text.get(line_range.clone())?;
+            let line_text = agent_observed_rich_text(textbox)
+                .text
+                .get(line_range.clone())?;
             if line_text.trim().is_empty() {
                 return None;
             }
             let range = RichTextRange::new(line_range.start, line_range.end);
-            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let page = agent_rich_text_page_for_range(agent_observed_rich_text(textbox), range);
             let bbox = agent_native_text_range_capture_bbox_for_page(
                 textbox,
                 viewport,
@@ -4569,11 +4576,12 @@ fn agent_rich_text_line_objects(
                 time_seconds,
                 native_session.as_deref_mut(),
             )?;
-            let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
+            let presentation =
+                agent_rich_text_range_presentation(agent_observed_rich_text(textbox), range);
             let mut hit_regions =
                 vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)];
             hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
-                &textbox.rich_text,
+                agent_observed_rich_text(textbox),
                 range,
                 native_bounds,
             ));
@@ -4593,7 +4601,10 @@ fn agent_rich_text_line_objects(
                         index: line_index,
                         page,
                         range,
-                        node_index: agent_rich_text_page_node_index(&textbox.rich_text, range),
+                        node_index: agent_rich_text_page_node_index(
+                            agent_observed_rich_text(textbox),
+                            range,
+                        ),
                         source: None,
                         ruby: None,
                         presentation,
@@ -4601,8 +4612,14 @@ fn agent_rich_text_line_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        object_layer: agent_rich_text_range_object_layer(&textbox.rich_text, range),
-                        object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
+                        object_layer: agent_rich_text_range_object_layer(
+                            agent_observed_rich_text(textbox),
+                            range,
+                        ),
+                        object_depth: agent_rich_text_page_object_depth(
+                            agent_observed_rich_text(textbox),
+                            range,
+                        ),
                         hit_test: true,
                         hit_regions,
                     },
@@ -4646,7 +4663,7 @@ fn agent_native_rich_text_element_bboxes(
     let mut native_session = native_session;
     for page_index in 0.. {
         let bounds = match agent_measure_frame_elements_with_session(
-            &textbox.rich_text,
+            agent_observed_rich_text(textbox),
             arcweft_render_native::NativeCaptureViewport::new(
                 viewport.width,
                 viewport.height,
@@ -4683,7 +4700,7 @@ fn agent_native_textbox_capture_bbox_for_page(
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
     let Ok(bounds) = agent_measure_frame_elements_with_session(
-        &textbox.rich_text,
+        agent_observed_rich_text(textbox),
         arcweft_render_native::NativeCaptureViewport::new(
             viewport.width,
             viewport.height,
@@ -4715,7 +4732,7 @@ fn agent_native_text_range_capture_bbox_for_page(
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
     let bounds = agent_measure_frame_elements_with_session(
-        &textbox.rich_text,
+        agent_observed_rich_text(textbox),
         arcweft_render_native::NativeCaptureViewport::new(
             viewport.width,
             viewport.height,
@@ -4730,7 +4747,11 @@ fn agent_native_text_range_capture_bbox_for_page(
     bounds
         .into_iter()
         .filter(|bounds| {
-            agent_native_element_overlaps_range(&textbox.rich_text, bounds.element, range)
+            agent_native_element_overlaps_range(
+                agent_observed_rich_text(textbox),
+                bounds.element,
+                range,
+            )
         })
         .map(|bounds| agent_bbox_from_native(bounds.bbox))
         .reduce(|bbox, child| agent_union_bbox(&bbox, &child))
@@ -4760,10 +4781,10 @@ fn agent_rich_text_run_object(
         AgentNativeRichTextElementBounds,
     >,
 ) -> Option<AgentObservedObject> {
-    let text = textbox
-        .rich_text
+    let frame = agent_observed_rich_text(textbox);
+    let text = frame
         .text
-        .get(valid_rich_text_range(run.range, &textbox.rich_text.text)?)?;
+        .get(valid_rich_text_range(run.range, &frame.text)?)?;
     if text.trim().is_empty() {
         return None;
     }
@@ -4771,8 +4792,8 @@ fn agent_rich_text_run_object(
         .get(&arcweft_render_native::NativeFrameElement::TextRun { index: run_index })
         .map(|bounds| bounds.bbox.clone())?;
     let object_id = agent_rich_text_run_object_id(step, index, run_index);
-    let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
-    let parent_id = agent_rich_text_line_for_range(&textbox.rich_text, run.range).map_or_else(
+    let page = agent_rich_text_page_for_range(frame, run.range);
+    let parent_id = agent_rich_text_line_for_range(frame, run.range).map_or_else(
         || agent_rich_text_page_object_id(step, index, page),
         |line| agent_rich_text_line_object_id(step, index, line),
     );
@@ -4824,16 +4845,17 @@ fn agent_rich_text_proxy_objects(
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
-    let Some(range) = valid_rich_text_range(run.range, &textbox.rich_text.text) else {
+    let frame = agent_observed_rich_text(textbox);
+    let Some(range) = valid_rich_text_range(run.range, &frame.text) else {
         return Vec::new();
     };
-    let Some(text) = textbox.rich_text.text.get(range) else {
+    let Some(text) = frame.text.get(range) else {
         return Vec::new();
     };
     if text.trim().is_empty() {
         return Vec::new();
     }
-    let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
+    let page = agent_rich_text_page_for_range(frame, run.range);
     run.presentation
         .object_proxies
         .iter()
@@ -4906,18 +4928,18 @@ fn agent_rich_text_ruby_object(
         AgentNativeRichTextElementBounds,
     >,
 ) -> Option<AgentObservedObject> {
-    let base_range = valid_rich_text_range(ruby.base_range, &textbox.rich_text.text)?;
-    let base_text = textbox.rich_text.text.get(base_range)?;
+    let frame = agent_observed_rich_text(textbox);
+    let base_range = valid_rich_text_range(ruby.base_range, &frame.text)?;
+    let base_text = frame.text.get(base_range)?;
     let bbox = native_bounds
         .get(&arcweft_render_native::NativeFrameElement::Ruby { index: ruby_index })
         .cloned()?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
-    let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
-    let parent_id = agent_rich_text_line_for_range(&textbox.rich_text, ruby.base_range)
-        .map_or_else(
-            || agent_rich_text_page_object_id(step, index, page),
-            |line| agent_rich_text_line_object_id(step, index, line),
-        );
+    let page = agent_rich_text_page_for_range(frame, ruby.base_range);
+    let parent_id = agent_rich_text_line_for_range(frame, ruby.base_range).map_or_else(
+        || agent_rich_text_page_object_id(step, index, page),
+        |line| agent_rich_text_line_object_id(step, index, line),
+    );
     let hit_regions = agent_ruby_hit_regions(&bbox, ruby.base_range);
     Some(agent_rich_text_child_object(
         step,
@@ -4960,6 +4982,7 @@ fn agent_rich_text_glyph_objects(
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
+    let frame = agent_observed_rich_text(textbox);
     native_bounds
         .iter()
         .filter_map(|(element, bounds)| {
@@ -4972,15 +4995,11 @@ fn agent_rich_text_glyph_objects(
                 return None;
             };
             let range = RichTextRange::new(range_start, range_end);
-            let text = textbox
-                .rich_text
-                .text
-                .get(valid_rich_text_range(range, &textbox.rich_text.text)?)?;
+            let text = frame.text.get(valid_rich_text_range(range, &frame.text)?)?;
             if text.trim().is_empty() {
                 return None;
             }
-            let (run_index, run) = textbox
-                .rich_text
+            let (run_index, run) = frame
                 .display_map
                 .text_runs
                 .iter()
@@ -4989,7 +5008,7 @@ fn agent_rich_text_glyph_objects(
             let object_id = format!(
                 "object.dialogue.{step}.{index}.glyph.{glyph_index}.{range_start}.{range_end}"
             );
-            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let page = agent_rich_text_page_for_range(frame, range);
             let parent_id = agent_rich_text_run_object_id(step, index, run_index);
             Some(agent_rich_text_child_object(
                 step,
@@ -5043,6 +5062,7 @@ fn agent_rich_text_cluster_objects(
         AgentNativeRichTextElementBounds,
     >,
 ) -> Vec<AgentObservedObject> {
+    let frame = agent_observed_rich_text(textbox);
     native_bounds
         .iter()
         .filter_map(|(element, bounds)| {
@@ -5055,15 +5075,11 @@ fn agent_rich_text_cluster_objects(
                 return None;
             };
             let range = RichTextRange::new(range_start, range_end);
-            let text = textbox
-                .rich_text
-                .text
-                .get(valid_rich_text_range(range, &textbox.rich_text.text)?)?;
+            let text = frame.text.get(valid_rich_text_range(range, &frame.text)?)?;
             if text.trim().is_empty() {
                 return None;
             }
-            let (run_index, run) = textbox
-                .rich_text
+            let (run_index, run) = frame
                 .display_map
                 .text_runs
                 .iter()
@@ -5072,7 +5088,7 @@ fn agent_rich_text_cluster_objects(
             let object_id = format!(
                 "object.dialogue.{step}.{index}.cluster.{cluster_index}.{range_start}.{range_end}"
             );
-            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let page = agent_rich_text_page_for_range(frame, range);
             let parent_id = agent_rich_text_run_object_id(step, index, run_index);
             Some(agent_rich_text_child_object(
                 step,
@@ -5332,7 +5348,12 @@ fn agent_rich_text_child_object(
         object_depth: spec.rich_text_ref.object_depth,
         text: Some(spec.text.clone()),
         rich_text_ref: Some(spec.rich_text_ref),
-        rich_text: agent_child_line_display_frame(&textbox.rich_text, spec.text),
+        content: AgentObservedObjectContent::RichText {
+            frame: Box::new(agent_child_line_display_frame(
+                agent_observed_rich_text(textbox),
+                spec.text,
+            )),
+        },
     }
 }
 
