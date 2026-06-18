@@ -393,3 +393,8 @@ pub fn parse_decimal_milli(value: &str) -> Option<Milli> {
         sign * whole.saturating_mul(1000).saturating_add(frac),
     ))
 }
+
+/// Parses an authored z-index token as an object-depth scalar.
+pub fn parse_z_index_token(value: &str) -> Option<i16> {
+    value.trim().parse::<i16>().ok()
+}

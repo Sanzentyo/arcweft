@@ -251,6 +251,14 @@ type, while ordinary custom selectors such as `[.sparkle]` remain effect spans.
 Those inferred proxies therefore produce the same run/page/line metadata,
 `rich_text_proxy` observed objects, object-id/mask/color captures, and hit-test
 regions as explicit `[object ...]` syntax.
+Ordinary text objects also expose presentation scalar metadata without becoming
+proxies. Style-family selectors such as `[style .z_index 3]...[/style]` and
+`[style .opacity 0.8]...[/style]`, including inferred forms like
+`[.z_index 3]...[/]`, lower into `RichTextPresentation`. Agent observe reports
+the resolved `presentation.z_index` / `presentation.opacity` on runs, lines, and
+pages, and derives `rich_text_ref.object_depth = z_index * 1000` so ordinary
+text participates in the same depth-aware object ordering as images, models, and
+custom proxy spans.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

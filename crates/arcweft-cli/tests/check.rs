@@ -2075,6 +2075,59 @@ fn agent_observe_infers_text_proxy_struct_shorthand() {
     assert_eq!(hit_json["hits"][0]["depth"], 7000);
 }
 
+#[test]
+fn agent_observe_reports_text_presentation_z_index_depth() {
+    let path = temp_arcw(
+        "agent-observe-rich-text-z-index-depth",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.z_index 7][.opacity 0.5]Depth[/][/] plain[p]
+}
+",
+    );
+    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe runs z-index source");
+    assert!(
+        observe.status.success(),
+        "agent observe for z-index text should succeed, stderr: {}",
+        String::from_utf8_lossy(&observe.stderr)
+    );
+    let observe_json: serde_json::Value =
+        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+    let run = find_rich_text_run_object(&observe_json, "Depth");
+    assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 7);
+    assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 500);
+    assert_eq!(run["rich_text_ref"]["object_depth"], 7000);
+    assert_eq!(run["rich_text_ref"]["hit_test"], false);
+
+    let line = observe_json["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| object["role"] == "rich_text_line")
+        .expect("rich-text line object is observed");
+    assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
+    let hit = hit_test_center_of_observed_object(&path, line);
+    fs::remove_file(&path).expect("remove temp z-index source");
+    assert_eq!(hit["status"], "ok");
+    assert_eq!(hit["top_object_id"], line["id"]);
+    assert_eq!(hit["hits"][0]["role"], "rich_text_line");
+    assert_eq!(hit["hits"][0]["depth"], 7000);
+}
+
 fn inferred_text_proxy_struct_shorthand_source() -> PathBuf {
     temp_arcw(
         "agent-observe-inferred-rich-text-proxy",
@@ -19461,6 +19514,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
     assert_full_grammar_nested_text_object_proxies(&source_path, &json);
     assert_full_grammar_inferred_text_object_proxy(&source_path, &json);
+    assert_full_grammar_presentation_scalar_depth(&json);
     assert_full_grammar_text_page_object_readback(&source_path, &json);
     assert_full_grammar_text_line_object_readback(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
@@ -33688,6 +33742,13 @@ fn assert_full_grammar_inferred_text_object_proxy(source_path: &Path, json: &ser
             [0]["params"]["channel"]["value"],
         "typed"
     );
+}
+
+fn assert_full_grammar_presentation_scalar_depth(json: &serde_json::Value) {
+    let run = find_rich_text_run_object(json, "z depth");
+    assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 3);
+    assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 800);
+    assert_eq!(run["rich_text_ref"]["object_depth"], 3000);
 }
 
 fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serde_json::Value) {

@@ -46,6 +46,13 @@ Scalar fields such as `italic`, `oblique`, `opacity`, and `z_index` use nearest
 explicit value wins. Structured layout fields deep-merge by field. Transform is
 one effective transform per run; the nearest transform span replaces earlier
 transform fields for that run. Effects and shader refs append in source order.
+`opacity` / `alpha` and `z_index` / `z` are authored as style-family
+presentation scalars, for example `[style .opacity 0.8]...[/style]`,
+`[style .z_index 3]...[/style]`, or their inferred forms `[.opacity 0.8]...[/]`
+and `[.z_index 3]...[/]`. Native/Agent observation exposes `z_index` as
+`rich_text_ref.object_depth = z_index * 1000` for ordinary run/glyph/line/page
+text objects, while object proxy `depth` continues to override the local proxy
+depth when present.
 
 Ruby base text and ruby annotation text may have different effective
 presentations. Ruby layout fields first come from the run/default cascade, then

@@ -16,11 +16,11 @@ use arcweft_render_text::{
     LineDisplaySpec, Milli, RichTextAngle, RichTextAssignOp, RichTextCascadeLayer, RichTextColor,
     RichTextControl, RichTextDocument, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextEffectTarget, RichTextFontFamily, RichTextInlineDirection, RichTextJlreqStrictness,
-    RichTextLayout, RichTextNode, RichTextObjectProxy, RichTextParam, RichTextRubyPosition,
-    RichTextSettingSource, RichTextShaderRef, RichTextSourceRange, RichTextStateScope,
-    RichTextStyle, RichTextStyleContribution, RichTextTransform, RichTextTransformOrigin,
-    RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli,
-    parse_milli_token,
+    RichTextLayout, RichTextNode, RichTextObjectProxy, RichTextParam, RichTextPresentationStyle,
+    RichTextRubyPosition, RichTextSettingSource, RichTextShaderRef, RichTextSourceRange,
+    RichTextStateScope, RichTextStyle, RichTextStyleContribution, RichTextTransform,
+    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
+    parse_decimal_milli, parse_milli_token, parse_z_index_token,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -2238,7 +2238,9 @@ enum InferredTagFamily {
 
 fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily> {
     match selector {
-        "italic" | "oblique" => Some(InferredTagFamily::Style),
+        "italic" | "oblique" | "opacity" | "alpha" | "z" | "z_index" => {
+            Some(InferredTagFamily::Style)
+        }
         "horizontal_tb"
         | "vertical_rl"
         | "vertical_lr"
@@ -2271,12 +2273,33 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             }),
             raw: attrs.to_owned(),
         },
+        "opacity" | "alpha" => RichTextStyle::Presentation {
+            presentation: RichTextPresentationStyle {
+                opacity: Some(parse_milli_token(&style_scalar_attr(attrs, "opacity"))),
+                z_index: None,
+            },
+        },
+        "z" | "z_index" => RichTextStyle::Presentation {
+            presentation: RichTextPresentationStyle {
+                opacity: None,
+                z_index: parse_z_index_token(&style_scalar_attr(attrs, "z_index")),
+            },
+        },
         _ => RichTextStyle::Unknown {
             name: "style".to_owned(),
             attrs: attrs.to_owned(),
         },
     };
     vec![RichTextNode::StyleStart { style }]
+}
+
+fn style_scalar_attr(attrs: &str, preferred: &str) -> String {
+    let parsed = parse_attrs(attrs);
+    parsed
+        .get(preferred)
+        .or_else(|| parsed.get("value"))
+        .or_else(|| parsed.get("amount"))
+        .map_or_else(|| attrs.to_owned(), ToOwned::to_owned)
 }
 
 fn lower_layout_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
@@ -3602,6 +3625,52 @@ flow @flow.main main {
                 .iter()
                 .any(|effect| effect.id == "sparkle")
         );
+    }
+
+    #[test]
+    fn presentation_scalar_style_sets_opacity_and_z_index() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.z_index 7][.opacity 0.5]BC[/][/]D[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.presentation.scalar".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .expect("presentation scalar run");
+
+        assert_eq!(run.presentation.z_index, 7);
+        assert_eq!(run.presentation.opacity, Some(Milli(500)));
     }
 
     #[test]

@@ -4899,6 +4899,7 @@ fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) -> NativeText
         RichTextStyle::Speed { .. }
         | RichTextStyle::Layout { .. }
         | RichTextStyle::Transform { .. }
+        | RichTextStyle::Presentation { .. }
         | RichTextStyle::Effect { .. }
         | RichTextStyle::Shader { .. }
         | RichTextStyle::Object { .. }

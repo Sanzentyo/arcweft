@@ -13,6 +13,7 @@ pub use rich_effects::{
     RichTextParam, RichTextPresentation, RichTextRubyPosition, RichTextShaderRef,
     RichTextStateScope, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
     RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
+    parse_z_index_token,
 };
 
 /// Rich-text display sidecar generated while lowering a runtime plan.
@@ -180,20 +181,63 @@ pub enum FallbackStylePolicy {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RichTextStyle {
-    Em { attrs: String },
-    Strong { attrs: String },
-    Italic { attrs: String },
-    Oblique { angle: RichTextAngle, raw: String },
-    Color { value: RichTextColor },
-    Font { family: RichTextFontFamily },
-    Size { points: Option<u16>, raw: String },
-    Speed { value: String },
-    Layout { layout: RichTextLayout },
-    Transform { transform: RichTextTransform },
-    Effect { effect: RichTextEffectDescriptor },
-    Shader { shader: RichTextShaderRef },
-    Object { proxy: RichTextObjectProxy },
-    Unknown { name: String, attrs: String },
+    Em {
+        attrs: String,
+    },
+    Strong {
+        attrs: String,
+    },
+    Italic {
+        attrs: String,
+    },
+    Oblique {
+        angle: RichTextAngle,
+        raw: String,
+    },
+    Color {
+        value: RichTextColor,
+    },
+    Font {
+        family: RichTextFontFamily,
+    },
+    Size {
+        points: Option<u16>,
+        raw: String,
+    },
+    Speed {
+        value: String,
+    },
+    Layout {
+        layout: RichTextLayout,
+    },
+    Transform {
+        transform: RichTextTransform,
+    },
+    Effect {
+        effect: RichTextEffectDescriptor,
+    },
+    Shader {
+        shader: RichTextShaderRef,
+    },
+    Object {
+        proxy: RichTextObjectProxy,
+    },
+    Presentation {
+        presentation: RichTextPresentationStyle,
+    },
+    Unknown {
+        name: String,
+        attrs: String,
+    },
+}
+
+/// Scalar presentation metadata applied to rich-text objects.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RichTextPresentationStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_index: Option<i16>,
 }
 
 /// Inline text color.
@@ -459,6 +503,18 @@ impl RichTextStyle {
             "speed" => Self::Speed {
                 value: attrs.to_owned(),
             },
+            "opacity" | "alpha" => Self::Presentation {
+                presentation: RichTextPresentationStyle {
+                    opacity: Some(parse_milli_token(attrs)),
+                    z_index: None,
+                },
+            },
+            "z" | "z_index" => Self::Presentation {
+                presentation: RichTextPresentationStyle {
+                    opacity: None,
+                    z_index: parse_z_index_token(attrs),
+                },
+            },
             name => Self::Unknown {
                 name: name.to_owned(),
                 attrs: attrs.to_owned(),
@@ -471,7 +527,7 @@ impl RichTextStyle {
         match self {
             Self::Em { .. } => "em",
             Self::Strong { .. } => "strong",
-            Self::Italic { .. } | Self::Oblique { .. } => "style",
+            Self::Italic { .. } | Self::Oblique { .. } | Self::Presentation { .. } => "style",
             Self::Color { .. } => "color",
             Self::Font { .. } => "font",
             Self::Size { .. } => "size",
@@ -909,7 +965,9 @@ fn remove_active_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {
 pub fn canonical_style_name(name: &str) -> &str {
     match name {
         "" | "/" => "/",
-        "i" | "italic" | "oblique" | "slant" | "style" => "style",
+        "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "z" | "z_index" | "style" => {
+            "style"
+        }
         "vertical"
         | "vertical_rl"
         | "vertical_lr"
@@ -942,6 +1000,14 @@ pub fn presentation_from_styles<'a>(
                 RichTextStyle::Effect { effect } => out.effects.push(effect.clone()),
                 RichTextStyle::Shader { shader } => out.shaders.push(shader.clone()),
                 RichTextStyle::Object { proxy } => out.object_proxies.push(proxy.clone()),
+                RichTextStyle::Presentation { presentation } => {
+                    if let Some(opacity) = presentation.opacity {
+                        out.opacity = Some(opacity);
+                    }
+                    if let Some(z_index) = presentation.z_index {
+                        out.z_index = z_index;
+                    }
+                }
                 RichTextStyle::Strong { .. }
                 | RichTextStyle::Color { .. }
                 | RichTextStyle::Font { .. }
