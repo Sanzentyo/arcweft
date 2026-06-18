@@ -79,12 +79,16 @@ horizontal and `vertical_rl` `spin + pulse` runs, where animated rotation and
 scale alter the native object color crop between pinned samples while preserving
 vertical layout metadata. The same sample defines an Arcweft `#[pure]`
 animation helper named `breath_orbit` and references it from `[.motion
-fn=breath_orbit ...]`; native capture resolves that function id through the
-renderer's deterministic animation-function registry and checks that the
-function-backed motion crop changes between pinned samples. This keeps the debug
-surface honest for stacked reveal, glyph-placement, affine animation,
-function-backed animation, and host-dispatched effects instead of only checking
-each effect family in isolation.
+fn=breath_orbit ...]`; native capture resolves that function id through
+`RichTextMotionRegistry` and checks that the function-backed motion crop changes
+between pinned samples. The default registry provides `breath_orbit` and
+`elastic_bloom`, while `NativeOffscreenCaptureSession::motion_registry_mut`
+allows tests and adapters to register additional motion function IDs. Missing
+motion functions are diagnosed instead of being silently reinterpreted through a
+hash fallback. This keeps the debug surface honest for stacked reveal,
+glyph-placement, affine animation, function-backed animation, and
+host-dispatched effects instead of only checking each effect family in
+isolation.
 Native window page changes reset the page-local effect clock and clear the
 renderer-local rich-text effect state store before preparing the next page. A
 cancelled or skipped line is therefore treated like a page/line replacement for
@@ -187,15 +191,18 @@ Builtin wave effects use the descriptor target when choosing their phase index:
 the target as one placement group. Shake and jitter continue to use
 `state_scope` for deterministic grouping.
 The deterministic native visual plan exposes renderer diagnostics and can be
-built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
-registered custom IDs run against `TextEffectGlyphContext`, and missing custom
-registries or unsupported custom phases are reported instead of being silently
-reinterpreted as builtins. `NativeOffscreenCaptureSession` also owns a mutable
-effect registry and shared state store; custom registered placement and
-`glyph_color` effects run when preparing submitted glyphs for framebuffer,
-color, object-id, and mask captures, so registry-backed custom effects are
-visible in actual native image output rather than only in plan snapshots. The
-same session can measure native element bounds through
+built with a `RichTextEffectRegistry`, `RichTextShaderRegistry`, and
+`RichTextMotionRegistry`; builtin effect IDs are handled directly, registered
+custom effect IDs run against `TextEffectGlyphContext`, registered shader IDs
+emit deterministic glyph passes, registered motion function IDs drive
+`.motion`, and missing registries or unsupported phases are reported instead of
+being silently reinterpreted as builtins. `NativeOffscreenCaptureSession` also
+owns mutable effect/shader/motion registries and a shared state store; custom
+registered placement and `glyph_color` effects, run-offscreen shaders, and
+motion functions run when preparing submitted glyphs for framebuffer, color,
+object-id, and mask captures, so registry-backed custom behavior is visible in
+actual native image output rather than only in plan snapshots. The same session
+can measure native element bounds through
 `measure_frame_elements_in`, and the standalone
 `measure_frame_elements_with_effect_registry` API accepts an explicit
 registry/state pair. This keeps glyph and ruby observe bboxes aligned with

@@ -152,7 +152,8 @@ translation, rotation, and scale together. Common parameters are `fn` or
 `target`. The function name is authored in Arcweft source and preserved in the
 effect descriptor; renderers may only execute functions they explicitly expose
 through their animation-function registry. Unknown names must remain
-deterministic and observable, not silently become nondeterministic host code.
+observable through renderer diagnostics and must not be silently reinterpreted
+as another fallback animation or nondeterministic host code.
 
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
@@ -250,9 +251,9 @@ visual-plan, and framebuffer capture paths. The native renderer also supports
 registered `run_offscreen_pass` shaders for text and ruby glyph submissions;
 the default registry provides `soft_glow` and `warm_glow`, and native adapters
 may register additional shader IDs through the shader registry. Unsupported
-shader ids, supported shader ids used at the wrong phase, unregistered custom
-effects, post-process effects, and host-event phases must be diagnosed instead
-of being silently reinterpreted as placement effects. For builtin wave
-placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
-broader targets evaluate the placement as one group; shake and jitter grouping
-is controlled by `state_scope`.
+shader ids, supported shader ids used at the wrong phase, unregistered motion
+function ids, unregistered custom effects, post-process effects, and host-event
+phases must be diagnosed instead of being silently reinterpreted as placement
+effects. For builtin wave placement, `target=glyph` evaluates the phase per
+glyph, while `target=run` and broader targets evaluate the placement as one
+group; shake and jitter grouping is controlled by `state_scope`.

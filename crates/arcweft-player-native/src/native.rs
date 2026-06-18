@@ -439,6 +439,80 @@ impl RichTextShaderRegistry {
     }
 }
 
+/// A normalized animation sample returned by renderer-local rich-text motion functions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeAnimationSample {
+    pub translate: [f32; 2],
+    pub rotate: f32,
+    pub scale: f32,
+}
+
+/// Per-motion context supplied to renderer-local animation functions.
+pub struct TextMotionContext<'a> {
+    pub effect: &'a RichTextEffectDescriptor,
+    pub function: &'a str,
+    pub sample_time: f32,
+    pub line_id: &'a str,
+    pub run_index: usize,
+    pub glyph_index: usize,
+    pub glyph_count: usize,
+    pub noise: [f32; 2],
+}
+
+/// Renderer-local rich-text motion function.
+pub trait RichTextMotionClass: Send {
+    fn sample(&mut self, ctx: &TextMotionContext<'_>) -> NativeAnimationSample;
+}
+
+pub type MotionLambda = Box<dyn FnMut(&TextMotionContext<'_>) -> NativeAnimationSample + Send>;
+
+pub enum RegisteredTextMotion {
+    Class(Box<dyn RichTextMotionClass>),
+    Lambda(MotionLambda),
+}
+
+/// Registry that resolves `.motion fn=...` references to native animation functions.
+#[derive(Default)]
+pub struct RichTextMotionRegistry {
+    functions: BTreeMap<String, RegisteredTextMotion>,
+}
+
+impl RichTextMotionRegistry {
+    pub fn insert_class(
+        &mut self,
+        id: impl Into<String>,
+        function: impl RichTextMotionClass + 'static,
+    ) {
+        self.functions
+            .insert(id.into(), RegisteredTextMotion::Class(Box::new(function)));
+    }
+
+    pub fn insert_lambda(
+        &mut self,
+        id: impl Into<String>,
+        function: impl FnMut(&TextMotionContext<'_>) -> NativeAnimationSample + Send + 'static,
+    ) {
+        self.functions
+            .insert(id.into(), RegisteredTextMotion::Lambda(Box::new(function)));
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.functions.contains_key(id)
+    }
+
+    pub fn sample(
+        &mut self,
+        id: &str,
+        ctx: &TextMotionContext<'_>,
+    ) -> Option<NativeAnimationSample> {
+        let function = self.functions.get_mut(id)?;
+        Some(match function {
+            RegisteredTextMotion::Class(function) => function.sample(ctx),
+            RegisteredTextMotion::Lambda(function) => function(ctx),
+        })
+    }
+}
+
 /// Builds the default native host effect registry used by native renderers.
 pub fn native_default_effect_registry() -> RichTextEffectRegistry {
     let mut registry = RichTextEffectRegistry::default();
@@ -453,6 +527,13 @@ pub fn native_default_shader_registry() -> RichTextShaderRegistry {
     registry
 }
 
+/// Builds the default native motion registry used by native renderers.
+pub fn native_default_motion_registry() -> RichTextMotionRegistry {
+    let mut registry = RichTextMotionRegistry::default();
+    register_native_default_text_motions(&mut registry);
+    registry
+}
+
 /// Registers native host effects that are available without external adapters.
 pub fn register_native_default_text_effects(registry: &mut RichTextEffectRegistry) {
     registry.insert_lambda("sparkle", native_sparkle_effect);
@@ -464,9 +545,26 @@ pub fn register_native_default_text_shaders(registry: &mut RichTextShaderRegistr
     registry.insert_lambda("warm_glow", native_warm_glow_shader);
 }
 
+/// Registers native motion functions that are available without external adapters.
+pub fn register_native_default_text_motions(registry: &mut RichTextMotionRegistry) {
+    registry.insert_lambda("breath_orbit", |ctx| {
+        sample_breath_orbit(ctx.sample_time, ctx.noise)
+    });
+    registry.insert_lambda("fx.breath_orbit", |ctx| {
+        sample_breath_orbit(ctx.sample_time, ctx.noise)
+    });
+    registry.insert_lambda("elastic_bloom", |ctx| {
+        sample_elastic_bloom(ctx.sample_time, ctx.noise)
+    });
+    registry.insert_lambda("fx.elastic_bloom", |ctx| {
+        sample_elastic_bloom(ctx.sample_time, ctx.noise)
+    });
+}
+
 struct NativeEffectExecution<'a> {
     registry: Option<&'a mut RichTextEffectRegistry>,
     shader_registry: Option<&'a mut RichTextShaderRegistry>,
+    motion_registry: Option<&'a mut RichTextMotionRegistry>,
     state: &'a mut RichTextStateStore,
     diagnostics: Vec<NativeVisualDiagnostic>,
     seen_diagnostics: BTreeSet<String>,
@@ -476,11 +574,13 @@ impl<'a> NativeEffectExecution<'a> {
     fn new(
         registry: Option<&'a mut RichTextEffectRegistry>,
         shader_registry: Option<&'a mut RichTextShaderRegistry>,
+        motion_registry: Option<&'a mut RichTextMotionRegistry>,
         state: &'a mut RichTextStateStore,
     ) -> Self {
         Self {
             registry,
             shader_registry,
+            motion_registry,
             state,
             diagnostics: Vec::new(),
             seen_diagnostics: BTreeSet::new(),
@@ -614,6 +714,37 @@ impl<'a> NativeEffectExecution<'a> {
             .unwrap_or_default()
     }
 
+    fn sample_motion_function(
+        &mut self,
+        effect: &RichTextEffectDescriptor,
+        function: &str,
+        ctx: &TextMotionContext<'_>,
+    ) -> Option<NativeAnimationSample> {
+        let Some(registry) = self.motion_registry.as_deref_mut() else {
+            self.push_motion_diagnostic(
+                "missing_motion_registry",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                function,
+                format!("rich-text motion function `{function}` has no native motion registry"),
+            );
+            return None;
+        };
+        let Some(sample) = registry.sample(function, ctx) else {
+            self.push_motion_diagnostic(
+                "missing_motion_function",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                function,
+                format!(
+                    "rich-text motion function `{function}` is not registered in the native motion registry"
+                ),
+            );
+            return None;
+        };
+        Some(sample)
+    }
+
     fn push_diagnostic(
         &mut self,
         code: &str,
@@ -649,6 +780,26 @@ impl<'a> NativeEffectExecution<'a> {
             code: code.to_owned(),
             message,
             effect_id: Some(shader.id.clone()),
+        });
+    }
+
+    fn push_motion_diagnostic(
+        &mut self,
+        code: &str,
+        severity: NativeVisualDiagnosticSeverity,
+        effect: &RichTextEffectDescriptor,
+        function: &str,
+        message: String,
+    ) {
+        let key = format!("{code}:{}:{function}:{:?}", effect.id, effect.phase);
+        if !self.seen_diagnostics.insert(key) {
+            return;
+        }
+        self.diagnostics.push(NativeVisualDiagnostic {
+            severity,
+            code: code.to_owned(),
+            message,
+            effect_id: Some(effect.id.clone()),
         });
     }
 }
@@ -697,6 +848,7 @@ pub struct NativeOffscreenCaptureSession {
     renderer: NativeOffscreenTextRenderer,
     effect_registry: RichTextEffectRegistry,
     shader_registry: RichTextShaderRegistry,
+    motion_registry: RichTextMotionRegistry,
     effect_state: RichTextStateStore,
 }
 
@@ -713,6 +865,7 @@ impl NativeOffscreenCaptureSession {
             renderer,
             effect_registry: native_default_effect_registry(),
             shader_registry: native_default_shader_registry(),
+            motion_registry: native_default_motion_registry(),
             effect_state: RichTextStateStore::default(),
         })
     }
@@ -725,6 +878,11 @@ impl NativeOffscreenCaptureSession {
     /// Mutable registry used by rich-text shaders during offscreen capture.
     pub fn shader_registry_mut(&mut self) -> &mut RichTextShaderRegistry {
         &mut self.shader_registry
+    }
+
+    /// Mutable registry used by `.motion fn=...` during offscreen capture.
+    pub fn motion_registry_mut(&mut self) -> &mut RichTextMotionRegistry {
+        &mut self.motion_registry
     }
 
     /// Mutable state store shared by custom rich-text effects during offscreen capture.
@@ -759,6 +917,7 @@ impl NativeOffscreenCaptureSession {
             viewport.time_seconds,
             Some(&mut self.effect_registry),
             Some(&mut self.shader_registry),
+            Some(&mut self.motion_registry),
             &mut self.effect_state,
         )
     }
@@ -1061,6 +1220,7 @@ impl NativeOffscreenCaptureSession {
         let mut effects = NativeEffectExecution::new(
             Some(&mut self.effect_registry),
             Some(&mut self.shader_registry),
+            Some(&mut self.motion_registry),
             &mut self.effect_state,
         );
         self.renderer.prepare(
@@ -1184,12 +1344,14 @@ pub fn measure_frame_elements_at_page_with_time(
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let mut state = RichTextStateStore::default();
     let mut shader_registry = native_default_shader_registry();
+    let mut motion_registry = native_default_motion_registry();
     measure_frame_elements_at_page_with_effects(
         frame,
         NativeCaptureViewport::new(width, height, left, top, page_index),
         time_seconds,
         None,
         Some(&mut shader_registry),
+        Some(&mut motion_registry),
         &mut state,
     )
 }
@@ -1202,12 +1364,14 @@ pub fn measure_frame_elements_with_effect_registry(
     state: &mut RichTextStateStore,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let mut shader_registry = native_default_shader_registry();
+    let mut motion_registry = native_default_motion_registry();
     measure_frame_elements_at_page_with_effects(
         frame,
         viewport,
         viewport.time_seconds,
         Some(registry),
         Some(&mut shader_registry),
+        Some(&mut motion_registry),
         state,
     )
 }
@@ -1218,10 +1382,11 @@ fn measure_frame_elements_at_page_with_effects(
     time_seconds: f32,
     registry: Option<&mut RichTextEffectRegistry>,
     shader_registry: Option<&mut RichTextShaderRegistry>,
+    motion_registry: Option<&mut RichTextMotionRegistry>,
     state: &mut RichTextStateStore,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
-    let mut effects = NativeEffectExecution::new(registry, shader_registry, state);
+    let mut effects = NativeEffectExecution::new(registry, shader_registry, motion_registry, state);
     let page_layout = layout_page_range(
         frame,
         page_range,
@@ -1304,11 +1469,13 @@ pub fn capture_frame_color_regions_at_page(
 pub fn visual_plan_from_frame(frame: &LineDisplayFrame, time_seconds: f32) -> NativeVisualPlan {
     let mut state = RichTextStateStore::default();
     let mut shader_registry = native_default_shader_registry();
+    let mut motion_registry = native_default_motion_registry();
     visual_plan_from_frame_with_effects(
         frame,
         time_seconds,
         None,
         Some(&mut shader_registry),
+        Some(&mut motion_registry),
         &mut state,
     )
 }
@@ -1321,11 +1488,13 @@ pub fn visual_plan_from_frame_with_effect_registry(
     state: &mut RichTextStateStore,
 ) -> NativeVisualPlan {
     let mut shader_registry = native_default_shader_registry();
+    let mut motion_registry = native_default_motion_registry();
     visual_plan_from_frame_with_effects(
         frame,
         time_seconds,
         Some(registry),
         Some(&mut shader_registry),
+        Some(&mut motion_registry),
         state,
     )
 }
@@ -1335,9 +1504,10 @@ fn visual_plan_from_frame_with_effects(
     time_seconds: f32,
     registry: Option<&mut RichTextEffectRegistry>,
     shader_registry: Option<&mut RichTextShaderRegistry>,
+    motion_registry: Option<&mut RichTextMotionRegistry>,
     state: &mut RichTextStateStore,
 ) -> NativeVisualPlan {
-    let mut effects = NativeEffectExecution::new(registry, shader_registry, state);
+    let mut effects = NativeEffectExecution::new(registry, shader_registry, motion_registry, state);
     let mut pages = Vec::new();
     let page_ranges = display_map_page_ranges(frame)
         .into_iter()
@@ -2216,7 +2386,14 @@ fn apply_presentation_effects_to_placement_with_execution(
         placement.opacity *= opacity.as_f32();
     }
     for effect in &presentation.effects {
-        if !apply_builtin_descriptor(line_id, effect, glyph_count, time_seconds, placement) {
+        if !apply_builtin_descriptor_with_execution(
+            line_id,
+            effect,
+            glyph_count,
+            time_seconds,
+            effects,
+            placement,
+        ) {
             effects.apply_custom_effect(line_id, effect, glyph_count, time_seconds, placement);
         }
     }
@@ -2228,6 +2405,47 @@ fn apply_builtin_descriptor(
     effect: &RichTextEffectDescriptor,
     glyph_count: usize,
     time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) -> bool {
+    let mut motion_registry = native_default_motion_registry();
+    apply_builtin_descriptor_inner(
+        line_id,
+        effect,
+        glyph_count,
+        time_seconds,
+        Some(&mut motion_registry),
+        None,
+        placement,
+    )
+}
+
+fn apply_builtin_descriptor_with_execution(
+    line_id: &str,
+    effect: &RichTextEffectDescriptor,
+    glyph_count: usize,
+    time_seconds: f32,
+    effects: &mut NativeEffectExecution<'_>,
+    placement: &mut NativeGlyphPlacement,
+) -> bool {
+    apply_builtin_descriptor_inner(
+        line_id,
+        effect,
+        glyph_count,
+        time_seconds,
+        None,
+        Some(effects),
+        placement,
+    )
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn apply_builtin_descriptor_inner(
+    line_id: &str,
+    effect: &RichTextEffectDescriptor,
+    glyph_count: usize,
+    time_seconds: f32,
+    motion_registry: Option<&mut RichTextMotionRegistry>,
+    effects: Option<&mut NativeEffectExecution<'_>>,
     placement: &mut NativeGlyphPlacement,
 ) -> bool {
     match effect.id.as_str() {
@@ -2306,7 +2524,15 @@ fn apply_builtin_descriptor(
             if !effect_applies_to_glyph_transform(effect) {
                 return true;
             }
-            apply_builtin_motion(line_id, effect, time_seconds, placement);
+            apply_builtin_motion(
+                line_id,
+                effect,
+                glyph_count,
+                time_seconds,
+                motion_registry,
+                effects,
+                placement,
+            );
         }
         "typewriter" => {
             if !effect_applies_to_glyph_mask(effect) {
@@ -2361,12 +2587,16 @@ fn apply_builtin_pulse(
 fn apply_builtin_motion(
     line_id: &str,
     effect: &RichTextEffectDescriptor,
+    glyph_count: usize,
     time_seconds: f32,
+    motion_registry: Option<&mut RichTextMotionRegistry>,
+    effects: Option<&mut NativeEffectExecution<'_>>,
     placement: &mut NativeGlyphPlacement,
 ) {
     let function = param_label(effect, "fn")
         .or_else(|| param_label(effect, "curve"))
         .unwrap_or_else(|| "breath_orbit".to_owned());
+    let function = normalize_motion_function_label(&function);
     let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
     let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
     let amplitude = param_milli(effect, "amp")
@@ -2386,7 +2616,24 @@ fn apply_builtin_motion(
     let sample_time = time_seconds.mul_add(speed, phase)
         + usize_to_f32_saturating(target_index) * 0.037
         + noise[0] * 0.11;
-    let sample = sample_native_animation_function(&function, sample_time, noise);
+    let ctx = TextMotionContext {
+        effect,
+        function: &function,
+        sample_time,
+        line_id,
+        run_index: placement.run_index,
+        glyph_index: placement.glyph_index,
+        glyph_count,
+        noise,
+    };
+    let sample = if let Some(effects) = effects {
+        effects.sample_motion_function(effect, &function, &ctx)
+    } else {
+        motion_registry.and_then(|registry| registry.sample(&function, &ctx))
+    };
+    let Some(sample) = sample else {
+        return;
+    };
     placement.x += amplitude * sample.translate[0];
     placement.y += amplitude * sample.translate[1];
     placement.rotate_degrees += angle * sample.rotate;
@@ -2394,25 +2641,6 @@ fn apply_builtin_motion(
     placement.scale_x *= scale;
     placement.scale_y *= scale;
     apply_effect_affine_pivot(effect, RichTextTransformOrigin::GlyphCenter, placement);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct NativeAnimationSample {
-    translate: [f32; 2],
-    rotate: f32,
-    scale: f32,
-}
-
-fn sample_native_animation_function(
-    function: &str,
-    time_seconds: f32,
-    noise: [f32; 2],
-) -> NativeAnimationSample {
-    match function.trim().trim_start_matches('.') {
-        "breath_orbit" | "fx.breath_orbit" => sample_breath_orbit(time_seconds, noise),
-        "elastic_bloom" | "fx.elastic_bloom" => sample_elastic_bloom(time_seconds, noise),
-        other => sample_hashed_animation_function(other, time_seconds, noise),
-    }
 }
 
 fn sample_breath_orbit(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
@@ -2445,21 +2673,12 @@ fn sample_elastic_bloom(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSa
     }
 }
 
-fn sample_hashed_animation_function(
-    function: &str,
-    time_seconds: f32,
-    noise: [f32; 2],
-) -> NativeAnimationSample {
-    let hash_low = u16::try_from(stable_text_hash(function) & 0xffff).unwrap_or_default();
-    let hash_phase = f32::from(hash_low) / 65535.0;
-    let tau = std::f32::consts::TAU;
-    let primary = ((time_seconds + hash_phase) * tau).sin();
-    let secondary = ((time_seconds * 1.7 + noise[0]) * tau).cos();
-    NativeAnimationSample {
-        translate: [primary * 0.45, secondary * 0.35],
-        rotate: primary.mul_add(0.55, secondary * 0.25),
-        scale: (primary * 0.5 + 0.5) * 0.65,
-    }
+fn normalize_motion_function_label(function: &str) -> String {
+    function
+        .trim()
+        .trim_start_matches('@')
+        .trim_start_matches('.')
+        .to_owned()
 }
 
 fn apply_effect_affine_pivot(
@@ -3791,6 +4010,7 @@ struct WindowState {
     layout: Option<LaidOutText>,
     effect_registry: RichTextEffectRegistry,
     shader_registry: RichTextShaderRegistry,
+    motion_registry: RichTextMotionRegistry,
     effect_state: RichTextStateStore,
     animation_started_at: Instant,
     has_timed_effects: bool,
@@ -3877,6 +4097,7 @@ impl WindowState {
             layout: None,
             effect_registry: native_default_effect_registry(),
             shader_registry: native_default_shader_registry(),
+            motion_registry: native_default_motion_registry(),
             effect_state: RichTextStateStore::default(),
             animation_started_at: Instant::now(),
             has_timed_effects: false,
@@ -5720,6 +5941,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         let mut effects = NativeEffectExecution::new(
             Some(&mut state.effect_registry),
             Some(&mut state.shader_registry),
+            Some(&mut state.motion_registry),
             &mut state.effect_state,
         );
         observe_layout_shaders(
@@ -6015,7 +6237,8 @@ mod tests {
 
         let mut shader_registry = native_default_shader_registry();
         let mut state = RichTextStateStore::default();
-        let mut effects = NativeEffectExecution::new(None, Some(&mut shader_registry), &mut state);
+        let mut effects =
+            NativeEffectExecution::new(None, Some(&mut shader_registry), None, &mut state);
 
         let glow_areas = shader_glyph_areas_for_text(&glyph_area, &layout, &mut effects);
 
@@ -6062,7 +6285,8 @@ mod tests {
 
         let mut shader_registry = native_default_shader_registry();
         let mut state = RichTextStateStore::default();
-        let mut effects = NativeEffectExecution::new(None, Some(&mut shader_registry), &mut state);
+        let mut effects =
+            NativeEffectExecution::new(None, Some(&mut shader_registry), None, &mut state);
 
         let glow_areas = shader_glyph_areas_for_text(&glyph_area, &layout, &mut effects);
         let plan = visual_plan_from_frame_for_test(&frame, 0.0);
@@ -6163,6 +6387,56 @@ mod tests {
                 },
                 RichTextNode::StyleEnd {
                     name: "effect".to_owned(),
+                },
+            ]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
+    }
+
+    fn motion_test_frame(function: &str) -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.motion.registry".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Effect {
+                        effect: RichTextEffectDescriptor {
+                            id: "motion".to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "fn".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: function.to_owned(),
+                                    },
+                                ),
+                                (
+                                    "amp".to_owned(),
+                                    RichTextParam::Milli {
+                                        value: Milli(48_000),
+                                    },
+                                ),
+                            ]),
+                            target: RichTextEffectTarget::Glyph,
+                            phase: RichTextEffectPhase::GlyphTransform,
+                            state_scope: RichTextStateScope::Glyph,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "/".to_owned(),
                 },
             ]),
         };
@@ -6672,6 +6946,56 @@ mod tests {
             Some(RichTextTransformOrigin::GlyphCenter)
         );
         assert_eq!(early.affine_target, Some(RichTextEffectTarget::Glyph));
+    }
+
+    #[test]
+    fn native_visual_plan_reports_missing_motion_function() {
+        let frame = motion_test_frame("snap_rise");
+
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert_eq!(
+            plan.diagnostics[0].severity,
+            NativeVisualDiagnosticSeverity::Warning
+        );
+        assert_eq!(plan.diagnostics[0].code, "missing_motion_function");
+        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some("motion"));
+    }
+
+    #[test]
+    fn native_capture_uses_custom_motion_registry_for_submitted_glyphs() {
+        let frame = motion_test_frame("snap_rise");
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut shifted = NativeOffscreenCaptureSession::new().expect("shifted session");
+        shifted
+            .motion_registry_mut()
+            .insert_lambda("snap_rise", |_ctx| NativeAnimationSample {
+                translate: [1.0, -0.25],
+                rotate: 0.0,
+                scale: 0.0,
+            });
+        let shifted_capture = shifted
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("shifted capture");
+
+        let baseline_bbox = baseline_capture.content_bbox.expect("baseline content");
+        let shifted_bbox = shifted_capture.content_bbox.expect("shifted content");
+        assert!(
+            baseline_capture
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "missing_motion_function")
+        );
+        assert!(shifted_capture.diagnostics.is_empty());
+        assert!(
+            shifted_bbox.x > baseline_bbox.x + 32,
+            "custom motion registry should move submitted glyph pixels: {baseline_bbox:?} -> {shifted_bbox:?}"
+        );
     }
 
     #[test]
