@@ -259,6 +259,20 @@ it must remain exact-test based rather than using the broad
 required after every small parser, layout, or protocol edit and should not be
 used as the routine workspace fast path.
 
+`just test-rich-text-object-goal` is the milestone gate for the current rich
+text typed-presentation-object work. It combines Agent protocol/MCP metadata
+tests, native effect/shader/motion/typewriter coverage, exact CLI observe and
+hit-test regressions, and the two rich-text sample checks. It is intentionally
+broader than `just test-rich-text` and should be run before claiming that
+milestone complete or handing it off, not after every small edit. Run this
+recipe sequentially; the native animation capture tests exercise GPU/offscreen
+readback and can become misleadingly slow when several renderer-heavy Cargo
+test processes compete in parallel.
+On 2026-06-19 this gate passed locally in 250.9s wall time; the combined
+typewriter/effect animation sample accounted for 182.92s of test-body time.
+Treat that exact test as milestone evidence unless it is later split or
+optimized.
+
 `vendor/glyphon` is patched into the workspace but remains an external manifest,
 so ordinary `cargo check --workspace`, workspace clippy, and
 `just test-workspace` do not directly test the fork. When a change touches
@@ -297,6 +311,7 @@ just test-slow-agent-observe
 just test-visual-golden
 just native-visual-artifacts
 just verify-vendor-glyphon
+just test-rich-text-object-goal
 just test-tier2
 just verify-full
 ```

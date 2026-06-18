@@ -28,13 +28,13 @@ execution without compatibility shims.
 | Registry-backed effects, shaders, and motion functions render through native/debug capture | `RichTextEffectRegistry`, `RichTextShaderRegistry`, `RichTextMotionRegistry`; `rich-text-effects-animation.arcw`; native and CLI regressions for glyph color, post-process, source-local pure helpers, and function motion; `SVR-2026-06-17-014` through `016`, `029` through `031`, `037`, and `SVR-2026-06-18-003` / `004` | Covered |
 | Missing/unsupported effect, shader, and motion paths are structured diagnostics in report and image resources | `agent_observe_native_rich_text_reports_structured_visual_diagnostics`; `agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources`; `image_resource_metadata_preserves_capture_diagnostics`; `docs/04-tooling/agent-observe-capture-contract.md`; `SVR-2026-06-18-008` | Covered |
 | Visual sample evidence exists for inspectable rendering outcomes, not only metadata | 2026-06-15 ruby/HTML comparison images, 2026-06-17 full grammar/effect captures, 2026-06-18 proxy/source-local post-process captures | Mostly covered |
+| A single explicit milestone command exists for the current rich-text object goal gate | `just test-rich-text-object-goal` runs the protocol/MCP/native/player/CLI/sample checks listed below | Covered |
 
 ## Remaining Audit Risks
 
-- The matrix is assembled from focused tests and review evidence, but a single
-  explicit milestone command that validates the whole rich-text object goal has
-  not been defined. Use targeted regressions during development, then run the
-  documented rich-text/native smoke set before claiming completion.
+- The matrix is assembled from focused tests and review evidence. Use targeted
+  regressions during development, then run `just test-rich-text-object-goal`
+  before claiming completion or handing off the milestone.
 - Fixed PNG review artifacts exist for the major visual issues, but many newer
   metadata/diagnostic guarantees intentionally use JSON/raw temporary evidence.
   That is appropriate for metadata transport, but completion should mention
@@ -46,6 +46,12 @@ execution without compatibility shims.
 ## Current Push Gate
 
 Before marking this goal complete, run or justify the equivalent of:
+
+```bash
+just test-rich-text-object-goal
+```
+
+The recipe currently expands to:
 
 ```bash
 cargo test -p arcweft-agent-protocol -- --nocapture
@@ -64,3 +70,9 @@ cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.ar
 
 Use `docs/implementation/test-execution-policy.md` for broader workspace gates
 at push cut points.
+
+Last local run on 2026-06-19: `just test-rich-text-object-goal` passed in
+250.9s wall time. The slowest selected check was
+`agent_observe_native_renderer_captures_combined_typewriter_animation_sample`
+at 182.92s test-body time; keep it as milestone evidence, not a tight-loop
+command.
