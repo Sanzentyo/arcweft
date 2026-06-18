@@ -18774,6 +18774,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     );
 
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
 
@@ -18814,6 +18815,38 @@ fn assert_effects_animation_function_motion_run_changes_over_time(
         &early_bytes,
         &late,
         &late_bytes,
+    );
+}
+
+fn assert_effects_animation_color_sparkle_run_is_tinted(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let color_run = find_rich_text_run_object(json, "色sparkle");
+    let effect = assert_rich_text_run_object_has_effect(color_run, "sparkle");
+    assert_eq!(
+        effect["phase"], "glyph_color",
+        "color sparkle should keep its glyph_color phase: {color_run}"
+    );
+    let object_id = color_run["id"]
+        .as_str()
+        .expect("color sparkle run object id is reported");
+    let color_path = dir.join("color-sparkle-rgba-4000.rgba");
+    let (capture, bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &color_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert!(capture["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(35)
+                && pixel[0] > pixel[2].saturating_add(20)
+                && pixel[3] > 0
+        }),
+        "glyph_color custom sparkle should tint the object crop: {capture}"
     );
 }
 

@@ -187,11 +187,12 @@ built with a `RichTextEffectRegistry`; builtin effect IDs are handled directly,
 registered custom IDs run against `TextEffectGlyphContext`, and missing custom
 registries or unsupported custom phases are reported instead of being silently
 reinterpreted as builtins. `NativeOffscreenCaptureSession` also owns a mutable
-effect registry and shared state store; custom registered placement effects run
-when preparing submitted glyphs for framebuffer, color, object-id, and mask
-captures, so registry-backed custom effects are visible in actual native image
-output rather than only in plan snapshots. The same session can measure native
-element bounds through `measure_frame_elements_in`, and the standalone
+effect registry and shared state store; custom registered placement and
+`glyph_color` effects run when preparing submitted glyphs for framebuffer,
+color, object-id, and mask captures, so registry-backed custom effects are
+visible in actual native image output rather than only in plan snapshots. The
+same session can measure native element bounds through
+`measure_frame_elements_in`, and the standalone
 `measure_frame_elements_with_effect_registry` API accepts an explicit
 registry/state pair. This keeps glyph and ruby observe bboxes aligned with
 registry-backed captures instead of reporting builtin-only debug geometry.
@@ -201,11 +202,13 @@ renderer diagnostics from glyph submission. `arcw agent observe --json --image
 effect implementations are visible to LLM/debugger tooling instead of becoming
 silent no-op captures. Offscreen capture sessions and the native window renderer
 install the native default host effect registry, which currently provides a
-deterministic `sparkle` glyph effect for samples and smoke captures while still
-reporting unknown custom IDs through diagnostics. Surface `.host` selectors use
-their `id`, `effect`, or `name` metadata as the registry id before native
-dispatch, so `[.host id=sparkle]...[/]` reaches the same default registry entry
-as an explicit custom effect descriptor with id `sparkle`.
+deterministic `sparkle` glyph effect for samples and smoke captures. The same
+registry entry also supports `phase=glyph_color`, where it tints glyphs instead
+of moving them, while still reporting unknown custom IDs through diagnostics.
+Surface `.host` selectors use their `id`, `effect`, or `name` metadata as the
+registry id before native dispatch, so `[.host id=sparkle]...[/]` reaches the
+same default registry entry as an explicit custom effect descriptor with id
+`sparkle`.
 For `before_layout` and `layout_transform` builtin placement effects,
 `arcweft-text-layout` reserves the deterministic displacement envelope in
 horizontal advances, vertical column planning, glyph bounds, and ruby base

@@ -239,6 +239,8 @@ pub struct NativeGlyphPlacement {
     pub scale_x: f32,
     pub scale_y: f32,
     pub opacity: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 4]>,
 }
 
 /// Host-resolved shader/filter reference for one native page.
@@ -1428,6 +1430,7 @@ fn native_glyph_placements_from_layout(
                 scale_x: 1.0,
                 scale_y: 1.0,
                 opacity: 1.0,
+                color: None,
             };
             *glyph_index += 1;
             let run = runs
@@ -1664,6 +1667,7 @@ fn native_glyph_placements_for_layout_with_effects(
                 scale_x: 1.0,
                 scale_y: 1.0,
                 opacity: 1.0,
+                color: None,
             };
             if let Some(effects) = effects.as_deref_mut() {
                 apply_presentation_effects_to_placement_with_execution(
@@ -1855,6 +1859,7 @@ fn transformed_presentation_rect(
         scale_x: 1.0,
         scale_y: 1.0,
         opacity: 1.0,
+        color: None,
     };
     if let Some(effects) = effects {
         apply_presentation_effects_to_placement_with_execution(
@@ -2341,6 +2346,13 @@ fn native_sparkle_effect(ctx: &mut TextEffectGlyphContext<'_>) {
     let shimmer = (phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
     let drift = (phase * 0.73 + noise[1] * std::f32::consts::TAU).cos();
 
+    if ctx.effect.phase == RichTextEffectPhase::GlyphColor {
+        let blue = rounded_u8(190.0 + shimmer * 65.0);
+        let green = rounded_u8(150.0 + shimmer * 80.0);
+        ctx.placement.color = Some([255, green, blue, 255]);
+        return;
+    }
+
     ctx.placement.x += drift * amplitude * 0.18;
     ctx.placement.y -= shimmer * amplitude * 0.35;
     ctx.placement.scale_x *= 1.0 + shimmer * 0.035;
@@ -2382,6 +2394,7 @@ const fn effect_applies_to_renderer_glyph(effect: &RichTextEffectDescriptor) -> 
         RichTextEffectPhase::BeforeLayout
             | RichTextEffectPhase::LayoutTransform
             | RichTextEffectPhase::GlyphTransform
+            | RichTextEffectPhase::GlyphColor
             | RichTextEffectPhase::GlyphMask
     )
 }
@@ -4546,6 +4559,7 @@ fn apply_ruby_transforms_to_glyph_area_inner(
             scale_x: 1.0,
             scale_y: 1.0,
             opacity: 1.0,
+            color: None,
         };
         if let Some(effects) = effects.as_deref_mut() {
             apply_presentation_effects_to_placement_with_execution(
@@ -4573,6 +4587,7 @@ fn apply_ruby_transforms_to_glyph_area_inner(
             instance.transform =
                 GlyphTransform::Affine(Affine2::new(compose_affine(affine, current)));
         }
+        apply_placement_color_override(instance, &placement);
     }
 }
 
@@ -5246,7 +5261,20 @@ fn apply_text_transform_placements_to_glyph_area(
             instance.transform =
                 GlyphTransform::Affine(Affine2::new(compose_affine(affine, current)));
         }
+        apply_placement_color_override(instance, placement);
     }
+}
+
+fn apply_placement_color_override(instance: &mut GlyphInstance, placement: &NativeGlyphPlacement) {
+    let Some([red, green, blue, alpha]) = placement.color else {
+        return;
+    };
+    instance.color = Some(Color::rgba(
+        red,
+        green,
+        blue,
+        scale_alpha_by_opacity(alpha, placement.opacity),
+    ));
 }
 
 fn glyph_presentation_affine(
@@ -5457,6 +5485,16 @@ fn presentation_alpha_for_visibility_time(
 fn scaled_alpha(base: u8, factor: u8) -> u8 {
     let scaled = u16::from(base) * u16::from(factor);
     u8::try_from((scaled + 127) / 255).unwrap_or(u8::MAX)
+}
+
+fn scale_alpha_by_opacity(alpha: u8, opacity: f32) -> u8 {
+    let factor = rounded_u8(opacity.clamp(0.0, 1.0) * 255.0);
+    scaled_alpha(alpha, factor)
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn rounded_u8(value: f32) -> u8 {
+    value.round().clamp(0.0, 255.0) as u8
 }
 
 fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
@@ -6471,6 +6509,7 @@ mod tests {
             scale_x: 1.0,
             scale_y: 1.0,
             opacity: 1.0,
+            color: None,
         }
     }
 
@@ -8592,6 +8631,33 @@ mod tests {
     }
 
     #[test]
+    fn native_capture_uses_custom_effect_registry_for_glyph_color() {
+        let frame =
+            custom_effect_test_frame_with_phase(".scarlet", RichTextEffectPhase::GlyphColor);
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        session
+            .effect_registry_mut()
+            .insert_lambda(".scarlet", |ctx| {
+                ctx.placement.color = Some([255, 32, 16, 255]);
+            });
+
+        let capture = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("glyph color capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(capture.content_pixels > 0);
+        assert!(
+            capture.rgba.chunks_exact(4).any(|pixel| {
+                pixel[0] > pixel[1].saturating_add(80)
+                    && pixel[0] > pixel[2].saturating_add(80)
+                    && pixel[3] > 0
+            }),
+            "registered glyph_color custom effect should tint submitted glyph pixels"
+        );
+    }
+
+    #[test]
     fn measure_frame_elements_uses_custom_effect_registry_for_glyph_bounds() {
         let frame = custom_effect_test_frame(".nudge");
         let baseline =
@@ -8670,9 +8736,28 @@ mod tests {
         custom_effect_test_frame_with_params(id, BTreeMap::new())
     }
 
+    fn custom_effect_test_frame_with_phase(
+        id: &str,
+        phase: RichTextEffectPhase,
+    ) -> LineDisplayFrame {
+        custom_effect_test_frame_with_params_and_phase(id, BTreeMap::new(), phase)
+    }
+
     fn custom_effect_test_frame_with_params(
         id: &str,
         params: BTreeMap<String, RichTextParam>,
+    ) -> LineDisplayFrame {
+        custom_effect_test_frame_with_params_and_phase(
+            id,
+            params,
+            RichTextEffectPhase::GlyphTransform,
+        )
+    }
+
+    fn custom_effect_test_frame_with_params_and_phase(
+        id: &str,
+        params: BTreeMap<String, RichTextParam>,
+        phase: RichTextEffectPhase,
     ) -> LineDisplayFrame {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.test.custom.effect".to_owned()),
@@ -8693,7 +8778,7 @@ mod tests {
                             id: id.to_owned(),
                             params,
                             target: RichTextEffectTarget::Run,
-                            phase: RichTextEffectPhase::GlyphTransform,
+                            phase,
                             state_scope: RichTextStateScope::Glyph,
                         },
                     },
