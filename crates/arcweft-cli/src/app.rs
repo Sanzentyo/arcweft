@@ -1703,6 +1703,11 @@ struct AgentMcpState {
     native_capture_session: Option<arcweft_player_native::native::NativeOffscreenCaptureSession>,
 }
 
+struct AgentObservationState {
+    report: AgentObservationReport,
+    native_session: arcweft_player_native::native::NativeOffscreenCaptureSession,
+}
+
 #[derive(serde::Deserialize)]
 struct AgentMcpJsonRpcRequest {
     #[serde(default)]
@@ -1759,19 +1764,32 @@ fn agent_mcp_resource_list(state: &AgentMcpState) -> Result<serde_json::Value, S
 
 fn agent_mcp_resource_read(
     params: &serde_json::Value,
-    state: &AgentMcpState,
+    state: &mut AgentMcpState,
 ) -> Result<serde_json::Value, String> {
     let uri = params
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "resources/read requires params.uri".to_owned())?;
-    let Some(report) = &state.report else {
+    let Some(report) = state.report.clone() else {
         return Err("resources/read requires a prior arcweft.observe call".to_owned());
     };
-    let resource = agent_mcp_cached_capture_resource(state, uri)
-        .or_else(|| agent_observe_cached_image_resource(report, state.image_output.as_ref(), uri))
-        .map_or_else(|| agent_observe_resource_by_uri(report, uri), Ok)
-        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+    let image_output = state.image_output.clone();
+    let resource = if let Some(resource) = agent_mcp_cached_capture_resource(state, uri)
+        .or_else(|| agent_observe_cached_image_resource(&report, image_output.as_ref(), uri))
+    {
+        resource
+    } else {
+        let native_session = agent_mcp_native_capture_session(state)
+            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+        agent_observe_resource_by_uri_with_page_and_time_and_session(
+            &report,
+            uri,
+            None,
+            agent_report_capture_time_seconds(&report),
+            Some(native_session),
+        )
+        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
+    };
     let read = read_resource_result(&resource)
         .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
     serde_json::to_value(read).map_err(|error| format!("failed to serialize MCP read: {error}"))
@@ -1821,10 +1839,11 @@ fn agent_mcp_call_observe(
     state: &mut AgentMcpState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<serde_json::Value, String> {
-    let (report, image_output, resources) =
+    let (report, image_output, resources, native_session) =
         agent_mcp_run_observation(arguments, adapter_registrars)?;
     state.report = Some(report);
     state.image_output = image_output;
+    state.native_capture_session = Some(native_session);
     state.capture_resources.clear();
     let tool = tool_result_for_resources(&resources);
     serde_json::to_value(tool)
@@ -1891,9 +1910,11 @@ fn agent_mcp_call_hit_test(
     let y = agent_mcp_u32_argument(arguments, "y", "arcweft.hit_test")?
         .ok_or_else(|| "arcweft.hit_test requires arguments.y".to_owned())?;
     if agent_mcp_arguments_request_observe(arguments) {
-        let (report, image_output, _) = agent_mcp_run_observation(arguments, adapter_registrars)?;
+        let (report, image_output, _, native_session) =
+            agent_mcp_run_observation(arguments, adapter_registrars)?;
         state.report = Some(report);
         state.image_output = image_output;
+        state.native_capture_session = Some(native_session);
         state.capture_resources.clear();
     }
     let Some(report) = &state.report else {
@@ -1923,6 +1944,7 @@ fn agent_mcp_run_observation(
         AgentObservationReport,
         Option<AgentImageOutput>,
         Vec<AgentResource>,
+        arcweft_player_native::native::NativeOffscreenCaptureSession,
     ),
     String,
 > {
@@ -1947,6 +1969,8 @@ fn agent_mcp_run_observation(
     let runtime_options = runtime_plan_options_for_selection(&selection);
     let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
         .map_err(|_| "failed to lower runtime plan".to_owned())?;
+    let mut native_session = agent_native_capture_session_for_hir(&checked.hir)
+        .map_err(|_| "failed to create native capture session".to_owned())?;
     let mut plan = lowered.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
@@ -1962,30 +1986,44 @@ fn agent_mcp_run_observation(
         },
         &options,
         selection.path(),
+        Some(&mut native_session),
     )
     .map_err(|error| error.to_string())?;
-    let image_output = agent_observe_image_output(&mut report, &options)
+    let image_output = agent_observe_image_output(&mut report, &options, Some(&mut native_session))
         .map_err(|_| "failed to build MCP observe image output".to_owned())?;
     let resources = agent_observe_list_resources(&report, image_output.as_ref())
         .map_err(|_| "failed to build MCP observe resources".to_owned())?;
-    Ok((report, image_output, resources))
+    Ok((report, image_output, resources, native_session))
 }
 
 fn agent_mcp_call_resource_read(
     arguments: &serde_json::Value,
-    state: &AgentMcpState,
+    state: &mut AgentMcpState,
 ) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
     let uri = arguments
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
-    let Some(report) = &state.report else {
+    let Some(report) = state.report.clone() else {
         return Err("arcweft.resource.read requires a prior arcweft.observe call".to_owned());
     };
-    let resource = agent_mcp_cached_capture_resource(state, uri)
-        .or_else(|| agent_observe_cached_image_resource(report, state.image_output.as_ref(), uri))
-        .map_or_else(|| agent_observe_resource_by_uri(report, uri), Ok)
-        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+    let image_output = state.image_output.clone();
+    let resource = if let Some(resource) = agent_mcp_cached_capture_resource(state, uri)
+        .or_else(|| agent_observe_cached_image_resource(&report, image_output.as_ref(), uri))
+    {
+        resource
+    } else {
+        let native_session = agent_mcp_native_capture_session(state)
+            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
+        agent_observe_resource_by_uri_with_page_and_time_and_session(
+            &report,
+            uri,
+            None,
+            agent_report_capture_time_seconds(&report),
+            Some(native_session),
+        )
+        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
+    };
     tool_result_for_resource(&resource)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
 }
@@ -2034,12 +2072,13 @@ fn agent_mcp_call_capture(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
     if arguments.get("source").is_some() || arguments.get("profile").is_some() {
-        let (report, image_output, _) = agent_mcp_run_observation(
+        let (report, image_output, _, native_session) = agent_mcp_run_observation(
             &agent_mcp_capture_observe_arguments(arguments),
             adapter_registrars,
         )?;
         state.report = Some(report);
         state.image_output = image_output;
+        state.native_capture_session = Some(native_session);
         state.capture_resources.clear();
     }
     let Some(report) = state.report.clone() else {
@@ -2084,6 +2123,25 @@ fn agent_mcp_native_capture_session(
         .native_capture_session
         .as_mut()
         .expect("native capture session initialized above"))
+}
+
+fn agent_native_capture_session_for_hir(
+    hir: &arcweft_lang_hir::model::HirModule,
+) -> Result<arcweft_player_native::native::NativeOffscreenCaptureSession, ExitCode> {
+    let mut native_session = arcweft_player_native::native::NativeOffscreenCaptureSession::new()
+        .map_err(|error| {
+            eprintln!("error: native capture failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    arcweft_player_native::native::register_arcweft_pure_text_motions(
+        native_session.motion_registry_mut(),
+        hir,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to register Arcweft text motion functions: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(native_session)
 }
 
 fn agent_mcp_capture_observe_arguments(arguments: &serde_json::Value) -> serde_json::Value {
@@ -2399,21 +2457,27 @@ fn agent_observe_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     validate_agent_observe_options(options)?;
-    let mut report = agent_observation_report_for_options(options, adapter_registrars)?;
-    let image_output = agent_observe_image_output(&mut report, options)?;
+    let mut observed = agent_observation_for_options(options, adapter_registrars)?;
+    let image_output = agent_observe_image_output(
+        &mut observed.report,
+        options,
+        Some(&mut observed.native_session),
+    )?;
     if let Some(uri) = &options.read_uri {
-        let resource = agent_observe_cached_image_resource(&report, image_output.as_ref(), uri)
-            .map_or_else(
-                || {
-                    agent_observe_resource_by_uri_with_page_and_time(
-                        &report,
-                        uri,
-                        options.page,
-                        agent_observe_capture_time_seconds(options),
-                    )
-                },
-                Ok,
-            )?;
+        let resource =
+            agent_observe_cached_image_resource(&observed.report, image_output.as_ref(), uri)
+                .map_or_else(
+                    || {
+                        agent_observe_resource_by_uri_with_page_and_time_and_session(
+                            &observed.report,
+                            uri,
+                            options.page,
+                            agent_observe_capture_time_seconds(options),
+                            Some(&mut observed.native_session),
+                        )
+                    },
+                    Ok,
+                )?;
         if options.mcp {
             let resource = agent_observe_mcp_resource_output(
                 AgentObserveResourceOutput::One(Box::new(resource)),
@@ -2434,7 +2498,7 @@ fn agent_observe_command(
         })?;
     }
     if let Some(resource) = options.resource {
-        let resource = agent_observe_resource(&report, image_output.as_ref(), resource)?;
+        let resource = agent_observe_resource(&observed.report, image_output.as_ref(), resource)?;
         if options.mcp {
             let resource = agent_observe_mcp_resource_output(resource, options.mcp_format)?;
             print_json(&resource)
@@ -2442,14 +2506,14 @@ fn agent_observe_command(
             print_json(&resource)
         }
     } else if options.json {
-        print_json(&report)
+        print_json(&observed.report)
     } else {
         println!(
             "ok: {} ({} object(s), {} diagnostic(s), render_hash={})",
-            report.source,
-            report.objects.len(),
-            report.diagnostics.len(),
-            report.render_hash
+            observed.report.source,
+            observed.report.objects.len(),
+            observed.report.diagnostics.len(),
+            observed.report.render_hash
         );
         Ok(())
     }
@@ -2459,6 +2523,13 @@ fn agent_observation_report_for_options(
     options: &AgentObserveOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentObservationReport, ExitCode> {
+    agent_observation_for_options(options, adapter_registrars).map(|observed| observed.report)
+}
+
+fn agent_observation_for_options(
+    options: &AgentObserveOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentObservationState, ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let pure_config = runtime_pure_config_for_selection(
         &selection,
@@ -2470,6 +2541,7 @@ fn agent_observation_report_for_options(
         options.math_wgpu_min_elements,
     )?;
     let checked = load_and_check_selection(&selection, None)?;
+    let mut native_session = agent_native_capture_session_for_hir(&checked.hir)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
     let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
@@ -2483,7 +2555,7 @@ fn agent_observation_report_for_options(
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    run_agent_observation(
+    let report = run_agent_observation(
         &mut executor,
         &lowered.line_display_catalog,
         NativeRunHost {
@@ -2493,10 +2565,15 @@ fn agent_observation_report_for_options(
         },
         options,
         selection.path(),
+        Some(&mut native_session),
     )
     .map_err(|error| {
         eprintln!("error: {error}");
         ExitCode::FAILURE
+    })?;
+    Ok(AgentObservationState {
+        report,
+        native_session,
     })
 }
 
@@ -2811,6 +2888,22 @@ fn agent_observe_resource_by_uri_with_page_and_time(
     page_override: Option<usize>,
     capture_time_seconds: f32,
 ) -> Result<AgentResource, ExitCode> {
+    agent_observe_resource_by_uri_with_page_and_time_and_session(
+        report,
+        uri,
+        page_override,
+        capture_time_seconds,
+        None,
+    )
+}
+
+fn agent_observe_resource_by_uri_with_page_and_time_and_session(
+    report: &AgentObservationReport,
+    uri: &str,
+    page_override: Option<usize>,
+    capture_time_seconds: f32,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+) -> Result<AgentResource, ExitCode> {
     if uri
         == format!(
             "arcweft://session/{}/observation/latest.json",
@@ -2875,7 +2968,12 @@ fn agent_observe_resource_by_uri_with_page_and_time(
         capture_time_seconds,
         ..request
     };
-    agent_observe_capture_resource(report, &request)
+    match native_session {
+        Some(native_session) => {
+            agent_native_capture_resource_with_session(report, &request, native_session)
+        }
+        None => agent_observe_capture_resource(report, &request),
+    }
 }
 
 fn agent_presentation_tree_resource_from_uri(
@@ -3299,6 +3397,7 @@ fn agent_native_scoped_capture(
     capture_kind: AgentObserveCaptureKind,
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentRasterCapture, ExitCode> {
+    let mut native_session = native_session;
     let full = AgentRasterCapture {
         width: capture.width,
         height: capture.height,
@@ -3315,6 +3414,7 @@ fn agent_native_scoped_capture(
         context,
         scope,
         selected,
+        native_session.as_deref_mut(),
     )?;
     if capture_kind == AgentObserveCaptureKind::Color {
         let AgentCaptureScope::Viewport = scope else {
@@ -3323,13 +3423,21 @@ fn agent_native_scoped_capture(
                     .iter()
                     .any(|target| !target.role().starts_with("rich_text_"))
             {
-                let (x, y, width, height) =
-                    agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+                let (x, y, width, height) = agent_native_scope_rect(
+                    capture.width,
+                    capture.height,
+                    context,
+                    &selected,
+                    native_session.as_deref_mut(),
+                )?;
                 return Ok(agent_crop_raster_capture(&full, x, y, width, height));
             }
-            if let Some(isolated) =
-                agent_native_color_capture(capture, context, &selected, native_session)?
-            {
+            if let Some(isolated) = agent_native_color_capture(
+                capture,
+                context,
+                &selected,
+                native_session.as_deref_mut(),
+            )? {
                 let mut rgba = isolated.rgba;
                 make_nontransparent_pixels_opaque(&mut rgba);
                 let full = AgentRasterCapture {
@@ -3341,17 +3449,32 @@ fn agent_native_scoped_capture(
                     rgba,
                     diagnostics: isolated.diagnostics,
                 };
-                let (x, y, width, height) =
-                    agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+                let (x, y, width, height) = agent_native_scope_rect(
+                    capture.width,
+                    capture.height,
+                    context,
+                    &selected,
+                    native_session.as_deref_mut(),
+                )?;
                 return Ok(agent_crop_raster_capture(&full, x, y, width, height));
             }
-            return agent_native_masked_framebuffer_capture(capture, context, &selected);
+            return agent_native_masked_framebuffer_capture(
+                capture,
+                context,
+                &selected,
+                native_session.as_deref_mut(),
+            );
         };
         return Ok(full);
     }
 
-    let debug =
-        agent_native_debug_capture(capture, context, &selected, capture_kind, native_session)?;
+    let debug = agent_native_debug_capture(
+        capture,
+        context,
+        &selected,
+        capture_kind,
+        native_session.as_deref_mut(),
+    )?;
     let full = AgentRasterCapture {
         width: debug.capture.width,
         height: debug.capture.height,
@@ -3362,8 +3485,13 @@ fn agent_native_scoped_capture(
         diagnostics: debug.capture.diagnostics,
     };
     if !matches!(scope, AgentCaptureScope::Viewport) {
-        let (x, y, width, height) =
-            agent_native_scope_rect(capture.width, capture.height, context, &selected)?;
+        let (x, y, width, height) = agent_native_scope_rect(
+            capture.width,
+            capture.height,
+            context,
+            &selected,
+            native_session.as_deref_mut(),
+        )?;
         return Ok(agent_crop_raster_capture(&full, x, y, width, height));
     }
     Ok(full)
@@ -3417,10 +3545,12 @@ fn agent_native_capture_targets_for_page<'a>(
     context: AgentNativeCaptureContext<'a>,
     scope: &AgentCaptureScope,
     selected: Vec<AgentNativeCaptureTarget<'a>>,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Vec<AgentNativeCaptureTarget<'a>>, ExitCode> {
     if !matches!(scope, AgentCaptureScope::Layer(_)) {
         return Ok(selected);
     }
+    let mut native_session = native_session;
     selected
         .into_iter()
         .filter_map(|target| {
@@ -3432,6 +3562,7 @@ fn agent_native_capture_targets_for_page<'a>(
                 capture_height,
                 context,
                 object,
+                native_session.as_deref_mut(),
             ) {
                 Ok(true) => Some(Ok(target)),
                 Ok(false) => None,
@@ -3446,12 +3577,19 @@ fn agent_native_object_is_visible_on_page(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<bool, ExitCode> {
     if !object.role.starts_with("rich_text_") {
         return Ok(true);
     }
-    agent_native_rich_text_child_rect(capture_width, capture_height, context, object)
-        .map(|rect| rect.is_some())
+    agent_native_rich_text_child_rect(
+        capture_width,
+        capture_height,
+        context,
+        object,
+        native_session,
+    )
+    .map(|rect| rect.is_some())
 }
 
 struct AgentNativeDebugCapture {
@@ -3465,6 +3603,7 @@ fn agent_native_color_capture(
     selected: &[AgentNativeCaptureTarget<'_>],
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<arcweft_player_native::native::NativeFrameCapture>, ExitCode> {
+    let mut native_session = native_session;
     let mut regions = Vec::new();
     for target in selected {
         let object_regions = agent_native_regions_for_target(
@@ -3473,13 +3612,14 @@ fn agent_native_color_capture(
             context,
             target,
             [0, 0, 0, 0],
+            native_session.as_deref_mut(),
         )?;
         if object_regions.iter().any(|region| region.element.is_none()) {
             return Ok(None);
         }
         regions.extend(object_regions);
     }
-    let capture_result = if let Some(native_session) = native_session {
+    let capture_result = if let Some(native_session) = native_session.as_deref_mut() {
         native_session.capture_frame_color_regions_in(
             context.frame,
             arcweft_player_native::native::NativeCaptureViewport::new(
@@ -3516,6 +3656,7 @@ fn agent_native_debug_capture(
     capture_kind: AgentObserveCaptureKind,
     native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentNativeDebugCapture, ExitCode> {
+    let mut native_session = native_session;
     let mut regions = Vec::new();
     for target in selected {
         let color = match capture_kind {
@@ -3531,6 +3672,7 @@ fn agent_native_debug_capture(
             context,
             target,
             color,
+            native_session.as_deref_mut(),
         )?);
     }
     let composition = match capture_kind {
@@ -3540,7 +3682,7 @@ fn agent_native_debug_capture(
         AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
         AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
     };
-    let capture_result = if let Some(native_session) = native_session {
+    let capture_result = if let Some(native_session) = native_session.as_deref_mut() {
         native_session.capture_frame_debug_regions_in(
             context.frame,
             arcweft_player_native::native::NativeCaptureViewport::new(
@@ -3579,7 +3721,9 @@ fn agent_native_masked_framebuffer_capture(
     capture: &arcweft_player_native::native::NativeFrameCapture,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentRasterCapture, ExitCode> {
+    let mut native_session = native_session;
     let mut masked = AgentRasterCapture::new(
         capture.width,
         capture.height,
@@ -3588,12 +3732,22 @@ fn agent_native_masked_framebuffer_capture(
     );
     masked.diagnostics.clone_from(&capture.diagnostics);
     for target in selected {
-        let (x, y, width, height) =
-            agent_native_target_rect(capture.width, capture.height, context, target)?;
+        let (x, y, width, height) = agent_native_target_rect(
+            capture.width,
+            capture.height,
+            context,
+            target,
+            native_session.as_deref_mut(),
+        )?;
         agent_copy_native_framebuffer_rect(&mut masked, capture, x, y, width, height);
     }
-    let (x, y, width, height) =
-        agent_native_scope_rect(capture.width, capture.height, context, selected)?;
+    let (x, y, width, height) = agent_native_scope_rect(
+        capture.width,
+        capture.height,
+        context,
+        selected,
+        native_session.as_deref_mut(),
+    )?;
     Ok(agent_crop_raster_capture(&masked, x, y, width, height))
 }
 
@@ -3643,9 +3797,15 @@ fn agent_native_regions_for_target(
     context: AgentNativeCaptureContext<'_>,
     target: &AgentNativeCaptureTarget<'_>,
     color: [u8; 4],
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Vec<arcweft_player_native::native::NativeFrameDebugRegion>, ExitCode> {
-    let (x, y, width, height) =
-        agent_native_target_rect(capture_width, capture_height, context, target)?;
+    let (x, y, width, height) = agent_native_target_rect(
+        capture_width,
+        capture_height,
+        context,
+        target,
+        native_session,
+    )?;
     let fallback_bbox = arcweft_player_native::native::NativeFrameContentBBox {
         x,
         y,
@@ -3765,14 +3925,21 @@ fn agent_native_scope_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     selected: &[AgentNativeCaptureTarget<'_>],
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
+    let mut native_session = native_session;
     let mut min_x = capture_width;
     let mut min_y = capture_height;
     let mut max_x = 0_u32;
     let mut max_y = 0_u32;
     for target in selected {
-        let (x, y, width, height) =
-            agent_native_target_rect(capture_width, capture_height, context, target)?;
+        let (x, y, width, height) = agent_native_target_rect(
+            capture_width,
+            capture_height,
+            context,
+            target,
+            native_session.as_deref_mut(),
+        )?;
         min_x = min_x.min(x);
         min_y = min_y.min(y);
         max_x = max_x.max(x.saturating_add(width));
@@ -3796,11 +3963,16 @@ fn agent_native_target_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     target: &AgentNativeCaptureTarget<'_>,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     match target {
-        AgentNativeCaptureTarget::Observed(object) => {
-            agent_native_object_rect(capture_width, capture_height, context, object)
-        }
+        AgentNativeCaptureTarget::Observed(object) => agent_native_object_rect(
+            capture_width,
+            capture_height,
+            context,
+            object,
+            native_session,
+        ),
         AgentNativeCaptureTarget::RichTextElement {
             parent, element, ..
         } => agent_native_rich_text_element_rect(
@@ -3809,6 +3981,7 @@ fn agent_native_target_rect(
             context,
             parent,
             *element,
+            native_session,
         )?
         .ok_or_else(|| {
             eprintln!(
@@ -3825,13 +3998,25 @@ fn agent_native_object_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     if object.role == "textbox" {
-        return agent_native_textbox_rect(capture_width, capture_height, context, object);
+        return agent_native_textbox_rect(
+            capture_width,
+            capture_height,
+            context,
+            object,
+            native_session,
+        );
     }
     if object.role.starts_with("rich_text_")
-        && let Some(rect) =
-            agent_native_rich_text_child_rect(capture_width, capture_height, context, object)?
+        && let Some(rect) = agent_native_rich_text_child_rect(
+            capture_width,
+            capture_height,
+            context,
+            object,
+            native_session,
+        )?
     {
         return Ok(rect);
     }
@@ -3850,6 +4035,7 @@ fn agent_native_textbox_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     textbox: &AgentObservedObject,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
     let mut rect = agent_clamped_bbox_rect(
         capture_width,
@@ -3860,7 +4046,7 @@ fn agent_native_textbox_rect(
         textbox.bbox.height,
     );
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = match arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+    let bounds = match agent_measure_frame_elements_at_page_with_session(
         &textbox.rich_text,
         capture_width,
         capture_height,
@@ -3868,6 +4054,7 @@ fn agent_native_textbox_rect(
         top,
         context.page_index,
         context.capture_time_seconds,
+        native_session,
     ) {
         Ok(bounds) => bounds,
         Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => return Ok(rect),
@@ -3895,6 +4082,7 @@ fn agent_native_rich_text_child_rect(
     capture_height: u32,
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     if object.rich_text_ref.as_ref().is_some_and(|rich_text_ref| {
         matches!(
@@ -3917,7 +4105,14 @@ fn agent_native_rich_text_child_rect(
     let Some(textbox) = agent_native_textbox_for_rich_text_child(context.objects, object) else {
         return Ok(None);
     };
-    agent_native_rich_text_element_rect(capture_width, capture_height, context, textbox, element)
+    agent_native_rich_text_element_rect(
+        capture_width,
+        capture_height,
+        context,
+        textbox,
+        element,
+        native_session,
+    )
 }
 
 fn agent_native_rich_text_element_rect(
@@ -3926,9 +4121,10 @@ fn agent_native_rich_text_element_rect(
     context: AgentNativeCaptureContext<'_>,
     textbox: &AgentObservedObject,
     element: arcweft_player_native::native::NativeFrameElement,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+    let bounds = agent_measure_frame_elements_at_page_with_session(
         &textbox.rich_text,
         capture_width,
         capture_height,
@@ -3936,6 +4132,7 @@ fn agent_native_rich_text_element_rect(
         top,
         context.page_index,
         context.capture_time_seconds,
+        native_session,
     )
     .map_err(|error| {
         eprintln!("error: native text layout measurement failed: {error}");
@@ -4583,6 +4780,7 @@ fn run_agent_observation(
     host_config: NativeRunHost<'_>,
     options: &AgentObserveOptions,
     source_path: &Path,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentObservationReport, arcweft_host_adapter::HostAdapterError> {
     let viewport = AgentViewport {
         width: options.viewport_width,
@@ -4606,6 +4804,7 @@ fn run_agent_observation(
     let mut tick = 0usize;
     let effective_steps = agent_observe_effective_steps(options);
     let force_capture_step = options.capture_step.is_some();
+    let mut native_session = native_session;
     for step_index in 0..effective_steps {
         tick = step_index;
         let result = executor.step_with_root_bindings(
@@ -4637,6 +4836,7 @@ fn run_agent_observation(
                 event,
                 &viewport,
                 options,
+                native_session.as_deref_mut(),
             ) {
                 Ok(event_objects) => objects.extend(event_objects),
                 Err(diagnostic) => diagnostics.push(diagnostic),
@@ -4676,6 +4876,7 @@ fn agent_observed_objects_for_flow_event(
     event: &FlowEvent,
     viewport: &AgentViewport,
     options: &AgentObserveOptions,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Vec<AgentObservedObject>, AgentDiagnostic> {
     let capture_time_seconds = agent_observe_capture_time_seconds(options);
     let FlowEvent::DialogueLine { line, bindings } = event else {
@@ -4702,14 +4903,23 @@ fn agent_observed_objects_for_flow_event(
             message: error.to_string(),
         })?;
     let mut textbox = agent_textbox_object(step, textbox_index, frame, viewport, options);
-    if let Some(capture_bbox) =
-        agent_native_textbox_capture_bbox_for_page(&textbox, viewport, 0, capture_time_seconds)
-    {
+    let mut native_session = native_session;
+    if let Some(capture_bbox) = agent_native_textbox_capture_bbox_for_page(
+        &textbox,
+        viewport,
+        0,
+        capture_time_seconds,
+        native_session.as_deref_mut(),
+    ) {
         textbox.capture_refs =
             agent_object_capture_refs_for_page("cli", step, &textbox.id, &capture_bbox, 0);
     }
-    let native_bounds =
-        agent_native_rich_text_element_bboxes(&textbox, viewport, capture_time_seconds);
+    let native_bounds = agent_native_rich_text_element_bboxes(
+        &textbox,
+        viewport,
+        capture_time_seconds,
+        native_session.as_deref_mut(),
+    );
     let children = agent_rich_text_child_objects(
         step,
         textbox_index,
@@ -4717,6 +4927,7 @@ fn agent_observed_objects_for_flow_event(
         viewport,
         capture_time_seconds,
         &native_bounds,
+        native_session.as_deref_mut(),
     );
     let mut objects = Vec::with_capacity(1 + children.len());
     objects.push(textbox);
@@ -4909,6 +5120,7 @@ impl AgentRasterCapture {
 fn agent_observe_image_output(
     report: &mut AgentObservationReport,
     options: &AgentObserveOptions,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Result<Option<AgentImageOutput>, ExitCode> {
     let Some(image) = options.image else {
         return Ok(None);
@@ -4954,7 +5166,12 @@ fn agent_observe_image_output(
         }
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
-            let capture_result = agent_native_capture_image(report, &request)?;
+            let capture_result = match native_session {
+                Some(native_session) => {
+                    agent_native_capture_image_with_session(report, &request, native_session)?
+                }
+                None => agent_native_capture_image(report, &request)?,
+            };
             report
                 .diagnostics
                 .extend(capture_result.image.diagnostics.clone());
@@ -5250,8 +5467,10 @@ fn agent_rich_text_child_objects(
         arcweft_player_native::native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
     let mut children = Vec::new();
+    let mut native_session = native_session;
     children.extend(agent_rich_text_page_objects(
         step,
         index,
@@ -5259,6 +5478,7 @@ fn agent_rich_text_child_objects(
         viewport,
         time_seconds,
         native_bounds,
+        native_session.as_deref_mut(),
     ));
     children.extend(agent_rich_text_line_objects(
         step,
@@ -5267,6 +5487,7 @@ fn agent_rich_text_child_objects(
         viewport,
         time_seconds,
         native_bounds,
+        native_session.as_deref_mut(),
     ));
     for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
         if matches!(
@@ -5348,7 +5569,9 @@ fn agent_rich_text_page_objects(
         arcweft_player_native::native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
+    let mut native_session = native_session;
     agent_rich_text_page_ranges(&textbox.rich_text)
         .into_iter()
         .enumerate()
@@ -5365,6 +5588,7 @@ fn agent_rich_text_page_objects(
                 viewport,
                 page_index,
                 time_seconds,
+                native_session.as_deref_mut(),
             )?;
             let range = RichTextRange::new(page_range.start, page_range.end);
             let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
@@ -5420,7 +5644,9 @@ fn agent_rich_text_line_objects(
         arcweft_player_native::native::NativeFrameElement,
         AgentNativeRichTextElementBounds,
     >,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Vec<AgentObservedObject> {
+    let mut native_session = native_session;
     agent_rich_text_line_ranges(&textbox.rich_text)
         .into_iter()
         .enumerate()
@@ -5440,6 +5666,7 @@ fn agent_rich_text_line_objects(
                 page,
                 range,
                 time_seconds,
+                native_session.as_deref_mut(),
             )?;
             let presentation = agent_rich_text_range_presentation(&textbox.rich_text, range);
             let mut hit_regions =
@@ -5485,15 +5712,50 @@ fn agent_rich_text_line_objects(
         .collect()
 }
 
+fn agent_measure_frame_elements_at_page_with_session(
+    frame: &LineDisplayFrame,
+    width: u32,
+    height: u32,
+    left: f32,
+    top: f32,
+    page_index: usize,
+    time_seconds: f32,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
+) -> Result<
+    Vec<arcweft_player_native::native::NativeFrameElementBounds>,
+    arcweft_player_native::native::NativeWindowError,
+> {
+    if let Some(native_session) = native_session {
+        return native_session.measure_frame_elements_in(
+            frame,
+            arcweft_player_native::native::NativeCaptureViewport::new(
+                width, height, left, top, page_index,
+            )
+            .with_time_seconds(time_seconds),
+        );
+    }
+    arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+        frame,
+        width,
+        height,
+        left,
+        top,
+        page_index,
+        time_seconds,
+    )
+}
+
 fn agent_native_rich_text_element_bboxes(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
     time_seconds: f32,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> BTreeMap<arcweft_player_native::native::NativeFrameElement, AgentNativeRichTextElementBounds> {
     let (left, top) = agent_native_text_origin(textbox);
     let mut bboxes = BTreeMap::new();
+    let mut native_session = native_session;
     for page_index in 0.. {
-        let bounds = match arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+        let bounds = match agent_measure_frame_elements_at_page_with_session(
             &textbox.rich_text,
             viewport.width,
             viewport.height,
@@ -5501,6 +5763,7 @@ fn agent_native_rich_text_element_bboxes(
             top,
             page_index,
             time_seconds,
+            native_session.as_deref_mut(),
         ) {
             Ok(bounds) => bounds,
             Err(arcweft_player_native::native::NativeWindowError::EmptyPages) => break,
@@ -5524,9 +5787,10 @@ fn agent_native_textbox_capture_bbox_for_page(
     viewport: &AgentViewport,
     page_index: usize,
     time_seconds: f32,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
-    let Ok(bounds) = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+    let Ok(bounds) = agent_measure_frame_elements_at_page_with_session(
         &textbox.rich_text,
         viewport.width,
         viewport.height,
@@ -5534,6 +5798,7 @@ fn agent_native_textbox_capture_bbox_for_page(
         top,
         page_index,
         time_seconds,
+        native_session,
     ) else {
         return None;
     };
@@ -5552,9 +5817,10 @@ fn agent_native_text_range_capture_bbox_for_page(
     page_index: usize,
     range: RichTextRange,
     time_seconds: f32,
+    native_session: Option<&mut arcweft_player_native::native::NativeOffscreenCaptureSession>,
 ) -> Option<AgentBBox> {
     let (left, top) = agent_native_text_origin(textbox);
-    let bounds = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+    let bounds = agent_measure_frame_elements_at_page_with_session(
         &textbox.rich_text,
         viewport.width,
         viewport.height,
@@ -5562,6 +5828,7 @@ fn agent_native_text_range_capture_bbox_for_page(
         top,
         page_index,
         time_seconds,
+        native_session,
     )
     .ok()?;
     bounds
@@ -11105,7 +11372,8 @@ mod tests {
             capture_time_seconds: 60.0,
         };
 
-        let capture = agent_native_masked_framebuffer_capture(&source, context, &selected).unwrap();
+        let capture =
+            agent_native_masked_framebuffer_capture(&source, context, &selected, None).unwrap();
 
         assert_eq!(capture.width, 6);
         assert_eq!(capture.height, 2);
