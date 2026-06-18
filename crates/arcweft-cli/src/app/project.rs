@@ -1,15 +1,29 @@
 use super::runtime::{
-    CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers, parse_runtime_pure_workers,
+    CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
+    parse_runtime_pure_workers, run_profile_phase,
 };
 use super::shared::is_arcw_path;
-use super::{
-    AdapterManifest, AdapterManifestFile, ArcweftRustManifest, Args, AssertUnwindSafe, ExitCode,
-    HostCallPolicy, LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend,
-    LoweredLineTaskGroup, NativeTaskBridge, Path, PathBuf, ResolvedLaunchProfile,
-    RuntimeMathBackend, RuntimePlanLowerOptions, RuntimeProfilePhase, RuntimePureAcceleratorConfig,
-    RuntimePureBackendMode, RuntimePureWorkerCount, SocketAddr, SyntaxLint, SyntaxLintSeverity,
-    TypeCheckEnv, TypeCheckReport, catch_unwind, fs, run_profile_phase, standard,
+use crate::output::RuntimeProfilePhase;
+use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_host_adapter::HostCallPolicy;
+use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
+use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity};
+use arcweft_launch::{
+    LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
+use arcweft_runtime_accelerator::{
+    RuntimePureAcceleratorConfig, RuntimePureBackendMode, RuntimePureWorkerCount,
+    math::RuntimeMathBackend,
+};
+use arcweft_runtime_host::NativeTaskBridge;
+use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
+use arcweft_rust_abi::ArcweftRustManifest;
+use clap::Args;
+use std::fs;
+use std::net::SocketAddr;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 #[derive(Args, Clone, Debug, Default)]
 pub(in crate::app) struct ProfileOptions {

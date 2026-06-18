@@ -4,8 +4,7 @@ use super::runtime::{
     CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
 };
 use super::{
-    AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    Args, ExitCode, NativeAdapterRegistrar, PathBuf, RuntimeBinding, ValueEnum,
+    AgentCommand, Args, ExitCode, NativeAdapterRegistrar, PathBuf, RuntimeBinding, ValueEnum,
 };
 
 #[cfg(feature = "native-capture")]
@@ -23,6 +22,9 @@ use super::{
     FlowFiberStatus, LineDisplayCatalog, NativeTaskBridge, Path, RuntimeStepInput,
     RuntimeStepResult, flow_status_label, fs, lower_runtime_plan_with_stats_and_options,
 };
+
+pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
+pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentObserveOptions {

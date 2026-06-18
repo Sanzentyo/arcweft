@@ -10,7 +10,7 @@ pub(in crate::app) mod verify;
 
 use self::agent::agent_command;
 use self::bundle::{bundle_command, run_bundle_command};
-use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, IdsCommand, JitCommand};
+use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, JitCommand};
 use self::jit::jit_command;
 use self::runtime::{
     NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, report_path,
@@ -37,7 +37,7 @@ use crate::output::{
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use crate::{server_adapter, toolchain_profile};
-use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
     BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileSpace,
@@ -74,13 +74,8 @@ use arcweft_lang_jit_cranelift::{
 };
 use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::{
-    expr::{CallArg, Expr, Literal, parse_expr},
-    lint::{SyntaxLint, SyntaxLintSeverity},
-};
-use arcweft_launch::{
-    LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
-};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, parse_expr};
+use arcweft_launch::LaunchKind;
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
@@ -94,16 +89,13 @@ use arcweft_runtime_host::{
     internal_scheduler_manifest, run_bundle_file_with_native_adapters, runtime_executor_stats,
 };
 use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerOptions, RuntimePlanLowerReport, RuntimePlanLowerStats,
-    lower_runtime_plan_with_options, lower_runtime_plan_with_stats_and_options,
+    RuntimePlanLowerReport, RuntimePlanLowerStats, lower_runtime_plan_with_options,
+    lower_runtime_plan_with_stats_and_options,
 };
-use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
 };
-use arcweft_rust_abi::ArcweftRustManifest;
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
-use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
     BackendKind, RuntimeTypeValidationStats, SmtBackend, VerificationMode, VerificationPolicy,
     VerificationReport, emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
@@ -118,9 +110,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
-
-const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
-const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
 
 /// Runs the Arcweft CLI with the standard native adapters.
 pub fn run<I, T>(args: I) -> ExitCode

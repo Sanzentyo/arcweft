@@ -1,8 +1,10 @@
+use super::commands::IdsCommand;
 use super::shared::{is_arcw_path, print_json};
-use super::{
-    Args, ExitCode, FormatOptions, IdsCommand, Path, PathBuf, ToolingEditReport, format_source, fs,
-    materialize_ids,
-};
+use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
+use clap::Args;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 #[derive(Args, Clone, Debug)]
 #[allow(clippy::struct_excessive_bools)]
