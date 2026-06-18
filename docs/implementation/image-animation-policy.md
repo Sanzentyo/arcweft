@@ -51,10 +51,13 @@ and native submission can consume one shared object model.
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
 used by native captures. This is intentionally not a debug raster fallback; it
-is the native renderer's image submission primitive that later UI/Agent paths
-will call. `capture_image_debug_quads_rgba` uses the same textured-quad path
-after recoloring non-transparent image pixels, giving object-id and mask capture
-the same alpha-shaped geometry as color image capture.
+is the native renderer's image submission primitive. `arcweft-render-native`
+also resolves `arcweft-ui` image display items through `UiImageSourceTable` into
+native quads, applying deterministic visual-time frame selection and
+fit/alignment rectangle calculation before GPU submission.
+`capture_image_debug_quads_rgba` uses the same textured-quad path after
+recoloring non-transparent image pixels, giving object-id and mask capture the
+same alpha-shaped geometry as color image capture.
 
 ## Presentation Rules
 
@@ -71,8 +74,8 @@ the same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Wire UI `DisplayItemKind::Image` through runtime-host/native renderer
-   submission using `UiImageSourceTable` and `capture_image_quads_rgba`.
+1. Wire runtime-host and Agent native observe to call the UI image display-list
+   bridge, rather than only using direct render-native unit submissions.
 2. Make Agent observation, hit-test, MCP image metadata, and CLI capture
    selection treat image objects the same way rich-text objects are treated.
 3. Add bundle/asset sidecar support so product-player `.awfb` execution can use

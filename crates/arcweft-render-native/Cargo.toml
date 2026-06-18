@@ -12,6 +12,7 @@ arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-glyphon = { path = "../arcweft-glyphon" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-text-layout = { path = "../arcweft-text-layout" }
+arcweft-ui = { path = "../arcweft-ui" }
 
 bytemuck.workspace = true
 glyphon.workspace = true
@@ -23,6 +24,9 @@ winit.workspace = true
 
 [lib]
 path = "src/lib.rs"
+
+[dev-dependencies]
+arcweft-image = { path = "../arcweft-image" }
 
 [lints]
 workspace = true

@@ -22,6 +22,10 @@ use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
     LayoutSize, TextLayoutConfig, layout_frame,
 };
+use arcweft_ui::{
+    DisplayItemKind, DisplayList, ImageAlignment, ImageFit, LayoutBox, UiImageSourceTable,
+    UiResolvedImageFrame,
+};
 use glyphon::{
     Affine2, Attrs, Buffer, Cache, Color, Family, FontSystem, GlyphInstance, GlyphTransform,
     Metrics, Point, Resolution, Shaping, Style, SwashCache, TextArea, TextAtlas, TextBounds,
@@ -2077,6 +2081,52 @@ pub fn capture_image_quads_rgba(
     height: u32,
 ) -> Result<NativeFrameCapture, NativeWindowError> {
     NativeOffscreenCaptureSession::new()?.capture_image_quads_rgba(quads, width, height)
+}
+
+/// Resolves UI image display items into native textured-quad submissions.
+///
+/// Frame selection is driven only by the supplied presentation visual time, so
+/// static and animated image capture remains deterministic and replayable.
+pub fn native_image_quads_from_display_list<'a>(
+    display: &DisplayList,
+    images: &'a UiImageSourceTable,
+    visual_time_millis: u64,
+) -> Result<Vec<NativeImageQuad<'a>>, NativeWindowError> {
+    display
+        .as_slice()
+        .iter()
+        .filter_map(|item| match item.kind() {
+            DisplayItemKind::Image(image) => Some(
+                images
+                    .resolve_frame(image, item.layout(), visual_time_millis)
+                    .map_err(|error| NativeWindowError::Image(error.to_string()))
+                    .and_then(native_image_quad_from_resolved_frame),
+            ),
+            DisplayItemKind::Text(_)
+            | DisplayItemKind::RichText(_)
+            | DisplayItemKind::Custom(_) => None,
+        })
+        .collect()
+}
+
+/// Converts one resolved UI image frame into the native renderer's quad shape.
+pub fn native_image_quad_from_resolved_frame(
+    resolved: UiResolvedImageFrame<'_>,
+) -> Result<NativeImageQuad<'_>, NativeWindowError> {
+    let frame = resolved.frame();
+    let dimensions = frame.dimensions();
+    Ok(NativeImageQuad {
+        width: dimensions.width(),
+        height: dimensions.height(),
+        rgba: frame.rgba(),
+        dst: native_image_rect_for_layout(
+            resolved.layout(),
+            resolved.fit(),
+            resolved.alignment(),
+            dimensions.width(),
+            dimensions.height(),
+        )?,
+    })
 }
 
 /// Renders recolored image quads into an offscreen native RGBA framebuffer.
@@ -6584,6 +6634,85 @@ fn upload_native_image_quad(
     texture
 }
 
+fn native_image_rect_for_layout(
+    layout: LayoutBox,
+    fit: ImageFit,
+    alignment: ImageAlignment,
+    image_width: u32,
+    image_height: u32,
+) -> Result<NativeImageRect, NativeWindowError> {
+    let origin = (
+        layout_milli_to_pixel(layout.origin.x.0),
+        layout_milli_to_pixel(layout.origin.y.0),
+    );
+    let outer = (
+        layout_milli_to_pixel(layout.size.width.0),
+        layout_milli_to_pixel(layout.size.height.0),
+    );
+    let intrinsic = (u32_to_f32(image_width), u32_to_f32(image_height));
+    if outer.0 <= 0.0 || outer.1 <= 0.0 {
+        return Err(NativeWindowError::Image(
+            "image layout dimensions must be positive".to_owned(),
+        ));
+    }
+    if intrinsic.0 <= 0.0 || intrinsic.1 <= 0.0 {
+        return Err(NativeWindowError::Image(
+            "image frame dimensions must be positive".to_owned(),
+        ));
+    }
+
+    let fitted = match fit {
+        ImageFit::Stretch => outer,
+        ImageFit::Intrinsic => intrinsic,
+        ImageFit::Contain => fit_preserving_aspect(outer, intrinsic, AspectFitMode::Contain),
+        ImageFit::Cover => fit_preserving_aspect(outer, intrinsic, AspectFitMode::Cover),
+    };
+    let offset = (
+        alignment_offset(outer.0, fitted.0, alignment.x_milli()),
+        alignment_offset(outer.1, fitted.1, alignment.y_milli()),
+    );
+
+    Ok(NativeImageRect {
+        x: origin.0 + offset.0,
+        y: origin.1 + offset.1,
+        width: fitted.0,
+        height: fitted.1,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AspectFitMode {
+    Contain,
+    Cover,
+}
+
+fn fit_preserving_aspect(
+    outer: (f32, f32),
+    intrinsic: (f32, f32),
+    mode: AspectFitMode,
+) -> (f32, f32) {
+    let scale = match mode {
+        AspectFitMode::Contain => (outer.0 / intrinsic.0).min(outer.1 / intrinsic.1),
+        AspectFitMode::Cover => (outer.0 / intrinsic.0).max(outer.1 / intrinsic.1),
+    };
+    (intrinsic.0 * scale, intrinsic.1 * scale)
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn layout_milli_to_pixel(value: i32) -> f32 {
+    value as f32 / 1_000.0
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn u32_to_f32(value: u32) -> f32 {
+    value as f32
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn alignment_offset(outer: f32, fitted: f32, alignment_milli: i32) -> f32 {
+    (outer - fitted) * (alignment_milli as f32 / 1_000.0)
+}
+
 fn validate_native_image_quad(quad: NativeImageQuad<'_>) -> Result<(), NativeWindowError> {
     if quad.width == 0 || quad.height == 0 {
         return Err(NativeWindowError::Image(
@@ -8036,9 +8165,17 @@ fn usize_to_f32_saturating(value: usize) -> f32 {
 mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
+    use arcweft_image::{
+        DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
+    };
     use arcweft_render_text::{
         LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextLayout, RichTextObjectProxy,
         RichTextTransform, RichTextVec2, RichTextWritingMode, RuntimeLineContext,
+    };
+    use arcweft_ui::{
+        FragmentKind, ImageId, LayoutLength as UiLayoutLength, LayoutPoint as UiLayoutPoint,
+        LayoutResults as UiLayoutResults, LayoutSize as UiLayoutSize, LayoutTree as UiLayoutTree,
+        NodeKey, StyleId, UiImageSource, UiImageSourceTable, ViewFragmentBuilder,
     };
 
     fn styled_ruby_test_frame() -> LineDisplayFrame {
@@ -8081,6 +8218,72 @@ mod tests {
             .expect("frame resolves");
         frame.nodes.clear();
         frame
+    }
+
+    fn two_frame_ui_image() -> DecodedImage {
+        let dimensions = ImageDimensions::new(2, 1).unwrap();
+        DecodedImage::new(
+            ImageFormat::Gif,
+            dimensions,
+            ImageRepetition::Infinite,
+            vec![
+                DecodedImageFrame::new(0, dimensions, 100, vec![255, 0, 0, 255, 0, 0, 255, 255])
+                    .unwrap(),
+                DecodedImageFrame::new(1, dimensions, 100, vec![0, 255, 0, 255, 255, 255, 0, 255])
+                    .unwrap(),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn native_image_quads_from_display_list_uses_ui_image_frame_and_fit() {
+        let mut images = UiImageSourceTable::default();
+        images
+            .insert_with_id(ImageId(7), UiImageSource::new(two_frame_ui_image()))
+            .unwrap();
+
+        let mut builder = ViewFragmentBuilder::default();
+        let image_node = builder
+            .push_node(
+                NodeKey(10),
+                FragmentKind::Image(ImageId(7)),
+                StyleId(0),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = builder.finish();
+        let tree = UiLayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = UiLayoutResults::new(&tree);
+        layouts
+            .set(
+                image_node,
+                LayoutBox::new(
+                    UiLayoutPoint::new(UiLayoutLength::px(10), UiLayoutLength::px(20)),
+                    UiLayoutSize::new(UiLayoutLength::px(100), UiLayoutLength::px(100)),
+                ),
+            )
+            .unwrap();
+        let display = DisplayList::from_fragment(&fragment, &layouts).unwrap();
+
+        let quads = native_image_quads_from_display_list(&display, &images, 150)
+            .expect("display image resolves to native quad");
+
+        assert_eq!(quads.len(), 1);
+        assert_eq!(quads[0].width, 2);
+        assert_eq!(quads[0].height, 1);
+        assert_eq!(quads[0].rgba, &[0, 255, 0, 255, 255, 255, 0, 255]);
+        assert_eq!(
+            quads[0].dst,
+            NativeImageRect {
+                x: 10.0,
+                y: 45.0,
+                width: 100.0,
+                height: 50.0,
+            }
+        );
     }
 
     #[test]
