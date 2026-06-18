@@ -7,6 +7,7 @@ pub mod hover;
 pub mod input;
 pub mod interaction;
 pub mod layer;
+pub mod replay;
 pub mod router;
 
 /// Named lifetime owner for presentation values.

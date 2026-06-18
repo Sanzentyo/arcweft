@@ -68,6 +68,11 @@ The unified UI design is adopted as the long-term boundary for future work:
   first hover boundary is also in `arcweft_presentation::hover`: hit records
   can carry stable root-to-leaf hover paths, and `HoverTransition` diffs those
   paths so unchanged common parents do not receive spurious leave/enter events.
+  Replay verification has an initial pure-data boundary in
+  `arcweft_presentation::replay`: `routing_hash` hashes LayerTree, HitTree, and
+  InteractionState routing inputs with a deterministic hasher, while
+  `route_fingerprint` combines that routing hash with the routed decision for
+  raw/routed replay comparisons.
 - A future `arcweft-ui` crate will own typed Component descriptors, retained
   fragments, generational Entity storage, reactivity, style, layout integration,
   and semantic UI nodes.
@@ -159,13 +164,14 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Extend the initial `InputRouter`, `HitTree`, focus/modal/capture state, and
-   hover path diff with gesture arena, replay hash, local-coordinate transform
-   handling, and Activity/TextBox semantic integration on top of the shared
-   presentation input and LayerTree boundaries. Later Component and Activity
-   work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
-   `LayerContent`, `HoverPath`, and `RouteDecision` instead of introducing
-   per-Activity routers, `ActivityViewport`, or `UiEvent` aliases.
+5. Extend the initial `InputRouter`, `HitTree`, focus/modal/capture state,
+   hover path diff, and replay fingerprinting with gesture arena,
+   local-coordinate transform handling, and Activity/TextBox semantic
+   integration on top of the shared presentation input and LayerTree
+   boundaries. Later Component and Activity work must use `ActionBatch`,
+   `HostEventBatch`, routed `InputEvent`, `LayerContent`, `HoverPath`,
+   `RoutingHash`, and `RouteDecision` instead of introducing per-Activity
+   routers, `ActivityViewport`, or `UiEvent` aliases.
 
 ## Invariants
 

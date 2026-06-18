@@ -11,6 +11,7 @@ use crate::layer::{
     LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
     LayerTreeError, LayerVisibility, RenderPhase,
 };
+use crate::replay::{route_fingerprint, routing_hash};
 use crate::router::{InputRouter, RouteDecision};
 
 #[test]
@@ -651,4 +652,130 @@ fn router_hover_path_uses_hit_record_path_and_respects_modal_block() {
         InputRouter::hover_path(PointerId(2), ViewportPoint::new(50.0, 50.0), &tree, &hits),
         None
     );
+}
+
+#[test]
+fn routing_hash_changes_when_layer_or_hit_routing_state_changes() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let target = interaction_target("activity.world");
+    let mut base_tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    base_tree
+        .insert(
+            LayerNode::new(
+                world.clone(),
+                LayerKind::Activity,
+                layer_order(RenderPhase::World, 0, 10),
+            )
+            .with_parent(root.clone())
+            .with_input_policy(LayerInputPolicy::HitTest),
+        )
+        .expect("world inserts");
+
+    let mut base_hits = HitTree::default();
+    base_hits.push(HitRecord::new(
+        world.clone(),
+        target.clone(),
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+    let base = routing_hash(&base_tree, &base_hits, &InteractionState::default());
+    assert_eq!(
+        base,
+        routing_hash(&base_tree, &base_hits, &InteractionState::default())
+    );
+
+    let mut moved_hits = HitTree::default();
+    moved_hits.push(HitRecord::new(
+        world.clone(),
+        target.clone(),
+        HitRect::new(1.0, 0.0, 100.0, 100.0),
+    ));
+    assert_ne!(
+        base,
+        routing_hash(&base_tree, &moved_hits, &InteractionState::default())
+    );
+
+    let mut modal_tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    modal_tree
+        .insert(
+            LayerNode::new(
+                world.clone(),
+                LayerKind::Activity,
+                layer_order(RenderPhase::World, 0, 10),
+            )
+            .with_parent(root)
+            .with_input_policy(LayerInputPolicy::Modal),
+        )
+        .expect("modal-like world inserts");
+    assert_ne!(
+        base,
+        routing_hash(&modal_tree, &base_hits, &InteractionState::default())
+    );
+}
+
+#[test]
+fn route_fingerprint_captures_routing_state_and_decision() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let target = interaction_target("activity.world");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            world.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("world inserts");
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        world,
+        target,
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+
+    let raw = RawInputEvent::new(
+        InputEpoch(70),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(10.0, 10.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let routed = InputRouter::route(&raw, &tree, &hits, &InteractionState::default());
+    let first = route_fingerprint(&tree, &hits, &InteractionState::default(), &routed);
+    let second = route_fingerprint(&tree, &hits, &InteractionState::default(), &routed);
+    assert_eq!(first, second);
+    assert_eq!(
+        first.routing_hash(),
+        routing_hash(&tree, &hits, &InteractionState::default())
+    );
+    assert_eq!(first.raw_epoch(), InputEpoch(70));
+
+    let miss = RawInputEvent::new(
+        InputEpoch(70),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(200.0, 200.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let missed = InputRouter::route(&miss, &tree, &hits, &InteractionState::default());
+    let missed_fingerprint = route_fingerprint(&tree, &hits, &InteractionState::default(), &missed);
+    assert_eq!(first.routing_hash(), missed_fingerprint.routing_hash());
+    assert_ne!(first.decision_hash(), missed_fingerprint.decision_hash());
 }
