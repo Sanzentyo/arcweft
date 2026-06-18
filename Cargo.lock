@@ -246,7 +246,6 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-host",
- "arcweft-runtime-plan",
  "arcweft-runtime-scheduler",
  "arcweft-rust-abi",
  "arcweft-test",

@@ -18,7 +18,12 @@ use arcweft_runtime_plan::flow::{
     lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
     lower_runtime_plan_with_stats_and_options,
 };
-use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
+pub use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
+use arcweft_runtime_plan::line_task::lower_line_task_groups;
+use arcweft_runtime_plan::pure::lower_pure_helper_candidates;
+pub use arcweft_runtime_plan::pure::{
+    PureHelperCandidate, PureHelperCandidateReport, PureHelperLowerError,
+};
 use thiserror::Error;
 
 /// Source compilation result shared by developer tooling and player hosts.
@@ -147,6 +152,13 @@ pub fn lower_source_runtime_plan_with_stats_and_options(
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     lower_runtime_plan_with_stats_and_options(hir, options)
+}
+
+/// Lowers pure helper candidates from checked HIR.
+pub fn lower_source_pure_helper_candidates(
+    hir: &HirModule,
+) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
+    lower_pure_helper_candidates(hir)
 }
 
 /// Compiles an Arcweft source string with the standard type-checking environment.

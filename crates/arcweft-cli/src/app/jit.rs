@@ -6,6 +6,7 @@ use crate::output::{
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
     ScriptBenchPureHelperTimingSummary, TypeCheckProfileStats,
 };
+use arcweft_compiler::{PureHelperCandidate, lower_source_pure_helper_candidates};
 use arcweft_core::{
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
@@ -26,7 +27,6 @@ use arcweft_lang_jit_cranelift::{
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_runtime_host::{HostSystemInfo, host_system_info};
-use arcweft_runtime_plan::pure::{PureHelperCandidate, lower_pure_helper_candidates};
 use clap::{Args, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -1065,7 +1065,7 @@ fn jit_check_source_target(
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
     let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
-    let pure_report = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
+    let pure_report = lower_source_pure_helper_candidates(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
         }

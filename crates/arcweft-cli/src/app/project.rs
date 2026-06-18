@@ -5,6 +5,7 @@ use super::runtime::{
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_compiler::{LoweredLineTaskGroup, RuntimePlanLowerOptions};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_launch::{
@@ -15,7 +16,6 @@ use arcweft_runtime_accelerator::{
     math::RuntimeMathBackend,
 };
 use arcweft_runtime_host::NativeTaskBridge;
-use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
 use clap::Args;
 use std::fs;

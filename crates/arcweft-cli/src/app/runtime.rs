@@ -23,7 +23,8 @@ use crate::output::{
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use arcweft_bundle::BundleRuntimeSummary;
 use arcweft_compiler::{
-    RuntimePlanLowerReport, RuntimePlanLowerStats, lower_source_runtime_plan_with_options,
+    PureHelperCandidate, PureHelperLowerError, RuntimePlanLowerReport, RuntimePlanLowerStats,
+    lower_source_pure_helper_candidates, lower_source_runtime_plan_with_options,
     lower_source_runtime_plan_with_stats_and_options,
 };
 use arcweft_core::aot::{AotProgram, AotProgramStats};
@@ -59,9 +60,6 @@ use arcweft_runtime_host::{
     NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
     NativeTaskStats, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, host_system_info,
     runtime_executor_stats,
-};
-use arcweft_runtime_plan::pure::{
-    PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
 };
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
@@ -2293,7 +2291,8 @@ fn script_bench_selection(
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let manifest = collect_script_tests(&compiled.hir);
-    let pure_helpers = lower_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
+    let pure_helpers =
+        lower_source_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
     let runtime = BenchRuntimeContext {
         pure_config,
         host_policy: &host_policy,
