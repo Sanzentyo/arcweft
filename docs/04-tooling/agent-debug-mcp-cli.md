@@ -237,17 +237,21 @@ host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges
 for text/interpolation/ruby/control output, and a semantic `advance_text` action.
-Visible rich-text text runs, ruby annotations, and glyph clusters are also
+Visible rich-text pages, text runs, ruby annotations, and glyph clusters are also
 exposed as `dialogue.rich_text` child objects with their own bbox,
 `capture_refs`, and a structured `rich_text_ref` pointing back to the parent
 display-map element, so an Agent can request a crop such as
 `arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png` when a
-specific inline element needs visual inspection. For child objects on later
+specific inline element needs visual inspection. Page child objects use
+`rich_text_ref.kind = text_page`, expose the page text range, and carry
+page-aware color/object-id/mask capture refs, so a whole rendered text page can
+be inspected as directly as a sprite or model object. For child objects on later
 rendered pages, `rich_text_ref.page` records the page and capture refs include a
 matching `?page=N` query plus `capture_refs[].page` metadata. Child object
-bboxes come from the native text layout metrics used by native image capture,
-so image crop origins and observed child bboxes describe the same glyph, ruby,
-and cluster geometry. Glyph-cluster refs also report renderer-facing
+bboxes come from the native text layout metrics used by native image capture
+where an object maps to concrete glyph/ruby elements, so image crop origins and
+observed child bboxes describe the same glyph, ruby, and cluster geometry.
+Glyph-cluster refs also report renderer-facing
 `orientation` and `vertical_form` metadata so debuggers can distinguish sideways
 rotation, text-combine-upright clusters, and requested vertical alternates.
 Ruby refs report `ruby_base_bbox` and `ruby_annotation_bbox` in viewport space

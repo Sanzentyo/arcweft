@@ -1768,6 +1768,33 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
 }
 
 fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
+    let page_object = objects
+        .iter()
+        .find(|object| object["id"] == "object.dialogue.0.0.page.0")
+        .expect("text page is observable as an element");
+    assert_eq!(page_object["role"], "rich_text_page");
+    assert_eq!(page_object["layer"], "dialogue.rich_text");
+    assert_eq!(page_object["text"], "Hello Aoi 夢\n");
+    assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
+    assert_eq!(page_object["rich_text_ref"]["index"], 0);
+    assert_eq!(
+        page_object["rich_text_ref"]["page"].as_u64().unwrap_or(0),
+        0
+    );
+    assert_eq!(page_object["rich_text_ref"]["range"]["start"], 0);
+    assert_eq!(
+        page_object["rich_text_ref"]["range"]["end"],
+        page_object["text"].as_str().expect("page text").len() as u64
+    );
+    assert_eq!(page_object["rich_text_ref"]["hit_test"], true);
+    assert_rich_text_hit_region_matches_bbox(
+        page_object,
+        "text_page",
+        0,
+        page_object["text"].as_str().expect("page text").len() as u64,
+    );
+    assert_agent_observe_object_capture_refs(page_object);
+
     let run_object = objects
         .iter()
         .find(|object| object["id"] == "object.dialogue.0.0.run.1")
@@ -18663,6 +18690,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         && proxy["params"]["channel"]["value"] == "choice",));
     assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
+    assert_full_grammar_text_page_object_readback(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
@@ -32236,6 +32264,59 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy_hit["depth"], 4000);
 }
 
+fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serde_json::Value) {
+    let page_object = find_rich_text_page_object_by_line(json, "say.full.006", 0);
+    assert_eq!(page_object["role"], "rich_text_page");
+    assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
+    assert_eq!(page_object["rich_text_ref"]["index"], 0);
+    assert_eq!(
+        page_object["rich_text_ref"]["page"].as_u64().unwrap_or(0),
+        0
+    );
+    assert_eq!(page_object["rich_text_ref"]["hit_test"], true);
+    assert!(
+        page_object["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("明示family") && text.contains("proxy")),
+        "full grammar text page object should expose the page text: {page_object}"
+    );
+    let range_start = page_object["rich_text_ref"]["range"]["start"]
+        .as_u64()
+        .expect("text page range start");
+    let range_end = page_object["rich_text_ref"]["range"]["end"]
+        .as_u64()
+        .expect("text page range end");
+    assert!(range_end > range_start);
+    assert_rich_text_hit_region_matches_bbox(page_object, "text_page", range_start, range_end);
+    assert_agent_observe_object_capture_refs(page_object);
+
+    let page_object_id = page_object["id"].as_str().expect("text page object id");
+    let page_object_width = page_object["bbox"]["width"]
+        .as_u64()
+        .expect("text page object bbox width");
+    let page_object_height = page_object["bbox"]["height"]
+        .as_u64()
+        .expect("text page object bbox height");
+    let page_mask_uri =
+        rich_text_object_capture_uri(page_object, "mask", "application/octet-stream");
+    assert_agent_read_uri_object_image_has_content(
+        source_path,
+        page_mask_uri,
+        page_object_id,
+        page_object_width,
+        page_object_height,
+    );
+    let page_object_id_uri =
+        rich_text_object_capture_uri(page_object, "object_id", "application/octet-stream");
+    assert_agent_read_uri_object_id_image_matches_object_color(
+        source_path,
+        page_object_id_uri,
+        page_object,
+        page_object_width,
+        page_object_height,
+    );
+}
+
 fn rich_text_text_run_has_transform(
     textbox: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
@@ -32371,6 +32452,25 @@ fn find_rich_text_ruby_object(report: &serde_json::Value, index: u64) -> &serde_
                 && object["rich_text_ref"]["index"].as_u64() == Some(index)
         })
         .unwrap_or_else(|| panic!("rich-text ruby `{index}` should be observed: {report}"))
+}
+
+fn find_rich_text_page_object_by_line<'a>(
+    report: &'a serde_json::Value,
+    line: &str,
+    page: u64,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_page"
+                && object["rich_text"]["line"] == line
+                && object["rich_text_ref"]["page"].as_u64().unwrap_or(0) == page
+        })
+        .unwrap_or_else(|| {
+            panic!("rich-text page `{line}` page {page} should be observed: {report}")
+        })
 }
 
 fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json::Value {
