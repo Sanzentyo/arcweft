@@ -300,6 +300,33 @@ mod tests {
     }
 
     #[test]
+    fn agent_hit_test_reports_generic_image_object_bbox_hit() {
+        let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
+        object.role = "image".to_owned();
+        object.object_layer = Some("hud.foreground".to_owned());
+        object.object_depth = Some(2500);
+        let mut report = test_agent_observation_report(None);
+        report.objects = vec![object];
+
+        let hit_report = agent_hit_test_report(&report, 20, 30);
+
+        assert_eq!(
+            hit_report.top_object_id.as_deref(),
+            Some("object.image.logo")
+        );
+        assert_eq!(hit_report.hits.len(), 1);
+        assert_eq!(hit_report.hits[0].layer, "hud.foreground");
+        assert_eq!(hit_report.hits[0].role, "image");
+        assert_eq!(hit_report.hits[0].depth, Some(2500));
+        assert_eq!(hit_report.hits[0].region.kind, AgentHitRegionKind::Object);
+        assert_eq!(
+            hit_report.hits[0].object.object_layer.as_deref(),
+            Some("hud.foreground")
+        );
+        assert!(hit_report.hits[0].rich_text_ref.is_none());
+    }
+
+    #[test]
     fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
         let source = arcweft_render_native::NativeFrameCapture {
             width: 8,
@@ -1512,7 +1539,7 @@ fn agent_hit_test_object_hits(
     y: u32,
 ) -> Vec<AgentHitTestHit> {
     let Some(rich_text_ref) = &object.rich_text_ref else {
-        return Vec::new();
+        return agent_generic_object_hit(object, x, y).into_iter().collect();
     };
     if !rich_text_ref.hit_test {
         return Vec::new();
@@ -1539,6 +1566,43 @@ fn agent_hit_test_object_hits(
                 .or(rich_text_ref.object_depth),
         })
         .collect()
+}
+
+fn agent_generic_object_hit(
+    object: &AgentObservedObject,
+    x: u32,
+    y: u32,
+) -> Option<AgentHitTestHit> {
+    if !agent_bbox_contains(&object.bbox, x, y) {
+        return None;
+    }
+    Some(AgentHitTestHit {
+        rank: 0,
+        object_id: object.id.clone(),
+        object: AgentImageObjectRef::from_observed(object),
+        layer: object
+            .resolved_object_layer()
+            .unwrap_or_else(|| object.layer.clone()),
+        role: object.role.clone(),
+        text: object.text.clone(),
+        bbox: object.bbox.clone(),
+        polygon: object.polygon.clone(),
+        capture_refs: object.capture_refs.clone(),
+        region: AgentHitRegion {
+            kind: AgentHitRegionKind::Object,
+            bbox: object.bbox.clone(),
+            range: RichTextRange::new(0, 0),
+            proxy_id: None,
+            proxy_type: None,
+            proxy_declaration: None,
+            proxy_role: None,
+            proxy_layer: object.resolved_object_layer(),
+            depth: object.resolved_object_depth(),
+            proxy_params: BTreeMap::new(),
+        },
+        rich_text_ref: None,
+        depth: object.resolved_object_depth(),
+    })
 }
 
 fn agent_hit_test_layer(
@@ -1581,6 +1645,7 @@ const fn agent_hit_test_region_priority(kind: AgentHitRegionKind) -> u8 {
         AgentHitRegionKind::TextRun => 60,
         AgentHitRegionKind::TextLine => 70,
         AgentHitRegionKind::TextPage => 80,
+        AgentHitRegionKind::Object => 90,
     }
 }
 

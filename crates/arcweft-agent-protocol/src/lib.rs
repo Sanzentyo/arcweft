@@ -637,6 +637,7 @@ pub struct AgentHitTestHit {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentHitRegionKind {
+    Object,
     TextPage,
     TextLine,
     TextRun,
@@ -1777,6 +1778,10 @@ mod tests {
         assert_eq!(
             json["presentation_tree"]["nodes"][2]["effects"][0]["phase"],
             "glyph_transform"
+        );
+        assert_eq!(
+            serde_json::to_value(AgentHitRegionKind::Object).expect("hit-region kind serializes"),
+            "object"
         );
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::TextPage).expect("hit-region kind serializes"),
