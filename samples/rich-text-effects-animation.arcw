@@ -69,6 +69,10 @@ flow rich_text_effects_animation {
         Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.host id=sparkle amp=1.5px seed=shader-demo state_scope=run]host sparkle[/]、[.host id=sparkle phase=glyph_color seed=color-demo state_scope=glyph]色sparkle[/] を同時に表示する。[p]
     ]
 
+    lumi.say(id=@say.effects.post, voice=auto, look=.focus)[
+        PostFX: [effect .wave phase=post_process amp=8px period=64px dir=1,0]post wave effect[/effect]、[.host id=sparkle phase=post_process amount=0.9 seed=screen-sparkle]post sparkle[/]。[p]
+    ]
+
     iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
         Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle state_scope=run]sparkle[/]。[r]関数: [.motion fn=breath_orbit amp=5px angle=9deg scale=0.14 speed=0.75 seed=breath origin=glyph_center target=glyph]関数motion[/]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
     ]

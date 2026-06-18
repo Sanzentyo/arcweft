@@ -123,6 +123,11 @@ debug metadata exposed through `arcw agent observe` and MCP-style resources, ins
 adapter reinterpret authored rich-text nodes independently. Ruby base text remains in the main line
 while ruby annotations are shaped with glyphon buffers and submitted as absolute `GlyphArea`
 geometry positioned from `LaidOutText`, instead of being inserted as `base(ruby)` fallback text.
+For main text, native submission resolves renderer cache keys for every Arcweft layout glyph:
+the rich glyphon buffer supplies the normal shaped keys, vertical alternates use per-glyph
+vertical-feature shaping, and any remaining glyph missing from the rich buffer is shaped from
+its own text/style before `GlyphArea` construction. This keeps object/layer image capture stable
+when a line mixes many inline spans, shaders, effects, and wrapped horizontal text.
 Page, line-wait, and clear
 controls split frames into native pages; Space, Enter, or `n` advances to the
 next page, and Escape closes the window. The
@@ -231,7 +236,8 @@ silent no-op captures. Offscreen capture sessions and the native window renderer
 install the native default host effect registry, which currently provides a
 deterministic `sparkle` glyph effect for samples and smoke captures. The same
 registry entry also supports `phase=glyph_color`, where it tints glyphs instead
-of moving them, while still reporting unknown custom IDs through diagnostics.
+of moving them, and `phase=post_process`, where it tints the native framebuffer
+after glyph submission. Unknown custom IDs still report through diagnostics.
 Surface `.host` selectors use their `id`, `effect`, or `name` metadata as the
 registry id before native dispatch, so `[.host id=sparkle]...[/]` reaches the
 same default registry entry as an explicit custom effect descriptor with id
@@ -263,13 +269,15 @@ shader IDs through `RichTextShaderRegistry::insert_post_process_lambda`. Unknown
 shader IDs are not reinterpreted by the native renderer; they remain
 host-resolved shader references until a concrete native/filter implementation
 is added and are reported through renderer diagnostics.
-Native builtin rich-text effects also report `unsupported_builtin_effect_phase`
-when a recognized effect such as `.wave` is authored at a visual phase the
-native renderer cannot execute. Shader `post_process` is supported through the
-shader registry; builtin glyph effects do not reinterpret that phase as
-placement. `host_event` phase effects leave the visual pipeline during lowering
-and are exposed as typed `DialogueHostEvent::Effect` markers instead of renderer
-diagnostics.
+Native builtin rich-text effects support `phase=post_process` as framebuffer
+passes instead of reinterpreting that phase as glyph placement. Wave, shake, and
+jitter displace the color framebuffer; arc, spin, pulse, and motion apply a
+deterministic visual tint for post-process inspection. Custom native adapters
+can register effect post-process passes through
+`RichTextEffectRegistry::insert_post_process_lambda`, and object-id/mask
+captures remain pure identification attachments. `host_event` phase effects
+leave the visual pipeline during lowering and are exposed as typed
+`DialogueHostEvent::Effect` markers instead of renderer diagnostics.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

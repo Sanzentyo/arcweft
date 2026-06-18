@@ -333,13 +333,24 @@ pub struct TextEffectGlyphContext<'a> {
 /// Renderer-local stateful rich-text effect.
 pub trait RichTextEffectClass: Send {
     fn apply_glyph(&mut self, ctx: &mut TextEffectGlyphContext<'_>);
+
+    fn post_process(
+        &mut self,
+        _ctx: &mut TextEffectPostProcessContext<'_>,
+        _rgba: &mut [u8],
+    ) -> bool {
+        false
+    }
 }
 
 pub type GlyphLambda = Box<dyn FnMut(&mut TextEffectGlyphContext<'_>) + Send + 'static>;
+pub type EffectPostProcessLambda =
+    Box<dyn FnMut(&mut TextEffectPostProcessContext<'_>, &mut [u8]) + Send + 'static>;
 
 pub enum RegisteredTextEffect {
     Class(Box<dyn RichTextEffectClass>),
     Lambda(GlyphLambda),
+    PostProcessLambda(EffectPostProcessLambda),
 }
 
 /// Registry that resolves `RichTextEffectDescriptor::id` to native execution.
@@ -367,8 +378,33 @@ impl RichTextEffectRegistry {
             .insert(id.into(), RegisteredTextEffect::Lambda(Box::new(effect)));
     }
 
+    pub fn insert_post_process_lambda(
+        &mut self,
+        id: impl Into<String>,
+        effect: impl FnMut(&mut TextEffectPostProcessContext<'_>, &mut [u8]) + Send + 'static,
+    ) {
+        self.effects.insert(
+            id.into(),
+            RegisteredTextEffect::PostProcessLambda(Box::new(effect)),
+        );
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.effects.contains_key(id)
+    }
+
+    pub fn supports_phase(&self, id: &str, phase: RichTextEffectPhase) -> bool {
+        let Some(effect) = self.effects.get(id) else {
+            return false;
+        };
+        match effect {
+            RegisteredTextEffect::Class(_) => {
+                phase == RichTextEffectPhase::PostProcess
+                    || effect_phase_applies_to_renderer_glyph(phase)
+            }
+            RegisteredTextEffect::Lambda(_) => effect_phase_applies_to_renderer_glyph(phase),
+            RegisteredTextEffect::PostProcessLambda(_) => phase == RichTextEffectPhase::PostProcess,
+        }
     }
 
     pub fn apply_host_effect(&mut self, id: &str, ctx: &mut TextEffectGlyphContext<'_>) -> bool {
@@ -378,9 +414,37 @@ impl RichTextEffectRegistry {
         match effect {
             RegisteredTextEffect::Class(effect) => effect.apply_glyph(ctx),
             RegisteredTextEffect::Lambda(effect) => effect(ctx),
+            RegisteredTextEffect::PostProcessLambda(_) => return false,
         }
         true
     }
+
+    pub fn post_process(
+        &mut self,
+        id: &str,
+        ctx: &mut TextEffectPostProcessContext<'_>,
+        rgba: &mut [u8],
+    ) -> Option<bool> {
+        let effect = self.effects.get_mut(id)?;
+        Some(match effect {
+            RegisteredTextEffect::Class(effect) => effect.post_process(ctx, rgba),
+            RegisteredTextEffect::Lambda(_) => false,
+            RegisteredTextEffect::PostProcessLambda(effect) => {
+                effect(ctx, rgba);
+                true
+            }
+        })
+    }
+}
+
+/// Per-effect context supplied to renderer-local effect post-process passes.
+pub struct TextEffectPostProcessContext<'a> {
+    pub effect: &'a RichTextEffectDescriptor,
+    pub time_seconds: f32,
+    pub line_id: &'a str,
+    pub width: u32,
+    pub height: u32,
+    pub state: &'a mut RichTextStateStore,
 }
 
 /// Per-shader context supplied to renderer-local shader implementations.
@@ -603,7 +667,7 @@ pub fn native_default_motion_registry() -> RichTextMotionRegistry {
 
 /// Registers native host effects that are available without external adapters.
 pub fn register_native_default_text_effects(registry: &mut RichTextEffectRegistry) {
-    registry.insert_lambda("sparkle", native_sparkle_effect);
+    registry.insert_class("sparkle", NativeSparkleEffect);
 }
 
 /// Registers native shaders that are available without external adapters.
@@ -667,6 +731,9 @@ impl<'a> NativeEffectExecution<'a> {
         time_seconds: f32,
         placement: &mut NativeGlyphPlacement,
     ) {
+        if effect.phase == RichTextEffectPhase::PostProcess {
+            return;
+        }
         if !effect_applies_to_renderer_glyph(effect) {
             self.push_diagnostic(
                 "unsupported_custom_effect_phase",
@@ -714,6 +781,83 @@ impl<'a> NativeEffectExecution<'a> {
             placement,
         };
         registry.apply_host_effect(&effect.id, &mut ctx);
+    }
+
+    fn apply_effect_post_processes<'b>(
+        &mut self,
+        line_id: &str,
+        effects: impl IntoIterator<Item = &'b RichTextEffectDescriptor>,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        rgba: &mut [u8],
+    ) {
+        for effect in effects {
+            self.apply_effect_post_process(line_id, effect, width, height, time_seconds, rgba);
+        }
+    }
+
+    fn apply_effect_post_process(
+        &mut self,
+        line_id: &str,
+        effect: &RichTextEffectDescriptor,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        rgba: &mut [u8],
+    ) {
+        if effect.phase != RichTextEffectPhase::PostProcess {
+            return;
+        }
+        if is_builtin_effect_id(&effect.id) {
+            apply_builtin_effect_post_process(effect, width, height, time_seconds, rgba);
+            return;
+        }
+        let Some(registry) = self.registry.as_deref_mut() else {
+            self.push_diagnostic(
+                "missing_custom_effect_registry",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` has no native effect registry",
+                    effect.id
+                ),
+            );
+            return;
+        };
+        if !registry.contains(&effect.id) {
+            self.push_diagnostic(
+                "missing_custom_effect",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` is not registered in the native effect registry",
+                    effect.id
+                ),
+            );
+            return;
+        }
+        if !registry.supports_phase(&effect.id, effect.phase) {
+            self.push_diagnostic(
+                "unsupported_custom_effect_phase",
+                NativeVisualDiagnosticSeverity::Warning,
+                effect,
+                format!(
+                    "custom rich-text effect `{}` uses unsupported native phase {:?}",
+                    effect.id, effect.phase
+                ),
+            );
+            return;
+        }
+        let mut ctx = TextEffectPostProcessContext {
+            effect,
+            time_seconds,
+            line_id,
+            width,
+            height,
+            state: self.state,
+        };
+        let _ = registry.post_process(&effect.id, &mut ctx, rgba);
     }
 
     fn observe_builtin_effect_phase(&mut self, effect: &RichTextEffectDescriptor) -> bool {
@@ -1093,6 +1237,7 @@ impl NativeOffscreenCaptureSession {
                 viewport.time_seconds,
             ),
         )?;
+        let post_process_effects = post_process_effects_for_page(frame, &page_range);
         let post_process_shaders = post_process_shaders_for_page(frame, &page_range);
         let Some(page) = page_from_display_map_range(frame, page_range) else {
             return Err(NativeWindowError::EmptyPages);
@@ -1110,6 +1255,8 @@ impl NativeOffscreenCaptureSession {
                 time_seconds: viewport.time_seconds,
                 force_alpha_mask: false,
             },
+            frame.line.0.as_str(),
+            &post_process_effects,
             &post_process_shaders,
         )
     }
@@ -1203,7 +1350,16 @@ impl NativeOffscreenCaptureSession {
                 diagnostics: Vec::new(),
             });
         let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let post_process_effects = post_process_effects_for_regions(frame, &page_range, regions);
         let post_process_shaders = post_process_shaders_for_regions(frame, &page_range, regions);
+        self.apply_post_process_effects(
+            frame.line.0.as_str(),
+            &mut readback,
+            width,
+            height,
+            viewport.time_seconds,
+            &post_process_effects,
+        );
         self.apply_post_process_shaders(
             &mut readback,
             width,
@@ -1227,10 +1383,20 @@ impl NativeOffscreenCaptureSession {
         rich_text: &WindowRichText,
         layout: NativeRenderLayout<'_>,
         target: NativeRenderTarget,
+        line_id: &str,
+        post_process_effects: &[RichTextEffectDescriptor],
         post_process_shaders: &[RichTextShaderRef],
     ) -> Result<NativeFrameCapture, NativeWindowError> {
         let mut readback =
             self.render_rich_text_rgba_with_clear(rich_text, layout, target, wgpu::Color::BLACK)?;
+        self.apply_post_process_effects(
+            line_id,
+            &mut readback,
+            target.width,
+            target.height,
+            target.time_seconds,
+            post_process_effects,
+        );
         self.apply_post_process_shaders(
             &mut readback,
             target.width,
@@ -1248,6 +1414,35 @@ impl NativeOffscreenCaptureSession {
             content_pixels: stats.content_pixels,
             diagnostics: readback.diagnostics,
         })
+    }
+
+    fn apply_post_process_effects(
+        &mut self,
+        line_id: &str,
+        readback: &mut NativeRenderReadback,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        effects: &[RichTextEffectDescriptor],
+    ) {
+        if effects.is_empty() {
+            return;
+        }
+        let mut execution = NativeEffectExecution::new(
+            Some(&mut self.effect_registry),
+            None,
+            None,
+            &mut self.effect_state,
+        );
+        execution.apply_effect_post_processes(
+            line_id,
+            effects.iter(),
+            width,
+            height,
+            time_seconds,
+            &mut readback.rgba,
+        );
+        readback.diagnostics.extend(execution.into_diagnostics());
     }
 
     fn apply_post_process_shaders(
@@ -2819,7 +3014,8 @@ fn is_builtin_effect_id(id: &str) -> bool {
 fn builtin_effect_phase_supported(effect: &RichTextEffectDescriptor) -> bool {
     match effect.id.as_str() {
         "wave" | "shake" | "jitter" | "arc" | "spin" | "pulse" | "motion" => {
-            effect_applies_to_glyph_transform(effect)
+            effect.phase == RichTextEffectPhase::PostProcess
+                || effect_applies_to_glyph_transform(effect)
         }
         "typewriter" => effect_applies_to_glyph_mask(effect),
         _ => true,
@@ -2967,6 +3163,23 @@ fn apply_effect_affine_pivot(
     placement.affine_target = Some(effect.target);
 }
 
+struct NativeSparkleEffect;
+
+impl RichTextEffectClass for NativeSparkleEffect {
+    fn apply_glyph(&mut self, ctx: &mut TextEffectGlyphContext<'_>) {
+        native_sparkle_effect(ctx);
+    }
+
+    fn post_process(
+        &mut self,
+        ctx: &mut TextEffectPostProcessContext<'_>,
+        rgba: &mut [u8],
+    ) -> bool {
+        native_sparkle_post_process(ctx, rgba);
+        true
+    }
+}
+
 fn native_sparkle_effect(ctx: &mut TextEffectGlyphContext<'_>) {
     if !effect_applies_to_renderer_glyph(ctx.effect) {
         return;
@@ -3001,6 +3214,144 @@ fn native_sparkle_effect(ctx: &mut TextEffectGlyphContext<'_>) {
     ctx.placement.opacity *= (0.82 + shimmer * 0.18).clamp(0.0, 1.0);
 }
 
+fn native_sparkle_post_process(ctx: &mut TextEffectPostProcessContext<'_>, rgba: &mut [u8]) {
+    let amount = param_milli(ctx.effect, "amount")
+        .or_else(|| param_milli(ctx.effect, "amp"))
+        .unwrap_or(Milli(350))
+        .as_f32()
+        .clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return;
+    }
+    let sparkle_seed = param_seed(ctx.effect, "seed").unwrap_or(0x51A7_61E5);
+    let seed_phase = f32::from(u8::try_from(sparkle_seed & 0xff).unwrap_or(0)) * 0.001;
+    let shimmer = ((ctx.time_seconds * 2.2 + seed_phase) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    for (index, pixel) in rgba.chunks_exact_mut(4).enumerate() {
+        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+            continue;
+        }
+        let noise = deterministic_noise(sparkle_seed, ctx.line_id, index, ctx.time_seconds * 13.0);
+        let pulse = ((noise[0] + shimmer) * amount).clamp(0.0, 1.0);
+        pixel[0] = blend_channel(pixel[0], 255, pulse * 0.45);
+        pixel[1] = blend_channel(pixel[1], 225, pulse * 0.35);
+        pixel[2] = blend_channel(pixel[2], 255, pulse * 0.55);
+    }
+}
+
+fn apply_builtin_effect_post_process(
+    effect: &RichTextEffectDescriptor,
+    width: u32,
+    height: u32,
+    time_seconds: f32,
+    rgba: &mut [u8],
+) {
+    match effect.id.as_str() {
+        "wave" | "shake" | "jitter" => {
+            apply_displacement_post_process(effect, width, height, time_seconds, rgba);
+        }
+        "arc" | "spin" | "pulse" | "motion" => {
+            apply_tint_post_process(effect, rgba);
+        }
+        _ => {}
+    }
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+fn apply_displacement_post_process(
+    effect: &RichTextEffectDescriptor,
+    width: u32,
+    height: u32,
+    time_seconds: f32,
+    rgba: &mut [u8],
+) {
+    if width == 0 || height == 0 || rgba.is_empty() {
+        return;
+    }
+    let source = rgba.to_vec();
+    let amplitude = param_milli(effect, "amp")
+        .or_else(|| param_milli(effect, "amount"))
+        .unwrap_or(Milli(3000))
+        .as_f32();
+    let period = param_milli(effect, "period")
+        .unwrap_or(Milli(64000))
+        .as_f32()
+        .max(1.0);
+    let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
+    let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
+    let direction = param_vec2(effect, "dir")
+        .or_else(|| axis_direction(effect))
+        .unwrap_or([1.0, 0.0]);
+    let effect_seed = param_seed(effect, "seed").unwrap_or(0);
+    for y in 0..height {
+        for x in 0..width {
+            let wave_index = if direction[0].abs() >= direction[1].abs() {
+                y as f32
+            } else {
+                x as f32
+            };
+            let delta = match effect.id.as_str() {
+                "shake" => {
+                    let noise = deterministic_noise(
+                        effect_seed,
+                        "post_process",
+                        y as usize,
+                        time_seconds * speed,
+                    );
+                    (noise[0] * 2.0 - 1.0) * amplitude
+                }
+                "jitter" => {
+                    let noise = deterministic_noise(effect_seed, "post_process", y as usize, 0.0);
+                    (noise[0] * 2.0 - 1.0) * amplitude
+                }
+                _ => {
+                    let t = (wave_index / period + time_seconds * speed + phase)
+                        * std::f32::consts::TAU;
+                    t.sin() * amplitude
+                }
+            };
+            let sample_x = (x as f32 - direction[0] * delta)
+                .round()
+                .clamp(0.0, width.saturating_sub(1) as f32) as u32;
+            let sample_y = (y as f32 - direction[1] * delta)
+                .round()
+                .clamp(0.0, height.saturating_sub(1) as f32) as u32;
+            let dst = ((y * width + x) * 4) as usize;
+            let src = ((sample_y * width + sample_x) * 4) as usize;
+            rgba[dst..dst + 4].copy_from_slice(&source[src..src + 4]);
+        }
+    }
+}
+
+fn apply_tint_post_process(effect: &RichTextEffectDescriptor, rgba: &mut [u8]) {
+    let amount = param_milli(effect, "amount")
+        .or_else(|| param_milli(effect, "amp"))
+        .unwrap_or(Milli(180))
+        .as_f32()
+        .clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return;
+    }
+    let color = match effect.id.as_str() {
+        "pulse" => [255, 220, 150],
+        "spin" => [170, 220, 255],
+        "arc" => [210, 190, 255],
+        "motion" => [255, 170, 220],
+        _ => [220, 220, 255],
+    };
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+            continue;
+        }
+        pixel[0] = blend_channel(pixel[0], color[0], amount);
+        pixel[1] = blend_channel(pixel[1], color[1], amount);
+        pixel[2] = blend_channel(pixel[2], color[2], amount);
+    }
+}
+
 const fn effect_target_wave_index(
     target: RichTextEffectTarget,
     placement: &NativeGlyphPlacement,
@@ -3030,8 +3381,12 @@ const fn effect_applies_to_glyph_mask(effect: &RichTextEffectDescriptor) -> bool
 }
 
 const fn effect_applies_to_renderer_glyph(effect: &RichTextEffectDescriptor) -> bool {
+    effect_phase_applies_to_renderer_glyph(effect.phase)
+}
+
+const fn effect_phase_applies_to_renderer_glyph(phase: RichTextEffectPhase) -> bool {
     matches!(
-        effect.phase,
+        phase,
         RichTextEffectPhase::BeforeLayout
             | RichTextEffectPhase::LayoutTransform
             | RichTextEffectPhase::GlyphTransform
@@ -3778,6 +4133,27 @@ fn post_process_shaders_for_page(
         .collect()
 }
 
+fn post_process_effects_for_page(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+) -> Vec<RichTextEffectDescriptor> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| intersect_display_range(run.range, page_range).is_some())
+        .flat_map(|run| post_process_effects_from_presentation(&run.presentation))
+        .chain(
+            frame
+                .display_map
+                .ruby_annotations
+                .iter()
+                .filter(|ruby| intersect_display_range(ruby.base_range, page_range).is_some())
+                .flat_map(|ruby| post_process_effects_from_presentation(&ruby.presentation)),
+        )
+        .collect()
+}
+
 fn post_process_shaders_for_regions(
     frame: &LineDisplayFrame,
     page_range: &Range<usize>,
@@ -3830,6 +4206,58 @@ fn post_process_shaders_for_regions(
         .collect()
 }
 
+fn post_process_effects_for_regions(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    regions: &[NativeFrameDebugRegion],
+) -> Vec<RichTextEffectDescriptor> {
+    regions
+        .iter()
+        .flat_map(|region| match region.element {
+            Some(NativeFrameElement::TextRun { index }) => frame
+                .display_map
+                .text_runs
+                .get(index)
+                .filter(|run| intersect_display_range(run.range, page_range).is_some())
+                .map(|run| post_process_effects_from_presentation(&run.presentation))
+                .unwrap_or_default(),
+            Some(NativeFrameElement::TextObjectProxy { run_index, .. }) => frame
+                .display_map
+                .text_runs
+                .get(run_index)
+                .filter(|run| intersect_display_range(run.range, page_range).is_some())
+                .map(|run| post_process_effects_from_presentation(&run.presentation))
+                .unwrap_or_default(),
+            Some(NativeFrameElement::GlyphCluster {
+                range_start,
+                range_end,
+                ..
+            }) => {
+                let range = RichTextRange::new(range_start, range_end);
+                frame
+                    .display_map
+                    .text_runs
+                    .iter()
+                    .find(|run| {
+                        range.start >= run.range.start
+                            && range.end <= run.range.end
+                            && intersect_display_range(run.range, page_range).is_some()
+                    })
+                    .map(|run| post_process_effects_from_presentation(&run.presentation))
+                    .unwrap_or_default()
+            }
+            Some(NativeFrameElement::Ruby { index }) => frame
+                .display_map
+                .ruby_annotations
+                .get(index)
+                .filter(|ruby| intersect_display_range(ruby.base_range, page_range).is_some())
+                .map(|ruby| post_process_effects_from_presentation(&ruby.presentation))
+                .unwrap_or_default(),
+            None => Vec::new(),
+        })
+        .collect()
+}
+
 fn post_process_shaders_from_presentation(
     presentation: &RichTextPresentation,
 ) -> Vec<RichTextShaderRef> {
@@ -3837,6 +4265,17 @@ fn post_process_shaders_from_presentation(
         .shaders
         .iter()
         .filter(|shader| shader.phase == RichTextEffectPhase::PostProcess)
+        .cloned()
+        .collect()
+}
+
+fn post_process_effects_from_presentation(
+    presentation: &RichTextPresentation,
+) -> Vec<RichTextEffectDescriptor> {
+    presentation
+        .effects
+        .iter()
+        .filter(|effect| effect.phase == RichTextEffectPhase::PostProcess)
         .cloned()
         .collect()
 }
@@ -5548,6 +5987,7 @@ fn native_text_bounds(width: u32, height: u32) -> TextBounds {
 struct LayoutGlyphCacheKeys {
     shaped: Vec<(RichTextRange, ResolvedGlyph)>,
     vertical_alternates: BTreeMap<usize, Vec<ResolvedGlyph>>,
+    per_glyph: BTreeMap<usize, Vec<ResolvedGlyph>>,
 }
 
 fn layout_glyph_cache_keys(
@@ -5568,10 +6008,13 @@ fn layout_glyph_cache_keys(
             (!cache_keys.is_empty()).then_some((glyph_index, cache_keys))
         })
         .collect();
-    LayoutGlyphCacheKeys {
+    let mut cache_keys = LayoutGlyphCacheKeys {
         shaped,
         vertical_alternates,
-    }
+        per_glyph: BTreeMap::new(),
+    };
+    cache_keys.per_glyph = per_glyph_cache_keys(font_system, rich_text, layout, &cache_keys);
+    cache_keys
 }
 
 fn text_buffer_cache_keys(
@@ -5628,6 +6071,44 @@ fn vertical_form_cache_keys(
     text_buffer_cache_keys_for_text(&buffer)
 }
 
+fn per_glyph_cache_keys(
+    font_system: &mut FontSystem,
+    rich_text: &WindowRichText,
+    layout: &LaidOutText,
+    cache_keys: &LayoutGlyphCacheKeys,
+) -> BTreeMap<usize, Vec<ResolvedGlyph>> {
+    layout
+        .glyphs
+        .iter()
+        .enumerate()
+        .filter(|(glyph_index, glyph)| {
+            cache_keys
+                .vertical_alternates
+                .get(glyph_index)
+                .is_none_or(Vec::is_empty)
+                && cache_keys_for_shaped_layout_glyph(glyph.range, cache_keys).is_empty()
+        })
+        .filter_map(|(glyph_index, glyph)| {
+            let style = native_style_for_display_range(rich_text, glyph.range);
+            let fallback = shaped_cache_keys_for_text(font_system, glyph.text.as_str(), &style);
+            (!fallback.is_empty()).then_some((glyph_index, fallback))
+        })
+        .collect()
+}
+
+fn shaped_cache_keys_for_text(
+    font_system: &mut FontSystem,
+    text: &str,
+    style: &NativeTextStyle,
+) -> Vec<ResolvedGlyph> {
+    let mut buffer = Buffer::new(font_system, style.metrics());
+    let attrs = style.attrs();
+    let spans = [(text, attrs.clone())];
+    buffer.set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    text_buffer_cache_keys_for_text(&buffer)
+}
+
 fn text_buffer_cache_keys_for_text(buffer: &Buffer) -> Vec<ResolvedGlyph> {
     buffer
         .layout_runs()
@@ -5676,6 +6157,16 @@ fn cache_keys_for_layout_glyph(
     if let Some(cache_keys) = cache_keys.vertical_alternates.get(&glyph_index) {
         return normalize_resolved_glyph_offsets(cache_keys.iter().copied());
     }
+    if let Some(cache_keys) = cache_keys.per_glyph.get(&glyph_index) {
+        return normalize_resolved_glyph_offsets(cache_keys.iter().copied());
+    }
+    cache_keys_for_shaped_layout_glyph(range, cache_keys)
+}
+
+fn cache_keys_for_shaped_layout_glyph(
+    range: RichTextRange,
+    cache_keys: &LayoutGlyphCacheKeys,
+) -> Vec<ResolvedGlyph> {
     normalize_resolved_glyph_offsets(cache_keys.shaped.iter().filter_map(
         |(candidate, resolved)| {
             (candidate.start < range.end && range.start < candidate.end).then_some(*resolved)
@@ -9899,21 +10390,53 @@ mod tests {
     }
 
     #[test]
-    fn native_visual_plan_reports_unsupported_builtin_effect_phase() {
-        let frame = custom_effect_test_frame_with_phase("wave", RichTextEffectPhase::PostProcess);
+    fn native_capture_applies_builtin_post_process_effect_phase() {
+        let frame = custom_effect_test_frame_with_params_and_phase(
+            "wave",
+            BTreeMap::from([
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Raw {
+                        value: "18px".to_owned(),
+                    },
+                ),
+                (
+                    "period".to_owned(),
+                    RichTextParam::Raw {
+                        value: "48px".to_owned(),
+                    },
+                ),
+                (
+                    "dir".to_owned(),
+                    RichTextParam::Raw {
+                        value: "1,0".to_owned(),
+                    },
+                ),
+            ]),
+            RichTextEffectPhase::PostProcess,
+        );
+        let baseline = plain_effect_test_frame();
 
         let plan = visual_plan_from_frame_for_test(&frame, 0.0);
 
-        assert_eq!(plan.diagnostics.len(), 1);
-        assert_eq!(
-            plan.diagnostics[0].severity,
-            NativeVisualDiagnosticSeverity::Warning
+        assert!(
+            plan.diagnostics.is_empty(),
+            "post_process builtin effects should execute instead of warning: {:?}",
+            plan.diagnostics
         );
-        assert_eq!(plan.diagnostics[0].code, "unsupported_builtin_effect_phase");
-        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some("wave"));
         assert!(
             plan.pages[0].glyphs[0].x.abs() < f32::EPSILON,
-            "unsupported builtin phases should no-op instead of being reinterpreted"
+            "post_process effects should not be reinterpreted as glyph placement transforms"
+        );
+
+        let baseline_capture =
+            capture_frame_rgba_at(&baseline, 800, 600, 96.0, 572.0).expect("baseline capture");
+        let capture = capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0).expect("wave capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert_ne!(
+            capture.rgba, baseline_capture.rgba,
+            "post_process wave should alter framebuffer pixels"
         );
     }
 
@@ -10017,6 +10540,39 @@ mod tests {
     }
 
     #[test]
+    fn native_capture_uses_custom_effect_registry_for_post_process() {
+        let frame =
+            custom_effect_test_frame_with_phase(".rose_wash", RichTextEffectPhase::PostProcess);
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        session
+            .effect_registry_mut()
+            .insert_post_process_lambda(".rose_wash", |_ctx, rgba| {
+                for pixel in rgba.chunks_exact_mut(4) {
+                    if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+                        continue;
+                    }
+                    pixel[0] = 255;
+                    pixel[1] = 32;
+                    pixel[2] = 96;
+                }
+            });
+
+        let capture = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("post-process custom effect capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(
+            capture.rgba.chunks_exact(4).any(|pixel| {
+                pixel[0] > pixel[1].saturating_add(120)
+                    && pixel[0] > pixel[2].saturating_add(80)
+                    && pixel[3] > 0
+            }),
+            "registered post-process custom effect should alter rendered glyph pixels"
+        );
+    }
+
+    #[test]
     fn measure_frame_elements_uses_custom_effect_registry_for_glyph_bounds() {
         let frame = custom_effect_test_frame(".nudge");
         let baseline =
@@ -10093,6 +10649,27 @@ mod tests {
 
     fn custom_effect_test_frame(id: &str) -> LineDisplayFrame {
         custom_effect_test_frame_with_params(id, BTreeMap::new())
+    }
+
+    fn plain_effect_test_frame() -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.custom.effect".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "A".to_owned(),
+            }]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
     }
 
     fn custom_effect_test_frame_with_phase(

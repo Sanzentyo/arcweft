@@ -19352,6 +19352,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
 
     for line in [
         "say.effects.shader",
+        "say.effects.post",
         "say.effects.motion",
         "say.effects.reveal",
     ] {
@@ -19432,6 +19433,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_warm_glow_shader_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
+    assert_effects_animation_post_process_effect_runs_execute(&source_path, &json, &dir);
     assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
 
@@ -19536,6 +19538,82 @@ fn assert_effects_animation_color_sparkle_run_is_tinted(
                 && pixel[3] > 0
         }),
         "glyph_color custom sparkle should tint the object crop: {capture}"
+    );
+}
+
+fn assert_effects_animation_post_process_effect_runs_execute(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let wave_run = find_rich_text_run_object(json, "post wave effect");
+    let wave = assert_rich_text_run_object_has_effect(wave_run, "wave");
+    assert_eq!(
+        wave["phase"], "post_process",
+        "post wave effect should keep its post_process phase: {wave_run}"
+    );
+    let wave_object_id = wave_run["id"]
+        .as_str()
+        .expect("post wave run object id is reported");
+    let wave_path = dir.join("post-wave-effect-rgba-4000.rgba");
+    let (wave_capture, wave_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &wave_path,
+        wave_object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert!(
+        wave_capture["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        wave_capture["diagnostics"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "post_process builtin effect should execute without native diagnostics: {wave_capture}"
+    );
+    assert!(
+        wave_bytes.chunks_exact(4).any(|pixel| pixel[3] > 0),
+        "post_process wave effect crop should contain rendered pixels: {wave_capture}"
+    );
+
+    let sparkle_run = find_rich_text_run_object(json, "post sparkle");
+    let sparkle = assert_rich_text_run_object_has_effect(sparkle_run, "sparkle");
+    assert_eq!(
+        sparkle["phase"], "post_process",
+        "post sparkle should keep its post_process phase: {sparkle_run}"
+    );
+    let sparkle_object_id = sparkle_run["id"]
+        .as_str()
+        .expect("post sparkle run object id is reported");
+    let sparkle_path = dir.join("post-sparkle-rgba-4000.rgba");
+    let (sparkle_capture, sparkle_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &sparkle_path,
+        sparkle_object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert!(
+        sparkle_capture["images"][0]["content_pixels"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        sparkle_capture["diagnostics"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "post_process registry effect should execute without native diagnostics: {sparkle_capture}"
+    );
+    assert!(
+        sparkle_bytes.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(20)
+                && pixel[2] > pixel[1].saturating_add(10)
+                && pixel[3] > 0
+        }),
+        "post_process sparkle effect should tint the object crop: {sparkle_capture}"
     );
 }
 
@@ -20549,19 +20627,30 @@ flow @flow.main main {
 }
 
 #[test]
-fn agent_observe_native_renderer_reports_unsupported_builtin_effect_phase() {
+fn agent_observe_native_renderer_applies_builtin_effect_post_process_phase() {
     let path = temp_arcw(
-        "agent-observe-native-unsupported-builtin-effect-phase",
+        "agent-observe-native-builtin-effect-post-process-phase",
         r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [effect .wave phase=post_process amp=4px]wave phase[/effect][p]
+    alice: [effect .wave phase=post_process amp=12px period=48px dir=1,0]wave phase[/effect][p]
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-unsupported-builtin-effect-phase");
-    let png_path = dir.join("native-unsupported-builtin-effect-phase.png");
+    let baseline = temp_arcw(
+        "agent-observe-native-builtin-effect-post-process-baseline",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: wave phase[p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-builtin-effect-post-process-phase");
+    let raw_path = dir.join("native-builtin-effect-post-process-phase.rgba");
+    let baseline_raw_path = dir.join("native-builtin-effect-post-process-baseline.rgba");
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -20569,11 +20658,13 @@ flow @flow.main main {
         .arg(&path)
         .arg("--json")
         .arg("--image")
-        .arg("png")
+        .arg("raw-rgba")
         .arg("--object")
         .arg("object.dialogue.0.0")
         .arg("--out")
-        .arg(&png_path)
+        .arg(&raw_path)
+        .arg("--capture-time")
+        .arg("0.25")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -20581,34 +20672,62 @@ flow @flow.main main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe reports native builtin effect diagnostics");
+        .expect("arcw agent observe applies native builtin effect post_process");
 
     assert!(
         output.status.success(),
-        "native builtin effect diagnostic capture should succeed, stderr: {}",
+        "native builtin effect post_process capture should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native builtin effect report is JSON");
+    let baseline_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&baseline)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&baseline_raw_path)
+        .arg("--capture-time")
+        .arg("0.25")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe captures native builtin effect baseline");
     assert!(
-        json["diagnostics"].as_array().is_some_and(|diagnostics| {
-            diagnostics.iter().any(|diagnostic| {
-                diagnostic["severity"] == "warning"
-                    && diagnostic["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains("unsupported_builtin_effect_phase"))
-                    && diagnostic["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains("wave"))
+        baseline_output.status.success(),
+        "native builtin effect baseline capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&baseline_output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("native builtin effect post_process report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_none_or(|diagnostics| {
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_none_or(|message| !message.contains("unsupported_builtin_effect_phase"))
             })
         }),
-        "native builtin effect capture should surface renderer diagnostics: {json}"
+        "native builtin effect post_process should execute without unsupported phase diagnostics: {json}"
     );
-    let bytes = fs::read(&png_path).expect("read native builtin effect diagnostic PNG");
-    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    let bytes = fs::read(&raw_path).expect("read native builtin effect post_process RGBA");
+    let baseline_bytes =
+        fs::read(&baseline_raw_path).expect("read native builtin effect baseline RGBA");
+    assert_ne!(
+        bytes, baseline_bytes,
+        "native builtin effect post_process should alter raw framebuffer pixels: {json}"
+    );
 
-    fs::remove_file(&path).expect("remove temp native builtin effect diagnostic source");
-    fs::remove_dir_all(&dir).expect("remove temp native builtin effect diagnostic dir");
+    fs::remove_file(&path).expect("remove temp native builtin effect post_process source");
+    fs::remove_file(&baseline).expect("remove temp native builtin effect baseline source");
+    fs::remove_dir_all(&dir).expect("remove temp native builtin effect post_process dir");
 }
 
 #[test]
