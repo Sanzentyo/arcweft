@@ -195,9 +195,10 @@ The deterministic native visual plan exposes renderer diagnostics and can be
 built with a `RichTextEffectRegistry`, `RichTextShaderRegistry`, and
 `RichTextMotionRegistry`; builtin effect IDs are handled directly, registered
 custom effect IDs run against `TextEffectGlyphContext`, registered shader IDs
-emit deterministic glyph passes, registered motion function IDs drive
-`.motion`, and missing registries or unsupported phases are reported instead of
-being silently reinterpreted as builtins. `NativeOffscreenCaptureSession` also
+emit deterministic glyph passes or post-process color readbacks, registered
+motion function IDs drive `.motion`, and missing registries or unsupported
+phases are reported instead of being silently reinterpreted as builtins.
+`NativeOffscreenCaptureSession` also
 owns mutable effect/shader/motion registries and a shared state store; custom
 registered placement and `glyph_color` effects, run-offscreen shaders, and
 motion functions run when preparing submitted glyphs for framebuffer, color,
@@ -238,17 +239,23 @@ time-specific placement offset when drawing, while layout/ruby planning now
 accounts for the space those layout-phase effects can occupy.
 The native renderer maps registered `[effect .shader id=... phase=run_offscreen_pass]`
 references to deterministic glyph-area passes submitted before the main glyph
-pass, and maps registered `phase=glyph_color` shader refs to main-glyph tint
-overrides. The resolved shader remains visible in the native visual plan, but
-it now also changes actual native framebuffer/debug captures instead of being
-metadata-only. Unknown shader IDs are not reinterpreted by the native renderer;
-they remain host-resolved shader references until a concrete native/filter
-implementation is added and are reported through renderer diagnostics.
+pass, maps registered `phase=glyph_color` shader refs to main-glyph tint
+overrides, and maps registered `phase=post_process` shader refs to deterministic
+RGBA post-processing for native framebuffer and isolated color captures.
+Object-id and mask captures remain pure identification attachments and are not
+post-processed. The default shader registry provides `soft_glow`, `warm_glow`,
+and `screen_tint`; custom native adapters can register additional post-process
+shader IDs through `RichTextShaderRegistry::insert_post_process_lambda`. Unknown
+shader IDs are not reinterpreted by the native renderer; they remain
+host-resolved shader references until a concrete native/filter implementation
+is added and are reported through renderer diagnostics.
 Native builtin rich-text effects also report `unsupported_builtin_effect_phase`
 when a recognized effect such as `.wave` is authored at a visual phase the
-native renderer cannot execute, such as `post_process`. `host_event` phase
-effects leave the visual pipeline during lowering and are exposed as typed
-`DialogueHostEvent::Effect` markers instead of renderer diagnostics.
+native renderer cannot execute. Shader `post_process` is supported through the
+shader registry; builtin glyph effects do not reinterpret that phase as
+placement. `host_event` phase effects leave the visual pipeline during lowering
+and are exposed as typed `DialogueHostEvent::Effect` markers instead of renderer
+diagnostics.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

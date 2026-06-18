@@ -20111,6 +20111,77 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_applies_shader_post_process_phase() {
+    let path = temp_arcw(
+        "agent-observe-native-shader-post-process-phase",
+        r##"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [effect .shader id=screen_tint phase=post_process amount=1 color="#ff2020"]post process shader[/effect][p]
+}
+"##,
+    );
+    let dir = temp_dir("agent-observe-native-shader-post-process-phase");
+    let raw_path = dir.join("native-shader-post-process-phase.rgba");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe applies native shader post_process");
+
+    assert!(
+        output.status.success(),
+        "native shader post_process capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native shader post_process report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_none_or(|diagnostics| {
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_none_or(|message| !message.contains("unsupported_shader_phase"))
+            })
+        }),
+        "native shader post_process should execute without unsupported phase diagnostics: {json}"
+    );
+    let width = usize::try_from(json["images"][0]["width"].as_u64().expect("image width"))
+        .expect("image width fits usize");
+    let height = usize::try_from(json["images"][0]["height"].as_u64().expect("image height"))
+        .expect("image height fits usize");
+    let bytes = fs::read(&raw_path).expect("read native shader post_process RGBA");
+    assert_eq!(bytes.len(), width.saturating_mul(height).saturating_mul(4));
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(100)
+                && pixel[0] > pixel[2].saturating_add(100)
+                && pixel[3] > 0
+        }),
+        "native shader post_process should red-tint rendered glyph pixels: {json}"
+    );
+
+    fs::remove_file(&path).expect("remove temp native shader post_process source");
+    fs::remove_dir_all(&dir).expect("remove temp native shader post_process dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_reports_unsupported_builtin_effect_phase() {
     let path = temp_arcw(
         "agent-observe-native-unsupported-builtin-effect-phase",

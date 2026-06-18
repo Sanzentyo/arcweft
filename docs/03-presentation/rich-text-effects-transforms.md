@@ -166,7 +166,9 @@ adapters use `cursor_alpha` / `cursor_opacity` as an optional opacity override.
 
 `.shader` references a renderer shader registry entry. It does not embed shader
 source in dialogue text. Common parameters are `id`, `amount`, `dir`, `phase`,
-and registry-specific raw tokens.
+`color`, and registry-specific raw tokens. Native adapters support registered
+`run_offscreen_pass` glyph passes, registered `glyph_color` main-glyph tint
+passes, and registered `post_process` raster passes.
 
 `.host` and unknown custom effect ids are registry-dispatched. `.host` is the
 explicit host-dispatched form; its `id`, `effect`, or `name` parameter names the
@@ -261,14 +263,16 @@ effects, and registry-dispatched custom `glyph_color` effects for observe,
 visual-plan, and framebuffer capture paths. The native renderer also supports
 registered `run_offscreen_pass` shaders for text and ruby glyph submissions and
 registered `glyph_color` shaders that tint the main glyph pass through the same
-native shader registry. The default registry provides `soft_glow` and
-`warm_glow`, and native adapters may register additional shader IDs through the
-shader registry. Unsupported shader ids, supported shader ids used at phases
-other than `run_offscreen_pass` / `glyph_color`, builtin effects used at
-unsupported visual phases, unregistered motion function ids, unregistered
-custom effects, and post-process effects must be diagnosed instead of being
-silently reinterpreted as placement effects. `host_event` phase effects leave
-the visual effect pipeline during lowering and become typed host event markers.
+native shader registry, plus registered `post_process` shaders over native
+color framebuffer/readback captures. The default registry provides `soft_glow`,
+`warm_glow`, and `screen_tint`, and native adapters may register additional
+shader IDs through the shader registry. Unsupported shader ids, supported
+shader ids used at phases other than `run_offscreen_pass` / `glyph_color` /
+`post_process`, builtin effects used at unsupported visual phases,
+unregistered motion function ids, and unregistered custom effects must be
+diagnosed instead of being silently reinterpreted as placement effects.
+`host_event` phase effects leave the visual effect pipeline during lowering and
+become typed host event markers.
 For builtin wave
 placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
 broader targets evaluate the placement as one group; shake and jitter grouping

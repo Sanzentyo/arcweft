@@ -384,17 +384,32 @@ pub struct TextShaderContext<'a> {
     pub shader: &'a RichTextShaderRef,
 }
 
+/// Per-post-process context supplied to renderer-local shader implementations.
+pub struct TextShaderPostProcessContext<'a> {
+    pub shader: &'a RichTextShaderRef,
+    pub width: u32,
+    pub height: u32,
+    pub time_seconds: f32,
+}
+
 /// Renderer-local rich-text shader.
 pub trait RichTextShaderClass: Send {
     fn glyph_passes(&mut self, ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass>;
+
+    fn post_process(&mut self, _ctx: &TextShaderPostProcessContext<'_>, _rgba: &mut [u8]) -> bool {
+        false
+    }
 }
 
 pub type ShaderLambda =
     Box<dyn FnMut(&TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> + Send + 'static>;
+pub type ShaderPostProcessLambda =
+    Box<dyn FnMut(&TextShaderPostProcessContext<'_>, &mut [u8]) + Send + 'static>;
 
 pub enum RegisteredTextShader {
     Class(Box<dyn RichTextShaderClass>),
     Lambda(ShaderLambda),
+    PostProcessLambda(ShaderPostProcessLambda),
 }
 
 /// Registry that resolves `RichTextShaderRef::id` to native shader passes.
@@ -422,8 +437,38 @@ impl RichTextShaderRegistry {
             .insert(id.into(), RegisteredTextShader::Lambda(Box::new(shader)));
     }
 
+    pub fn insert_post_process_lambda(
+        &mut self,
+        id: impl Into<String>,
+        shader: impl FnMut(&TextShaderPostProcessContext<'_>, &mut [u8]) + Send + 'static,
+    ) {
+        self.shaders.insert(
+            id.into(),
+            RegisteredTextShader::PostProcessLambda(Box::new(shader)),
+        );
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.shaders.contains_key(id)
+    }
+
+    pub fn supports_phase(&self, id: &str, phase: RichTextEffectPhase) -> bool {
+        let Some(shader) = self.shaders.get(id) else {
+            return false;
+        };
+        match shader {
+            RegisteredTextShader::Class(_) => matches!(
+                phase,
+                RichTextEffectPhase::RunOffscreenPass
+                    | RichTextEffectPhase::GlyphColor
+                    | RichTextEffectPhase::PostProcess
+            ),
+            RegisteredTextShader::Lambda(_) => matches!(
+                phase,
+                RichTextEffectPhase::RunOffscreenPass | RichTextEffectPhase::GlyphColor
+            ),
+            RegisteredTextShader::PostProcessLambda(_) => phase == RichTextEffectPhase::PostProcess,
+        }
     }
 
     pub fn glyph_passes(
@@ -435,6 +480,24 @@ impl RichTextShaderRegistry {
         Some(match shader {
             RegisteredTextShader::Class(shader) => shader.glyph_passes(ctx),
             RegisteredTextShader::Lambda(shader) => shader(ctx),
+            RegisteredTextShader::PostProcessLambda(_) => Vec::new(),
+        })
+    }
+
+    pub fn post_process(
+        &mut self,
+        id: &str,
+        ctx: &TextShaderPostProcessContext<'_>,
+        rgba: &mut [u8],
+    ) -> Option<bool> {
+        let shader = self.shaders.get_mut(id)?;
+        Some(match shader {
+            RegisteredTextShader::Class(shader) => shader.post_process(ctx, rgba),
+            RegisteredTextShader::Lambda(_) => false,
+            RegisteredTextShader::PostProcessLambda(shader) => {
+                shader(ctx, rgba);
+                true
+            }
         })
     }
 }
@@ -543,6 +606,7 @@ pub fn register_native_default_text_effects(registry: &mut RichTextEffectRegistr
 pub fn register_native_default_text_shaders(registry: &mut RichTextShaderRegistry) {
     registry.insert_lambda("soft_glow", native_soft_glow_shader);
     registry.insert_lambda("warm_glow", native_warm_glow_shader);
+    registry.insert_post_process_lambda("screen_tint", native_screen_tint_post_process);
 }
 
 /// Registers native motion functions that are available without external adapters.
@@ -671,18 +735,9 @@ impl<'a> NativeEffectExecution<'a> {
     }
 
     fn observe_shader(&mut self, shader: &RichTextShaderRef) {
-        if !shader_phase_supported(shader.phase) {
-            let code = if self
-                .shader_registry
-                .as_deref()
-                .is_some_and(|registry| registry.contains(&shader.id))
-            {
-                "unsupported_shader_phase"
-            } else {
-                "missing_shader"
-            };
+        if !shader_phase_known(shader.phase) {
             self.push_shader_diagnostic(
-                code,
+                "unsupported_shader_phase",
                 NativeVisualDiagnosticSeverity::Warning,
                 shader,
                 format!(
@@ -705,6 +760,17 @@ impl<'a> NativeEffectExecution<'a> {
             return;
         };
         if registry.contains(&shader.id) {
+            if !registry.supports_phase(&shader.id, shader.phase) {
+                self.push_shader_diagnostic(
+                    "unsupported_shader_phase",
+                    NativeVisualDiagnosticSeverity::Warning,
+                    shader,
+                    format!(
+                        "rich-text shader `{}` uses unsupported native phase {:?}",
+                        shader.id, shader.phase
+                    ),
+                );
+            }
             return;
         }
         self.push_shader_diagnostic(
@@ -738,6 +804,46 @@ impl<'a> NativeEffectExecution<'a> {
         registry
             .glyph_passes(&shader.id, &TextShaderContext { shader })
             .and_then(|passes| passes.into_iter().next().map(|pass| pass.color))
+    }
+
+    fn apply_shader_post_processes<'b>(
+        &mut self,
+        shaders: impl IntoIterator<Item = &'b RichTextShaderRef>,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        rgba: &mut [u8],
+    ) {
+        for shader in shaders {
+            self.apply_shader_post_process(shader, width, height, time_seconds, rgba);
+        }
+    }
+
+    fn apply_shader_post_process(
+        &mut self,
+        shader: &RichTextShaderRef,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        rgba: &mut [u8],
+    ) {
+        if shader.phase != RichTextEffectPhase::PostProcess {
+            return;
+        }
+        self.observe_shader(shader);
+        let Some(registry) = self.shader_registry.as_deref_mut() else {
+            return;
+        };
+        if !registry.supports_phase(&shader.id, shader.phase) {
+            return;
+        }
+        let ctx = TextShaderPostProcessContext {
+            shader,
+            width,
+            height,
+            time_seconds,
+        };
+        let _ = registry.post_process(&shader.id, &ctx, rgba);
     }
 
     fn sample_motion_function(
@@ -983,19 +1089,24 @@ impl NativeOffscreenCaptureSession {
                 viewport.time_seconds,
             ),
         )?;
+        let post_process_shaders = post_process_shaders_for_page(frame, &page_range);
         let Some(page) = page_from_display_map_range(frame, page_range) else {
             return Err(NativeWindowError::EmptyPages);
         };
         self.capture_rich_text_rgba(
             &page.rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
-            width,
-            height,
-            NativeTextOrigin {
-                left: viewport.left,
-                top: viewport.top,
+            NativeRenderTarget {
+                width,
+                height,
+                origin: NativeTextOrigin {
+                    left: viewport.left,
+                    top: viewport.top,
+                },
+                time_seconds: viewport.time_seconds,
+                force_alpha_mask: false,
             },
-            viewport.time_seconds,
+            &post_process_shaders,
         )
     }
 
@@ -1081,12 +1192,21 @@ impl NativeOffscreenCaptureSession {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
         let background = [0, 0, 0, 0];
-        let readback = self
+        let mut readback = self
             .capture_color_text_regions_rgba_at(frame, viewport, regions)?
             .unwrap_or_else(|| NativeRenderReadback {
                 rgba: solid_rgba(width, height, background),
                 diagnostics: Vec::new(),
             });
+        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let post_process_shaders = post_process_shaders_for_regions(frame, &page_range, regions);
+        self.apply_post_process_shaders(
+            &mut readback,
+            width,
+            height,
+            viewport.time_seconds,
+            &post_process_shaders,
+        );
         let stats = native_frame_content_stats(&readback.rgba, width, height, background);
         Ok(NativeFrameCapture {
             width,
@@ -1102,32 +1222,55 @@ impl NativeOffscreenCaptureSession {
         &mut self,
         rich_text: &WindowRichText,
         layout: NativeRenderLayout<'_>,
-        width: u32,
-        height: u32,
-        origin: NativeTextOrigin,
-        time_seconds: f32,
+        target: NativeRenderTarget,
+        post_process_shaders: &[RichTextShaderRef],
     ) -> Result<NativeFrameCapture, NativeWindowError> {
-        let readback = self.render_rich_text_rgba_with_clear(
-            rich_text,
-            layout,
-            NativeRenderTarget {
-                width,
-                height,
-                origin,
-                time_seconds,
-                force_alpha_mask: false,
-            },
-            wgpu::Color::BLACK,
-        )?;
-        let stats = native_frame_content_stats(&readback.rgba, width, height, [0, 0, 0, 255]);
+        let mut readback =
+            self.render_rich_text_rgba_with_clear(rich_text, layout, target, wgpu::Color::BLACK)?;
+        self.apply_post_process_shaders(
+            &mut readback,
+            target.width,
+            target.height,
+            target.time_seconds,
+            post_process_shaders,
+        );
+        let stats =
+            native_frame_content_stats(&readback.rgba, target.width, target.height, [0, 0, 0, 255]);
         Ok(NativeFrameCapture {
-            width,
-            height,
+            width: target.width,
+            height: target.height,
             rgba: readback.rgba,
             content_bbox: stats.content_bbox,
             content_pixels: stats.content_pixels,
             diagnostics: readback.diagnostics,
         })
+    }
+
+    fn apply_post_process_shaders(
+        &mut self,
+        readback: &mut NativeRenderReadback,
+        width: u32,
+        height: u32,
+        time_seconds: f32,
+        shaders: &[RichTextShaderRef],
+    ) {
+        if shaders.is_empty() {
+            return;
+        }
+        let mut effects = NativeEffectExecution::new(
+            None,
+            Some(&mut self.shader_registry),
+            None,
+            &mut self.effect_state,
+        );
+        effects.apply_shader_post_processes(
+            shaders.iter(),
+            width,
+            height,
+            time_seconds,
+            &mut readback.rgba,
+        );
+        readback.diagnostics.extend(effects.into_diagnostics());
     }
 
     fn capture_debug_text_regions_rgba_at(
@@ -2810,10 +2953,12 @@ const fn effect_applies_to_renderer_glyph(effect: &RichTextEffectDescriptor) -> 
     )
 }
 
-const fn shader_phase_supported(phase: RichTextEffectPhase) -> bool {
+const fn shader_phase_known(phase: RichTextEffectPhase) -> bool {
     matches!(
         phase,
-        RichTextEffectPhase::RunOffscreenPass | RichTextEffectPhase::GlyphColor
+        RichTextEffectPhase::RunOffscreenPass
+            | RichTextEffectPhase::GlyphColor
+            | RichTextEffectPhase::PostProcess
     )
 }
 
@@ -2967,6 +3112,25 @@ fn native_warm_glow_shader(ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyph
     native_glow_shader(ctx, [255, 178, 112])
 }
 
+fn native_screen_tint_post_process(ctx: &TextShaderPostProcessContext<'_>, rgba: &mut [u8]) {
+    let color = shader_param_color(ctx.shader, "color").unwrap_or([120, 160, 255]);
+    let amount = shader_param_milli(ctx.shader, "amount")
+        .unwrap_or(Milli(250))
+        .as_f32()
+        .clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return;
+    }
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+            continue;
+        }
+        pixel[0] = blend_channel(pixel[0], color[0], amount);
+        pixel[1] = blend_channel(pixel[1], color[1], amount);
+        pixel[2] = blend_channel(pixel[2], color[2], amount);
+    }
+}
+
 fn native_glow_shader(ctx: &TextShaderContext<'_>, color: [u8; 3]) -> Vec<NativeShaderGlyphPass> {
     let shader = resolve_shader_filter(ctx.shader);
     if ctx.shader.phase == RichTextEffectPhase::GlyphColor {
@@ -3093,6 +3257,38 @@ fn shader_param_milli(shader: &RichTextShaderRef, name: &str) -> Option<Milli> {
 
 fn shader_param_vec2(shader: &RichTextShaderRef, name: &str) -> Option<[f32; 2]> {
     param_as_vec2(shader.params.get(name)?)
+}
+
+fn shader_param_color(shader: &RichTextShaderRef, name: &str) -> Option<[u8; 3]> {
+    param_as_color(shader.params.get(name)?)
+}
+
+fn param_as_color(param: &RichTextParam) -> Option<[u8; 3]> {
+    let value = match param {
+        RichTextParam::Raw { value }
+        | RichTextParam::Text { value }
+        | RichTextParam::Selector { value }
+        | RichTextParam::Expr { source: value } => {
+            value.trim().trim_matches('"').trim_matches('\'')
+        }
+        _ => return None,
+    };
+    parse_hex_rgb(value)
+}
+
+fn parse_hex_rgb(value: &str) -> Option<[u8; 3]> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let red = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let green = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let blue = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([red, green, blue])
+}
+
+fn blend_channel(source: u8, target: u8, amount: f32) -> u8 {
+    rounded_u8(f32::from(source) * (1.0 - amount) + f32::from(target) * amount)
 }
 
 fn param_as_milli(param: &RichTextParam) -> Option<Milli> {
@@ -3471,6 +3667,83 @@ fn display_map_ruby_for_range(
                 presentation: annotation.presentation.clone(),
             })
         })
+        .collect()
+}
+
+fn post_process_shaders_for_page(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+) -> Vec<RichTextShaderRef> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| intersect_display_range(run.range, page_range).is_some())
+        .flat_map(|run| post_process_shaders_from_presentation(&run.presentation))
+        .chain(
+            frame
+                .display_map
+                .ruby_annotations
+                .iter()
+                .filter(|ruby| intersect_display_range(ruby.base_range, page_range).is_some())
+                .flat_map(|ruby| post_process_shaders_from_presentation(&ruby.presentation)),
+        )
+        .collect()
+}
+
+fn post_process_shaders_for_regions(
+    frame: &LineDisplayFrame,
+    page_range: &Range<usize>,
+    regions: &[NativeFrameDebugRegion],
+) -> Vec<RichTextShaderRef> {
+    regions
+        .iter()
+        .flat_map(|region| match region.element {
+            Some(NativeFrameElement::TextRun { index }) => frame
+                .display_map
+                .text_runs
+                .get(index)
+                .filter(|run| intersect_display_range(run.range, page_range).is_some())
+                .map(|run| post_process_shaders_from_presentation(&run.presentation))
+                .unwrap_or_default(),
+            Some(NativeFrameElement::GlyphCluster {
+                range_start,
+                range_end,
+                ..
+            }) => {
+                let range = RichTextRange::new(range_start, range_end);
+                frame
+                    .display_map
+                    .text_runs
+                    .iter()
+                    .find(|run| {
+                        range.start >= run.range.start
+                            && range.end <= run.range.end
+                            && intersect_display_range(run.range, page_range).is_some()
+                    })
+                    .map(|run| post_process_shaders_from_presentation(&run.presentation))
+                    .unwrap_or_default()
+            }
+            Some(NativeFrameElement::Ruby { index }) => frame
+                .display_map
+                .ruby_annotations
+                .get(index)
+                .filter(|ruby| intersect_display_range(ruby.base_range, page_range).is_some())
+                .map(|ruby| post_process_shaders_from_presentation(&ruby.presentation))
+                .unwrap_or_default(),
+            None => Vec::new(),
+        })
+        .collect()
+}
+
+fn post_process_shaders_from_presentation(
+    presentation: &RichTextPresentation,
+) -> Vec<RichTextShaderRef> {
+    presentation
+        .shaders
+        .iter()
+        .filter(|shader| shader.phase == RichTextEffectPhase::PostProcess)
+        .cloned()
         .collect()
 }
 
@@ -6476,6 +6749,55 @@ mod tests {
                     && pixel[3] > 0
             }),
             "registered custom shader should emit red-tinted glyph pass pixels"
+        );
+    }
+
+    #[test]
+    fn native_capture_applies_default_post_process_shader() {
+        let frame = shader_test_frame("screen_tint", RichTextEffectPhase::PostProcess);
+        let capture = capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("post-process shader capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(capture.content_pixels > 0);
+        assert!(
+            capture
+                .rgba
+                .chunks_exact(4)
+                .any(|pixel| pixel[2] > pixel[0] && pixel[2] > pixel[1] && pixel[3] > 0),
+            "default screen_tint post-process should blue-tint rendered glyph pixels"
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_custom_post_process_shader_registry() {
+        let frame = shader_test_frame("rose_screen", RichTextEffectPhase::PostProcess);
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        session
+            .shader_registry_mut()
+            .insert_post_process_lambda("rose_screen", |_ctx, rgba| {
+                for pixel in rgba.chunks_exact_mut(4) {
+                    if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+                        continue;
+                    }
+                    pixel[0] = 255;
+                    pixel[1] = 24;
+                    pixel[2] = 16;
+                }
+            });
+
+        let capture = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("custom post-process shader capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(
+            capture.rgba.chunks_exact(4).any(|pixel| {
+                pixel[0] > pixel[1].saturating_add(120)
+                    && pixel[0] > pixel[2].saturating_add(120)
+                    && pixel[3] > 0
+            }),
+            "registered post-process shader should alter rendered glyph pixels"
         );
     }
 
