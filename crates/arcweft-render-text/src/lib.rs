@@ -9,10 +9,10 @@ mod rich_effects;
 
 pub use rich_effects::{
     Milli, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextParam,
-    RichTextPresentation, RichTextRubyPosition, RichTextShaderRef, RichTextStateScope,
-    RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
-    RichTextWritingMode, parse_decimal_milli, parse_milli_token,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextObjectProxy,
+    RichTextParam, RichTextPresentation, RichTextRubyPosition, RichTextShaderRef,
+    RichTextStateScope, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
+    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
 };
 
 /// Rich-text display sidecar generated while lowering a runtime plan.
@@ -192,6 +192,7 @@ pub enum RichTextStyle {
     Transform { transform: RichTextTransform },
     Effect { effect: RichTextEffectDescriptor },
     Shader { shader: RichTextShaderRef },
+    Object { proxy: RichTextObjectProxy },
     Unknown { name: String, attrs: String },
 }
 
@@ -476,6 +477,7 @@ impl RichTextStyle {
             Self::Speed { .. } => "speed",
             Self::Layout { .. } => "layout",
             Self::Transform { .. } => "transform",
+            Self::Object { .. } => "object",
             Self::Effect { .. } | Self::Shader { .. } => "effect",
             Self::Unknown { name, .. } => name,
         }
@@ -938,6 +940,7 @@ pub fn presentation_from_styles<'a>(
                 }
                 RichTextStyle::Effect { effect } => out.effects.push(effect.clone()),
                 RichTextStyle::Shader { shader } => out.shaders.push(shader.clone()),
+                RichTextStyle::Object { proxy } => out.object_proxies.push(proxy.clone()),
                 RichTextStyle::Strong { .. }
                 | RichTextStyle::Color { .. }
                 | RichTextStyle::Font { .. }

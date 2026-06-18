@@ -18653,6 +18653,14 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     ));
     assert!(rich_text_text_run_has_effect(explicit, "jitter"));
     assert!(rich_text_text_run_has_shader(explicit, "soft_glow"));
+    assert!(rich_text_text_run_has_object_proxy(explicit, |proxy| proxy
+        ["id"]
+        == "hotspot"
+        && proxy["type_name"] == "KeywordHit"
+        && proxy["role"] == "keyword"
+        && proxy["depth"] == 4000
+        && proxy["hit_test"] == true
+        && proxy["params"]["channel"]["value"] == "choice",));
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
@@ -31899,6 +31907,19 @@ fn rich_text_text_run_has_shader(textbox: &serde_json::Value, id: &str) -> bool 
             .into_iter()
             .flatten()
             .any(|shader| shader["id"] == id)
+    })
+}
+
+fn rich_text_text_run_has_object_proxy(
+    textbox: &serde_json::Value,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> bool {
+    rich_text_text_runs(textbox).iter().any(|run| {
+        run["presentation"]["object_proxies"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(&predicate)
     })
 }
 

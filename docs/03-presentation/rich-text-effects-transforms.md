@@ -3,7 +3,9 @@
 This document defines the presentation-side execution contract for rich-text
 transforms, effects, and shader references. It complements the dialogue
 authoring syntax in
-[Dialogue Control Tags, Ruby, Interpolation, and Line Marks](../01-language/dialogue-control-tags-and-ruby.md).
+[Dialogue Control Tags, Ruby, Interpolation, and Line Marks](../01-language/dialogue-control-tags-and-ruby.md)
+and the object/proxy model in
+[Text Presentation Objects](text-presentation-objects.md).
 
 The renderer-agnostic data model is `RichTextPresentation`. Renderer adapters
 resolve effect ids, shader ids, stateful classes, and host callbacks through
@@ -214,6 +216,7 @@ Agent observation must expose the effective presentation needed to debug text:
 - full transform descriptor
 - effect descriptors with id, params, target, phase, and state scope
 - shader refs with id, params, and phase
+- text object proxies with id, type, role, depth, hit-test policy, and params
 - source ranges and ruby base/annotation bboxes
 
 Image capture follows

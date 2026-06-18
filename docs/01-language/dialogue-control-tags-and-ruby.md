@@ -82,6 +82,7 @@ A module may still define a qualified function such as `my_tags::p`, but it cann
 | `em`, `strong` | emphasis spans |
 | `color`, `font`, `size` | rich text styling spans |
 | `speed` | text reveal speed control |
+| `object` | typed text presentation object/proxy span |
 | `reset` | reset text style/reveal modifiers |
 | `voice` | voice cue inside a line |
 | `face`, `pose` | expression/pose change |
@@ -124,6 +125,7 @@ The canonical forms keep the family explicit:
 alice: [effect .shake amp=2px dir=0,1]揺れる文字[/effect][p]
 alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
 alice: [transform .offset x=4px y=-2px]少しずらす[/transform][p]
+alice: [object .hotspot type=KeywordHit hit=true]当たり判定つき文字[/object][p]
 ```
 
 `[/]` closes the most recent inferred rich-text span. Canonical tooling expands
@@ -139,6 +141,14 @@ with a following `[/]`, canonical tooling removes that inferred close because
 markers are zero-width, not spans. Unknown dot selectors with attributes
 canonicalize to custom effect spans, for example
 `[.sparkle amp=2px]...[/]` becomes `[effect .sparkle amp=2px]...[/effect]`.
+
+Text presentation object proxies are explicit object-family spans:
+`[object .name ...]...[/object]`. They preserve custom proxy metadata for
+hit-testing, depth ordering, object-id capture, and renderer/tooling registries
+without reinterpreting the span as a visual effect. The declaration-time proxy
+type may be marked with normal Arcweft attributes such as `#[text_proxy(...)]`;
+inline dialogue text refers to it with `type=Name`, `struct=Name`, or
+`proxy=Name` so it does not conflict with `#[expr]` interpolation.
 
 Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as

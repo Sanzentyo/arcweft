@@ -8,6 +8,7 @@ Related:
 
 - [Agent Debug Bus / MCP / CLI](agent-debug-mcp-cli.md)
 - [Text / RichText / Typst](../03-presentation/text-typesetting.md)
+- [Text Presentation Objects](../03-presentation/text-presentation-objects.md)
 - [Rich Text Effects and Transforms](../03-presentation/rich-text-effects-transforms.md)
 
 ---

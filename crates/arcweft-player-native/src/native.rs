@@ -3485,6 +3485,7 @@ fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) -> NativeText
         | RichTextStyle::Transform { .. }
         | RichTextStyle::Effect { .. }
         | RichTextStyle::Shader { .. }
+        | RichTextStyle::Object { .. }
         | RichTextStyle::Unknown { .. } => {}
     }
     native

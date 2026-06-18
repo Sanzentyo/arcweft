@@ -10,6 +10,7 @@
 - [HTML / Servo / DOM UI](html-servo-dom.md)
 - [Vector / SVG](vector-svg.md)
 - [Text / RichText / Typst](text-typesetting.md)
+- [Text Presentation Objects](text-presentation-objects.md)
 - [Rich Text Effects and Transforms](rich-text-effects-transforms.md)
 - [Audio / Spatial / TTS / BGM](audio.md)
 - [Character Stage / Sprite / Voice Timeline](character-stage.md)

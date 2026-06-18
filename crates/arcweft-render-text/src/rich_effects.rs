@@ -295,6 +295,22 @@ pub struct RichTextShaderRef {
     pub phase: RichTextEffectPhase,
 }
 
+/// Typed proxy metadata attached to a span of text presentation objects.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RichTextObjectProxy {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<Milli>,
+    #[serde(default)]
+    pub hit_test: bool,
+    #[serde(default)]
+    pub params: BTreeMap<String, RichTextParam>,
+}
+
 /// Presentation metadata resolved for a text run or ruby annotation.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextPresentation {
@@ -306,6 +322,8 @@ pub struct RichTextPresentation {
     pub effects: Vec<RichTextEffectDescriptor>,
     #[serde(default)]
     pub shaders: Vec<RichTextShaderRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_proxies: Vec<RichTextObjectProxy>,
     #[serde(default)]
     pub italic: bool,
     #[serde(default)]
@@ -327,6 +345,7 @@ impl RichTextPresentation {
         }
         self.effects.extend(other.effects);
         self.shaders.extend(other.shaders);
+        self.object_proxies.extend(other.object_proxies);
         self.italic |= other.italic;
         if other.oblique.is_some() {
             self.oblique = other.oblique;

@@ -16,10 +16,11 @@ use arcweft_render_text::{
     LineDisplaySpec, Milli, RichTextAngle, RichTextAssignOp, RichTextCascadeLayer, RichTextColor,
     RichTextControl, RichTextDocument, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextEffectTarget, RichTextFontFamily, RichTextInlineDirection, RichTextJlreqStrictness,
-    RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition, RichTextSettingSource,
-    RichTextShaderRef, RichTextSourceRange, RichTextStateScope, RichTextStyle,
-    RichTextStyleContribution, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
-    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
+    RichTextLayout, RichTextNode, RichTextObjectProxy, RichTextParam, RichTextRubyPosition,
+    RichTextSettingSource, RichTextShaderRef, RichTextSourceRange, RichTextStateScope,
+    RichTextStyle, RichTextStyleContribution, RichTextTransform, RichTextTransformOrigin,
+    RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli,
+    parse_milli_token,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -2044,6 +2045,7 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
         "style" => lower_style_tag(tag),
         "layout" => lower_layout_tag(tag),
         "transform" => lower_transform_tag(tag),
+        "object" => lower_object_tag(tag),
         "effect" | "fx" => lower_effect_tag(tag),
         "voice" => host_event(DialogueHostEvent::Voice {
             attrs: tag.attrs().to_owned(),
@@ -2208,6 +2210,72 @@ fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
     }]
 }
 
+fn lower_object_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+    let (selector, attrs) = split_selector_attrs(tag.attrs());
+    vec![RichTextNode::StyleStart {
+        style: RichTextStyle::Object {
+            proxy: object_proxy_from_selector(selector.trim_start_matches('.'), attrs),
+        },
+    }]
+}
+
+fn object_proxy_from_selector(selector: &str, attrs: &str) -> RichTextObjectProxy {
+    let attrs = parse_attrs(attrs);
+    let id = if selector.is_empty() {
+        attrs
+            .get("id")
+            .or_else(|| attrs.get("name"))
+            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "text_object".to_owned())
+    } else {
+        selector.to_owned()
+    };
+    RichTextObjectProxy {
+        id,
+        type_name: attrs
+            .get("type")
+            .or_else(|| attrs.get("struct"))
+            .or_else(|| attrs.get("proxy"))
+            .map(|value| trim_quotes(value).to_owned())
+            .filter(|value| !value.is_empty()),
+        role: attrs
+            .get("role")
+            .map(|value| trim_quotes(value).to_owned())
+            .filter(|value| !value.is_empty()),
+        depth: attrs
+            .get("depth")
+            .or_else(|| attrs.get("z"))
+            .or_else(|| attrs.get("z_index"))
+            .map(|value| parse_milli_token(value)),
+        hit_test: attrs
+            .get("hit")
+            .or_else(|| attrs.get("hit_test"))
+            .is_some_and(|value| matches!(trim_quotes(value), "true" | "yes" | "1" | "on")),
+        params: attrs
+            .iter()
+            .filter(|(key, _)| !is_object_proxy_metadata_attr(key))
+            .map(|(key, value)| (key.clone(), param_from_value(value)))
+            .collect(),
+    }
+}
+
+fn is_object_proxy_metadata_attr(key: &str) -> bool {
+    matches!(
+        key,
+        "id" | "name"
+            | "type"
+            | "struct"
+            | "proxy"
+            | "role"
+            | "depth"
+            | "z"
+            | "z_index"
+            | "hit"
+            | "hit_test"
+    )
+}
+
 fn canonical_end_tag(name: &str) -> &str {
     match name {
         "style" | "italic" | "i" | "oblique" | "slant" => "style",
@@ -2220,6 +2288,7 @@ fn canonical_end_tag(name: &str) -> &str {
         | "ruby_under"
         | "ruby_inter_character" => "layout",
         "transform" | "offset" | "pos" | "rotate" | "scale" | "skew" => "transform",
+        "object" => "object",
         "effect" | "fx" | "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter"
         | "jitter" | "shader" | "host" => "effect",
         other => other,
@@ -2916,6 +2985,82 @@ flow @flow.main main {
             })
             .expect("plain text run after inferred close");
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn explicit_object_tag_lowers_text_proxy_metadata_to_presentation() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[object .hotspot type=KeywordHit role=keyword depth=4 hit=true channel=choice]BC[/object]D[p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.object.proxy".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let object_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .expect("object proxy text run");
+        let proxy = object_run
+            .presentation
+            .object_proxies
+            .first()
+            .expect("object proxy presentation");
+
+        assert_eq!(proxy.id, "hotspot");
+        assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
+        assert_eq!(proxy.role.as_deref(), Some("keyword"));
+        assert_eq!(proxy.depth, Some(Milli(4000)));
+        assert!(proxy.hit_test);
+        assert_eq!(
+            proxy.params.get("channel"),
+            Some(&RichTextParam::Raw {
+                value: "choice".to_owned()
+            })
+        );
+        assert!(
+            !proxy.params.contains_key("type") && !proxy.params.contains_key("depth"),
+            "proxy metadata keys should not be forwarded as custom params"
+        );
+        let plain_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "D")
+            })
+            .expect("plain text run after object close");
+        assert!(plain_run.presentation.object_proxies.is_empty());
     }
 
     #[test]
