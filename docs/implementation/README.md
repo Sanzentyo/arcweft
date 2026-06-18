@@ -41,7 +41,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   invoking source compilation while still resolving native window/capture frames
   from runtime-host flow events. See
   `docs/implementation/native-rich-text-player.md` and
-  `docs/implementation/native-cli-player-boundaries.md`.
+  `docs/implementation/native-cli-player-boundaries.md`. The completion audit
+  for the `pro_review33` boundary, including the adopted
+  `arcweft-unified-ui-activity-input-design.md` constraints, is tracked in
+  `docs/implementation/pro-review33-completion-audit.md`.
 - `docs/implementation/rich-text-object-goal-audit.md` tracks the current
   requirement/evidence matrix for the rich-text typed-presentation-object goal;
   use it to separate completed evidence from remaining audit risk before
