@@ -18661,6 +18661,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         && proxy["depth"] == 4000
         && proxy["hit_test"] == true
         && proxy["params"]["channel"]["value"] == "choice",));
+    assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
@@ -31921,6 +31922,26 @@ fn rich_text_text_run_has_object_proxy(
             .flatten()
             .any(&predicate)
     })
+}
+
+fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
+    let proxy_run = find_rich_text_run_object(json, "proxy");
+    assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
+    assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 4000);
+    let proxy_hit = rich_text_hit_region(
+        proxy_run,
+        "text_object_proxy",
+        proxy_run["rich_text_ref"]["range"]["start"]
+            .as_u64()
+            .expect("proxy range start"),
+        proxy_run["rich_text_ref"]["range"]["end"]
+            .as_u64()
+            .expect("proxy range end"),
+    );
+    assert_eq!(proxy_hit["proxy_id"], "hotspot");
+    assert_eq!(proxy_hit["proxy_type"], "KeywordHit");
+    assert_eq!(proxy_hit["proxy_role"], "keyword");
+    assert_eq!(proxy_hit["depth"], 4000);
 }
 
 fn rich_text_text_run_has_transform(

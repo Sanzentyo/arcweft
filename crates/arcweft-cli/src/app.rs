@@ -79,8 +79,8 @@ use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
 use arcweft_render_text::{
-    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextRange,
-    RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
+    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextPresentation,
+    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
 };
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
@@ -4870,11 +4870,14 @@ fn agent_rich_text_run_object(
                 vertical_form: None,
                 ruby_base_bbox: None,
                 ruby_annotation_bbox: None,
-                hit_regions: vec![agent_hit_region(
+                object_depth: agent_object_depth(&run.presentation),
+                hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
+                hit_regions: agent_text_hit_regions(
                     AgentHitRegionKind::TextRun,
                     &bbox,
                     run.range,
-                )],
+                    &run.presentation,
+                ),
             },
             page,
         },
@@ -4921,6 +4924,8 @@ fn agent_rich_text_ruby_object(
                 vertical_form: None,
                 ruby_base_bbox: bbox.ruby.as_ref().map(|ruby| ruby.base_bbox.clone()),
                 ruby_annotation_bbox: bbox.ruby.as_ref().map(|ruby| ruby.annotation_bbox.clone()),
+                object_depth: agent_object_depth(&ruby.presentation),
+                hit_test: agent_presentation_has_hit_test_proxy(&ruby.presentation),
                 hit_regions,
             },
             page,
@@ -4991,11 +4996,14 @@ fn agent_rich_text_cluster_objects(
                         }),
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        hit_regions: vec![agent_hit_region(
+                        object_depth: agent_object_depth(&run.presentation),
+                        hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
+                        hit_regions: agent_text_hit_regions(
                             AgentHitRegionKind::GlyphCluster,
                             &bounds.bbox,
                             range,
-                        )],
+                            &run.presentation,
+                        ),
                     },
                     page,
                 },
@@ -5025,7 +5033,52 @@ fn agent_hit_region(
         kind,
         bbox: bbox.clone(),
         range,
+        proxy_id: None,
+        proxy_type: None,
+        proxy_role: None,
+        depth: None,
     }
+}
+
+fn agent_text_hit_regions(
+    base_kind: AgentHitRegionKind,
+    bbox: &AgentBBox,
+    range: RichTextRange,
+    presentation: &RichTextPresentation,
+) -> Vec<AgentHitRegion> {
+    let mut regions = vec![agent_hit_region(base_kind, bbox, range)];
+    regions.extend(
+        presentation
+            .object_proxies
+            .iter()
+            .filter(|proxy| proxy.hit_test)
+            .map(|proxy| AgentHitRegion {
+                kind: AgentHitRegionKind::TextObjectProxy,
+                bbox: bbox.clone(),
+                range,
+                proxy_id: Some(proxy.id.clone()),
+                proxy_type: proxy.type_name.clone(),
+                proxy_role: proxy.role.clone(),
+                depth: proxy.depth.map(|depth| depth.0),
+            }),
+    );
+    regions
+}
+
+fn agent_object_depth(presentation: &RichTextPresentation) -> Option<i32> {
+    presentation
+        .object_proxies
+        .iter()
+        .filter_map(|proxy| proxy.depth.map(|depth| depth.0))
+        .max()
+        .or_else(|| (presentation.z_index != 0).then_some(i32::from(presentation.z_index) * 1000))
+}
+
+fn agent_presentation_has_hit_test_proxy(presentation: &RichTextPresentation) -> bool {
+    presentation
+        .object_proxies
+        .iter()
+        .any(|proxy| proxy.hit_test)
 }
 
 fn agent_ruby_hit_regions(

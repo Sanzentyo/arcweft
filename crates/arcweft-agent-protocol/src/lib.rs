@@ -431,6 +431,10 @@ pub struct AgentRichTextElementRef {
     pub ruby_base_bbox: Option<AgentBBox>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ruby_annotation_bbox: Option<AgentBBox>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_depth: Option<i32>,
+    #[serde(default)]
+    pub hit_test: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hit_regions: Vec<AgentHitRegion>,
 }
@@ -450,6 +454,14 @@ pub struct AgentHitRegion {
     pub kind: AgentHitRegionKind,
     pub bbox: AgentBBox,
     pub range: RichTextRange,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<i32>,
 }
 
 /// Semantic role for a rich-text hit-test region.
@@ -458,6 +470,7 @@ pub struct AgentHitRegion {
 pub enum AgentHitRegionKind {
     TextRun,
     GlyphCluster,
+    TextObjectProxy,
     RubyObject,
     RubyBase,
     RubyAnnotation,
@@ -914,10 +927,16 @@ mod tests {
             vertical_form: None,
             ruby_base_bbox: None,
             ruby_annotation_bbox: None,
+            object_depth: None,
+            hit_test: false,
             hit_regions: vec![AgentHitRegion {
                 kind: AgentHitRegionKind::TextRun,
                 bbox: bbox.clone(),
                 range: RichTextRange::new(0, 5),
+                proxy_id: None,
+                proxy_type: None,
+                proxy_role: None,
+                depth: None,
             }],
         }
     }

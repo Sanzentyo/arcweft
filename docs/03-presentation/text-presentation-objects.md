@@ -79,6 +79,10 @@ then proxy depth, then source order.
 `hit=true` enables hit-test regions for the span. `hit=false` keeps the proxy
 observable but non-interactive. Hit regions are reported in Agent observation and
 must use the same post-transform bounds as object-id and color captures.
+Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
+`text_object_proxy`, the proxy id/type/role, and the resolved local depth. The
+same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
+debuggers can sort text objects with image/model-like presentation objects.
 
 ## Renderer Boundary
 
