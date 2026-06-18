@@ -25,7 +25,7 @@ pub struct RawInputEvent {
 pub enum RawInputKind {
     Pointer(PointerInput),
     Keyboard(KeyboardInput),
-    Text(String),
+    Text(TextInput),
     Agent(AgentInput),
 }
 
@@ -42,6 +42,12 @@ pub struct PointerInput {
 pub struct KeyboardInput {
     pub key: String,
     pub phase: KeyPhase,
+}
+
+/// Text input payload after host/IME normalization.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextInput {
+    value: String,
 }
 
 /// Agent semantic input enters the same routing system as physical input.
@@ -168,6 +174,18 @@ impl RawInputEvent {
 impl ViewportPoint {
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
+    }
+}
+
+impl TextInput {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+
+    pub const fn value(&self) -> &str {
+        self.value.as_str()
     }
 }
 

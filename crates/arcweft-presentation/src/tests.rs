@@ -1,13 +1,16 @@
 use super::*;
+use crate::hit::{HitRecord, HitRect, HitTree};
 use crate::input::{
     Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
-    InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, RawInputEvent,
-    RawInputKind,
+    InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, KeyboardInput, PointerId,
+    PointerInput, PointerPhase, RawInputEvent, RawInputKind, TextInput, ViewportPoint,
 };
+use crate::interaction::{FocusState, InteractionState, PointerCapture};
 use crate::layer::{
     LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
     LayerTreeError, LayerVisibility, RenderPhase,
 };
+use crate::router::{InputRouter, RouteDecision};
 
 #[test]
 fn registry_clears_values_when_scope_exits() {
@@ -203,6 +206,10 @@ fn layer_order(phase: RenderPhase, z: i32, stable_index: u32) -> LayerOrder {
     }
 }
 
+fn interaction_target(name: &str) -> InteractionTarget {
+    InteractionTarget::new(PublicId::try_new(format!("target.{name}")).unwrap())
+}
+
 #[test]
 fn layer_tree_derives_render_and_input_order_from_same_nodes() {
     let root = layer_id("root");
@@ -319,4 +326,246 @@ fn hidden_layers_are_not_routable_or_rendered() {
 
     assert_eq!(tree.render_order(), std::slice::from_ref(&root));
     assert_eq!(tree.input_order(), std::slice::from_ref(&root));
+}
+
+#[test]
+fn router_routes_pointer_by_layer_order_and_modal_blocks_lower_layers() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let modal = layer_id("modal");
+    let world_target = interaction_target("activity.world");
+    let modal_target = interaction_target("modal.close");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            world.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("world inserts");
+    tree.insert(
+        LayerNode::new(
+            modal.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("modal inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        world.clone(),
+        world_target,
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+    hits.push(HitRecord::new(
+        modal.clone(),
+        modal_target.clone(),
+        HitRect::new(0.0, 0.0, 20.0, 20.0),
+    ));
+
+    let modal_hit = RawInputEvent::new(
+        InputEpoch(10),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(5.0, 5.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let routed = InputRouter::route(&modal_hit, &tree, &hits, &InteractionState::default());
+    assert!(matches!(
+        routed.event().map(InputEvent::target),
+        Some(target) if target == &modal_target
+    ));
+
+    let lower_hit = RawInputEvent::new(
+        InputEpoch(11),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(50.0, 50.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let blocked = InputRouter::route(&lower_hit, &tree, &hits, &InteractionState::default());
+    assert_eq!(blocked.decision(), &RouteDecision::BlockedByModal { modal });
+}
+
+#[test]
+fn router_keeps_agent_invocation_inside_layer_and_modal_policy() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let modal = layer_id("modal");
+    let world_target = interaction_target("activity.world");
+    let modal_target = interaction_target("modal.close");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            world.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("world inserts");
+    tree.insert(
+        LayerNode::new(
+            modal.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("modal inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        world,
+        world_target.clone(),
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+    hits.push(HitRecord::new(
+        modal.clone(),
+        modal_target.clone(),
+        HitRect::new(0.0, 0.0, 20.0, 20.0),
+    ));
+
+    let lower_agent = RawInputEvent::new(
+        InputEpoch(20),
+        RawInputKind::Agent(AgentInput {
+            action: PublicId::try_new("action.inspect").unwrap(),
+            target: Some(world_target),
+        }),
+    );
+    let blocked = InputRouter::route(&lower_agent, &tree, &hits, &InteractionState::default());
+    assert_eq!(
+        blocked.decision(),
+        &RouteDecision::BlockedByModal {
+            modal: modal.clone()
+        }
+    );
+
+    let modal_agent = RawInputEvent::new(
+        InputEpoch(21),
+        RawInputKind::Agent(AgentInput {
+            action: PublicId::try_new("action.close").unwrap(),
+            target: Some(modal_target.clone()),
+        }),
+    );
+    let routed = InputRouter::route(&modal_agent, &tree, &hits, &InteractionState::default());
+    assert!(matches!(
+        routed.event().map(InputEvent::target),
+        Some(target) if target == &modal_target
+    ));
+}
+
+#[test]
+fn router_routes_keyboard_and_text_to_focus_target() {
+    let root = layer_id("root");
+    let dialogue = layer_id("dialogue");
+    let target = interaction_target("textbox.main");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            dialogue.clone(),
+            LayerKind::TextBox,
+            layer_order(RenderPhase::Dialogue, 0, 10),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("dialogue inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        dialogue.clone(),
+        target.clone(),
+        HitRect::new(0.0, 0.0, 500.0, 160.0),
+    ));
+    let mut state = InteractionState::default();
+    state.set_focus(FocusState::new(dialogue, target.clone()));
+
+    let key = RawInputEvent::new(
+        InputEpoch(30),
+        RawInputKind::Keyboard(KeyboardInput {
+            key: "Enter".to_owned(),
+            phase: KeyPhase::Down,
+        }),
+    );
+    let routed_key = InputRouter::route(&key, &tree, &hits, &state);
+    assert!(matches!(
+        routed_key.event().map(InputEvent::kind),
+        Some(InputEventKind::Key {
+            key,
+            phase: KeyPhase::Down
+        }) if key == "Enter"
+    ));
+
+    let text = RawInputEvent::new(InputEpoch(31), RawInputKind::Text(TextInput::new("abc")));
+    let routed_text = InputRouter::route(&text, &tree, &hits, &state);
+    assert!(matches!(
+        routed_text.event().map(InputEvent::kind),
+        Some(InputEventKind::Text(value)) if value == "abc"
+    ));
+    assert_eq!(routed_text.event().map(InputEvent::target), Some(&target));
+}
+
+#[test]
+fn router_sends_pointer_events_to_active_capture_owner() {
+    let root = layer_id("root");
+    let activity = layer_id("activity");
+    let target = interaction_target("activity.drag");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            activity.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::Capture),
+    )
+    .expect("activity inserts");
+
+    let mut state = InteractionState::default();
+    state.capture_pointer(PointerCapture::new(PointerId(9), activity, target.clone()));
+    let raw = RawInputEvent::new(
+        InputEpoch(40),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(9),
+            position: ViewportPoint::new(999.0, 999.0),
+            phase: PointerPhase::Move,
+        }),
+    );
+
+    let routed = InputRouter::route(&raw, &tree, &HitTree::default(), &state);
+    assert_eq!(routed.event().map(InputEvent::target), Some(&target));
+    assert!(matches!(
+        routed.event().map(InputEvent::kind),
+        Some(InputEventKind::Pointer {
+            phase: PointerPhase::Move
+        })
+    ));
 }

@@ -2,8 +2,11 @@ use arcweft_id::PublicId;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+pub mod hit;
 pub mod input;
+pub mod interaction;
 pub mod layer;
+pub mod router;
 
 /// Named lifetime owner for presentation values.
 ///

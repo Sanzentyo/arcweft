@@ -58,6 +58,13 @@ The unified UI design is adopted as the long-term boundary for future work:
   `LayerInputPolicy`, and `LayerContent` cover render order, future input
   routing order, and TextBox/Activity/UI content ownership without introducing
   public compatibility concepts such as `ActivityViewport` or `UiEvent`.
+  `arcweft_presentation::hit`, `arcweft_presentation::interaction`, and
+  `arcweft_presentation::router` now add the first routing boundary:
+  `HitTree`, `HitRecord`, `InteractionState`, `FocusState`, pointer capture
+  records, `InputRouter`, and auditable `RouteDecision` values. Pointer,
+  keyboard, text, and Agent semantic input all route through the same
+  LayerTree/HitTree checks, and modal layers block lower targets instead of
+  allowing Agent or focus paths to bypass visibility and layer policy.
 - A future `arcweft-ui` crate will own typed Component descriptors, retained
   fragments, generational Entity storage, reactivity, style, layout integration,
   and semantic UI nodes.
@@ -149,12 +156,13 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Build the actual router, HitTree, focus/modal/capture state, hover path
-   diff, gesture arena, replay hash, and Activity/TextBox semantic integration
-   on top of the shared presentation input and LayerTree boundaries. Later
-   Component and Activity work must use `ActionBatch`, `HostEventBatch`, routed
-   `InputEvent`, and `LayerContent` instead of introducing per-Activity routers,
-   `ActivityViewport`, or `UiEvent` aliases.
+5. Extend the initial `InputRouter`, `HitTree`, focus/modal/capture state with
+   hover path diff, gesture arena, replay hash, local-coordinate transform
+   handling, and Activity/TextBox semantic integration on top of the shared
+   presentation input and LayerTree boundaries. Later Component and Activity
+   work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
+   `LayerContent`, and `RouteDecision` instead of introducing per-Activity
+   routers, `ActivityViewport`, or `UiEvent` aliases.
 
 ## Invariants
 
