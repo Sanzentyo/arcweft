@@ -10,7 +10,7 @@ pub(in crate::app) mod verify;
 
 use self::agent::agent_command;
 use self::bundle::{bundle_command, run_bundle_command};
-use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand};
+use self::commands::{BuildCommand, Cli, CliCommand};
 use self::jit::jit_command;
 use self::runtime::{
     runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
@@ -18,70 +18,11 @@ use self::runtime::{
 };
 use self::tooling::{format_command, ids_command};
 use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};
-use crate::output::{
-    AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, RuntimeExecutorTier,
-    RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
-    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary, RuntimeRunReport,
-    RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, ScriptBenchDeterministicSummary,
-    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
-    ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
-    ScriptBenchSectionRunSummary, ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary,
-    ScriptTestStatus, TypeCheckProfileStats, flow_status_label,
-};
 use crate::toolchain_profile;
-use arcweft_bundle::BundleRuntimeSummary;
-use arcweft_core::aot::{AotProgram, AotProgramStats};
-use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
-use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
-use arcweft_core::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
-use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeRouteSpec,
-};
-use arcweft_core::step::{
-    RuntimePureCallStats, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
-    RuntimeStepResult, RuntimeStepStats,
-};
-use arcweft_core::{
-    pure::RuntimePureCallBackend,
-    value::{RuntimeBinding, RuntimeValue, runtime_sequence_dense_f32, runtime_sequence_values},
-};
-use arcweft_host_adapter::HostCallPolicy;
-use arcweft_lang_sema::check::TypeCheckReport;
-use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, parse_expr};
-use arcweft_launch::LaunchKind;
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_runtime_accelerator::{
-    RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
-    RuntimePureWorkerCount, math::RuntimeMathBackend,
-};
-use arcweft_runtime_host::{
-    BundleRunnerExecutor, BundleRunnerPhase, BundleRunnerStepMode, BundleRunnerStepSummary,
-    NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
-    NativeTaskStats, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, host_system_info,
-    runtime_executor_stats,
-};
-use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerReport, RuntimePlanLowerStats, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options,
-};
-use arcweft_runtime_plan::pure::{
-    PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
-};
-use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
-use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
-use clap::{Args, Parser, ValueEnum};
+use arcweft_runtime_host::NativeAdapterRegistrar;
+use clap::Parser;
 use std::ffi::OsString;
-use std::fs;
-use std::net::SocketAddr;
-use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
 
 /// Runs the Arcweft CLI with the standard native adapters.
 pub fn run<I, T>(args: I) -> ExitCode

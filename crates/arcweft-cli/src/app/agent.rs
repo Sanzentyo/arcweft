@@ -1,11 +1,14 @@
+use super::commands::AgentCommand;
 use super::project::ProfileOptions;
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
     CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
 };
-use super::{
-    AgentCommand, Args, ExitCode, NativeAdapterRegistrar, PathBuf, RuntimeBinding, ValueEnum,
-};
+use arcweft_core::value::RuntimeBinding;
+use arcweft_runtime_host::NativeAdapterRegistrar;
+use clap::{Args, ValueEnum};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[cfg(feature = "native-capture")]
 use super::project::{
@@ -18,10 +21,21 @@ use super::runtime::step_options;
 #[cfg(feature = "native-capture")]
 use super::shared::print_json;
 #[cfg(feature = "native-capture")]
-use super::{
-    FlowFiberStatus, LineDisplayCatalog, NativeTaskBridge, Path, RuntimeStepInput,
-    RuntimeStepResult, flow_status_label, fs, lower_runtime_plan_with_stats_and_options,
-};
+use crate::output::flow_status_label;
+#[cfg(feature = "native-capture")]
+use arcweft_core::engine::FlowFiberStatus;
+#[cfg(feature = "native-capture")]
+use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
+#[cfg(feature = "native-capture")]
+use arcweft_render_text::LineDisplayCatalog;
+#[cfg(feature = "native-capture")]
+use arcweft_runtime_host::NativeTaskBridge;
+#[cfg(feature = "native-capture")]
+use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats_and_options;
+#[cfg(feature = "native-capture")]
+use std::fs;
+#[cfg(feature = "native-capture")]
+use std::path::Path;
 
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
