@@ -237,7 +237,7 @@ host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges
 for text/interpolation/ruby/control output, and a semantic `advance_text` action.
-Visible rich-text pages, text runs, ruby annotations, and glyph clusters are also
+Visible rich-text pages, authored lines, text runs, ruby annotations, and glyph clusters are also
 exposed as `dialogue.rich_text` child objects with their own bbox,
 `capture_refs`, and a structured `rich_text_ref` pointing back to the parent
 display-map element, so an Agent can request a crop such as
@@ -245,7 +245,10 @@ display-map element, so an Agent can request a crop such as
 specific inline element needs visual inspection. Page child objects use
 `rich_text_ref.kind = text_page`, expose the page text range, and carry
 page-aware color/object-id/mask capture refs, so a whole rendered text page can
-be inspected as directly as a sprite or model object. For child objects on later
+be inspected as directly as a sprite or model object. Line child objects use
+`rich_text_ref.kind = text_line` and split the resolved display text at authored
+hard breaks and page boundaries; their captures are restricted to the native
+text/ruby elements that overlap that line range. For child objects on later
 rendered pages, `rich_text_ref.page` records the page and capture refs include a
 matching `?page=N` query plus `capture_refs[].page` metadata. Child object
 bboxes come from the native text layout metrics used by native image capture

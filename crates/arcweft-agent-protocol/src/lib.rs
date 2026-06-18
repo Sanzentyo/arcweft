@@ -444,6 +444,7 @@ pub struct AgentRichTextElementRef {
 #[serde(rename_all = "snake_case")]
 pub enum AgentRichTextElementKind {
     TextPage,
+    TextLine,
     TextRun,
     Ruby,
     GlyphCluster,
@@ -471,6 +472,7 @@ pub struct AgentHitRegion {
 #[serde(rename_all = "snake_case")]
 pub enum AgentHitRegionKind {
     TextPage,
+    TextLine,
     TextRun,
     GlyphCluster,
     TextObjectProxy,
@@ -988,6 +990,11 @@ mod tests {
                 .expect("rich-text element kind serializes"),
             "text_page"
         );
+        assert_eq!(
+            serde_json::to_value(AgentRichTextElementKind::TextLine)
+                .expect("rich-text element kind serializes"),
+            "text_line"
+        );
         assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
         assert_eq!(
             json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["id"],
@@ -1012,6 +1019,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::TextPage).expect("hit-region kind serializes"),
             "text_page"
+        );
+        assert_eq!(
+            serde_json::to_value(AgentHitRegionKind::TextLine).expect("hit-region kind serializes"),
+            "text_line"
         );
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::RubyAnnotation)

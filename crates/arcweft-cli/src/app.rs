@@ -2868,6 +2868,7 @@ fn agent_native_textbox_for_capture<'a>(
 fn agent_rich_text_child_parent_object_id(object_id: &str) -> Option<&str> {
     object_id
         .split_once(".page.")
+        .or_else(|| object_id.split_once(".line."))
         .or_else(|| object_id.split_once(".run."))
         .or_else(|| object_id.split_once(".ruby."))
         .or_else(|| object_id.split_once(".cluster."))
@@ -3314,19 +3315,20 @@ fn agent_native_elements_for_object(
             )
             .collect();
     }
-    if object
-        .rich_text_ref
-        .as_ref()
-        .is_some_and(|rich_text_ref| rich_text_ref.kind == AgentRichTextElementKind::TextPage)
-    {
-        return agent_native_text_page_elements(context, object);
+    if object.rich_text_ref.as_ref().is_some_and(|rich_text_ref| {
+        matches!(
+            rich_text_ref.kind,
+            AgentRichTextElementKind::TextPage | AgentRichTextElementKind::TextLine
+        )
+    }) {
+        return agent_native_text_range_elements(context, object);
     }
     agent_native_element_for_object(object)
         .into_iter()
         .collect()
 }
 
-fn agent_native_text_page_elements(
+fn agent_native_text_range_elements(
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
 ) -> Vec<arcweft_player_native::native::NativeFrameElement> {
@@ -3497,8 +3499,10 @@ fn agent_native_rich_text_child_rect(
     object: &AgentObservedObject,
 ) -> Result<Option<(u32, u32, u32, u32)>, ExitCode> {
     if object.rich_text_ref.as_ref().is_some_and(|rich_text_ref| {
-        rich_text_ref.kind == AgentRichTextElementKind::TextPage
-            && rich_text_ref.page == context.page_index
+        matches!(
+            rich_text_ref.kind,
+            AgentRichTextElementKind::TextPage | AgentRichTextElementKind::TextLine
+        ) && rich_text_ref.page == context.page_index
     }) {
         return Ok(Some(agent_clamped_bbox_rect(
             capture_width,
@@ -3571,7 +3575,7 @@ fn agent_native_element_for_object(
         return agent_native_element_for_object_id(&object.id);
     };
     match rich_text_ref.kind {
-        AgentRichTextElementKind::TextPage => None,
+        AgentRichTextElementKind::TextPage | AgentRichTextElementKind::TextLine => None,
         AgentRichTextElementKind::TextRun
         | AgentRichTextElementKind::Ruby
         | AgentRichTextElementKind::TextObjectProxy => {
@@ -4809,6 +4813,13 @@ fn agent_rich_text_child_objects(
         viewport,
         time_seconds,
     ));
+    children.extend(agent_rich_text_line_objects(
+        step,
+        index,
+        textbox,
+        viewport,
+        time_seconds,
+    ));
     for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
         if matches!(
             run.source,
@@ -4914,6 +4925,70 @@ fn agent_rich_text_page_objects(
         .collect()
 }
 
+fn agent_rich_text_line_objects(
+    step: usize,
+    index: usize,
+    textbox: &AgentObservedObject,
+    viewport: &AgentViewport,
+    time_seconds: f32,
+) -> Vec<AgentObservedObject> {
+    agent_rich_text_line_ranges(&textbox.rich_text)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(line_index, line_range)| {
+            if line_range.is_empty() {
+                return None;
+            }
+            let line_text = textbox.rich_text.text.get(line_range.clone())?;
+            if line_text.trim().is_empty() {
+                return None;
+            }
+            let range = RichTextRange::new(line_range.start, line_range.end);
+            let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let bbox = agent_native_text_range_capture_bbox_for_page(
+                textbox,
+                viewport,
+                page,
+                range,
+                time_seconds,
+            )?;
+            let object_id = format!("object.dialogue.{step}.{index}.line.{line_index}");
+            Some(agent_rich_text_child_object(
+                step,
+                textbox,
+                AgentRichTextChildObjectSpec {
+                    object_id: &object_id,
+                    role: "rich_text_line",
+                    text: line_text.to_owned(),
+                    bbox: &bbox,
+                    rich_text_ref: AgentRichTextElementRef {
+                        kind: AgentRichTextElementKind::TextLine,
+                        index: line_index,
+                        page,
+                        range,
+                        node_index: agent_rich_text_page_node_index(&textbox.rich_text, range),
+                        source: None,
+                        ruby: None,
+                        presentation: None,
+                        orientation: None,
+                        vertical_form: None,
+                        ruby_base_bbox: None,
+                        ruby_annotation_bbox: None,
+                        object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
+                        hit_test: true,
+                        hit_regions: vec![agent_hit_region(
+                            AgentHitRegionKind::TextLine,
+                            &bbox,
+                            range,
+                        )],
+                    },
+                    page,
+                },
+            ))
+        })
+        .collect()
+}
+
 fn agent_native_rich_text_element_bboxes(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
@@ -4973,6 +5048,33 @@ fn agent_native_textbox_capture_bbox_for_page(
                 agent_union_bbox(&bbox, &agent_bbox_from_native(bounds.bbox))
             }),
     )
+}
+
+fn agent_native_text_range_capture_bbox_for_page(
+    textbox: &AgentObservedObject,
+    viewport: &AgentViewport,
+    page_index: usize,
+    range: RichTextRange,
+    time_seconds: f32,
+) -> Option<AgentBBox> {
+    let (left, top) = agent_native_text_origin(textbox);
+    let bounds = arcweft_player_native::native::measure_frame_elements_at_page_with_time(
+        &textbox.rich_text,
+        viewport.width,
+        viewport.height,
+        left,
+        top,
+        page_index,
+        time_seconds,
+    )
+    .ok()?;
+    bounds
+        .into_iter()
+        .filter(|bounds| {
+            agent_native_element_overlaps_range(&textbox.rich_text, bounds.element, range)
+        })
+        .map(|bounds| agent_bbox_from_native(bounds.bbox))
+        .reduce(|bbox, child| agent_union_bbox(&bbox, &child))
 }
 
 #[derive(Clone, Debug)]
@@ -5481,6 +5583,30 @@ fn agent_rich_text_ranges_overlap(left: RichTextRange, right: RichTextRange) -> 
     left.start < right.end && right.start < left.end
 }
 
+fn agent_native_element_overlaps_range(
+    frame: &LineDisplayFrame,
+    element: arcweft_player_native::native::NativeFrameElement,
+    range: RichTextRange,
+) -> bool {
+    match element {
+        arcweft_player_native::native::NativeFrameElement::TextRun { index } => frame
+            .display_map
+            .text_runs
+            .get(index)
+            .is_some_and(|run| agent_rich_text_ranges_overlap(run.range, range)),
+        arcweft_player_native::native::NativeFrameElement::Ruby { index } => frame
+            .display_map
+            .ruby_annotations
+            .get(index)
+            .is_some_and(|ruby| agent_rich_text_ranges_overlap(ruby.base_range, range)),
+        arcweft_player_native::native::NativeFrameElement::GlyphCluster {
+            range_start,
+            range_end,
+            ..
+        } => agent_rich_text_ranges_overlap(RichTextRange::new(range_start, range_end), range),
+    }
+}
+
 fn agent_rich_text_page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<usize>> {
     let mut break_offsets = frame
         .display_map
@@ -5509,6 +5635,52 @@ fn agent_rich_text_page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<
     }
     ranges.push(start..frame.text.len());
     ranges
+}
+
+fn agent_rich_text_line_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<usize>> {
+    let mut break_offsets = frame
+        .display_map
+        .controls
+        .iter()
+        .filter(|marker| {
+            matches!(
+                marker.control,
+                RichTextControl::HardBreak
+                    | RichTextControl::Page
+                    | RichTextControl::LineWait
+                    | RichTextControl::Clear
+            )
+        })
+        .map(|marker| agent_display_map_line_break_offset(frame, marker))
+        .map(|offset| agent_display_map_offset_after_atomic_ruby_base(frame, offset))
+        .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
+        .collect::<Vec<_>>();
+    break_offsets.sort_unstable();
+    break_offsets.dedup();
+
+    let mut start = 0;
+    let mut ranges = Vec::with_capacity(break_offsets.len() + 1);
+    for end in break_offsets {
+        if start <= end {
+            ranges.push(start..end);
+            start = end;
+        }
+    }
+    ranges.push(start..frame.text.len());
+    ranges
+}
+
+fn agent_display_map_line_break_offset(
+    frame: &LineDisplayFrame,
+    marker: &arcweft_render_text::RichTextControlMarker,
+) -> usize {
+    match marker.control {
+        RichTextControl::HardBreak => marker.range.map_or_else(
+            || agent_display_map_offset_before_node(frame, marker.node_index),
+            |range| range.end,
+        ),
+        _ => agent_display_map_offset_before_node(frame, marker.node_index),
+    }
 }
 
 fn agent_display_map_offset_after_atomic_ruby_base(
