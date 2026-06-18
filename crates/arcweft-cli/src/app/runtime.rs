@@ -3,8 +3,7 @@ use super::jit::{
     per_iteration_ns, run_jit_check, speedup_x, timing_samples,
 };
 use super::project::{
-    ProfileOptions, SourceSelection, count_warning_lints, has_error_lints,
-    load_and_check_selection, native_host_policy_for_selection,
+    ProfileOptions, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
     native_host_policy_for_selection_with_adapter, profile_listen_addr, require_profile_kind,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, typecheck_env_for_selection,
@@ -903,10 +902,10 @@ pub(in crate::app) fn compile_profile_runtime_plan(
                 lint.message()
             );
         }
-        if has_error_lints(&lints) {
+        if arcweft_compiler::has_error_lints(&lints) {
             return Err(ExitCode::FAILURE);
         }
-        Ok::<usize, ExitCode>(count_warning_lints(&lints))
+        Ok::<usize, ExitCode>(arcweft_compiler::count_warning_lints(&lints))
     })?;
     let hir = profile_lower_hir(&tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;

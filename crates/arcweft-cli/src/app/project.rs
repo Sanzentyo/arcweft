@@ -7,7 +7,6 @@ use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
-use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity};
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
@@ -406,7 +405,7 @@ pub(in crate::app) fn load_and_check_with_env(
             lint.message()
         );
     }
-    if has_error_lints(&lints) {
+    if arcweft_compiler::has_error_lints(&lints) {
         return Err(ExitCode::FAILURE);
     }
 
@@ -456,23 +455,10 @@ pub(in crate::app) fn load_and_check_with_env(
     Ok(CheckedModule {
         hir,
         env: env.clone(),
-        syntax_warnings: count_warning_lints(&lints),
+        syntax_warnings: arcweft_compiler::count_warning_lints(&lints),
         syntax_stats,
         line_task_groups,
         typecheck_report,
         phases,
     })
-}
-
-pub(in crate::app) fn count_warning_lints(lints: &[SyntaxLint]) -> usize {
-    lints
-        .iter()
-        .filter(|lint| matches!(lint.severity(), SyntaxLintSeverity::Warning))
-        .count()
-}
-
-pub(in crate::app) fn has_error_lints(lints: &[SyntaxLint]) -> bool {
-    lints
-        .iter()
-        .any(|lint| matches!(lint.severity(), SyntaxLintSeverity::Error))
 }
