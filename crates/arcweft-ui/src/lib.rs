@@ -4,6 +4,7 @@ pub mod component;
 pub mod display;
 pub mod entity;
 pub mod fragment;
+pub mod frame;
 pub mod layout;
 pub mod reactive;
 pub mod semantics;
@@ -22,6 +23,7 @@ pub use fragment::{
     ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
 };
+pub use frame::UiLayerOutput;
 pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,
     LayoutTree,
@@ -433,6 +435,74 @@ mod tests {
             DisplayList::from_fragment(&fragment, &layouts),
             Err(UiError::MissingLayout(text))
         );
+    }
+
+    #[test]
+    fn ui_layer_output_pairs_display_list_and_semantics_for_frame_commit() {
+        let ui_layer = layer_id("ui");
+        let button = target("ui.confirm");
+        let action = public_id("action.confirm");
+        let mut fragment_builder = ViewFragmentBuilder::default();
+        let rich_text = fragment_builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::RichText(RichTextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                Some(SemanticSpecId(1)),
+            )
+            .unwrap();
+        let root = fragment_builder
+            .push_node(
+                NodeKey(2),
+                FragmentKind::Container(ContainerKind::Block),
+                StyleId(1),
+                &[rich_text],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = fragment_builder.finish();
+        let tree = LayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = LayoutResults::new(&tree);
+        for node in [rich_text, root] {
+            layouts
+                .set(
+                    node,
+                    LayoutBox::new(
+                        LayoutPoint::new(LayoutLength::px(0), LayoutLength::px(0)),
+                        LayoutSize::new(LayoutLength::px(120), LayoutLength::px(24)),
+                    ),
+                )
+                .unwrap();
+        }
+
+        let mut semantic_builder = UiSemanticFragmentBuilder::default();
+        semantic_builder
+            .push(
+                UiSemanticNode::new(
+                    NodeKey(1),
+                    ui_layer,
+                    button.clone(),
+                    SemanticRole::Button,
+                    HitRect::new(0.0, 0.0, 120.0, 24.0),
+                )
+                .with_label("Confirm")
+                .with_action(action),
+            )
+            .unwrap();
+
+        let output =
+            UiLayerOutput::from_fragment(&fragment, &layouts, semantic_builder.finish()).unwrap();
+        assert_eq!(output.display().as_slice().len(), 1);
+        assert_eq!(
+            output.display().as_slice()[0].kind(),
+            DisplayItemKind::RichText(RichTextSourceId(1))
+        );
+        assert_eq!(output.semantics().as_slice().len(), 1);
+        assert_eq!(output.semantics().as_slice()[0].target(), &button);
+        assert_eq!(output.semantics().as_slice()[0].label(), Some("Confirm"));
     }
 
     #[test]

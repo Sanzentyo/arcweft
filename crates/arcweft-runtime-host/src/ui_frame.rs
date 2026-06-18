@@ -1,6 +1,6 @@
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
-use arcweft_ui::{DisplayList, UiSemanticFragment};
+use arcweft_ui::{DisplayList, UiLayerOutput};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -88,8 +88,7 @@ impl UiFrameCommitBuilder {
     pub fn push_layer(
         &mut self,
         layer: LayerId,
-        display: DisplayList,
-        semantics: &UiSemanticFragment,
+        output: UiLayerOutput,
     ) -> Result<(), UiFrameCommitError> {
         if !self.known_layers.contains(&layer) {
             return Err(UiFrameCommitError::UnknownLayer(layer));
@@ -97,6 +96,7 @@ impl UiFrameCommitBuilder {
         if self.layers.contains_key(&layer) {
             return Err(UiFrameCommitError::DuplicateLayer(layer));
         }
+        let (display, semantics) = output.into_parts();
         let frame_layer = UiFrameLayer::new(layer.clone(), display, semantics.to_semantic_tree());
         self.layers.insert(layer, frame_layer);
         Ok(())
@@ -165,6 +165,18 @@ mod tests {
         builder.finish()
     }
 
+    fn layer_output(
+        key: u64,
+        layer: LayerId,
+        target: InteractionTarget,
+        action: PublicId,
+    ) -> UiLayerOutput {
+        UiLayerOutput::new(
+            DisplayList::default(),
+            semantic_fragment(key, layer, target, action),
+        )
+    }
+
     #[test]
     fn ui_frame_commit_orders_layers_by_committed_layer_tree() {
         let root = layer_id("root");
@@ -196,8 +208,7 @@ mod tests {
         builder
             .push_layer(
                 modal.clone(),
-                DisplayList::default(),
-                &semantic_fragment(
+                layer_output(
                     1,
                     modal.clone(),
                     target("modal.close"),
@@ -208,8 +219,7 @@ mod tests {
         builder
             .push_layer(
                 ui.clone(),
-                DisplayList::default(),
-                &semantic_fragment(
+                layer_output(
                     2,
                     ui.clone(),
                     target("ui.confirm"),
@@ -246,25 +256,19 @@ mod tests {
 
         let mut builder = UiFrameCommitBuilder::new(&layers);
         assert_eq!(
-            builder.push_layer(
-                missing.clone(),
-                DisplayList::default(),
-                &UiSemanticFragment::default(),
-            ),
+            builder.push_layer(missing.clone(), UiLayerOutput::default()),
             Err(UiFrameCommitError::UnknownLayer(missing))
         );
         builder
             .push_layer(
                 ui.clone(),
-                DisplayList::default(),
-                &semantic_fragment(1, ui.clone(), target("ui.first"), public_id("action.first")),
+                layer_output(1, ui.clone(), target("ui.first"), public_id("action.first")),
             )
             .unwrap();
         assert_eq!(
             builder.push_layer(
                 ui.clone(),
-                DisplayList::default(),
-                &semantic_fragment(
+                layer_output(
                     2,
                     ui.clone(),
                     target("ui.second"),
@@ -311,8 +315,7 @@ mod tests {
         builder
             .push_layer(
                 ui,
-                DisplayList::default(),
-                &semantic_fragment(1, layer_id("ui"), button.clone(), action.clone()),
+                layer_output(1, layer_id("ui"), button.clone(), action.clone()),
             )
             .unwrap();
         let semantics = builder.finish().merged_semantics();

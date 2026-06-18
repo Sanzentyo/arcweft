@@ -69,13 +69,15 @@ instead of pushing TextBox, Activity, or UI routing concepts down into
 
 `arcweft-runtime-host` also owns the first UI frame commit boundary. It depends
 on `arcweft-ui` as the host-layer join point and validates UI frame output
-against the committed `LayerTree`: `UiFrameCommitBuilder` accepts per-layer
-`DisplayList` plus `UiSemanticFragment`, rejects unknown or duplicate layers,
-orders committed UI layers by `LayerTree::render_order`, and exposes merged
-`SemanticTree` data for Agent observation and presentation action dispatch. This
-keeps `arcweft-presentation` independent from the higher-level UI crate while
-still giving host orchestration a typed place to combine Component output,
-display items, and semantics.
+against the committed `LayerTree`: component rendering now produces a per-layer
+`UiLayerOutput` that pairs the renderer-facing `DisplayList` with the
+`UiSemanticFragment` used for Agent observation and presentation action
+dispatch. `UiFrameCommitBuilder` accepts that typed output, rejects unknown or
+duplicate layers, orders committed UI layers by `LayerTree::render_order`, and
+exposes merged `SemanticTree` data. This keeps `arcweft-presentation`
+independent from the higher-level UI crate while still giving host
+orchestration a typed place to combine Component output, display items, and
+semantics.
 
 ## UI / Activity / Input Direction
 
@@ -154,8 +156,10 @@ The unified UI design is adopted as the long-term boundary for future work:
   owns the first display-list boundary: `DisplayList` turns laid-out retained
   text, rich text, image, and custom element nodes into ordered pure-data
   `DisplayItem` values, while containers and mounted component nodes remain
-  structural and do not emit renderer primitives directly. Later cuts will
-  connect these display items to renderer submission integration.
+  structural and do not emit renderer primitives directly. `frame` pairs that
+  display list with the corresponding `UiSemanticFragment` as `UiLayerOutput`,
+  giving runtime-host a single Component-output payload to validate against the
+  committed LayerTree before renderer submission integration.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -269,8 +273,8 @@ remaining architectural cuts are:
    `TextBoxRef` wrapper.
 5. Register concrete TextBox, Activity, UI, and runtime action handlers through
    `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, and have
-   future Component rendering feed `UiFrameCommitBuilder` with `DisplayList`
-   and `UiSemanticFragment` output. Later Component and Activity work must use
+   Component rendering feed `UiFrameCommitBuilder` with `UiLayerOutput` rather
+   than loose display/semantic pairs. Later Component and Activity work must use
    `ActionBatch`, `HostEventBatch`, routed `InputEvent`, `LayerContent`,
    `LayerTransform`, `HoverPath`, `GestureArena`, `RoutingHash`,
    `RouteDecision`, `SemanticTree`, `UiFrameCommit`,
