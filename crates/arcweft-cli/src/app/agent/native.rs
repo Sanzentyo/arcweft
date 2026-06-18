@@ -282,6 +282,8 @@ mod tests {
                 },
                 captures: Vec::new(),
             },
+            object_layer: None,
+            object_depth: None,
             text: None,
             rich_text_ref: None,
             rich_text: test_line_display_frame(),
@@ -1531,7 +1533,10 @@ fn agent_hit_test_object_hits(
             capture_refs: object.capture_refs.clone(),
             region: region.clone(),
             rich_text_ref: Some(rich_text_ref.clone()),
-            depth: region.depth.or(rich_text_ref.object_depth),
+            depth: region
+                .depth
+                .or(object.resolved_object_depth())
+                .or(rich_text_ref.object_depth),
         })
         .collect()
 }
@@ -1544,6 +1549,7 @@ fn agent_hit_test_layer(
     region
         .proxy_layer
         .clone()
+        .or_else(|| object.resolved_object_layer())
         .or_else(|| rich_text_ref.object_layer.clone())
         .unwrap_or_else(|| object.layer.clone())
 }
@@ -4279,6 +4285,8 @@ fn agent_textbox_object(
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
         capture_refs,
+        object_layer: None,
+        object_depth: None,
         text: Some(frame.text.clone()),
         rich_text_ref: None,
         rich_text: frame,
@@ -5255,6 +5263,8 @@ fn agent_rich_text_child_object(
             spec.bbox,
             spec.page,
         ),
+        object_layer: spec.rich_text_ref.object_layer.clone(),
+        object_depth: spec.rich_text_ref.object_depth,
         text: Some(spec.text.clone()),
         rich_text_ref: Some(spec.rich_text_ref),
         rich_text: agent_child_line_display_frame(&textbox.rich_text, spec.text),
@@ -5554,9 +5564,8 @@ fn agent_child_line_display_frame(parent: &LineDisplayFrame, text: String) -> Li
 fn agent_object_layers(object: &AgentObservedObject) -> Vec<String> {
     let mut layers = vec![object.layer.clone()];
     if let Some(object_layer) = object
-        .rich_text_ref
+        .resolved_object_layer()
         .as_ref()
-        .and_then(|rich_text_ref| rich_text_ref.object_layer.as_ref())
         .filter(|object_layer| *object_layer != &object.layer)
     {
         layers.push(object_layer.clone());
@@ -5567,9 +5576,8 @@ fn agent_object_layers(object: &AgentObservedObject) -> Vec<String> {
 fn agent_object_matches_layer(object: &AgentObservedObject, layer: &str) -> bool {
     object.layer == layer
         || object
-            .rich_text_ref
+            .resolved_object_layer()
             .as_ref()
-            .and_then(|rich_text_ref| rich_text_ref.object_layer.as_ref())
             .is_some_and(|object_layer| object_layer == layer)
 }
 

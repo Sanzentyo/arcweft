@@ -53,6 +53,12 @@ and layout. This keeps Agent/renderer adapters from spelunking through generic
 display-list payloads when they need image-specific capture or observation
 metadata.
 
+`arcweft-agent-protocol` now treats `object_layer` and `object_depth` as generic
+observed-object metadata instead of deriving them only from `rich_text_ref`.
+`AgentImageObjectRef` and the presentation tree preserve those fields for image
+objects that have no rich-text child reference, while rich-text objects continue
+to use their rich-text metadata as a fallback.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface

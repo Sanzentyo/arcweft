@@ -482,6 +482,10 @@ pub struct AgentObservedObject {
     pub polygon: Vec<AgentPoint>,
     pub capture_refs: AgentObjectCaptureRefs,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_layer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_depth: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
@@ -500,17 +504,29 @@ impl AgentImageObjectRef {
             bbox: object.bbox.clone(),
             polygon: object.polygon.clone(),
             capture_refs: object.capture_refs.clone(),
-            object_layer: object
-                .rich_text_ref
-                .as_ref()
-                .and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
-            object_depth: object
-                .rich_text_ref
-                .as_ref()
-                .and_then(|rich_text_ref| rich_text_ref.object_depth),
+            object_layer: object.resolved_object_layer(),
+            object_depth: object.resolved_object_depth(),
             text: object.text.clone(),
             rich_text_ref: object.rich_text_ref.clone(),
         }
+    }
+}
+
+impl AgentObservedObject {
+    pub fn resolved_object_layer(&self) -> Option<String> {
+        self.object_layer.clone().or_else(|| {
+            self.rich_text_ref
+                .as_ref()
+                .and_then(|rich_text_ref| rich_text_ref.object_layer.clone())
+        })
+    }
+
+    pub fn resolved_object_depth(&self) -> Option<i32> {
+        self.object_depth.or_else(|| {
+            self.rich_text_ref
+                .as_ref()
+                .and_then(|rich_text_ref| rich_text_ref.object_depth)
+        })
     }
 }
 
@@ -1185,8 +1201,8 @@ fn agent_presentation_object_node(
         object_id: Some(object.id.clone()),
         role: Some(object.role.clone()),
         rich_text_kind: rich_text_ref.map(|rich_text_ref| rich_text_ref.kind),
-        object_layer: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
-        object_depth: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_depth),
+        object_layer: object.resolved_object_layer(),
+        object_depth: object.resolved_object_depth(),
         effects: presentation
             .as_ref()
             .map_or_else(Vec::new, |summary| summary.effects.clone()),
@@ -1533,6 +1549,8 @@ mod tests {
             polygon: bbox.polygon(),
             bbox: bbox.clone(),
             capture_refs: test_capture_refs(),
+            object_layer: None,
+            object_depth: None,
             text: Some("Hello".to_owned()),
             rich_text_ref: Some(test_rich_text_ref(&bbox)),
             rich_text: test_line_display_frame(),
@@ -2167,6 +2185,57 @@ mod tests {
         );
         assert_eq!(json["image"]["object"]["object_layer"], "ui");
         assert_eq!(json["image"]["object"]["object_depth"], 7000);
+    }
+
+    #[test]
+    fn generic_image_object_metadata_does_not_require_rich_text_ref() {
+        let bbox = AgentBBox {
+            space: AgentCoordinateSpace::Viewport,
+            x: 20,
+            y: 30,
+            width: 40,
+            height: 50,
+        };
+        let object = AgentObservedObject {
+            id: "object.image.logo".to_owned(),
+            parent_id: None,
+            entity: Some("asset.logo.webp".to_owned()),
+            layer: "hud".to_owned(),
+            role: "image".to_owned(),
+            visible: true,
+            bbox: bbox.clone(),
+            polygon: bbox.polygon(),
+            capture_refs: test_capture_refs(),
+            object_layer: Some("hud.foreground".to_owned()),
+            object_depth: Some(2500),
+            text: None,
+            rich_text_ref: None,
+            rich_text: test_line_display_frame(),
+        };
+
+        let image_object = AgentImageObjectRef::from_observed(&object);
+        assert_eq!(image_object.object_layer.as_deref(), Some("hud.foreground"));
+        assert_eq!(image_object.object_depth, Some(2500));
+        assert!(image_object.rich_text_ref.is_none());
+
+        let tree = AgentPresentationTree::from_layers_and_objects(
+            &[AgentObservedLayer {
+                id: "hud".to_owned(),
+                visible: true,
+                bbox,
+                object_count: 1,
+                capture_refs: test_layer_capture_refs(),
+            }],
+            &[object],
+        );
+        let image_node = tree
+            .nodes
+            .iter()
+            .find(|node| node.object_id.as_deref() == Some("object.image.logo"))
+            .expect("image object appears in presentation tree");
+        assert_eq!(image_node.role.as_deref(), Some("image"));
+        assert_eq!(image_node.object_layer.as_deref(), Some("hud.foreground"));
+        assert_eq!(image_node.object_depth, Some(2500));
     }
 
     #[test]
