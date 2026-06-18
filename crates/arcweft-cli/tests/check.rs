@@ -2136,6 +2136,116 @@ flow @flow.main main {
     );
 }
 
+#[test]
+fn agent_hit_test_capture_time_follows_animated_text_proxy_bounds() {
+    let path = temp_arcw(
+        "agent-hit-test-animated-rich-text-proxy",
+        r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [object .hotspot type=KeywordHit][.wave amp=60px dir=0,1 target=run]Hit[/][/object][p]
+}
+"#,
+    );
+    let early = observe_animated_proxy_hit_test_source(&path, "0");
+    let late = observe_animated_proxy_hit_test_source(&path, "0.25");
+    let early_proxy = find_rich_text_proxy_object(&early, "hotspot", "Hit");
+    let late_proxy = find_rich_text_proxy_object(&late, "hotspot", "Hit");
+    let early_bottom = agent_json_bbox_bottom(&early_proxy["bbox"]);
+    let late_center_x =
+        agent_json_bbox_x(&late_proxy["bbox"]) + agent_json_bbox_width(&late_proxy["bbox"]) / 2;
+    let late_center_y =
+        agent_json_bbox_y(&late_proxy["bbox"]) + agent_json_bbox_height(&late_proxy["bbox"]) / 2;
+    assert!(
+        late_center_y > early_bottom,
+        "late wave proxy center should move outside the early proxy bbox: early={early_proxy} late={late_proxy}"
+    );
+
+    let late_hit = hit_test_animated_proxy_source_at(&path, late_center_x, late_center_y, "0.25");
+    assert_eq!(late_hit["status"], "ok");
+    assert_eq!(late_hit["top_object_id"], late_proxy["id"]);
+    assert_eq!(late_hit["hits"][0]["region"]["kind"], "text_object_proxy");
+    assert_eq!(late_hit["hits"][0]["region"]["proxy_id"], "hotspot");
+    assert_eq!(
+        late_hit["hits"][0]["region"]["proxy_params"]["channel"]["value"],
+        "choice"
+    );
+
+    let early_hit = hit_test_animated_proxy_source_at(&path, late_center_x, late_center_y, "0");
+    fs::remove_file(&path).expect("remove temp animated hit-test source");
+    assert!(
+        early_hit["hits"]
+            .as_array()
+            .expect("early hit-test hits are listed")
+            .iter()
+            .all(|hit| hit["region"]["proxy_id"] != "hotspot"),
+        "early hit-test should not use the late animated proxy bounds: {early_hit}"
+    );
+}
+
+fn observe_animated_proxy_hit_test_source(path: &Path, capture_time: &str) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .output()
+        .expect("arcw agent observe runs animated hit-test source");
+    assert!(
+        output.status.success(),
+        "agent observe for animated hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("animated hit-test observe output is JSON")
+}
+
+fn hit_test_animated_proxy_source_at(
+    path: &Path,
+    x: u64,
+    y: u64,
+    capture_time: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("hit-test")
+        .arg(path)
+        .arg("--x")
+        .arg(x.to_string())
+        .arg("--y")
+        .arg(y.to_string())
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .output()
+        .expect("arcw agent hit-test runs animated rich text source");
+    assert!(
+        output.status.success(),
+        "agent hit-test for animated rich text should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("animated hit-test output is JSON")
+}
+
 fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_json::Value) {
     let objects = observe_json["objects"]
         .as_array()

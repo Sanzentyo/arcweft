@@ -330,6 +330,10 @@ Native measurement now also has a time-aware page API, and Agent observe/crop
 paths pass `capture_time` through it, so animated glyph-transform bboxes used
 for rich-text child objects, textbox capture refs, and scoped native crops track
 the same effect time as the rendered framebuffer.
+Agent hit-testing consumes those same time-aware observed hit regions: an
+animated proxy span can be hit at its sampled `capture_time` position, while the
+same viewport coordinate does not hit that proxy at a different sampled time if
+the glyph-transform bbox has moved away.
 Object-scoped native captures can also resolve rich-text child object IDs that
 are absent from the current observation object list because a visibility effect
 has hidden their pixels. The CLI derives the parent textbox and native
