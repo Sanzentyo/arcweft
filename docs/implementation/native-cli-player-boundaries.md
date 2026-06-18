@@ -101,13 +101,20 @@ The unified UI design is adopted as the long-term boundary for future work:
   passed through `InputRouter` modal, visibility, and layer-policy checks. This
   keeps semantic actions from introducing `UiEvent`, `ActivityViewport`, or a
   separate Agent-only invoke path.
-- `arcweft-ui` now owns the first Sans I/O UI semantic fragment boundary:
-  `UiSemanticNode`, `UiSemanticFragment`, and `UiSemanticFragmentBuilder`
-  produce ordered UI semantic nodes and lower them into
-  `arcweft_presentation::semantic::SemanticTree` without introducing `UiEvent`
-  or a separate UI router. Later cuts will extend this crate with typed
-  Component descriptors, retained fragments, generational Entity storage,
-  reactivity, style, and layout integration.
+- `arcweft-ui` now owns the first Sans I/O UI state boundaries. Typed
+  component descriptors live in `component`: `ComponentId`,
+  `ComponentSchemaId`, `UiProgramId`, `RustComponentId`,
+  `ComponentDescriptor`, and `ComponentRegistry` resolve public component names
+  to dense load-time IDs without hot-path string lookup. Stateful UI component
+  instances live in `entity`: `RawEntity`, `Entity<T>`, `DirtyFlags`, and
+  `EntityStore` provide safe generational handles, reject stale reused slots,
+  and track dirty state without `unsafe`, leaked state, or public compatibility
+  aliases. `semantics` still owns `UiSemanticNode`, `UiSemanticFragment`, and
+  `UiSemanticFragmentBuilder`, which produce ordered UI semantic nodes and
+  lower them into `arcweft_presentation::semantic::SemanticTree` without
+  introducing `UiEvent` or a separate UI router. Later cuts will extend this
+  crate with retained fragments, reactivity, style/property bindings, and
+  layout integration.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -188,8 +195,8 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    developer-facing phase timing, source selection, and diagnostic printing.
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
-3. Continue extending `arcweft-ui` from its initial semantic fragment boundary
-   toward typed Component descriptors, retained fragments, Entity storage,
+3. Continue extending `arcweft-ui` from its initial semantic, Component
+   descriptor, and generational Entity boundaries toward retained fragments,
    reactivity, style/property bindings, and layout integration, without adding
    public names such as `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or
    per-Activity input routers.

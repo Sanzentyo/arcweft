@@ -1,203 +1,58 @@
-//! Sans I/O UI fragment data for Arcweft presentation integration.
+//! Sans I/O UI component, entity, and fragment data for Arcweft presentation.
 
-use arcweft_id::PublicId;
-use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::input::InteractionTarget;
-use arcweft_presentation::layer::LayerId;
-use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
-use std::collections::BTreeSet;
+pub mod component;
+pub mod entity;
+pub mod semantics;
+
 use thiserror::Error;
 
-/// Stable component identifier resolved at bundle/load time.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ComponentId(pub u32);
+pub use component::{
+    ComponentDescriptor, ComponentId, ComponentImplementation, ComponentRegistry,
+    ComponentSchemaId, RustComponentId, UiProgramId,
+};
+pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
+pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 
 /// Stable key for one retained UI fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey(pub u64);
 
-/// Frame-local node identifier inside one flat UI semantic fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct UiNodeId(pub u32);
-
-/// Flat retained semantic node produced by UI component rendering.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UiSemanticNode {
-    key: NodeKey,
-    layer: LayerId,
-    target: InteractionTarget,
-    role: SemanticRole,
-    bounds: HitRect,
-    label: Option<String>,
-    actions: Vec<PublicId>,
-    enabled: bool,
-    visible: bool,
-}
-
-/// Ordered semantic fragment emitted by UI components before presentation merge.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiSemanticFragment {
-    nodes: Vec<UiSemanticNode>,
-}
-
-/// Builder for one flat UI semantic fragment.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiSemanticFragmentBuilder {
-    nodes: Vec<UiSemanticNode>,
-    keys: BTreeSet<NodeKey>,
-}
-
-/// Error while building a UI semantic fragment.
+/// Error while building or updating UI state.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum UiSemanticError {
+pub enum UiError {
     #[error("duplicate UI node key {0:?}")]
     DuplicateNodeKey(NodeKey),
-    #[error("too many UI semantic nodes")]
+    #[error("duplicate component public id {0}")]
+    DuplicateComponentPublicId(arcweft_id::PublicId),
+    #[error("stale UI entity {0:?}")]
+    StaleEntity(RawEntity),
+    #[error("UI entity has a different state type: {0:?}")]
+    EntityTypeMismatch(RawEntity),
+    #[error("too many UI items")]
     CapacityExceeded,
-}
-
-impl UiSemanticNode {
-    pub fn new(
-        key: NodeKey,
-        layer: LayerId,
-        target: InteractionTarget,
-        role: SemanticRole,
-        bounds: HitRect,
-    ) -> Self {
-        Self {
-            key,
-            layer,
-            target,
-            role,
-            bounds,
-            label: None,
-            actions: Vec::new(),
-            enabled: true,
-            visible: true,
-        }
-    }
-
-    #[must_use]
-    pub fn with_label(mut self, label: impl Into<String>) -> Self {
-        self.label = Some(label.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_action(mut self, action: PublicId) -> Self {
-        self.actions.push(action);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_visible(mut self, visible: bool) -> Self {
-        self.visible = visible;
-        self
-    }
-
-    pub const fn key(&self) -> NodeKey {
-        self.key
-    }
-
-    pub const fn layer(&self) -> &LayerId {
-        &self.layer
-    }
-
-    pub const fn target(&self) -> &InteractionTarget {
-        &self.target
-    }
-
-    pub const fn role(&self) -> SemanticRole {
-        self.role
-    }
-
-    pub const fn bounds(&self) -> HitRect {
-        self.bounds
-    }
-
-    pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
-    }
-
-    pub fn actions(&self) -> &[PublicId] {
-        &self.actions
-    }
-
-    pub const fn enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub const fn visible(&self) -> bool {
-        self.visible
-    }
-
-    fn to_semantic_node(&self) -> SemanticNode {
-        let mut node = SemanticNode::new(
-            self.layer.clone(),
-            self.target.clone(),
-            self.role,
-            self.bounds,
-        )
-        .with_enabled(self.enabled)
-        .with_visible(self.visible);
-        if let Some(label) = &self.label {
-            node = node.with_label(label.clone());
-        }
-        self.actions
-            .iter()
-            .cloned()
-            .fold(node, SemanticNode::with_action)
-    }
-}
-
-impl UiSemanticFragment {
-    pub fn as_slice(&self) -> &[UiSemanticNode] {
-        &self.nodes
-    }
-
-    pub fn to_semantic_tree(&self) -> SemanticTree {
-        let mut tree = SemanticTree::default();
-        for node in &self.nodes {
-            tree.push(node.to_semantic_node());
-        }
-        tree
-    }
-
-    pub fn into_vec(self) -> Vec<UiSemanticNode> {
-        self.nodes
-    }
-}
-
-impl UiSemanticFragmentBuilder {
-    pub fn push(&mut self, node: UiSemanticNode) -> Result<UiNodeId, UiSemanticError> {
-        if !self.keys.insert(node.key()) {
-            return Err(UiSemanticError::DuplicateNodeKey(node.key()));
-        }
-        let index =
-            u32::try_from(self.nodes.len()).map_err(|_| UiSemanticError::CapacityExceeded)?;
-        self.nodes.push(node);
-        Ok(UiNodeId(index))
-    }
-
-    pub fn finish(self) -> UiSemanticFragment {
-        UiSemanticFragment { nodes: self.nodes }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_presentation::input::{ActionTarget, InputEpoch};
+    use arcweft_id::PublicId;
+    use arcweft_presentation::hit::HitRect;
+    use arcweft_presentation::input::{ActionTarget, InputEpoch, InteractionTarget};
     use arcweft_presentation::interaction::InteractionState;
     use arcweft_presentation::layer::{
-        LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
+        LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
     };
+    use arcweft_presentation::semantic::SemanticRole;
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct DialogueSkinState {
+        hovered_nameplate: bool,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct InventoryState {
+        selected_slot: u8,
+    }
 
     fn public_id(value: &str) -> PublicId {
         PublicId::try_new(value).unwrap()
@@ -217,6 +72,96 @@ mod tests {
             z,
             stable_index: 0,
         }
+    }
+
+    #[test]
+    fn component_registry_resolves_dense_component_ids() {
+        let mut registry = ComponentRegistry::default();
+        let public_id = public_id("ui.dialogue.standard");
+        let descriptor = ComponentDescriptor::new(
+            Some(public_id.clone()),
+            ComponentSchemaId(7),
+            0x1234,
+            ComponentImplementation::Arcweft(UiProgramId(3)),
+        );
+
+        let id = registry.register(descriptor).unwrap();
+        assert_eq!(id, ComponentId(0));
+        assert_eq!(registry.resolve_public_id(&public_id), Some(id));
+        assert_eq!(registry.get(id).unwrap().schema(), ComponentSchemaId(7));
+    }
+
+    #[test]
+    fn component_registry_rejects_duplicate_public_ids() {
+        let mut registry = ComponentRegistry::default();
+        let public_id = public_id("ui.dialogue.standard");
+        let descriptor = || {
+            ComponentDescriptor::new(
+                Some(public_id.clone()),
+                ComponentSchemaId(1),
+                0,
+                ComponentImplementation::Rust(RustComponentId(1)),
+            )
+        };
+        registry.register(descriptor()).unwrap();
+
+        assert_eq!(
+            registry.register(descriptor()),
+            Err(UiError::DuplicateComponentPublicId(public_id))
+        );
+    }
+
+    #[test]
+    fn entity_store_rejects_stale_reused_handles() {
+        let mut store = EntityStore::default();
+        let first = store
+            .insert(
+                DialogueSkinState {
+                    hovered_nameplate: false,
+                },
+                Some(ComponentId(1)),
+            )
+            .unwrap();
+        assert_eq!(store.component(first), Some(ComponentId(1)));
+        assert!(store.dirty(first).unwrap().contains(DirtyFlags::FRAGMENT));
+
+        let removed = store.remove(first).unwrap();
+        assert_eq!(
+            removed,
+            DialogueSkinState {
+                hovered_nameplate: false
+            }
+        );
+
+        let second = store
+            .insert(InventoryState { selected_slot: 2 }, Some(ComponentId(2)))
+            .unwrap();
+        assert_eq!(second.raw().index(), first.raw().index());
+        assert_ne!(second.raw().generation(), first.raw().generation());
+        assert!(store.get(first).is_none());
+        assert_eq!(
+            store.mark_dirty(first, DirtyFlags::LAYOUT),
+            Err(UiError::StaleEntity(first.raw()))
+        );
+        assert_eq!(
+            store.get(second),
+            Some(&InventoryState { selected_slot: 2 })
+        );
+    }
+
+    #[test]
+    fn entity_store_detects_wrong_state_type_on_remove() {
+        let mut store = EntityStore::default();
+        let state = store
+            .insert(InventoryState { selected_slot: 1 }, None)
+            .unwrap();
+        let wrong_type = Entity::<DialogueSkinState>::from_raw(state.raw());
+
+        assert_eq!(
+            store.remove(wrong_type),
+            Err(UiError::EntityTypeMismatch(state.raw()))
+        );
+        assert_eq!(store.get(state), Some(&InventoryState { selected_slot: 1 }));
     }
 
     #[test]
@@ -270,7 +215,7 @@ mod tests {
                 SemanticRole::Button,
                 HitRect::new(10.0, 0.0, 10.0, 10.0),
             )),
-            Err(UiSemanticError::DuplicateNodeKey(NodeKey(1)))
+            Err(UiError::DuplicateNodeKey(NodeKey(1)))
         );
     }
 
