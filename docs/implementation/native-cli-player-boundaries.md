@@ -50,7 +50,10 @@ The unified UI design is adopted as the long-term boundary for future work:
   window, GPU, or Activity framebuffer state.
 - `arcweft-presentation` will own LayerTree, InputRouter, InteractionState,
   HitTree contracts, TextBox presentation state, and Activity presentation
-  descriptors.
+  descriptors. The first pure-data boundary lives in
+  `arcweft_presentation::input`: `RawInputEvent`, routed `InputEvent`,
+  `InteractionTarget`, `Action` / `ActionBatch`, and `HostEvent` /
+  `HostEventBatch`.
 - A future `arcweft-ui` crate will own typed Component descriptors, retained
   fragments, generational Entity storage, reactivity, style, layout integration,
   and semantic UI nodes.
@@ -142,9 +145,12 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Add `ActionBatch` / `HostEventBatch` and routed input boundaries before
-   expanding Activity or UI interaction APIs, so later Component and Activity
-   work does not grow its own input router.
+5. Build the actual LayerTree router, HitTree, focus/modal/capture state,
+   hover path diff, gesture arena, replay hash, and Activity/TextBox semantic
+   integration on top of the shared presentation input boundary. Later
+   Component and Activity work must use `ActionBatch`, `HostEventBatch`, and
+   routed `InputEvent` instead of introducing per-Activity routers or `UiEvent`
+   aliases.
 
 ## Invariants
 

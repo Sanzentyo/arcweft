@@ -1,4 +1,9 @@
 use super::*;
+use crate::input::{
+    Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
+    InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, RawInputEvent,
+    RawInputKind,
+};
 
 #[test]
 fn registry_clears_values_when_scope_exits() {
@@ -105,5 +110,79 @@ fn slot_value_behaves_like_static_option() {
         .id()
         .as_str(),
         "slot.character.alice.default"
+    );
+}
+
+#[test]
+fn routed_input_keeps_raw_epoch_and_stable_target() {
+    let target = InteractionTarget::new(PublicId::try_new("target.textbox.main").unwrap());
+    let raw = RawInputEvent::new(
+        InputEpoch(7),
+        RawInputKind::Agent(AgentInput {
+            action: PublicId::try_new("action.advance").unwrap(),
+            target: Some(target.clone()),
+        }),
+    );
+    let routed = InputEvent::new(
+        raw.epoch(),
+        target.clone(),
+        InputEventKind::Key {
+            key: "Enter".to_owned(),
+            phase: KeyPhase::Down,
+        },
+    );
+
+    assert_eq!(routed.raw_epoch(), InputEpoch(7));
+    assert_eq!(routed.target(), &target);
+    assert!(matches!(
+        routed.kind(),
+        InputEventKind::Key {
+            key,
+            phase: KeyPhase::Down
+        } if key == "Enter"
+    ));
+}
+
+#[test]
+fn action_and_host_event_batches_preserve_ordered_owned_data() {
+    let target = InteractionTarget::new(PublicId::try_new("target.activity.truck").unwrap());
+    let mut actions = ActionBatch::default();
+    actions.push(Action::new(
+        ActionTarget::Activity(target.clone()),
+        PublicId::try_new("action.pause").unwrap(),
+    ));
+    actions.push(
+        Action::new(
+            ActionTarget::Entity(target.clone()),
+            PublicId::try_new("action.inspect").unwrap(),
+        )
+        .with_payload("bbox"),
+    );
+
+    assert_eq!(actions.as_slice().len(), 2);
+    assert_eq!(actions.as_slice()[0].kind().as_str(), "action.pause");
+    assert_eq!(
+        actions.as_slice()[1].payload().map(String::as_str),
+        Some("bbox")
+    );
+
+    let mut events = HostEventBatch::default();
+    events.push(HostEvent::new(
+        HostEventSource::Activity(target),
+        PublicId::try_new("host.activity.ready").unwrap(),
+    ));
+    events.push(
+        HostEvent::new(
+            HostEventSource::Task(PublicId::try_new("task.load").unwrap()),
+            PublicId::try_new("host.task.done").unwrap(),
+        )
+        .with_payload("ok"),
+    );
+
+    assert_eq!(events.as_slice().len(), 2);
+    assert_eq!(events.as_slice()[0].kind().as_str(), "host.activity.ready");
+    assert_eq!(
+        events.as_slice()[1].payload().map(String::as_str),
+        Some("ok")
     );
 }

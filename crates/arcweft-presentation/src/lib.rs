@@ -2,6 +2,8 @@ use arcweft_id::PublicId;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+pub mod input;
+
 /// Named lifetime owner for presentation values.
 ///
 /// A scope is the data-model counterpart of an Arcweft lexical/lifetime scope:
