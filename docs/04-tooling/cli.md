@@ -407,7 +407,9 @@ image they need.
 Object-scoped image metadata keeps `image.object.layer` as the render layer and
 also exposes semantic rich-text `image.object.object_layer` / `object_depth`
 when present, so a crop remains usable as a typed text object without walking
-back to the full observation.
+back to the full observation. It also repeats the captured object's
+`capture_refs`, allowing a debugger to move from a color crop to object-id or
+mask resources for the same text object directly from the returned metadata.
 For inline debugging, this includes child object URIs such as
 `arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png`.
 The `rich_text.display_map` field lets debuggers correlate those captures with

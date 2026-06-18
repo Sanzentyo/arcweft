@@ -198,6 +198,7 @@ pub struct AgentImageObjectRef {
     pub entity: Option<String>,
     pub layer: String,
     pub role: String,
+    pub capture_refs: AgentObjectCaptureRefs,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_layer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -440,6 +441,7 @@ impl AgentImageObjectRef {
             entity: object.entity.clone(),
             layer: object.layer.clone(),
             role: object.role.clone(),
+            capture_refs: object.capture_refs.clone(),
             object_layer: object
                 .rich_text_ref
                 .as_ref()
@@ -1226,6 +1228,7 @@ mod tests {
             entity: Some("character.alice".to_owned()),
             layer: "dialogue".to_owned(),
             role: "rich_text_run".to_owned(),
+            capture_refs: test_capture_refs(),
             object_layer: Some("ui".to_owned()),
             object_depth: Some(7000),
             text: Some("Hello".to_owned()),
@@ -1251,6 +1254,14 @@ mod tests {
         );
         let json = serde_json::to_value(&resource).expect("resource serializes");
         assert_eq!(json["image"]["object"]["layer"], "dialogue");
+        assert_eq!(
+            json["image"]["object"]["capture_refs"]["object_id_color"]["alpha"],
+            255
+        );
+        assert_eq!(
+            json["image"]["object"]["capture_refs"]["captures"][0]["kind"],
+            "mask"
+        );
         assert_eq!(json["image"]["object"]["object_layer"], "ui");
         assert_eq!(json["image"]["object"]["object_depth"], 7000);
     }

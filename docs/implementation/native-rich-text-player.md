@@ -475,7 +475,10 @@ metadata therefore preserve proxy params, source ranges, hit regions, and
 object-layer/depth alongside the returned PNG/raw bytes. The same metadata also
 copies semantic `object_layer` / `object_depth` onto `image.object` itself while
 leaving `image.object.layer` as the render layer, so a saved object crop remains
-self-describing as a text presentation object.
+self-describing as a text presentation object. `image.object.capture_refs`
+preserves the captured object's sibling color/object-id/mask resource URIs, so
+debuggers can switch capture kind from a returned image artifact without
+walking the observation object list again.
 
 Inspect the same rich-text display frame through the Agent Debug Bus CLI slice:
 

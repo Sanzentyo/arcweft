@@ -2256,6 +2256,11 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
         serde_json::from_slice(&capture.stdout).expect("object capture output is JSON");
     assert_eq!(json["images"][0]["scope"]["kind"], "object");
     assert_eq!(json["images"][0]["object"]["id"], object_id);
+    assert_agent_observe_object_capture_refs(&json["images"][0]["object"]);
+    assert_eq!(
+        json["images"][0]["object"]["capture_refs"]["object_id_color"],
+        object["capture_refs"]["object_id_color"]
+    );
     assert_eq!(json["images"][0]["object"]["object_layer"], object_layer);
     assert_eq!(json["images"][0]["object"]["object_depth"], object_depth);
     assert_eq!(
@@ -24601,6 +24606,7 @@ fn assert_mcp_image_object_rich_text_ref(
     assert_eq!(metadata["image"]["scope"]["kind"], "object");
     assert_eq!(metadata["image"]["scope"]["id"], object_id);
     assert_eq!(metadata["image"]["object"]["id"], object_id);
+    assert_agent_observe_object_capture_refs(&metadata["image"]["object"]);
     assert_eq!(metadata["image"]["object"]["rich_text_ref"]["kind"], kind);
     if !metadata["image"]["object"]["rich_text_ref"]["object_layer"].is_null() {
         assert_eq!(
