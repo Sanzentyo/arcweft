@@ -3842,12 +3842,15 @@ fn agent_native_element_and_role_for_object_id(
     if let Some((_, suffix)) = object_id.split_once(".proxy.") {
         let mut parts = suffix.split('.');
         let run_index = parts.next()?.parse().ok()?;
-        parts.next()?.parse::<usize>().ok()?;
+        let proxy_index = parts.next()?.parse().ok()?;
         if parts.next().is_some() {
             return None;
         }
         return Some((
-            arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index },
+            arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+                run_index,
+                proxy_index,
+            },
             "rich_text_proxy",
         ));
     }
@@ -5414,22 +5417,24 @@ fn agent_rich_text_proxy_objects(
     if text.trim().is_empty() {
         return Vec::new();
     }
-    let Some(bbox) = native_bounds
-        .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
-        .map(|bounds| bounds.bbox.clone())
-    else {
-        return Vec::new();
-    };
     let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
     run.presentation
         .object_proxies
         .iter()
         .enumerate()
-        .map(|(proxy_index, proxy)| {
+        .filter_map(|(proxy_index, proxy)| {
             let object_id =
                 format!("object.dialogue.{step}.{index}.proxy.{run_index}.{proxy_index}");
             let presentation = agent_proxy_presentation(&run.presentation, proxy);
-            agent_rich_text_child_object(
+            let bbox = native_bounds
+                .get(
+                    &arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+                        run_index,
+                        proxy_index,
+                    },
+                )
+                .map(|bounds| bounds.bbox.clone())?;
+            Some(agent_rich_text_child_object(
                 step,
                 textbox,
                 AgentRichTextChildObjectSpec {
@@ -5460,7 +5465,7 @@ fn agent_rich_text_proxy_objects(
                     },
                     page,
                 },
-            )
+            ))
         })
         .collect()
 }
@@ -5944,6 +5949,13 @@ fn agent_native_element_overlaps_range(
             .ruby_annotations
             .get(index)
             .is_some_and(|ruby| agent_rich_text_ranges_overlap(ruby.base_range, range)),
+        arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+            run_index, ..
+        } => frame
+            .display_map
+            .text_runs
+            .get(run_index)
+            .is_some_and(|run| agent_rich_text_ranges_overlap(run.range, range)),
         arcweft_player_native::native::NativeFrameElement::GlyphCluster {
             range_start,
             range_end,

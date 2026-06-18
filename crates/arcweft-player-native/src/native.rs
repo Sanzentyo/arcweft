@@ -96,6 +96,10 @@ pub enum NativeFrameElement {
     TextRun {
         index: usize,
     },
+    TextObjectProxy {
+        run_index: usize,
+        proxy_index: usize,
+    },
     Ruby {
         index: usize,
     },
@@ -1949,7 +1953,36 @@ fn native_element_bounds_from_layout_at(
 ) -> Vec<NativeFrameElementBounds> {
     let transformed =
         native_transformed_glyph_bounds(page_layout, time_seconds, effects.as_deref_mut());
-    let mut bounds = page_layout
+    let mut bounds = native_text_run_bounds_from_layout(page_layout, &transformed, width, height);
+    bounds.extend(native_text_proxy_bounds_from_layout(
+        page_layout,
+        &transformed,
+        width,
+        height,
+    ));
+    bounds.extend(native_glyph_cluster_bounds_from_layout(
+        page_layout,
+        &transformed,
+        width,
+        height,
+    ));
+    bounds.extend(native_ruby_bounds_from_layout(
+        page_layout,
+        width,
+        height,
+        time_seconds,
+        effects,
+    ));
+    bounds
+}
+
+fn native_text_run_bounds_from_layout(
+    page_layout: &NativePageLayout,
+    transformed: &NativeTransformedGlyphBounds,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    page_layout
         .layout
         .runs
         .iter()
@@ -1967,36 +2000,93 @@ fn native_element_bounds_from_layout_at(
                 ruby: None,
             })
         })
-        .collect::<Vec<_>>();
-    bounds.extend(
-        page_layout
-            .layout
-            .glyphs
-            .iter()
-            .enumerate()
-            .filter_map(|(index, glyph)| {
-                let range_start = page_layout.page_start + glyph.range.start;
-                let range_end = page_layout.page_start + glyph.range.end;
-                let bounds = transformed
-                    .glyph_bounds
-                    .get(index)
-                    .copied()
-                    .unwrap_or(glyph.bounds);
-                Some(NativeFrameElementBounds {
-                    element: NativeFrameElement::GlyphCluster {
-                        index,
-                        range_start,
-                        range_end,
-                    },
-                    bbox: native_bbox_from_layout_rect(bounds, width, height)?,
-                    glyph: Some(NativeGlyphClusterMetadata {
-                        orientation: glyph.orientation.into(),
-                        vertical_form: glyph.vertical_form.into(),
+        .collect()
+}
+
+fn native_text_proxy_bounds_from_layout(
+    page_layout: &NativePageLayout,
+    transformed: &NativeTransformedGlyphBounds,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    page_layout
+        .layout
+        .runs
+        .iter()
+        .filter_map(|run| {
+            let source_run_index = *page_layout.text_run_indices.get(run.run_index)?;
+            let source_run = page_layout.frame.display_map.text_runs.get(run.run_index)?;
+            let bounds = transformed
+                .run_bounds
+                .get(&run.run_index)
+                .copied()
+                .unwrap_or(run.bounds);
+            Some(
+                source_run
+                    .presentation
+                    .object_proxies
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(proxy_index, _)| {
+                        Some(NativeFrameElementBounds {
+                            element: NativeFrameElement::TextObjectProxy {
+                                run_index: source_run_index,
+                                proxy_index,
+                            },
+                            bbox: native_bbox_from_layout_rect(bounds, width, height)?,
+                            glyph: None,
+                            ruby: None,
+                        })
                     }),
-                    ruby: None,
-                })
-            }),
-    );
+            )
+        })
+        .flatten()
+        .collect()
+}
+
+fn native_glyph_cluster_bounds_from_layout(
+    page_layout: &NativePageLayout,
+    transformed: &NativeTransformedGlyphBounds,
+    width: u32,
+    height: u32,
+) -> Vec<NativeFrameElementBounds> {
+    page_layout
+        .layout
+        .glyphs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, glyph)| {
+            let range_start = page_layout.page_start + glyph.range.start;
+            let range_end = page_layout.page_start + glyph.range.end;
+            let bounds = transformed
+                .glyph_bounds
+                .get(index)
+                .copied()
+                .unwrap_or(glyph.bounds);
+            Some(NativeFrameElementBounds {
+                element: NativeFrameElement::GlyphCluster {
+                    index,
+                    range_start,
+                    range_end,
+                },
+                bbox: native_bbox_from_layout_rect(bounds, width, height)?,
+                glyph: Some(NativeGlyphClusterMetadata {
+                    orientation: glyph.orientation.into(),
+                    vertical_form: glyph.vertical_form.into(),
+                }),
+                ruby: None,
+            })
+        })
+        .collect()
+}
+
+fn native_ruby_bounds_from_layout(
+    page_layout: &NativePageLayout,
+    width: u32,
+    height: u32,
+    time_seconds: f32,
+    mut effects: Option<&mut NativeEffectExecution<'_>>,
+) -> Vec<NativeFrameElementBounds> {
     let ruby_bounds_by_index = page_layout
         .layout
         .ruby
@@ -2025,28 +2115,25 @@ fn native_element_bounds_from_layout_at(
                 bounds
             },
         );
-    bounds.extend(
-        ruby_bounds_by_index
-            .into_iter()
-            .filter_map(|(index, geometry)| {
-                let bounds =
-                    inflate_layout_rect_asymmetric(geometry.object, 16.0, 16.0, 16.0, 16.0);
-                Some(NativeFrameElementBounds {
-                    element: NativeFrameElement::Ruby { index },
-                    bbox: native_bbox_from_layout_rect(bounds, width, height)?,
-                    glyph: None,
-                    ruby: Some(NativeRubyElementGeometry {
-                        base_bbox: native_bbox_from_layout_rect(geometry.base, width, height)?,
-                        annotation_bbox: native_bbox_from_layout_rect(
-                            geometry.annotation,
-                            width,
-                            height,
-                        )?,
-                    }),
-                })
-            }),
-    );
-    bounds
+    ruby_bounds_by_index
+        .into_iter()
+        .filter_map(|(index, geometry)| {
+            let bounds = inflate_layout_rect_asymmetric(geometry.object, 16.0, 16.0, 16.0, 16.0);
+            Some(NativeFrameElementBounds {
+                element: NativeFrameElement::Ruby { index },
+                bbox: native_bbox_from_layout_rect(bounds, width, height)?,
+                glyph: None,
+                ruby: Some(NativeRubyElementGeometry {
+                    base_bbox: native_bbox_from_layout_rect(geometry.base, width, height)?,
+                    annotation_bbox: native_bbox_from_layout_rect(
+                        geometry.annotation,
+                        width,
+                        height,
+                    )?,
+                }),
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -3706,6 +3793,13 @@ fn post_process_shaders_for_regions(
                 .filter(|run| intersect_display_range(run.range, page_range).is_some())
                 .map(|run| post_process_shaders_from_presentation(&run.presentation))
                 .unwrap_or_default(),
+            Some(NativeFrameElement::TextObjectProxy { run_index, .. }) => frame
+                .display_map
+                .text_runs
+                .get(run_index)
+                .filter(|run| intersect_display_range(run.range, page_range).is_some())
+                .map(|run| post_process_shaders_from_presentation(&run.presentation))
+                .unwrap_or_default(),
             Some(NativeFrameElement::GlyphCluster {
                 range_start,
                 range_end,
@@ -3847,6 +3941,10 @@ fn debug_selected_text_ranges(
                     let run = frame.display_map.text_runs.get(index)?;
                     intersect_display_range(run.range, page_range)?
                 }
+                NativeFrameElement::TextObjectProxy { run_index, .. } => {
+                    let run = frame.display_map.text_runs.get(run_index)?;
+                    intersect_display_range(run.range, page_range)?
+                }
                 NativeFrameElement::GlyphCluster {
                     range_start,
                     range_end,
@@ -3875,6 +3973,10 @@ fn color_selected_text_ranges(
             let range = match region.element? {
                 NativeFrameElement::TextRun { index } => {
                     let run = frame.display_map.text_runs.get(index)?;
+                    intersect_display_range(run.range, page_range)?
+                }
+                NativeFrameElement::TextObjectProxy { run_index, .. } => {
+                    let run = frame.display_map.text_runs.get(run_index)?;
                     intersect_display_range(run.range, page_range)?
                 }
                 NativeFrameElement::GlyphCluster {
@@ -6449,8 +6551,8 @@ mod tests {
     use super::*;
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_render_text::{
-        LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextLayout, RichTextTransform,
-        RichTextVec2, RichTextWritingMode, RuntimeLineContext,
+        LineDisplaySpec, RichTextAngle, RichTextDocument, RichTextLayout, RichTextObjectProxy,
+        RichTextTransform, RichTextVec2, RichTextWritingMode, RuntimeLineContext,
     };
 
     fn styled_ruby_test_frame() -> LineDisplayFrame {
@@ -6799,6 +6901,75 @@ mod tests {
             }),
             "registered post-process shader should alter rendered glyph pixels"
         );
+    }
+
+    #[test]
+    fn native_measure_reports_text_object_proxy_element_bounds() {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.text.object.proxy".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Object {
+                        proxy: RichTextObjectProxy {
+                            id: "hotspot".to_owned(),
+                            type_name: Some("KeywordHit".to_owned()),
+                            role: Some("keyword".to_owned()),
+                            layer: Some("ui".to_owned()),
+                            depth: Some(Milli(4000)),
+                            hit_test: true,
+                            params: BTreeMap::new(),
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "proxy".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "object".to_owned(),
+                },
+                RichTextNode::Text {
+                    text: "Z".to_owned(),
+                },
+            ]),
+        };
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves");
+        let bounds =
+            measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0).expect("bounds resolve");
+        let proxy = bounds
+            .iter()
+            .find(|bounds| {
+                matches!(
+                    bounds.element,
+                    NativeFrameElement::TextObjectProxy {
+                        run_index: 1,
+                        proxy_index: 0
+                    }
+                )
+            })
+            .expect("text object proxy element is addressable");
+        let run = bounds
+            .iter()
+            .find(|bounds| matches!(bounds.element, NativeFrameElement::TextRun { index: 1 }))
+            .expect("proxy text run element is addressable");
+
+        assert_eq!(proxy.bbox, run.bbox);
+        assert!(proxy.bbox.width > 0);
+        assert!(proxy.bbox.height > 0);
     }
 
     fn shader_test_frame(id: &str, phase: RichTextEffectPhase) -> LineDisplayFrame {

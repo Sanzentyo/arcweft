@@ -27,6 +27,14 @@ rich-text frames include `display_map` metadata that
 maps text runs and ruby annotations back to byte ranges in the displayed text; those text runs and
 ruby annotations are also emitted as `dialogue.rich_text` child objects with `rich_text_ref`
 metadata and their own crop URIs.
+Typed text proxy spans are also native-addressable elements, not only JSON
+metadata on their parent run. `NativeFrameElement::TextObjectProxy` uses the
+source text-run index plus proxy index, resolves to the same post-transform
+glyph geometry as the visible span, and drives proxy object color/mask/object-id
+captures through the normal native element path. This keeps custom
+`#[text_proxy]` / `[object ...]` spans aligned with image/model-like debug
+objects that have their own object id, hit region, layer/depth metadata, and
+capture refs.
 Native text shaping disables standard/contextual ligatures for submitted body
 and ruby buffers. The current layout model maps styled/rich-text source ranges
 to per-character layout glyphs before native shaping, so ligature clusters such
