@@ -51,12 +51,16 @@ based on its horizontal shaping advance, and the glyphon adapter maps the
 resolved horizontal glyph offsets into vertical progression before applying the
 engine-side `Rotate90Cw` transform. This matches the long-term sideways-run
 policy without introducing a separate compatibility renderer.
-The native shader path currently resolves `soft_glow` as deterministic
-additional glyph passes submitted before the main text/ruby glyph areas. Agent
-observe coverage now checks the full grammar sample by reading the `shader`
-run's raw RGBA object crop and requiring visible blue-tinted glow pixels, so the
-shader construct is guarded as rendered output rather than only display-map
-metadata.
+The native shader path resolves run-offscreen shader IDs through
+`RichTextShaderRegistry` as deterministic additional glyph passes submitted
+before the main text/ruby glyph areas. The default registry provides
+`soft_glow` and `warm_glow`; `NativeOffscreenCaptureSession::shader_registry_mut`
+allows tests and adapters to register additional shader IDs. Agent observe
+coverage checks the full grammar sample by reading the `shader` run's raw RGBA
+object crop and requiring visible blue-tinted glow pixels, while the effects
+animation sample checks a separate `warm_glow` object crop for warm-tinted
+pixels. These guards prove shader constructs affect rendered output rather than
+only display-map metadata.
 Step-pinned capture is part of the same native/debug surface: `--capture-step`
 forces observe to run to the requested runtime step, and unless an explicit
 `--capture-time` is supplied the renderer uses that step as deterministic effect
@@ -215,13 +219,13 @@ horizontal advances, vertical column planning, glyph bounds, and ruby base
 allocation before native glyph submission. The native renderer still applies the
 time-specific placement offset when drawing, while layout/ruby planning now
 accounts for the space those layout-phase effects can occupy.
-The native renderer also maps `[effect .shader id=soft_glow ...]` to
-deterministic glyph-area glow passes submitted before the main glyph pass. The
-resolved shader remains visible in the native visual plan, but it now also
-changes actual native framebuffer/debug captures instead of being metadata-only.
-Unknown shader IDs are not reinterpreted by the native renderer; they remain
-host-resolved shader references until a concrete native/filter implementation
-is added.
+The native renderer maps registered `[effect .shader id=... phase=run_offscreen_pass]`
+references to deterministic glyph-area passes submitted before the main glyph
+pass. The resolved shader remains visible in the native visual plan, but it now
+also changes actual native framebuffer/debug captures instead of being
+metadata-only. Unknown shader IDs are not reinterpreted by the native renderer;
+they remain host-resolved shader references until a concrete native/filter
+implementation is added and are reported through renderer diagnostics.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

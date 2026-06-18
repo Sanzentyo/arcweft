@@ -18774,6 +18774,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     );
 
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_warm_glow_shader_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
@@ -18815,6 +18816,38 @@ fn assert_effects_animation_function_motion_run_changes_over_time(
         &early_bytes,
         &late,
         &late_bytes,
+    );
+}
+
+fn assert_effects_animation_warm_glow_shader_run_is_tinted(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let shader_run = find_rich_text_run_object(json, "warm glow shader");
+    let shader = assert_rich_text_run_object_has_shader(shader_run, "warm_glow");
+    assert_eq!(
+        shader["phase"], "run_offscreen_pass",
+        "warm_glow should be a run_offscreen_pass shader: {shader_run}"
+    );
+    let object_id = shader_run["id"]
+        .as_str()
+        .expect("warm glow shader run object id is reported");
+    let color_path = dir.join("warm-glow-shader-rgba-4000.rgba");
+    let (capture, bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &color_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert!(capture["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(25)
+                && pixel[1] > pixel[2].saturating_add(20)
+                && pixel[3] > 0
+        }),
+        "registered warm_glow shader should tint the object crop with warm pixels: {capture}"
     );
 }
 
@@ -32192,6 +32225,18 @@ fn assert_rich_text_run_object_has_effect<'a>(
         .flatten()
         .find(|effect| effect["id"] == id)
         .unwrap_or_else(|| panic!("rich-text run object should carry effect `{id}`: {run}"))
+}
+
+fn assert_rich_text_run_object_has_shader<'a>(
+    run: &'a serde_json::Value,
+    id: &str,
+) -> &'a serde_json::Value {
+    run["rich_text_ref"]["presentation"]["shaders"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|shader| shader["id"] == id)
+        .unwrap_or_else(|| panic!("rich-text run object should carry shader `{id}`: {run}"))
 }
 
 fn find_rich_text_cluster_object<'a>(

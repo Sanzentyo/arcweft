@@ -252,6 +252,13 @@ pub struct NativeResolvedShaderFilter {
     pub direction: [f32; 2],
 }
 
+/// One renderer-owned glyph-area pass emitted by a rich-text shader registry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeShaderGlyphPass {
+    pub offset: [f32; 2],
+    pub color: [u8; 4],
+}
+
 /// Key used by renderer-local rich-text state stores.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RichTextStateScopeKey {
@@ -372,10 +379,77 @@ impl RichTextEffectRegistry {
     }
 }
 
+/// Per-shader context supplied to renderer-local shader implementations.
+pub struct TextShaderContext<'a> {
+    pub shader: &'a RichTextShaderRef,
+}
+
+/// Renderer-local rich-text shader.
+pub trait RichTextShaderClass: Send {
+    fn glyph_passes(&mut self, ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass>;
+}
+
+pub type ShaderLambda =
+    Box<dyn FnMut(&TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> + Send + 'static>;
+
+pub enum RegisteredTextShader {
+    Class(Box<dyn RichTextShaderClass>),
+    Lambda(ShaderLambda),
+}
+
+/// Registry that resolves `RichTextShaderRef::id` to native shader passes.
+#[derive(Default)]
+pub struct RichTextShaderRegistry {
+    shaders: BTreeMap<String, RegisteredTextShader>,
+}
+
+impl RichTextShaderRegistry {
+    pub fn insert_class(
+        &mut self,
+        id: impl Into<String>,
+        shader: impl RichTextShaderClass + 'static,
+    ) {
+        self.shaders
+            .insert(id.into(), RegisteredTextShader::Class(Box::new(shader)));
+    }
+
+    pub fn insert_lambda(
+        &mut self,
+        id: impl Into<String>,
+        shader: impl FnMut(&TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> + Send + 'static,
+    ) {
+        self.shaders
+            .insert(id.into(), RegisteredTextShader::Lambda(Box::new(shader)));
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.shaders.contains_key(id)
+    }
+
+    pub fn glyph_passes(
+        &mut self,
+        id: &str,
+        ctx: &TextShaderContext<'_>,
+    ) -> Option<Vec<NativeShaderGlyphPass>> {
+        let shader = self.shaders.get_mut(id)?;
+        Some(match shader {
+            RegisteredTextShader::Class(shader) => shader.glyph_passes(ctx),
+            RegisteredTextShader::Lambda(shader) => shader(ctx),
+        })
+    }
+}
+
 /// Builds the default native host effect registry used by native renderers.
 pub fn native_default_effect_registry() -> RichTextEffectRegistry {
     let mut registry = RichTextEffectRegistry::default();
     register_native_default_text_effects(&mut registry);
+    registry
+}
+
+/// Builds the default native shader registry used by native renderers.
+pub fn native_default_shader_registry() -> RichTextShaderRegistry {
+    let mut registry = RichTextShaderRegistry::default();
+    register_native_default_text_shaders(&mut registry);
     registry
 }
 
@@ -384,8 +458,15 @@ pub fn register_native_default_text_effects(registry: &mut RichTextEffectRegistr
     registry.insert_lambda("sparkle", native_sparkle_effect);
 }
 
+/// Registers native shaders that are available without external adapters.
+pub fn register_native_default_text_shaders(registry: &mut RichTextShaderRegistry) {
+    registry.insert_lambda("soft_glow", native_soft_glow_shader);
+    registry.insert_lambda("warm_glow", native_warm_glow_shader);
+}
+
 struct NativeEffectExecution<'a> {
     registry: Option<&'a mut RichTextEffectRegistry>,
+    shader_registry: Option<&'a mut RichTextShaderRegistry>,
     state: &'a mut RichTextStateStore,
     diagnostics: Vec<NativeVisualDiagnostic>,
     seen_diagnostics: BTreeSet<String>,
@@ -394,10 +475,12 @@ struct NativeEffectExecution<'a> {
 impl<'a> NativeEffectExecution<'a> {
     fn new(
         registry: Option<&'a mut RichTextEffectRegistry>,
+        shader_registry: Option<&'a mut RichTextShaderRegistry>,
         state: &'a mut RichTextStateStore,
     ) -> Self {
         Self {
             registry,
+            shader_registry,
             state,
             diagnostics: Vec::new(),
             seen_diagnostics: BTreeSet::new(),
@@ -472,32 +555,63 @@ impl<'a> NativeEffectExecution<'a> {
     }
 
     fn observe_shader(&mut self, shader: &RichTextShaderRef) {
-        if shader.id == "soft_glow" && shader.phase == RichTextEffectPhase::RunOffscreenPass {
-            return;
-        }
-        let (code, message) = if shader.id == "soft_glow" {
-            (
-                "unsupported_shader_phase",
+        if shader.phase != RichTextEffectPhase::RunOffscreenPass {
+            let code = if self
+                .shader_registry
+                .as_deref()
+                .is_some_and(|registry| registry.contains(&shader.id))
+            {
+                "unsupported_shader_phase"
+            } else {
+                "missing_shader"
+            };
+            self.push_shader_diagnostic(
+                code,
+                NativeVisualDiagnosticSeverity::Warning,
+                shader,
                 format!(
                     "rich-text shader `{}` uses unsupported native phase {:?}",
                     shader.id, shader.phase
                 ),
-            )
-        } else {
-            (
-                "missing_shader",
+            );
+            return;
+        }
+        let Some(registry) = self.shader_registry.as_deref() else {
+            self.push_shader_diagnostic(
+                "missing_shader_registry",
+                NativeVisualDiagnosticSeverity::Warning,
+                shader,
                 format!(
-                    "rich-text shader `{}` is not registered in the native shader registry",
+                    "rich-text shader `{}` has no native shader registry",
                     shader.id
                 ),
-            )
+            );
+            return;
         };
+        if registry.contains(&shader.id) {
+            return;
+        }
         self.push_shader_diagnostic(
-            code,
+            "missing_shader",
             NativeVisualDiagnosticSeverity::Warning,
             shader,
-            message,
+            format!(
+                "rich-text shader `{}` is not registered in the native shader registry",
+                shader.id
+            ),
         );
+    }
+
+    fn shader_glyph_passes(&mut self, shader: &RichTextShaderRef) -> Vec<NativeShaderGlyphPass> {
+        if shader.phase != RichTextEffectPhase::RunOffscreenPass {
+            return Vec::new();
+        }
+        let Some(registry) = self.shader_registry.as_deref_mut() else {
+            return Vec::new();
+        };
+        registry
+            .glyph_passes(&shader.id, &TextShaderContext { shader })
+            .unwrap_or_default()
     }
 
     fn push_diagnostic(
@@ -582,6 +696,7 @@ pub struct NativeOffscreenCaptureSession {
     format: TextureFormat,
     renderer: NativeOffscreenTextRenderer,
     effect_registry: RichTextEffectRegistry,
+    shader_registry: RichTextShaderRegistry,
     effect_state: RichTextStateStore,
 }
 
@@ -597,6 +712,7 @@ impl NativeOffscreenCaptureSession {
             format,
             renderer,
             effect_registry: native_default_effect_registry(),
+            shader_registry: native_default_shader_registry(),
             effect_state: RichTextStateStore::default(),
         })
     }
@@ -604,6 +720,11 @@ impl NativeOffscreenCaptureSession {
     /// Mutable registry used by custom rich-text effects during offscreen capture.
     pub fn effect_registry_mut(&mut self) -> &mut RichTextEffectRegistry {
         &mut self.effect_registry
+    }
+
+    /// Mutable registry used by rich-text shaders during offscreen capture.
+    pub fn shader_registry_mut(&mut self) -> &mut RichTextShaderRegistry {
+        &mut self.shader_registry
     }
 
     /// Mutable state store shared by custom rich-text effects during offscreen capture.
@@ -637,6 +758,7 @@ impl NativeOffscreenCaptureSession {
             viewport,
             viewport.time_seconds,
             Some(&mut self.effect_registry),
+            Some(&mut self.shader_registry),
             &mut self.effect_state,
         )
     }
@@ -936,8 +1058,11 @@ impl NativeOffscreenCaptureSession {
         target: NativeRenderTarget,
         clear: wgpu::Color,
     ) -> Result<NativeRenderReadback, NativeWindowError> {
-        let mut effects =
-            NativeEffectExecution::new(Some(&mut self.effect_registry), &mut self.effect_state);
+        let mut effects = NativeEffectExecution::new(
+            Some(&mut self.effect_registry),
+            Some(&mut self.shader_registry),
+            &mut self.effect_state,
+        );
         self.renderer.prepare(
             &self.device,
             &self.queue,
@@ -1058,11 +1183,13 @@ pub fn measure_frame_elements_at_page_with_time(
     time_seconds: f32,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let mut state = RichTextStateStore::default();
+    let mut shader_registry = native_default_shader_registry();
     measure_frame_elements_at_page_with_effects(
         frame,
         NativeCaptureViewport::new(width, height, left, top, page_index),
         time_seconds,
         None,
+        Some(&mut shader_registry),
         &mut state,
     )
 }
@@ -1074,11 +1201,13 @@ pub fn measure_frame_elements_with_effect_registry(
     registry: &mut RichTextEffectRegistry,
     state: &mut RichTextStateStore,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
+    let mut shader_registry = native_default_shader_registry();
     measure_frame_elements_at_page_with_effects(
         frame,
         viewport,
         viewport.time_seconds,
         Some(registry),
+        Some(&mut shader_registry),
         state,
     )
 }
@@ -1088,10 +1217,11 @@ fn measure_frame_elements_at_page_with_effects(
     viewport: NativeCaptureViewport,
     time_seconds: f32,
     registry: Option<&mut RichTextEffectRegistry>,
+    shader_registry: Option<&mut RichTextShaderRegistry>,
     state: &mut RichTextStateStore,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
     let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
-    let mut effects = NativeEffectExecution::new(registry, state);
+    let mut effects = NativeEffectExecution::new(registry, shader_registry, state);
     let page_layout = layout_page_range(
         frame,
         page_range,
@@ -1173,7 +1303,14 @@ pub fn capture_frame_color_regions_at_page(
 /// Builds a deterministic native visual plan for a rich-text frame.
 pub fn visual_plan_from_frame(frame: &LineDisplayFrame, time_seconds: f32) -> NativeVisualPlan {
     let mut state = RichTextStateStore::default();
-    visual_plan_from_frame_with_effects(frame, time_seconds, None, &mut state)
+    let mut shader_registry = native_default_shader_registry();
+    visual_plan_from_frame_with_effects(
+        frame,
+        time_seconds,
+        None,
+        Some(&mut shader_registry),
+        &mut state,
+    )
 }
 
 /// Builds a deterministic native visual plan using renderer-local custom effects.
@@ -1183,16 +1320,24 @@ pub fn visual_plan_from_frame_with_effect_registry(
     registry: &mut RichTextEffectRegistry,
     state: &mut RichTextStateStore,
 ) -> NativeVisualPlan {
-    visual_plan_from_frame_with_effects(frame, time_seconds, Some(registry), state)
+    let mut shader_registry = native_default_shader_registry();
+    visual_plan_from_frame_with_effects(
+        frame,
+        time_seconds,
+        Some(registry),
+        Some(&mut shader_registry),
+        state,
+    )
 }
 
 fn visual_plan_from_frame_with_effects(
     frame: &LineDisplayFrame,
     time_seconds: f32,
     registry: Option<&mut RichTextEffectRegistry>,
+    shader_registry: Option<&mut RichTextShaderRegistry>,
     state: &mut RichTextStateStore,
 ) -> NativeVisualPlan {
-    let mut effects = NativeEffectExecution::new(registry, state);
+    let mut effects = NativeEffectExecution::new(registry, shader_registry, state);
     let mut pages = Vec::new();
     let page_ranges = display_map_page_ranges(frame)
         .into_iter()
@@ -2443,61 +2588,82 @@ fn observe_layout_shaders<'a>(
     );
 }
 
-fn shader_glow_glyph_areas_for_text(
+fn shader_glyph_areas_for_text(
     glyph_area: &OwnedGlyphArea,
     layout: &LaidOutText,
+    effects: &mut NativeEffectExecution<'_>,
 ) -> Vec<OwnedGlyphArea> {
-    shader_glow_glyph_areas(glyph_area, |metadata| {
-        layout
-            .glyphs
-            .get(metadata)
-            .and_then(|glyph| soft_glow_shader(&glyph.presentation.shaders))
+    shader_glyph_areas(glyph_area, |metadata| {
+        layout.glyphs.get(metadata).map_or_else(Vec::new, |glyph| {
+            shader_glyph_passes_for_presentation(&glyph.presentation, effects)
+        })
     })
 }
 
-fn shader_glow_glyph_areas_for_ruby(
+fn shader_glyph_areas_for_ruby(
     ruby_glyph_areas: &[OwnedGlyphArea],
     ruby_buffers: &[WindowRubyBuffer],
+    effects: &mut NativeEffectExecution<'_>,
 ) -> Vec<OwnedGlyphArea> {
     ruby_glyph_areas
         .iter()
         .zip(ruby_buffers)
         .flat_map(|(glyph_area, ruby)| {
-            let shader = soft_glow_shader(&ruby.presentation.shaders);
-            shader_glow_glyph_areas(glyph_area, move |_metadata| shader.clone())
+            let passes = shader_glyph_passes_for_presentation(&ruby.presentation, effects);
+            shader_glyph_areas(glyph_area, move |_metadata| passes.clone())
         })
         .collect()
 }
 
-fn shader_glow_glyph_areas(
+fn shader_glyph_passes_for_presentation(
+    presentation: &RichTextPresentation,
+    effects: &mut NativeEffectExecution<'_>,
+) -> Vec<NativeShaderGlyphPass> {
+    presentation
+        .shaders
+        .iter()
+        .flat_map(|shader| effects.shader_glyph_passes(shader))
+        .collect()
+}
+
+fn shader_glyph_areas(
     glyph_area: &OwnedGlyphArea,
-    shader_for_metadata: impl Fn(usize) -> Option<NativeResolvedShaderFilter>,
+    mut passes_for_metadata: impl FnMut(usize) -> Vec<NativeShaderGlyphPass>,
 ) -> Vec<OwnedGlyphArea> {
-    [
-        SoftGlowPass::Forward,
-        SoftGlowPass::Backward,
-        SoftGlowPass::SideA,
-        SoftGlowPass::SideB,
-    ]
-    .into_iter()
-    .filter_map(|pass| {
-        let mut area = glyph_area.clone();
-        let mut has_visible_shader_glyph = false;
-        area.set_default_color(Color::rgba(0, 0, 0, 0));
-        for glyph in area.glyphs_mut() {
-            let Some(shader) = shader_for_metadata(glyph.metadata) else {
-                glyph.color = Some(Color::rgba(0, 0, 0, 0));
-                continue;
-            };
-            let offset = soft_glow_offset(&shader, pass);
-            glyph.origin.x += offset[0];
-            glyph.origin.y += offset[1];
-            glyph.color = Some(soft_glow_color(&shader, pass));
-            has_visible_shader_glyph = true;
-        }
-        has_visible_shader_glyph.then_some(area)
-    })
-    .collect()
+    let mut passes_by_metadata = BTreeMap::<usize, Vec<NativeShaderGlyphPass>>::new();
+    for glyph in glyph_area.glyphs() {
+        passes_by_metadata
+            .entry(glyph.metadata)
+            .or_insert_with(|| passes_for_metadata(glyph.metadata));
+    }
+    let pass_count = passes_by_metadata
+        .values()
+        .map(Vec::len)
+        .max()
+        .unwrap_or_default();
+
+    (0..pass_count)
+        .filter_map(|pass| {
+            let mut area = glyph_area.clone();
+            let mut has_visible_shader_glyph = false;
+            area.set_default_color(Color::rgba(0, 0, 0, 0));
+            for glyph in area.glyphs_mut() {
+                let Some(shader_pass) = passes_by_metadata
+                    .get(&glyph.metadata)
+                    .and_then(|passes| passes.get(pass))
+                else {
+                    glyph.color = Some(Color::rgba(0, 0, 0, 0));
+                    continue;
+                };
+                glyph.origin.x += shader_pass.offset[0];
+                glyph.origin.y += shader_pass.offset[1];
+                let [red, green, blue, alpha] = shader_pass.color;
+                glyph.color = Some(Color::rgba(red, green, blue, alpha));
+                has_visible_shader_glyph = true;
+            }
+            has_visible_shader_glyph.then_some(area)
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -2508,13 +2674,28 @@ enum SoftGlowPass {
     SideB,
 }
 
-fn soft_glow_shader(shaders: &[RichTextShaderRef]) -> Option<NativeResolvedShaderFilter> {
-    shaders
-        .iter()
-        .find(|shader| {
-            shader.id == "soft_glow" && shader.phase == RichTextEffectPhase::RunOffscreenPass
-        })
-        .map(resolve_shader_filter)
+fn native_soft_glow_shader(ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> {
+    native_glow_shader(ctx, [155, 205, 255])
+}
+
+fn native_warm_glow_shader(ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyphPass> {
+    native_glow_shader(ctx, [255, 178, 112])
+}
+
+fn native_glow_shader(ctx: &TextShaderContext<'_>, color: [u8; 3]) -> Vec<NativeShaderGlyphPass> {
+    let shader = resolve_shader_filter(ctx.shader);
+    [
+        SoftGlowPass::Forward,
+        SoftGlowPass::Backward,
+        SoftGlowPass::SideA,
+        SoftGlowPass::SideB,
+    ]
+    .into_iter()
+    .map(|pass| NativeShaderGlyphPass {
+        offset: soft_glow_offset(&shader, pass),
+        color: glow_color(&shader, pass, color),
+    })
+    .collect()
 }
 
 fn soft_glow_offset(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> [f32; 2] {
@@ -2530,14 +2711,18 @@ fn soft_glow_offset(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> 
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn soft_glow_color(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> Color {
+fn glow_color(
+    shader: &NativeResolvedShaderFilter,
+    pass: SoftGlowPass,
+    [red, green, blue]: [u8; 3],
+) -> [u8; 4] {
     let alpha_scale = match pass {
         SoftGlowPass::Forward => 72.0,
         SoftGlowPass::Backward => 44.0,
         SoftGlowPass::SideA | SoftGlowPass::SideB => 32.0,
     };
     let alpha = (shader.amount * alpha_scale).round().clamp(8.0, 96.0) as u8;
-    Color::rgba(155, 205, 255, alpha)
+    [red, green, blue, alpha]
 }
 
 fn normalize_shader_direction(direction: [f32; 2]) -> [f32; 2] {
@@ -3605,6 +3790,7 @@ struct WindowState {
     layout_frame: Option<LineDisplayFrame>,
     layout: Option<LaidOutText>,
     effect_registry: RichTextEffectRegistry,
+    shader_registry: RichTextShaderRegistry,
     effect_state: RichTextStateStore,
     animation_started_at: Instant,
     has_timed_effects: bool,
@@ -3690,6 +3876,7 @@ impl WindowState {
             layout_frame: page.layout_frame.clone(),
             layout: None,
             effect_registry: native_default_effect_registry(),
+            shader_registry: native_default_shader_registry(),
             effect_state: RichTextStateStore::default(),
             animation_started_at: Instant::now(),
             has_timed_effects: false,
@@ -4221,7 +4408,9 @@ impl NativeOffscreenTextRenderer {
                 target.time_seconds,
             );
         }
-        let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout.layout);
+        let text_shader_glyph_areas = effects.as_deref_mut().map_or_else(Vec::new, |effects| {
+            shader_glyph_areas_for_text(&glyph_area, layout.layout, effects)
+        });
         let ruby_glyph_areas = ruby_glyph_areas(
             &self.ruby_buffers,
             &rich_text.text,
@@ -4229,10 +4418,11 @@ impl NativeOffscreenTextRenderer {
             target.height,
             target.time_seconds,
             target.force_alpha_mask,
-            effects,
+            effects.as_deref_mut(),
         );
-        let ruby_shader_glyph_areas =
-            shader_glow_glyph_areas_for_ruby(&ruby_glyph_areas, &self.ruby_buffers);
+        let ruby_shader_glyph_areas = effects.map_or_else(Vec::new, |effects| {
+            shader_glyph_areas_for_ruby(&ruby_glyph_areas, &self.ruby_buffers, effects)
+        });
         let glyph_areas = native_glyph_area_submission_list(
             &text_shader_glyph_areas,
             &glyph_area,
@@ -5527,8 +5717,11 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         };
         apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout, &cache_keys);
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, time_seconds);
-        let mut effects =
-            NativeEffectExecution::new(Some(&mut state.effect_registry), &mut state.effect_state);
+        let mut effects = NativeEffectExecution::new(
+            Some(&mut state.effect_registry),
+            Some(&mut state.shader_registry),
+            &mut state.effect_state,
+        );
         observe_layout_shaders(
             &mut effects,
             layout,
@@ -5541,7 +5734,8 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             time_seconds,
             &mut effects,
         );
-        let text_shader_glyph_areas = shader_glow_glyph_areas_for_text(&glyph_area, layout);
+        let text_shader_glyph_areas =
+            shader_glyph_areas_for_text(&glyph_area, layout, &mut effects);
         let ruby_glyph_areas = ruby_glyph_areas(
             &state.ruby_buffers,
             &state.rich_text.text,
@@ -5552,7 +5746,7 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
             Some(&mut effects),
         );
         let ruby_shader_glyph_areas =
-            shader_glow_glyph_areas_for_ruby(&ruby_glyph_areas, &state.ruby_buffers);
+            shader_glyph_areas_for_ruby(&ruby_glyph_areas, &state.ruby_buffers, &mut effects);
         let glyph_areas = native_glyph_area_submission_list(
             &text_shader_glyph_areas,
             &glyph_area,
@@ -5819,7 +6013,11 @@ mod tests {
         )
         .expect("glyph area resolves");
 
-        let glow_areas = shader_glow_glyph_areas_for_text(&glyph_area, &layout);
+        let mut shader_registry = native_default_shader_registry();
+        let mut state = RichTextStateStore::default();
+        let mut effects = NativeEffectExecution::new(None, Some(&mut shader_registry), &mut state);
+
+        let glow_areas = shader_glyph_areas_for_text(&glyph_area, &layout, &mut effects);
 
         assert_eq!(glow_areas.len(), 4);
         assert_eq!(glow_areas[0].len(), glyph_area.len());
@@ -5862,7 +6060,11 @@ mod tests {
         )
         .expect("glyph area resolves");
 
-        let glow_areas = shader_glow_glyph_areas_for_text(&glyph_area, &layout);
+        let mut shader_registry = native_default_shader_registry();
+        let mut state = RichTextStateStore::default();
+        let mut effects = NativeEffectExecution::new(None, Some(&mut shader_registry), &mut state);
+
+        let glow_areas = shader_glyph_areas_for_text(&glyph_area, &layout, &mut effects);
         let plan = visual_plan_from_frame_for_test(&frame, 0.0);
 
         assert!(glow_areas.is_empty());
@@ -5890,6 +6092,35 @@ mod tests {
         assert_eq!(
             plan.diagnostics[0].effect_id.as_deref(),
             Some("missing_glow")
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_custom_shader_registry_for_submitted_glyph_passes() {
+        let frame = shader_test_frame("rose_glow", RichTextEffectPhase::RunOffscreenPass);
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        session
+            .shader_registry_mut()
+            .insert_lambda("rose_glow", |_ctx| {
+                vec![NativeShaderGlyphPass {
+                    offset: [18.0, -2.0],
+                    color: [255, 48, 24, 255],
+                }]
+            });
+
+        let capture = session
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("custom shader capture");
+
+        assert!(capture.diagnostics.is_empty());
+        assert!(capture.content_pixels > 0);
+        assert!(
+            capture.rgba.chunks_exact(4).any(|pixel| {
+                pixel[0] > pixel[1].saturating_add(90)
+                    && pixel[0] > pixel[2].saturating_add(90)
+                    && pixel[3] > 0
+            }),
+            "registered custom shader should emit red-tinted glyph pass pixels"
         );
     }
 

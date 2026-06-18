@@ -247,10 +247,12 @@ effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
 typewriter masking for `glyph_mask`, registry-dispatched custom placement
 effects, and registry-dispatched custom `glyph_color` effects for observe,
 visual-plan, and framebuffer capture paths. The native renderer also supports
-the registered `soft_glow` shader at `run_offscreen_pass` for text and ruby
-glyph submissions. Unsupported shader ids, supported shader ids used at the
-wrong phase, unregistered custom effects, post-process effects, and host-event
-phases must be diagnosed instead of being silently reinterpreted as placement
-effects. For builtin wave placement, `target=glyph` evaluates the phase per
-glyph, while `target=run` and broader targets evaluate the placement as one
-group; shake and jitter grouping is controlled by `state_scope`.
+registered `run_offscreen_pass` shaders for text and ruby glyph submissions;
+the default registry provides `soft_glow` and `warm_glow`, and native adapters
+may register additional shader IDs through the shader registry. Unsupported
+shader ids, supported shader ids used at the wrong phase, unregistered custom
+effects, post-process effects, and host-event phases must be diagnosed instead
+of being silently reinterpreted as placement effects. For builtin wave
+placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
+broader targets evaluate the placement as one group; shake and jitter grouping
+is controlled by `state_scope`.
