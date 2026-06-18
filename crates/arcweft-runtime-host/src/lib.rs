@@ -1,5 +1,6 @@
 //! Host-side runtime execution boundary for Arcweft bundles and native tasks.
 
+pub mod activity_host;
 pub mod bundle_runner;
 pub mod capabilities;
 pub mod native_system;
@@ -8,6 +9,10 @@ pub mod presentation_dispatch;
 pub mod stats;
 pub mod ui_frame;
 
+pub use activity_host::{
+    ActivityHost, ActivityHostError, ActivityHostRegistrationError, ActivityHostRegistry,
+    ActivityHostStepError, ActivityStepInputRef, ActivityStepOutput, ActivityStepOutputSink,
+};
 pub use arcweft_core::value::RuntimeBinding;
 pub use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 pub use bundle_runner::{

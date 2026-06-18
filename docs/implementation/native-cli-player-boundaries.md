@@ -68,6 +68,16 @@ semantic action partitioning and handler orchestration in the host layer
 instead of pushing TextBox, Activity, or UI routing concepts down into
 `arcweft-core`.
 
+`arcweft-runtime-host` now also owns the first Activity host step boundary.
+`ActivityHostRegistry` registers concrete Activity instances by stable
+`InteractionTarget`, rejects duplicate targets at registration time, and steps
+one Activity with borrowed `ActivityStepInputRef` data selected from already
+routed `InputEvent`s plus `HostEventSource::Activity` notifications. Activity
+output returns through `ActivityStepOutputSink` as `ActionBatch` and
+`HostEventBatch`, keeping Activity input/output on the same presentation data
+model without adding per-Activity routers or sending raw input into
+`arcweft-core`.
+
 `arcweft-runtime-host` also owns the first UI frame commit boundary. It depends
 on `arcweft-ui` as the host-layer join point and validates UI frame output
 against the committed `LayerTree`: component rendering now produces a per-layer
@@ -274,17 +284,19 @@ remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Register concrete TextBox, Activity, UI, and runtime action handlers through
-   `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, and have
-   Component rendering feed `UiFrameCommitBuilder` with `UiLayerOutput` rather
-   than loose display/semantic pairs. Later Component and Activity work must use
-   `ActionBatch`, `HostEventBatch`, routed `InputEvent`, `LayerContent`,
-   `LayerTransform`, `HoverPath`, `GestureArena`, `RoutingHash`,
-   `RouteDecision`, `SemanticTree`, `UiFrameCommit`,
-   `PresentationActionDispatchPlan`, `PresentationActionHandlers`, and
-   `PresentationActionHandlerRegistry` instead of introducing per-Activity
-   routers, `ActivityViewport`, `UiEvent` aliases, or Agent-only semantic
-   invoke shortcuts.
+5. Continue wiring concrete TextBox, Activity, UI, and runtime handlers through
+   the host-owned boundaries now in place:
+   `PresentationActionHandlerRegistry` / `PresentationActionHandlers` for
+   semantic actions, `ActivityHostRegistry` / `ActivityHost` for Activity
+   stepping, and `UiFrameCommitBuilder` with `UiLayerOutput` for Component
+   rendering output. Later Component and Activity work must use `ActionBatch`,
+   `HostEventBatch`, routed `InputEvent`, `LayerContent`, `LayerTransform`,
+   `HoverPath`, `GestureArena`, `RoutingHash`, `RouteDecision`, `SemanticTree`,
+   `UiFrameCommit`, `PresentationActionDispatchPlan`,
+   `PresentationActionHandlers`, `PresentationActionHandlerRegistry`, and
+   `ActivityHostRegistry` instead of introducing per-Activity routers,
+   `ActivityViewport`, `UiEvent` aliases, or Agent-only semantic invoke
+   shortcuts.
 
 ## Invariants
 

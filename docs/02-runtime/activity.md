@@ -2,19 +2,32 @@
 
 Activity はノベル本編、トラックゲーム、FPS、WASM plugin、Rust plugin、外部 process を統一する。
 
-## Activity trait
+## Activity host trait
 
 ```rust
-pub trait Activity {
+pub trait ActivityHost {
     fn manifest() -> ActivityManifest where Self: Sized;
     fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
-    fn step(&mut self, input: RuntimeStepInputRef<'_>, output: RuntimeStepOutputSink<'_>) -> StepStatus;
+    fn step(
+        &mut self,
+        input: ActivityStepInputRef<'_>,
+        output: &mut ActivityStepOutputSink<'_>,
+    ) -> Result<(), ActivityError>;
     fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
     fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
 }
 ```
 
-Activity snapshot は Sans I/O data。Activity は path を開かず、host adapter が snapshot bytes の serialize、compress、encrypt、file write、cloud sync を担当する。
+`ActivityStepInputRef` は `LayerTree` / `HitTree` で route 済みの
+`InputEvent` と、`HostEventSource::Activity` の host event だけを借用す
+る。Activity は raw pointer/key/window event を解釈せず、Activity ごとの
+input router も持たない。出力は `ActivityStepOutputSink` へ
+`ActionBatch` / `HostEventBatch` として追加し、runtime-host が core
+step、TextBox、UI、他 Activity への配送順を決める。
+
+Activity snapshot は Sans I/O data。Activity は path を開かず、host
+adapter が snapshot bytes の serialize、compress、encrypt、file write、
+cloud sync を担当する。
 
 ## Mode
 
