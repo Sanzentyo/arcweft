@@ -86,7 +86,6 @@ pub struct RuntimeStepInput {
     pub bindings: Vec<RuntimeBinding>,
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
-    pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
 }

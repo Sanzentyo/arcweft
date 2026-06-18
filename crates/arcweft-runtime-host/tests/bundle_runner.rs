@@ -10,6 +10,7 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
+use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_host::{
     BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
     run_bundle_with_native_adapters,
@@ -150,6 +151,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
                     .to_owned(),
         },
         program,
+        LineDisplayCatalog::default(),
     )
     .with_adapter_manifests([BundleAdapterManifest {
         id: "custom-echo".to_owned(),

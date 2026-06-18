@@ -18,6 +18,9 @@ rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+arcweft-render-text = { path = "../arcweft-render-text" }
+
 [lib]
 path = "src/lib.rs"
 

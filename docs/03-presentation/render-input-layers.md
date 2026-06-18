@@ -129,7 +129,7 @@ pub enum LayerKind {
     Choice,
     NativeUi,
     HtmlUi,
-    ActivityViewport,
+    Activity,
     DebugOverlay,
     AgentOverlay,
     Custom,
@@ -313,7 +313,7 @@ pub struct RawInputEvent {
 }
 ```
 
-その後、`LayerInputRouter` が semantic input に変換する。
+その後、`InputRouter` が semantic input に変換する。
 
 ```rust
 pub struct RoutedInputEvent {
@@ -559,14 +559,14 @@ headless では pixel-perfect DOM/Servo capture が利用できない場合で�
 
 ---
 
-## 13. Activity viewport layer
+## 13. Activity layer
 
-トラックゲームやFPSミニゲームは `ActivityViewport` layer を持つ。
+トラックゲームやFPSミニゲームは Activity を layer content として持つ。
 
 ```arcw
 layer @layer.truck_game phase World z 100 {
     input capture
-    activity_viewport @activity.truck_game {
+    activity @activity.truck_game {
         size = fill
         input_map = @input.truck_game
     }
@@ -576,7 +576,7 @@ layer @layer.truck_game phase World z 100 {
 Activity への入力は layer を通して送る。
 
 ```rust
-pub enum ActivityInputRoute {
+pub enum ActivityInput {
     Pointer(PointerEvent),
     Keyboard(KeyEvent),
     Gamepad(GamepadEvent),
@@ -718,7 +718,7 @@ arcweft-layer-render
   LayerRenderTargetPolicy, layer composition, layer cache
 
 arcweft-layer-input
-  LayerInputRouter, hit-test, focus, modal, capture
+  InputRouter, hit-test, focus, modal, capture
 
 arcweft-layer-agent
   LayerObservation, layer-aware bbox/mask/action target
@@ -734,13 +734,13 @@ arcweft-layer-lsp
 ## 18. 実装順
 
 1. `LayerTree` / `LayerNode` / `LayerSpec` を `RenderSpec` に入れる。
-2. `LayerInputRouter` を作り、semantic action と pointer hit-test を layer top-down に統一する。
+2. `InputRouter` を作り、semantic action と pointer hit-test を layer top-down に統一する。
 3. Game Native UI node に所属layerを持たせる。
 4. Object ID pass を layer/object ID と結びつける。
 5. Agent Observation に `layers` を追加する。
 6. Modal/focus/capture を導入する。
 7. HTML/Servo/DOM layer bridge をつなぐ。
-8. Activity viewport layer をつなぐ。
+8. Activity layer content をつなぐ。
 9. LSP/visual test/contract を追加する。
 
 ---
@@ -754,8 +754,8 @@ arcweft-layer-lsp
 4. modal/focus/capture は layer state として管理する。
 5. Agent bbox/mask/action target は layer 情報を必ず持つ。
 6. HTML/Servo/DOM UI も LayerTree 上の HtmlUi layer として扱う。
-7. Activity viewport も layer として扱う。
-8. headless と windowed で同じ LayerInputRouter を使う。
+7. Activity も layer content として扱う。
+8. headless と windowed で同じ InputRouter を使う。
 9. `#<...>.method` のように境界が必要な参照は従来通り `#<...>` を使う。
 10. visual test は layer 単位で visible / blocked / hit-test を検査できる。
 ```

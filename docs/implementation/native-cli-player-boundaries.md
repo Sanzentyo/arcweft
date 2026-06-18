@@ -58,6 +58,9 @@ The unified UI design is adopted as the long-term boundary for future work:
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
   LayerTree / HitTree / InteractionTarget model.
+- `UiEvent` is not a public runtime-step concept; UI handlers lower to routed
+  input, `ActionTarget`, or semantic action data owned by presentation/runtime
+  host boundaries.
 - Rich text display data is owned once by the line display store/catalog;
   TextBox and Component views borrow projections instead of cloning full rich
   text frames for reveal-only updates.

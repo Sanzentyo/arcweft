@@ -460,7 +460,7 @@ UI widget の `on_click` は、hit region と semantic action へ lowering さ�
 ```arcw
 Button("閉じる")
     .agent_target(@ui.settings.close)
-    .on_click { event.emit(UiEvent.SettingsClosed) }
+    .on_click { action.invoke(@action.settings.close) }
 ```
 
 lowering:
@@ -470,7 +470,7 @@ UiNode
   → HitRegion(layer = layer.modal, target = ui.settings.close)
   → ActionTarget(kind = invoke, action = close)
   → LayerInputEvent on click
-  → UiEvent.SettingsClosed
+  → SemanticAction::Invoke(@action.settings.close)
 ```
 
 ## RuntimeStepInput の更新
@@ -483,7 +483,6 @@ pub struct RuntimeStepInput {
     pub layer_input_events: Vec<LayerInputEvent>,
     pub semantic_input_events: Vec<SemanticInputEvent>,
     pub task_events: Vec<TaskEvent>,
-    pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
 }
 ```
@@ -676,7 +675,7 @@ phase InputCapture
 check on input KeyDown
 when input.key == .Escape
 {
-    event.emit(UiEvent::CloseModal)
+    action.invoke(@action.modal.close)
     consume input
 }
 ```

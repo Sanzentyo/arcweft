@@ -32,7 +32,6 @@ pub struct RuntimeStepInput {
     pub dt: LogicalDuration,
     pub input: LayeredInputFrame,
     pub task_events: Vec<TaskEvent>,
-    pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
 }
 ```
@@ -235,7 +234,7 @@ Button("閉じる")
     .layer(@layer.modal.settings)
     .agent_target(@ui.settings.close)
     .on_click {
-        event.emit(UiEvent.SettingsClosed)
+        action.invoke(@action.settings.close)
     }
 ```
 

@@ -22,7 +22,7 @@ pub enum GameEvent {
     TextAdvanced,
     ChoiceSelected { id: Ref<ChoiceOption> },
     TruckFinished { result: TruckResult },
-    Ui(UiEvent),
+    Action(SemanticAction),
     Task(TaskEvent),
 }
 ```

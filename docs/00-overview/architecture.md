@@ -95,14 +95,14 @@ Snapshot は pure data。serialize、compress、encrypt、file write は host / 
 
 ### LayerTree は描画と入力の共通単位
 
-`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native UI、HTML UI、modal、debug overlay、Activity viewport を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
+`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native UI、HTML UI、modal、debug overlay、Activity を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
 
 ### UI は二系統
 
 - Game Native UI: SwiftUI 風、リアクティブ、wgpu/vector/text、Agent 観測に最適。
 - HTML/CSS UI: native は Servo、web は browser DOM。
 
-どちらも layer に載り、最終的に `UiEvent` と `ActionTarget` を返す。
+どちらも layer に載り、最終的に route 済み input と `ActionTarget` / semantic action を返す。
 
 ### 音声も構造化
 

@@ -13,7 +13,6 @@ pub struct RuntimeStepInput {
     pub bindings: Vec<RuntimeBinding>,
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
-    pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
 }
@@ -30,7 +29,6 @@ pub struct RuntimeStepInputRef<'a> {
     bindings: &'a [RuntimeBinding],
     input_events: &'a [InputEvent],
     task_events: &'a [TaskEvent],
-    ui_events: &'a [UiEvent],
     audio_events: &'a [AudioEvent],
     source_events: &'a [RuntimeSourceEvent],
 }
@@ -238,13 +236,6 @@ pub struct InputEvent {
     pub payload: Option<String>,
 }
 
-/// UI event placeholder kept as Sans I/O data.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UiEvent {
-    pub kind: String,
-    pub payload: Option<String>,
-}
-
 /// Audio event placeholder kept as Sans I/O data.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioEvent {
@@ -260,7 +251,6 @@ impl RuntimeStepInput {
             bindings: self.bindings.as_slice(),
             input_events: self.input_events.as_slice(),
             task_events: self.task_events.as_slice(),
-            ui_events: self.ui_events.as_slice(),
             audio_events: self.audio_events.as_slice(),
             source_events: self.source_events.as_slice(),
         }
@@ -286,10 +276,6 @@ impl<'a> RuntimeStepInputRef<'a> {
 
     pub const fn task_events(&self) -> &'a [TaskEvent] {
         self.task_events
-    }
-
-    pub const fn ui_events(&self) -> &'a [UiEvent] {
-        self.ui_events
     }
 
     pub const fn audio_events(&self) -> &'a [AudioEvent] {

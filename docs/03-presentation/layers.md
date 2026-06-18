@@ -203,7 +203,7 @@ InputEvent
   → if Modal layer exists above target, block below
   → deliver to layer handler
   → layer returns Consumed / PassThrough / Blocked
-  → produce GameEvent / UiEvent / ActivityInput / AgentActionResult
+  → produce GameEvent / SemanticAction / ActivityInput / AgentActionResult
 ```
 
 ## Focus scopes

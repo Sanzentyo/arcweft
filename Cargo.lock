@@ -498,6 +498,7 @@ dependencies = [
  "arcweft-bundle",
  "arcweft-core",
  "arcweft-host-adapter",
+ "arcweft-render-text",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-scheduler",
  "num_cpus",
