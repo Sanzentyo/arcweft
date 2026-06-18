@@ -20340,6 +20340,53 @@ flow @flow.main main {
     assert_agent_native_visual_resource_diagnostic(&resource, "missing_shader", "ghost_glow");
 }
 
+#[test]
+fn agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources() {
+    let path = temp_arcw(
+        "agent-observe-native-rich-text-missing-motion-diagnostics",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.motion fn=ghost_orbit amp=4px target=glyph]missing motion[/][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_agent_native_visual_diagnostic(&json, "missing_motion_function", "motion");
+    assert_agent_native_visual_image_diagnostic(&json, "missing_motion_function", "motion");
+
+    let read_uri = "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png";
+    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg(read_uri)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("128")
+        .output()
+        .expect("arcw agent observe reads missing motion diagnostic image URI");
+    fs::remove_file(&path).expect("remove temp missing motion diagnostics source");
+
+    assert!(
+        read_output.status.success(),
+        "missing motion diagnostic read-uri should succeed, stderr: {}",
+        String::from_utf8_lossy(&read_output.stderr)
+    );
+    let resource: serde_json::Value =
+        serde_json::from_slice(&read_output.stdout).expect("read-uri resource is JSON");
+    assert_eq!(resource["uri"], read_uri);
+    assert_agent_native_visual_resource_diagnostic(&resource, "missing_motion_function", "motion");
+}
+
 fn assert_effects_animation_function_motion_run_changes_over_time(
     source_path: &Path,
     json: &serde_json::Value,
