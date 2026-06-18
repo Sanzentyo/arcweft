@@ -81,12 +81,13 @@ hit-test also accepts generic observed object bounding boxes with
 their capture refs without pretending to be rich text.
 
 `arcweft-cli` owns the first Agent adapter bridge from committed UI image
-display items to observed image objects. Given a `UiFrameCommit`,
-`UiImageSourceTable`, and pinned visual time, the adapter resolves the active
-decoded frame, converts the UI layout box to a viewport bbox, and emits
-`content.kind = "image"` with source id, frame index, local time, and intrinsic
-dimensions. This bridge is adapter-side and does not add an Agent dependency to
-`arcweft-runtime-host`.
+display items to observed image objects and their capture pixels. Given a
+`UiFrameCommit`, `UiImageSourceTable`, and pinned visual time, the adapter
+resolves the active decoded frame once, converts the UI layout box to a
+viewport bbox, emits `content.kind = "image"` with source id, frame index,
+local time, and intrinsic dimensions, and stores the same active RGBA frame in
+an object-id keyed frame store for native capture. This bridge is adapter-side
+and does not add an Agent dependency to `arcweft-runtime-host`.
 
 Agent native object capture now recognizes typed image objects without walking
 through a parent rich-text textbox. When the same observation context carries a
@@ -128,11 +129,10 @@ same alpha-shaped geometry as color image capture.
    settles it; static `asset.image(...)` references are already checked against
    bundle image asset ids.
 2. Wire the live Agent native observe loop to feed actual runtime UI commits
-   through the UI image item bridge, rather than only covering the adapter path
-   in focused tests.
-3. Wire live runtime UI/image commits into the Agent image frame store so CLI
-   read-uri/MCP image color capture uses decoded frames from real samples, not
-   only focused adapter tests.
+   through the UI image item bridge and carry the resulting image frame store
+   into CLI read-uri/MCP image color capture.
+3. Expose source-level image declarations in `.arcw` samples so real sample
+   runs can populate the UI image source table without test-only setup.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
 5. Add regression tests for frame selection, decode, native capture pixels,

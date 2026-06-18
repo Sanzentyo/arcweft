@@ -582,7 +582,7 @@ mod tests {
         builder.push_layer(hud, output).unwrap();
         let commit = builder.finish();
 
-        let objects = agent_image_objects_from_ui_frame(
+        let observation = agent_image_observation_from_ui_frame(
             "cli",
             4,
             &AgentViewport {
@@ -595,6 +595,7 @@ mod tests {
             150,
         );
 
+        let objects = &observation.objects;
         assert_eq!(objects.len(), 1);
         let object = &objects[0];
         assert_eq!(object.role, "image");
@@ -612,6 +613,57 @@ mod tests {
         assert_eq!(content.local_time_millis, Some(150));
         assert_eq!(content.intrinsic_width, Some(2));
         assert_eq!(content.intrinsic_height, Some(1));
+
+        let object_only_bridge = agent_image_objects_from_ui_frame(
+            "cli",
+            4,
+            &AgentViewport {
+                width: 320,
+                height: 180,
+                scale: 1.0,
+            },
+            &commit,
+            &image_sources,
+            150,
+        );
+        assert_eq!(object_only_bridge, *objects);
+
+        let stored_frame = observation.image_frames.get(&object.id).unwrap();
+        assert_eq!(stored_frame.width, 2);
+        assert_eq!(stored_frame.height, 1);
+        assert_eq!(stored_frame.rgba, vec![2, 2, 2, 255, 3, 3, 3, 255]);
+
+        let mut report = test_agent_observation_report(None);
+        report.viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let mut capture_object = object.clone();
+        capture_object.bbox.width = 2;
+        capture_object.bbox.height = 1;
+        capture_object.polygon = capture_object.bbox.polygon();
+        report.objects = vec![capture_object];
+        let mut native_session =
+            arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
+        let result = agent_native_capture_image_with_frame_store(
+            &report,
+            &AgentCaptureReadRequest {
+                uri: format!("arcweft://session/cli/frame/4/object.{}.rgba", object.id),
+                image_kind: AgentObserveImageKind::RawRgba,
+                capture_kind: AgentObserveCaptureKind::Color,
+                scope: AgentCaptureScope::Object(object.id.clone()),
+                page: 0,
+                capture_step: 4,
+                capture_time_seconds: 0.15,
+            },
+            &mut native_session,
+            &observation.image_frames,
+        )
+        .unwrap();
+        assert_eq!(result.image.width, 2);
+        assert_eq!(result.image.height, 1);
+        assert_eq!(result.bytes, vec![2, 2, 2, 255, 3, 3, 3, 255]);
     }
 
     #[test]
@@ -2436,6 +2488,12 @@ struct AgentImageFrameStore {
     frames_by_object: BTreeMap<String, AgentStoredImageFrame>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct AgentUiImageObservation {
+    objects: Vec<AgentObservedObject>,
+    image_frames: AgentImageFrameStore,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentStoredImageFrame {
     width: u32,
@@ -2444,13 +2502,6 @@ struct AgentStoredImageFrame {
 }
 
 impl AgentImageFrameStore {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "live UI/image observe wiring will populate the frame store"
-        )
-    )]
     fn insert(&mut self, object_id: impl Into<String>, width: u32, height: u32, rgba: Vec<u8>) {
         self.frames_by_object.insert(
             object_id.into(),
@@ -4915,11 +4966,31 @@ pub(crate) fn agent_image_objects_from_ui_frame(
     images: &UiImageSourceTable,
     visual_time_millis: u64,
 ) -> Vec<AgentObservedObject> {
+    agent_image_observation_from_ui_frame(
+        session_id,
+        step,
+        viewport,
+        frame,
+        images,
+        visual_time_millis,
+    )
+    .objects
+}
+
+fn agent_image_observation_from_ui_frame(
+    session_id: &str,
+    step: usize,
+    viewport: &AgentViewport,
+    frame: &UiFrameCommit,
+    images: &UiImageSourceTable,
+    visual_time_millis: u64,
+) -> AgentUiImageObservation {
+    let mut observation = AgentUiImageObservation::default();
     frame
         .image_items()
         .into_iter()
         .filter_map(|item| {
-            agent_image_object_from_ui_item(
+            agent_image_observation_from_ui_item(
                 session_id,
                 step,
                 viewport,
@@ -4928,17 +4999,26 @@ pub(crate) fn agent_image_objects_from_ui_frame(
                 visual_time_millis,
             )
         })
-        .collect()
+        .for_each(|(object, frame)| {
+            observation.image_frames.insert(
+                object.id.clone(),
+                frame.width,
+                frame.height,
+                frame.rgba,
+            );
+            observation.objects.push(object);
+        });
+    observation
 }
 
-fn agent_image_object_from_ui_item(
+fn agent_image_observation_from_ui_item(
     session_id: &str,
     step: usize,
     viewport: &AgentViewport,
     item: &UiFrameImageItem,
     images: &UiImageSourceTable,
     visual_time_millis: u64,
-) -> Option<AgentObservedObject> {
+) -> Option<(AgentObservedObject, AgentStoredImageFrame)> {
     let source = images.get(item.image())?;
     let local_time_millis = source.playback().local_time_millis(visual_time_millis);
     let frame = source.image().frame_at_time_millis(local_time_millis)?;
@@ -4951,29 +5031,37 @@ fn agent_image_object_from_ui_item(
     );
     let source_id = format!("ui.image.{}", item.image().0);
     let dimensions = source.image().dimensions();
-    Some(AgentObservedObject {
-        id: object_id.clone(),
-        parent_id: None,
-        entity: Some(source_id.clone()),
-        layer: item.layer().public_id().as_str().to_owned(),
-        role: "image".to_owned(),
-        visible: true,
-        bbox: bbox.clone(),
-        polygon: bbox.polygon(),
-        capture_refs: agent_object_capture_refs(session_id, step, &object_id, &bbox),
-        object_layer: Some(item.layer().public_id().as_str().to_owned()),
-        object_depth: None,
-        text: None,
-        rich_text_ref: None,
-        content: AgentObservedObjectContent::Image(AgentObservedImageContent {
-            source: source_id,
-            asset: None,
-            frame_index: usize::try_from(frame.index()).ok(),
-            local_time_millis: Some(local_time_millis),
-            intrinsic_width: Some(dimensions.width()),
-            intrinsic_height: Some(dimensions.height()),
-        }),
-    })
+    let frame_dimensions = frame.dimensions();
+    Some((
+        AgentObservedObject {
+            id: object_id.clone(),
+            parent_id: None,
+            entity: Some(source_id.clone()),
+            layer: item.layer().public_id().as_str().to_owned(),
+            role: "image".to_owned(),
+            visible: true,
+            bbox: bbox.clone(),
+            polygon: bbox.polygon(),
+            capture_refs: agent_object_capture_refs(session_id, step, &object_id, &bbox),
+            object_layer: Some(item.layer().public_id().as_str().to_owned()),
+            object_depth: None,
+            text: None,
+            rich_text_ref: None,
+            content: AgentObservedObjectContent::Image(AgentObservedImageContent {
+                source: source_id,
+                asset: None,
+                frame_index: usize::try_from(frame.index()).ok(),
+                local_time_millis: Some(local_time_millis),
+                intrinsic_width: Some(dimensions.width()),
+                intrinsic_height: Some(dimensions.height()),
+            }),
+        },
+        AgentStoredImageFrame {
+            width: frame_dimensions.width(),
+            height: frame_dimensions.height(),
+            rgba: frame.rgba().to_vec(),
+        },
+    ))
 }
 
 fn agent_bbox_from_layout(layout: LayoutBox, viewport: &AgentViewport) -> AgentBBox {
