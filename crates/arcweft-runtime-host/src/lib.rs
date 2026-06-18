@@ -25,10 +25,12 @@ pub use native_task::{
 };
 pub use presentation_dispatch::{
     DispatchedPresentationAction, PresentationActionDestination, PresentationActionDispatchError,
-    PresentationActionDispatchPlan, PresentationActionExecutionError,
-    PresentationActionHandlerError, PresentationActionHandlerOutput, PresentationActionHandlers,
-    dispatch_presentation_action, dispatch_presentation_action_batch, dispatch_semantic_invoke,
-    execute_presentation_action_plan,
+    PresentationActionDispatchPlan, PresentationActionEffectTarget,
+    PresentationActionExecutionError, PresentationActionHandlerEffect,
+    PresentationActionHandlerError, PresentationActionHandlerOutput,
+    PresentationActionHandlerRegistration, PresentationActionHandlerRegistry,
+    PresentationActionHandlers, PresentationHostEventSource, dispatch_presentation_action,
+    dispatch_presentation_action_batch, dispatch_semantic_invoke, execute_presentation_action_plan,
 };
 pub use stats::{
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,

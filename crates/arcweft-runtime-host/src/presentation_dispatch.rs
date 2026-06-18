@@ -1,6 +1,7 @@
 use arcweft_id::PublicId;
 use arcweft_presentation::input::{
-    Action, ActionBatch, ActionTarget, HostEventBatch, InputEpoch, InteractionTarget,
+    Action, ActionBatch, ActionTarget, HostEvent, HostEventBatch, HostEventSource, InputEpoch,
+    InteractionTarget,
 };
 use arcweft_presentation::interaction::InteractionState;
 use arcweft_presentation::layer::LayerTree;
@@ -99,6 +100,49 @@ pub trait PresentationActionHandlers {
         action: &Action,
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError>;
+}
+
+/// Registered host-side action handlers for concrete `TextBox`, `Activity`, UI, and runtime adapters.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PresentationActionHandlerRegistry {
+    handlers: Vec<PresentationActionHandlerRegistration>,
+}
+
+/// One concrete action handler registration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentationActionHandlerRegistration {
+    destination: PresentationActionDestination,
+    action: PublicId,
+    effects: Vec<PresentationActionHandlerEffect>,
+}
+
+/// Pure-data effect emitted by a registered presentation action handler.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PresentationActionHandlerEffect {
+    Action {
+        target: PresentationActionEffectTarget,
+        kind: PublicId,
+        payload: Option<String>,
+    },
+    HostEvent {
+        source: PresentationHostEventSource,
+        kind: PublicId,
+        payload: Option<String>,
+    },
+}
+
+/// Target selection for a handler-emitted follow-up action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PresentationActionEffectTarget {
+    Incoming,
+    Explicit(ActionTarget),
+}
+
+/// Source selection for a handler-emitted host event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PresentationHostEventSource {
+    IncomingActivity,
+    Explicit(HostEventSource),
 }
 
 /// Route an Agent semantic invocation and partition it for runtime-host handlers.
@@ -242,6 +286,219 @@ impl PresentationActionHandlerOutput {
 
     pub fn into_parts(self) -> (ActionBatch, HostEventBatch) {
         (self.actions, self.host_events)
+    }
+}
+
+impl PresentationActionHandlerRegistry {
+    pub fn register(&mut self, registration: PresentationActionHandlerRegistration) {
+        self.handlers.push(registration);
+    }
+
+    #[must_use]
+    pub fn with_registration(
+        mut self,
+        registration: PresentationActionHandlerRegistration,
+    ) -> Self {
+        self.register(registration);
+        self
+    }
+
+    pub fn registrations(&self) -> &[PresentationActionHandlerRegistration] {
+        &self.handlers
+    }
+
+    fn handle_registered_action(
+        &self,
+        destination: PresentationActionDestination,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+    ) -> Result<(), PresentationActionHandlerError> {
+        let Some(registration) = self
+            .handlers
+            .iter()
+            .find(|candidate| candidate.matches(destination, action))
+        else {
+            return Err(PresentationActionHandlerError::unhandled(
+                destination,
+                action,
+            ));
+        };
+        registration.apply(action, output, destination)
+    }
+}
+
+impl PresentationActionHandlers for PresentationActionHandlerRegistry {
+    fn handle_runtime_action(
+        &mut self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+    ) -> Result<(), PresentationActionHandlerError> {
+        self.handle_registered_action(PresentationActionDestination::Runtime, action, output)
+    }
+
+    fn handle_textbox_action(
+        &mut self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+    ) -> Result<(), PresentationActionHandlerError> {
+        self.handle_registered_action(PresentationActionDestination::TextBox, action, output)
+    }
+
+    fn handle_activity_action(
+        &mut self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+    ) -> Result<(), PresentationActionHandlerError> {
+        self.handle_registered_action(PresentationActionDestination::Activity, action, output)
+    }
+
+    fn handle_ui_entity_action(
+        &mut self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+    ) -> Result<(), PresentationActionHandlerError> {
+        self.handle_registered_action(PresentationActionDestination::UiEntity, action, output)
+    }
+}
+
+impl PresentationActionHandlerRegistration {
+    pub fn new(destination: PresentationActionDestination, action: PublicId) -> Self {
+        Self {
+            destination,
+            action,
+            effects: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_effect(mut self, effect: PresentationActionHandlerEffect) -> Self {
+        self.effects.push(effect);
+        self
+    }
+
+    pub const fn destination(&self) -> PresentationActionDestination {
+        self.destination
+    }
+
+    pub const fn action(&self) -> &PublicId {
+        &self.action
+    }
+
+    pub fn effects(&self) -> &[PresentationActionHandlerEffect] {
+        &self.effects
+    }
+
+    fn matches(&self, destination: PresentationActionDestination, action: &Action) -> bool {
+        self.destination == destination && &self.action == action.kind()
+    }
+
+    fn apply(
+        &self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+        destination: PresentationActionDestination,
+    ) -> Result<(), PresentationActionHandlerError> {
+        for effect in &self.effects {
+            effect.apply(action, output, destination)?;
+        }
+        Ok(())
+    }
+}
+
+impl PresentationActionHandlerEffect {
+    pub fn action(target: PresentationActionEffectTarget, kind: PublicId) -> Self {
+        Self::Action {
+            target,
+            kind,
+            payload: None,
+        }
+    }
+
+    pub fn host_event(source: PresentationHostEventSource, kind: PublicId) -> Self {
+        Self::HostEvent {
+            source,
+            kind,
+            payload: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_payload(mut self, payload: impl Into<String>) -> Self {
+        match &mut self {
+            Self::Action {
+                payload: current, ..
+            }
+            | Self::HostEvent {
+                payload: current, ..
+            } => *current = Some(payload.into()),
+        }
+        self
+    }
+
+    fn apply(
+        &self,
+        action: &Action,
+        output: &mut PresentationActionHandlerOutput,
+        destination: PresentationActionDestination,
+    ) -> Result<(), PresentationActionHandlerError> {
+        match self {
+            Self::Action {
+                target,
+                kind,
+                payload,
+            } => {
+                let mut emitted = Action::new(target.resolve(action), kind.clone());
+                if let Some(payload) = payload {
+                    emitted = emitted.with_payload(payload.clone());
+                }
+                output.push_action(emitted);
+                Ok(())
+            }
+            Self::HostEvent {
+                source,
+                kind,
+                payload,
+            } => {
+                let mut emitted =
+                    HostEvent::new(source.resolve(action, destination)?, kind.clone());
+                if let Some(payload) = payload {
+                    emitted = emitted.with_payload(payload.clone());
+                }
+                output.push_host_event(emitted);
+                Ok(())
+            }
+        }
+    }
+}
+
+impl PresentationActionEffectTarget {
+    fn resolve(&self, action: &Action) -> ActionTarget {
+        match self {
+            Self::Incoming => action.target().clone(),
+            Self::Explicit(target) => target.clone(),
+        }
+    }
+}
+
+impl PresentationHostEventSource {
+    fn resolve(
+        &self,
+        action: &Action,
+        destination: PresentationActionDestination,
+    ) -> Result<HostEventSource, PresentationActionHandlerError> {
+        match self {
+            Self::Explicit(source) => Ok(source.clone()),
+            Self::IncomingActivity => match action.target() {
+                ActionTarget::Activity(target) => Ok(HostEventSource::Activity(target.clone())),
+                ActionTarget::Runtime | ActionTarget::Entity(_) => {
+                    Err(PresentationActionHandlerError::rejected(
+                        destination,
+                        action,
+                        "incoming action target is not an Activity",
+                    ))
+                }
+            },
+        }
     }
 }
 
@@ -578,6 +835,118 @@ mod tests {
             })
         );
         assert_eq!(handlers.calls, vec!["runtime:action.first"]);
+    }
+
+    #[test]
+    fn registered_handlers_emit_configured_actions_and_host_events() {
+        let textbox = target("textbox.main");
+        let activity = target("activity.truck");
+        let mut plan = PresentationActionDispatchPlan::default();
+        plan.push(DispatchedPresentationAction::new(
+            PresentationActionDestination::TextBox,
+            Action::new(
+                ActionTarget::Entity(textbox.clone()),
+                public_id("action.advance"),
+            ),
+        ));
+        plan.push(DispatchedPresentationAction::new(
+            PresentationActionDestination::Activity,
+            Action::new(
+                ActionTarget::Activity(activity.clone()),
+                public_id("action.pause"),
+            ),
+        ));
+
+        let mut registry = PresentationActionHandlerRegistry::default()
+            .with_registration(
+                PresentationActionHandlerRegistration::new(
+                    PresentationActionDestination::TextBox,
+                    public_id("action.advance"),
+                )
+                .with_effect(PresentationActionHandlerEffect::action(
+                    PresentationActionEffectTarget::Incoming,
+                    public_id("action.textbox.advance_committed"),
+                )),
+            )
+            .with_registration(
+                PresentationActionHandlerRegistration::new(
+                    PresentationActionDestination::Activity,
+                    public_id("action.pause"),
+                )
+                .with_effect(PresentationActionHandlerEffect::host_event(
+                    PresentationHostEventSource::IncomingActivity,
+                    public_id("host.activity.pause_requested"),
+                )),
+            );
+
+        let output = execute_presentation_action_plan(&plan, &mut registry).unwrap();
+        assert_eq!(
+            output.actions().as_slice()[0].target(),
+            &ActionTarget::Entity(textbox)
+        );
+        assert_eq!(
+            output.actions().as_slice()[0].kind().as_str(),
+            "action.textbox.advance_committed"
+        );
+        assert_eq!(
+            output.host_events().as_slice()[0].source(),
+            &HostEventSource::Activity(activity)
+        );
+        assert_eq!(
+            output.host_events().as_slice()[0].kind().as_str(),
+            "host.activity.pause_requested"
+        );
+    }
+
+    #[test]
+    fn registered_handlers_reject_unregistered_or_mismatched_activity_sources() {
+        let button = target("ui.button");
+        let mut unregistered_plan = PresentationActionDispatchPlan::default();
+        unregistered_plan.push(DispatchedPresentationAction::new(
+            PresentationActionDestination::UiEntity,
+            Action::new(
+                ActionTarget::Entity(button.clone()),
+                public_id("action.select"),
+            ),
+        ));
+        let mut registry = PresentationActionHandlerRegistry::default();
+        assert_eq!(
+            execute_presentation_action_plan(&unregistered_plan, &mut registry),
+            Err(PresentationActionExecutionError::Handler {
+                index: 0,
+                source: PresentationActionHandlerError::Unhandled {
+                    destination: PresentationActionDestination::UiEntity,
+                    action: public_id("action.select"),
+                },
+            })
+        );
+
+        let mut mismatched_plan = PresentationActionDispatchPlan::default();
+        mismatched_plan.push(DispatchedPresentationAction::new(
+            PresentationActionDestination::UiEntity,
+            Action::new(ActionTarget::Entity(button), public_id("action.select")),
+        ));
+        registry.register(
+            PresentationActionHandlerRegistration::new(
+                PresentationActionDestination::UiEntity,
+                public_id("action.select"),
+            )
+            .with_effect(PresentationActionHandlerEffect::host_event(
+                PresentationHostEventSource::IncomingActivity,
+                public_id("host.activity.invalid"),
+            )),
+        );
+        assert_eq!(
+            execute_presentation_action_plan(&mismatched_plan, &mut registry),
+            Err(PresentationActionExecutionError::Handler {
+                index: 0,
+                source: PresentationActionHandlerError::Rejected {
+                    destination: PresentationActionDestination::UiEntity,
+                    action: public_id("action.select"),
+                    reason: "incoming action target is not an Activity".to_owned(),
+                },
+            })
+        );
     }
 
     #[derive(Default)]

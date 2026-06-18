@@ -47,9 +47,13 @@ it accepts routed `arcweft-presentation` actions, classifies them by
 `SemanticRole`, and produces an ordered dispatch plan for runtime, TextBox,
 Activity, and UI-entity handlers. The same module can execute that plan against
 host-owned handler implementations while collecting follow-up `ActionBatch` and
-`HostEventBatch` output as pure data. This keeps semantic action partitioning
-and handler orchestration in the host layer instead of pushing TextBox,
-Activity, or UI routing concepts down into `arcweft-core`.
+`HostEventBatch` output as pure data. A registration-backed
+`PresentationActionHandlerRegistry` is available for concrete host adapters:
+registered actions emit configured pure-data effects, while unregistered
+actions fail with structured handler errors instead of being ignored. This keeps
+semantic action partitioning and handler orchestration in the host layer
+instead of pushing TextBox, Activity, or UI routing concepts down into
+`arcweft-core`.
 
 ## UI / Activity / Input Direction
 
@@ -188,15 +192,16 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Implement concrete TextBox, Activity, UI, and runtime handler adapters on top
-   of the runtime-host `PresentationActionHandlers` contract, and add future
-   `arcweft-ui` semantic node production. Later Component and Activity work
-   must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
+5. Register concrete TextBox, Activity, UI, and runtime action handlers through
+   `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, then add
+   future `arcweft-ui` semantic node production. Later Component and Activity
+   work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
    `LayerContent`, `LayerTransform`, `HoverPath`, `GestureArena`,
    `RoutingHash`, `RouteDecision`, `SemanticTree`,
-   `PresentationActionDispatchPlan`, and `PresentationActionHandlers` instead
-   of introducing per-Activity routers, `ActivityViewport`, `UiEvent` aliases,
-   or Agent-only semantic invoke shortcuts.
+   `PresentationActionDispatchPlan`, `PresentationActionHandlers`, and
+   `PresentationActionHandlerRegistry` instead of introducing per-Activity
+   routers, `ActivityViewport`, `UiEvent` aliases, or Agent-only semantic
+   invoke shortcuts.
 
 ## Invariants
 
