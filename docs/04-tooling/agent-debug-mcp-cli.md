@@ -37,6 +37,9 @@ session/frame/resource state, list resources, then either call
 `arcweft.capture` for a viewport/layer/object PNG or raw RGBA image content,
 call `arcweft.hit_test` for a depth-sorted object hit list at a viewport
 coordinate, or read a specific object/layer/rich-text child image URI.
+Hit-test hits include each selected object's `capture_refs`, so clients can
+follow a hit directly to color, object-id, or mask captures without separately
+walking the full observation object list.
 `arcweft.capture` can also take a listed image `uri` directly,
 using that URI to infer format, capture kind, and viewport/layer/object scope.
 Passing `source`, or passing `manifest` plus `profile`, to `arcweft.capture` or

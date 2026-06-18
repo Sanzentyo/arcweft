@@ -227,7 +227,7 @@ fn agent_hit_test_tool_descriptor() -> McpToolDescriptor {
     McpToolDescriptor {
             name: "arcweft.hit_test".to_owned(),
             title: Some("Hit-Test Arcweft".to_owned()),
-            description: "Hit-tests the latest observed Agent frame, or observes a supplied source/profile first, and returns depth-sorted object/region hits for a viewport coordinate.".to_owned(),
+            description: "Hit-tests the latest observed Agent frame, or observes a supplied source/profile first, and returns depth-sorted object/region hits with capture_refs for a viewport coordinate.".to_owned(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

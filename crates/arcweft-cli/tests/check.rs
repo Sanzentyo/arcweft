@@ -2406,6 +2406,8 @@ flow @flow.main main {
     assert_eq!(top["region"]["proxy_id"], "hover");
     assert_eq!(top["region"]["proxy_type"], "HoverHit");
     assert_eq!(top["region"]["proxy_layer"], "ui");
+    assert_eq!(top["layer"], "ui");
+    assert_agent_hit_capture_refs_match(top, hover);
     assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
     assert_eq!(top["depth"], 7000);
     let keyword_hit = hit_json["hits"]
