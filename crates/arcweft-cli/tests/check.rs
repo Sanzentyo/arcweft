@@ -20209,15 +20209,19 @@ flow @flow.main main {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .expect("native page-selected rich-text object report is JSON");
-    let page_capture_uri = assert_page_selected_native_rich_text_object_report(&json);
+    let page_capture_uris = assert_page_selected_native_rich_text_object_report(&json);
 
-    assert_agent_read_uri_page_capture_ref(&path, &page_capture_uri);
+    for (object_id, page_capture_uri) in page_capture_uris {
+        assert_agent_read_uri_page_capture_ref(&path, &page_capture_uri, &object_id);
+    }
 
     fs::remove_file(&path).expect("remove temp native rich-text page object source");
     fs::remove_dir_all(&dir).expect("remove temp native rich-text page object dir");
 }
 
-fn assert_page_selected_native_rich_text_object_report(json: &serde_json::Value) -> String {
+fn assert_page_selected_native_rich_text_object_report(
+    json: &serde_json::Value,
+) -> Vec<(String, String)> {
     assert_eq!(json["images"][0]["kind"], "color");
     assert_eq!(json["images"][0]["renderer"], "native");
     assert_eq!(json["images"][0]["page"], 1);
@@ -20277,10 +20281,72 @@ fn assert_page_selected_native_rich_text_object_report(json: &serde_json::Value)
         page_capture_uri.ends_with("/object.object.dialogue.0.0.run.1.png?page=1"),
         "page-selected rich-text child capture ref should encode page query: {page_capture_uri}"
     );
-    page_capture_uri
+    let page_object = page_selected_rich_text_object(json, "object.dialogue.0.0.page.1");
+    assert_eq!(page_object["role"], "rich_text_page");
+    assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
+    assert_eq!(page_object["rich_text_ref"]["page"], 1);
+    assert_eq!(page_object["text"], "After");
+    assert_rich_text_hit_region_matches_bbox(page_object, "text_page", 6, 11);
+    let page_object_capture_uri =
+        assert_page_selected_object_color_capture_ref(page_object, "object.dialogue.0.0.page.1");
+
+    let line_object = page_selected_rich_text_object(json, "object.dialogue.0.0.line.1");
+    assert_eq!(line_object["role"], "rich_text_line");
+    assert_eq!(line_object["rich_text_ref"]["kind"], "text_line");
+    assert_eq!(line_object["rich_text_ref"]["page"], 1);
+    assert_eq!(line_object["text"], "After");
+    assert_rich_text_hit_region_matches_bbox(line_object, "text_line", 6, 11);
+    let line_object_capture_uri =
+        assert_page_selected_object_color_capture_ref(line_object, "object.dialogue.0.0.line.1");
+
+    vec![
+        ("object.dialogue.0.0.run.1".to_owned(), page_capture_uri),
+        (
+            "object.dialogue.0.0.page.1".to_owned(),
+            page_object_capture_uri,
+        ),
+        (
+            "object.dialogue.0.0.line.1".to_owned(),
+            line_object_capture_uri,
+        ),
+    ]
 }
 
-fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str) {
+fn page_selected_rich_text_object<'a>(
+    json: &'a serde_json::Value,
+    object_id: &str,
+) -> &'a serde_json::Value {
+    json["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["id"] == object_id)
+        .unwrap_or_else(|| panic!("page-selected object should be observed: {object_id}"))
+}
+
+fn assert_page_selected_object_color_capture_ref(
+    object: &serde_json::Value,
+    object_id: &str,
+) -> String {
+    let capture = object["capture_refs"]["captures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capture| capture["kind"] == "color" && capture["mime_type"] == "image/png")
+        .unwrap_or_else(|| panic!("page-selected object has a color PNG capture ref: {object}"));
+    assert_eq!(capture["page"], 1);
+    let uri = capture["uri"]
+        .as_str()
+        .expect("page-selected object color PNG capture ref has a URI")
+        .to_owned();
+    assert!(
+        uri.ends_with(&format!("/object.{object_id}.png?page=1")),
+        "page-selected object capture ref should encode page query: {uri}"
+    );
+    uri
+}
+
+fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str, object_id: &str) {
     let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -20308,10 +20374,7 @@ fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str) {
     assert_eq!(resource["image"]["renderer"], "native");
     assert_eq!(resource["image"]["page"], 1);
     assert_eq!(resource["image"]["scope"]["kind"], "object");
-    assert_eq!(
-        resource["image"]["scope"]["id"],
-        "object.dialogue.0.0.run.1"
-    );
+    assert_eq!(resource["image"]["scope"]["id"], object_id);
     assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
 }
 
