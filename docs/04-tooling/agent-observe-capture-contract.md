@@ -180,9 +180,9 @@ captures preserve both the render `layer` and the semantic `object_layer` /
 self-describing when inspected without the original observation object list.
 `image.object.parent_id` preserves the containing presentation object for
 object-scoped crops. Dialogue textboxes have no parent; rich-text page, line,
-run, glyph, cluster, ruby, and proxy crops currently reference their containing
-textbox so tools can recover the high-level `character.say` / `narrator.say`
-facade that produced the lower-level text object.
+run, glyph, cluster, ruby, and proxy crops preserve the immediate text object
+parent when that parent exists. The normal chain is textbox -> page -> line ->
+run -> proxy/glyph/cluster, while ruby objects attach to their containing line.
 `image.object.bbox` and `image.object.polygon` preserve the viewport geometry of
 the captured object, matching the object descriptor used for hit-testing and
 object-id capture.
@@ -215,9 +215,19 @@ the renderer/debug hierarchy:
       "children": ["object.dialogue.0.0"]
     },
     {
+      "id": "object.dialogue.0.0.run.2",
+      "kind": "object",
+      "parent_id": "object.dialogue.0.0.line.0",
+      "layer_id": "dialogue.rich_text",
+      "object_id": "object.dialogue.0.0.run.2",
+      "role": "rich_text_run",
+      "rich_text_kind": "text_run",
+      "children": ["object.dialogue.0.0.proxy.2.0"]
+    },
+    {
       "id": "object.dialogue.0.0.proxy.2.0",
       "kind": "object",
-      "parent_id": "object.dialogue.0.0",
+      "parent_id": "object.dialogue.0.0.run.2",
       "layer_id": "dialogue.rich_text",
       "object_id": "object.dialogue.0.0.proxy.2.0",
       "role": "rich_text_proxy",
@@ -245,7 +255,7 @@ pixel to the source span that produced it:
 ```json
 {
   "id": "object.dialogue.0.0.ruby.0",
-  "parent_id": "object.dialogue.0.0",
+  "parent_id": "object.dialogue.0.0.line.0",
   "role": "rich_text_ruby",
   "bbox": { "x": 32, "y": 520, "width": 640, "height": 120 },
   "rich_text": {

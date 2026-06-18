@@ -170,9 +170,9 @@ to infer it from a broader `rich_text_run`.
 Image resources produced for the proxy object keep an `image.object` reference
 with the same selected `rich_text_ref` and `parent_id`. A raw/PNG mask,
 object-id, or color crop therefore carries the proxy id/type/role/layer/depth,
-typed params, hit-test regions, source range, and containing textbox identity
-alongside the pixels. This is the text-object equivalent of a sprite or 3D model
-crop retaining its object identity and depth/hit metadata.
+typed params, hit-test regions, source range, and containing text-object
+identity alongside the pixels. This is the text-object equivalent of a sprite or
+3D model crop retaining its object identity and depth/hit metadata.
 
 ## Renderer Boundary
 

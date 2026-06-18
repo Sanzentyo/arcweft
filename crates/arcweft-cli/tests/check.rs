@@ -33729,10 +33729,10 @@ fn assert_full_grammar_text_object_proxy_observed_object(
 ) {
     let proxy_object = find_rich_text_proxy_object(json, "hotspot", "proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
-    let parent_id = rich_text_object_parent_id(proxy_object);
+    let parent_id = rich_text_proxy_parent_id(proxy_object);
     assert_eq!(proxy_object["parent_id"], parent_id);
     let proxy_object_id = proxy_object["id"].as_str().expect("proxy object id");
-    let parent_node = presentation_tree_node(json, parent_id);
+    let parent_node = presentation_tree_node(json, &parent_id);
     assert!(
         parent_node["children"]
             .as_array()
@@ -33914,7 +33914,7 @@ fn assert_full_grammar_nested_proxy_observed_object(
 ) {
     let proxy_object = find_rich_text_proxy_object(json, proxy_id, "multi proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
-    let parent_id = rich_text_object_parent_id(proxy_object);
+    let parent_id = rich_text_proxy_parent_id(proxy_object);
     assert_eq!(proxy_object["parent_id"], parent_id);
     assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy_object["rich_text_ref"]["hit_test"], true);
@@ -34524,22 +34524,17 @@ fn rich_text_proxy_hit_region<'a>(
         })
 }
 
-fn rich_text_object_parent_id(object: &serde_json::Value) -> &str {
+fn rich_text_proxy_parent_id(object: &serde_json::Value) -> String {
     let object_id = object["id"]
         .as_str()
         .unwrap_or_else(|| panic!("rich-text object id is reported: {object}"));
-    object_id
-        .split_once(".page.")
-        .or_else(|| object_id.split_once(".line."))
-        .or_else(|| object_id.split_once(".run."))
-        .or_else(|| object_id.split_once(".ruby."))
-        .or_else(|| object_id.split_once(".glyph."))
-        .or_else(|| object_id.split_once(".cluster."))
-        .or_else(|| object_id.split_once(".proxy."))
-        .map_or_else(
-            || panic!("rich-text object id should include a child suffix: {object_id}"),
-            |(parent_id, _)| parent_id,
-        )
+    let (textbox_id, suffix) = object_id
+        .split_once(".proxy.")
+        .unwrap_or_else(|| panic!("rich-text proxy object id should include .proxy.: {object_id}"));
+    let run_index = suffix.split('.').next().unwrap_or_else(|| {
+        panic!("rich-text proxy object id should include run index: {object_id}")
+    });
+    format!("{textbox_id}.run.{run_index}")
 }
 
 fn presentation_tree_node<'a>(

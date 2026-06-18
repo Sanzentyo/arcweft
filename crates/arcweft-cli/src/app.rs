@@ -5155,7 +5155,28 @@ fn agent_rich_text_child_objects(
         textbox,
         native_bounds,
     ));
+    agent_repair_rich_text_child_parent_ids(textbox, &mut children);
     children
+}
+
+fn agent_repair_rich_text_child_parent_ids(
+    textbox: &AgentObservedObject,
+    children: &mut [AgentObservedObject],
+) {
+    let mut valid_ids = children
+        .iter()
+        .map(|child| child.id.clone())
+        .collect::<BTreeSet<_>>();
+    valid_ids.insert(textbox.id.clone());
+    for child in children {
+        let is_valid = child
+            .parent_id
+            .as_ref()
+            .is_some_and(|parent_id| valid_ids.contains(parent_id));
+        if !is_valid {
+            child.parent_id = Some(textbox.id.clone());
+        }
+    }
 }
 
 fn agent_rich_text_page_objects(
@@ -5195,12 +5216,13 @@ fn agent_rich_text_page_objects(
                 range,
                 native_bounds,
             ));
-            let object_id = format!("object.dialogue.{step}.{index}.page.{page_index}");
+            let object_id = agent_rich_text_page_object_id(step, index, page_index);
             Some(agent_rich_text_child_object(
                 step,
                 textbox,
                 AgentRichTextChildObjectSpec {
                     object_id: &object_id,
+                    parent_id: Some(textbox.id.clone()),
                     role: "rich_text_page",
                     text: page_text.to_owned(),
                     bbox: &bbox,
@@ -5268,12 +5290,14 @@ fn agent_rich_text_line_objects(
                 range,
                 native_bounds,
             ));
-            let object_id = format!("object.dialogue.{step}.{index}.line.{line_index}");
+            let object_id = agent_rich_text_line_object_id(step, index, line_index);
+            let parent_id = agent_rich_text_page_object_id(step, index, page);
             Some(agent_rich_text_child_object(
                 step,
                 textbox,
                 AgentRichTextChildObjectSpec {
                     object_id: &object_id,
+                    parent_id: Some(parent_id),
                     role: "rich_text_line",
                     text: line_text.to_owned(),
                     bbox: &bbox,
@@ -5424,13 +5448,18 @@ fn agent_rich_text_run_object(
     let bbox = native_bounds
         .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
         .map(|bounds| bounds.bbox.clone())?;
-    let object_id = format!("object.dialogue.{step}.{index}.run.{run_index}");
+    let object_id = agent_rich_text_run_object_id(step, index, run_index);
     let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
+    let parent_id = agent_rich_text_line_for_range(&textbox.rich_text, run.range).map_or_else(
+        || agent_rich_text_page_object_id(step, index, page),
+        |line| agent_rich_text_line_object_id(step, index, line),
+    );
     Some(agent_rich_text_child_object(
         step,
         textbox,
         AgentRichTextChildObjectSpec {
             object_id: &object_id,
+            parent_id: Some(parent_id),
             role: "rich_text_run",
             text: text.to_owned(),
             bbox: &bbox,
@@ -5504,6 +5533,7 @@ fn agent_rich_text_proxy_objects(
                 textbox,
                 AgentRichTextChildObjectSpec {
                     object_id: &object_id,
+                    parent_id: Some(agent_rich_text_run_object_id(step, index, run_index)),
                     role: "rich_text_proxy",
                     text: text.to_owned(),
                     bbox: &bbox,
@@ -5561,12 +5591,18 @@ fn agent_rich_text_ruby_object(
         .cloned()?;
     let object_id = format!("object.dialogue.{step}.{index}.ruby.{ruby_index}");
     let page = agent_rich_text_page_for_range(&textbox.rich_text, ruby.base_range);
+    let parent_id = agent_rich_text_line_for_range(&textbox.rich_text, ruby.base_range)
+        .map_or_else(
+            || agent_rich_text_page_object_id(step, index, page),
+            |line| agent_rich_text_line_object_id(step, index, line),
+        );
     let hit_regions = agent_ruby_hit_regions(&bbox, ruby.base_range);
     Some(agent_rich_text_child_object(
         step,
         textbox,
         AgentRichTextChildObjectSpec {
             object_id: &object_id,
+            parent_id: Some(parent_id),
             role: "rich_text_ruby",
             text: format!("{base_text} ({})", ruby.ruby),
             bbox: &bbox.bbox,
@@ -5621,21 +5657,24 @@ fn agent_rich_text_glyph_objects(
             if text.trim().is_empty() {
                 return None;
             }
-            let run = textbox
+            let (run_index, run) = textbox
                 .rich_text
                 .display_map
                 .text_runs
                 .iter()
-                .find(|run| range.start >= run.range.start && range.end <= run.range.end)?;
+                .enumerate()
+                .find(|(_, run)| range.start >= run.range.start && range.end <= run.range.end)?;
             let object_id = format!(
                 "object.dialogue.{step}.{index}.glyph.{glyph_index}.{range_start}.{range_end}"
             );
             let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let parent_id = agent_rich_text_run_object_id(step, index, run_index);
             Some(agent_rich_text_child_object(
                 step,
                 textbox,
                 AgentRichTextChildObjectSpec {
                     object_id: &object_id,
+                    parent_id: Some(parent_id),
                     role: "rich_text_glyph",
                     text: text.to_owned(),
                     bbox: &bounds.bbox,
@@ -5701,21 +5740,24 @@ fn agent_rich_text_cluster_objects(
             if text.trim().is_empty() {
                 return None;
             }
-            let run = textbox
+            let (run_index, run) = textbox
                 .rich_text
                 .display_map
                 .text_runs
                 .iter()
-                .find(|run| range.start >= run.range.start && range.end <= run.range.end)?;
+                .enumerate()
+                .find(|(_, run)| range.start >= run.range.start && range.end <= run.range.end)?;
             let object_id = format!(
                 "object.dialogue.{step}.{index}.cluster.{cluster_index}.{range_start}.{range_end}"
             );
             let page = agent_rich_text_page_for_range(&textbox.rich_text, range);
+            let parent_id = agent_rich_text_run_object_id(step, index, run_index);
             Some(agent_rich_text_child_object(
                 step,
                 textbox,
                 AgentRichTextChildObjectSpec {
                     object_id: &object_id,
+                    parent_id: Some(parent_id),
                     role: "rich_text_cluster",
                     text: text.to_owned(),
                     bbox: &bounds.bbox,
@@ -5941,6 +5983,7 @@ const fn agent_glyph_vertical_form_from_native(
 
 struct AgentRichTextChildObjectSpec<'a> {
     object_id: &'a str,
+    parent_id: Option<String>,
     role: &'a str,
     text: String,
     bbox: &'a AgentBBox,
@@ -5955,7 +5998,7 @@ fn agent_rich_text_child_object(
 ) -> AgentObservedObject {
     AgentObservedObject {
         id: spec.object_id.to_owned(),
-        parent_id: Some(textbox.id.clone()),
+        parent_id: spec.parent_id.or_else(|| Some(textbox.id.clone())),
         entity: textbox.entity.clone(),
         layer: "dialogue.rich_text".to_owned(),
         role: spec.role.to_owned(),
@@ -5986,6 +6029,28 @@ fn agent_rich_text_page_for_range(frame: &LineDisplayFrame, range: RichTextRange
             valid_range.start >= page_range.start && valid_range.end <= page_range.end
         })
         .unwrap_or(0)
+}
+
+fn agent_rich_text_line_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> Option<usize> {
+    let valid_range = valid_rich_text_range(range, &frame.text)?;
+    agent_rich_text_line_ranges(frame)
+        .into_iter()
+        .filter(|line_range| !line_range.is_empty())
+        .position(|line_range| {
+            valid_range.start >= line_range.start && valid_range.end <= line_range.end
+        })
+}
+
+fn agent_rich_text_page_object_id(step: usize, index: usize, page: usize) -> String {
+    format!("object.dialogue.{step}.{index}.page.{page}")
+}
+
+fn agent_rich_text_line_object_id(step: usize, index: usize, line: usize) -> String {
+    format!("object.dialogue.{step}.{index}.line.{line}")
+}
+
+fn agent_rich_text_run_object_id(step: usize, index: usize, run: usize) -> String {
+    format!("object.dialogue.{step}.{index}.run.{run}")
 }
 
 fn agent_rich_text_page_node_index(frame: &LineDisplayFrame, range: RichTextRange) -> usize {
