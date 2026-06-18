@@ -20183,6 +20183,11 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
 
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_source_local_effect_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_source_local_effect_post_process_run_is_tinted(
+        &source_path,
+        &json,
+        &dir,
+    );
     assert_effects_animation_source_local_shader_run_is_tinted(&source_path, &json, &dir);
     assert_effects_animation_source_local_shader_post_process_run_is_tinted(
         &source_path,
@@ -20334,6 +20339,41 @@ fn assert_effects_animation_source_local_effect_run_changes_over_time(
         &early_bytes,
         &late,
         &late_bytes,
+    );
+}
+
+fn assert_effects_animation_source_local_effect_post_process_run_is_tinted(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let effect_run = find_rich_text_run_object(json, "source post effect");
+    let effect = assert_rich_text_run_object_has_effect(effect_run, "source_drift");
+    assert_eq!(
+        effect["phase"], "post_process",
+        "source-local effect should keep its post_process phase: {effect_run}"
+    );
+    let object_id = effect_run["id"]
+        .as_str()
+        .expect("source-local post-process effect run object id is reported");
+    let color_path = dir.join("source-local-effect-post-process-rgba-4000.rgba");
+    let (capture, bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &color_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    assert!(
+        capture["diagnostics"].as_array().is_some_and(Vec::is_empty),
+        "source-local post-process text effect should register before native capture: {capture}"
+    );
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| {
+            pixel[0] > pixel[1].saturating_add(15)
+                && pixel[2] > pixel[1].saturating_add(10)
+                && pixel[3] > 0
+        }),
+        "source-local post-process effect should tint the object crop with magenta pixels: {capture}"
     );
 }
 

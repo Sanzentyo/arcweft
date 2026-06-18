@@ -117,7 +117,10 @@ helper ABI: `register_arcweft_pure_text_effects` exports
 `#[text_effect] #[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` helpers into
 `RichTextEffectRegistry`, so `[.source_drift ...]` style custom effect spans are
 resolved by the same native registry path as adapter-registered effects rather
-than by a parser special case. Source-local shaders use the same ABI as a first
+than by a parser special case. The same source-local effect ID owns glyph
+placement/color and framebuffer `post_process` entry points, so source-authored
+custom decorations can be exercised across visual phases without adapter-only
+duplicate IDs. Source-local shaders use the same ABI as a first
 native registry boundary: `register_arcweft_pure_text_shaders` exports
 `#[text_shader] #[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` helpers into
 `RichTextShaderRegistry` for `run_offscreen_pass`, `glyph_color`, and

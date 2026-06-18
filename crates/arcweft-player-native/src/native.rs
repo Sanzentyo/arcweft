@@ -361,6 +361,10 @@ pub enum RegisteredTextEffect {
     Class(Box<dyn RichTextEffectClass>),
     Lambda(GlyphLambda),
     PostProcessLambda(EffectPostProcessLambda),
+    Combined {
+        glyph: GlyphLambda,
+        post_process: EffectPostProcessLambda,
+    },
 }
 
 /// Registry that resolves `RichTextEffectDescriptor::id` to native execution.
@@ -399,6 +403,21 @@ impl RichTextEffectRegistry {
         );
     }
 
+    pub fn insert_combined_lambda(
+        &mut self,
+        id: impl Into<String>,
+        glyph: impl FnMut(&mut TextEffectGlyphContext<'_>) + Send + 'static,
+        post_process: impl FnMut(&mut TextEffectPostProcessContext<'_>, &mut [u8]) + Send + 'static,
+    ) {
+        self.effects.insert(
+            id.into(),
+            RegisteredTextEffect::Combined {
+                glyph: Box::new(glyph),
+                post_process: Box::new(post_process),
+            },
+        );
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.effects.contains_key(id)
     }
@@ -408,7 +427,7 @@ impl RichTextEffectRegistry {
             return false;
         };
         match effect {
-            RegisteredTextEffect::Class(_) => {
+            RegisteredTextEffect::Class(_) | RegisteredTextEffect::Combined { .. } => {
                 phase == RichTextEffectPhase::PostProcess
                     || effect_phase_applies_to_renderer_glyph(phase)
             }
@@ -425,6 +444,7 @@ impl RichTextEffectRegistry {
             RegisteredTextEffect::Class(effect) => effect.apply_glyph(ctx),
             RegisteredTextEffect::Lambda(effect) => effect(ctx),
             RegisteredTextEffect::PostProcessLambda(_) => return false,
+            RegisteredTextEffect::Combined { glyph, .. } => glyph(ctx),
         }
         true
     }
@@ -441,6 +461,10 @@ impl RichTextEffectRegistry {
             RegisteredTextEffect::Lambda(_) => false,
             RegisteredTextEffect::PostProcessLambda(effect) => {
                 effect(ctx, rgba);
+                true
+            }
+            RegisteredTextEffect::Combined { post_process, .. } => {
+                post_process(ctx, rgba);
                 true
             }
         })
@@ -839,35 +863,51 @@ fn register_arcweft_pure_text_effect(
             name: candidate.name().to_owned(),
         });
     }
-    let helper = runtime_helper_from_pure_candidate(candidate);
-    let mut scratch = VmPureFunctionScratch::default();
-    registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
-        let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
-        let phase = scratch
-            .evaluate_f32_slice(
-                &helper,
-                &[
-                    ctx.time_seconds,
-                    usize_to_f32_saturating(ctx.glyph_index),
-                    seed,
-                ],
-            )
-            .ok()
-            .as_ref()
-            .and_then(runtime_value_as_f32)
-            .filter(|value| value.is_finite())
-            .unwrap_or(ctx.time_seconds);
-        if ctx.effect.phase == RichTextEffectPhase::GlyphColor {
-            apply_pure_text_effect_color(ctx, phase);
-            return;
-        }
-        let effect_seed = param_seed(ctx.effect, "seed").unwrap_or(0)
-            ^ stable_text_hash(&helper.name)
-            ^ u64::try_from(ctx.run_index).unwrap_or(u64::MAX);
-        let noise = deterministic_noise(effect_seed, ctx.line_id, ctx.glyph_index, phase);
-        let sample = sample_parametric_motion(ctx.effect, phase, noise);
-        apply_parametric_motion_sample(ctx.effect, sample, ctx.placement);
-    });
+    let glyph_helper = runtime_helper_from_pure_candidate(candidate);
+    let post_process_helper = glyph_helper.clone();
+    let mut glyph_scratch = VmPureFunctionScratch::default();
+    let mut post_process_scratch = VmPureFunctionScratch::default();
+    registry.insert_combined_lambda(
+        candidate.name().to_owned(),
+        move |ctx| {
+            let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
+            let phase = glyph_scratch
+                .evaluate_f32_slice(
+                    &glyph_helper,
+                    &[
+                        ctx.time_seconds,
+                        usize_to_f32_saturating(ctx.glyph_index),
+                        seed,
+                    ],
+                )
+                .ok()
+                .as_ref()
+                .and_then(runtime_value_as_f32)
+                .filter(|value| value.is_finite())
+                .unwrap_or(ctx.time_seconds);
+            if ctx.effect.phase == RichTextEffectPhase::GlyphColor {
+                apply_pure_text_effect_color(ctx, phase);
+                return;
+            }
+            let effect_seed = param_seed(ctx.effect, "seed").unwrap_or(0)
+                ^ stable_text_hash(&glyph_helper.name)
+                ^ u64::try_from(ctx.run_index).unwrap_or(u64::MAX);
+            let noise = deterministic_noise(effect_seed, ctx.line_id, ctx.glyph_index, phase);
+            let sample = sample_parametric_motion(ctx.effect, phase, noise);
+            apply_parametric_motion_sample(ctx.effect, sample, ctx.placement);
+        },
+        move |ctx, rgba| {
+            let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
+            let phase = post_process_scratch
+                .evaluate_f32_slice(&post_process_helper, &[ctx.time_seconds, 0.0, seed])
+                .ok()
+                .as_ref()
+                .and_then(runtime_value_as_f32)
+                .filter(|value| value.is_finite())
+                .unwrap_or(ctx.time_seconds);
+            apply_pure_text_effect_post_process(ctx.effect, phase, rgba);
+        },
+    );
     Ok(())
 }
 
@@ -3609,6 +3649,37 @@ fn apply_pure_text_effect_color(ctx: &mut TextEffectGlyphContext<'_>, phase: f32
     let blue = rounded_u8(220.0 + pulse * 35.0);
     let alpha = rounded_u8(amount * 255.0).max(1);
     ctx.placement.color = Some([red, green, blue, alpha]);
+}
+
+fn apply_pure_text_effect_post_process(
+    effect: &RichTextEffectDescriptor,
+    phase: f32,
+    rgba: &mut [u8],
+) {
+    let amount = param_milli(effect, "amount")
+        .or_else(|| param_milli(effect, "amp"))
+        .unwrap_or(Milli(350))
+        .as_f32()
+        .clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return;
+    }
+    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let secondary = ((phase + 0.41) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let color = [
+        rounded_u8(180.0 + pulse * 75.0),
+        rounded_u8(120.0 + secondary * 105.0),
+        rounded_u8(210.0 + (1.0 - pulse) * 45.0),
+    ];
+    let blend = (amount * (0.3 + pulse * 0.7)).clamp(0.0, 1.0);
+    for pixel in rgba.chunks_exact_mut(4) {
+        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
+            continue;
+        }
+        pixel[0] = blend_channel(pixel[0], color[0], blend);
+        pixel[1] = blend_channel(pixel[1], color[1], blend);
+        pixel[2] = blend_channel(pixel[2], color[2], blend);
+    }
 }
 
 fn sample_elastic_bloom(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
@@ -8898,6 +8969,8 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
 
         assert_eq!(exported, 1);
         assert!(registry.contains("source_drift"));
+        assert!(registry.supports_phase("source_drift", RichTextEffectPhase::GlyphColor));
+        assert!(registry.supports_phase("source_drift", RichTextEffectPhase::PostProcess));
     }
 
     #[test]
@@ -8961,6 +9034,59 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
         assert_ne!(
             baseline_capture.rgba, exported_capture.rgba,
             "Arcweft pure text effect export should alter captured native glyph pixels"
+        );
+    }
+
+    #[test]
+    fn native_capture_uses_arcweft_pure_text_effect_post_process_export() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_effect]
+#[pure]
+fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + 0.25f32 + glyph * 0.05f32 + seed * 0.001f32
+}
+",
+        );
+        let frame = custom_effect_test_frame_with_params_and_phase(
+            "source_drift",
+            BTreeMap::from([
+                (
+                    "amount".to_owned(),
+                    RichTextParam::Milli { value: Milli::ONE },
+                ),
+                (
+                    "seed".to_owned(),
+                    RichTextParam::Raw {
+                        value: "source-post-effect".to_owned(),
+                    },
+                ),
+            ]),
+            RichTextEffectPhase::PostProcess,
+        );
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
+        let export_count = register_arcweft_pure_text_effects(exported.effect_registry_mut(), &hir)
+            .expect("register Arcweft pure text effect");
+        let exported_capture = exported
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("exported capture");
+
+        assert_eq!(export_count, 1);
+        assert!(
+            baseline_capture
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "missing_custom_effect")
+        );
+        assert!(exported_capture.diagnostics.is_empty());
+        assert_ne!(
+            baseline_capture.rgba, exported_capture.rgba,
+            "Arcweft pure text effect post-process export should alter captured framebuffer pixels"
         );
     }
 

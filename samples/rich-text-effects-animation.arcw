@@ -83,7 +83,7 @@ flow rich_text_effects_animation {
     ]
 
     lumi.say(id=@say.effects.post, voice=auto, look=.focus)[
-        PostFX: [effect .wave phase=post_process amp=8px period=64px dir=1,0]post wave effect[/effect]、[.host id=sparkle phase=post_process amount=0.9 seed=screen-sparkle]post sparkle[/]。[p]
+        PostFX: [effect .wave phase=post_process amp=8px period=64px dir=1,0]post wave effect[/effect]、[.source_drift phase=post_process amount=0.75 seed=source-post-effect]source post effect[/]、[.host id=sparkle phase=post_process amount=0.9 seed=screen-sparkle]post sparkle[/]。[p]
     ]
 
     iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
