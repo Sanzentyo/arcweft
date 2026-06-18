@@ -18662,7 +18662,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         && proxy["hit_test"] == true
         && proxy["params"]["channel"]["value"] == "choice",));
     assert_full_grammar_text_object_proxy_hit_region(&json);
-    assert_full_grammar_text_object_proxy_observed_object(&json);
+    assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
@@ -32099,7 +32099,10 @@ fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
     assert_eq!(proxy_hit["depth"], 4000);
 }
 
-fn assert_full_grammar_text_object_proxy_observed_object(json: &serde_json::Value) {
+fn assert_full_grammar_text_object_proxy_observed_object(
+    source_path: &Path,
+    json: &serde_json::Value,
+) {
     let proxy_object = find_rich_text_proxy_object(json, "hotspot", "proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
     assert_eq!(proxy_object["text"], "proxy");
@@ -32121,6 +32124,23 @@ fn assert_full_grammar_text_object_proxy_observed_object(json: &serde_json::Valu
     assert_eq!(proxy["depth"], 4000);
     assert_eq!(proxy["hit_test"], true);
     assert_agent_observe_object_capture_refs(proxy_object);
+    for (kind, mime_type) in [
+        ("mask", "application/octet-stream"),
+        ("object_id", "application/octet-stream"),
+    ] {
+        let uri = rich_text_object_capture_uri(proxy_object, kind, mime_type);
+        assert_agent_read_uri_object_image_has_content(
+            source_path,
+            uri,
+            proxy_object["id"].as_str().expect("proxy object id"),
+            proxy_object["bbox"]["width"]
+                .as_u64()
+                .expect("proxy object bbox width"),
+            proxy_object["bbox"]["height"]
+                .as_u64()
+                .expect("proxy object bbox height"),
+        );
+    }
     let proxy_hit = rich_text_hit_region(
         proxy_object,
         "text_object_proxy",
