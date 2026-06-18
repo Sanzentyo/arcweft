@@ -2018,13 +2018,17 @@ flow @flow.main main {
     assert_eq!(top["region"]["proxy_layer"], "ui");
     assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
     assert_eq!(top["depth"], 7000);
-    assert!(
-        hit_json["hits"]
-            .as_array()
-            .expect("hits are listed")
-            .iter()
-            .any(|hit| hit["region"]["proxy_id"] == "hotspot" && hit["depth"] == 4000),
-        "shallower nested proxy should remain visible as a lower-ranked hit: {hit_json}"
+    let keyword_hit = hit_json["hits"]
+        .as_array()
+        .expect("hits are listed")
+        .iter()
+        .find(|hit| hit["region"]["proxy_id"] == "hotspot" && hit["depth"] == 4000)
+        .unwrap_or_else(|| {
+            panic!("shallower nested proxy should remain visible as a lower-ranked hit: {hit_json}")
+        });
+    assert_eq!(
+        keyword_hit["region"]["proxy_params"]["channel"]["value"],
+        "choice"
     );
 }
 
@@ -2052,6 +2056,10 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
     let line_keyword_hit = rich_text_proxy_hit_region(line, "hotspot", 0, 3);
     assert_eq!(line_keyword_hit["proxy_type"], "KeywordHit");
     assert_eq!(line_keyword_hit["depth"], 4000);
+    assert_eq!(
+        line_keyword_hit["proxy_params"]["channel"]["value"],
+        "choice"
+    );
 }
 
 #[test]

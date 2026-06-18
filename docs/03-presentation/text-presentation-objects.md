@@ -113,7 +113,11 @@ presentation `z_index`, then proxy depth, then source order.
 observable but non-interactive. Hit regions are reported in Agent observation and
 must use the same post-transform bounds as object-id and color captures.
 Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
-`text_object_proxy`, the proxy id/type/role/layer, and the resolved local depth.
+`text_object_proxy`, the proxy id/type/role/layer, the resolved local depth, and
+the typed proxy params that came from inline attributes or
+`#[text_proxy]` / `#[rich_text_proxy]` defaults. Hit-test reports return the
+same `proxy_params`, so input handlers and Agent tools do not need to recover
+custom metadata by separately walking the parent presentation object.
 The selected proxy layer is exposed as `rich_text_ref.object_layer`, and the
 same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
 debuggers can sort text objects with image/model-like presentation objects.

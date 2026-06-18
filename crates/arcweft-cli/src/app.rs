@@ -5722,6 +5722,7 @@ fn agent_hit_region(
         proxy_role: None,
         proxy_layer: None,
         depth: None,
+        proxy_params: BTreeMap::new(),
     }
 }
 
@@ -5777,6 +5778,7 @@ fn agent_proxy_hit_region(
         proxy_role: proxy.role.clone(),
         proxy_layer: proxy.layer.clone(),
         depth: proxy.depth.map(|depth| depth.0),
+        proxy_params: proxy.params.clone(),
     }
 }
 

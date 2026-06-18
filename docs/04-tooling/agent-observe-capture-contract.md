@@ -192,6 +192,11 @@ The observation should include the effective presentation summary needed to
 debug rich text: layout fields, ruby defaults/overrides, transforms, effects,
 shader refs, object proxy metadata, hit-test regions, source anchors, and the
 resolved `object_layer` / `object_depth` used by text objects.
+For `text_object_proxy` hit regions, the region itself carries the proxy id,
+type, role, layer, depth, and `proxy_params`. `proxy_params` is the typed
+`RichTextParam` map after struct-attribute defaults and inline overrides have
+been resolved, and the same region shape is returned by `arcw agent hit-test`
+and MCP `arcweft.hit_test`.
 
 ---
 

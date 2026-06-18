@@ -6,10 +6,11 @@
 
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextPresentation, RichTextRange, RichTextTextSource,
+    LineDisplayFrame, RichTextParam, RichTextPresentation, RichTextRange, RichTextTextSource,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// One Agent Debug Bus observation frame.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -470,6 +471,8 @@ pub struct AgentHitRegion {
     pub proxy_layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<i32>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub proxy_params: BTreeMap<String, RichTextParam>,
 }
 
 /// Result of hit-testing observed Agent objects at a viewport coordinate.
@@ -687,8 +690,8 @@ mod tests {
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_render_text::{
         RichTextAssignOp, RichTextCascadeLayer, RichTextEffectDescriptor, RichTextEffectPhase,
-        RichTextEffectTarget, RichTextPresentation, RichTextSettingSource, RichTextStateScope,
-        RichTextStyleContribution,
+        RichTextEffectTarget, RichTextParam, RichTextPresentation, RichTextSettingSource,
+        RichTextStateScope, RichTextStyleContribution,
     };
     use std::collections::BTreeMap;
 
@@ -982,6 +985,7 @@ mod tests {
                 proxy_role: None,
                 proxy_layer: None,
                 depth: None,
+                proxy_params: BTreeMap::new(),
             }],
         }
     }
@@ -1082,6 +1086,37 @@ mod tests {
         assert_eq!(json["actions"][0]["action"], "advance_text");
         assert_eq!(json["actions"][0]["kind"], "semantic");
         assert_eq!(json["diagnostics"][0]["severity"], "info");
+    }
+
+    #[test]
+    fn hit_region_serializes_proxy_params_when_present() {
+        let region = AgentHitRegion {
+            kind: AgentHitRegionKind::TextObjectProxy,
+            bbox: AgentBBox {
+                space: AgentCoordinateSpace::Viewport,
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4,
+            },
+            range: RichTextRange::new(0, 3),
+            proxy_id: Some("hotspot".to_owned()),
+            proxy_type: Some("KeywordHit".to_owned()),
+            proxy_role: Some("keyword".to_owned()),
+            proxy_layer: None,
+            depth: Some(4000),
+            proxy_params: BTreeMap::from([(
+                "channel".to_owned(),
+                RichTextParam::Selector {
+                    value: "choice".to_owned(),
+                },
+            )]),
+        };
+
+        let json = serde_json::to_value(&region).expect("hit region serializes");
+
+        assert_eq!(json["kind"], "text_object_proxy");
+        assert_eq!(json["proxy_params"]["channel"]["value"], "choice");
     }
 
     #[test]
