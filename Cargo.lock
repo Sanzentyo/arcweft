@@ -415,6 +415,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-render-native",
  "arcweft-render-text",
+ "arcweft-runtime-host",
  "clap",
  "png",
  "serde",

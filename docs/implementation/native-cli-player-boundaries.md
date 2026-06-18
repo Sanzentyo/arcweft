@@ -75,8 +75,10 @@ cuts are:
 3. Make native renderer/capture a feature-gated CLI capability or move it to a
    dedicated native Agent/debug binary once the Agent command surface can be
    compiled without renderer types.
-4. Move product native player execution toward `.awfb` / bytecode input. Source
-   execution remains a developer mode, not the product-player model.
+4. Carry line display sidecars in `.awfb` so native bundle execution can open a
+   window and capture rich-text frames without falling back to source
+   compilation. Source execution remains a developer mode, not the
+   product-player model.
 5. Add the presentation input and future `arcweft-ui` crates according to the
    unified UI design, without adding public names such as `ActivityViewport`,
    `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
@@ -90,3 +92,6 @@ cuts are:
   responsibility crates.
 - Native renderer object geometry, Agent capture geometry, hit testing, and
   debug resources must share the same deterministic presentation model.
+- Native player `.awfb` execution must not invoke the source compiler. Until
+  bundles carry line display sidecars, `.awfb` execution is headless bytecode
+  execution only.

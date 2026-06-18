@@ -11,6 +11,7 @@ arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 
 clap = { workspace = true, features = ["derive"] }
 png.workspace = true

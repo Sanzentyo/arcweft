@@ -374,6 +374,17 @@ Run a source file without opening a window:
 cargo run -p arcweft-player-native -- --headless --json path/to/file.arcw
 ```
 
+Run an `.awfb` bytecode bundle without source compilation:
+
+```bash
+cargo run -p arcweft-cli --quiet -- bundle path/to/file.arcw --output target/game.awfb
+cargo run -p arcweft-player-native --quiet -- --headless --json --bundle target/game.awfb
+```
+
+Bundle execution is currently headless-only because `.awfb` does not yet carry
+the line display catalog required for native window presentation and rich-text
+capture.
+
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:
 
