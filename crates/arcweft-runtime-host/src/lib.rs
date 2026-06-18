@@ -4,6 +4,7 @@ pub mod bundle_runner;
 pub mod capabilities;
 pub mod native_system;
 pub mod native_task;
+pub mod presentation_dispatch;
 pub mod stats;
 
 pub use arcweft_core::value::RuntimeBinding;
@@ -21,6 +22,11 @@ pub use native_system::{HostSystemInfo, host_system_info, system_info_value};
 pub use native_task::{
     INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,
     NativeTaskClassCounts, NativeTaskStats, internal_scheduler_manifest,
+};
+pub use presentation_dispatch::{
+    DispatchedPresentationAction, PresentationActionDestination, PresentationActionDispatchError,
+    PresentationActionDispatchPlan, dispatch_presentation_action,
+    dispatch_presentation_action_batch, dispatch_semantic_invoke,
 };
 pub use stats::{
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,

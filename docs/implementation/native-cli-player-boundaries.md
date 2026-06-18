@@ -42,6 +42,13 @@ runtime-host, verifier, bundle, tooling, and native renderer crates, but it must
 not become the native product player and must not depend on
 `arcweft-player-native` for Agent observe/capture.
 
+`arcweft-runtime-host` now owns the first presentation-action dispatch boundary:
+it accepts routed `arcweft-presentation` actions, classifies them by
+`SemanticRole`, and produces an ordered dispatch plan for runtime, TextBox,
+Activity, and UI-entity handlers. This keeps semantic action partitioning in
+the host layer instead of pushing TextBox, Activity, or UI routing concepts down
+into `arcweft-core`.
+
 ## UI / Activity / Input Direction
 
 The unified UI design is adopted as the long-term boundary for future work:
@@ -179,13 +186,14 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Connect the initial `SemanticTree` to runtime-host Activity/TextBox
-   dispatch and future `arcweft-ui` semantic node production. Later Component
-   and Activity work must use `ActionBatch`, `HostEventBatch`, routed
-   `InputEvent`, `LayerContent`, `LayerTransform`, `HoverPath`,
-   `GestureArena`, `RoutingHash`, `RouteDecision`, and `SemanticTree` instead
-   of introducing per-Activity routers, `ActivityViewport`, `UiEvent` aliases,
-   or Agent-only semantic invoke shortcuts.
+5. Wire the runtime-host `PresentationActionDispatchPlan` into real TextBox,
+   Activity, UI, and runtime handler execution, and add future `arcweft-ui`
+   semantic node production. Later Component and Activity work must use
+   `ActionBatch`, `HostEventBatch`, routed `InputEvent`, `LayerContent`,
+   `LayerTransform`, `HoverPath`, `GestureArena`, `RoutingHash`,
+   `RouteDecision`, `SemanticTree`, and `PresentationActionDispatchPlan`
+   instead of introducing per-Activity routers, `ActivityViewport`, `UiEvent`
+   aliases, or Agent-only semantic invoke shortcuts.
 
 ## Invariants
 
