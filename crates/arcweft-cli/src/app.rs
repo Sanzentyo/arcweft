@@ -29,9 +29,9 @@ use arcweft_agent_protocol::{
     AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
     AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentPresentationTree, AgentPresentationTreeQuery,
-    AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
-    AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentObservedLayer, AgentObservedObject, AgentPresentationObjectProxyParamQuery,
+    AgentPresentationTree, AgentPresentationTreeQuery, AgentResource, AgentResourceBody,
+    AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
@@ -2945,7 +2945,22 @@ fn agent_presentation_tree_query_from_uri(
             "proxy_struct" | "object_proxy_struct" | "struct" => {
                 query.object_proxy_struct = Some(value.to_owned());
             }
+            "proxy_param" | "object_proxy_param" => {
+                query.object_proxy_param = Some(agent_proxy_param_query_value(value));
+            }
             "has_transform" => query.has_transform = Some(agent_bool_query_value(value)?),
+            _ if key.starts_with("proxy_param.") => {
+                query.object_proxy_param = Some(agent_proxy_param_query_key_value(
+                    key.trim_start_matches("proxy_param."),
+                    value,
+                )?);
+            }
+            _ if key.starts_with("object_proxy_param.") => {
+                query.object_proxy_param = Some(agent_proxy_param_query_key_value(
+                    key.trim_start_matches("object_proxy_param."),
+                    value,
+                )?);
+            }
             _ => {
                 eprintln!("error: unsupported presentation-tree query key: {key}");
                 return Err(ExitCode::from(2));
@@ -2953,6 +2968,33 @@ fn agent_presentation_tree_query_from_uri(
         }
     }
     Ok(query)
+}
+
+fn agent_proxy_param_query_value(value: &str) -> AgentPresentationObjectProxyParamQuery {
+    value.split_once('=').map_or_else(
+        || AgentPresentationObjectProxyParamQuery {
+            key: value.to_owned(),
+            value: None,
+        },
+        |(key, value)| AgentPresentationObjectProxyParamQuery {
+            key: key.to_owned(),
+            value: Some(value.to_owned()),
+        },
+    )
+}
+
+fn agent_proxy_param_query_key_value(
+    key: &str,
+    value: &str,
+) -> Result<AgentPresentationObjectProxyParamQuery, ExitCode> {
+    if key.is_empty() {
+        eprintln!("error: proxy parameter query key must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    Ok(AgentPresentationObjectProxyParamQuery {
+        key: key.to_owned(),
+        value: Some(value.to_owned()),
+    })
 }
 
 fn agent_rich_text_kind_from_query_value(

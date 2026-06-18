@@ -250,6 +250,9 @@ reading the full observation payload.
           "declaration": {
             "struct_name": "KeywordHit",
             "attribute": "text_proxy"
+          },
+          "params": {
+            "channel": { "kind": "selector", "value": "choice" }
           }
         }
       ],
@@ -288,6 +291,8 @@ keys are:
 | `proxy_type` / `object_proxy_type` | custom object proxy type name, such as `KeywordHit` |
 | `proxy_role` / `object_proxy_role` | resolved custom object proxy role, such as `keyword` |
 | `proxy_struct` / `object_proxy_struct` | source Arcweft struct that supplied `#[text_proxy]` / `#[rich_text_proxy]` defaults |
+| `proxy_param` / `object_proxy_param` | object proxy parameter key; may also be written as `proxy_param=key=value` |
+| `proxy_param.{key}` / `object_proxy_param.{key}` | object proxy parameter key/value match, such as `proxy_param.channel=choice` |
 | `has_transform` | `true` / `false` transform presence |
 
 Examples:
@@ -298,6 +303,7 @@ arcweft://session/cli/frame/0/presentation-tree.json?effect=motion&motion=breath
 arcweft://session/cli/frame/0/presentation-tree.json?proxy=hotspot
 arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit
 arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=KeywordHit
+arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=choice
 arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby
 ```
 

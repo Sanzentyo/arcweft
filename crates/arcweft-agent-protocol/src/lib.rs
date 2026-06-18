@@ -818,6 +818,7 @@ pub struct AgentPresentationTreeQuery {
     pub object_proxy_type: Option<String>,
     pub object_proxy_role: Option<String>,
     pub object_proxy_struct: Option<String>,
+    pub object_proxy_param: Option<AgentPresentationObjectProxyParamQuery>,
     pub has_transform: Option<bool>,
 }
 
@@ -851,6 +852,15 @@ pub struct AgentPresentationObjectProxyRef {
     pub depth: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration: Option<RichTextObjectProxyDeclaration>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, RichTextParam>,
+}
+
+/// Query for object-proxy parameter metadata in a presentation tree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentPresentationObjectProxyParamQuery {
+    pub key: String,
+    pub value: Option<String>,
 }
 
 /// Presentation tree node category.
@@ -949,6 +959,7 @@ impl AgentPresentationTreeQuery {
             && self.object_proxy_type.is_none()
             && self.object_proxy_role.is_none()
             && self.object_proxy_struct.is_none()
+            && self.object_proxy_param.is_none()
             && self.has_transform.is_none()
     }
 
@@ -1011,9 +1022,42 @@ impl AgentPresentationTreeQuery {
                         })
                     })
                 })
+            && self.object_proxy_param.as_ref().is_none_or(|param_query| {
+                node.object_proxies
+                    .iter()
+                    .any(|proxy| proxy_matches_param_query(proxy, param_query))
+            })
             && self
                 .has_transform
                 .is_none_or(|has_transform| node.has_transform == has_transform)
+    }
+}
+
+fn proxy_matches_param_query(
+    proxy: &AgentPresentationObjectProxyRef,
+    query: &AgentPresentationObjectProxyParamQuery,
+) -> bool {
+    let Some(param) = proxy.params.get(&query.key) else {
+        return false;
+    };
+    query
+        .value
+        .as_ref()
+        .is_none_or(|value| rich_text_param_matches_query_value(param, value))
+}
+
+fn rich_text_param_matches_query_value(param: &RichTextParam, value: &str) -> bool {
+    match param {
+        RichTextParam::Bool { value: param_value } => value == param_value.to_string(),
+        RichTextParam::Int { value: param_value } => value == param_value.to_string(),
+        RichTextParam::Milli { value: param_value } => value == param_value.0.to_string(),
+        RichTextParam::Vec2 { value: param_value } => {
+            value == format!("{},{}", param_value.x.0, param_value.y.0)
+        }
+        RichTextParam::Text { value: param_value }
+        | RichTextParam::Raw { value: param_value }
+        | RichTextParam::Selector { value: param_value } => value == param_value,
+        RichTextParam::Expr { source } => value == source,
     }
 }
 
@@ -1241,6 +1285,7 @@ fn agent_presentation_object_proxy_ref(
         layer: proxy.layer.clone(),
         depth: proxy.depth.map(|depth| depth.0),
         declaration: proxy.declaration.clone(),
+        params: proxy.params.clone(),
     }
 }
 
@@ -1830,6 +1875,12 @@ mod tests {
                             struct_name: "KeywordHit".to_owned(),
                             attribute: "text_proxy".to_owned(),
                         }),
+                        params: BTreeMap::from([(
+                            "channel".to_owned(),
+                            RichTextParam::Selector {
+                                value: "choice".to_owned(),
+                            },
+                        )]),
                     }],
                     motion_function_ids: Vec::new(),
                     has_transform: false,
@@ -1913,6 +1964,27 @@ mod tests {
         });
         assert_eq!(
             typed_proxy_filtered
+                .nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "presentation.root",
+                "presentation.layer.dialogue",
+                "object.dialogue.0.0",
+                "object.dialogue.0.0.proxy.0"
+            ]
+        );
+
+        let proxy_param_filtered = tree.filtered(&AgentPresentationTreeQuery {
+            object_proxy_param: Some(AgentPresentationObjectProxyParamQuery {
+                key: "channel".to_owned(),
+                value: Some("choice".to_owned()),
+            }),
+            ..AgentPresentationTreeQuery::default()
+        });
+        assert_eq!(
+            proxy_param_filtered
                 .nodes
                 .iter()
                 .map(|node| node.id.as_str())

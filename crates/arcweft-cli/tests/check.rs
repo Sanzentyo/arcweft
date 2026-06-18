@@ -2354,59 +2354,7 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         && proxy["params"]["tone"]["value"] == "alert",));
     assert!(rich_text_text_run_has_effect(textbox, "sparkle"));
 
-    let proxy_type_nodes = observe_json["presentation_tree"]["nodes"]
-        .as_array()
-        .expect("presentation tree nodes are reported")
-        .iter()
-        .filter(|node| {
-            node["object_proxies"].as_array().is_some_and(|proxies| {
-                proxies.iter().any(|proxy| {
-                    proxy["id"] == "hotspot"
-                        && proxy["type_name"] == "KeywordHit"
-                        && proxy["role"] == "keyword"
-                        && proxy["declaration"]["struct_name"] == "KeywordHit"
-                        && proxy["declaration"]["attribute"] == "text_proxy"
-                })
-            })
-        })
-        .count();
-    assert!(
-        proxy_type_nodes >= 2,
-        "presentation tree should index KeywordHit on run and proxy objects: {observe_json}"
-    );
-
-    let proxy_type_read = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
-        .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit")
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("4")
-        .arg("--max-ops")
-        .arg("64")
-        .output()
-        .expect("arcw agent observe reads proxy-type filtered presentation tree");
-    assert!(
-        proxy_type_read.status.success(),
-        "agent observe proxy-type presentation tree read should succeed, stderr: {}",
-        String::from_utf8_lossy(&proxy_type_read.stderr)
-    );
-    let proxy_type_tree: serde_json::Value =
-        serde_json::from_slice(&proxy_type_read.stdout).expect("proxy-type tree read is JSON");
-    assert!(
-        proxy_type_tree["body"]["body"]["nodes"]
-            .as_array()
-            .expect("proxy-type tree nodes are returned")
-            .iter()
-            .any(|node| node["object_proxies"]
-                .as_array()
-                .is_some_and(|proxies| proxies
-                    .iter()
-                    .any(|proxy| proxy["type_name"] == "KeywordHit")))
-    );
+    assert_inferred_text_proxy_presentation_tree_indexes(path, observe_json);
 
     let hover = find_rich_text_proxy_object(observe_json, "HoverHit", "Hit");
     assert_eq!(hover["role"], "rich_text_proxy");
@@ -2427,6 +2375,98 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         hover_width,
         hover_height,
     );
+}
+
+fn assert_inferred_text_proxy_presentation_tree_indexes(
+    path: &Path,
+    observe_json: &serde_json::Value,
+) {
+    let proxy_type_nodes = observe_json["presentation_tree"]["nodes"]
+        .as_array()
+        .expect("presentation tree nodes are reported")
+        .iter()
+        .filter(|node| rich_text_proxy_tree_node_indexes_keyword_hit(node))
+        .count();
+    assert!(
+        proxy_type_nodes >= 2,
+        "presentation tree should index KeywordHit on run and proxy objects: {observe_json}"
+    );
+
+    let proxy_type_tree = read_agent_presentation_tree_resource(
+        path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit",
+        "proxy-type",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_type_tree,
+        |proxy| { proxy["type_name"] == "KeywordHit" }
+    ));
+
+    let proxy_param_tree = read_agent_presentation_tree_resource(
+        path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=inventory",
+        "proxy-param",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_param_tree,
+        |proxy| { proxy["params"]["channel"]["value"] == "inventory" }
+    ));
+}
+
+fn rich_text_proxy_tree_node_indexes_keyword_hit(node: &serde_json::Value) -> bool {
+    node["object_proxies"].as_array().is_some_and(|proxies| {
+        proxies.iter().any(|proxy| {
+            proxy["id"] == "hotspot"
+                && proxy["type_name"] == "KeywordHit"
+                && proxy["role"] == "keyword"
+                && proxy["declaration"]["struct_name"] == "KeywordHit"
+                && proxy["declaration"]["attribute"] == "text_proxy"
+                && proxy["params"]["channel"]["value"] == "inventory"
+        })
+    })
+}
+
+fn read_agent_presentation_tree_resource(
+    path: &Path,
+    uri: &str,
+    context: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--read-uri")
+        .arg(uri)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .unwrap_or_else(|error| panic!("arcw agent observe reads {context} tree: {error}"));
+    assert!(
+        output.status.success(),
+        "agent observe {context} presentation tree read should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("{context} tree read is JSON: {error}"))
+}
+
+fn presentation_tree_has_object_proxy(
+    tree: &serde_json::Value,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> bool {
+    tree["body"]["body"]["nodes"]
+        .as_array()
+        .expect("presentation tree nodes are returned")
+        .iter()
+        .any(|node| {
+            node["object_proxies"]
+                .as_array()
+                .is_some_and(|proxies| proxies.iter().any(&predicate))
+        })
 }
 
 fn hit_test_center_of_observed_object(

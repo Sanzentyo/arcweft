@@ -177,6 +177,7 @@ arcw agent observe game/routes/opening.arcw --image png --capture object-id --la
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp --mcp-format tool-result
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?shader=soft_glow --mcp --mcp-format read
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit --mcp --mcp-format read
+arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=choice --mcp --mcp-format read
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png --mcp --mcp-format tool-result
 arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
@@ -194,9 +195,10 @@ The MCP server also supports `resources/templates/list`, which returns the
 current URI template families for observation JSON, object JSON, presentation
 tree readback, presentation tree filters, viewport captures, layer
 color/object-id/mask captures, and object color/object-id/mask captures.
-Presentation-tree filters include rich-text proxy id/type/role/struct keys, so a
-debugger can find all spans backed by a custom `#[text_proxy]` struct before
-choosing an object crop, mask, object-id capture, or hit-test point.
+Presentation-tree filters include rich-text proxy id/type/role/struct/parameter
+keys, so a debugger can find all spans backed by a custom `#[text_proxy]`
+struct or a specific typed proxy parameter before choosing an object crop, mask,
+object-id capture, or hit-test point.
 `--mcp-format list` returns MCP `resources/list` compatible descriptors for the
 selected resources and object-local capture refs when `--resource all` is used,
 including image kind, renderer, scope, composition, and dimensions in each image
