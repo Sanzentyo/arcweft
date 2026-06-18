@@ -1,0 +1,18 @@
+[package]
+name = "arcweft-ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-id = { path = "../arcweft-id" }
+arcweft-presentation = { path = "../arcweft-presentation" }
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

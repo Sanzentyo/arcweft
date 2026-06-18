@@ -101,9 +101,13 @@ The unified UI design is adopted as the long-term boundary for future work:
   passed through `InputRouter` modal, visibility, and layer-policy checks. This
   keeps semantic actions from introducing `UiEvent`, `ActivityViewport`, or a
   separate Agent-only invoke path.
-- A future `arcweft-ui` crate will own typed Component descriptors, retained
-  fragments, generational Entity storage, reactivity, style, layout integration,
-  and semantic UI nodes.
+- `arcweft-ui` now owns the first Sans I/O UI semantic fragment boundary:
+  `UiSemanticNode`, `UiSemanticFragment`, and `UiSemanticFragmentBuilder`
+  produce ordered UI semantic nodes and lower them into
+  `arcweft_presentation::semantic::SemanticTree` without introducing `UiEvent`
+  or a separate UI router. Later cuts will extend this crate with typed
+  Component descriptors, retained fragments, generational Entity storage,
+  reactivity, style, and layout integration.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -134,10 +138,10 @@ the order of future implementation cuts:
   `arcweft-input` crate: LayerTree, HitTree, focus, modal, capture, hover,
   gesture, replay hash, TextBox presentation state, and Activity presentation
   descriptors are one Sans I/O presentation boundary.
-- `arcweft-ui` is introduced later as one crate for typed Component
-  descriptors, retained flat fragments, generational Entity storage,
-  reactivity, style/property bindings, layout integration, and semantic UI
-  nodes.
+- `arcweft-ui` starts as one crate for UI semantic node production and remains
+  the future home for typed Component descriptors, retained flat fragments,
+  generational Entity storage, reactivity, style/property bindings, and layout
+  integration.
 - Activity, TextBox, UI, Agent, and replay must share LayerTree routing and
   semantic observation. Agent actions must not bypass visibility, enabled
   state, modal policy, or routed interaction targets.
@@ -184,18 +188,20 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    developer-facing phase timing, source selection, and diagnostic printing.
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
-3. Add the presentation input and future `arcweft-ui` crates according to the
-   unified UI design, without adding public names such as `ActivityViewport`,
-   `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
+3. Continue extending `arcweft-ui` from its initial semantic fragment boundary
+   toward typed Component descriptors, retained fragments, Entity storage,
+   reactivity, style/property bindings, and layout integration, without adding
+   public names such as `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or
+   per-Activity input routers.
 4. Keep the unified TextBox model as the current source of truth: canonical
    `@textbox.main`, dialogue `window`, manifest `window`, and generic typed
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
 5. Register concrete TextBox, Activity, UI, and runtime action handlers through
-   `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, then add
-   future `arcweft-ui` semantic node production. Later Component and Activity
-   work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
+   `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, and have
+   future Component rendering feed `UiSemanticFragment` production. Later
+   Component and Activity work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
    `LayerContent`, `LayerTransform`, `HoverPath`, `GestureArena`,
    `RoutingHash`, `RouteDecision`, `SemanticTree`,
    `PresentationActionDispatchPlan`, `PresentationActionHandlers`, and

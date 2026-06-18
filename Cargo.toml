@@ -20,6 +20,7 @@ members = [
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
+    "crates/arcweft-ui",
     "crates/arcweft-render-native",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",

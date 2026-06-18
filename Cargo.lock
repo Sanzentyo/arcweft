@@ -592,6 +592,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-ui"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "arcweft-presentation",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-verify"
 version = "0.1.0"
 dependencies = [
