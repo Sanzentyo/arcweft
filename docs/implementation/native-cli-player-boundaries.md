@@ -65,6 +65,37 @@ The unified UI design is adopted as the long-term boundary for future work:
   TextBox and Component views borrow projections instead of cloning full rich
   text frames for reveal-only updates.
 
+The attached unified UI/activity/input design also adds constraints that affect
+the order of future implementation cuts:
+
+- Public vocabulary is intentionally small: `Activity`, `Layer`/`LayerTree`,
+  `Component`, `TextBox`, `TextField`, `TextArea`, `RawInputEvent`,
+  `InputEvent`, `Action`, and `HostEvent`. Names such as `DialogueWindow`,
+  `TextBoxComponent`, `ActivityViewport`, `UiInputEvent`, and `UiEvent` must
+  not become public compatibility concepts.
+- `@textbox.main` is the canonical default TextBox ID. `@textbox.0` is not a
+  runtime alias; it should be handled only by a one-shot migration path.
+- Dialogue source keeps the `window = @textbox.main` option name because
+  `window` is the dialogue-line output role, while `TextBox` is the target
+  entity family.
+- Rust dialogue APIs should converge on `window: Option<Ref<TextBox>>` rather
+  than `text_box` fields or a dedicated `TextBoxRef` wrapper.
+- Input work starts in `arcweft-presentation`, not a separate
+  `arcweft-input` crate: LayerTree, HitTree, focus, modal, capture, hover,
+  gesture, replay hash, TextBox presentation state, and Activity presentation
+  descriptors are one Sans I/O presentation boundary.
+- `arcweft-ui` is introduced later as one crate for typed Component
+  descriptors, retained flat fragments, generational Entity storage,
+  reactivity, style/property bindings, layout integration, and semantic UI
+  nodes.
+- Activity, TextBox, UI, Agent, and replay must share LayerTree routing and
+  semantic observation. Agent actions must not bypass visibility, enabled
+  state, modal policy, or routed interaction targets.
+- Reveal/typewriter and paint-only effects must not invalidate base text
+  layout; text layout cache keys include writing mode, font/style revisions,
+  quantized size, locale, and scale, but not reveal cursor, hover, opacity, or
+  paint-effect time.
+
 ## Required Next Cuts
 
 The current cuts remove the direct CLI dependency on `arcweft-player-native`,
@@ -104,6 +135,13 @@ now mostly dispatch and import wiring. The remaining architectural cuts are:
 4. Add the presentation input and future `arcweft-ui` crates according to the
    unified UI design, without adding public names such as `ActivityViewport`,
    `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
+5. Replace the remaining `@textbox.0`, `TextBoxRef`, and Rust `text_box`
+   surfaces with the unified TextBox model: canonical `@textbox.main`,
+   dialogue `window`, and generic typed references. Do this as a direct model
+   change plus migration tooling, not as runtime aliases.
+6. Add `ActionBatch` / `HostEventBatch` and routed input boundaries before
+   expanding Activity or UI interaction APIs, so later Component and Activity
+   work does not grow its own input router.
 
 ## Invariants
 
