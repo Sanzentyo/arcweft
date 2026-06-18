@@ -2179,31 +2179,11 @@ flow @flow.main main {
         "QuestHit",
         "rich_text_proxy",
     );
+    assert_agent_observe_proxy_object_image_metadata_carries_struct_declaration(
+        &path, proxy, "hud", 6000,
+    );
 
-    let proxy_struct_tree = read_agent_presentation_tree_resource(
-        &path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=QuestHit",
-        "rich-text-proxy-struct",
-    );
-    assert!(presentation_tree_has_object_proxy(
-        &proxy_struct_tree,
-        |proxy| {
-            proxy["type_name"] == "QuestHit"
-                && proxy["declaration"]["attribute"] == "rich_text_proxy"
-                && proxy["params"]["channel"]["value"] == "quest"
-        }
-    ));
-    let proxy_param_tree = read_agent_presentation_tree_resource(
-        &path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.state=active",
-        "rich-text-proxy-param",
-    );
-    assert!(presentation_tree_has_object_proxy(
-        &proxy_param_tree,
-        |proxy| {
-            proxy["type_name"] == "QuestHit" && proxy["params"]["state"]["value"] == "active"
-        }
-    ));
+    assert_agent_presentation_tree_filters_rich_text_proxy_struct(&path);
 
     let hit_json = hit_test_center_of_observed_object(&path, proxy);
     fs::remove_file(&path).expect("remove temp rich_text_proxy source");
@@ -2226,6 +2206,47 @@ flow @flow.main main {
         "active"
     );
     assert_eq!(hit_json["hits"][0]["depth"], 6000);
+}
+
+fn assert_agent_observe_proxy_object_image_metadata_carries_struct_declaration(
+    path: &Path,
+    proxy: &serde_json::Value,
+    object_layer: &str,
+    object_depth: i32,
+) {
+    assert_agent_observe_object_image_metadata_carries_object_layer(
+        path,
+        proxy,
+        object_layer,
+        object_depth,
+    );
+}
+
+fn assert_agent_presentation_tree_filters_rich_text_proxy_struct(path: &Path) {
+    let proxy_struct_tree = read_agent_presentation_tree_resource(
+        path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=QuestHit",
+        "rich-text-proxy-struct",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_struct_tree,
+        |proxy| {
+            proxy["type_name"] == "QuestHit"
+                && proxy["declaration"]["attribute"] == "rich_text_proxy"
+                && proxy["params"]["channel"]["value"] == "quest"
+        }
+    ));
+    let proxy_param_tree = read_agent_presentation_tree_resource(
+        path,
+        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.state=active",
+        "rich-text-proxy-param",
+    );
+    assert!(presentation_tree_has_object_proxy(
+        &proxy_param_tree,
+        |proxy| {
+            proxy["type_name"] == "QuestHit" && proxy["params"]["state"]["value"] == "active"
+        }
+    ));
 }
 
 #[test]
@@ -2472,12 +2493,8 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
         object_depth
     );
     assert_eq!(
-        json["images"][0]["object"]["rich_text_ref"]["kind"],
-        object["rich_text_ref"]["kind"]
-    );
-    assert_eq!(
-        json["images"][0]["object"]["rich_text_ref"]["range"],
-        object["rich_text_ref"]["range"]
+        json["images"][0]["object"]["rich_text_ref"],
+        object["rich_text_ref"]
     );
     assert!(
         json["images"][0]["content_pixels"].as_u64().unwrap_or(0) > 0,
