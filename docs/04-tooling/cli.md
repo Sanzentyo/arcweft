@@ -345,6 +345,9 @@ object-id color and color/object-id/mask resource URIs, so a debugger can crop
 or identify the selected text object without first walking the observation
 object list. Hit entries preserve the observed object's viewport `polygon`
 alongside `bbox`, matching the geometry exposed by object capture metadata.
+They also include `object`, the same object descriptor shape used by
+object-scoped image metadata, so clients can reuse hit results as typed text
+object descriptors.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

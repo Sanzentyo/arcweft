@@ -225,7 +225,10 @@ and MCP `arcweft.hit_test`. Hit-test hits also carry the observed object's
 URIs, so hit consumers can treat text objects as directly capturable debug
 objects without separately resolving the object list. Hit entries preserve the
 observed object's viewport `bbox` and `polygon`, so hit-test results and
-object-scoped image metadata describe the same target geometry.
+object-scoped image metadata describe the same target geometry. Each hit also
+includes `object`, an `AgentImageObjectRef` matching object-scoped image
+metadata, so clients can use the same descriptor shape for hit results and
+capture resources.
 
 ---
 

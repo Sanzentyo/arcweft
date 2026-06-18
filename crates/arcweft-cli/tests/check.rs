@@ -2035,6 +2035,16 @@ flow @flow.main main {
 }
 
 fn assert_agent_hit_capture_refs_match(hit: &serde_json::Value, object: &serde_json::Value) {
+    assert_eq!(hit["object"]["id"], object["id"]);
+    assert_eq!(hit["object"]["layer"], object["layer"]);
+    assert_eq!(hit["object"]["role"], object["role"]);
+    assert_eq!(hit["object"]["bbox"], object["bbox"]);
+    assert_eq!(hit["object"]["polygon"], object["polygon"]);
+    assert_eq!(hit["object"]["capture_refs"], object["capture_refs"]);
+    assert_eq!(
+        hit["object"]["rich_text_ref"]["kind"],
+        object["rich_text_ref"]["kind"]
+    );
     assert_eq!(hit["polygon"], object["polygon"]);
     assert_eq!(
         hit["capture_refs"]["object_id_color"],

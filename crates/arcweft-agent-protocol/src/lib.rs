@@ -546,6 +546,7 @@ pub struct AgentHitTestReport {
 pub struct AgentHitTestHit {
     pub rank: usize,
     pub object_id: String,
+    pub object: AgentImageObjectRef,
     pub layer: String,
     pub role: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1187,6 +1188,19 @@ mod tests {
         let hit = AgentHitTestHit {
             rank: 0,
             object_id: "object.dialogue.0.0.proxy.0.0".to_owned(),
+            object: AgentImageObjectRef {
+                id: "object.dialogue.0.0.proxy.0.0".to_owned(),
+                entity: Some("character.alice".to_owned()),
+                layer: "dialogue.rich_text".to_owned(),
+                role: "rich_text_proxy".to_owned(),
+                bbox: bbox.clone(),
+                polygon: bbox.polygon(),
+                capture_refs: test_capture_refs(),
+                object_layer: Some("ui".to_owned()),
+                object_depth: Some(4000),
+                text: Some("Hit".to_owned()),
+                rich_text_ref: None,
+            },
             layer: "ui".to_owned(),
             role: "rich_text_proxy".to_owned(),
             text: Some("Hit".to_owned()),
@@ -1210,6 +1224,8 @@ mod tests {
 
         let json = serde_json::to_value(&hit).expect("hit serializes");
 
+        assert_eq!(json["object"]["layer"], "dialogue.rich_text");
+        assert_eq!(json["object"]["object_layer"], "ui");
         assert_eq!(json["layer"], "ui");
         assert_eq!(json["polygon"].as_array().unwrap().len(), 4);
         assert_eq!(json["capture_refs"]["object_id_color"]["alpha"], 255);

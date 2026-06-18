@@ -2607,6 +2607,7 @@ fn agent_hit_test_object_hits(
         .map(|region| AgentHitTestHit {
             rank: 0,
             object_id: object.id.clone(),
+            object: AgentImageObjectRef::from_observed(object),
             layer: agent_hit_test_layer(object, rich_text_ref, region),
             role: object.role.clone(),
             text: object.text.clone(),
