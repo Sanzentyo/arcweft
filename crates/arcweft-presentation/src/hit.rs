@@ -1,7 +1,7 @@
 use crate::input::InteractionTarget;
 use crate::layer::LayerId;
 
-/// Axis-aligned hit bounds in logical viewport coordinates.
+/// Axis-aligned hit bounds in layer-local logical coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HitRect {
     pub x: f32,
@@ -41,8 +41,13 @@ impl HitRect {
         }
     }
 
-    pub fn contains(self, x: f32, y: f32) -> bool {
-        x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
+    pub fn contains(self, x: f64, y: f64) -> bool {
+        let left = f64::from(self.x);
+        let top = f64::from(self.y);
+        x >= left
+            && y >= top
+            && x < left + f64::from(self.width)
+            && y < top + f64::from(self.height)
     }
 }
 
@@ -104,7 +109,7 @@ impl HitRecord {
         self.visible
     }
 
-    pub fn accepts_hit(&self, x: f32, y: f32) -> bool {
+    pub fn accepts_hit(&self, x: f64, y: f64) -> bool {
         self.enabled && self.visible && self.bounds.contains(x, y)
     }
 }
@@ -132,7 +137,7 @@ impl HitTree {
         self.records.iter().find(|record| record.target() == target)
     }
 
-    pub fn hit_in_layer(&self, layer: &LayerId, x: f32, y: f32) -> Option<&HitRecord> {
+    pub fn hit_in_layer(&self, layer: &LayerId, x: f64, y: f64) -> Option<&HitRecord> {
         self.records_for_layer(layer)
             .find(|record| record.accepts_hit(x, y))
     }

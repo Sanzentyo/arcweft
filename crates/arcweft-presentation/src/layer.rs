@@ -26,6 +26,7 @@ pub struct LayerNode {
     parent: Option<LayerId>,
     children: Vec<LayerId>,
     order: LayerOrder,
+    transform: LayerTransform,
     visibility: LayerVisibility,
     input: LayerInputPolicy,
 }
@@ -56,6 +57,28 @@ pub struct LayerOrder {
     pub phase: RenderPhase,
     pub z: i32,
     pub stable_index: u32,
+}
+
+/// Affine transform from layer-local coordinates to viewport coordinates.
+///
+/// Matrix fields are fixed-point values in thousandths. This keeps the
+/// presentation model deterministic while still allowing hit-testing to map
+/// viewport pointer coordinates into layer-local geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LayerTransform {
+    pub m11_milli: i32,
+    pub m12_milli: i32,
+    pub m21_milli: i32,
+    pub m22_milli: i32,
+    pub tx_milli: i32,
+    pub ty_milli: i32,
+}
+
+/// Point in layer-local logical coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -184,6 +207,7 @@ impl LayerNode {
             parent: None,
             children: Vec::new(),
             order,
+            transform: LayerTransform::identity(),
             visibility: LayerVisibility::Visible,
             input: LayerInputPolicy::HitTest,
         }
@@ -210,6 +234,12 @@ impl LayerNode {
     #[must_use]
     pub fn with_visibility(mut self, visibility: LayerVisibility) -> Self {
         self.visibility = visibility;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_transform(mut self, transform: LayerTransform) -> Self {
+        self.transform = transform;
         self
     }
 
@@ -247,6 +277,10 @@ impl LayerNode {
         self.order
     }
 
+    pub const fn transform(&self) -> LayerTransform {
+        self.transform
+    }
+
     pub const fn visibility(&self) -> LayerVisibility {
         self.visibility
     }
@@ -254,4 +288,61 @@ impl LayerNode {
     pub const fn input_policy(&self) -> LayerInputPolicy {
         self.input
     }
+}
+
+impl LayerTransform {
+    pub const fn identity() -> Self {
+        Self {
+            m11_milli: 1_000,
+            m12_milli: 0,
+            m21_milli: 0,
+            m22_milli: 1_000,
+            tx_milli: 0,
+            ty_milli: 0,
+        }
+    }
+
+    pub const fn translation_milli(
+        horizontal_offset_milli: i32,
+        vertical_offset_milli: i32,
+    ) -> Self {
+        Self {
+            tx_milli: horizontal_offset_milli,
+            ty_milli: vertical_offset_milli,
+            ..Self::identity()
+        }
+    }
+
+    pub const fn scale_milli(horizontal_scale_milli: i32, vertical_scale_milli: i32) -> Self {
+        Self {
+            m11_milli: horizontal_scale_milli,
+            m12_milli: 0,
+            m21_milli: 0,
+            m22_milli: vertical_scale_milli,
+            tx_milli: 0,
+            ty_milli: 0,
+        }
+    }
+
+    pub fn viewport_to_local(self, x: f32, y: f32) -> Option<LayerPoint> {
+        let m11 = milli_to_f64(self.m11_milli);
+        let m12 = milli_to_f64(self.m12_milli);
+        let m21 = milli_to_f64(self.m21_milli);
+        let m22 = milli_to_f64(self.m22_milli);
+        let det = (m11 * m22) - (m12 * m21);
+        if det.abs() <= f64::EPSILON {
+            return None;
+        }
+
+        let dx = f64::from(x) - milli_to_f64(self.tx_milli);
+        let dy = f64::from(y) - milli_to_f64(self.ty_milli);
+        Some(LayerPoint {
+            x: ((m22 * dx) - (m12 * dy)) / det,
+            y: ((-m21 * dx) + (m11 * dy)) / det,
+        })
+    }
+}
+
+fn milli_to_f64(value: i32) -> f64 {
+    f64::from(value) / 1_000.0
 }

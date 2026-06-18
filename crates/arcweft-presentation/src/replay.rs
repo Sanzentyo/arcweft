@@ -166,6 +166,7 @@ fn hash_layer_node(hasher: &mut StableHasher, node: &LayerNode) {
         hasher.layer_id(child);
     }
     hash_layer_order(hasher, node.order());
+    hash_layer_transform(hasher, node.transform());
     hasher.u32(layer_visibility_code(node.visibility()));
     hasher.u32(layer_input_policy_code(node.input_policy()));
 }
@@ -200,6 +201,15 @@ fn hash_layer_order(hasher: &mut StableHasher, order: LayerOrder) {
     hasher.u32(render_phase_code(order.phase));
     hasher.i32(order.z);
     hasher.u32(order.stable_index);
+}
+
+fn hash_layer_transform(hasher: &mut StableHasher, transform: crate::layer::LayerTransform) {
+    hasher.i32(transform.m11_milli);
+    hasher.i32(transform.m12_milli);
+    hasher.i32(transform.m21_milli);
+    hasher.i32(transform.m22_milli);
+    hasher.i32(transform.tx_milli);
+    hasher.i32(transform.ty_milli);
 }
 
 fn hash_hit_tree(hasher: &mut StableHasher, hits: &HitTree) {

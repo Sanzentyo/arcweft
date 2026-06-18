@@ -122,7 +122,7 @@ fn route_pointer(raw: &RawInputEvent, layers: &LayerTree, hits: &HitTree) -> Rou
 
     match pointer_hit(layers, hits, x, y) {
         PointerHit::Hit(record) => {
-            return route_hit_record(
+            return route_pointer_hit_record(
                 raw,
                 layers,
                 record,
@@ -185,6 +185,18 @@ fn route_text(
     )
 }
 
+fn route_pointer_hit_record(
+    raw: &RawInputEvent,
+    layers: &LayerTree,
+    record: &HitRecord,
+    kind: InputEventKind,
+) -> RouteDecision {
+    if !record.enabled() || !record.visible() {
+        return RouteDecision::TargetUnavailable;
+    }
+    route_to_known_layer_without_modal(raw, layers, record.layer(), record.target(), kind)
+}
+
 fn route_hit_record(
     raw: &RawInputEvent,
     layers: &LayerTree,
@@ -218,6 +230,28 @@ fn route_to_known_layer(
     }
     if let Some(modal) = blocking_modal_for(layers, layer) {
         return RouteDecision::BlockedByModal { modal };
+    }
+    RouteDecision::Routed(InputEvent::new(raw.epoch(), target.clone(), kind))
+}
+
+fn route_to_known_layer_without_modal(
+    raw: &RawInputEvent,
+    layers: &LayerTree,
+    layer: &LayerId,
+    target: &crate::input::InteractionTarget,
+    kind: InputEventKind,
+) -> RouteDecision {
+    let Some(node) = layers.get(layer) else {
+        return RouteDecision::LayerUnavailable {
+            layer: layer.clone(),
+        };
+    };
+    if node.visibility() == LayerVisibility::Hidden {
+        return RouteDecision::TargetUnavailable;
+    }
+    match node.input_policy() {
+        LayerInputPolicy::Ignore | LayerInputPolicy::PassThrough => return RouteDecision::Ignored,
+        LayerInputPolicy::HitTest | LayerInputPolicy::Capture | LayerInputPolicy::Modal => {}
     }
     RouteDecision::Routed(InputEvent::new(raw.epoch(), target.clone(), kind))
 }
@@ -261,12 +295,18 @@ fn pointer_hit<'a>(layers: &LayerTree, hits: &'a HitTree, x: f32, y: f32) -> Poi
         match node.input_policy() {
             LayerInputPolicy::Ignore | LayerInputPolicy::PassThrough => {}
             LayerInputPolicy::HitTest | LayerInputPolicy::Capture => {
-                if let Some(record) = hits.hit_in_layer(layer, x, y) {
+                let Some(local) = node.transform().viewport_to_local(x, y) else {
+                    continue;
+                };
+                if let Some(record) = hits.hit_in_layer(layer, local.x, local.y) {
                     return PointerHit::Hit(record);
                 }
             }
             LayerInputPolicy::Modal => {
-                if let Some(record) = hits.hit_in_layer(layer, x, y) {
+                let Some(local) = node.transform().viewport_to_local(x, y) else {
+                    continue;
+                };
+                if let Some(record) = hits.hit_in_layer(layer, local.x, local.y) {
                     return PointerHit::Hit(record);
                 }
                 return PointerHit::BlockedByModal(layer.clone());

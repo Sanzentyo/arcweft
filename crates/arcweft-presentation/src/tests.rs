@@ -8,8 +8,8 @@ use crate::input::{
 };
 use crate::interaction::{FocusState, InteractionState, PointerCapture};
 use crate::layer::{
-    LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
-    LayerTreeError, LayerVisibility, RenderPhase,
+    LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTransform,
+    LayerTree, LayerTreeError, LayerVisibility, RenderPhase,
 };
 use crate::replay::{route_fingerprint, routing_hash};
 use crate::router::{InputRouter, RouteDecision};
@@ -573,6 +573,115 @@ fn router_sends_pointer_events_to_active_capture_owner() {
 }
 
 #[test]
+fn router_maps_viewport_pointer_into_layer_local_hit_bounds() {
+    let root = layer_id("root");
+    let translated = layer_id("translated");
+    let target = interaction_target("ui.translated.button");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            translated.clone(),
+            LayerKind::GameUi,
+            layer_order(RenderPhase::GameUi, 0, 10),
+        )
+        .with_parent(root)
+        .with_transform(LayerTransform::translation_milli(100_000, 50_000))
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("translated layer inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        translated,
+        target.clone(),
+        HitRect::new(0.0, 0.0, 20.0, 20.0),
+    ));
+    let raw = RawInputEvent::new(
+        InputEpoch(50),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(4),
+            position: ViewportPoint::new(110.0, 60.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let routed = InputRouter::route(&raw, &tree, &hits, &InteractionState::default());
+    assert_eq!(routed.event().map(InputEvent::target), Some(&target));
+
+    let outside = RawInputEvent::new(
+        InputEpoch(51),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(4),
+            position: ViewportPoint::new(10.0, 10.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let missed = InputRouter::route(&outside, &tree, &hits, &InteractionState::default());
+    assert_eq!(missed.decision(), &RouteDecision::NoTarget);
+}
+
+#[test]
+fn router_skips_non_invertible_transform_without_blocking_lower_layer() {
+    let root = layer_id("root");
+    let lower = layer_id("lower");
+    let broken = layer_id("broken");
+    let lower_target = interaction_target("world.lower");
+    let broken_target = interaction_target("modal.broken");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            lower.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("lower inserts");
+    tree.insert(
+        LayerNode::new(
+            broken.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root)
+        .with_transform(LayerTransform::scale_milli(0, 0))
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("broken inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        lower,
+        lower_target.clone(),
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+    hits.push(HitRecord::new(
+        broken,
+        broken_target,
+        HitRect::new(0.0, 0.0, 100.0, 100.0),
+    ));
+
+    let raw = RawInputEvent::new(
+        InputEpoch(52),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(5),
+            position: ViewportPoint::new(10.0, 10.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let routed = InputRouter::route(&raw, &tree, &hits, &InteractionState::default());
+    assert_eq!(routed.event().map(InputEvent::target), Some(&lower_target));
+}
+
+#[test]
 fn hover_transition_diffs_only_changed_suffix() {
     let root = interaction_target("root");
     let list = interaction_target("choice.list");
@@ -711,13 +820,35 @@ fn routing_hash_changes_when_layer_or_hit_routing_state_changes() {
                 LayerKind::Activity,
                 layer_order(RenderPhase::World, 0, 10),
             )
-            .with_parent(root)
+            .with_parent(root.clone())
             .with_input_policy(LayerInputPolicy::Modal),
         )
         .expect("modal-like world inserts");
     assert_ne!(
         base,
         routing_hash(&modal_tree, &base_hits, &InteractionState::default())
+    );
+
+    let mut transformed_tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    transformed_tree
+        .insert(
+            LayerNode::new(
+                world,
+                LayerKind::Activity,
+                layer_order(RenderPhase::World, 0, 10),
+            )
+            .with_parent(root)
+            .with_transform(LayerTransform::translation_milli(1_000, 0))
+            .with_input_policy(LayerInputPolicy::HitTest),
+        )
+        .expect("transformed world inserts");
+    assert_ne!(
+        base,
+        routing_hash(&transformed_tree, &base_hits, &InteractionState::default())
     );
 }
 
