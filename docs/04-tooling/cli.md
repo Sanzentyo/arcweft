@@ -945,6 +945,12 @@ preserved while adding the inferred `type`, so `[.HoverHit tone=alert]...[/]`
 becomes `[object .HoverHit type=HoverHit tone=alert]...[/object]`. It does not
 expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or
 speaker-line sugar.
+The runtime/debug form keeps the originating proxy declaration as typed
+metadata. Agent observe and hit-test report both the resolved proxy `type_name`
+and the declaration provenance (`struct_name` plus `text_proxy` /
+`rich_text_proxy` attribute family), so CLI clients can debug custom text
+objects without guessing whether a value came from inline attributes or a
+declared proxy default.
 
 Declaration canonicalization uses the same diagnostic names as LSP. Source-level
 lint names are domain namespaces, while JSON diagnostics and CI logs also carry

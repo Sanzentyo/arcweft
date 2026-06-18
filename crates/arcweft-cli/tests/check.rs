@@ -2008,18 +2008,7 @@ flow @flow.main main {
     assert_eq!(hit_json["y"], y);
     assert_eq!(hit_json["top_object_id"], hover["id"]);
     let top = &hit_json["hits"][0];
-    assert_eq!(top["rank"], 0);
-    assert_eq!(top["object_id"], hover["id"]);
-    assert_eq!(top["role"], "rich_text_proxy");
-    assert_eq!(top["region"]["kind"], "text_object_proxy");
-    assert_eq!(top["region"]["proxy_id"], "hover");
-    assert_eq!(top["region"]["proxy_type"], "HoverHit");
-    assert_eq!(top["region"]["proxy_role"], "hover");
-    assert_eq!(top["region"]["proxy_layer"], "ui");
-    assert_eq!(top["layer"], "ui");
-    assert_agent_hit_capture_refs_match(top, hover);
-    assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
-    assert_eq!(top["depth"], 7000);
+    assert_top_hover_rich_text_proxy_hit(top, hover);
     let keyword_hit = hit_json["hits"]
         .as_array()
         .expect("hits are listed")
@@ -2050,6 +2039,27 @@ fn assert_agent_hit_capture_refs_match(hit: &serde_json::Value, object: &serde_j
         hit["capture_refs"]["object_id_color"],
         object["capture_refs"]["object_id_color"]
     );
+}
+
+fn assert_top_hover_rich_text_proxy_hit(top: &serde_json::Value, hover: &serde_json::Value) {
+    assert_eq!(top["rank"], 0);
+    assert_eq!(top["object_id"], hover["id"]);
+    assert_eq!(top["role"], "rich_text_proxy");
+    assert_eq!(top["region"]["kind"], "text_object_proxy");
+    assert_eq!(top["region"]["proxy_id"], "hover");
+    assert_eq!(top["region"]["proxy_type"], "HoverHit");
+    assert_text_proxy_declaration(&top["region"]["proxy_declaration"], "HoverHit");
+    assert_eq!(top["region"]["proxy_role"], "hover");
+    assert_eq!(top["region"]["proxy_layer"], "ui");
+    assert_eq!(top["layer"], "ui");
+    assert_agent_hit_capture_refs_match(top, hover);
+    assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(top["depth"], 7000);
+}
+
+fn assert_text_proxy_declaration(declaration: &serde_json::Value, struct_name: &str) {
+    assert_eq!(declaration["struct_name"], struct_name);
+    assert_eq!(declaration["attribute"], "text_proxy");
 }
 
 #[test]
@@ -2087,6 +2097,10 @@ fn agent_observe_infers_text_proxy_struct_shorthand() {
     assert_eq!(hit_json["hits"][0]["region"]["kind"], "text_object_proxy");
     assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "HoverHit");
     assert_eq!(hit_json["hits"][0]["region"]["proxy_type"], "HoverHit");
+    assert_text_proxy_declaration(
+        &hit_json["hits"][0]["region"]["proxy_declaration"],
+        "HoverHit",
+    );
     assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "ui");
     assert_eq!(
         hit_json["hits"][0]["region"]["proxy_params"]["tone"]["value"],
@@ -2321,6 +2335,8 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         ["id"]
         == "hotspot"
         && proxy["type_name"] == "KeywordHit"
+        && proxy["declaration"]["struct_name"] == "KeywordHit"
+        && proxy["declaration"]["attribute"] == "text_proxy"
         && proxy["role"] == "keyword"
         && proxy["depth"] == 4000
         && proxy["hit_test"] == true
@@ -2329,6 +2345,8 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         ["id"]
         == "HoverHit"
         && proxy["type_name"] == "HoverHit"
+        && proxy["declaration"]["struct_name"] == "HoverHit"
+        && proxy["declaration"]["attribute"] == "text_proxy"
         && proxy["role"] == "hover"
         && proxy["layer"] == "ui"
         && proxy["depth"] == 7000
@@ -2476,6 +2494,7 @@ flow @flow.main main {
     assert_eq!(top["region"]["kind"], "text_object_proxy");
     assert_eq!(top["region"]["proxy_id"], "hover");
     assert_eq!(top["region"]["proxy_type"], "HoverHit");
+    assert_text_proxy_declaration(&top["region"]["proxy_declaration"], "HoverHit");
     assert_eq!(top["region"]["proxy_layer"], "ui");
     assert_eq!(top["layer"], "ui");
     assert_agent_hit_capture_refs_match(top, hover);
@@ -2735,6 +2754,7 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
     assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
     let page_hover_hit = rich_text_proxy_hit_region(page, "hover", 0, 3);
     assert_eq!(page_hover_hit["proxy_type"], "HoverHit");
+    assert_text_proxy_declaration(&page_hover_hit["proxy_declaration"], "HoverHit");
     assert_eq!(page_hover_hit["proxy_layer"], "ui");
     assert_eq!(page_hover_hit["depth"], 7000);
 
@@ -2746,6 +2766,7 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
     let line_keyword_hit = rich_text_proxy_hit_region(line, "hotspot", 0, 3);
     assert_eq!(line_keyword_hit["proxy_type"], "KeywordHit");
+    assert_text_proxy_declaration(&line_keyword_hit["proxy_declaration"], "KeywordHit");
     assert_eq!(line_keyword_hit["depth"], 4000);
     assert_eq!(
         line_keyword_hit["proxy_params"]["channel"]["value"],
@@ -33642,6 +33663,7 @@ fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
     );
     assert_eq!(proxy_hit["proxy_id"], "hotspot");
     assert_eq!(proxy_hit["proxy_type"], "KeywordHit");
+    assert_text_proxy_declaration(&proxy_hit["proxy_declaration"], "KeywordHit");
     assert_eq!(proxy_hit["proxy_role"], "keyword");
     assert!(proxy_hit["proxy_layer"].is_null());
     assert_eq!(proxy_hit["depth"], 4000);
@@ -33668,6 +33690,7 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     let proxy = &proxy_object["rich_text_ref"]["presentation"]["object_proxies"][0];
     assert_eq!(proxy["id"], "hotspot");
     assert_eq!(proxy["type_name"], "KeywordHit");
+    assert_text_proxy_declaration(&proxy["declaration"], "KeywordHit");
     assert_eq!(proxy["role"], "keyword");
     assert!(proxy["layer"].is_null());
     assert_eq!(proxy["depth"], 4000);
@@ -33695,6 +33718,11 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     );
     assert_eq!(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
+            [0]["declaration"]["struct_name"],
+        "KeywordHit"
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
             [0]["params"]["channel"]["value"],
         "choice"
     );
@@ -33719,6 +33747,7 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     );
     assert_eq!(proxy_hit["proxy_id"], "hotspot");
     assert_eq!(proxy_hit["proxy_type"], "KeywordHit");
+    assert_text_proxy_declaration(&proxy_hit["proxy_declaration"], "KeywordHit");
     assert_eq!(proxy_hit["proxy_role"], "keyword");
     assert!(proxy_hit["proxy_layer"].is_null());
     assert_eq!(proxy_hit["depth"], 4000);
@@ -33741,6 +33770,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
         .find(|proxy| proxy["id"] == "hotspot2")
         .expect("nested proxy run should keep outer keyword proxy");
     assert_eq!(keyword["type_name"], "KeywordHit");
+    assert_text_proxy_declaration(&keyword["declaration"], "KeywordHit");
     assert_eq!(keyword["role"], "keyword");
     assert!(keyword["layer"].is_null());
     assert_eq!(keyword["depth"], 4000);
@@ -33751,6 +33781,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
         .find(|proxy| proxy["id"] == "hover")
         .expect("nested proxy run should keep inner hover proxy");
     assert_eq!(hover["type_name"], "HoverHit");
+    assert_text_proxy_declaration(&hover["declaration"], "HoverHit");
     assert_eq!(hover["role"], "hover");
     assert_eq!(hover["layer"], "ui");
     assert_eq!(hover["depth"], 7000);
@@ -33766,10 +33797,12 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
         .expect("nested proxy range end");
     let keyword_hit = rich_text_proxy_hit_region(proxy_run, "hotspot2", range_start, range_end);
     assert_eq!(keyword_hit["proxy_type"], "KeywordHit");
+    assert_text_proxy_declaration(&keyword_hit["proxy_declaration"], "KeywordHit");
     assert_eq!(keyword_hit["proxy_role"], "keyword");
     assert_eq!(keyword_hit["depth"], 4000);
     let hover_hit = rich_text_proxy_hit_region(proxy_run, "hover", range_start, range_end);
     assert_eq!(hover_hit["proxy_type"], "HoverHit");
+    assert_text_proxy_declaration(&hover_hit["proxy_declaration"], "HoverHit");
     assert_eq!(hover_hit["proxy_role"], "hover");
     assert_eq!(hover_hit["proxy_layer"], "ui");
     assert_eq!(hover_hit["depth"], 7000);
@@ -33816,6 +33849,7 @@ fn assert_full_grammar_nested_proxy_observed_object(
     };
     assert_eq!(proxy["id"], proxy_id);
     assert_eq!(proxy["type_name"], proxy_type);
+    assert_text_proxy_declaration(&proxy["declaration"], proxy_type);
     assert_eq!(proxy["role"], proxy_role);
     if proxy_id == "hover" {
         assert_eq!(proxy["layer"], "ui");

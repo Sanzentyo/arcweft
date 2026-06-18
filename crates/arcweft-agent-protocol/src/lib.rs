@@ -6,7 +6,8 @@
 
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextParam, RichTextPresentation, RichTextRange, RichTextTextSource,
+    LineDisplayFrame, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
+    RichTextRange, RichTextTextSource,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -516,6 +517,8 @@ pub struct AgentHitRegion {
     pub proxy_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_declaration: Option<RichTextObjectProxyDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1039,6 +1042,7 @@ mod tests {
                 range: RichTextRange::new(0, 5),
                 proxy_id: None,
                 proxy_type: None,
+                proxy_declaration: None,
                 proxy_role: None,
                 proxy_layer: None,
                 depth: None,
@@ -1159,6 +1163,10 @@ mod tests {
             range: RichTextRange::new(0, 3),
             proxy_id: Some("hotspot".to_owned()),
             proxy_type: Some("KeywordHit".to_owned()),
+            proxy_declaration: Some(RichTextObjectProxyDeclaration {
+                struct_name: "KeywordHit".to_owned(),
+                attribute: "text_proxy".to_owned(),
+            }),
             proxy_role: Some("keyword".to_owned()),
             proxy_layer: None,
             depth: Some(4000),
@@ -1173,6 +1181,8 @@ mod tests {
         let json = serde_json::to_value(&region).expect("hit region serializes");
 
         assert_eq!(json["kind"], "text_object_proxy");
+        assert_eq!(json["proxy_declaration"]["struct_name"], "KeywordHit");
+        assert_eq!(json["proxy_declaration"]["attribute"], "text_proxy");
         assert_eq!(json["proxy_params"]["channel"]["value"], "choice");
     }
 
@@ -1213,6 +1223,10 @@ mod tests {
                 range: RichTextRange::new(0, 3),
                 proxy_id: Some("hotspot".to_owned()),
                 proxy_type: Some("KeywordHit".to_owned()),
+                proxy_declaration: Some(RichTextObjectProxyDeclaration {
+                    struct_name: "KeywordHit".to_owned(),
+                    attribute: "text_proxy".to_owned(),
+                }),
                 proxy_role: Some("keyword".to_owned()),
                 proxy_layer: Some("ui".to_owned()),
                 depth: Some(4000),

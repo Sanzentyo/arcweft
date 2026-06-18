@@ -262,6 +262,12 @@ type, while ordinary custom selectors such as `[.sparkle]` remain effect spans.
 Those inferred proxies therefore produce the same run/page/line metadata,
 `rich_text_proxy` observed objects, object-id/mask/color captures, and hit-test
 regions as explicit `[object ...]` syntax.
+Resolved object proxies now preserve typed declaration provenance from the
+Arcweft struct that supplied defaults. The selected `object_proxies[]` entry and
+each `text_object_proxy` hit region expose the struct name plus the attribute
+family (`text_proxy` or `rich_text_proxy`), so Agent observe, image metadata,
+and hit-test results remain self-describing even when the proxy type name is
+registry-facing or inline metadata overrides defaults.
 Ordinary text objects also expose presentation scalar metadata without becoming
 proxies. Style-family selectors such as `[style .layer hud]...[/style]`,
 `[style .z_index 3]...[/style]`, and `[style .opacity 0.8]...[/style]`,

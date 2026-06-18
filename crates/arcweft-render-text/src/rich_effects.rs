@@ -300,6 +300,8 @@ pub struct RichTextShaderRef {
 pub struct RichTextObjectProxy {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaration: Option<RichTextObjectProxyDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -311,6 +313,13 @@ pub struct RichTextObjectProxy {
     pub hit_test: bool,
     #[serde(default)]
     pub params: BTreeMap<String, RichTextParam>,
+}
+
+/// Source declaration that supplied rich-text object proxy defaults.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RichTextObjectProxyDeclaration {
+    pub struct_name: String,
+    pub attribute: String,
 }
 
 /// Presentation metadata resolved for a text run or ruby annotation.

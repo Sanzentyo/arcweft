@@ -84,6 +84,11 @@ filled from the struct attribute: `kind` supplies the default proxy role,
 `layer` / `object_layer` supplies object-layer metadata, `default_hit` supplies
 hit-test policy, `depth` / `z` / `z_index` supplies local depth, and remaining
 attribute arguments become default typed proxy params.
+The resolved proxy also keeps typed declaration provenance: the source struct
+name and the attribute family (`text_proxy` or `rich_text_proxy`) that supplied
+the defaults. This provenance is separate from `type_name`, because an
+attribute may choose a registry-facing proxy type name while the Arcweft struct
+name remains the source declaration used by tooling.
 
 Proxy spans may be nested or otherwise overlap. The effective text run keeps all
 active proxies in source order instead of collapsing them into one object. Agent
@@ -129,10 +134,11 @@ observable but non-interactive. Hit regions are reported in Agent observation an
 must use the same post-transform bounds as object-id and color captures.
 Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
 `text_object_proxy`, the proxy id/type/role/layer, the resolved local depth, and
-the typed proxy params that came from inline attributes or
-`#[text_proxy]` / `#[rich_text_proxy]` defaults. Hit-test reports return the
-same `proxy_params`, so input handlers and Agent tools do not need to recover
-custom metadata by separately walking the parent presentation object.
+the typed declaration provenance and proxy params that came from inline
+attributes or `#[text_proxy]` / `#[rich_text_proxy]` defaults. Hit-test reports
+return the same `proxy_declaration` and `proxy_params`, so input handlers and
+Agent tools do not need to recover custom metadata by separately walking the
+parent presentation object.
 The selected proxy layer is exposed as `rich_text_ref.object_layer`, and the
 same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
 debuggers can sort text objects with image/model-like presentation objects.

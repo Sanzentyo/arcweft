@@ -7417,6 +7417,7 @@ mod tests {
                     style: RichTextStyle::Object {
                         proxy: RichTextObjectProxy {
                             id: "hotspot".to_owned(),
+                            declaration: None,
                             type_name: Some("KeywordHit".to_owned()),
                             role: Some("keyword".to_owned()),
                             layer: Some("ui".to_owned()),

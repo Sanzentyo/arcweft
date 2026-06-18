@@ -16,11 +16,12 @@ use arcweft_render_text::{
     LineDisplaySpec, Milli, RichTextAngle, RichTextAssignOp, RichTextCascadeLayer, RichTextColor,
     RichTextControl, RichTextDocument, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextEffectTarget, RichTextFontFamily, RichTextInlineDirection, RichTextJlreqStrictness,
-    RichTextLayout, RichTextNode, RichTextObjectProxy, RichTextParam, RichTextPresentationStyle,
-    RichTextRubyPosition, RichTextSettingSource, RichTextShaderRef, RichTextSourceRange,
-    RichTextStateScope, RichTextStyle, RichTextStyleContribution, RichTextTransform,
-    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
-    parse_decimal_milli, parse_milli_token, parse_z_index_token,
+    RichTextLayout, RichTextNode, RichTextObjectProxy, RichTextObjectProxyDeclaration,
+    RichTextParam, RichTextPresentationStyle, RichTextRubyPosition, RichTextSettingSource,
+    RichTextShaderRef, RichTextSourceRange, RichTextStateScope, RichTextStyle,
+    RichTextStyleContribution, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
+    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
+    parse_z_index_token,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -51,6 +52,7 @@ pub(crate) struct DialogueSpeakerPreset {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct TextProxyTypeDefaults {
+    declaration: RichTextObjectProxyDeclaration,
     type_name: String,
     role: Option<String>,
     layer: Option<String>,
@@ -207,6 +209,10 @@ fn text_proxy_defaults_from_struct(item: &StructItem) -> Option<TextProxyTypeDef
         .attrs()
         .iter()
         .find(|attr| is_text_proxy_attribute(attr))?;
+    let declaration = RichTextObjectProxyDeclaration {
+        struct_name: item.name().to_owned(),
+        attribute: attr.name().to_owned(),
+    };
     let attrs = parse_attr_args(attr.args().unwrap_or_default());
     let type_name = attrs
         .get("type")
@@ -242,6 +248,7 @@ fn text_proxy_defaults_from_struct(item: &StructItem) -> Option<TextProxyTypeDef
         .collect();
 
     Some(TextProxyTypeDefaults {
+        declaration,
         type_name,
         role,
         layer,
@@ -2454,6 +2461,7 @@ fn object_proxy_from_selector(
     );
     RichTextObjectProxy {
         id,
+        declaration: defaults.map(|defaults| defaults.declaration.clone()),
         type_name: explicit_type_name
             .or_else(|| defaults.map(|defaults| defaults.type_name.clone())),
         role: attrs
@@ -3381,6 +3389,7 @@ flow @flow.main main {
             .expect("object proxy presentation");
 
         assert_eq!(proxy.id, "hotspot");
+        assert!(proxy.declaration.is_none());
         assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
         assert_eq!(proxy.role.as_deref(), Some("keyword"));
         assert_eq!(proxy.depth, Some(Milli(4000)));
@@ -3458,6 +3467,13 @@ flow @flow.main main {
             .expect("object proxy presentation");
 
         assert_eq!(proxy.id, "hotspot");
+        assert_eq!(
+            proxy.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("KeywordHit", "text_proxy"))
+        );
         assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
         assert_eq!(proxy.role.as_deref(), Some("keyword"));
         assert_eq!(proxy.depth, Some(Milli(4000)));
@@ -3527,6 +3543,13 @@ flow @flow.main main {
         };
 
         assert_eq!(keyword.id, "hotspot");
+        assert_eq!(
+            keyword.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("KeywordHit", "text_proxy"))
+        );
         assert_eq!(keyword.type_name.as_deref(), Some("KeywordHit"));
         assert_eq!(keyword.role.as_deref(), Some("keyword"));
         assert_eq!(keyword.depth, Some(Milli(4000)));
@@ -3539,6 +3562,13 @@ flow @flow.main main {
         );
 
         assert_eq!(hover.id, "hover");
+        assert_eq!(
+            hover.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("HoverHit", "text_proxy"))
+        );
         assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
         assert_eq!(hover.role.as_deref(), Some("hover"));
         assert_eq!(hover.layer.as_deref(), Some("hud"));
@@ -3615,6 +3645,13 @@ flow @flow.main main {
         };
 
         assert_eq!(keyword.id, "hotspot");
+        assert_eq!(
+            keyword.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("KeywordHit", "text_proxy"))
+        );
         assert_eq!(keyword.type_name.as_deref(), Some("KeywordHit"));
         assert_eq!(keyword.role.as_deref(), Some("keyword"));
         assert_eq!(keyword.depth, Some(Milli(4000)));
@@ -3627,6 +3664,13 @@ flow @flow.main main {
         );
 
         assert_eq!(hover.id, "HoverHit");
+        assert_eq!(
+            hover.declaration.as_ref().map(|declaration| (
+                declaration.struct_name.as_str(),
+                declaration.attribute.as_str()
+            )),
+            Some(("HoverHit", "text_proxy"))
+        );
         assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
         assert_eq!(hover.role.as_deref(), Some("hover"));
         assert_eq!(hover.layer.as_deref(), Some("ui"));
