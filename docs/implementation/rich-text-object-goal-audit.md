@@ -62,7 +62,7 @@ cargo test -p arcweft-player-native post_process -- --nocapture
 cargo test -p arcweft-player-native typewriter -- --nocapture
 cargo test -p arcweft-cli --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
 cargo test -p arcweft-cli --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
-cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --exact --nocapture
+cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
 cargo test -p arcweft-cli --test check agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
 cargo run -p arcweft-cli --quiet -- check samples/rich-text-full-grammar.arcw
 cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
@@ -75,4 +75,5 @@ Last local run on 2026-06-19: `just test-rich-text-object-goal` passed in
 250.9s wall time. The slowest selected check was
 `agent_observe_native_renderer_captures_combined_typewriter_animation_sample`
 at 182.92s test-body time; keep it as milestone evidence, not a tight-loop
-command.
+command. That exact test is ignored in the default `check.rs` suite and is
+selected explicitly by this gate.

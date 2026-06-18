@@ -271,7 +271,10 @@ test processes compete in parallel.
 On 2026-06-19 this gate passed locally in 250.9s wall time; the combined
 typewriter/effect animation sample accounted for 182.92s of test-body time.
 Treat that exact test as milestone evidence unless it is later split or
-optimized.
+optimized. The combined sample regression is marked ignored in the default
+`arcweft-cli --test check` suite and selected explicitly by this milestone
+gate, so routine `just test-cli-check` runs do not inherit the multi-minute
+sample sweep.
 
 `vendor/glyphon` is patched into the workspace but remains an external manifest,
 so ordinary `cargo check --workspace`, workspace clippy, and

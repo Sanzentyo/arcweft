@@ -20174,6 +20174,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
 }
 
 #[test]
+#[ignore = "milestone-only rich-text effects animation sample; runs many native object captures"]
 fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample() {
     let source_path = workspace_root().join("samples/rich-text-effects-animation.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
