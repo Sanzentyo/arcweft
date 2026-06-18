@@ -220,8 +220,11 @@ plus the `dev-source` feature. The remaining architectural cuts are:
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned
    parse/lint/HIR/typecheck/line-task functions. Profiled runtime compilation
-   also calls the same compiler-owned phase functions, while CLI modules keep
-   developer-facing phase timing, source selection, and diagnostic printing.
+   also calls the same compiler-owned phase functions, and CLI runtime,
+   verify-types, run/serve/test, and Agent native observe paths now lower
+   runtime plans through compiler-owned `lower_source_runtime_plan_*` APIs. CLI
+   modules keep developer-facing phase timing, source selection, diagnostic
+   printing, and runtime execution policy.
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component

@@ -15,9 +15,9 @@ use crate::output::{
     RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
     VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
 };
+use arcweft_compiler::lower_source_runtime_plan_with_options;
 use arcweft_core::{engine::FlowFiberStatus, plan::RuntimePlan, value::RuntimeBinding};
 use arcweft_runtime_host::NativeAdapterRegistrar;
-use arcweft_runtime_plan::flow::lower_runtime_plan_with_options;
 use arcweft_verify::{
     BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
     emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
@@ -183,7 +183,7 @@ fn verify_types_runtime_plan(
 ) -> Result<RuntimePlan, ExitCode> {
     let mut runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
         let runtime_options = runtime_plan_options_for_selection(selection);
-        lower_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
+        lower_source_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }

@@ -1,5 +1,6 @@
 //! Source-to-runtime-plan compiler driver for Arcweft.
 
+use arcweft_core::plan::RuntimePlan;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::HirModule;
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
@@ -10,7 +11,13 @@ use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_lang_syntax::source::ParsedSource;
 use arcweft_render_text::LineDisplayCatalog;
-use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan_with_stats};
+pub use arcweft_runtime_plan::flow::{
+    RuntimePlanLowerOptions, RuntimePlanLowerReport, RuntimePlanLowerStats,
+};
+use arcweft_runtime_plan::flow::{
+    lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
+    lower_runtime_plan_with_stats_and_options,
+};
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use thiserror::Error;
 
@@ -126,6 +133,22 @@ pub fn lower_source_line_tasks(
     lower_line_task_groups(hir)
 }
 
+/// Lowers checked HIR into a runtime plan with explicit profile/build-context options.
+pub fn lower_source_runtime_plan_with_options(
+    hir: &HirModule,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+    lower_runtime_plan_with_options(hir, options)
+}
+
+/// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
+pub fn lower_source_runtime_plan_with_stats_and_options(
+    hir: &HirModule,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+    lower_runtime_plan_with_stats_and_options(hir, options)
+}
+
 /// Compiles an Arcweft source string with the standard type-checking environment.
 pub fn compile_source(source: &str) -> Result<CompiledSource, CompileSourceError> {
     compile_source_with_env(source, &TypeCheckEnv::standard())
@@ -159,6 +182,7 @@ pub fn compile_source_with_env(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_render_text::{RichTextColor, RichTextStyle};
 
     #[test]
     fn compiles_dialogue_source_to_plan_and_display_catalog() {
@@ -178,5 +202,50 @@ flow @flow.main main {
 
         assert!(!compiled.plan.entries.is_empty());
         assert!(!compiled.display.lines().is_empty());
+    }
+
+    #[test]
+    fn lower_source_runtime_plan_with_options_applies_dialogue_defaults_profile() {
+        let parsed = parse_source_text(
+            r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue:.defaults.mobile {
+    text_color = rgb("#202122")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+        );
+        let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+        validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect("fixture typechecks");
+
+        let report = lower_source_runtime_plan_with_stats_and_options(
+            &hir,
+            &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        )
+        .expect("runtime plan lowers with selected dialogue defaults");
+        let spec = report
+            .line_display_catalog
+            .lines()
+            .first()
+            .expect("line display spec");
+
+        assert_eq!(
+            spec.base_styles,
+            vec![RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 32,
+                    green: 33,
+                    blue: 34
+                }
+            }]
+        );
     }
 }

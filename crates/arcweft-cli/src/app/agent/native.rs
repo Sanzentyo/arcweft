@@ -7,9 +7,10 @@ use super::{
     AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind, CliRuntimeExecutorTier,
     CliRuntimeStepMode, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
     NativeTaskBridge, Path, PathBuf, ProfileOptions, RuntimeStepInput, RuntimeStepResult,
-    flow_status_label, fs, load_and_check_selection, lower_runtime_plan_with_stats_and_options,
-    native_host_policy_for_selection, print_json, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
+    flow_status_label, fs, load_and_check_selection,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
+    resolve_source_selection, runtime_plan_options_for_selection,
+    runtime_pure_config_for_selection, step_options,
 };
 use arcweft_agent_mcp::{
     McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
@@ -782,7 +783,7 @@ fn agent_mcp_run_observation(
     let host_policy = native_host_policy_for_selection(&selection)
         .map_err(|_| "failed to resolve native host policy".to_owned())?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
-    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
+    let lowered = lower_source_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
         .map_err(|_| "failed to lower runtime plan".to_owned())?;
     let mut native_session = agent_native_capture_session_for_hir(&checked.hir)
         .map_err(|_| "failed to create native capture session".to_owned())?;
@@ -1373,7 +1374,7 @@ fn agent_observation_for_options(
     let mut native_session = agent_native_capture_session_for_hir(&checked.hir)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
-    let lowered = lower_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
+    let lowered = lower_source_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
         .map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());

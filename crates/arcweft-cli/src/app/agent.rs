@@ -23,6 +23,8 @@ use super::shared::print_json;
 #[cfg(feature = "native-capture")]
 use crate::output::flow_status_label;
 #[cfg(feature = "native-capture")]
+use arcweft_compiler::lower_source_runtime_plan_with_stats_and_options;
+#[cfg(feature = "native-capture")]
 use arcweft_core::engine::FlowFiberStatus;
 #[cfg(feature = "native-capture")]
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
@@ -30,8 +32,6 @@ use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
 use arcweft_render_text::LineDisplayCatalog;
 #[cfg(feature = "native-capture")]
 use arcweft_runtime_host::NativeTaskBridge;
-#[cfg(feature = "native-capture")]
-use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats_and_options;
 #[cfg(feature = "native-capture")]
 use std::fs;
 #[cfg(feature = "native-capture")]
