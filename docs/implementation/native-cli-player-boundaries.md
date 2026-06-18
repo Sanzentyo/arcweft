@@ -91,8 +91,11 @@ now mostly dispatch and import wiring. The remaining architectural cuts are:
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
    prioritizing import-surface cleanup and any remaining dispatch-only
    simplification without reintroducing cross-layer command logic.
-2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
-   CLI-specific profiling and diagnostics in CLI modules.
+2. Continue moving compile-driver behavior toward `arcweft-compiler`.
+   The non-profiled CLI project-loading path now calls compiler-owned
+   parse/lint/HIR/typecheck/line-task functions while keeping CLI phase timing
+   and diagnostic printing in CLI modules; profiled runtime compilation still
+   has CLI-local phase orchestration.
 3. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 4. Add the presentation input and future `arcweft-ui` crates according to the

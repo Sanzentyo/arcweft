@@ -13,10 +13,10 @@ use self::bundle::{bundle_command, run_bundle_command};
 use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, IdsCommand, JitCommand};
 use self::jit::jit_command;
 use self::runtime::{
-    NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, profile_lower_hir,
-    profile_validate_hir, report_path, run_profile_phase, run_runtime_steps_with_executor,
-    runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
-    runtime_serve_command, script_bench_command, script_test_command,
+    NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, report_path,
+    run_profile_phase, run_runtime_steps_with_executor, runtime_cli_command, runtime_plan_command,
+    runtime_profile_command, runtime_run_command, runtime_serve_command, script_bench_command,
+    script_test_command,
 };
 use self::tooling::{format_command, ids_command};
 use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};

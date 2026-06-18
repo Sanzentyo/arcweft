@@ -12,6 +12,7 @@ arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-bundle = { path = "../arcweft-bundle" }
+arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }

@@ -8,8 +8,7 @@ use super::{
     LoweredLineTaskGroup, NativeTaskBridge, Path, PathBuf, ResolvedLaunchProfile,
     RuntimeMathBackend, RuntimePlanLowerOptions, RuntimeProfilePhase, RuntimePureAcceleratorConfig,
     RuntimePureBackendMode, RuntimePureWorkerCount, SocketAddr, SyntaxLint, SyntaxLintSeverity,
-    TypeCheckEnv, TypeCheckReport, catch_unwind, fs, lint_id_policy, lower_line_task_groups,
-    parse_source, profile_lower_hir, profile_validate_hir, run_profile_phase, standard,
+    TypeCheckEnv, TypeCheckReport, catch_unwind, fs, run_profile_phase, standard,
 };
 
 #[derive(Args, Clone, Debug, Default)]
@@ -362,7 +361,10 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
 
     let parsed = run_profile_phase(&mut phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| parse_source(source))).map_err(|_| {
+        catch_unwind(AssertUnwindSafe(|| {
+            arcweft_compiler::parse_source_text(source)
+        }))
+        .map_err(|_| {
             eprintln!("error: parser panicked while checking {}", path.display());
             ExitCode::FAILURE
         })
@@ -377,7 +379,9 @@ pub(in crate::app) fn load_and_check_with_env(
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let lints = run_profile_phase(&mut phases, "lint", || {
-        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(lint_id_policy(&tree))
+        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(
+            arcweft_compiler::lint_source_tree(&tree),
+        )
     })?;
     for lint in &lints {
         eprintln!(
@@ -392,12 +396,42 @@ pub(in crate::app) fn load_and_check_with_env(
         return Err(ExitCode::FAILURE);
     }
 
-    let hir = profile_lower_hir(&tree, &mut phases)?;
+    let hir = run_profile_phase(&mut phases, "lower_hir", || {
+        arcweft_compiler::lower_source_tree(&tree).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
 
-    let typecheck_report = profile_validate_hir(&hir, env, &mut phases)?;
+    run_profile_phase(&mut phases, "resolve", || {
+        arcweft_compiler::resolve_hir_references(&hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    run_profile_phase(&mut phases, "readiness", || {
+        arcweft_compiler::validate_hir_typecheck_ready(&hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    let typecheck_report = run_profile_phase(&mut phases, "typecheck", || {
+        arcweft_compiler::typecheck_hir_with_env(&hir, env).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
 
     let line_task_groups = run_profile_phase(&mut phases, "line_task_lower", || {
-        lower_line_task_groups(&hir).map_err(|errors| {
+        arcweft_compiler::lower_source_line_tasks(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }

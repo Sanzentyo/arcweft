@@ -234,6 +234,7 @@ dependencies = [
  "arcweft-agent-mcp",
  "arcweft-agent-protocol",
  "arcweft-bundle",
+ "arcweft-compiler",
  "arcweft-core",
  "arcweft-host-adapter",
  "arcweft-lang-hir",
