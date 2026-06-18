@@ -228,7 +228,9 @@ responsibility modules instead of being re-exported through the app root. The
 native player bundle boundary is also covered by binary-level tests: default
 input must be `.awfb`, a minimal `.awfb` runs through the headless bundle path,
 and `.arcw` source input requires explicit `--source` plus the `dev-source`
-feature. The remaining architectural cuts are:
+feature. The player binary's framebuffer `--capture` surface is similarly
+feature-gated behind `dev-capture`, keeping the default product-player argv
+focused on bundle execution. The remaining architectural cuts are:
 
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned

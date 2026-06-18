@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 default = []
+dev-capture = ["dep:png"]
 dev-source = ["dep:arcweft-compiler"]
 
 [dependencies]
@@ -19,7 +20,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 
 clap = { workspace = true, features = ["derive"] }
-png.workspace = true
+png = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

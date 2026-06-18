@@ -381,17 +381,18 @@ Run a source file in explicit developer mode:
 cargo run -p arcweft-player-native --features dev-source -- --headless --json --source path/to/file.arcw
 ```
 
-Bundles carry the line display catalog needed for native window presentation and
-rich-text capture, so `.awfb` input can be combined with the same `--capture`
-options used for source developer mode. Product/native player entry should use
-`.awfb` input; source input is a development convenience only.
+Bundles carry the line display catalog needed for native window presentation.
+Product/native player entry should use `.awfb` input; source input is a
+development convenience only. Native capture is a development/debug harness and
+is exposed by the `dev-capture` feature rather than the default product player
+argv.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:
 
 ```bash
-cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png target/game.awfb
-cargo run -p arcweft-player-native -- --headless --json --capture raw-rgba --capture-out native.rgba --capture-width 960 --capture-height 540 target/game.awfb
+cargo run -p arcweft-player-native --features dev-capture -- --headless --json --capture png --capture-out native.png target/game.awfb
+cargo run -p arcweft-player-native --features dev-capture -- --headless --json --capture raw-rgba --capture-out native.rgba --capture-width 960 --capture-height 540 target/game.awfb
 ```
 
 The native capture path renders to an offscreen texture, copies the texture to a
@@ -588,7 +589,7 @@ cargo test -p arcweft-cli agent_mcp_stdio_observes_and_reads_rich_text_child_ima
 cargo clippy -p arcweft-player-native --all-targets --all-features
 cargo run -p arcweft-player-native -- --headless --json target/game.awfb
 cargo run -p arcweft-player-native --features dev-source -- --headless --json --source path/to/file.arcw
-cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png --capture-width 480 --capture-height 270 target/game.awfb
+cargo run -p arcweft-player-native --features dev-capture -- --headless --json --capture png --capture-out native.png --capture-width 480 --capture-height 270 target/game.awfb
 ```
 
 No absolute host paths are required in tracked docs or generated player reports.
