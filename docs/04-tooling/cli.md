@@ -384,6 +384,9 @@ debug geometry. In both cases object-id and mask captures stay aligned with
 native rich-text element crops before non-text renderer ID/mask attachments
 exist.
 `--layer LAYER` crops the capture to that layer's observed object bounds.
+For rich-text child objects, layer selection also matches
+`rich_text_ref.object_layer`, so semantic text-object layers such as `hud` or
+`ui` can be captured without changing the parent render layer.
 `--object OBJECT_ID` crops the capture to one observed object's bbox. Native
 color capture uses resolved display text plus `display_map` ruby annotations,
 so interpolation output, ruby annotations, and inline element crops are based

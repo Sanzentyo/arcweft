@@ -4050,7 +4050,7 @@ fn agent_native_capture_targets_for_scope<'a>(
             let selected = context
                 .objects
                 .iter()
-                .filter(|object| object.layer == *layer)
+                .filter(|object| agent_object_matches_layer(object, layer))
                 .map(AgentNativeCaptureTarget::Observed)
                 .collect::<Vec<_>>();
             if selected.is_empty() {
@@ -4866,7 +4866,7 @@ fn select_agent_capture_objects<'a>(
     if let Some(layer) = &options.layer {
         let selected = objects
             .iter()
-            .filter(|object| object.layer == *layer)
+            .filter(|object| agent_object_matches_layer(object, layer))
             .collect::<Vec<_>>();
         if selected.is_empty() {
             eprintln!("error: no observed object matches --layer {layer}");
@@ -6214,6 +6214,28 @@ fn agent_child_line_display_frame(parent: &LineDisplayFrame, text: String) -> Li
     }
 }
 
+fn agent_object_layers(object: &AgentObservedObject) -> Vec<String> {
+    let mut layers = vec![object.layer.clone()];
+    if let Some(object_layer) = object
+        .rich_text_ref
+        .as_ref()
+        .and_then(|rich_text_ref| rich_text_ref.object_layer.as_ref())
+        .filter(|object_layer| *object_layer != &object.layer)
+    {
+        layers.push(object_layer.clone());
+    }
+    layers
+}
+
+fn agent_object_matches_layer(object: &AgentObservedObject, layer: &str) -> bool {
+    object.layer == layer
+        || object
+            .rich_text_ref
+            .as_ref()
+            .and_then(|rich_text_ref| rich_text_ref.object_layer.as_ref())
+            .is_some_and(|object_layer| object_layer == layer)
+}
+
 fn valid_rich_text_range(range: RichTextRange, text: &str) -> Option<std::ops::Range<usize>> {
     if range.start <= range.end
         && range.end <= text.len()
@@ -6240,18 +6262,20 @@ fn agent_observed_layers(
 ) -> Vec<AgentObservedLayer> {
     let mut layers = BTreeMap::<String, AgentLayerAccumulator>::new();
     for object in objects {
-        layers
-            .entry(object.layer.clone())
-            .and_modify(|layer| {
-                layer.visible |= object.visible;
-                layer.object_count = layer.object_count.saturating_add(1);
-                layer.bbox = agent_union_bbox(&layer.bbox, &object.bbox);
-            })
-            .or_insert_with(|| AgentLayerAccumulator {
-                visible: object.visible,
-                bbox: object.bbox.clone(),
-                object_count: 1,
-            });
+        for object_layer in agent_object_layers(object) {
+            layers
+                .entry(object_layer)
+                .and_modify(|layer| {
+                    layer.visible |= object.visible;
+                    layer.object_count = layer.object_count.saturating_add(1);
+                    layer.bbox = agent_union_bbox(&layer.bbox, &object.bbox);
+                })
+                .or_insert_with(|| AgentLayerAccumulator {
+                    visible: object.visible,
+                    bbox: object.bbox.clone(),
+                    object_count: 1,
+                });
+        }
     }
     layers
         .into_iter()

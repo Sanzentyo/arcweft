@@ -273,6 +273,11 @@ overlapping text-run presentations in source order. They therefore preserve the
 same metadata surface as run/glyph/cluster objects for object-scoped capture and
 readback, while their top-level `object_layer` / `object_depth` still select the
 deepest overlapping proxy when one is present.
+Agent layer aggregation and `--layer` capture selection include both the render
+layer stored on `AgentObservedObject.layer` and a rich-text child's semantic
+`rich_text_ref.object_layer`. A text run can therefore remain in the dialogue
+render layer while still being capturable as the `hud` or `ui` semantic object
+layer used by input/debug tooling.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

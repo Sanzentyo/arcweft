@@ -2107,6 +2107,16 @@ flow @flow.main main {
     );
     let observe_json: serde_json::Value =
         serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+    let hud_layer = observe_json["layers"]
+        .as_array()
+        .expect("layers are reported")
+        .iter()
+        .find(|layer| layer["id"] == "hud")
+        .expect("presentation object layer is observed as a layer");
+    assert!(
+        hud_layer["object_count"].as_u64().unwrap_or(0) >= 3,
+        "hud layer should include run/page/line rich text objects: {hud_layer}"
+    );
     let run = find_rich_text_run_object(&observe_json, "Depth");
     assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 7);
@@ -2154,6 +2164,9 @@ flow @flow.main main {
     );
     assert_eq!(line["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
+
+    assert_agent_observe_captures_presentation_layer(&path);
+
     let hit = hit_test_center_of_observed_object(&path, line);
     fs::remove_file(&path).expect("remove temp z-index source");
     assert_eq!(hit["status"], "ok");
@@ -2161,6 +2174,37 @@ flow @flow.main main {
     assert_eq!(hit["hits"][0]["role"], "rich_text_line");
     assert_eq!(hit["hits"][0]["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(hit["hits"][0]["depth"], 7000);
+}
+
+fn assert_agent_observe_captures_presentation_layer(path: &Path) {
+    let layer_dir = temp_dir("agent-observe-rich-text-layer-capture");
+    let layer_png = layer_dir.join("hud-layer.png");
+    let layer_capture = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--layer")
+        .arg("hud")
+        .arg("--out")
+        .arg(&layer_png)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe captures presentation object layer");
+    assert!(
+        layer_capture.status.success(),
+        "agent observe should capture rich-text presentation object layer, stderr: {}",
+        String::from_utf8_lossy(&layer_capture.stderr)
+    );
+    let layer_png_bytes = fs::read(&layer_png).expect("read rich-text presentation layer PNG");
+    assert_eq!(&layer_png_bytes[..8], b"\x89PNG\r\n\x1a\n");
 }
 
 fn inferred_text_proxy_struct_shorthand_source() -> PathBuf {
