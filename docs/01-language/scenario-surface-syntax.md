@@ -480,7 +480,7 @@ Meaning:
 | `voice=auto` | derive voice cue from line ID, locale, and speaker |
 | `id=@say...` | explicit line entity ID |
 
-The implicit window is `@textbox.0` unless the character, line, or project defaults override it.
+The implicit window is `@textbox.main` unless the character, line, or project defaults override it.
 
 Speaker presets are allowed in the same position:
 

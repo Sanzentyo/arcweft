@@ -349,7 +349,7 @@ Characters expose object-like stage APIs. These APIs return handles that can be 
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```

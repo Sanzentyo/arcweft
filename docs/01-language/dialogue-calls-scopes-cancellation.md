@@ -29,7 +29,7 @@ Use these roles consistently:
 ```text
 @foo.bar
   Entity reference only.
-  Example: @flow.opening, @say.opening.001, @textbox.0.
+  Example: @flow.opening, @say.opening.001, @textbox.main.
 
 speaker(args): text
   Compact dialogue sugar.
@@ -86,7 +86,7 @@ local to a block without mutating `@character.alice`.
 ```arcw
 alice.say(
     id = @say.opening.dream_hint,
-    window = @textbox.0,
+    window = @textbox.main,
     voice = auto,
     look = smile,
 )[
@@ -109,7 +109,7 @@ This creates and executes a `DialogueLine`.
 pub fn Character.say(
     self: Ref<Character>,
     id: Option<Ref<DialogueLine>> = None,
-    window: Ref<Textbox> = @textbox.0,
+    window: Ref<Textbox> = @textbox.main,
     voice: VoicePolicy = auto,
     look: Option<Expression> = None,
     style: Option<TextStylePatch> = None,

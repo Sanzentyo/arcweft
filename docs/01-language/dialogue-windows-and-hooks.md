@@ -19,7 +19,7 @@ Related:
 Arcweft prelude defines a global default dialogue textbox:
 
 ```arcw
-pub textbox @textbox.0 default_textbox {
+pub textbox @textbox.main default_textbox {
     layer = @layer.ui.dialogue
     position = bottom
     frame = rect(x=80, y=520, w=1120, h=160)
@@ -28,7 +28,7 @@ pub textbox @textbox.0 default_textbox {
 }
 ```
 
-When no window is specified, `@textbox.0` is used.
+When no window is specified, `@textbox.main` is used.
 
 ```arcw
 alice.say()[おはよう。[p]]
@@ -36,7 +36,7 @@ alice.say()[おはよう。[p]]
 alice: おはよう。[p]
 ```
 
-Both update `@textbox.0` by default.
+Both update `@textbox.main` by default.
 
 ---
 
@@ -150,7 +150,7 @@ The project may declare default hooks, reveal behavior, voice behavior, and text
 
 ```arcw
 dialogue defaults {
-    window = @textbox.0
+    window = @textbox.main
     reveal = typewriter(speed=normal)
     voice = auto_if_available
 
@@ -257,7 +257,7 @@ Hooks are deterministic unless declared otherwise. Product builds may disable no
 Text windows can have contracts.
 
 ```arcw
-pub textbox @textbox.0 default_textbox
+pub textbox @textbox.main default_textbox
 ensures layout.width > 0
 ensures layout.height > 0
 ensures agent_observable == true

@@ -186,7 +186,7 @@ effects signal.choice_visible, ui.patch
 fn dialogue_defaults_are_preserved_as_top_level_declarations() {
     let source = r"
 pub dialogue defaults @dialogue.defaults {
-    window = @textbox.0
+    window = @textbox.main
     voice = auto
     rich_text {
         ruby {

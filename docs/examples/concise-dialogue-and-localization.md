@@ -10,7 +10,7 @@ use game::characters::{alice}
 use tag game::fx::{flash}
 
 dialogue defaults {
-    window = @textbox.0
+    window = @textbox.main
     hooks {
         before_text_style += @hook.dialogue.read_state_color
         before_voice_resolve += @hook.dialogue.auto_voice_key
@@ -173,7 +173,7 @@ Preload for a likely next flow can be explicit:
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```

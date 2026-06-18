@@ -1,6 +1,6 @@
 # Dialogue Line Manifest Schema
 
-A dialogue line is the compiled unit connecting source text, localization key, speaker, textbox target, voice, control tags, dialogue interpolation, stage timeline, history, and agent observation.
+A dialogue line is the compiled unit connecting source text, localization key, speaker, window target, voice, control tags, dialogue interpolation, stage timeline, history, and agent observation.
 
 ```json
 {
@@ -8,7 +8,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "line_id": "say.opening.alice.002",
   "text_key": "text.opening.alice.002",
   "speaker": "character.alice",
-  "textbox": "textbox.0",
+  "window": "textbox.main",
   "source_locale": "ja-JP",
   "source_text": "今日は少しだけ、変な夢を見たんだ。",
   "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color, fallback=\"変な夢\")]を見たんだ。[p]",
@@ -75,7 +75,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "agent": {
     "observable": true,
     "action_targets": ["advance_text"],
-    "textbox": "textbox.0"
+    "window": "textbox.main"
   }
 }
 ```
@@ -87,7 +87,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
 | `line_id` | Stable narrative line entity |
 | `text_key` | Localization key |
 | `speaker` | Character or built-in narrator |
-| `textbox` | TextBox target; defaults to `textbox.0` |
+| `window` | Dialogue window target; defaults to `textbox.main` |
 | `source_locale` | Locale of inline/source text |
 | `source_text` | Plain source text, without non-text control tags |
 | `source_rich_text` | Source rich text including ruby, dialogue interpolation, and permitted control tags |
@@ -165,18 +165,18 @@ scope rain {
 }
 ```
 
-## TextBox target
+## Window target
 
-If no textbox is specified in source, the manifest records the resolved target.
+If no window is specified in source, the manifest records the resolved target.
 
 ```json
-{ "textbox": "textbox.0" }
+{ "window": "textbox.main" }
 ```
 
 Custom textboxes are recorded by entity ID:
 
 ```json
-{ "textbox": "textbox.phone_message" }
+{ "window": "textbox.phone_message" }
 ```
 
 ## Text fragments
@@ -249,7 +249,7 @@ The manifest compiles into:
 ```text
 DialogueLine
   -> Character.say command
-  -> TextBox target update
+  -> Window target update
   -> AudioCommand / VoiceCue
   -> TextRevealPlan
   -> StageCommandTimeline

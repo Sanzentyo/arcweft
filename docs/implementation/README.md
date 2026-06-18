@@ -132,7 +132,7 @@ Phase 0 / Phase 1 minimal Rust workspace:
   rich-text/style options in that cascade, including chained presets such as
   `let worried = side(...)`, and records them as `SpeakerPreset` contributions
   between character `dialogue_style` and per-line options. Dialogue window
-  targets now resolve through the same cascade, defaulting to `textbox.0`, and
+  targets now resolve through the same cascade, defaulting to `textbox.main`, and
   textbox `rich_text` / `dialogue_style` blocks contribute
   `DialogueWindowTheme` values between selected dialogue defaults and character
   `dialogue_style`. Flow `let` statements now retain their expression source

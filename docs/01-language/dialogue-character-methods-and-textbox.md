@@ -32,7 +32,7 @@ alice.say(
     id = @say.opening.greeting,
     voice = auto,
     look = smile,
-    window = @textbox.0,
+    window = @textbox.main,
 )[
     おはよう。[p]
 ]
@@ -287,7 +287,7 @@ A `preload next` block explicitly prepares assets for a future flow.
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```
@@ -307,25 +307,24 @@ alice.say()[おはよう。[p]]
 is equivalent to:
 
 ```arcw
-alice.say(window=@textbox.0)[おはよう。[p]]
+alice.say(window=@textbox.main)[おはよう。[p]]
 ```
 
 Built-in textboxes:
 
 | ID | Meaning |
 |---|---|
-| `@textbox.0` | Default main dialogue textbox |
-| `@textbox.main` | Alias of `@textbox.0` |
-| `@textbox.narrator` | Optional narration textbox; defaults to `@textbox.0` unless configured |
+| `@textbox.main` | Default main dialogue textbox |
+| `@textbox.narrator` | Optional narration textbox; defaults to `@textbox.main` unless configured |
 | `@textbox.system` | System messages / debug messages |
 
 Project default:
 
 ```toml
 [dialogue.default_window]
-main = "textbox.0"
+main = "textbox.main"
 narrator = "textbox.narrator"
-missing = "textbox.0"
+missing = "textbox.main"
 ```
 
 Custom dialogue windows can be declared as UI components or text surfaces:
@@ -379,7 +378,7 @@ pub character alice {
         name_color = rgb("#e070ff")
         unread_text_color = rgb("#ffffff")
         read_text_color = rgb("#c8c8d0")
-        window = @textbox.0
+        window = @textbox.main
     }
 
     voice {
@@ -423,7 +422,7 @@ The conventional project-wide profile is:
 
 ```arcw
 pub dialogue defaults @dialogue.defaults {
-    window = @textbox.0
+    window = @textbox.main
     reveal = typewriter(speed=normal)
 }
 ```
@@ -498,7 +497,7 @@ namespace that can also be reused by choices, UI text, logs, and HUD text.
 
 ```arcw
 pub dialogue defaults @dialogue.defaults {
-    window = @textbox.0
+    window = @textbox.main
 
     rich_text {
         text {
@@ -578,7 +577,7 @@ Common visual-novel patterns are built in.
 
 ```arcw
 pub dialogue defaults @dialogue.defaults {
-    window = @textbox.0
+    window = @textbox.main
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),
@@ -932,7 +931,7 @@ anticipate @flow.alice_intro {
 1. `Character.say(...)[...]` is canonical for character-alias dialogue.
 2. `speaker:` is only sugar for applying dialogue content to a speaker value. For `Ref<Character>` this is `speaker.say()[...]`; for `SpeakerPreset` this is `speaker()[...]`.
 3. There is no `script` item and no script-lowering phase.
-4. A missing dialogue window target resolves to `@textbox.0`.
+4. A missing dialogue window target resolves to `@textbox.main`.
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.

@@ -27,6 +27,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Range;
 
+const DEFAULT_DIALOGUE_WINDOW: &str = "textbox.main";
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct DialogueDisplayDefaults {
     global: DialogueStyleDefaults,
@@ -665,7 +667,7 @@ fn effective_dialogue_window(
                 .and_then(|character| character.window.clone())
         })
         .or_else(|| defaults.global.window.clone())
-        .or_else(|| Some("textbox.0".to_owned()))
+        .or_else(|| Some(DEFAULT_DIALOGUE_WINDOW.to_owned()))
 }
 
 impl DialogueStyleDefaults {
@@ -3132,6 +3134,7 @@ flow @flow.main main {
             &defaults,
         );
 
+        assert_eq!(spec.window.as_deref(), Some("textbox.main"));
         assert_eq!(
             spec.base_styles,
             vec![
