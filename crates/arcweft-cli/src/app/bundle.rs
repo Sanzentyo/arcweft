@@ -11,8 +11,9 @@ use super::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeProfilePhase};
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
-    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileSpace,
+    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleImageAnimation,
+    BundleImageAsset, BundleImageFormat, BundleLaunchKind, BundleManifest, BundleRuntimeSummary,
+    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::{
     plan::{FlowOp, RuntimePlan},
@@ -163,6 +164,8 @@ fn compile_bundle_artifact(
         &adapter_manifest,
         required_host_calls.iter().map(String::as_str),
     );
+    let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
+    let image_assets = collect_bundle_image_assets(&virtual_files);
     Ok(ArcweftBundle::new(
         bundle_manifest(
             selection,
@@ -179,10 +182,8 @@ fn compile_bundle_artifact(
         compiled.line_display_catalog,
     )
     .with_adapter_manifests(adapter_manifests)
-    .with_virtual_files(collect_bundle_virtual_files(
-        selection.path(),
-        options.include_spaces(),
-    )?))
+    .with_virtual_files(virtual_files)
+    .with_image_assets(image_assets))
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
@@ -266,6 +267,7 @@ fn bundle_command_report(
         adapter_manifests: bundle.adapter_manifests.len(),
         bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
         virtual_files: bundle.virtual_files.len(),
+        image_assets: bundle.image_assets.len(),
         phases,
         runtime: bundle.manifest.runtime.clone(),
     }
@@ -493,6 +495,78 @@ fn collect_bundle_virtual_files(
         .map(|space| collect_bundle_virtual_files_for_space(&root, space))
         .collect::<Result<Vec<_>, _>>()
         .map(|groups| groups.into_iter().flatten().collect())
+}
+
+fn collect_bundle_image_assets(files: &[BundleVirtualFile]) -> Vec<BundleImageAsset> {
+    let mut assets = files
+        .iter()
+        .filter(|file| file.space == BundleVirtualFileSpace::Asset)
+        .filter_map(bundle_image_asset_from_virtual_file)
+        .collect::<Vec<_>>();
+    assets.sort_by(|left, right| left.id.cmp(&right.id));
+    assets.dedup_by(|left, right| left.id == right.id);
+    assets
+}
+
+fn bundle_image_asset_from_virtual_file(file: &BundleVirtualFile) -> Option<BundleImageAsset> {
+    let format = bundle_image_format_from_path(&file.path)?;
+    Some(BundleImageAsset {
+        id: bundle_asset_id_from_virtual_path(&file.path)?,
+        file: BundleVirtualFileRef {
+            space: file.space,
+            path: file.path.clone(),
+        },
+        format,
+        animation: bundle_image_animation_for_format(format),
+        dimensions: None,
+    })
+}
+
+fn bundle_image_format_from_path(path: &str) -> Option<BundleImageFormat> {
+    match path.rsplit('.').next()?.to_ascii_lowercase().as_str() {
+        "png" => Some(BundleImageFormat::Png),
+        "jpg" | "jpeg" => Some(BundleImageFormat::Jpeg),
+        "gif" => Some(BundleImageFormat::Gif),
+        "webp" => Some(BundleImageFormat::WebP),
+        _ => None,
+    }
+}
+
+const fn bundle_image_animation_for_format(format: BundleImageFormat) -> BundleImageAnimation {
+    match format {
+        BundleImageFormat::Gif | BundleImageFormat::WebP => BundleImageAnimation::Animated,
+        BundleImageFormat::Png | BundleImageFormat::Jpeg => BundleImageAnimation::Static,
+    }
+}
+
+fn bundle_asset_id_from_virtual_path(path: &str) -> Option<String> {
+    let without_extension = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+    let parts = without_extension
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(bundle_asset_id_component)
+        .collect::<Option<Vec<_>>>()?;
+    (!parts.is_empty()).then(|| format!("asset.{}", parts.join(".")))
+}
+
+fn bundle_asset_id_component(value: &str) -> Option<String> {
+    let component = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else if matches!(ch, '_' | '-') {
+                '_'
+            } else {
+                '\0'
+            }
+        })
+        .collect::<String>();
+    (!component.is_empty()
+        && component
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_lowercase() || ch.is_ascii_digit()))
+    .then_some(component)
 }
 
 fn collect_bundle_virtual_files_for_space(

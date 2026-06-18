@@ -28384,9 +28384,14 @@ struct BundleNativeFileFixture {
 fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     let dir = temp_dir("bundle-native-file-task");
     let source_path = dir.join("main.arcw");
+    let asset_dir = dir.join(".arcweft").join("asset");
     let save_dir = dir.join(".arcweft").join("save");
     let bundle_path = dir.join("game.awfb");
+    fs::create_dir_all(asset_dir.join("bg")).expect("create virtual asset bg root");
+    fs::create_dir_all(asset_dir.join("ui")).expect("create virtual asset ui root");
     fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(asset_dir.join("bg").join("room.png"), b"png").expect("seed png asset");
+    fs::write(asset_dir.join("ui").join("logo.webp"), b"webp").expect("seed webp asset");
     fs::write(save_dir.join("input.txt"), "bundle-ok").expect("seed virtual input");
     fs::write(
         &source_path,
@@ -28442,7 +28447,8 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
             && bundle_stdout.contains("\"bytecode_instructions\"")
             && bundle_stdout.contains("\"name\": \"bytecode_lower\"")
             && bundle_stdout.contains("\"name\": \"encode_bundle\"")
-            && bundle_stdout.contains("\"virtual_files\": 1"),
+            && bundle_stdout.contains("\"virtual_files\": 3")
+            && bundle_stdout.contains("\"image_assets\": 2"),
         "bundle JSON should describe native requirements and packaged save input: {bundle_stdout}"
     );
     assert!(
@@ -28457,8 +28463,14 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
             && bundle_json.contains("\"program\"")
             && bundle_json.contains("native-file")
             && bundle_json.contains("save")
-            && bundle_json.contains("input.txt"),
-        "bundle artifact should include executable bytecode, native-file adapter metadata, and relative save file: {bundle_json}"
+            && bundle_json.contains("input.txt")
+            && bundle_json.contains("\"image_assets\"")
+            && bundle_json.contains("\"id\": \"asset.bg.room\"")
+            && bundle_json.contains("\"format\": \"png\"")
+            && bundle_json.contains("\"id\": \"asset.ui.logo\"")
+            && bundle_json.contains("\"format\": \"webp\"")
+            && bundle_json.contains("\"animation\": \"animated\""),
+        "bundle artifact should include executable bytecode, native-file adapter metadata, relative save file, and typed image assets: {bundle_json}"
     );
     assert!(
         !bundle_json.contains(&fixture.dir.display().to_string()),

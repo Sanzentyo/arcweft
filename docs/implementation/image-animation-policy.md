@@ -57,7 +57,9 @@ metadata.
 `BundleImageAsset` maps a stable asset id to a bundle virtual file, records the
 encoded format (`png`, `jpeg`, `gif`, or `webp`), records whether the asset is
 static or animated, and can resolve its encoded bytes without filesystem I/O or
-source lowering. Decode remains adapter work through `arcweft-image`.
+source lowering. Decode remains adapter work through `arcweft-image`. The CLI
+bundler now populates this section from `.arcweft/asset` PNG/JPEG/GIF/WebP
+files while preserving relative virtual paths and avoiding host path leakage.
 
 `arcweft-agent-protocol` now treats `object_layer` and `object_depth` as generic
 observed-object metadata instead of deriving them only from `rich_text_ref`.
@@ -95,8 +97,8 @@ same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Wire CLI bundling to populate `image_assets` from project asset declarations
-   and virtual files.
+1. Wire source/DSL asset declarations to the same bundle image asset ids instead
+   of relying only on project asset-root discovery.
 2. Wire Agent native observe to call the runtime-host image item API and UI
    image display-list bridge, rather than only using direct render-native unit
    submissions.

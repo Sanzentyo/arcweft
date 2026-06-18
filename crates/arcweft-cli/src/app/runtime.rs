@@ -1205,6 +1205,7 @@ pub(in crate::app) struct BundleCommandReport {
     pub(in crate::app) adapter_manifests: usize,
     pub(in crate::app) bytecode_instructions: usize,
     pub(in crate::app) virtual_files: usize,
+    pub(in crate::app) image_assets: usize,
     pub(in crate::app) phases: Vec<RuntimeProfilePhase>,
     pub(in crate::app) runtime: BundleRuntimeSummary,
 }

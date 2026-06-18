@@ -115,6 +115,12 @@ same `image_assets[]` section; adapters decode bytes after looking up the
 referenced virtual file, so bundle execution can use encoded payloads without
 re-reading or re-lowering source files.
 
+The CLI bundler derives image asset records for image files under
+`.arcweft/asset`: `bg/room.png` becomes `asset.bg.room`, `ui/logo.webp` becomes
+`asset.ui.logo`, and the record points at the matching asset virtual file.
+PNG/JPEG are marked `static`; GIF/WebP are marked `animated` because they may
+carry multiple frames.
+
 Future product bundle slices can replace structured JSON bytecode with a
 compact deterministic binary bytecode section and add graph indexes, entity
 tables, source maps, contracts, shaders, UI, audio, and text resources as typed
