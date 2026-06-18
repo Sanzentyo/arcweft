@@ -3351,6 +3351,53 @@ flow @flow.main main {
             .any(|node| node["rich_text_kind"] == "text_object_proxy")
     );
 
+    let presentation_tree_filtered_mcp_read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby")
+        .arg("--mcp")
+        .arg("--mcp-format")
+        .arg("read")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reads filtered presentation tree as MCP resource");
+
+    assert!(
+        presentation_tree_filtered_mcp_read_output.status.success(),
+        "agent observe filtered presentation tree MCP read should succeed, stderr: {}",
+        String::from_utf8_lossy(&presentation_tree_filtered_mcp_read_output.stderr)
+    );
+    let presentation_tree_filtered_mcp_read: serde_json::Value =
+        serde_json::from_slice(&presentation_tree_filtered_mcp_read_output.stdout)
+            .expect("filtered presentation tree MCP read output is JSON");
+    assert_eq!(
+        presentation_tree_filtered_mcp_read["contents"][0]["uri"],
+        "arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby"
+    );
+    assert_eq!(
+        presentation_tree_filtered_mcp_read["contents"][0]["mimeType"],
+        "application/json"
+    );
+    let filtered_tree_mcp_text = presentation_tree_filtered_mcp_read["contents"][0]["text"]
+        .as_str()
+        .expect("filtered presentation tree MCP text content is present");
+    let filtered_tree_mcp_json: serde_json::Value =
+        serde_json::from_str(filtered_tree_mcp_text).expect("filtered tree MCP text is JSON");
+    assert!(
+        filtered_tree_mcp_json["nodes"]
+            .as_array()
+            .expect("MCP filtered tree nodes are returned")
+            .iter()
+            .any(|node| node["rich_text_kind"] == "ruby")
+    );
+
     let mcp_resource_list_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -24547,6 +24594,12 @@ fn agent_mcp_stdio_lists_resource_templates_before_observe() {
                 .is_some_and(|uri| uri.ends_with("/presentation-tree.json"))
     }));
     assert!(templates.iter().any(|template| {
+        template["name"] == "presentation-tree-filter"
+            && template["uriTemplate"].as_str().is_some_and(|uri| {
+                uri.contains("presentation-tree.json?{filter_key}={filter_value}")
+            })
+    }));
+    assert!(templates.iter().any(|template| {
         template["name"] == "layer-mask-capture"
             && template["uriTemplate"]
                 .as_str()
@@ -24748,30 +24801,7 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
             .is_some_and(|description| description.contains("kind=mask")
                 && description.contains("scope=object:object.dialogue.0.0.ruby.0"))
     );
-    assert!(
-        info["resource_templates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|template| {
-                template["name"] == "object-mask-capture"
-                    && template["uriTemplate"]
-                        .as_str()
-                        .is_some_and(|uri| uri.contains("object.{object_id}.mask.{extension}"))
-            })
-    );
-    assert!(
-        info["resource_templates"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|template| {
-                template["name"] == "presentation-tree"
-                    && template["uriTemplate"]
-                        .as_str()
-                        .is_some_and(|uri| uri.ends_with("/presentation-tree.json"))
-            })
-    );
+    assert_mcp_session_info_resource_templates(&info);
     assert!(info["layers"].as_array().unwrap().iter().any(|layer| {
         layer["id"] == "dialogue.rich_text"
             && layer["capture_refs"]["captures"]
@@ -24811,6 +24841,30 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
             .iter()
             .any(|resource| resource["name"] == "presentation-tree.json")
     );
+}
+
+fn assert_mcp_session_info_resource_templates(info: &serde_json::Value) {
+    let templates = info["resource_templates"]
+        .as_array()
+        .expect("session info resource templates are returned");
+    assert!(templates.iter().any(|template| {
+        template["name"] == "object-mask-capture"
+            && template["uriTemplate"]
+                .as_str()
+                .is_some_and(|uri| uri.contains("object.{object_id}.mask.{extension}"))
+    }));
+    assert!(templates.iter().any(|template| {
+        template["name"] == "presentation-tree"
+            && template["uriTemplate"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/presentation-tree.json"))
+    }));
+    assert!(templates.iter().any(|template| {
+        template["name"] == "presentation-tree-filter"
+            && template["uriTemplate"].as_str().is_some_and(|uri| {
+                uri.contains("presentation-tree.json?{filter_key}={filter_value}")
+            })
+    }));
 }
 
 fn assert_mcp_png_capture_content(response: &serde_json::Value, metadata_context: &str) {

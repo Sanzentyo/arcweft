@@ -289,6 +289,13 @@ pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
             Some("application/json"),
         ),
         resource_template(
+            "arcweft://session/{session_id}/frame/{tick}/presentation-tree.json?{filter_key}={filter_value}",
+            "presentation-tree-filter",
+            "Filtered presentation tree",
+            "Typed presentation object tree filtered by role, rich_text_kind, object_layer, effect, shader, motion, proxy, or has_transform while preserving ancestors.",
+            Some("application/json"),
+        ),
+        resource_template(
             "arcweft://session/{session_id}/frame/{tick}/{capture}.{extension}",
             "viewport-capture",
             "Viewport capture",
@@ -881,6 +888,15 @@ mod tests {
                     .description
                     .as_deref()
                     .is_some_and(|description| description.contains("rich-text child objects"))
+        }));
+        assert!(templates.resource_templates.iter().any(|template| {
+            template.name == "presentation-tree-filter"
+                && template
+                    .uri_template
+                    .contains("presentation-tree.json?{filter_key}={filter_value}")
+                && template.description.as_deref().is_some_and(|description| {
+                    description.contains("shader") && description.contains("preserving ancestors")
+                })
         }));
     }
 

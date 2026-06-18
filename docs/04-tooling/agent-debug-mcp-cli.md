@@ -28,8 +28,9 @@ JSON shapes without owning stdio, HTTP, auth, or renderer sessions.
 `arcw agent mcp` is the current minimal stdio transport. It accepts line-delimited
 JSON-RPC requests for `initialize`, `tools/list`, `tools/call`, `resources/list`,
 `resources/templates/list`, and `resources/read`. `resources/templates/list`
-advertises the stable `arcweft://` URI families for viewport, layer, object, and
-rich-text child captures before a source has been observed. `tools/call`
+advertises the stable `arcweft://` URI families for presentation-tree filters,
+viewport, layer, object, and rich-text child captures before a source has been
+observed. `tools/call`
 supports `arcweft.observe`, `arcweft.capture`, `arcweft.resource.read`,
 `arcweft.session.info`, and `arcweft.hit_test`; the server keeps the latest
 one-shot observation in memory so clients can observe once, inspect the current
@@ -174,6 +175,7 @@ arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resou
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp
 arcw agent observe game/routes/opening.arcw --image png --capture object-id --layer dialogue --resource all --mcp --mcp-format list
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --resource image --mcp --mcp-format tool-result
+arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/presentation-tree.json?shader=soft_glow --mcp --mcp-format read
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png --mcp --mcp-format tool-result
 arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
@@ -188,9 +190,9 @@ or `--capture mask`. `--resource image` returns the selected image as an
 `AgentResource` whose body is base64-encoded binary data, and `--resource image
 --mcp` returns MCP `resources/read` compatible contents with a base64 `blob`.
 The MCP server also supports `resources/templates/list`, which returns the
-current URI template families for observation JSON, object JSON, viewport
-captures, layer color/object-id/mask captures, and object color/object-id/mask
-captures.
+current URI template families for observation JSON, object JSON, presentation
+tree readback, presentation tree filters, viewport captures, layer
+color/object-id/mask captures, and object color/object-id/mask captures.
 `--mcp-format list` returns MCP `resources/list` compatible descriptors for the
 selected resources and object-local capture refs when `--resource all` is used,
 including image kind, renderer, scope, composition, and dimensions in each image
