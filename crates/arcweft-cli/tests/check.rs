@@ -2178,7 +2178,6 @@ flow @flow.main main {
     );
 
     let early_hit = hit_test_animated_proxy_source_at(&path, late_center_x, late_center_y, "0");
-    fs::remove_file(&path).expect("remove temp animated hit-test source");
     assert!(
         early_hit["hits"]
             .as_array()
@@ -2187,6 +2186,48 @@ flow @flow.main main {
             .all(|hit| hit["region"]["proxy_id"] != "hotspot"),
         "early hit-test should not use the late animated proxy bounds: {early_hit}"
     );
+
+    let dir = temp_dir("agent-hit-test-animated-rich-text-proxy-capture");
+    let late_object_id = late_proxy["id"]
+        .as_str()
+        .expect("late animated proxy object id is reported");
+    let mask_path = dir.join("animated-proxy-mask.rgba");
+    let (mask_json, mask_bytes) =
+        capture_animated_proxy_raw_at(&path, late_object_id, "mask", &mask_path, "0.25");
+    assert_animated_proxy_capture_uses_late_bounds(
+        &mask_json,
+        &mask_bytes,
+        early_proxy,
+        late_proxy,
+        "mask_attachment",
+    );
+    assert_eq!(
+        mask_json["images"][0]["object"]["rich_text_ref"]["presentation"]["object_proxies"][0]["params"]
+            ["channel"]["value"],
+        "choice"
+    );
+
+    let object_id_path = dir.join("animated-proxy-object-id.rgba");
+    let (object_id_json, object_id_bytes) =
+        capture_animated_proxy_raw_at(&path, late_object_id, "object-id", &object_id_path, "0.25");
+    assert_animated_proxy_capture_uses_late_bounds(
+        &object_id_json,
+        &object_id_bytes,
+        early_proxy,
+        late_proxy,
+        "object_id_attachment",
+    );
+    assert_raw_object_id_tint_bytes(
+        &object_id_bytes,
+        agent_object_id_color_from_json(late_proxy),
+        object_id_json["images"][0]["content_pixels"]
+            .as_u64()
+            .expect("animated proxy object-id content pixels"),
+        "animated proxy object-id capture-time crop",
+    );
+
+    fs::remove_dir_all(&dir).expect("remove temp animated proxy capture dir");
+    fs::remove_file(&path).expect("remove temp animated hit-test source");
 }
 
 fn observe_animated_proxy_hit_test_source(path: &Path, capture_time: &str) -> serde_json::Value {
@@ -2211,6 +2252,83 @@ fn observe_animated_proxy_hit_test_source(path: &Path, capture_time: &str) -> se
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("animated hit-test observe output is JSON")
+}
+
+fn capture_animated_proxy_raw_at(
+    path: &Path,
+    object_id: &str,
+    capture_kind: &str,
+    raw_path: &Path,
+    capture_time: &str,
+) -> (serde_json::Value, Vec<u8>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(raw_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .output()
+        .expect("arcw agent observe captures animated rich text proxy");
+    assert!(
+        output.status.success(),
+        "animated rich text proxy {capture_kind} capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animated proxy capture output is JSON");
+    let bytes = fs::read(raw_path).expect("read animated proxy raw capture");
+    let width = json["images"][0]["width"].as_u64().unwrap();
+    let height = json["images"][0]["height"].as_u64().unwrap();
+    assert_eq!(bytes.len() as u64, width * height * 4);
+    (json, bytes)
+}
+
+fn assert_animated_proxy_capture_uses_late_bounds(
+    json: &serde_json::Value,
+    bytes: &[u8],
+    early_proxy: &serde_json::Value,
+    late_proxy: &serde_json::Value,
+    composition: &str,
+) {
+    assert_eq!(json["images"][0]["renderer"], "native");
+    assert_eq!(json["images"][0]["scope"]["kind"], "object");
+    assert_eq!(json["images"][0]["scope"]["id"], late_proxy["id"]);
+    assert_eq!(json["images"][0]["composition"], composition);
+    assert_eq!(
+        json["images"][0]["object"]["rich_text_ref"]["kind"],
+        "text_object_proxy"
+    );
+    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| pixel[3] > 0),
+        "animated proxy {composition} raw capture should contain selected pixels"
+    );
+    let content = &json["images"][0]["content_viewport_bbox"];
+    assert!(
+        agent_json_bboxes_intersect(content, &late_proxy["bbox"]),
+        "animated proxy capture content should overlap the late observed bbox: image={} late={late_proxy}",
+        json["images"][0]
+    );
+    assert!(
+        !agent_json_bboxes_intersect(content, &early_proxy["bbox"]),
+        "animated proxy capture content should not use the stale early bbox: image={} early={early_proxy}",
+        json["images"][0]
+    );
 }
 
 fn hit_test_animated_proxy_source_at(

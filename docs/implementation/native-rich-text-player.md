@@ -334,6 +334,9 @@ Agent hit-testing consumes those same time-aware observed hit regions: an
 animated proxy span can be hit at its sampled `capture_time` position, while the
 same viewport coordinate does not hit that proxy at a different sampled time if
 the glyph-transform bbox has moved away.
+Object-scoped mask and object-id captures for animated rich-text proxies use
+that same sampled bbox, and their `content_viewport_bbox` is checked against the
+sampled proxy object rather than the time-zero proxy geometry.
 Object-scoped native captures can also resolve rich-text child object IDs that
 are absent from the current observation object list because a visibility effect
 has hidden their pixels. The CLI derives the parent textbox and native
