@@ -250,7 +250,7 @@ fn extractable_dialogue_defaults_override(contribution: &RichTextStyleContributi
 fn extractable_textbox_theme_override(contribution: &RichTextStyleContribution) -> bool {
     contribution.active
         && contribution.op == RichTextAssignOp::Replace
-        && contribution.layer != RichTextCascadeLayer::DialogueWindowTheme
+        && contribution.layer != RichTextCascadeLayer::TextBoxTheme
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }

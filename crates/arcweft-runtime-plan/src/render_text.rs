@@ -714,7 +714,7 @@ fn textbox_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
             defaults.merge(style_defaults_from_body(
                 block.source,
                 None,
-                RichTextCascadeLayer::DialogueWindowTheme,
+                RichTextCascadeLayer::TextBoxTheme,
                 Some(item.id().body()),
                 block.absolute_start,
             ));
@@ -723,7 +723,7 @@ fn textbox_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
             defaults.merge(style_defaults_from_body(
                 block.source,
                 Some("rich_text"),
-                RichTextCascadeLayer::DialogueWindowTheme,
+                RichTextCascadeLayer::TextBoxTheme,
                 Some(item.id().body()),
                 block.absolute_start,
             ));

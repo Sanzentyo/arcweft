@@ -2134,7 +2134,7 @@ flow @flow.main main {
             )
         }));
         assert!(spec.style_contributions.iter().any(|contribution| {
-            contribution.layer == RichTextCascadeLayer::DialogueWindowTheme
+            contribution.layer == RichTextCascadeLayer::TextBoxTheme
                 && contribution.path == "rich_text.text.color"
                 && contribution.value == "rgb(\"#303132\")"
                 && !contribution.active

@@ -27645,7 +27645,7 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
         stdout,
         contributions,
         PlanStyleContribution {
-            layer: "dialogue_window_theme",
+            layer: "text_box_theme",
             path: "rich_text.text.color",
             value: "\"#303132\"",
             active: Some(false),

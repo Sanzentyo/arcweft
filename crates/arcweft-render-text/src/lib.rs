@@ -67,7 +67,7 @@ pub enum RichTextCascadeLayer {
     LineOptions,
     SpeakerPreset,
     CharacterDialogueStyle,
-    DialogueWindowTheme,
+    TextBoxTheme,
     DialogueDefaults,
     EngineDefaults,
 }

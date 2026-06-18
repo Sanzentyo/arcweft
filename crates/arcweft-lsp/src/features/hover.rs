@@ -131,7 +131,7 @@ fn all_cascade_layers() -> [RichTextCascadeLayer; 7] {
         RichTextCascadeLayer::LineOptions,
         RichTextCascadeLayer::SpeakerPreset,
         RichTextCascadeLayer::CharacterDialogueStyle,
-        RichTextCascadeLayer::DialogueWindowTheme,
+        RichTextCascadeLayer::TextBoxTheme,
         RichTextCascadeLayer::DialogueDefaults,
         RichTextCascadeLayer::EngineDefaults,
     ]
@@ -143,7 +143,7 @@ fn cascade_layer_label(layer: RichTextCascadeLayer) -> &'static str {
         RichTextCascadeLayer::LineOptions => "line_options",
         RichTextCascadeLayer::SpeakerPreset => "speaker_preset",
         RichTextCascadeLayer::CharacterDialogueStyle => "character_dialogue_style",
-        RichTextCascadeLayer::DialogueWindowTheme => "dialogue_window_theme",
+        RichTextCascadeLayer::TextBoxTheme => "text_box_theme",
         RichTextCascadeLayer::DialogueDefaults => "dialogue_defaults",
         RichTextCascadeLayer::EngineDefaults => "engine_defaults",
     }
