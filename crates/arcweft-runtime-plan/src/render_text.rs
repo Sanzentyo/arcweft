@@ -8,7 +8,7 @@ use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem, DialogueTag,
     DialogueToken, LineArg,
 };
-use arcweft_lang_hir::syntax::ast::items::{EntityDeclItem, EntityDeclKind};
+use arcweft_lang_hir::syntax::ast::items::{Attribute, EntityDeclItem, EntityDeclKind, StructItem};
 use arcweft_lang_hir::syntax::ast::pattern::Pattern;
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, parse_expr};
 use arcweft_render_text::{
@@ -31,6 +31,7 @@ pub(crate) struct DialogueDisplayDefaults {
     global: DialogueStyleDefaults,
     textboxes: BTreeMap<String, DialogueStyleDefaults>,
     characters: BTreeMap<String, DialogueStyleDefaults>,
+    text_proxies: BTreeMap<String, TextProxyTypeDefaults>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -46,6 +47,15 @@ pub(crate) struct DialogueSpeakerPreset {
     name: String,
     callee: String,
     defaults: DialogueStyleDefaults,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct TextProxyTypeDefaults {
+    type_name: String,
+    role: Option<String>,
+    depth: Option<Milli>,
+    default_hit: Option<bool>,
+    params: BTreeMap<String, RichTextParam>,
 }
 
 impl DialogueDisplayDefaults {
@@ -78,6 +88,13 @@ impl DialogueDisplayDefaults {
                         for key in entity_style_keys(item) {
                             defaults.textboxes.insert(key, style.clone());
                         }
+                    }
+                }
+                HirTopLevelDecl::Struct(item) => {
+                    if let Some(proxy_defaults) = text_proxy_defaults_from_struct(item) {
+                        defaults
+                            .text_proxies
+                            .insert(item.name().to_owned(), proxy_defaults);
                     }
                 }
                 _ => {}
@@ -184,6 +201,70 @@ fn dialogue_defaults_label(item: &DialogueDefaultsItem) -> String {
         .map_or_else(|| "<anonymous>".to_owned(), |id| format!("@{}", id.body()))
 }
 
+fn text_proxy_defaults_from_struct(item: &StructItem) -> Option<TextProxyTypeDefaults> {
+    let attr = item
+        .attrs()
+        .iter()
+        .find(|attr| is_text_proxy_attribute(attr))?;
+    let attrs = parse_attr_args(attr.args().unwrap_or_default());
+    let type_name = attrs
+        .get("type")
+        .or_else(|| attrs.get("proxy"))
+        .or_else(|| attrs.get("name"))
+        .map(|value| trim_quotes(value).to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| item.name().to_owned());
+    let role = attrs
+        .get("role")
+        .or_else(|| attrs.get("kind"))
+        .map(|value| trim_quotes(value).to_owned())
+        .filter(|value| !value.is_empty());
+    let depth = attrs
+        .get("depth")
+        .or_else(|| attrs.get("z"))
+        .or_else(|| attrs.get("z_index"))
+        .map(|value| parse_milli_token(value));
+    let default_hit = attrs
+        .get("default_hit")
+        .or_else(|| attrs.get("hit"))
+        .or_else(|| attrs.get("hit_test"))
+        .map(|value| truthy_attr(value));
+    let params = attrs
+        .iter()
+        .filter(|(key, _)| !is_text_proxy_attribute_metadata_attr(key))
+        .map(|(key, value)| (key.clone(), param_from_value(value)))
+        .collect();
+
+    Some(TextProxyTypeDefaults {
+        type_name,
+        role,
+        depth,
+        default_hit,
+        params,
+    })
+}
+
+fn is_text_proxy_attribute(attr: &Attribute) -> bool {
+    matches!(attr.name(), "text_proxy" | "rich_text_proxy")
+}
+
+fn is_text_proxy_attribute_metadata_attr(key: &str) -> bool {
+    matches!(
+        key,
+        "type"
+            | "proxy"
+            | "name"
+            | "role"
+            | "kind"
+            | "depth"
+            | "z"
+            | "z_index"
+            | "default_hit"
+            | "hit"
+            | "hit_test"
+    )
+}
+
 #[cfg(test)]
 pub(crate) fn lower_dialogue_display(
     line: RuntimeLineId,
@@ -230,7 +311,11 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
                 .tokens()
                 .iter()
                 .flat_map(|token| {
-                    lower_dialogue_token(token, default_inline_failure_policy.as_ref())
+                    lower_dialogue_token(
+                        token,
+                        default_inline_failure_policy.as_ref(),
+                        &defaults.text_proxies,
+                    )
                 })
                 .collect(),
         ),
@@ -1982,6 +2067,7 @@ fn split_nested_style_block<'a>(
 fn lower_dialogue_token(
     token: &DialogueToken,
     default_inline_failure_policy: Option<&InlineFailurePolicy>,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
 ) -> Vec<RichTextNode> {
     match token {
         DialogueToken::Text(text) => vec![RichTextNode::Text { text: text.clone() }],
@@ -1990,7 +2076,7 @@ fn lower_dialogue_token(
                 text: text.clone(),
             })]
         }
-        DialogueToken::Tag(tag) => lower_tag(tag),
+        DialogueToken::Tag(tag) => lower_tag(tag, text_proxies),
         DialogueToken::InferredTag(tag) => lower_inferred_tag(tag),
         DialogueToken::Mark(mark) => {
             vec![RichTextNode::Control(RichTextControl::Mark {
@@ -2026,7 +2112,10 @@ fn lower_dialogue_token(
     }
 }
 
-fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+fn lower_tag(
+    tag: &DialogueTag,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> Vec<RichTextNode> {
     match tag.name() {
         "p" | "page" => vec![RichTextNode::Control(RichTextControl::Page)],
         "l" | "wait" => vec![RichTextNode::Control(RichTextControl::LineWait)],
@@ -2045,7 +2134,7 @@ fn lower_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
         "style" => lower_style_tag(tag),
         "layout" => lower_layout_tag(tag),
         "transform" => lower_transform_tag(tag),
-        "object" => lower_object_tag(tag),
+        "object" => lower_object_tag(tag, text_proxies),
         "effect" | "fx" => lower_effect_tag(tag),
         "voice" => host_event(DialogueHostEvent::Voice {
             attrs: tag.attrs().to_owned(),
@@ -2210,17 +2299,33 @@ fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
     }]
 }
 
-fn lower_object_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+fn lower_object_tag(
+    tag: &DialogueTag,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> Vec<RichTextNode> {
     let (selector, attrs) = split_selector_attrs(tag.attrs());
     vec![RichTextNode::StyleStart {
         style: RichTextStyle::Object {
-            proxy: object_proxy_from_selector(selector.trim_start_matches('.'), attrs),
+            proxy: object_proxy_from_selector(
+                selector.trim_start_matches('.'),
+                attrs,
+                text_proxies,
+            ),
         },
     }]
 }
 
-fn object_proxy_from_selector(selector: &str, attrs: &str) -> RichTextObjectProxy {
+fn object_proxy_from_selector(
+    selector: &str,
+    attrs: &str,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> RichTextObjectProxy {
     let attrs = parse_attrs(attrs);
+    let explicit_type_name = object_proxy_type_name_attr(&attrs);
+    let defaults = explicit_type_name
+        .as_deref()
+        .and_then(|type_name| text_proxies.get(type_name))
+        .or_else(|| text_proxies.get(selector));
     let id = if selector.is_empty() {
         attrs
             .get("id")
@@ -2231,39 +2336,53 @@ fn object_proxy_from_selector(selector: &str, attrs: &str) -> RichTextObjectProx
     } else {
         selector.to_owned()
     };
+    let mut params = defaults.map_or_else(BTreeMap::new, |defaults| defaults.params.clone());
+    params.extend(
+        attrs
+            .iter()
+            .filter(|(key, _)| !is_object_proxy_metadata_attr(key))
+            .map(|(key, value)| (key.clone(), param_from_value(value))),
+    );
     RichTextObjectProxy {
         id,
-        type_name: attrs
-            .get("type")
-            .or_else(|| attrs.get("struct"))
-            .or_else(|| attrs.get("proxy"))
-            .map(|value| trim_quotes(value).to_owned())
-            .filter(|value| !value.is_empty()),
+        type_name: explicit_type_name
+            .or_else(|| defaults.map(|defaults| defaults.type_name.clone())),
         role: attrs
             .get("role")
+            .or_else(|| attrs.get("kind"))
             .map(|value| trim_quotes(value).to_owned())
-            .filter(|value| !value.is_empty()),
+            .filter(|value| !value.is_empty())
+            .or_else(|| defaults.and_then(|defaults| defaults.role.clone())),
         depth: attrs
             .get("depth")
             .or_else(|| attrs.get("z"))
             .or_else(|| attrs.get("z_index"))
-            .map(|value| parse_milli_token(value)),
+            .map(|value| parse_milli_token(value))
+            .or_else(|| defaults.and_then(|defaults| defaults.depth)),
         hit_test: attrs
             .get("hit")
             .or_else(|| attrs.get("hit_test"))
-            .is_some_and(|value| matches!(trim_quotes(value), "true" | "yes" | "1" | "on")),
-        params: attrs
-            .iter()
-            .filter(|(key, _)| !is_object_proxy_metadata_attr(key))
-            .map(|(key, value)| (key.clone(), param_from_value(value)))
-            .collect(),
+            .map(|value| truthy_attr(value))
+            .or_else(|| defaults.and_then(|defaults| defaults.default_hit))
+            .unwrap_or(false),
+        params,
     }
+}
+
+fn object_proxy_type_name_attr(attrs: &BTreeMap<String, String>) -> Option<String> {
+    attrs
+        .get("type")
+        .or_else(|| attrs.get("struct"))
+        .or_else(|| attrs.get("proxy"))
+        .map(|value| trim_quotes(value).to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn is_object_proxy_metadata_attr(key: &str) -> bool {
     matches!(
         key,
         "id" | "name"
+            | "kind"
             | "type"
             | "struct"
             | "proxy"
@@ -2626,6 +2745,55 @@ fn parse_attrs(source: &str) -> BTreeMap<String, String> {
             Some((key.to_owned(), trim_quotes(value).to_owned()))
         })
         .collect()
+}
+
+fn parse_attr_args(source: &str) -> BTreeMap<String, String> {
+    split_attr_items(source)
+        .into_iter()
+        .filter_map(|item| {
+            let (key, value) = item.as_str().split_once('=')?;
+            Some((key.to_owned(), trim_quotes(value).to_owned()))
+        })
+        .collect()
+}
+
+fn split_attr_items(source: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    for ch in source.chars() {
+        match (quote, ch) {
+            (Some(active), next) if next == active => {
+                quote = None;
+                current.push(ch);
+            }
+            (None, '"' | '\'') => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            (None, ',' | ';') => {
+                push_attr_item(&mut items, &mut current);
+            }
+            (None, next) if next.is_whitespace() => {
+                push_attr_item(&mut items, &mut current);
+            }
+            _ => current.push(ch),
+        }
+    }
+    push_attr_item(&mut items, &mut current);
+    items
+}
+
+fn push_attr_item(items: &mut Vec<String>, current: &mut String) {
+    let item = current.trim();
+    if !item.is_empty() {
+        items.push(item.to_owned());
+    }
+    current.clear();
+}
+
+fn truthy_attr(value: &str) -> bool {
+    matches!(trim_quotes(value), "true" | "yes" | "1" | "on")
 }
 
 fn trim_quotes(value: &str) -> &str {
@@ -3061,6 +3229,67 @@ flow @flow.main main {
             })
             .expect("plain text run after object close");
         assert!(plain_run.presentation.object_proxies.is_empty());
+    }
+
+    #[test]
+    fn text_proxy_struct_attribute_supplies_object_proxy_defaults() {
+        let parsed = parse_source(
+            r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[object .hotspot type=KeywordHit]BC[/object]D[p]
+}
+"#,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.object.proxy.defaults".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let proxy = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .and_then(|run| run.presentation.object_proxies.first())
+            .expect("object proxy presentation");
+
+        assert_eq!(proxy.id, "hotspot");
+        assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
+        assert_eq!(proxy.role.as_deref(), Some("keyword"));
+        assert_eq!(proxy.depth, Some(Milli(4000)));
+        assert!(proxy.hit_test);
+        assert_eq!(
+            proxy.params.get("channel"),
+            Some(&RichTextParam::Raw {
+                value: "choice".to_owned()
+            })
+        );
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub surface character narrator {
     }
 }
 
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
 pub dialogue defaults @dialogue:.defaults.full {
     rich_text {
         layout {
@@ -96,7 +101,7 @@ flow rich_text_full_grammar {
     ]
 
     narrator.say(id=@say.full.006, voice=auto)[
-        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg origin=glyph_center target=glyph]transform[/transform]、[effect .jitter amp=1px seed=full target=glyph phase=glyph_transform state_scope=glyph]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0 phase=run_offscreen_pass]shader[/effect]、[object .hotspot type=KeywordHit role=keyword depth=4 hit=true channel=choice]proxy[/object]。[p]
+        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg origin=glyph_center target=glyph]transform[/transform]、[effect .jitter amp=1px seed=full target=glyph phase=glyph_transform state_scope=glyph]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0 phase=run_offscreen_pass]shader[/effect]、[object .hotspot type=KeywordHit]proxy[/object]。[p]
     ]
 
     alice.say(id=@say.full.007, voice=auto)[

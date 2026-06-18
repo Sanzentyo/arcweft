@@ -57,17 +57,28 @@ Arcweft attributes are the declaration-time way to mark Rust/Arcweft structs as
 text proxy payloads:
 
 ```arcw
-#[text_proxy(kind="hit", default_hit=true)]
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
 pub struct KeywordHit {
-    depth: i32
-    channel: TextHitChannel
+    channel: String
 }
 ```
 
-The declaration metadata belongs to semantic analysis and tooling. Inline text
-does not overload `#[...]`, because dialogue text already uses `#[expr]` for
-interpolation and source items use `#[...]` for attributes. Inline spans refer
-to the proxy type by name through `type=KeywordHit` or `proxy=KeywordHit`.
+The declaration metadata is collected into the rich-text proxy registry during
+runtime-plan lowering. Inline text does not overload `#[...]`, because dialogue
+text already uses `#[expr]` for interpolation and source items use `#[...]` for
+attributes. Inline spans refer to the proxy type by name through
+`type=KeywordHit` or `proxy=KeywordHit`:
+
+```arcw
+alice.say[
+    [object .hotspot type=KeywordHit]夢[/object]
+]
+```
+
+Inline attributes override declaration defaults. Unspecified proxy metadata is
+filled from the struct attribute: `kind` supplies the default proxy role,
+`default_hit` supplies hit-test policy, `depth` / `z` / `z_index` supplies local
+depth, and remaining attribute arguments become default typed proxy params.
 
 ## Depth And Hit Testing
 
