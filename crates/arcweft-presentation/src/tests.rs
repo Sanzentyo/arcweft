@@ -14,6 +14,7 @@ use crate::layer::{
 };
 use crate::replay::{route_fingerprint, routing_hash};
 use crate::router::{InputRouter, RouteDecision};
+use crate::semantic::{SemanticActionError, SemanticNode, SemanticRole, SemanticTree};
 
 #[test]
 fn registry_clears_values_when_scope_exits() {
@@ -1011,4 +1012,212 @@ fn gesture_arena_cancel_reports_current_winner_and_removes_session() {
         }
     );
     assert!(arena.sessions().is_empty());
+}
+
+#[test]
+fn semantic_tree_lowers_textbox_and_activity_actions_to_shared_action_batch_targets() {
+    let textbox_target = interaction_target("textbox.main");
+    let activity_target = interaction_target("activity.truck");
+    let advance = PublicId::try_new("action.advance").unwrap();
+    let pause = PublicId::try_new("action.pause").unwrap();
+    let mut semantics = SemanticTree::default();
+    semantics.push(
+        SemanticNode::new(
+            layer_id("dialogue"),
+            textbox_target.clone(),
+            SemanticRole::TextBox,
+            HitRect::new(0.0, 0.0, 640.0, 160.0),
+        )
+        .with_label("Dialogue")
+        .with_action(advance.clone()),
+    );
+    semantics.push(
+        SemanticNode::new(
+            layer_id("activity"),
+            activity_target.clone(),
+            SemanticRole::Activity,
+            HitRect::new(0.0, 0.0, 320.0, 240.0),
+        )
+        .with_label("Truck")
+        .with_action(pause.clone()),
+    );
+
+    let textbox_action = semantics
+        .lower_action(&textbox_target, &advance)
+        .expect("textbox action lowers");
+    assert_eq!(
+        textbox_action.target(),
+        &ActionTarget::Entity(textbox_target.clone())
+    );
+    assert_eq!(textbox_action.kind(), &advance);
+
+    let activity_action = semantics
+        .lower_action(&activity_target, &pause)
+        .expect("activity action lowers");
+    assert_eq!(
+        activity_action.target(),
+        &ActionTarget::Activity(activity_target)
+    );
+    assert_eq!(activity_action.kind(), &pause);
+}
+
+#[test]
+fn semantic_tree_rejects_hidden_disabled_and_undeclared_actions() {
+    let hidden_target = interaction_target("button.hidden");
+    let disabled_target = interaction_target("button.disabled");
+    let visible_target = interaction_target("button.visible");
+    let select = PublicId::try_new("action.select").unwrap();
+    let inspect = PublicId::try_new("action.inspect").unwrap();
+    let mut semantics = SemanticTree::default();
+    semantics.push(
+        SemanticNode::new(
+            layer_id("ui"),
+            hidden_target.clone(),
+            SemanticRole::Button,
+            HitRect::new(0.0, 0.0, 20.0, 20.0),
+        )
+        .with_visible(false)
+        .with_action(select.clone()),
+    );
+    semantics.push(
+        SemanticNode::new(
+            layer_id("ui"),
+            disabled_target.clone(),
+            SemanticRole::Button,
+            HitRect::new(0.0, 0.0, 20.0, 20.0),
+        )
+        .with_enabled(false)
+        .with_action(select.clone()),
+    );
+    semantics.push(
+        SemanticNode::new(
+            layer_id("ui"),
+            visible_target.clone(),
+            SemanticRole::Button,
+            HitRect::new(0.0, 0.0, 20.0, 20.0),
+        )
+        .with_action(select.clone()),
+    );
+
+    assert_eq!(
+        semantics.lower_action(&hidden_target, &select),
+        Err(SemanticActionError::Hidden(hidden_target))
+    );
+    assert_eq!(
+        semantics.lower_action(&disabled_target, &select),
+        Err(SemanticActionError::Disabled(disabled_target))
+    );
+    assert_eq!(
+        semantics.lower_action(&visible_target, &inspect),
+        Err(SemanticActionError::UndeclaredAction {
+            target: visible_target,
+            action: inspect
+        })
+    );
+}
+
+#[test]
+fn semantic_tree_hit_records_route_through_existing_layer_policy() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let modal = layer_id("modal");
+    let world_target = interaction_target("activity.world");
+    let modal_target = interaction_target("modal.close");
+    let inspect = PublicId::try_new("action.inspect").unwrap();
+    let close = PublicId::try_new("action.close").unwrap();
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            world.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("world inserts");
+    tree.insert(
+        LayerNode::new(
+            modal.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("modal inserts");
+
+    let mut semantics = SemanticTree::default();
+    semantics.push(
+        SemanticNode::new(
+            world,
+            world_target.clone(),
+            SemanticRole::Activity,
+            HitRect::new(0.0, 0.0, 100.0, 100.0),
+        )
+        .with_action(inspect.clone()),
+    );
+    semantics.push(
+        SemanticNode::new(
+            modal.clone(),
+            modal_target.clone(),
+            SemanticRole::Button,
+            HitRect::new(0.0, 0.0, 20.0, 20.0),
+        )
+        .with_action(close.clone()),
+    );
+    let hits = semantics.to_hit_tree();
+
+    let modal_hit = RawInputEvent::new(
+        InputEpoch(80),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(5.0, 5.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let routed = InputRouter::route(&modal_hit, &tree, &hits, &InteractionState::default());
+    assert_eq!(routed.event().map(InputEvent::target), Some(&modal_target));
+
+    let lower_hit = RawInputEvent::new(
+        InputEpoch(81),
+        RawInputKind::Pointer(PointerInput {
+            pointer: PointerId(1),
+            position: ViewportPoint::new(50.0, 50.0),
+            phase: PointerPhase::Down,
+        }),
+    );
+    let blocked = InputRouter::route(&lower_hit, &tree, &hits, &InteractionState::default());
+    assert_eq!(blocked.decision(), &RouteDecision::BlockedByModal { modal });
+
+    assert_eq!(
+        semantics.route_and_lower_action(
+            InputEpoch(82),
+            &world_target,
+            &inspect,
+            &tree,
+            &InteractionState::default(),
+        ),
+        Err(SemanticActionError::RejectedByRouter(
+            RouteDecision::BlockedByModal {
+                modal: layer_id("modal")
+            }
+        ))
+    );
+
+    let modal_action = semantics
+        .route_and_lower_action(
+            InputEpoch(83),
+            &modal_target,
+            &close,
+            &tree,
+            &InteractionState::default(),
+        )
+        .expect("modal semantic action routes");
+    assert_eq!(modal_action.target(), &ActionTarget::Entity(modal_target));
+    assert_eq!(modal_action.kind(), &close);
 }

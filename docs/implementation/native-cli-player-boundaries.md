@@ -80,7 +80,14 @@ The unified UI design is adopted as the long-term boundary for future work:
   first Sans I/O `GestureArena` boundary for tap, drag, horizontal scroll, and
   vertical scroll arbitration. It records stable pointer sessions and resolves
   winners from deterministic movement thresholds without adding per-Activity
-  gesture routers.
+  gesture routers. `arcweft_presentation::semantic` now provides the first
+  shared `SemanticTree` boundary: `SemanticNode`, `SemanticRole`, and
+  `SemanticActionError` normalize TextBox, Activity, and UI observation nodes,
+  derive ordinary `HitTree` records from semantic bounds, and lower declared
+  semantic actions to `ActionTarget` only after Agent semantic invocation has
+  passed through `InputRouter` modal, visibility, and layer-policy checks. This
+  keeps semantic actions from introducing `UiEvent`, `ActivityViewport`, or a
+  separate Agent-only invoke path.
 - A future `arcweft-ui` crate will own typed Component descriptors, retained
   fragments, generational Entity storage, reactivity, style, layout integration,
   and semantic UI nodes.
@@ -172,14 +179,13 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    references. Runtime aliases are not used. Rust dialogue APIs already use
    `window: Option<Ref<TextBox>>` rather than `text_box` fields or a dedicated
    `TextBoxRef` wrapper.
-5. Extend the initial `InputRouter`, `HitTree`, focus/modal/capture state,
-   hover path diff, replay fingerprinting, local-coordinate transform handling,
-   and gesture arena with Activity/TextBox semantic integration on top of the
-   shared presentation input and LayerTree boundaries. Later Component and
-   Activity work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
-   `LayerContent`, `LayerTransform`, `HoverPath`, `GestureArena`,
-   `RoutingHash`, and `RouteDecision` instead of introducing per-Activity
-   routers, `ActivityViewport`, or `UiEvent` aliases.
+5. Connect the initial `SemanticTree` to runtime-host Activity/TextBox
+   dispatch and future `arcweft-ui` semantic node production. Later Component
+   and Activity work must use `ActionBatch`, `HostEventBatch`, routed
+   `InputEvent`, `LayerContent`, `LayerTransform`, `HoverPath`,
+   `GestureArena`, `RoutingHash`, `RouteDecision`, and `SemanticTree` instead
+   of introducing per-Activity routers, `ActivityViewport`, `UiEvent` aliases,
+   or Agent-only semantic invoke shortcuts.
 
 ## Invariants
 

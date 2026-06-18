@@ -10,6 +10,7 @@ pub mod interaction;
 pub mod layer;
 pub mod replay;
 pub mod router;
+pub mod semantic;
 
 /// Named lifetime owner for presentation values.
 ///
