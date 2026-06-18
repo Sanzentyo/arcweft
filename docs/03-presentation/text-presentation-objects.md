@@ -33,9 +33,11 @@ handles, but those children must reference the text object they decorate.
 Agent observation exposes the flat object table and a typed `presentation_tree`;
 the tree is the canonical way to traverse layer, textbox, page, line, run,
 ruby, glyph/cluster, and proxy relationships without re-parsing object ids.
-Tree object nodes also expose lightweight effect, shader, transform, proxy, and
-motion-function indexes so tools can find animated or custom-rendered text
-objects before loading the full object descriptor.
+Tree object nodes also expose lightweight effect, shader, transform,
+motion-function, and proxy indexes. Proxy indexes include the authored proxy id,
+resolved type name, role, layer, depth, and declaration provenance, so tools can
+find animated, custom-rendered, or `#[text_proxy]`-backed text objects before
+loading the full object descriptor.
 
 ## Proxy Spans
 

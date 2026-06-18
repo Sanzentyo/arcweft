@@ -2936,6 +2936,15 @@ fn agent_presentation_tree_query_from_uri(
             "proxy" | "object_proxy" | "object_proxy_id" => {
                 query.object_proxy_id = Some(value.to_owned());
             }
+            "proxy_type" | "object_proxy_type" | "type" => {
+                query.object_proxy_type = Some(value.to_owned());
+            }
+            "proxy_role" | "object_proxy_role" => {
+                query.object_proxy_role = Some(value.to_owned());
+            }
+            "proxy_struct" | "object_proxy_struct" | "struct" => {
+                query.object_proxy_struct = Some(value.to_owned());
+            }
             "has_transform" => query.has_transform = Some(agent_bool_query_value(value)?),
             _ => {
                 eprintln!("error: unsupported presentation-tree query key: {key}");

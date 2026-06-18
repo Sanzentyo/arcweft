@@ -6,8 +6,8 @@
 
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextEffectPhase, RichTextObjectProxyDeclaration, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextTextSource,
+    LineDisplayFrame, RichTextEffectPhase, RichTextObjectProxy, RichTextObjectProxyDeclaration,
+    RichTextParam, RichTextPresentation, RichTextRange, RichTextTextSource,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -798,6 +798,8 @@ pub struct AgentPresentationTreeNode {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_proxy_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_proxies: Vec<AgentPresentationObjectProxyRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub motion_function_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub has_transform: bool,
@@ -813,6 +815,9 @@ pub struct AgentPresentationTreeQuery {
     pub shader_id: Option<String>,
     pub motion_function_id: Option<String>,
     pub object_proxy_id: Option<String>,
+    pub object_proxy_type: Option<String>,
+    pub object_proxy_role: Option<String>,
+    pub object_proxy_struct: Option<String>,
     pub has_transform: Option<bool>,
 }
 
@@ -830,6 +835,22 @@ pub struct AgentPresentationShaderRef {
     pub id: String,
     #[serde(default)]
     pub phase: RichTextEffectPhase,
+}
+
+/// Lightweight object-proxy index attached to a presentation tree object node.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentPresentationObjectProxyRef {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaration: Option<RichTextObjectProxyDeclaration>,
 }
 
 /// Presentation tree node category.
@@ -925,6 +946,9 @@ impl AgentPresentationTreeQuery {
             && self.shader_id.is_none()
             && self.motion_function_id.is_none()
             && self.object_proxy_id.is_none()
+            && self.object_proxy_type.is_none()
+            && self.object_proxy_role.is_none()
+            && self.object_proxy_struct.is_none()
             && self.has_transform.is_none()
     }
 
@@ -960,6 +984,33 @@ impl AgentPresentationTreeQuery {
                     .iter()
                     .any(|candidate| candidate == object_proxy_id)
             })
+            && self
+                .object_proxy_type
+                .as_ref()
+                .is_none_or(|object_proxy_type| {
+                    node.object_proxies.iter().any(|proxy| {
+                        proxy.type_name.as_ref() == Some(object_proxy_type)
+                            || proxy.id == *object_proxy_type
+                    })
+                })
+            && self
+                .object_proxy_role
+                .as_ref()
+                .is_none_or(|object_proxy_role| {
+                    node.object_proxies
+                        .iter()
+                        .any(|proxy| proxy.role.as_ref() == Some(object_proxy_role))
+                })
+            && self
+                .object_proxy_struct
+                .as_ref()
+                .is_none_or(|object_proxy_struct| {
+                    node.object_proxies.iter().any(|proxy| {
+                        proxy.declaration.as_ref().is_some_and(|declaration| {
+                            declaration.struct_name == *object_proxy_struct
+                        })
+                    })
+                })
             && self
                 .has_transform
                 .is_none_or(|has_transform| node.has_transform == has_transform)
@@ -1037,6 +1088,7 @@ fn agent_presentation_root_node(root: &str, children: Vec<String>) -> AgentPrese
         effects: Vec::new(),
         shaders: Vec::new(),
         object_proxy_ids: Vec::new(),
+        object_proxies: Vec::new(),
         motion_function_ids: Vec::new(),
         has_transform: false,
     }
@@ -1062,6 +1114,7 @@ fn agent_presentation_layer_node(
         effects: Vec::new(),
         shaders: Vec::new(),
         object_proxy_ids: Vec::new(),
+        object_proxies: Vec::new(),
         motion_function_ids: Vec::new(),
         has_transform: false,
     }
@@ -1099,6 +1152,9 @@ fn agent_presentation_object_node(
         object_proxy_ids: presentation
             .as_ref()
             .map_or_else(Vec::new, |summary| summary.object_proxy_ids.clone()),
+        object_proxies: presentation
+            .as_ref()
+            .map_or_else(Vec::new, |summary| summary.object_proxies.clone()),
         motion_function_ids: presentation
             .as_ref()
             .map_or_else(Vec::new, |summary| summary.motion_function_ids.clone()),
@@ -1123,6 +1179,7 @@ struct AgentPresentationNodeSummary {
     effects: Vec<AgentPresentationEffectRef>,
     shaders: Vec<AgentPresentationShaderRef>,
     object_proxy_ids: Vec<String>,
+    object_proxies: Vec<AgentPresentationObjectProxyRef>,
     motion_function_ids: Vec<String>,
     has_transform: bool,
 }
@@ -1152,6 +1209,11 @@ fn agent_presentation_node_summary(
             .iter()
             .map(|proxy| proxy.id.clone())
             .collect(),
+        object_proxies: presentation
+            .object_proxies
+            .iter()
+            .map(agent_presentation_object_proxy_ref)
+            .collect(),
         motion_function_ids: presentation
             .effects
             .iter()
@@ -1166,6 +1228,19 @@ fn agent_presentation_node_summary(
             })
             .collect(),
         has_transform: presentation.transform.is_some(),
+    }
+}
+
+fn agent_presentation_object_proxy_ref(
+    proxy: &RichTextObjectProxy,
+) -> AgentPresentationObjectProxyRef {
+    AgentPresentationObjectProxyRef {
+        id: proxy.id.clone(),
+        type_name: proxy.type_name.clone(),
+        role: proxy.role.clone(),
+        layer: proxy.layer.clone(),
+        depth: proxy.depth.map(|depth| depth.0),
+        declaration: proxy.declaration.clone(),
     }
 }
 
@@ -1682,6 +1757,7 @@ mod tests {
                     effects: Vec::new(),
                     shaders: Vec::new(),
                     object_proxy_ids: Vec::new(),
+                    object_proxies: Vec::new(),
                     motion_function_ids: Vec::new(),
                     has_transform: false,
                 },
@@ -1702,6 +1778,7 @@ mod tests {
                     effects: Vec::new(),
                     shaders: Vec::new(),
                     object_proxy_ids: Vec::new(),
+                    object_proxies: Vec::new(),
                     motion_function_ids: Vec::new(),
                     has_transform: false,
                 },
@@ -1725,6 +1802,7 @@ mod tests {
                         phase: RichTextEffectPhase::RunOffscreenPass,
                     }],
                     object_proxy_ids: Vec::new(),
+                    object_proxies: Vec::new(),
                     motion_function_ids: vec!["breath_orbit".to_owned()],
                     has_transform: true,
                 },
@@ -1742,6 +1820,17 @@ mod tests {
                     effects: Vec::new(),
                     shaders: Vec::new(),
                     object_proxy_ids: vec!["hotspot".to_owned()],
+                    object_proxies: vec![AgentPresentationObjectProxyRef {
+                        id: "hotspot".to_owned(),
+                        type_name: Some("KeywordHit".to_owned()),
+                        role: Some("keyword".to_owned()),
+                        layer: Some("hit".to_owned()),
+                        depth: Some(4100),
+                        declaration: Some(RichTextObjectProxyDeclaration {
+                            struct_name: "KeywordHit".to_owned(),
+                            attribute: "text_proxy".to_owned(),
+                        }),
+                    }],
                     motion_function_ids: Vec::new(),
                     has_transform: false,
                 },
@@ -1759,6 +1848,7 @@ mod tests {
                     effects: Vec::new(),
                     shaders: Vec::new(),
                     object_proxy_ids: Vec::new(),
+                    object_proxies: Vec::new(),
                     motion_function_ids: Vec::new(),
                     has_transform: false,
                 },
@@ -1813,6 +1903,26 @@ mod tests {
         assert_eq!(
             proxy_filtered.nodes[2].children,
             vec!["object.dialogue.0.0.proxy.0".to_owned()]
+        );
+
+        let typed_proxy_filtered = tree.filtered(&AgentPresentationTreeQuery {
+            object_proxy_type: Some("KeywordHit".to_owned()),
+            object_proxy_role: Some("keyword".to_owned()),
+            object_proxy_struct: Some("KeywordHit".to_owned()),
+            ..AgentPresentationTreeQuery::default()
+        });
+        assert_eq!(
+            typed_proxy_filtered
+                .nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "presentation.root",
+                "presentation.layer.dialogue",
+                "object.dialogue.0.0",
+                "object.dialogue.0.0.proxy.0"
+            ]
         );
 
         let empty_filtered = tree.filtered(&AgentPresentationTreeQuery {

@@ -240,6 +240,19 @@ reading the full observation payload.
       "role": "rich_text_proxy",
       "rich_text_kind": "text_object_proxy",
       "object_proxy_ids": ["hotspot"],
+      "object_proxies": [
+        {
+          "id": "hotspot",
+          "type_name": "KeywordHit",
+          "role": "keyword",
+          "layer": "ui",
+          "depth": 4000,
+          "declaration": {
+            "struct_name": "KeywordHit",
+            "attribute": "text_proxy"
+          }
+        }
+      ],
       "object_depth": 4000
     }
   ]
@@ -250,8 +263,9 @@ Layer nodes group top-level objects. Object nodes use the observed object id as
 their node id and repeat only the routing metadata needed to traverse the tree:
 primary render layer, role, optional rich-text kind, and resolved object
 layer/depth. Object nodes also expose lightweight visual indexes:
-`effects`, `shaders`, `object_proxy_ids`, `motion_function_ids`, and
-`has_transform`. These indexes are for discovery and routing only. The
+`effects`, `shaders`, `object_proxy_ids`, `object_proxies`,
+`motion_function_ids`, and `has_transform`. These indexes are for discovery and
+routing only. The
 authoritative geometry, capture refs, source range, effect/shader params, proxy
 metadata, and hit regions remain in `objects[]` and object-scoped
 `image.object` metadata.
@@ -271,6 +285,9 @@ keys are:
 | `shader` / `shader_id` | presentation shader id |
 | `motion` / `motion_function_id` | motion function id extracted from `[effect .motion fn=...]` |
 | `proxy` / `object_proxy_id` | custom object proxy id |
+| `proxy_type` / `object_proxy_type` | custom object proxy type name, such as `KeywordHit` |
+| `proxy_role` / `object_proxy_role` | resolved custom object proxy role, such as `keyword` |
+| `proxy_struct` / `object_proxy_struct` | source Arcweft struct that supplied `#[text_proxy]` / `#[rich_text_proxy]` defaults |
 | `has_transform` | `true` / `false` transform presence |
 
 Examples:
@@ -279,6 +296,8 @@ Examples:
 arcweft://session/cli/frame/0/presentation-tree.json?shader=soft_glow
 arcweft://session/cli/frame/0/presentation-tree.json?effect=motion&motion=breath_orbit
 arcweft://session/cli/frame/0/presentation-tree.json?proxy=hotspot
+arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit
+arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=KeywordHit
 arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby
 ```
 

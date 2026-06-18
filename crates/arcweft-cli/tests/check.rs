@@ -2354,6 +2354,60 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         && proxy["params"]["tone"]["value"] == "alert",));
     assert!(rich_text_text_run_has_effect(textbox, "sparkle"));
 
+    let proxy_type_nodes = observe_json["presentation_tree"]["nodes"]
+        .as_array()
+        .expect("presentation tree nodes are reported")
+        .iter()
+        .filter(|node| {
+            node["object_proxies"].as_array().is_some_and(|proxies| {
+                proxies.iter().any(|proxy| {
+                    proxy["id"] == "hotspot"
+                        && proxy["type_name"] == "KeywordHit"
+                        && proxy["role"] == "keyword"
+                        && proxy["declaration"]["struct_name"] == "KeywordHit"
+                        && proxy["declaration"]["attribute"] == "text_proxy"
+                })
+            })
+        })
+        .count();
+    assert!(
+        proxy_type_nodes >= 2,
+        "presentation tree should index KeywordHit on run and proxy objects: {observe_json}"
+    );
+
+    let proxy_type_read = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reads proxy-type filtered presentation tree");
+    assert!(
+        proxy_type_read.status.success(),
+        "agent observe proxy-type presentation tree read should succeed, stderr: {}",
+        String::from_utf8_lossy(&proxy_type_read.stderr)
+    );
+    let proxy_type_tree: serde_json::Value =
+        serde_json::from_slice(&proxy_type_read.stdout).expect("proxy-type tree read is JSON");
+    assert!(
+        proxy_type_tree["body"]["body"]["nodes"]
+            .as_array()
+            .expect("proxy-type tree nodes are returned")
+            .iter()
+            .any(|node| node["object_proxies"]
+                .as_array()
+                .is_some_and(|proxies| proxies
+                    .iter()
+                    .any(|proxy| proxy["type_name"] == "KeywordHit")))
+    );
+
     let hover = find_rich_text_proxy_object(observe_json, "HoverHit", "Hit");
     assert_eq!(hover["role"], "rich_text_proxy");
     assert_eq!(hover["rich_text_ref"]["kind"], "text_object_proxy");
