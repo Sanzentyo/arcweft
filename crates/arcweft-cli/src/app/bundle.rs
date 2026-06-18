@@ -1,3 +1,7 @@
+use super::project::{
+    SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
+    typecheck_env_for_selection,
+};
 use super::runtime::{
     BundleCommandReport, BundleRunReport, ProfileCompiledRuntimePlan, compile_profile_runtime_plan,
     report_path, run_profile_phase,
@@ -7,10 +11,8 @@ use super::{
     BundleOptions, BundleRunnerError, BundleRunnerOptions, BundleRuntimeSummary, BundleSource,
     BundleVirtualFile, BundleVirtualFileSpace, CliRuntimeExecutorTier, Component, ExitCode, FlowOp,
     INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, Path, RunBundleOptions,
-    RuntimeExecutorTier, RuntimePlan, RuntimeProfilePhase, SourceSelection,
-    adapter_manifest_for_selection, bundle_launch_kind, fs, internal_scheduler_manifest,
-    print_json, resolve_source_selection, run_bundle_file_with_native_adapters, standard,
-    typecheck_env_for_selection,
+    RuntimeExecutorTier, RuntimePlan, RuntimeProfilePhase, bundle_launch_kind, fs,
+    internal_scheduler_manifest, print_json, run_bundle_file_with_native_adapters, standard,
 };
 
 pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {

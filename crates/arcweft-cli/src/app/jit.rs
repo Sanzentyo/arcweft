@@ -1,5 +1,6 @@
+use super::project::{CheckedModule, load_and_check_with_env};
 use super::{
-    AotPureFunctionBackend, AotPureI64Plan, Args, BorrowCheckProfileStats, CheckedModule, Command,
+    AotPureFunctionBackend, AotPureI64Plan, Args, BorrowCheckProfileStats, Command,
     CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend, DenseSeq, ExitCode,
     HostSystemInfo, Instant, JitCommand, Path, PathBuf, PureFunctionBackendKind,
     PureFunctionRequest, PureFunctionResult, PureFunctionStats, PureHelperCandidate,
@@ -11,7 +12,7 @@ use super::{
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
     ScriptBenchPureHelperTimingSummary, TypeCheckEnv, TypeCheckProfileStats, ValueEnum,
     VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend, host_system_info,
-    load_and_check_with_env, lower_pure_helper_candidates, print_json,
+    lower_pure_helper_candidates, print_json,
 };
 
 #[derive(Args, Clone, Debug)]

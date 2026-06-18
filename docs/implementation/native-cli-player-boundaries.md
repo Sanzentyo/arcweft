@@ -77,13 +77,16 @@ check / format / verify / bundle tooling without linking the native GPU/window
 stack. Runtime plan/run/profile/serve/test/bench implementation now lives in
 `app/runtime.rs`, JIT check implementation now lives in `app/jit.rs`, and
 check/verify/verify-types/unsafe implementation now lives in `app/verify.rs`.
-The primary `app.rs` is smaller, but it still owns shared project loading and
-cross-command helper parsing. The remaining architectural cuts are:
+Shared source/profile selection, adapter manifest resolution, typecheck
+environment construction, and checked-module loading now live in
+`app/project.rs`. The primary `app.rs` is smaller, but it still owns command
+option types and cross-command helper parsing. The remaining architectural cuts
+are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing shared source-selection / project-loading helpers next so the
-   primary module becomes dispatch plus shared CLI context instead of a
-   cross-layer implementation sink.
+   prioritizing command option / value parser organization next so the primary
+   module becomes dispatch plus shared CLI context instead of a cross-layer
+   implementation sink.
 2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
 3. Move remaining product-player host/task behavior onto `.awfb` execution.

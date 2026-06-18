@@ -2,6 +2,13 @@ use super::jit::{
     JitBuiltinCase, JitCheckOptions, JitCheckReport, JitCheckTarget, jit_check_input_array,
     per_iteration_ns, run_jit_check, speedup_x, timing_samples,
 };
+use super::project::{
+    SourceSelection, count_warning_lints, has_error_lints, load_and_check_selection,
+    native_host_policy_for_selection, native_host_policy_for_selection_with_adapter,
+    profile_listen_addr, require_profile_kind, resolve_source_selection,
+    runtime_plan_options_for_selection, runtime_pure_config_for_selection,
+    typecheck_env_for_selection,
+};
 use super::{
     AotExecutor, AotProfileStats, AotProgram, AotProgramStats, AssertUnwindSafe, BenchSection,
     BorrowCheckProfileStats, BundleRunnerPhase, BundleRunnerStepSummary, BundleRuntimeSummary,
@@ -26,16 +33,12 @@ use super::{
     ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
     ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus, ScriptTestOptions,
     ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, ServeOptions, SocketAddr,
-    SourceSelection, TypeCheckEnv, TypeCheckProfileStats, TypeCheckReport, analyze_types,
-    catch_unwind, collect_script_tests, count_warning_lints, flow_status_label, fs,
-    has_error_lints, host_system_info, is_arcw_path, lint_id_policy, load_and_check_selection,
+    TypeCheckEnv, TypeCheckProfileStats, TypeCheckReport, analyze_types, catch_unwind,
+    collect_script_tests, flow_status_label, fs, host_system_info, is_arcw_path, lint_id_policy,
     lower_line_task_groups, lower_pure_helper_candidates, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options, lower_to_hir, native_host_policy_for_selection,
-    native_host_policy_for_selection_with_adapter, parse_expr, parse_source, print_json,
-    profile_listen_addr, registry_from_hir, require_profile_kind, resolve_source_selection,
-    runtime_executor_stats, runtime_plan_options_for_selection, runtime_pure_config_for_selection,
-    runtime_sequence_values, serve_native_http, step_options, typecheck_env_for_selection,
-    validate_hir_references, validate_runtime_plan_types, validate_typecheck_ready,
+    lower_runtime_plan_with_stats_and_options, lower_to_hir, parse_expr, parse_source, print_json,
+    registry_from_hir, runtime_executor_stats, runtime_sequence_values, serve_native_http,
+    step_options, validate_hir_references, validate_runtime_plan_types, validate_typecheck_ready,
 };
 
 pub(super) fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {

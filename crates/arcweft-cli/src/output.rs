@@ -1,4 +1,4 @@
-use crate::app::CheckedModule;
+use crate::app::project::CheckedModule;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
