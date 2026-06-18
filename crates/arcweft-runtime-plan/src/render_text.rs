@@ -2086,7 +2086,7 @@ fn lower_dialogue_token(
             })]
         }
         DialogueToken::Tag(tag) => lower_tag(tag, text_proxies),
-        DialogueToken::InferredTag(tag) => lower_inferred_tag(tag),
+        DialogueToken::InferredTag(tag) => lower_inferred_tag(tag, text_proxies),
         DialogueToken::Mark(mark) => {
             vec![RichTextNode::Control(RichTextControl::Mark {
                 name: mark.name().to_owned(),
@@ -2195,8 +2195,14 @@ fn lower_tag(
     }
 }
 
-fn lower_inferred_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+fn lower_inferred_tag(
+    tag: &DialogueTag,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> Vec<RichTextNode> {
     let selector = tag.name().trim_start_matches('.');
+    if inferred_text_proxy_type(selector, tag.attrs(), text_proxies) {
+        return lower_object_selector(selector, tag.attrs(), text_proxies);
+    }
     match inferred_tag_family(selector, tag.attrs()) {
         Some(InferredTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
         Some(InferredTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
@@ -2208,6 +2214,17 @@ fn lower_inferred_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
             })]
         }
     }
+}
+
+fn inferred_text_proxy_type(
+    selector: &str,
+    attrs: &str,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> bool {
+    let attrs = parse_attrs(attrs);
+    object_proxy_type_name_attr(&attrs)
+        .is_some_and(|type_name| text_proxies.contains_key(&type_name))
+        || text_proxies.contains_key(selector)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2336,13 +2353,17 @@ fn lower_object_tag(
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
 ) -> Vec<RichTextNode> {
     let (selector, attrs) = split_selector_attrs(tag.attrs());
+    lower_object_selector(selector.trim_start_matches('.'), attrs, text_proxies)
+}
+
+fn lower_object_selector(
+    selector: &str,
+    attrs: &str,
+    text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
+) -> Vec<RichTextNode> {
     vec![RichTextNode::StyleStart {
         style: RichTextStyle::Object {
-            proxy: object_proxy_from_selector(
-                selector.trim_start_matches('.'),
-                attrs,
-                text_proxies,
-            ),
+            proxy: object_proxy_from_selector(selector, attrs, text_proxies),
         },
     }]
 }
@@ -3478,6 +3499,108 @@ flow @flow.main main {
                 && !hover.params.contains_key("hit")
                 && !hover.params.contains_key("layer"),
             "proxy metadata keys should not be forwarded as custom params"
+        );
+    }
+
+    #[test]
+    fn inferred_text_proxy_struct_shorthand_lowers_to_object_proxy() {
+        let parsed = parse_source(
+            r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+#[text_proxy(kind="hover", default_hit=false, depth=2, layer=ui)]
+pub struct HoverHit {
+    layer: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[.hotspot type=KeywordHit channel=inventory][.HoverHit depth=7 hit=true tone=alert]BC[/][/][.sparkle amp=2px]FX[/][p]
+}
+"#,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.object.proxy.inferred".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let object_proxies = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .map(|run| run.presentation.object_proxies.as_slice())
+            .expect("inferred object proxy text run");
+        let [keyword, hover] = object_proxies else {
+            panic!("inferred proxy run should carry two proxies: {object_proxies:?}");
+        };
+
+        assert_eq!(keyword.id, "hotspot");
+        assert_eq!(keyword.type_name.as_deref(), Some("KeywordHit"));
+        assert_eq!(keyword.role.as_deref(), Some("keyword"));
+        assert_eq!(keyword.depth, Some(Milli(4000)));
+        assert!(keyword.hit_test);
+        assert_eq!(
+            keyword.params.get("channel"),
+            Some(&RichTextParam::Raw {
+                value: "inventory".to_owned()
+            })
+        );
+
+        assert_eq!(hover.id, "HoverHit");
+        assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
+        assert_eq!(hover.role.as_deref(), Some("hover"));
+        assert_eq!(hover.layer.as_deref(), Some("ui"));
+        assert_eq!(hover.depth, Some(Milli(7000)));
+        assert!(hover.hit_test);
+        assert_eq!(
+            hover.params.get("tone"),
+            Some(&RichTextParam::Raw {
+                value: "alert".to_owned()
+            })
+        );
+
+        let effect_run = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "FX")
+            })
+            .expect("custom effect run remains effect");
+        assert!(effect_run.presentation.object_proxies.is_empty());
+        assert!(
+            effect_run
+                .presentation
+                .effects
+                .iter()
+                .any(|effect| effect.id == "sparkle")
         );
     }
 

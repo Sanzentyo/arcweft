@@ -242,6 +242,15 @@ Surface `.host` selectors use their `id`, `effect`, or `name` metadata as the
 registry id before native dispatch, so `[.host id=sparkle]...[/]` reaches the
 same default registry entry as an explicit custom effect descriptor with id
 `sparkle`.
+Runtime-plan lowering now uses the same visible `#[text_proxy]` /
+`#[rich_text_proxy]` struct registry as canonical tooling for inferred inline
+selectors. `[.id type=KeywordHit]...[/]`, `[.id struct=KeywordHit]...[/]`,
+`[.id proxy=KeywordHit]...[/]`, and `[.KeywordHit]...[/]` lower directly to
+typed `RichTextStyle::Object` proxies when `KeywordHit` is a declared text proxy
+type, while ordinary custom selectors such as `[.sparkle]` remain effect spans.
+Those inferred proxies therefore produce the same run/page/line metadata,
+`rich_text_proxy` observed objects, object-id/mask/color captures, and hit-test
+regions as explicit `[object ...]` syntax.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

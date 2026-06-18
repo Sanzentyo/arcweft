@@ -2033,6 +2033,149 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_infers_text_proxy_struct_shorthand() {
+    let path = inferred_text_proxy_struct_shorthand_source();
+    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe runs inferred proxy source");
+    assert!(
+        observe.status.success(),
+        "agent observe for inferred proxy should succeed, stderr: {}",
+        String::from_utf8_lossy(&observe.stderr)
+    );
+    let observe_json: serde_json::Value =
+        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+    assert_inferred_text_proxy_struct_shorthand_observe(&path, &observe_json);
+    let hover = find_rich_text_proxy_object(&observe_json, "HoverHit", "Hit");
+
+    let hit_json = hit_test_center_of_observed_object(&path, hover);
+    fs::remove_file(&path).expect("remove temp inferred proxy source");
+
+    assert_eq!(hit_json["status"], "ok");
+    assert_eq!(hit_json["top_object_id"], hover["id"]);
+    assert_eq!(hit_json["hits"][0]["role"], "rich_text_proxy");
+    assert_eq!(hit_json["hits"][0]["region"]["kind"], "text_object_proxy");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "HoverHit");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_type"], "HoverHit");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "ui");
+    assert_eq!(
+        hit_json["hits"][0]["region"]["proxy_params"]["tone"]["value"],
+        "alert"
+    );
+    assert_eq!(hit_json["hits"][0]["depth"], 7000);
+}
+
+fn inferred_text_proxy_struct_shorthand_source() -> PathBuf {
+    temp_arcw(
+        "agent-observe-inferred-rich-text-proxy",
+        r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+pub struct HoverHit {
+    layer: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]Hit[/][/][.sparkle amp=2px]FX[/][p]
+}
+"#,
+    )
+}
+
+fn assert_inferred_text_proxy_struct_shorthand_observe(
+    path: &Path,
+    observe_json: &serde_json::Value,
+) {
+    let textbox = find_textbox_object(observe_json);
+    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| proxy
+        ["id"]
+        == "hotspot"
+        && proxy["type_name"] == "KeywordHit"
+        && proxy["role"] == "keyword"
+        && proxy["depth"] == 4000
+        && proxy["hit_test"] == true
+        && proxy["params"]["channel"]["value"] == "inventory",));
+    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| proxy
+        ["id"]
+        == "HoverHit"
+        && proxy["type_name"] == "HoverHit"
+        && proxy["role"] == "hover"
+        && proxy["layer"] == "ui"
+        && proxy["depth"] == 7000
+        && proxy["hit_test"] == true
+        && proxy["params"]["tone"]["value"] == "alert",));
+    assert!(rich_text_text_run_has_effect(textbox, "sparkle"));
+
+    let hover = find_rich_text_proxy_object(observe_json, "HoverHit", "Hit");
+    assert_eq!(hover["role"], "rich_text_proxy");
+    assert_eq!(hover["rich_text_ref"]["kind"], "text_object_proxy");
+    assert_eq!(hover["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(hover["rich_text_ref"]["object_depth"], 7000);
+    let hover_uri = rich_text_object_capture_uri(hover, "object_id", "application/octet-stream");
+    let hover_width = hover["bbox"]["width"]
+        .as_u64()
+        .expect("inferred proxy bbox width");
+    let hover_height = hover["bbox"]["height"]
+        .as_u64()
+        .expect("inferred proxy bbox height");
+    assert_agent_read_uri_object_id_image_matches_object_color(
+        path,
+        hover_uri,
+        hover,
+        hover_width,
+        hover_height,
+    );
+}
+
+fn hit_test_center_of_observed_object(
+    path: &Path,
+    object: &serde_json::Value,
+) -> serde_json::Value {
+    let center_x = agent_json_bbox_x(&object["bbox"]) + agent_json_bbox_width(&object["bbox"]) / 2;
+    let center_y = agent_json_bbox_y(&object["bbox"]) + agent_json_bbox_height(&object["bbox"]) / 2;
+    let hit_test = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("hit-test")
+        .arg(path)
+        .arg("--x")
+        .arg(center_x.to_string())
+        .arg("--y")
+        .arg(center_y.to_string())
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent hit-test runs inferred rich text source");
+
+    assert!(
+        hit_test.status.success(),
+        "agent hit-test for inferred proxy should succeed, stderr: {}",
+        String::from_utf8_lossy(&hit_test.stderr)
+    );
+    serde_json::from_slice(&hit_test.stdout).expect("hit-test output is JSON")
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native observe and hit-test coverage"]
 fn agent_mcp_stdio_hit_test_reports_depth_sorted_rich_text_proxy() {
     let path = temp_arcw(
@@ -19317,6 +19460,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
     assert_full_grammar_nested_text_object_proxies(&source_path, &json);
+    assert_full_grammar_inferred_text_object_proxy(&source_path, &json);
     assert_full_grammar_text_page_object_readback(&source_path, &json);
     assert_full_grammar_text_line_object_readback(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
@@ -33487,6 +33631,62 @@ fn assert_full_grammar_nested_proxy_observed_object(
         proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
             [0]["params"][expected_param.0]["value"],
         expected_param.1
+    );
+}
+
+fn assert_full_grammar_inferred_text_object_proxy(source_path: &Path, json: &serde_json::Value) {
+    let proxy_run = find_rich_text_run_object(json, "typed proxy");
+    assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
+    assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 4000);
+    let proxies = proxy_run["rich_text_ref"]["presentation"]["object_proxies"]
+        .as_array()
+        .expect("inferred proxy run should expose object_proxies");
+    let [proxy] = proxies.as_slice() else {
+        panic!("inferred proxy run should carry one proxy: {proxy_run}");
+    };
+    assert_eq!(proxy["id"], "KeywordHit");
+    assert_eq!(proxy["type_name"], "KeywordHit");
+    assert_eq!(proxy["role"], "keyword");
+    assert_eq!(proxy["depth"], 4000);
+    assert_eq!(proxy["hit_test"], true);
+    assert_eq!(proxy["params"]["channel"]["value"], "typed");
+
+    let proxy_object = find_rich_text_proxy_object(json, "KeywordHit", "typed proxy");
+    assert_eq!(proxy_object["role"], "rich_text_proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["object_depth"], 4000);
+    assert_agent_observe_object_capture_refs(proxy_object);
+    let proxy_object_id = proxy_object["id"]
+        .as_str()
+        .expect("inferred proxy object id");
+    let proxy_object_width = proxy_object["bbox"]["width"]
+        .as_u64()
+        .expect("inferred proxy object bbox width");
+    let proxy_object_height = proxy_object["bbox"]["height"]
+        .as_u64()
+        .expect("inferred proxy object bbox height");
+    let proxy_object_id_uri =
+        rich_text_object_capture_uri(proxy_object, "object_id", "application/octet-stream");
+    assert_agent_read_uri_object_id_image_matches_object_color(
+        source_path,
+        proxy_object_id_uri,
+        proxy_object,
+        proxy_object_width,
+        proxy_object_height,
+    );
+    let proxy_mask_uri =
+        rich_text_object_capture_uri(proxy_object, "mask", "application/octet-stream");
+    let proxy_mask_resource = assert_agent_read_uri_object_image_has_content(
+        source_path,
+        proxy_mask_uri,
+        proxy_object_id,
+        proxy_object_width,
+        proxy_object_height,
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
+            [0]["params"]["channel"]["value"],
+        "typed"
     );
 }
 
