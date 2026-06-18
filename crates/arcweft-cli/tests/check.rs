@@ -20850,10 +20850,11 @@ fn assert_agent_read_uri_object_image_has_content(
     object_id: &str,
     width: u64,
     height: u64,
-) {
+) -> serde_json::Value {
     let resource = read_agent_observe_object_image_resource(path, uri);
     assert_agent_read_uri_object_image_metadata(&resource, uri, object_id, width, height);
     assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+    resource
 }
 
 fn assert_agent_read_uri_object_id_image_matches_object_color(
@@ -20920,6 +20921,15 @@ fn assert_agent_read_uri_object_image_metadata(
     assert_eq!(resource["image"]["renderer"], "native");
     assert_eq!(resource["image"]["scope"]["kind"], "object");
     assert_eq!(resource["image"]["scope"]["id"], object_id);
+    assert_eq!(resource["image"]["object"]["id"], object_id);
+    assert!(
+        resource["image"]["object"]["role"].as_str().is_some(),
+        "object image metadata should preserve the observed object role: {resource}"
+    );
+    assert!(
+        resource["image"]["object"]["layer"].as_str().is_some(),
+        "object image metadata should preserve the observed object layer: {resource}"
+    );
     assert_eq!(resource["image"]["width"], width);
     assert_eq!(resource["image"]["height"], height);
 }
@@ -32820,12 +32830,21 @@ fn assert_full_grammar_text_object_proxy_observed_object(
         .expect("proxy object bbox height");
     let proxy_mask_uri =
         rich_text_object_capture_uri(proxy_object, "mask", "application/octet-stream");
-    assert_agent_read_uri_object_image_has_content(
+    let proxy_mask_resource = assert_agent_read_uri_object_image_has_content(
         source_path,
         proxy_mask_uri,
         proxy_object_id,
         proxy_object_width,
         proxy_object_height,
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["kind"],
+        "text_object_proxy"
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
+            [0]["params"]["channel"]["value"],
+        "choice"
     );
     let proxy_object_id_uri =
         rich_text_object_capture_uri(proxy_object, "object_id", "application/octet-stream");
@@ -32982,12 +33001,21 @@ fn assert_full_grammar_nested_proxy_observed_object(
     );
     let proxy_mask_uri =
         rich_text_object_capture_uri(proxy_object, "mask", "application/octet-stream");
-    assert_agent_read_uri_object_image_has_content(
+    let proxy_mask_resource = assert_agent_read_uri_object_image_has_content(
         source_path,
         proxy_mask_uri,
         proxy_object_id,
         proxy_object_width,
         proxy_object_height,
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["kind"],
+        "text_object_proxy"
+    );
+    assert_eq!(
+        proxy_mask_resource["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"]
+            [0]["params"][expected_param.0]["value"],
+        expected_param.1
     );
 }
 

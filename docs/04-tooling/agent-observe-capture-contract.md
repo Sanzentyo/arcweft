@@ -113,6 +113,15 @@ Required capture families:
 PNG resources must be decoded as normal PNG images. Raw and PNG captures of the
 same scope must describe the same viewport-space geometry.
 
+Object-scoped image metadata carries an `object` reference in addition to
+`scope.object.id`. The reference preserves the observed object's id, optional
+entity, layer, role, optional display text, and optional `rich_text_ref`. For a
+rich-text child crop, this means `--read-uri`, MCP `resources/read`, and direct
+capture responses expose the same source range, presentation summary, proxy
+metadata, hit regions, and object-layer/depth metadata that the observation
+object exposed. Clients should use this metadata instead of reparsing the URI or
+walking the whole object list after reading image bytes.
+
 ---
 
 ## Scope semantics
@@ -155,7 +164,8 @@ on a non-zero rendered page. The `page` value is also present in metadata.
 
 Clients should treat URIs as opaque identifiers after discovery. The resource
 metadata is authoritative for renderer, scope, composition, dimensions, and
-coordinate mapping.
+coordinate mapping. For object resources, `image.object` is authoritative for
+the object metadata associated with the captured pixels.
 
 ---
 

@@ -26,10 +26,10 @@ use arcweft_agent_protocol::{
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
     AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
     AgentHitTestHit, AgentHitTestReport, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageRenderer,
-    AgentImageResource, AgentImageScope, AgentLayerCaptureRef, AgentLayerCaptureRefs,
-    AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport, AgentObservedLayer,
-    AgentObservedObject, AgentResource, AgentResourceBody, AgentRgbaColor,
+    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
+    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
+    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
+    AgentObservedLayer, AgentObservedObject, AgentResource, AgentResourceBody, AgentRgbaColor,
     AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
@@ -3047,6 +3047,7 @@ fn agent_native_capture_image_with_session(
         content_bbox: stats.bbox,
         content_viewport_bbox,
         content_pixels: Some(stats.content_pixels),
+        object: agent_image_object_for_capture_scope(report, &request.scope),
         written: None,
     };
     Ok(AgentNativeCaptureImageResult {
@@ -3054,6 +3055,20 @@ fn agent_native_capture_image_with_session(
         bytes,
         capture,
     })
+}
+
+fn agent_image_object_for_capture_scope(
+    report: &AgentObservationReport,
+    scope: &AgentCaptureScope,
+) -> Option<AgentImageObjectRef> {
+    let AgentCaptureScope::Object(object_id) = scope else {
+        return None;
+    };
+    report
+        .objects
+        .iter()
+        .find(|object| object.id == *object_id)
+        .map(AgentImageObjectRef::from_observed)
 }
 
 fn agent_native_textbox_for_capture<'a>(
@@ -4280,6 +4295,7 @@ fn agent_layer_capture_ref_resource(
             page: capture.page,
             width: capture.width,
             height: capture.height,
+            object: None,
         },
     )
 }
@@ -4301,6 +4317,7 @@ fn agent_object_capture_ref_resource(
             page: capture.page,
             width: capture.width,
             height: capture.height,
+            object: Some(AgentImageObjectRef::from_observed(object)),
         },
     )
 }
@@ -4313,6 +4330,7 @@ struct AgentCaptureRefResourceSpec<'a> {
     page: usize,
     width: u32,
     height: u32,
+    object: Option<AgentImageObjectRef>,
 }
 
 fn agent_capture_ref_resource(
@@ -4340,6 +4358,7 @@ fn agent_capture_ref_resource(
             content_bbox: None,
             content_viewport_bbox: None,
             content_pixels: None,
+            object: spec.object,
         }),
         body: AgentResourceBody::Text(String::new()),
     }
@@ -4720,12 +4739,11 @@ fn agent_observe_image_output(
             let hash = hash_hex(overlay_svg.as_bytes());
             report.render_hash.clone_from(&hash);
             let uri = agent_capture_uri(report, "overlay", "svg", options);
+            let scope = agent_capture_scope_for_options(options);
             report.images = vec![AgentImageResource {
                 kind: AgentImageKind::OverlaySvg,
                 renderer: AgentImageRenderer::Native,
-                scope: agent_image_scope_for_capture_scope(&agent_capture_scope_for_options(
-                    options,
-                )),
+                scope: agent_image_scope_for_capture_scope(&scope),
                 composition: AgentImageComposition::OverlayVector,
                 page: 0,
                 capture_step: report.steps,
@@ -4741,6 +4759,7 @@ fn agent_observe_image_output(
                 content_bbox: None,
                 content_viewport_bbox: None,
                 content_pixels: None,
+                object: agent_image_object_for_capture_scope(report, &scope),
                 written: options.out.as_deref().map(report_path),
             }];
             report.overlay_svg = Some(overlay_svg.clone());

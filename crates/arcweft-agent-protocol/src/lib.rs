@@ -186,6 +186,22 @@ pub struct AgentImageMetadata {
     pub content_viewport_bbox: Option<AgentImageContentBBox>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_pixels: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<AgentImageObjectRef>,
+}
+
+/// Observed object metadata preserved on an image resource that captures an object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentImageObjectRef {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
+    pub layer: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rich_text_ref: Option<AgentRichTextElementRef>,
 }
 
 /// Bounds of non-transparent pixels in image-local coordinates.
@@ -223,6 +239,7 @@ impl AgentImageMetadata {
             content_bbox: image.content_bbox,
             content_viewport_bbox: image.content_viewport_bbox,
             content_pixels: image.content_pixels,
+            object: image.object.clone(),
         }
     }
 }
@@ -300,6 +317,8 @@ pub struct AgentImageResource {
     pub content_viewport_bbox: Option<AgentImageContentBBox>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_pixels: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<AgentImageObjectRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub written: Option<String>,
 }
@@ -407,6 +426,20 @@ pub struct AgentObservedObject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
     pub rich_text: LineDisplayFrame,
+}
+
+impl AgentImageObjectRef {
+    /// Copies the stable object identity and rich-text link into image metadata.
+    pub fn from_observed(object: &AgentObservedObject) -> Self {
+        Self {
+            id: object.id.clone(),
+            entity: object.entity.clone(),
+            layer: object.layer.clone(),
+            role: object.role.clone(),
+            text: object.text.clone(),
+            rich_text_ref: object.rich_text_ref.clone(),
+        }
+    }
 }
 
 /// Structured reference from an observed child object back into its parent rich-text display map.
@@ -788,6 +821,7 @@ mod tests {
                 height: 4,
             }),
             content_pixels: Some(12),
+            object: None,
             written: None,
         }
     }
@@ -827,6 +861,7 @@ mod tests {
                 content_bbox: None,
                 content_viewport_bbox: None,
                 content_pixels: None,
+                object: None,
                 written: None,
             }],
             layers: Vec::new(),
@@ -895,6 +930,7 @@ mod tests {
                 content_bbox: None,
                 content_viewport_bbox: None,
                 content_pixels: None,
+                object: None,
                 written: None,
             }],
             layers: vec![AgentObservedLayer {
@@ -1120,6 +1156,46 @@ mod tests {
     }
 
     #[test]
+    fn image_resource_metadata_preserves_observed_object_ref() {
+        let report = test_mcp_observation_report();
+        let bbox = AgentBBox {
+            space: AgentCoordinateSpace::Viewport,
+            x: 96,
+            y: 548,
+            width: 3,
+            height: 4,
+        };
+        let rich_text_ref = test_rich_text_ref(&bbox);
+        let mut image = test_raw_mask_image_resource();
+        image.object = Some(AgentImageObjectRef {
+            id: "object.dialogue.0.0.run.0".to_owned(),
+            entity: Some("character.alice".to_owned()),
+            layer: "dialogue".to_owned(),
+            role: "rich_text_run".to_owned(),
+            text: Some("Hello".to_owned()),
+            rich_text_ref: Some(rich_text_ref.clone()),
+        });
+
+        let resource = report.image_resource(&image, &[255; 48]);
+
+        assert_eq!(
+            resource
+                .image
+                .as_ref()
+                .and_then(|image| image.object.as_ref()),
+            image.object.as_ref()
+        );
+        assert_eq!(
+            resource
+                .image
+                .as_ref()
+                .and_then(|image| image.object.as_ref())
+                .and_then(|object| object.rich_text_ref.as_ref()),
+            Some(&rich_text_ref)
+        );
+    }
+
+    #[test]
     fn observation_report_builds_mcp_style_resources() {
         let report = test_mcp_observation_report();
 
@@ -1156,6 +1232,7 @@ mod tests {
                 content_bbox: None,
                 content_viewport_bbox: None,
                 content_pixels: None,
+                object: None,
             },
         );
         assert_image_metadata(
@@ -1190,6 +1267,7 @@ mod tests {
                     height: 4,
                 }),
                 content_pixels: Some(12),
+                object: None,
             },
         );
         assert_eq!(signals.uri, "arcweft://session/cli/signals.json");

@@ -142,6 +142,12 @@ target as the decorated run, but its `rich_text_ref.kind` is
 `text_object_proxy` and its presentation contains only the selected proxy. This
 lets LLM/debug tools capture or inspect the proxy span directly without having
 to infer it from a broader `rich_text_run`.
+Image resources produced for the proxy object keep an `image.object` reference
+with the same selected `rich_text_ref`. A raw/PNG mask, object-id, or color crop
+therefore carries the proxy id/type/role/layer/depth, typed params, hit-test
+regions, and source range alongside the pixels. This is the text-object
+equivalent of a sprite or 3D model crop retaining its object identity and
+depth/hit metadata.
 
 ## Renderer Boundary
 
@@ -161,6 +167,8 @@ Agent observe/capture must be able to retrieve:
 - effective presentation metadata, including proxy ids and attributes
 - hit regions and depth ordering metadata
 - a pinned runtime step plus visual `capture_time` for animated text objects
+- object-scoped image resource metadata that preserves the captured text
+  object's `rich_text_ref`
 
 This makes text debug behave like image, sprite, and 3D model debug: the Agent
 can ask what object exists, where it is, what authored proxy metadata it carries,

@@ -622,6 +622,7 @@ mod tests {
                     height: 24,
                 }),
                 content_pixels: Some(512),
+                object: None,
             }),
             body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                 encoding: AgentBinaryEncoding::Base64,
@@ -706,6 +707,7 @@ mod tests {
                     content_bbox: None,
                     content_viewport_bbox: None,
                     content_pixels: None,
+                    object: None,
                 }),
                 body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                     encoding: AgentBinaryEncoding::Base64,
