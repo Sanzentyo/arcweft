@@ -30,18 +30,20 @@ execution without compatibility shims.
 | Visual sample evidence exists for inspectable rendering outcomes, not only metadata | `docs/implementation/rich-text-object-visual-evidence.md`; 2026-06-15 ruby/HTML comparison images; 2026-06-16 horizontal ruby comparison; 2026-06-17 full grammar/effect captures; 2026-06-18 proxy/source-local post-process captures | Covered |
 | A single explicit milestone command exists for the current rich-text object goal gate | `just test-rich-text-object-goal` runs the protocol/MCP/native/player/CLI/sample checks listed below | Covered |
 
-## Remaining Audit Risks
+## Completion Notes
 
-- The matrix is assembled from focused tests and review evidence. Use targeted
-  regressions during development, then run `just test-rich-text-object-goal`
-  before claiming completion or handing off the milestone.
+- The matrix is assembled from focused tests, sample checks, native offscreen
+  PNG/raw readback, HTML comparison captures, and fixed visual-review evidence.
+  Run `just test-rich-text-object-goal` before claiming completion or handing
+  off the milestone.
 - `docs/implementation/rich-text-object-visual-evidence.md` classifies fixed
   PNG/HTML review artifacts separately from temporary raw/JSON and
   metadata-only regressions. Keep that index current when new visual sample
   requirements or evidence classes are added.
-- Golden-image screenshot checks remain deferred until a stable local UI
-  harness exists; the current goal is covered by native offscreen PNG/raw
-  readback rather than a window screenshot harness.
+- Window screenshot golden checks are non-blocking for this goal. The required
+  image/layer/object capture contract is covered by native offscreen PNG/raw
+  readback, object-id/mask/color attachments, and MCP/CLI resource readback.
+  Add window screenshot goldens later when a stable UI harness exists.
 
 ## Current Push Gate
 
@@ -72,8 +74,8 @@ Use `docs/implementation/test-execution-policy.md` for broader workspace gates
 at push cut points.
 
 Last local run on 2026-06-19: `just test-rich-text-object-goal` passed in
-250.9s wall time. The slowest selected check was
+256.2s wall time. The slowest selected check was
 `agent_observe_native_renderer_captures_combined_typewriter_animation_sample`
-at 182.92s test-body time; keep it as milestone evidence, not a tight-loop
+at 182.81s test-body time; keep it as milestone evidence, not a tight-loop
 command. That exact test is ignored in the default `check.rs` suite and is
 selected explicitly by this gate.
