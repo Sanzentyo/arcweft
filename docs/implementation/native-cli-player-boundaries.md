@@ -64,12 +64,14 @@ The unified UI design is adopted as the long-term boundary for future work:
 
 ## Required Next Cuts
 
-The current cut removes the direct CLI dependency on `arcweft-player-native` and
-moves renderer tests into `arcweft-render-native`. The remaining architectural
-cuts are:
+The current cuts remove the direct CLI dependency on `arcweft-player-native`,
+move renderer tests into `arcweft-render-native`, extract the Clap command
+surface into `app/commands.rs`, and move bundle/run-bundle implementation into
+`app/bundle.rs`. The remaining architectural cuts are:
 
-1. Split `arcweft-cli/src/app.rs` by command implementation after the command
-   surface extraction in `app/commands.rs`.
+1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
+   prioritizing Agent observe/hit-test/native capture next because it is the
+   remaining native renderer dependency cluster.
 2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
 3. Make native renderer/capture a feature-gated CLI capability or move it to a
