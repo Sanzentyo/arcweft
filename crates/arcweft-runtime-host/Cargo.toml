@@ -23,6 +23,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
+serde_json.workspace = true
 
 [lib]
 path = "src/lib.rs"

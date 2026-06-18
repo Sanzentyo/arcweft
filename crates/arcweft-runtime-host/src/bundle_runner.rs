@@ -5,7 +5,7 @@ use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowExit, FlowFiber, FlowFiberStatus};
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
-use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
@@ -124,6 +124,8 @@ pub struct BundleRunnerStepSummary {
     pub task_requests: usize,
     pub diagnostics: Vec<String>,
     pub line_effects: Vec<String>,
+    #[serde(skip)]
+    pub flow_events: Vec<FlowEvent>,
 }
 
 #[derive(Debug, Error)]
@@ -465,6 +467,7 @@ impl BundleRunnerStepSummary {
             stats,
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let flow_events = std::mem::take(&mut output.flow_events);
         (
             Self {
                 index,
@@ -478,6 +481,7 @@ impl BundleRunnerStepSummary {
                     .map(|diagnostic| diagnostic.message)
                     .collect(),
                 line_effects: output.effects.line.iter().map(effect_label).collect(),
+                flow_events,
             },
             task_requests,
         )
@@ -643,5 +647,92 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Select(_) => "select".to_owned(),
         LineEffectRequest::Break { .. } => "break".to_owned(),
         LineEffectRequest::Continue { .. } => "continue".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+    use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_core::line_task::LineTaskGroup;
+    use arcweft_core::plan::{FlowOp, RuntimeFlow, RuntimeLineId};
+    use arcweft_render_text::LineDisplayCatalog;
+
+    #[test]
+    fn bundle_runner_preserves_typed_flow_events_for_embedding_hosts() {
+        let bundle = dialogue_bundle();
+        let report = run_bundle_with_native_adapters(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 4,
+                mode: BundleRunnerStepMode::Game,
+                max_ops: 64,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect("bundle runs");
+
+        assert!(report.steps.iter().any(|step| {
+            step.flow_events.iter().any(|event| {
+                matches!(
+                    event,
+                    FlowEvent::DialogueLine { line, .. } if line.0 == "line.opening"
+                )
+            })
+        }));
+        let json = serde_json::to_value(&report).expect("report serializes");
+        assert!(
+            json["steps"]
+                .as_array()
+                .expect("steps are serialized")
+                .iter()
+                .all(|step| step.get("flow_events").is_none())
+        );
+    }
+
+    fn dialogue_bundle() -> ArcweftBundle {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.main".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![
+                    FlowOp::Dialogue {
+                        line: RuntimeLineId("line.opening".to_owned()),
+                        task_group: 0,
+                    },
+                    FlowOp::Return("done".to_owned()),
+                ],
+            }],
+            vec![LineTaskGroup::default()],
+        )
+        .expect("runtime plan is valid");
+        let bytecode = BytecodeProgram::from_runtime_plan(plan);
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: "dialogue-bundle.arcw".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: None,
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: 2,
+                    line_task_groups: 1,
+                    stream_plans: 0,
+                    source_plans: 0,
+                },
+            },
+            BundleSource {
+                label: "dialogue-bundle.arcw".to_owned(),
+                text: "flow main { dialogue }".to_owned(),
+            },
+            bytecode,
+            LineDisplayCatalog::default(),
+        )
     }
 }

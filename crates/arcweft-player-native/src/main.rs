@@ -1,9 +1,9 @@
 use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-capture")]
 use arcweft_player_native::NativePlayerCaptureMetadata;
+use arcweft_player_native::run_bundle_headless;
 #[cfg(feature = "dev-source")]
-use arcweft_player_native::compile_source;
-use arcweft_player_native::{NativePlayerProgram, load_bundle, run_headless};
+use arcweft_player_native::{NativePlayerProgram, compile_source, run_headless};
 use arcweft_render_native as native;
 use clap::Parser;
 #[cfg(feature = "dev-capture")]
@@ -99,10 +99,21 @@ fn run_bundle(args: &Args) -> Result<(), String> {
     let bytes =
         fs::read(&args.path).map_err(|error| format!("failed to read bundle file: {error}"))?;
     let bundle = ArcweftBundle::from_json_slice(&bytes).map_err(|error| error.to_string())?;
-    let program = load_bundle(bundle).map_err(|error| error.to_string())?;
-    run_program(args, program)
+    run_bundle_program(args, &bundle)
 }
 
+fn run_bundle_program(args: &Args, bundle: &ArcweftBundle) -> Result<(), String> {
+    let report = run_bundle_headless(bundle, args.steps).map_err(|error| error.to_string())?;
+    if args.headless {
+        #[cfg(feature = "dev-capture")]
+        let report = attach_native_capture(args, report)?;
+        write_headless_report(args, &report)?;
+        return Ok(());
+    }
+    native::run_frames_window("Arcweft Player", &report.frames).map_err(|error| error.to_string())
+}
+
+#[cfg(feature = "dev-source")]
 fn run_program(args: &Args, program: NativePlayerProgram) -> Result<(), String> {
     if args.headless {
         let report = run_headless(program, args.steps).map_err(|error| error.to_string())?;

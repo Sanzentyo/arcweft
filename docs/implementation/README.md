@@ -33,12 +33,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `arcweft-render-native` owns the `wgpu`/`glyphon` native renderer, offscreen
   capture, native text geometry, object-id/mask/color readback, and window
   presentation adapter. `arcweft-player-native` is now the headless/native
-  player host that orchestrates compiled runtime plans and delegates rendering
-  to `arcweft-render-native`. Shared source-to-runtime-plan compilation lives in
-  `arcweft-compiler`, so the player no longer owns parser/HIR/sema/runtime-plan
-  lowering directly. `.awfb` bundles carry the line display catalog, so the
-  native player can execute bytecode bundles without invoking source
-  compilation while still resolving native window/capture frames. See
+  player host that runs `.awfb` bundles through `arcweft-runtime-host` and
+  delegates rendering to `arcweft-render-native`. Shared source-to-runtime-plan
+  compilation lives in `arcweft-compiler`, so the player no longer owns
+  parser/HIR/sema/runtime-plan lowering directly. `.awfb` bundles carry the line
+  display catalog, so the native player can execute bytecode bundles without
+  invoking source compilation while still resolving native window/capture frames
+  from runtime-host flow events. See
   `docs/implementation/native-rich-text-player.md` and
   `docs/implementation/native-cli-player-boundaries.md`.
 - `docs/implementation/rich-text-object-goal-audit.md` tracks the current

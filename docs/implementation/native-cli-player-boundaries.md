@@ -43,7 +43,7 @@ pixel/object geometry
 `arcweft-player-native` owns player orchestration:
 
 ```text
-compiled program execution
+runtime-host bundle execution
 headless frame collection
 native product entrypoint
 render-native orchestration
@@ -233,7 +233,11 @@ feature-gated behind `dev-capture`, keeping the default product-player argv
 focused on bundle execution. The headless report API follows the same boundary:
 the `native_capture` JSON field and `NativePlayerCaptureMetadata` type exist
 only for `dev-capture` builds, so default product-player reports do not expose
-debug readback metadata. The remaining architectural cuts are:
+debug readback metadata. The player `.awfb` execution path now calls
+`arcweft-runtime-host`'s bundle runner and resolves display frames from the
+typed `FlowEvent`s retained in `BundleRunnerStepSummary`; source execution
+and direct `NativePlayerProgram` execution remain `dev-source` paths. The
+remaining architectural cuts are:
 
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned
@@ -248,8 +252,10 @@ debug readback metadata. The remaining architectural cuts are:
    printing, and runtime execution policy. Runtime-plan regression coverage now
    lives under `arcweft-runtime-plan` tests instead of giving
    `arcweft-lang-sema` a dev-only runtime-plan dependency.
-2. Move remaining product-player host/task behavior onto `.awfb` execution.
-   Source execution remains a developer mode, not the product-player model.
+2. Keep future product-player lifecycle work on the `.awfb`/runtime-host path.
+   Input, audio, save/load, and other product host behavior should extend this
+   runner/player split; source execution remains a developer mode, not the
+   product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component
    descriptor, generational Entity, retained flat fragment, property
    invalidation, reactive dependency, layout, and display-list boundaries toward
@@ -283,7 +289,8 @@ debug readback metadata. The remaining architectural cuts are:
 - Native renderer object geometry, Agent capture geometry, hit testing, and
   debug resources must share the same deterministic presentation model.
 - Native player `.awfb` execution must not invoke the source compiler. Bundles
-  carry line display sidecars so native window presentation and capture can
-  resolve dialogue frames from bytecode input. The `arcweft-player-native`
-  binary treats `.awfb` as its default input; `.arcw` source execution requires
-  the explicit `--source` developer-mode flag and the `dev-source` feature.
+  carry line display sidecars, and the player resolves native window/capture
+  frames from runtime-host bundle-runner flow events. The
+  `arcweft-player-native` binary treats `.awfb` as its default input; `.arcw`
+  source execution requires the explicit `--source` developer-mode flag and the
+  `dev-source` feature.

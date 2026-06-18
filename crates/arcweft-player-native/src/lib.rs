@@ -3,18 +3,25 @@
 use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-source")]
 use arcweft_compiler::compile_source as compile_arcweft_source;
+#[cfg(feature = "dev-source")]
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::plan::FlowEvent;
+#[cfg(feature = "dev-source")]
 use arcweft_core::step::{
     RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStopReason,
 };
 #[cfg(feature = "dev-capture")]
 use arcweft_render_native::NativeFrameContentBBox;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
+use arcweft_runtime_host::{
+    BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
+    run_bundle_with_native_adapters,
+};
 use serde::Serialize;
 use thiserror::Error;
 
 /// Compiled native-player program.
+#[cfg(feature = "dev-source")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativePlayerProgram {
     plan: arcweft_core::plan::RuntimePlan,
@@ -54,8 +61,9 @@ pub enum NativePlayerError {
     #[cfg(feature = "dev-source")]
     #[error(transparent)]
     Compile(#[from] arcweft_compiler::CompileSourceError),
-    #[error("failed to decode bundle bytecode: {0}")]
-    DecodeBytecode(arcweft_core::plan::RuntimePlanError),
+    #[error(transparent)]
+    BundleRunner(#[from] arcweft_runtime_host::BundleRunnerError),
+    #[cfg(feature = "dev-source")]
     #[error("no display frame was produced")]
     NoDisplayFrame,
 }
@@ -70,19 +78,8 @@ pub fn compile_source(source: &str) -> Result<NativePlayerProgram, NativePlayerE
     })
 }
 
-/// Loads a compiled bundle into the native player without invoking source compilation.
-pub fn load_bundle(bundle: ArcweftBundle) -> Result<NativePlayerProgram, NativePlayerError> {
-    Ok(NativePlayerProgram {
-        plan: bundle
-            .bytecode
-            .program
-            .into_runtime_plan()
-            .map_err(NativePlayerError::DecodeBytecode)?,
-        display: bundle.display,
-    })
-}
-
 /// Runs the program without opening a window and returns resolved display frames.
+#[cfg(feature = "dev-source")]
 pub fn run_headless(
     program: NativePlayerProgram,
     max_steps: usize,
@@ -138,6 +135,43 @@ pub fn run_headless(
     })
 }
 
+/// Runs a compiled `.awfb` bundle through the runtime-host bundle boundary.
+pub fn run_bundle_headless(
+    bundle: &ArcweftBundle,
+    max_steps: usize,
+) -> Result<HeadlessPlayerReport, NativePlayerError> {
+    let runner = run_bundle_with_native_adapters(
+        bundle,
+        &BundleRunnerOptions {
+            steps: max_steps,
+            mode: BundleRunnerStepMode::Game,
+            max_ops: 64,
+            executor: BundleRunnerExecutor::BytecodeVm,
+            ..BundleRunnerOptions::default()
+        },
+        &[],
+    )?;
+    let mut frames = Vec::new();
+    let mut diagnostics = Vec::new();
+    for step in &runner.steps {
+        diagnostics.extend(step.diagnostics.iter().cloned());
+        append_display_frames(
+            &bundle.display,
+            &step.flow_events,
+            &mut frames,
+            &mut diagnostics,
+        );
+    }
+    Ok(HeadlessPlayerReport {
+        frames,
+        diagnostics,
+        steps: runner.steps.len(),
+        status: runner.final_status,
+        #[cfg(feature = "dev-capture")]
+        native_capture: None,
+    })
+}
+
 /// Compiles and runs source until the first display frame is available.
 #[cfg(feature = "dev-source")]
 pub fn first_display_frame(source: &str) -> Result<LineDisplayFrame, NativePlayerError> {
@@ -179,6 +213,7 @@ fn append_display_frames(
     }
 }
 
+#[cfg(feature = "dev-source")]
 fn flow_status_label(status: &FlowFiberStatus) -> String {
     match status {
         FlowFiberStatus::Running => "running".to_owned(),
@@ -194,8 +229,9 @@ fn flow_status_label(status: &FlowFiberStatus) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "dev-source")]
     #[test]
-    fn headless_player_runs_program_without_source_compiler() {
+    fn dev_source_headless_player_runs_program() {
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 
         let plan = RuntimePlan::new(
@@ -219,9 +255,92 @@ mod tests {
         assert_eq!(report.status, "done:Return(\"done\")");
     }
 
+    #[test]
+    fn bundle_headless_uses_runtime_host_flow_events_for_display_frames() {
+        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+        use arcweft_core::bytecode::BytecodeProgram;
+        use arcweft_core::line_task::LineTaskGroup;
+        use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
+        use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode};
+
+        let line = RuntimeLineId("line.opening".to_owned());
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.main".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![
+                    FlowOp::Dialogue {
+                        line: line.clone(),
+                        task_group: 0,
+                    },
+                    FlowOp::Return("done".to_owned()),
+                ],
+            }],
+            vec![LineTaskGroup::default()],
+        )
+        .expect("runtime plan is valid");
+        let bundle = ArcweftBundle::new(
+            BundleManifest {
+                source_label: "bundle-display.arcw".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: None,
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: 2,
+                    line_task_groups: 1,
+                    stream_plans: 0,
+                    source_plans: 0,
+                },
+            },
+            BundleSource {
+                label: "bundle-display.arcw".to_owned(),
+                text: "flow main { dialogue }".to_owned(),
+            },
+            BytecodeProgram::from_runtime_plan(plan),
+            LineDisplayCatalog::new(vec![LineDisplaySpec {
+                line,
+                callee: "alice".to_owned(),
+                text_key: None,
+                window: None,
+                voice: None,
+                look: None,
+                style: None,
+                base_styles: Vec::new(),
+                default_inline_failure_policy: None,
+                style_contributions: Vec::new(),
+                args: Vec::new(),
+                content: RichTextDocument::new(vec![RichTextNode::Text {
+                    text: "Hello bundle".to_owned(),
+                }]),
+            }]),
+        );
+
+        let report = run_bundle_headless(&bundle, 8).expect("bundle runs through runtime host");
+
+        assert_eq!(report.status, "done return done");
+        assert_eq!(report.steps, 2);
+        assert_eq!(report.frames.len(), 1);
+        assert_eq!(report.frames[0].text, "Hello bundle");
+    }
+
     #[cfg(not(feature = "dev-capture"))]
     #[test]
     fn headless_report_json_omits_capture_metadata_without_dev_capture() {
+        let report = run_bundle_headless(&return_only_bundle(), 8).expect("bundle runs");
+        let json = serde_json::to_value(&report).expect("report serializes");
+
+        assert!(json.get("native_capture").is_none());
+    }
+
+    #[cfg(not(feature = "dev-capture"))]
+    fn return_only_bundle() -> ArcweftBundle {
+        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+        use arcweft_core::bytecode::BytecodeProgram;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 
         let plan = RuntimePlan::new(
@@ -233,17 +352,31 @@ mod tests {
             Vec::new(),
         )
         .expect("runtime plan is valid");
-        let report = run_headless(
-            NativePlayerProgram {
-                plan,
-                display: LineDisplayCatalog::default(),
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: "return-only.arcw".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: None,
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: 1,
+                    line_task_groups: 0,
+                    stream_plans: 0,
+                    source_plans: 0,
+                },
             },
-            8,
+            BundleSource {
+                label: "return-only.arcw".to_owned(),
+                text: "flow main { return \"done\" }".to_owned(),
+            },
+            BytecodeProgram::from_runtime_plan(plan),
+            LineDisplayCatalog::default(),
         )
-        .expect("program runs");
-        let json = serde_json::to_value(&report).expect("report serializes");
-
-        assert!(json.get("native_capture").is_none());
     }
 
     #[cfg(feature = "dev-capture")]

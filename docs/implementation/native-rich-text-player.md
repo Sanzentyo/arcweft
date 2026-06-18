@@ -12,9 +12,9 @@ Arcweft now has a Sans I/O rich text display model in `crates/arcweft-render-tex
 Runtime-plan lowering emits a `LineDisplayCatalog` sidecar, and flow execution emits dialogue line
 events with a snapshot of runtime bindings. Shared source compilation is owned
 by `arcweft-compiler`; the native player crate uses that driver for developer
-source execution,
-run the runtime plan headlessly, resolve interpolation from the binding snapshot, and return display
-frames as JSON.
+source execution. Product `.awfb` execution uses the `arcweft-runtime-host`
+bundle runner, keeps typed flow events in the runner report, resolves
+interpolation from the binding snapshot, and returns display frames as JSON.
 
 The CLI also exposes this display path through `arcw agent observe`. That command runs the same
 checked source and runtime executor path, keeps the display catalog, resolves emitted dialogue lines,
@@ -382,10 +382,10 @@ cargo run -p arcweft-player-native --features dev-source -- --headless --json --
 ```
 
 Bundles carry the line display catalog needed for native window presentation.
-Product/native player entry should use `.awfb` input; source input is a
-development convenience only. Native capture is a development/debug harness and
-is exposed by the `dev-capture` feature rather than the default product player
-argv. The `native_capture` JSON report field and
+Product/native player entry uses `.awfb` input through the runtime-host bundle
+runner; source input is a development convenience only. Native capture is a
+development/debug harness and is exposed by the `dev-capture` feature rather
+than the default product player argv. The `native_capture` JSON report field and
 `NativePlayerCaptureMetadata` API are also present only in `dev-capture` builds.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
