@@ -18764,6 +18764,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     );
 
     assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
 
     fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
 }
@@ -18800,6 +18801,45 @@ fn assert_effects_animation_spin_pulse_run_changes_over_time(
         &spin_pulse_early_bytes,
         &spin_pulse_late,
         &spin_pulse_late_bytes,
+    );
+}
+
+fn assert_effects_animation_vertical_spin_pulse_run_changes_over_time(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let vertical_run = find_rich_text_run_object(json, "縦回転");
+    assert_eq!(
+        vertical_run["rich_text_ref"]["presentation"]["layout"]["writing_mode"], "vertical_rl",
+        "vertical spin/pulse run should keep vertical_rl layout metadata: {vertical_run}"
+    );
+    for effect in ["spin", "pulse"] {
+        assert_rich_text_run_object_has_effect(vertical_run, effect);
+    }
+    let object_id = vertical_run["id"]
+        .as_str()
+        .expect("vertical spin/pulse run object id is reported");
+    let early_path = dir.join("vertical-spin-pulse-color-4000.rgba");
+    let late_path = dir.join("vertical-spin-pulse-color-4500.rgba");
+    let (early, early_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &early_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    let (late, late_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &late_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4.5"],
+    );
+    assert_full_grammar_color_captures_differ(
+        "vertical spin + pulse affine animation",
+        &early,
+        &early_bytes,
+        &late,
+        &late_bytes,
     );
 }
 
