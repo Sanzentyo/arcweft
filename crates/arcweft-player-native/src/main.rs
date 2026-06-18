@@ -185,3 +185,50 @@ impl NativeCaptureFormat {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_for(path: &str) -> Args {
+        Args {
+            headless: true,
+            json: true,
+            source: false,
+            steps: 1,
+            capture: None,
+            capture_out: None,
+            capture_width: 64,
+            capture_height: 64,
+            path: PathBuf::from(path),
+        }
+    }
+
+    #[test]
+    fn default_input_requires_awfb_bundle() {
+        let args = args_for("game.arcw");
+        let error = run(&args).expect_err("source input must not be accepted by default");
+
+        assert!(error.contains("native player expects an .awfb bundle"));
+        assert!(error.contains("pass --source for .arcw dev input"));
+    }
+
+    #[test]
+    fn source_mode_requires_arcw_extension_before_feature_gate() {
+        let mut args = args_for("game.awfb");
+        args.source = true;
+        let error = run(&args).expect_err("--source must require source-shaped input");
+
+        assert!(error.contains("--source expects an .arcw source file"));
+    }
+
+    #[cfg(not(feature = "dev-source"))]
+    #[test]
+    fn source_mode_requires_dev_source_feature() {
+        let mut args = args_for("game.arcw");
+        args.source = true;
+        let error = run(&args).expect_err("--source must be feature-gated");
+
+        assert!(error.contains("dev-source feature"));
+    }
+}
