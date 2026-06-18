@@ -652,6 +652,18 @@ pub enum RichTextEffectExportError {
     UnsupportedSignature { name: String },
 }
 
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RichTextShaderExportError {
+    #[error("Arcweft pure helper lowering failed for text shader export: {0}")]
+    PureLower(#[from] PureHelperLowerError),
+    #[error("text shader function `{name}` must be annotated with #[pure]")]
+    MissingPureAttribute { name: String },
+    #[error(
+        "text shader function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
+    )]
+    UnsupportedSignature { name: String },
+}
+
 impl RichTextMotionRegistry {
     pub fn insert_class(
         &mut self,
@@ -688,6 +700,61 @@ impl RichTextMotionRegistry {
     }
 }
 
+pub fn register_arcweft_pure_text_shaders(
+    registry: &mut RichTextShaderRegistry,
+    module: &HirModule,
+) -> Result<usize, RichTextShaderExportError> {
+    module
+        .functions()
+        .iter()
+        .filter(|function| {
+            function.has_attribute("text_shader") || function.has_attribute("rich_text_shader")
+        })
+        .try_fold(0usize, |exported, function| {
+            if !function.has_attribute("pure") {
+                return Err(RichTextShaderExportError::MissingPureAttribute {
+                    name: function.name().to_owned(),
+                });
+            }
+            let candidate = arcweft_runtime_plan::pure::lower_pure_helper_candidate(
+                function,
+                RuntimePureHelperOrigin::Annotated,
+            )?;
+            register_arcweft_pure_text_shader(registry, &candidate)?;
+            Ok(exported.saturating_add(1))
+        })
+}
+
+fn register_arcweft_pure_text_shader(
+    registry: &mut RichTextShaderRegistry,
+    candidate: &PureHelperCandidate,
+) -> Result<(), RichTextShaderExportError> {
+    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
+        return Err(RichTextShaderExportError::UnsupportedSignature {
+            name: candidate.name().to_owned(),
+        });
+    }
+    let helper = runtime_helper_from_pure_candidate(candidate);
+    let mut scratch = VmPureFunctionScratch::default();
+    registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
+        let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
+        let time = shader_param_milli(ctx.shader, "time")
+            .or_else(|| shader_param_milli(ctx.shader, "t"))
+            .or_else(|| shader_param_milli(ctx.shader, "phase"))
+            .unwrap_or_default()
+            .as_f32();
+        let phase = scratch
+            .evaluate_f32_slice(&helper, &[time, 0.0, seed])
+            .ok()
+            .as_ref()
+            .and_then(runtime_value_as_f32)
+            .filter(|value| value.is_finite())
+            .unwrap_or(time);
+        pure_text_shader_glyph_passes(ctx.shader, phase)
+    });
+    Ok(())
+}
+
 pub fn register_arcweft_pure_text_effects(
     registry: &mut RichTextEffectRegistry,
     module: &HirModule,
@@ -717,7 +784,7 @@ fn register_arcweft_pure_text_effect(
     registry: &mut RichTextEffectRegistry,
     candidate: &PureHelperCandidate,
 ) -> Result<(), RichTextEffectExportError> {
-    if !arcweft_text_motion_signature_supported(candidate) {
+    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
         return Err(RichTextEffectExportError::UnsupportedSignature {
             name: candidate.name().to_owned(),
         });
@@ -783,7 +850,7 @@ fn register_arcweft_pure_text_motion(
     registry: &mut RichTextMotionRegistry,
     candidate: &PureHelperCandidate,
 ) -> Result<(), RichTextMotionExportError> {
-    if !arcweft_text_motion_signature_supported(candidate) {
+    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
         return Err(RichTextMotionExportError::UnsupportedSignature {
             name: candidate.name().to_owned(),
         });
@@ -824,7 +891,7 @@ fn runtime_helper_from_pure_candidate(candidate: &PureHelperCandidate) -> Runtim
     }
 }
 
-fn arcweft_text_motion_signature_supported(candidate: &PureHelperCandidate) -> bool {
+fn arcweft_text_pure_f32_triplet_signature_supported(candidate: &PureHelperCandidate) -> bool {
     candidate.input_types()
         == [
             RuntimePureInputType::F32,
@@ -3867,6 +3934,51 @@ fn native_glow_shader(ctx: &TextShaderContext<'_>, color: [u8; 3]) -> Vec<Native
     .collect()
 }
 
+fn pure_text_shader_glyph_passes(
+    shader: &RichTextShaderRef,
+    phase: f32,
+) -> Vec<NativeShaderGlyphPass> {
+    let resolved = resolve_shader_filter(shader);
+    let color = shader_param_color(shader, "color").map_or_else(
+        || pure_text_shader_color(phase, resolved.amount),
+        |[red, green, blue]| [red, green, blue, 255],
+    );
+    if shader.phase == RichTextEffectPhase::GlyphColor {
+        return vec![NativeShaderGlyphPass {
+            offset: [0.0, 0.0],
+            color,
+        }];
+    }
+    let direction = normalize_shader_direction(resolved.direction);
+    let side = [-direction[1], direction[0]];
+    let radius = (resolved.amount * 5.0).clamp(1.0, 14.0);
+    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let alpha = rounded_u8((24.0 + pulse * 96.0) * resolved.amount.clamp(0.0, 1.0)).max(8);
+    [
+        [direction[0] * radius, direction[1] * radius],
+        [direction[0] * radius * -0.45, direction[1] * radius * -0.45],
+        [side[0] * radius * 0.55, side[1] * radius * 0.55],
+        [side[0] * radius * -0.55, side[1] * radius * -0.55],
+    ]
+    .into_iter()
+    .map(|offset| NativeShaderGlyphPass {
+        offset,
+        color: [color[0], color[1], color[2], alpha],
+    })
+    .collect()
+}
+
+fn pure_text_shader_color(phase: f32, amount: f32) -> [u8; 4] {
+    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let secondary = ((phase + 0.37) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    [
+        rounded_u8(80.0 + pulse * 175.0),
+        rounded_u8(120.0 + secondary * 110.0),
+        rounded_u8(220.0 + (1.0 - pulse) * 35.0),
+        rounded_u8((amount.clamp(0.0, 1.0) * 255.0).max(1.0)),
+    ]
+}
+
 fn soft_glow_offset(shader: &NativeResolvedShaderFilter, pass: SoftGlowPass) -> [f32; 2] {
     let direction = normalize_shader_direction(shader.direction);
     let side = [-direction[1], direction[0]];
@@ -3970,6 +4082,10 @@ fn shader_param_milli(shader: &RichTextShaderRef, name: &str) -> Option<Milli> {
 
 fn shader_param_vec2(shader: &RichTextShaderRef, name: &str) -> Option<[f32; 2]> {
     param_as_vec2(shader.params.get(name)?)
+}
+
+fn shader_param_seed(shader: &RichTextShaderRef, name: &str) -> Option<u64> {
+    shader.params.get(name).map(param_as_seed)
 }
 
 fn shader_param_color(shader: &RichTextShaderRef, name: &str) -> Option<[u8; 3]> {
@@ -8566,6 +8682,64 @@ fn source_drift(t: f32, glyph: f32, seed: f32) -> f32 {
         assert_ne!(
             baseline_capture.rgba, exported_capture.rgba,
             "Arcweft pure text effect export should alter captured native glyph pixels"
+        );
+    }
+
+    #[test]
+    fn native_shader_registry_exports_arcweft_pure_text_shader_function() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_shader]
+#[pure]
+fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + glyph * 0.125f32 + seed * 0.001f32
+}
+",
+        );
+        let mut registry = RichTextShaderRegistry::default();
+
+        let exported =
+            register_arcweft_pure_text_shaders(&mut registry, &hir).expect("shader exports");
+
+        assert_eq!(exported, 1);
+        assert!(registry.contains("source_glow"));
+    }
+
+    #[test]
+    fn native_capture_uses_arcweft_pure_text_shader_registry_export() {
+        let hir = arcweft_text_registry_hir(
+            r"
+#[text_shader]
+#[pure]
+fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
+    return t + 0.25f32 + glyph * 0.05f32 + seed * 0.001f32
+}
+",
+        );
+        let frame = shader_test_frame("source_glow", RichTextEffectPhase::GlyphColor);
+        let mut baseline = NativeOffscreenCaptureSession::new().expect("baseline session");
+        let baseline_capture = baseline
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("baseline capture");
+
+        let mut exported = NativeOffscreenCaptureSession::new().expect("exported session");
+        let export_count = register_arcweft_pure_text_shaders(exported.shader_registry_mut(), &hir)
+            .expect("register Arcweft pure text shader");
+        let exported_capture = exported
+            .capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("exported capture");
+
+        assert_eq!(export_count, 1);
+        assert!(
+            baseline_capture
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "missing_shader")
+        );
+        assert!(exported_capture.diagnostics.is_empty());
+        assert_ne!(
+            baseline_capture.rgba, exported_capture.rgba,
+            "Arcweft pure text shader export should alter captured native glyph pixels"
         );
     }
 

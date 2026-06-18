@@ -2149,6 +2149,14 @@ fn agent_native_capture_session_for_hir(
         eprintln!("error: failed to register Arcweft text effect functions: {error}");
         ExitCode::FAILURE
     })?;
+    arcweft_player_native::native::register_arcweft_pure_text_shaders(
+        native_session.shader_registry_mut(),
+        hir,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to register Arcweft text shader functions: {error}");
+        ExitCode::FAILURE
+    })?;
     Ok(native_session)
 }
 

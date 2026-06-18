@@ -117,12 +117,17 @@ helper ABI: `register_arcweft_pure_text_effects` exports
 `#[text_effect] #[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` helpers into
 `RichTextEffectRegistry`, so `[.source_drift ...]` style custom effect spans are
 resolved by the same native registry path as adapter-registered effects rather
-than by a parser special case. Missing motion functions and missing custom
-effects are diagnosed instead of being silently reinterpreted through a hash
-fallback. This keeps the debug surface honest for stacked reveal,
-glyph-placement, affine animation, function-backed animation, source-local
-custom effects, and host-dispatched effects instead of only checking each
-effect family in isolation.
+than by a parser special case. Source-local shaders use the same ABI as a first
+native registry boundary: `register_arcweft_pure_text_shaders` exports
+`#[text_shader] #[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` helpers into
+`RichTextShaderRegistry` for `run_offscreen_pass` and `glyph_color` shader refs,
+with shader params such as `time`, `seed`, `amount`, `dir`, and `color` kept as
+registry-owned parameters. Missing motion functions, missing custom effects,
+and missing shader functions are diagnosed instead of being silently
+reinterpreted through a hash fallback. This keeps the debug surface honest for
+stacked reveal, glyph-placement, affine animation, function-backed animation,
+source-local custom effects/shaders, and host-dispatched effects instead of only
+checking each effect family in isolation.
 Native window page changes reset the page-local effect clock and clear the
 renderer-local rich-text effect state store before preparing the next page. A
 cancelled or skipped line is therefore treated like a page/line replacement for
@@ -239,11 +244,11 @@ motion function IDs drive `.motion`, and missing registries or unsupported
 phases are reported instead of being silently reinterpreted as builtins.
 `NativeOffscreenCaptureSession` also owns mutable effect/shader/motion
 registries and a shared state store; custom registered placement and
-`glyph_color` effects, source-local pure text effects, run-offscreen shaders,
-and motion functions run when preparing submitted glyphs for framebuffer,
-color, object-id, and mask captures, so registry-backed custom behavior is
-visible in actual native image output rather than only in plan snapshots. The
-same session
+`glyph_color` effects, source-local pure text effects, source-local pure text
+shaders, run-offscreen shaders, and motion functions run when preparing
+submitted glyphs for framebuffer, color, object-id, and mask captures, so
+registry-backed custom behavior is visible in actual native image output rather
+than only in plan snapshots. The same session
 can measure native element bounds through
 `measure_frame_elements_in`, and the standalone
 `measure_frame_elements_with_effect_registry` API accepts an explicit
