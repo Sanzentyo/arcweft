@@ -488,12 +488,15 @@ dialogue defaults available to MCP debuggers. `arcweft.observe` and
 `arcweft.capture` use the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
 Both tools accept a non-negative capture time in seconds (`--capture-time` on
-the CLI, `capture_time` in MCP) for visibility-only glyph effects such as
-typewriter reveal; layout and Agent geometry remain derived from the same
-resolved text frame while rendered glyph alpha can vary by capture time. When
-`--capture-step` / MCP `capture_step` is supplied without an explicit capture
-time, native image capture uses that step number as the default visual-effect
-time in seconds and records the non-zero value in `images[].capture_time_millis`.
+the CLI, `capture_time` in MCP) as the native animation sample time for
+rich-text effects, shaders, registry-backed motion functions, typewriter
+visibility, animated proxy bounds, hit-testing, and image capture. Source
+ranges and object ids remain stable across capture times, while visual bboxes,
+hit regions, glyph alpha, object-id/mask attachments, and object crops use the
+sampled native text geometry for the requested time. When `--capture-step` /
+MCP `capture_step` is supplied without an explicit capture time, native image
+capture uses that step number as the default animation sample time in seconds
+and records the non-zero value in `images[].capture_time_millis`.
 Observation reports also keep optional root-level `capture_time_millis` for
 explicit or step-derived visual time, allowing later `arcweft.capture` and URI
 readback to reproduce the same animation state.

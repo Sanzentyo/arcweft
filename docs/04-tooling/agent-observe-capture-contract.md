@@ -53,17 +53,21 @@ An observation represents a single rendered frame:
 hashes before reading image bytes, but image comparisons must use capture
 resources rather than synthetic replacement renderers.
 
-`capture_time` is an observation/capture input in seconds. It affects
-visibility-only effects such as typewriter reveal. It must not change source
-ranges, object identity, or layout geometry unless the effect phase is
-explicitly pre-layout. When a deterministic `capture_step` is supplied and
-`capture_time` is omitted, native image capture derives the visual-effect time
-from that step number in seconds. Image resources expose non-zero visual time as
-`capture_time_millis` so debuggers can distinguish state step and effect time
-without parsing command arguments. Observation reports also include optional
-root-level `capture_time_millis` when the frame was observed with an explicit
-`capture_time` or step-derived visual-effect time, so subsequent capture or URI
-readback can reproduce the same animation state.
+`capture_time` is an observation/capture input in seconds. It is the native
+animation sample time for rich-text effects, shaders, registry-backed motion
+functions, typewriter visibility, animated proxy bounds, hit-testing, and image
+capture. It must not change source ranges or object identity. Visual bboxes,
+hit regions, glyph alpha, object-id/mask attachments, and object crops use the
+sampled native text geometry for that time, so animated text objects can be
+debugged like image or model objects at a selected frame. When a deterministic
+`capture_step` is supplied and `capture_time` is omitted, native image capture
+derives the animation sample time from that step number in seconds. Image
+resources expose non-zero visual time as `capture_time_millis` so debuggers can
+distinguish state step and effect time without parsing command arguments.
+Observation reports also include optional root-level `capture_time_millis` when
+the frame was observed with an explicit `capture_time` or step-derived visual
+time, so subsequent capture or URI readback can reproduce the same animation
+state.
 
 ---
 

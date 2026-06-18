@@ -56,11 +56,14 @@ MCP session by URI, so later captures do not evict earlier PNG/raw resources;
 `resources/read` and `arcweft.resource.read` return the same native renderer
 composition, metadata, and image bytes that each capture tool call produced.
 `arcweft.observe` and `arcweft.capture` both accept `capture_time` as a
-non-negative seconds value for native visibility-only glyph effects such as
-typewriter reveal. The time affects rendered glyph alpha in PNG/raw captures
-without changing the observed Agent geometry. If `capture_step` is set without
-`capture_time`, native capture uses the step count as the visual-effect time in
-seconds and records it as `capture_time_millis` on image resources. They also
+non-negative seconds value for native rich-text animation sampling, including
+effects, shaders, motion functions, typewriter visibility, animated proxy
+bounds, hit-testing, and image capture. Source ranges and object ids remain
+stable, while visual bboxes, hit regions, glyph alpha, object-id/mask
+attachments, and object crops use the sampled native text geometry. If
+`capture_step` is set without `capture_time`, native capture uses the step count
+as the animation sample time in seconds and records it as
+`capture_time_millis` on image resources. They also
 accept `viewport_width` and `viewport_height` to reproduce non-default screen sizes;
 when a source is observed, `textbox_height` can enlarge the observed dialogue
 textbox for layout-sensitive rich-text debugging without changing source text.

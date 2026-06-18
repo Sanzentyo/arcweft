@@ -160,7 +160,7 @@ fn agent_observe_tool_descriptor() -> McpToolDescriptor {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels." },
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels for layout-sensitive rich-text debugging." },
@@ -214,7 +214,7 @@ fn agent_capture_tool_descriptor() -> McpToolDescriptor {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native capture time in seconds for visibility-only glyph effects such as typewriter." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels when source is supplied." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels when source is supplied." },
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels when source is supplied." }
@@ -239,7 +239,7 @@ fn agent_hit_test_tool_descriptor() -> McpToolDescriptor {
                     "steps": { "type": "integer", "minimum": 1 },
                     "capture_step": { "type": "integer", "minimum": 1, "description": "Observe before hit-testing after this many runtime steps. Overrides steps when supplied." },
                     "max_ops": { "type": "integer", "minimum": 1 },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native layout time in seconds for animated glyph transforms before hit-testing." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, motion functions, typewriter visibility, and animated proxy bounds before hit-testing." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
                     "textbox_height": { "type": "integer", "minimum": 1 },
@@ -693,45 +693,9 @@ mod tests {
 
     #[test]
     fn image_tool_content_preserves_object_rich_text_ref_metadata() {
-        let metadata: AgentImageMetadata = serde_json::from_value(serde_json::json!({
-            "kind": "mask",
-            "renderer": "native",
-            "scope": { "kind": "object", "id": "object.dialogue.0.0.proxy.0.0" },
-            "composition": "mask_attachment",
-            "width": 12,
-            "height": 8,
-            "pixel_format": "rgba8_unorm",
-            "row_stride_bytes": 48,
-            "content_pixels": 24,
-            "object": {
-                "id": "object.dialogue.0.0.proxy.0.0",
-                "layer": "dialogue.rich_text",
-                "role": "rich_text_proxy",
-                "text": "proxy",
-                "rich_text_ref": {
-                    "kind": "text_object_proxy",
-                    "index": 0,
-                    "range": { "start": 10, "end": 15 },
-                    "node_index": 3,
-                    "presentation": {
-                        "object_proxies": [{
-                            "id": "hotspot",
-                            "type_name": "KeywordHit",
-                            "role": "keyword",
-                            "depth": 4000,
-                            "hit_test": true,
-                            "params": {
-                                "channel": { "kind": "selector", "value": "choice" }
-                            }
-                        }]
-                    },
-                    "object_depth": 4000,
-                    "hit_test": true,
-                    "hit_regions": []
-                }
-            }
-        }))
-        .expect("object image metadata deserializes");
+        let metadata: AgentImageMetadata =
+            serde_json::from_value(proxy_object_image_metadata_fixture())
+                .expect("object image metadata deserializes");
         let resource = AgentResource {
             uri: "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba"
                 .to_owned(),
@@ -772,6 +736,77 @@ mod tests {
                 ["channel"]["value"],
             "choice"
         );
+        assert_eq!(
+            json["image"]["object"]["bbox"]["space"],
+            serde_json::json!("viewport")
+        );
+        assert_eq!(
+            json["image"]["object"]["capture_refs"]["object_id_color"]["alpha"],
+            255
+        );
+    }
+
+    fn proxy_object_image_metadata_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "kind": "mask",
+            "renderer": "native",
+            "scope": { "kind": "object", "id": "object.dialogue.0.0.proxy.0.0" },
+            "composition": "mask_attachment",
+            "width": 12,
+            "height": 8,
+            "pixel_format": "rgba8_unorm",
+            "row_stride_bytes": 48,
+            "content_pixels": 24,
+            "object": {
+                "id": "object.dialogue.0.0.proxy.0.0",
+                "layer": "dialogue.rich_text",
+                "role": "rich_text_proxy",
+                "bbox": { "space": "viewport", "x": 120, "y": 520, "width": 12, "height": 8 },
+                "polygon": [
+                    { "x": 120, "y": 520 },
+                    { "x": 132, "y": 520 },
+                    { "x": 132, "y": 528 },
+                    { "x": 120, "y": 528 }
+                ],
+                "capture_refs": {
+                    "object_id_color": {
+                        "red": 10,
+                        "green": 20,
+                        "blue": 30,
+                        "alpha": 255
+                    },
+                    "captures": [{
+                        "kind": "mask",
+                        "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba",
+                        "mime_type": "application/octet-stream",
+                        "width": 12,
+                        "height": 8
+                    }]
+                },
+                "text": "proxy",
+                "rich_text_ref": {
+                    "kind": "text_object_proxy",
+                    "index": 0,
+                    "range": { "start": 10, "end": 15 },
+                    "node_index": 3,
+                    "presentation": {
+                        "object_proxies": [{
+                            "id": "hotspot",
+                            "type_name": "KeywordHit",
+                            "role": "keyword",
+                            "depth": 4000,
+                            "hit_test": true,
+                            "params": {
+                                "channel": { "kind": "selector", "value": "choice" }
+                            }
+                        }]
+                    },
+                    "object_depth": 4000,
+                    "hit_test": true,
+                    "hit_regions": []
+                }
+            }
+        })
     }
 
     #[test]
@@ -975,6 +1010,10 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_capture_time_description_mentions_animated_text_objects(
+            &properties["capture_time"],
+            true,
+        );
         assert_eq!(properties["capture_step"]["type"], "integer");
         assert_eq!(properties["capture_step"]["minimum"], 1);
         assert_eq!(properties["viewport_width"]["type"], "integer");
@@ -1002,6 +1041,10 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
+        assert_capture_time_description_mentions_animated_text_objects(
+            &properties["capture_time"],
+            true,
+        );
         assert_eq!(properties["capture_step"]["type"], "integer");
         assert_eq!(properties["capture_step"]["minimum"], 1);
         assert_eq!(properties["viewport_width"]["type"], "integer");
@@ -1030,6 +1073,26 @@ mod tests {
         assert_eq!(properties["y"]["type"], "integer");
         assert_eq!(properties["y"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
+        assert_capture_time_description_mentions_animated_text_objects(
+            &properties["capture_time"],
+            false,
+        );
         assert_eq!(properties["capture_step"]["minimum"], 1);
+    }
+
+    fn assert_capture_time_description_mentions_animated_text_objects(
+        property: &serde_json::Value,
+        includes_image_capture: bool,
+    ) {
+        let description = property["description"]
+            .as_str()
+            .expect("capture_time description");
+        assert!(description.contains("animation sample time"));
+        assert!(description.contains("motion functions"));
+        assert!(description.contains("typewriter visibility"));
+        assert!(description.contains("animated proxy bounds"));
+        if includes_image_capture {
+            assert!(description.contains("image capture"));
+        }
     }
 }
