@@ -463,6 +463,41 @@ impl<'a> NativeEffectExecution<'a> {
         registry.apply_host_effect(&effect.id, &mut ctx);
     }
 
+    fn observe_shaders<'b>(&mut self, shaders: impl IntoIterator<Item = &'b RichTextShaderRef>) {
+        for shader in shaders {
+            self.observe_shader(shader);
+        }
+    }
+
+    fn observe_shader(&mut self, shader: &RichTextShaderRef) {
+        if shader.id == "soft_glow" && shader.phase == RichTextEffectPhase::RunOffscreenPass {
+            return;
+        }
+        let (code, message) = if shader.id == "soft_glow" {
+            (
+                "unsupported_shader_phase",
+                format!(
+                    "rich-text shader `{}` uses unsupported native phase {:?}",
+                    shader.id, shader.phase
+                ),
+            )
+        } else {
+            (
+                "missing_shader",
+                format!(
+                    "rich-text shader `{}` is not registered in the native shader registry",
+                    shader.id
+                ),
+            )
+        };
+        self.push_shader_diagnostic(
+            code,
+            NativeVisualDiagnosticSeverity::Warning,
+            shader,
+            message,
+        );
+    }
+
     fn push_diagnostic(
         &mut self,
         code: &str,
@@ -479,6 +514,25 @@ impl<'a> NativeEffectExecution<'a> {
             code: code.to_owned(),
             message,
             effect_id: Some(effect.id.clone()),
+        });
+    }
+
+    fn push_shader_diagnostic(
+        &mut self,
+        code: &str,
+        severity: NativeVisualDiagnosticSeverity,
+        shader: &RichTextShaderRef,
+        message: String,
+    ) {
+        let key = format!("{code}:{}:{:?}", shader.id, shader.phase);
+        if !self.seen_diagnostics.insert(key) {
+            return;
+        }
+        self.diagnostics.push(NativeVisualDiagnostic {
+            severity,
+            code: code.to_owned(),
+            message,
+            effect_id: Some(shader.id.clone()),
         });
     }
 }
@@ -1196,6 +1250,17 @@ fn visual_page_from_range(
         .iter()
         .flat_map(|run| run.presentation.shaders.iter().map(resolve_shader_filter))
         .collect();
+    observe_layout_shaders(
+        effects,
+        &page_layout.layout,
+        page_layout.layout.ruby.iter().filter_map(|ruby| {
+            page_layout
+                .ruby_indices
+                .get(ruby.ruby_index)
+                .and_then(|index| frame.display_map.ruby_annotations.get(*index))
+                .map(|ruby| &ruby.presentation)
+        }),
+    );
     Some(NativeVisualPage {
         page_index,
         text: page_layout.frame.text,
@@ -2347,6 +2412,24 @@ fn resolve_shader_filter(shader: &RichTextShaderRef) -> NativeResolvedShaderFilt
     }
 }
 
+fn observe_layout_shaders<'a>(
+    effects: &mut NativeEffectExecution<'_>,
+    layout: &LaidOutText,
+    ruby_presentations: impl IntoIterator<Item = &'a RichTextPresentation>,
+) {
+    effects.observe_shaders(
+        layout
+            .runs
+            .iter()
+            .flat_map(|run| run.presentation.shaders.iter()),
+    );
+    effects.observe_shaders(
+        ruby_presentations
+            .into_iter()
+            .flat_map(|presentation| presentation.shaders.iter()),
+    );
+}
+
 fn shader_glow_glyph_areas_for_text(
     glyph_area: &OwnedGlyphArea,
     layout: &LaidOutText,
@@ -2415,7 +2498,9 @@ enum SoftGlowPass {
 fn soft_glow_shader(shaders: &[RichTextShaderRef]) -> Option<NativeResolvedShaderFilter> {
     shaders
         .iter()
-        .find(|shader| shader.id == "soft_glow")
+        .find(|shader| {
+            shader.id == "soft_glow" && shader.phase == RichTextEffectPhase::RunOffscreenPass
+        })
         .map(resolve_shader_filter)
 }
 
@@ -4092,25 +4177,7 @@ impl NativeOffscreenTextRenderer {
                 height: target.height,
             },
         );
-        let cache_keys = layout_glyph_cache_keys(
-            &mut self.font_system,
-            &self.text_buffer,
-            rich_text,
-            layout.layout,
-        );
-        let bounds = native_text_bounds(target.width, target.height);
-        let mut glyph_area = glyph_area_from_layout(
-            layout.layout,
-            GlyphonAreaOptions {
-                bounds,
-                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
-                force_alpha_mask: target.force_alpha_mask,
-                ..GlyphonAreaOptions::default()
-            },
-            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
-        )
-        .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
-        apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout.layout, &cache_keys);
+        let mut glyph_area = self.prepare_glyph_area(rich_text, layout, target)?;
         apply_text_colors_to_glyph_area(
             &mut glyph_area,
             rich_text,
@@ -4118,6 +4185,14 @@ impl NativeOffscreenTextRenderer {
             target.time_seconds,
         );
         if let Some(effects) = effects.as_deref_mut() {
+            observe_layout_shaders(
+                effects,
+                layout.layout,
+                rich_text
+                    .ruby_annotations
+                    .iter()
+                    .map(|ruby| &ruby.presentation),
+            );
             apply_text_transforms_to_glyph_area_with_effects(
                 &mut glyph_area,
                 &rich_text.text,
@@ -4163,6 +4238,33 @@ impl NativeOffscreenTextRenderer {
                 &mut self.swash_cache,
             )
             .map_err(|error| NativeWindowError::Readback(error.to_string()))
+    }
+
+    fn prepare_glyph_area(
+        &mut self,
+        rich_text: &WindowRichText,
+        layout: NativeRenderLayout<'_>,
+        target: NativeRenderTarget,
+    ) -> Result<OwnedGlyphArea, NativeWindowError> {
+        let cache_keys = layout_glyph_cache_keys(
+            &mut self.font_system,
+            &self.text_buffer,
+            rich_text,
+            layout.layout,
+        );
+        let mut glyph_area = glyph_area_from_layout(
+            layout.layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(target.width, target.height),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                force_alpha_mask: target.force_alpha_mask,
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .map_err(|error| NativeWindowError::Readback(error.to_string()))?;
+        apply_shaped_horizontal_origins_to_glyph_area(&mut glyph_area, layout.layout, &cache_keys);
+        Ok(glyph_area)
     }
 
     fn render_texture_with_clear(
@@ -5389,6 +5491,11 @@ fn prepare_window_text_renderer(state: &mut WindowState) -> Result<(), ()> {
         apply_text_colors_to_glyph_area(&mut glyph_area, &state.rich_text, layout, time_seconds);
         let mut effects =
             NativeEffectExecution::new(Some(&mut state.effect_registry), &mut state.effect_state);
+        observe_layout_shaders(
+            &mut effects,
+            layout,
+            state.ruby_buffers.iter().map(|ruby| &ruby.presentation),
+        );
         apply_text_transforms_to_glyph_area_with_effects(
             &mut glyph_area,
             &state.rich_text.text,
@@ -5647,50 +5754,7 @@ mod tests {
 
     #[test]
     fn soft_glow_shader_adds_native_glyph_passes() {
-        let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.test.shader.soft_glow".to_owned()),
-            callee: "alice".to_owned(),
-            text_key: None,
-            window: None,
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            default_inline_failure_policy: None,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![
-                RichTextNode::StyleStart {
-                    style: RichTextStyle::Shader {
-                        shader: RichTextShaderRef {
-                            id: "soft_glow".to_owned(),
-                            params: BTreeMap::from([
-                                (
-                                    "amount".to_owned(),
-                                    RichTextParam::Milli { value: Milli::ONE },
-                                ),
-                                (
-                                    "dir".to_owned(),
-                                    RichTextParam::Raw {
-                                        value: "1,0".to_owned(),
-                                    },
-                                ),
-                            ]),
-                            phase: RichTextEffectPhase::RunOffscreenPass,
-                        },
-                    },
-                },
-                RichTextNode::Text {
-                    text: "A".to_owned(),
-                },
-                RichTextNode::StyleEnd {
-                    name: "effect".to_owned(),
-                },
-            ]),
-        };
-        let frame = spec
-            .resolve_frame(&RuntimeLineContext::default())
-            .expect("frame resolves");
+        let frame = shader_test_frame("soft_glow", RichTextEffectPhase::RunOffscreenPass);
         let page = WindowPage::from_frame(&frame)
             .into_iter()
             .next()
@@ -5729,6 +5793,112 @@ mod tests {
             glow_areas[0].glyphs()[0].color,
             Some(Color::rgba(155, 205, 255, 72))
         );
+    }
+
+    #[test]
+    fn soft_glow_shader_phase_must_be_run_offscreen_pass() {
+        let frame = shader_test_frame("soft_glow", RichTextEffectPhase::GlyphColor);
+        let page = WindowPage::from_frame(&frame)
+            .into_iter()
+            .next()
+            .expect("window page");
+        let page_layout_frame = page.layout_frame.as_ref().expect("layout frame");
+        let layout = layout_frame(
+            page_layout_frame,
+            native_text_layout_config(800, 600, 96.0, 572.0),
+        )
+        .expect("layout resolves");
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
+        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
+        let cache_keys =
+            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
+        let glyph_area = glyph_area_from_layout(
+            &layout,
+            GlyphonAreaOptions {
+                bounds: native_text_bounds(800, 600),
+                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
+                ..GlyphonAreaOptions::default()
+            },
+            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
+        )
+        .expect("glyph area resolves");
+
+        let glow_areas = shader_glow_glyph_areas_for_text(&glyph_area, &layout);
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+
+        assert!(glow_areas.is_empty());
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert_eq!(
+            plan.diagnostics[0].severity,
+            NativeVisualDiagnosticSeverity::Warning
+        );
+        assert_eq!(plan.diagnostics[0].code, "unsupported_shader_phase");
+        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some("soft_glow"));
+    }
+
+    #[test]
+    fn native_visual_plan_reports_missing_shader_registry_entry() {
+        let frame = shader_test_frame("missing_glow", RichTextEffectPhase::RunOffscreenPass);
+
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert_eq!(
+            plan.diagnostics[0].severity,
+            NativeVisualDiagnosticSeverity::Warning
+        );
+        assert_eq!(plan.diagnostics[0].code, "missing_shader");
+        assert_eq!(
+            plan.diagnostics[0].effect_id.as_deref(),
+            Some("missing_glow")
+        );
+    }
+
+    fn shader_test_frame(id: &str, phase: RichTextEffectPhase) -> LineDisplayFrame {
+        let spec = LineDisplaySpec {
+            line: RuntimeLineId("say.test.shader.soft_glow".to_owned()),
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::StyleStart {
+                    style: RichTextStyle::Shader {
+                        shader: RichTextShaderRef {
+                            id: id.to_owned(),
+                            params: BTreeMap::from([
+                                (
+                                    "amount".to_owned(),
+                                    RichTextParam::Milli { value: Milli::ONE },
+                                ),
+                                (
+                                    "dir".to_owned(),
+                                    RichTextParam::Raw {
+                                        value: "1,0".to_owned(),
+                                    },
+                                ),
+                            ]),
+                            phase,
+                        },
+                    },
+                },
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::StyleEnd {
+                    name: "effect".to_owned(),
+                },
+            ]),
+        };
+        spec.resolve_frame(&RuntimeLineContext::default())
+            .expect("frame resolves")
     }
 
     #[test]

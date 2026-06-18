@@ -19691,6 +19691,69 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_unsupported_shader_phase() {
+    let path = temp_arcw(
+        "agent-observe-native-unsupported-shader-phase",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [effect .shader id=soft_glow phase=glyph_color amount=1 dir=1,0]shader phase[/effect][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-unsupported-shader-phase");
+    let png_path = dir.join("native-unsupported-shader-phase.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports native shader diagnostics");
+
+    assert!(
+        output.status.success(),
+        "native shader diagnostic capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native shader report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_some_and(|diagnostics| {
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic["severity"] == "warning"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("unsupported_shader_phase"))
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("soft_glow"))
+            })
+        }),
+        "native shader capture should surface renderer diagnostics: {json}"
+    );
+    let bytes = fs::read(&png_path).expect("read native shader diagnostic PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    fs::remove_file(&path).expect("remove temp native shader diagnostic source");
+    fs::remove_dir_all(&dir).expect("remove temp native shader diagnostic dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_dispatches_host_effect_registry() {
     let path = temp_arcw(
         "agent-observe-native-host-effect-registry",

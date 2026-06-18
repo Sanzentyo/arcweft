@@ -245,9 +245,12 @@ fallback semantics.
 The native rich-text placement renderer currently supports builtin placement
 effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
 typewriter masking for `glyph_mask`, and registry-dispatched custom placement
-effects for observe, visual-plan, and framebuffer capture paths. Color,
-offscreen shader, post-process, and host-event phases remain separate renderer
-capabilities and must be diagnosed if a placement-only path is asked to execute
-them. For builtin wave placement, `target=glyph` evaluates the phase per glyph,
-while `target=run` and broader targets evaluate the placement as one group;
-shake and jitter grouping is controlled by `state_scope`.
+effects for observe, visual-plan, and framebuffer capture paths. The native
+renderer also supports the registered `soft_glow` shader at
+`run_offscreen_pass` for text and ruby glyph submissions. Unsupported shader
+ids, supported shader ids used at the wrong phase, color-only effects,
+post-process effects, and host-event phases must be diagnosed instead of being
+silently reinterpreted as placement effects. For builtin wave placement,
+`target=glyph` evaluates the phase per glyph, while `target=run` and broader
+targets evaluate the placement as one group; shake and jitter grouping is
+controlled by `state_scope`.
