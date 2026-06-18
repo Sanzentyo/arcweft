@@ -74,12 +74,14 @@ module while it is being moved toward the unified LayerTree / InputRouter /
 semantic observation model. The CLI native renderer dependency is gated behind
 the `native-capture` feature, so default `arcweft-cli` builds can run ordinary
 check / format / verify / bundle tooling without linking the native GPU/window
-stack. The remaining architectural cuts are:
+stack. Runtime plan/run/profile/serve/test/bench implementation now lives in
+`app/runtime.rs`, and the primary `app.rs` is smaller, but it still owns shared
+project loading plus check/verify/JIT command logic. The remaining architectural
+cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing runtime/profile/test/bench next so the primary module becomes
-   dispatch plus shared CLI context instead of a cross-layer implementation
-   sink.
+   prioritizing check/verify/JIT next so the primary module becomes dispatch
+   plus shared CLI context instead of a cross-layer implementation sink.
 2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
 3. Move remaining product-player host/task behavior onto `.awfb` execution.
