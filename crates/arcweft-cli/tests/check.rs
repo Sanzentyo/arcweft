@@ -18662,6 +18662,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         && proxy["hit_test"] == true
         && proxy["params"]["channel"]["value"] == "choice",));
     assert_full_grammar_text_object_proxy_hit_region(&json);
+    assert_full_grammar_text_object_proxy_observed_object(&json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
     let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
@@ -31944,6 +31945,44 @@ fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
     assert_eq!(proxy_hit["depth"], 4000);
 }
 
+fn assert_full_grammar_text_object_proxy_observed_object(json: &serde_json::Value) {
+    let proxy_object = find_rich_text_proxy_object(json, "hotspot", "proxy");
+    assert_eq!(proxy_object["role"], "rich_text_proxy");
+    assert_eq!(proxy_object["text"], "proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["index"], 0);
+    assert_eq!(proxy_object["rich_text_ref"]["hit_test"], true);
+    assert_eq!(proxy_object["rich_text_ref"]["object_depth"], 4000);
+    assert_eq!(
+        proxy_object["rich_text_ref"]["presentation"]["object_proxies"]
+            .as_array()
+            .expect("proxy object presentation should expose object_proxies")
+            .len(),
+        1
+    );
+    let proxy = &proxy_object["rich_text_ref"]["presentation"]["object_proxies"][0];
+    assert_eq!(proxy["id"], "hotspot");
+    assert_eq!(proxy["type_name"], "KeywordHit");
+    assert_eq!(proxy["role"], "keyword");
+    assert_eq!(proxy["depth"], 4000);
+    assert_eq!(proxy["hit_test"], true);
+    assert_agent_observe_object_capture_refs(proxy_object);
+    let proxy_hit = rich_text_hit_region(
+        proxy_object,
+        "text_object_proxy",
+        proxy_object["rich_text_ref"]["range"]["start"]
+            .as_u64()
+            .expect("proxy range start"),
+        proxy_object["rich_text_ref"]["range"]["end"]
+            .as_u64()
+            .expect("proxy range end"),
+    );
+    assert_eq!(proxy_hit["proxy_id"], "hotspot");
+    assert_eq!(proxy_hit["proxy_type"], "KeywordHit");
+    assert_eq!(proxy_hit["proxy_role"], "keyword");
+    assert_eq!(proxy_hit["depth"], 4000);
+}
+
 fn rich_text_text_run_has_transform(
     textbox: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
@@ -31997,6 +32036,29 @@ fn find_rich_text_run_object<'a>(
         .iter()
         .find(|object| object["role"] == "rich_text_run" && object["text"] == text)
         .unwrap_or_else(|| panic!("rich-text run `{text}` should be observed: {report}"))
+}
+
+fn find_rich_text_proxy_object<'a>(
+    report: &'a serde_json::Value,
+    proxy_id: &str,
+    text: &str,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_proxy"
+                && object["text"] == text
+                && object["rich_text_ref"]["presentation"]["object_proxies"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|proxy| proxy["id"] == proxy_id)
+        })
+        .unwrap_or_else(|| {
+            panic!("rich-text proxy `{proxy_id}` for `{text}` should be observed: {report}")
+        })
 }
 
 fn assert_rich_text_run_object_has_effect<'a>(

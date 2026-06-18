@@ -16,6 +16,7 @@ textbox
   page
     line
       run
+        proxy_object
         glyph_cluster
         ruby_object
           ruby_base
@@ -83,6 +84,20 @@ Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
 `text_object_proxy`, the proxy id/type/role, and the resolved local depth. The
 same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
 debuggers can sort text objects with image/model-like presentation objects.
+
+Agent observation also emits each authored proxy span as its own
+`rich_text_proxy` observed object. Its object id is rooted at the parent textbox
+and includes the native run index plus proxy index:
+
+```text
+object.dialogue.<step>.<textbox>.proxy.<run>.<proxy>
+```
+
+The proxy object uses the same measured post-transform bbox and native capture
+target as the decorated run, but its `rich_text_ref.kind` is
+`text_object_proxy` and its presentation contains only the selected proxy. This
+lets LLM/debug tools capture or inspect the proxy span directly without having
+to infer it from a broader `rich_text_run`.
 
 ## Renderer Boundary
 

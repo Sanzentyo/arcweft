@@ -79,8 +79,9 @@ use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
 use arcweft_render_text::{
-    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextPresentation,
-    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
+    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy,
+    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
+    RichTextTextSource, RuntimeLineContext,
 };
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
@@ -2869,6 +2870,7 @@ fn agent_rich_text_child_parent_object_id(object_id: &str) -> Option<&str> {
         .split_once(".run.")
         .or_else(|| object_id.split_once(".ruby."))
         .or_else(|| object_id.split_once(".cluster."))
+        .or_else(|| object_id.split_once(".proxy."))
         .map(|(parent, _)| parent)
 }
 
@@ -3510,7 +3512,9 @@ fn agent_native_element_for_object(
         return agent_native_element_for_object_id(&object.id);
     };
     match rich_text_ref.kind {
-        AgentRichTextElementKind::TextRun | AgentRichTextElementKind::Ruby => {
+        AgentRichTextElementKind::TextRun
+        | AgentRichTextElementKind::Ruby
+        | AgentRichTextElementKind::TextObjectProxy => {
             agent_native_element_for_object_id(&object.id)
         }
         AgentRichTextElementKind::GlyphCluster => Some(
@@ -3550,6 +3554,18 @@ fn agent_native_element_and_role_for_object_id(
                 "rich_text_ruby",
             )
         });
+    }
+    if let Some((_, suffix)) = object_id.split_once(".proxy.") {
+        let mut parts = suffix.split('.');
+        let run_index = parts.next()?.parse().ok()?;
+        parts.next()?.parse::<usize>().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        return Some((
+            arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index },
+            "rich_text_proxy",
+        ));
     }
     if let Some((_, suffix)) = object_id.split_once(".cluster.") {
         let mut parts = suffix.split('.');
@@ -4729,6 +4745,14 @@ fn agent_rich_text_child_objects(
         {
             children.push(object);
         }
+        children.extend(agent_rich_text_proxy_objects(
+            step,
+            index,
+            run_index,
+            textbox,
+            run,
+            native_bounds,
+        ));
     }
     for (ruby_index, ruby) in textbox
         .rich_text
@@ -4882,6 +4906,76 @@ fn agent_rich_text_run_object(
             page,
         },
     ))
+}
+
+fn agent_rich_text_proxy_objects(
+    step: usize,
+    index: usize,
+    run_index: usize,
+    textbox: &AgentObservedObject,
+    run: &RichTextTextRun,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
+) -> Vec<AgentObservedObject> {
+    let Some(range) = valid_rich_text_range(run.range, &textbox.rich_text.text) else {
+        return Vec::new();
+    };
+    let Some(text) = textbox.rich_text.text.get(range) else {
+        return Vec::new();
+    };
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    let Some(bbox) = native_bounds
+        .get(&arcweft_player_native::native::NativeFrameElement::TextRun { index: run_index })
+        .map(|bounds| bounds.bbox.clone())
+    else {
+        return Vec::new();
+    };
+    let page = agent_rich_text_page_for_range(&textbox.rich_text, run.range);
+    run.presentation
+        .object_proxies
+        .iter()
+        .enumerate()
+        .map(|(proxy_index, proxy)| {
+            let object_id =
+                format!("object.dialogue.{step}.{index}.proxy.{run_index}.{proxy_index}");
+            let presentation = agent_proxy_presentation(&run.presentation, proxy);
+            agent_rich_text_child_object(
+                step,
+                textbox,
+                AgentRichTextChildObjectSpec {
+                    object_id: &object_id,
+                    role: "rich_text_proxy",
+                    text: text.to_owned(),
+                    bbox: &bbox,
+                    rich_text_ref: AgentRichTextElementRef {
+                        kind: AgentRichTextElementKind::TextObjectProxy,
+                        index: proxy_index,
+                        page,
+                        range: run.range,
+                        node_index: run.node_index,
+                        source: Some(run.source),
+                        ruby: None,
+                        presentation: Some(presentation),
+                        orientation: None,
+                        vertical_form: None,
+                        ruby_base_bbox: None,
+                        ruby_annotation_bbox: None,
+                        object_depth: proxy.depth.map(|depth| depth.0).or_else(|| {
+                            (run.presentation.z_index != 0)
+                                .then_some(i32::from(run.presentation.z_index) * 1000)
+                        }),
+                        hit_test: proxy.hit_test,
+                        hit_regions: agent_proxy_hit_regions(&bbox, run.range, proxy),
+                    },
+                    page,
+                },
+            )
+        })
+        .collect()
 }
 
 fn agent_rich_text_ruby_object(
@@ -5052,17 +5146,46 @@ fn agent_text_hit_regions(
             .object_proxies
             .iter()
             .filter(|proxy| proxy.hit_test)
-            .map(|proxy| AgentHitRegion {
-                kind: AgentHitRegionKind::TextObjectProxy,
-                bbox: bbox.clone(),
-                range,
-                proxy_id: Some(proxy.id.clone()),
-                proxy_type: proxy.type_name.clone(),
-                proxy_role: proxy.role.clone(),
-                depth: proxy.depth.map(|depth| depth.0),
-            }),
+            .map(|proxy| agent_proxy_hit_region(bbox, range, proxy)),
     );
     regions
+}
+
+fn agent_proxy_presentation(
+    presentation: &RichTextPresentation,
+    proxy: &RichTextObjectProxy,
+) -> RichTextPresentation {
+    let mut proxy_presentation = presentation.clone();
+    proxy_presentation.object_proxies = vec![proxy.clone()];
+    proxy_presentation
+}
+
+fn agent_proxy_hit_regions(
+    bbox: &AgentBBox,
+    range: RichTextRange,
+    proxy: &RichTextObjectProxy,
+) -> Vec<AgentHitRegion> {
+    proxy
+        .hit_test
+        .then(|| agent_proxy_hit_region(bbox, range, proxy))
+        .into_iter()
+        .collect()
+}
+
+fn agent_proxy_hit_region(
+    bbox: &AgentBBox,
+    range: RichTextRange,
+    proxy: &RichTextObjectProxy,
+) -> AgentHitRegion {
+    AgentHitRegion {
+        kind: AgentHitRegionKind::TextObjectProxy,
+        bbox: bbox.clone(),
+        range,
+        proxy_id: Some(proxy.id.clone()),
+        proxy_type: proxy.type_name.clone(),
+        proxy_role: proxy.role.clone(),
+        depth: proxy.depth.map(|depth| depth.0),
+    }
 }
 
 fn agent_object_depth(presentation: &RichTextPresentation) -> Option<i32> {

@@ -446,6 +446,7 @@ pub enum AgentRichTextElementKind {
     TextRun,
     Ruby,
     GlyphCluster,
+    TextObjectProxy,
 }
 
 /// Hit-test region for one observed rich-text element.
