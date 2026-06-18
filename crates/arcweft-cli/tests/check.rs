@@ -20046,9 +20046,9 @@ flow @flow.main main {
 }
 
 #[test]
-fn agent_observe_native_renderer_reports_unsupported_shader_phase() {
+fn agent_observe_native_renderer_applies_shader_glyph_color_phase() {
     let path = temp_arcw(
-        "agent-observe-native-unsupported-shader-phase",
+        "agent-observe-native-shader-glyph-color-phase",
         r"
 character @character.alice Alice as alice {}
 
@@ -20057,8 +20057,8 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-unsupported-shader-phase");
-    let png_path = dir.join("native-unsupported-shader-phase.png");
+    let dir = temp_dir("agent-observe-native-shader-glyph-color-phase");
+    let png_path = dir.join("native-shader-glyph-color-phase.png");
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -20078,34 +20078,36 @@ flow @flow.main main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe reports native shader diagnostics");
+        .expect("arcw agent observe applies native shader glyph_color");
 
     assert!(
         output.status.success(),
-        "native shader diagnostic capture should succeed, stderr: {}",
+        "native shader glyph_color capture should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("native shader report is JSON");
     assert!(
-        json["diagnostics"].as_array().is_some_and(|diagnostics| {
-            diagnostics.iter().any(|diagnostic| {
-                diagnostic["severity"] == "warning"
-                    && diagnostic["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains("unsupported_shader_phase"))
-                    && diagnostic["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains("soft_glow"))
+        json["diagnostics"].as_array().is_none_or(|diagnostics| {
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_none_or(|message| !message.contains("unsupported_shader_phase"))
             })
         }),
-        "native shader capture should surface renderer diagnostics: {json}"
+        "native shader glyph_color should execute without unsupported phase diagnostics: {json}"
     );
-    let bytes = fs::read(&png_path).expect("read native shader diagnostic PNG");
+    assert!(
+        json["images"][0]["content_pixels"]
+            .as_u64()
+            .is_some_and(|pixels| pixels > 0),
+        "native shader glyph_color capture should contain rendered glyph pixels: {json}"
+    );
+    let bytes = fs::read(&png_path).expect("read native shader glyph_color PNG");
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
 
-    fs::remove_file(&path).expect("remove temp native shader diagnostic source");
-    fs::remove_dir_all(&dir).expect("remove temp native shader diagnostic dir");
+    fs::remove_file(&path).expect("remove temp native shader glyph_color source");
+    fs::remove_dir_all(&dir).expect("remove temp native shader glyph_color dir");
 }
 
 #[test]

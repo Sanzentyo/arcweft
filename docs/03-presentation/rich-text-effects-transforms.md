@@ -253,11 +253,13 @@ effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
 typewriter masking for `glyph_mask`, registry-dispatched custom placement
 effects, and registry-dispatched custom `glyph_color` effects for observe,
 visual-plan, and framebuffer capture paths. The native renderer also supports
-registered `run_offscreen_pass` shaders for text and ruby glyph submissions;
-the default registry provides `soft_glow` and `warm_glow`, and native adapters
-may register additional shader IDs through the shader registry. Unsupported
-shader ids, supported shader ids used at the wrong phase, builtin effects used
-at unsupported phases, unregistered motion function ids, unregistered custom
+registered `run_offscreen_pass` shaders for text and ruby glyph submissions and
+registered `glyph_color` shaders that tint the main glyph pass through the same
+native shader registry. The default registry provides `soft_glow` and
+`warm_glow`, and native adapters may register additional shader IDs through the
+shader registry. Unsupported shader ids, supported shader ids used at phases
+other than `run_offscreen_pass` / `glyph_color`, builtin effects used at
+unsupported phases, unregistered motion function ids, unregistered custom
 effects, post-process effects, and host-event phases must be diagnosed instead
 of being silently reinterpreted as placement effects. For builtin wave
 placement, `target=glyph` evaluates the phase per glyph, while `target=run` and

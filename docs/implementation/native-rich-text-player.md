@@ -237,8 +237,9 @@ time-specific placement offset when drawing, while layout/ruby planning now
 accounts for the space those layout-phase effects can occupy.
 The native renderer maps registered `[effect .shader id=... phase=run_offscreen_pass]`
 references to deterministic glyph-area passes submitted before the main glyph
-pass. The resolved shader remains visible in the native visual plan, but it now
-also changes actual native framebuffer/debug captures instead of being
+pass, and maps registered `phase=glyph_color` shader refs to main-glyph tint
+overrides. The resolved shader remains visible in the native visual plan, but
+it now also changes actual native framebuffer/debug captures instead of being
 metadata-only. Unknown shader IDs are not reinterpreted by the native renderer;
 they remain host-resolved shader references until a concrete native/filter
 implementation is added and are reported through renderer diagnostics.

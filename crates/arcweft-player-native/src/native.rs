@@ -671,7 +671,7 @@ impl<'a> NativeEffectExecution<'a> {
     }
 
     fn observe_shader(&mut self, shader: &RichTextShaderRef) {
-        if shader.phase != RichTextEffectPhase::RunOffscreenPass {
+        if !shader_phase_supported(shader.phase) {
             let code = if self
                 .shader_registry
                 .as_deref()
@@ -728,6 +728,16 @@ impl<'a> NativeEffectExecution<'a> {
         registry
             .glyph_passes(&shader.id, &TextShaderContext { shader })
             .unwrap_or_default()
+    }
+
+    fn shader_glyph_color(&mut self, shader: &RichTextShaderRef) -> Option<[u8; 4]> {
+        if shader.phase != RichTextEffectPhase::GlyphColor {
+            return None;
+        }
+        let registry = self.shader_registry.as_deref_mut()?;
+        registry
+            .glyph_passes(&shader.id, &TextShaderContext { shader })
+            .and_then(|passes| passes.into_iter().next().map(|pass| pass.color))
     }
 
     fn sample_motion_function(
@@ -2413,6 +2423,7 @@ fn apply_presentation_effects_to_placement_with_execution(
             effects.apply_custom_effect(line_id, effect, glyph_count, time_seconds, placement);
         }
     }
+    apply_presentation_shader_color_to_placement(presentation, effects, placement);
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -2799,6 +2810,25 @@ const fn effect_applies_to_renderer_glyph(effect: &RichTextEffectDescriptor) -> 
     )
 }
 
+const fn shader_phase_supported(phase: RichTextEffectPhase) -> bool {
+    matches!(
+        phase,
+        RichTextEffectPhase::RunOffscreenPass | RichTextEffectPhase::GlyphColor
+    )
+}
+
+fn apply_presentation_shader_color_to_placement(
+    presentation: &RichTextPresentation,
+    effects: &mut NativeEffectExecution<'_>,
+    placement: &mut NativeGlyphPlacement,
+) {
+    for shader in &presentation.shaders {
+        if let Some(color) = effects.shader_glyph_color(shader) {
+            placement.color = Some(color);
+        }
+    }
+}
+
 const fn shake_noise_index(scope: RichTextStateScope, placement: &NativeGlyphPlacement) -> usize {
     match scope {
         RichTextStateScope::Glyph => placement.glyph_index,
@@ -2939,6 +2969,13 @@ fn native_warm_glow_shader(ctx: &TextShaderContext<'_>) -> Vec<NativeShaderGlyph
 
 fn native_glow_shader(ctx: &TextShaderContext<'_>, color: [u8; 3]) -> Vec<NativeShaderGlyphPass> {
     let shader = resolve_shader_filter(ctx.shader);
+    if ctx.shader.phase == RichTextEffectPhase::GlyphColor {
+        let alpha = rounded_u8((shader.amount * 255.0).clamp(0.0, 255.0));
+        return vec![NativeShaderGlyphPass {
+            offset: [0.0, 0.0],
+            color: [color[0], color[1], color[2], alpha],
+        }];
+    }
     [
         SoftGlowPass::Forward,
         SoftGlowPass::Backward,
@@ -6366,50 +6403,33 @@ mod tests {
     }
 
     #[test]
-    fn soft_glow_shader_phase_must_be_run_offscreen_pass() {
+    fn soft_glow_shader_glyph_color_tints_native_glyphs() {
         let frame = shader_test_frame("soft_glow", RichTextEffectPhase::GlyphColor);
-        let page = WindowPage::from_frame(&frame)
-            .into_iter()
-            .next()
-            .expect("window page");
-        let page_layout_frame = page.layout_frame.as_ref().expect("layout frame");
-        let layout = layout_frame(
-            page_layout_frame,
-            native_text_layout_config(800, 600, 96.0, 572.0),
-        )
-        .expect("layout resolves");
-        let mut font_system = FontSystem::new();
-        let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
-        prepare_window_text_buffers(&mut font_system, &mut buffer, &page.rich_text, 800, 600);
-        let cache_keys =
-            layout_glyph_cache_keys(&mut font_system, &buffer, &page.rich_text, &layout);
-        let glyph_area = glyph_area_from_layout(
-            &layout,
-            GlyphonAreaOptions {
-                bounds: native_text_bounds(800, 600),
-                origin_offset: Vector::new(0.0, NATIVE_GLYPHAREA_BASELINE_OFFSET),
-                ..GlyphonAreaOptions::default()
-            },
-            |index, glyph| cache_keys_for_layout_glyph(index, glyph.range, &cache_keys),
-        )
-        .expect("glyph area resolves");
-
-        let mut shader_registry = native_default_shader_registry();
-        let mut state = RichTextStateStore::default();
-        let mut effects =
-            NativeEffectExecution::new(None, Some(&mut shader_registry), None, &mut state);
-
-        let glow_areas = shader_glyph_areas_for_text(&glyph_area, &layout, &mut effects);
         let plan = visual_plan_from_frame_for_test(&frame, 0.0);
 
-        assert!(glow_areas.is_empty());
-        assert_eq!(plan.diagnostics.len(), 1);
         assert_eq!(
-            plan.diagnostics[0].severity,
-            NativeVisualDiagnosticSeverity::Warning
+            plan.diagnostics,
+            Vec::<NativeVisualDiagnostic>::new(),
+            "registered glyph_color shaders should execute instead of warning"
         );
-        assert_eq!(plan.diagnostics[0].code, "unsupported_shader_phase");
-        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some("soft_glow"));
+        assert!(
+            plan.pages
+                .iter()
+                .flat_map(|page| page.glyphs.iter())
+                .any(|glyph| glyph.color == Some([155, 205, 255, 255])),
+            "soft_glow glyph_color should tint main glyph placements: {plan:#?}"
+        );
+
+        let capture = capture_frame_rgba_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("glyph_color shader capture");
+        assert!(capture.diagnostics.is_empty());
+        assert!(
+            capture
+                .rgba
+                .chunks_exact(4)
+                .any(|pixel| pixel[2] > pixel[0] && pixel[2] > pixel[1] && pixel[3] > 0),
+            "soft_glow glyph_color should produce blue-tinted glyph pixels"
+        );
     }
 
     #[test]
