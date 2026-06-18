@@ -4,6 +4,7 @@ pub mod component;
 pub mod entity;
 pub mod fragment;
 pub mod semantics;
+pub mod style;
 
 use thiserror::Error;
 
@@ -18,6 +19,10 @@ pub use fragment::{
     ViewFragmentBuilder,
 };
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
+pub use style::{
+    Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder, Rgba8,
+    UiPropertyId, UiPropertyKind, UiPropertyValue, ValueSourceId,
+};
 
 /// Stable key for one retained UI fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -36,6 +41,8 @@ pub enum UiError {
     EntityTypeMismatch(RawEntity),
     #[error("invalid UI fragment node {0:?}")]
     InvalidFragmentNode(NodeId),
+    #[error("duplicate UI property binding {0:?}")]
+    DuplicatePropertyBinding(UiPropertyId),
     #[error("too many UI items")]
     CapacityExceeded,
 }
@@ -212,6 +219,74 @@ mod tests {
         assert_eq!(id, ComponentId(0));
         assert_eq!(registry.resolve_public_id(&public_id), Some(id));
         assert_eq!(registry.get(id).unwrap().schema(), ComponentSchemaId(7));
+    }
+
+    #[test]
+    fn property_binding_invalidation_keeps_paint_changes_out_of_layout_and_fragment() {
+        let mut builder = PropertyBindingTableBuilder::default();
+        builder
+            .push(PropertyBinding::new(
+                UiPropertyId(1),
+                UiPropertyKind::Opacity,
+                ValueSourceId(10),
+            ))
+            .unwrap();
+        builder
+            .push(PropertyBinding::new(
+                UiPropertyId(2),
+                UiPropertyKind::Rotate,
+                ValueSourceId(10),
+            ))
+            .unwrap();
+        builder
+            .push(PropertyBinding::new(
+                UiPropertyId(3),
+                UiPropertyKind::Width,
+                ValueSourceId(11),
+            ))
+            .unwrap();
+        builder
+            .push(PropertyBinding::new(
+                UiPropertyId(4),
+                UiPropertyKind::SemanticLabel,
+                ValueSourceId(12),
+            ))
+            .unwrap();
+
+        let table = builder.finish();
+        let paint_flags = table.dirty_flags_for_source(ValueSourceId(10));
+        assert!(paint_flags.contains(DirtyFlags::PAINT));
+        assert!(!paint_flags.contains(DirtyFlags::LAYOUT));
+        assert!(!paint_flags.contains(DirtyFlags::FRAGMENT));
+
+        let layout_flags = table.dirty_flags_for_source(ValueSourceId(11));
+        assert!(layout_flags.contains(DirtyFlags::LAYOUT));
+        assert!(!layout_flags.contains(DirtyFlags::FRAGMENT));
+
+        let semantics_flags = table.dirty_flags_for_source(ValueSourceId(12));
+        assert!(semantics_flags.contains(DirtyFlags::SEMANTICS));
+        assert!(!semantics_flags.contains(DirtyFlags::LAYOUT));
+    }
+
+    #[test]
+    fn property_binding_rejects_duplicate_property_slots() {
+        let mut builder = PropertyBindingTableBuilder::default();
+        builder
+            .push(PropertyBinding::new(
+                UiPropertyId(1),
+                UiPropertyKind::Color,
+                ValueSourceId(1),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            builder.push(PropertyBinding::new(
+                UiPropertyId(1),
+                UiPropertyKind::BackgroundColor,
+                ValueSourceId(2)
+            )),
+            Err(UiError::DuplicatePropertyBinding(UiPropertyId(1)))
+        );
     }
 
     #[test]

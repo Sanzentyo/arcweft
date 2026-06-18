@@ -117,9 +117,12 @@ The unified UI design is adopted as the long-term boundary for future work:
   `FragmentNode`, `FragmentKind`, `Span32`, and sidecar child/event vectors keep
   rich text, plain text, images, stateful components, and custom host elements
   in one deterministic node list. Fragment event bindings are handler IDs plus
-  event kinds, not a public `UiEvent` compatibility family. Later cuts will
-  extend this crate with reactivity, style/property bindings, layout
-  integration, and display-list generation.
+  event kinds, not a public `UiEvent` compatibility family. `style` now owns
+  the first property-binding invalidation boundary: `PropertyBinding`,
+  `PropertyBindingTable`, `UiPropertyKind`, `ValueSourceId`, and `Invalidation`
+  distinguish paint-only changes such as opacity, color, and transforms from
+  layout, semantic, and structural fragment changes. Later cuts will extend
+  this crate with reactivity, layout integration, and display-list generation.
 - `TextBox` is a dialogue domain object, not a Component. It may use an
   anonymous or named Component as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
@@ -201,10 +204,11 @@ plus the `dev-source` feature. The remaining architectural cuts are:
 2. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 3. Continue extending `arcweft-ui` from its initial semantic, Component
-   descriptor, generational Entity, and retained flat fragment boundaries toward
-   reactivity, style/property bindings, layout integration, and display-list
-   generation, without adding public names such as `ActivityViewport`,
-   `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
+   descriptor, generational Entity, retained flat fragment, and property
+   invalidation boundaries toward reactivity, layout integration, and
+   display-list generation, without adding public names such as
+   `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or per-Activity input
+   routers.
 4. Keep the unified TextBox model as the current source of truth: canonical
    `@textbox.main`, dialogue `window`, manifest `window`, and generic typed
    references. Runtime aliases are not used. Rust dialogue APIs already use

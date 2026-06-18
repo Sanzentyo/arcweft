@@ -92,9 +92,10 @@ impl DirtyFlags {
     pub const FRAGMENT: Self = Self(1 << 1);
     pub const LAYOUT: Self = Self(1 << 2);
     pub const SEMANTICS: Self = Self(1 << 3);
+    pub const PAINT: Self = Self(1 << 4);
 
     pub const fn all() -> Self {
-        Self(Self::STATE.0 | Self::FRAGMENT.0 | Self::LAYOUT.0 | Self::SEMANTICS.0)
+        Self(Self::STATE.0 | Self::FRAGMENT.0 | Self::LAYOUT.0 | Self::SEMANTICS.0 | Self::PAINT.0)
     }
 
     pub const fn bits(self) -> u8 {
