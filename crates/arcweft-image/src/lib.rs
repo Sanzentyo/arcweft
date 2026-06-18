@@ -13,6 +13,7 @@ pub enum ImageFormat {
     Png,
     Jpeg,
     Gif,
+    #[serde(rename = "webp")]
     WebP,
 }
 
@@ -495,5 +496,13 @@ mod tests {
         assert_eq!(decoded.frames()[1].rgba(), &[0, 255, 0, 255]);
         assert_eq!(decoded.frame_at_time_millis(49).unwrap().index(), 1);
         assert_eq!(decoded.frame_at_time_millis(50).unwrap().index(), 0);
+    }
+
+    #[test]
+    fn image_format_serializes_webp_without_word_split() {
+        assert_eq!(
+            serde_json::to_value(ImageFormat::WebP).expect("format serializes"),
+            "webp"
+        );
     }
 }
