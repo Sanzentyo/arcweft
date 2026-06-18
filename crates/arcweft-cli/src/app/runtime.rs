@@ -10,36 +10,545 @@ use super::project::{
     typecheck_env_for_selection,
 };
 use super::{
-    AotExecutor, AotProfileStats, AotProgram, AotProgramStats, AssertUnwindSafe, BenchSection,
-    BorrowCheckProfileStats, BundleRunnerPhase, BundleRunnerStepSummary, BundleRuntimeSummary,
-    BytecodeProfileStats, BytecodeProgram, BytecodeStats, BytecodeVmExecutor, CallArg,
-    CliRunOptions, CliRuntimeExecutorTier, CliRuntimeStepMode, ExitCode, Expr, FlowFiberStatus,
-    FlowRuntimeId, HostCallPolicy, Instant, LaunchKind, LineDisplayCatalog, Literal,
-    NativeAdapterRegistrar, NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge,
-    NativeTaskClassCounts, NativeTaskStats, Path, PlanOptions, ProfileOptions, PureHelperCandidate,
-    PureHelperLowerError, RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeExecutor, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier,
+    AotExecutor, AotProfileStats, AotProgram, AotProgramStats, Args, AssertUnwindSafe,
+    BenchSection, BorrowCheckProfileStats, BundleRunnerExecutor, BundleRunnerPhase,
+    BundleRunnerStepMode, BundleRunnerStepSummary, BundleRuntimeSummary, BytecodeProfileStats,
+    BytecodeProgram, BytecodeStats, BytecodeVmExecutor, CallArg, DenseMatrixF32, DenseMatrixF64,
+    DenseTensorF32, DenseTensorF64, ExitCode, Expr, FlowFiberStatus, FlowRuntimeId, HostCallPolicy,
+    Instant, LaunchKind, LineDisplayCatalog, Literal, NativeAdapterRegistrar,
+    NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
+    NativeTaskStats, Path, PathBuf, ProfileOptions, PureHelperCandidate, PureHelperLowerError,
+    RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutor,
+    RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimeMathBackend,
     RuntimePlan, RuntimePlanLowerReport, RuntimePlanLowerStats, RuntimePlanProfileStats,
-    RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfileOptions, RuntimeProfilePhase,
-    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureAccelerator,
-    RuntimePureAcceleratorConfig, RuntimePureCallBackend, RuntimePureCallStats,
+    RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase, RuntimeProfileReport,
+    RuntimeProfileRuntime, RuntimePureAccelerator, RuntimePureAcceleratorConfig,
+    RuntimePureBackendMode, RuntimePureCallBackend, RuntimePureCallStats,
     RuntimePureCallStatsSummary, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec, RuntimeRunOptions,
-    RuntimeRunReport, RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult,
-    RuntimeStepRunSummary, RuntimeStepStats, RuntimeTypeValidationProfileStats,
+    RuntimePureInputType, RuntimePureOutputType, RuntimePureWorkerCount, RuntimeRouteSpec,
+    RuntimeRunReport, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepResult, RuntimeStepRunSummary, RuntimeStepStats, RuntimeTypeValidationProfileStats,
     RuntimeTypeValidationStats, RuntimeValue, ScriptBench, ScriptBenchDeterministicSummary,
-    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary, ScriptBenchOptions,
+    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
     ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
     ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
-    ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus, ScriptTestOptions,
-    ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, ServeOptions, SocketAddr,
-    TypeCheckEnv, TypeCheckProfileStats, TypeCheckReport, analyze_types, catch_unwind,
+    ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus,
+    ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, SocketAddr, TypeCheckEnv,
+    TypeCheckProfileStats, TypeCheckReport, ValueEnum, analyze_types, catch_unwind,
     collect_script_tests, flow_status_label, fs, host_system_info, is_arcw_path, lint_id_policy,
     lower_line_task_groups, lower_pure_helper_candidates, lower_runtime_plan_with_options,
     lower_runtime_plan_with_stats_and_options, lower_to_hir, parse_expr, parse_source, print_json,
-    registry_from_hir, runtime_executor_stats, runtime_sequence_values, serve_native_http,
-    step_options, validate_hir_references, validate_runtime_plan_types, validate_typecheck_ready,
+    registry_from_hir, runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values,
+    serve_native_http, validate_hir_references, validate_runtime_plan_types,
+    validate_typecheck_ready,
 };
+
+impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
+    fn from(value: BundleRunnerExecutor) -> Self {
+        match value {
+            BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm,
+            BundleRunnerExecutor::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<CliRuntimeExecutorTier> for BundleRunnerExecutor {
+    fn from(value: CliRuntimeExecutorTier) -> Self {
+        match value {
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
+            CliRuntimeExecutorTier::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<BundleRunnerStepMode> for CliRuntimeStepMode {
+    fn from(value: BundleRunnerStepMode) -> Self {
+        match value {
+            BundleRunnerStepMode::OneOp => Self::OneOp,
+            BundleRunnerStepMode::Drain => Self::Drain,
+            BundleRunnerStepMode::Game => Self::Game,
+            BundleRunnerStepMode::Server => Self::Server,
+        }
+    }
+}
+
+impl From<CliRuntimeStepMode> for BundleRunnerStepMode {
+    fn from(value: CliRuntimeStepMode) -> Self {
+        match value {
+            CliRuntimeStepMode::OneOp => Self::OneOp,
+            CliRuntimeStepMode::Drain => Self::Drain,
+            CliRuntimeStepMode::Game => Self::Game,
+            CliRuntimeStepMode::Server => Self::Server,
+        }
+    }
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct PlanOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct RuntimeRunOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 1)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct RuntimeProfileOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long)]
+    adapter: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct CliRunOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long)]
+    entry: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+    #[arg(last = true)]
+    args: Vec<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct ServeOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long)]
+    entry: Option<String>,
+    #[arg(long)]
+    adapter: Option<String>,
+    #[arg(long)]
+    listen: Option<SocketAddr>,
+    #[arg(long)]
+    once: bool,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 128)]
+    max_ops: usize,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct ScriptTestOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 32)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct ScriptBenchOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[arg(long, default_value_t = 32)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long, default_value_t = 1)]
+    iterations: usize,
+    #[arg(long, default_value_t = 0)]
+    warmup: usize,
+    #[arg(long, default_value_t = 5)]
+    samples: usize,
+    #[arg(long, default_value_t = 0)]
+    input_seed: u64,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub(in crate::app) enum CliRuntimeStepMode {
+    OneOp,
+    Drain,
+    Game,
+    Server,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(in crate::app) enum CliRuntimeExecutorTier {
+    BytecodeVm,
+    Aot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(in crate::app) enum CliRuntimePureBackend {
+    Auto,
+    Vm,
+    Aot,
+    Jit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(in crate::app) enum CliRuntimeMathBackend {
+    Auto,
+    Scalar,
+    Glam,
+    Ndarray,
+    Wgpu,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::app) enum CliRuntimePureWorkers {
+    Auto,
+    Fixed(usize),
+}
+
+impl From<CliRuntimeExecutorTier> for RuntimeExecutorTier {
+    fn from(tier: CliRuntimeExecutorTier) -> Self {
+        match tier {
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
+            CliRuntimeExecutorTier::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<CliRuntimePureBackend> for RuntimePureBackendMode {
+    fn from(value: CliRuntimePureBackend) -> Self {
+        match value {
+            CliRuntimePureBackend::Auto => Self::Auto,
+            CliRuntimePureBackend::Vm => Self::Vm,
+            CliRuntimePureBackend::Aot => Self::Aot,
+            CliRuntimePureBackend::Jit => Self::Jit,
+        }
+    }
+}
+
+impl From<CliRuntimeMathBackend> for RuntimeMathBackend {
+    fn from(value: CliRuntimeMathBackend) -> Self {
+        match value {
+            CliRuntimeMathBackend::Auto => Self::Auto,
+            CliRuntimeMathBackend::Scalar => Self::Scalar,
+            CliRuntimeMathBackend::Glam => Self::Glam,
+            CliRuntimeMathBackend::Ndarray => Self::Ndarray,
+            CliRuntimeMathBackend::Wgpu => Self::Wgpu,
+        }
+    }
+}
+
+impl From<CliRuntimePureWorkers> for RuntimePureWorkerCount {
+    fn from(value: CliRuntimePureWorkers) -> Self {
+        match value {
+            CliRuntimePureWorkers::Auto => Self::Auto,
+            CliRuntimePureWorkers::Fixed(value) => Self::Fixed(value),
+        }
+    }
+}
+
+pub(in crate::app) fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {
+    let Some((name, raw)) = value.split_once('=') else {
+        return Err("expected name=value".to_owned());
+    };
+    if name.is_empty() {
+        return Err("binding name must not be empty".to_owned());
+    }
+    Ok(RuntimeBinding {
+        name: name.to_owned(),
+        value: parse_runtime_value(raw)?,
+    })
+}
+
+fn parse_runtime_value(raw: &str) -> Result<RuntimeValue, String> {
+    match raw {
+        "true" => Ok(RuntimeValue::Bool(true)),
+        "false" => Ok(RuntimeValue::Bool(false)),
+        "()" => Ok(RuntimeValue::Unit),
+        value if value.starts_with("matrix/f32/") => parse_runtime_matrix_f32(value),
+        value if value.starts_with("matrix/f64/") => parse_runtime_matrix_f64(value),
+        value if value.starts_with("tensor/f32/") => parse_runtime_tensor_f32(value),
+        value if value.starts_with("tensor/f64/") => parse_runtime_tensor_f64(value),
+        value if value.starts_with("seq/f32:") => parse_runtime_f32_sequence(value),
+        value if value.starts_with('@') => Ok(RuntimeValue::EntityRef(value[1..].to_owned())),
+        value => value
+            .parse::<i64>()
+            .map(RuntimeValue::i64)
+            .or_else(|_| Ok(RuntimeValue::String(value.to_owned()))),
+    }
+}
+
+fn parse_runtime_matrix_f32(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("matrix/f32/")
+        .split_once(':')
+        .ok_or_else(|| "matrix/f32 value must be matrix/f32/<rows>x<cols>:<csv>".to_owned())?;
+    let (rows, cols) = shape
+        .split_once('x')
+        .ok_or_else(|| "matrix/f32 shape must be <rows>x<cols>".to_owned())?;
+    let rows = parse_nonzero_usize(rows, "matrix/f32 rows")?;
+    let cols = parse_nonzero_usize(cols, "matrix/f32 cols")?;
+    let values = parse_f32_csv(values, "matrix/f32")?;
+    DenseMatrixF32::new(rows, cols, values)
+        .map(RuntimeValue::MatrixF32)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_tensor_f32(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("tensor/f32/")
+        .split_once(':')
+        .ok_or_else(|| "tensor/f32 value must be tensor/f32/<dims>:<csv>".to_owned())?;
+    let dims = shape
+        .split('x')
+        .map(|dim| parse_nonzero_usize(dim, "tensor/f32 dim"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let values = parse_f32_csv(values, "tensor/f32")?;
+    DenseTensorF32::new(dims, values)
+        .map(RuntimeValue::TensorF32)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_matrix_f64(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("matrix/f64/")
+        .split_once(':')
+        .ok_or_else(|| "matrix/f64 value must be matrix/f64/<rows>x<cols>:<csv>".to_owned())?;
+    let (rows, cols) = shape
+        .split_once('x')
+        .ok_or_else(|| "matrix/f64 shape must be <rows>x<cols>".to_owned())?;
+    let rows = parse_nonzero_usize(rows, "matrix/f64 rows")?;
+    let cols = parse_nonzero_usize(cols, "matrix/f64 cols")?;
+    let values = parse_f64_csv(values, "matrix/f64")?;
+    DenseMatrixF64::new(rows, cols, values)
+        .map(RuntimeValue::MatrixF64)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_tensor_f64(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("tensor/f64/")
+        .split_once(':')
+        .ok_or_else(|| "tensor/f64 value must be tensor/f64/<dims>:<csv>".to_owned())?;
+    let dims = shape
+        .split('x')
+        .map(|dim| parse_nonzero_usize(dim, "tensor/f64 dim"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let values = parse_f64_csv(values, "tensor/f64")?;
+    DenseTensorF64::new(dims, values)
+        .map(RuntimeValue::TensorF64)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_f32_sequence(raw: &str) -> Result<RuntimeValue, String> {
+    let values = raw
+        .strip_prefix("seq/f32:")
+        .ok_or_else(|| "not an f32 sequence".to_owned())
+        .and_then(|values| parse_f32_csv(values, "seq/f32"))?;
+    Ok(runtime_sequence_dense_f32(values))
+}
+
+fn parse_nonzero_usize(raw: &str, label: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|_| format!("{label} must be a positive integer, got `{raw}`"))?;
+    if value == 0 {
+        return Err(format!("{label} must be greater than zero"));
+    }
+    Ok(value)
+}
+
+fn parse_f32_csv(raw: &str, label: &str) -> Result<Vec<f32>, String> {
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    raw.split(',')
+        .map(|value| {
+            value
+                .trim()
+                .parse::<f32>()
+                .map_err(|_| format!("{label} element must be f32, got `{value}`"))
+        })
+        .collect()
+}
+
+fn parse_f64_csv(raw: &str, label: &str) -> Result<Vec<f64>, String> {
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    raw.split(',')
+        .map(|value| {
+            value
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| format!("{label} element must be f64, got `{value}`"))
+        })
+        .collect()
+}
+
+pub(in crate::app) fn parse_runtime_pure_workers(
+    raw: &str,
+) -> Result<CliRuntimePureWorkers, String> {
+    if raw == "auto" {
+        return Ok(CliRuntimePureWorkers::Auto);
+    }
+    let value = raw.parse::<usize>().map_err(|_| {
+        format!("pure worker count must be `auto` or a positive integer, got `{raw}`")
+    })?;
+    if value == 0 {
+        return Err("pure worker count must be greater than zero".to_owned());
+    }
+    Ok(CliRuntimePureWorkers::Fixed(value))
+}
+
+pub(in crate::app) fn step_options(mode: CliRuntimeStepMode, max_ops: usize) -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        mode: mode.into(),
+        budget: RuntimeStepBudget { max_ops },
+    }
+}
+
+impl From<CliRuntimeStepMode> for RuntimeStepMode {
+    fn from(value: CliRuntimeStepMode) -> Self {
+        match value {
+            CliRuntimeStepMode::OneOp => Self::OneOp,
+            CliRuntimeStepMode::Drain => Self::Drain,
+            CliRuntimeStepMode::Game => Self::Game,
+            CliRuntimeStepMode::Server => Self::Server,
+        }
+    }
+}
 
 pub(super) fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;

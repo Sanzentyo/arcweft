@@ -1,9 +1,10 @@
+use super::runtime::{
+    CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
+    CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
+};
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    Args, CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend,
-    CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, NativeAdapterRegistrar, PathBuf,
-    ProfileOptions, RuntimeBinding, ValueEnum, parse_runtime_binding_arg,
-    parse_runtime_pure_workers,
+    Args, ExitCode, NativeAdapterRegistrar, PathBuf, ProfileOptions, RuntimeBinding, ValueEnum,
 };
 
 #[cfg(feature = "native-capture")]
@@ -13,10 +14,12 @@ use super::project::{
 };
 
 #[cfg(feature = "native-capture")]
+use super::runtime::step_options;
+#[cfg(feature = "native-capture")]
 use super::{
     FlowFiberStatus, LineDisplayCatalog, NativeTaskBridge, Path, RuntimeStepInput,
     RuntimeStepResult, flow_status_label, fs, lower_runtime_plan_with_stats_and_options,
-    print_json, step_options,
+    print_json,
 };
 
 #[derive(Args, Clone, Debug)]

@@ -80,14 +80,15 @@ check/verify/verify-types/unsafe implementation now lives in `app/verify.rs`.
 Shared source/profile selection, adapter manifest resolution, typecheck
 environment construction, and checked-module loading now live in
 `app/project.rs`. Bundle/run-bundle option types and bundle-only helper
-conversion now live in `app/bundle.rs`. The primary `app.rs` is smaller, but it
-still owns most runtime command option types and cross-command helper parsing.
-The remaining architectural cuts are:
+conversion now live in `app/bundle.rs`. Runtime command option types, runtime
+value parsers, and runtime step/executor CLI conversion helpers now live in
+`app/runtime.rs`. The primary `app.rs` is smaller, but it still owns a few
+shared CLI option/helper definitions. The remaining architectural cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing command option / value parser organization next so the primary
-   module becomes dispatch plus shared CLI context instead of a cross-layer
-   implementation sink.
+   prioritizing the remaining shared CLI option/helper definitions next so the
+   primary module becomes dispatch plus shared CLI context instead of a
+   cross-layer implementation sink.
 2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
 3. Move remaining product-player host/task behavior onto `.awfb` execution.
