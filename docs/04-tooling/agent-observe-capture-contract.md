@@ -223,7 +223,9 @@ been resolved, and the same region shape is returned by `arcw agent hit-test`
 and MCP `arcweft.hit_test`. Hit-test hits also carry the observed object's
 `capture_refs`, including object-id color and color/object-id/mask resource
 URIs, so hit consumers can treat text objects as directly capturable debug
-objects without separately resolving the object list.
+objects without separately resolving the object list. Hit entries preserve the
+observed object's viewport `bbox` and `polygon`, so hit-test results and
+object-scoped image metadata describe the same target geometry.
 
 ---
 

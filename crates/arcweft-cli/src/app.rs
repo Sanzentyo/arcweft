@@ -2611,6 +2611,7 @@ fn agent_hit_test_object_hits(
             role: object.role.clone(),
             text: object.text.clone(),
             bbox: object.bbox.clone(),
+            polygon: object.polygon.clone(),
             capture_refs: object.capture_refs.clone(),
             region: region.clone(),
             rich_text_ref: Some(rich_text_ref.clone()),

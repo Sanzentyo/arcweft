@@ -551,6 +551,7 @@ pub struct AgentHitTestHit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub bbox: AgentBBox,
+    pub polygon: Vec<AgentPoint>,
     pub capture_refs: AgentObjectCaptureRefs,
     pub region: AgentHitRegion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1190,6 +1191,7 @@ mod tests {
             role: "rich_text_proxy".to_owned(),
             text: Some("Hit".to_owned()),
             bbox: bbox.clone(),
+            polygon: bbox.polygon(),
             capture_refs: test_capture_refs(),
             region: AgentHitRegion {
                 kind: AgentHitRegionKind::TextObjectProxy,
@@ -1209,6 +1211,7 @@ mod tests {
         let json = serde_json::to_value(&hit).expect("hit serializes");
 
         assert_eq!(json["layer"], "ui");
+        assert_eq!(json["polygon"].as_array().unwrap().len(), 4);
         assert_eq!(json["capture_refs"]["object_id_color"]["alpha"], 255);
         assert_eq!(json["capture_refs"]["captures"][0]["kind"], "mask");
     }

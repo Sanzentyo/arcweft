@@ -343,7 +343,8 @@ targets. Semantic object layers do not rewrite the parent framebuffer layer
 capture. Each hit also carries the observed object's `capture_refs`, including
 object-id color and color/object-id/mask resource URIs, so a debugger can crop
 or identify the selected text object without first walking the observation
-object list.
+object list. Hit entries preserve the observed object's viewport `polygon`
+alongside `bbox`, matching the geometry exposed by object capture metadata.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

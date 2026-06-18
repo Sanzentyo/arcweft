@@ -47,7 +47,8 @@ render layer. This keeps headless input/debug routing aligned with semantic
 text object layers while preserving the original render-layer capture path.
 Hit-test hits also copy the observed object's `capture_refs`, so the same result
 contains the object-id color and color/object-id/mask crop URIs for the selected
-text object.
+text object. Hit results also preserve the observed object's viewport polygon,
+matching the geometry later returned by object-scoped image metadata.
 Native text shaping disables standard/contextual ligatures for submitted body
 and ruby buffers. The current layout model maps styled/rich-text source ranges
 to per-character layout glyphs before native shaping, so ligature clusters such
