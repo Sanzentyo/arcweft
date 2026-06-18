@@ -916,8 +916,8 @@ pub fn canonical_style_name(name: &str) -> &str {
         | "ruby_inter_character"
         | "layout" => "layout",
         "offset" | "pos" | "rotate" | "scale" | "transform" => "transform",
-        "wave" | "shake" | "arc" | "spin" | "pulse" | "typewriter" | "jitter" | "shader"
-        | "host" | "effect" | "fx" => "effect",
+        "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter" | "jitter"
+        | "shader" | "host" | "effect" | "fx" => "effect",
         other => other,
     }
 }

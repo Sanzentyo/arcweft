@@ -18763,10 +18763,48 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
         &late_color_bytes,
     );
 
+    assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
 
     fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
+}
+
+fn assert_effects_animation_function_motion_run_changes_over_time(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let motion_run = find_rich_text_run_object(json, "関数motion");
+    let motion_effect = assert_rich_text_run_object_has_effect(motion_run, "motion");
+    assert_eq!(
+        motion_effect["params"]["fn"]["value"], "breath_orbit",
+        "motion run should carry the referenced Arcweft animation function id: {motion_run}"
+    );
+    let object_id = motion_run["id"]
+        .as_str()
+        .expect("function motion run object id is reported");
+    let early_path = dir.join("function-motion-color-4000.rgba");
+    let late_path = dir.join("function-motion-color-4500.rgba");
+    let (early, early_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &early_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4"],
+    );
+    let (late, late_bytes) = observe_full_grammar_run_color_at(
+        source_path,
+        &late_path,
+        object_id,
+        &["--capture-step", "3", "--capture-time", "4.5"],
+    );
+    assert_full_grammar_color_captures_differ(
+        "function-backed motion animation",
+        &early,
+        &early_bytes,
+        &late,
+        &late_bytes,
+    );
 }
 
 fn assert_effects_animation_spin_pulse_run_changes_over_time(
@@ -31919,15 +31957,16 @@ fn find_rich_text_run_object<'a>(
         .unwrap_or_else(|| panic!("rich-text run `{text}` should be observed: {report}"))
 }
 
-fn assert_rich_text_run_object_has_effect(run: &serde_json::Value, id: &str) {
-    assert!(
-        run["rich_text_ref"]["presentation"]["effects"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|effect| effect["id"] == id),
-        "rich-text run object should carry effect `{id}`: {run}"
-    );
+fn assert_rich_text_run_object_has_effect<'a>(
+    run: &'a serde_json::Value,
+    id: &str,
+) -> &'a serde_json::Value {
+    run["rich_text_ref"]["presentation"]["effects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|effect| effect["id"] == id)
+        .unwrap_or_else(|| panic!("rich-text run object should carry effect `{id}`: {run}"))
 }
 
 fn find_rich_text_cluster_object<'a>(

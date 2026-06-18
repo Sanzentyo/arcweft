@@ -144,6 +144,14 @@ frame, capture time, and seed must produce the same capture.
 `.pulse` applies deterministic time-varying scale. Common parameters are
 `amp`, `amount`, `speed`, `phase`, `origin`, and `target`.
 
+`.motion` applies a renderer-resolved deterministic animation function to
+translation, rotation, and scale together. Common parameters are `fn` or
+`curve`, `amp`, `angle`, `scale`, `speed`, `phase`, `seed`, `origin`, and
+`target`. The function name is authored in Arcweft source and preserved in the
+effect descriptor; renderers may only execute functions they explicitly expose
+through their animation-function registry. Unknown names must remain
+deterministic and observable, not silently become nondeterministic host code.
+
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture

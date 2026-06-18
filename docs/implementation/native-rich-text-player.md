@@ -73,9 +73,19 @@ visible pixels at `--capture-time 0`, visible pixels at a later pinned sample,
 and object color crops differ between two later samples. It also checks
 horizontal and `vertical_rl` `spin + pulse` runs, where animated rotation and
 scale alter the native object color crop between pinned samples while preserving
-vertical layout metadata. This keeps the debug surface honest for stacked
-reveal, glyph-placement, affine animation, and host-dispatched effects instead
-of only checking each effect family in isolation.
+vertical layout metadata. The same sample defines an Arcweft `#[pure]`
+animation helper named `breath_orbit` and references it from `[.motion
+fn=breath_orbit ...]`; native capture resolves that function id through the
+renderer's deterministic animation-function registry and checks that the
+function-backed motion crop changes between pinned samples. This keeps the debug
+surface honest for stacked reveal, glyph-placement, affine animation,
+function-backed animation, and host-dispatched effects instead of only checking
+each effect family in isolation.
+Native window page changes reset the page-local effect clock and clear the
+renderer-local rich-text effect state store before preparing the next page. A
+cancelled or skipped line is therefore treated like a page/line replacement for
+this native path: no old animation state is advanced after the page is replaced,
+and subsequent pages start with fresh renderer-local effect state.
 When native element bounds are unavailable, fallback child bboxes and ruby
 placement advance through the same display-map run styles as native capture,
 so size, weight, italic, font-family, and textbox-width wrapping influence

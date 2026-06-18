@@ -299,6 +299,10 @@ impl RichTextStateStore {
     ) {
         self.values.insert((scope, name.into()), value);
     }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
+    }
 }
 
 /// Per-glyph effect context supplied to renderer-local effect implementations.
@@ -2083,6 +2087,12 @@ fn apply_builtin_descriptor(
             }
             apply_builtin_pulse(effect, time_seconds, placement);
         }
+        "motion" => {
+            if !effect_applies_to_glyph_transform(effect) {
+                return true;
+            }
+            apply_builtin_motion(line_id, effect, time_seconds, placement);
+        }
         "typewriter" => {
             if !effect_applies_to_glyph_mask(effect) {
                 return true;
@@ -2131,6 +2141,110 @@ fn apply_builtin_pulse(
     placement.scale_x *= scale;
     placement.scale_y *= scale;
     apply_effect_affine_pivot(effect, RichTextTransformOrigin::Center, placement);
+}
+
+fn apply_builtin_motion(
+    line_id: &str,
+    effect: &RichTextEffectDescriptor,
+    time_seconds: f32,
+    placement: &mut NativeGlyphPlacement,
+) {
+    let function = param_label(effect, "fn")
+        .or_else(|| param_label(effect, "curve"))
+        .unwrap_or_else(|| "breath_orbit".to_owned());
+    let speed = param_milli(effect, "speed").unwrap_or(Milli::ONE).as_f32();
+    let phase = param_milli(effect, "phase").unwrap_or_default().as_f32();
+    let amplitude = param_milli(effect, "amp")
+        .or_else(|| param_milli(effect, "radius"))
+        .unwrap_or(Milli(4000))
+        .as_f32();
+    let angle = param_milli(effect, "angle").unwrap_or(Milli(6000)).as_f32();
+    let scale_amplitude = param_milli(effect, "scale")
+        .or_else(|| param_milli(effect, "scale_amp"))
+        .or_else(|| param_milli(effect, "amount"))
+        .unwrap_or(Milli(80))
+        .as_f32()
+        .max(0.0);
+    let motion_seed = param_seed(effect, "seed").unwrap_or(0) ^ stable_text_hash(&function);
+    let noise = deterministic_noise(motion_seed, line_id, placement.glyph_index, 0.0);
+    let target_index = effect_target_wave_index(effect.target, placement);
+    let sample_time = time_seconds.mul_add(speed, phase)
+        + usize_to_f32_saturating(target_index) * 0.037
+        + noise[0] * 0.11;
+    let sample = sample_native_animation_function(&function, sample_time, noise);
+    placement.x += amplitude * sample.translate[0];
+    placement.y += amplitude * sample.translate[1];
+    placement.rotate_degrees += angle * sample.rotate;
+    let scale = 1.0 + scale_amplitude * sample.scale.max(0.0);
+    placement.scale_x *= scale;
+    placement.scale_y *= scale;
+    apply_effect_affine_pivot(effect, RichTextTransformOrigin::GlyphCenter, placement);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NativeAnimationSample {
+    translate: [f32; 2],
+    rotate: f32,
+    scale: f32,
+}
+
+fn sample_native_animation_function(
+    function: &str,
+    time_seconds: f32,
+    noise: [f32; 2],
+) -> NativeAnimationSample {
+    match function.trim().trim_start_matches('.') {
+        "breath_orbit" | "fx.breath_orbit" => sample_breath_orbit(time_seconds, noise),
+        "elastic_bloom" | "fx.elastic_bloom" => sample_elastic_bloom(time_seconds, noise),
+        other => sample_hashed_animation_function(other, time_seconds, noise),
+    }
+}
+
+fn sample_breath_orbit(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
+    let tau = std::f32::consts::TAU;
+    let primary = (time_seconds * tau).sin();
+    let secondary = (time_seconds.mul_add(2.0, noise[0]) * tau).sin();
+    let orbit = time_seconds.mul_add(tau, secondary * 0.32);
+    let bloom = (primary * 0.5 + 0.5).powf(1.35) * 0.72 + (secondary * 0.5 + 0.5) * 0.28;
+    NativeAnimationSample {
+        translate: [
+            orbit.cos() * (0.65 + bloom * 0.35),
+            orbit.sin().mul_add(0.48, secondary * 0.18),
+        ],
+        rotate: primary.mul_add(0.72, secondary * 0.28),
+        scale: bloom,
+    }
+}
+
+fn sample_elastic_bloom(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
+    let tau = std::f32::consts::TAU;
+    let primary = (time_seconds * tau).sin();
+    let snap = (time_seconds.mul_add(3.0, noise[1] * 0.25) * tau)
+        .sin()
+        .max(0.0)
+        .powf(2.2);
+    NativeAnimationSample {
+        translate: [primary * 0.25, -snap * 0.55],
+        rotate: primary.mul_add(0.35, snap * 0.65),
+        scale: snap,
+    }
+}
+
+fn sample_hashed_animation_function(
+    function: &str,
+    time_seconds: f32,
+    noise: [f32; 2],
+) -> NativeAnimationSample {
+    let hash_low = u16::try_from(stable_text_hash(function) & 0xffff).unwrap_or_default();
+    let hash_phase = f32::from(hash_low) / 65535.0;
+    let tau = std::f32::consts::TAU;
+    let primary = ((time_seconds + hash_phase) * tau).sin();
+    let secondary = ((time_seconds * 1.7 + noise[0]) * tau).cos();
+    NativeAnimationSample {
+        translate: [primary * 0.45, secondary * 0.35],
+        rotate: primary.mul_add(0.55, secondary * 0.25),
+        scale: (primary * 0.5 + 0.5) * 0.65,
+    }
 }
 
 fn apply_effect_affine_pivot(
@@ -2347,6 +2461,18 @@ fn param_seed(effect: &RichTextEffectDescriptor, name: &str) -> Option<u64> {
 
 fn param_vec2(effect: &RichTextEffectDescriptor, name: &str) -> Option<[f32; 2]> {
     param_as_vec2(effect.params.get(name)?)
+}
+
+fn param_label(effect: &RichTextEffectDescriptor, name: &str) -> Option<String> {
+    let (RichTextParam::Raw { value }
+    | RichTextParam::Text { value }
+    | RichTextParam::Selector { value }
+    | RichTextParam::Expr { source: value }) = effect.params.get(name)?
+    else {
+        return None;
+    };
+    let label = value.trim().trim_matches('"').trim_matches('\'');
+    (!label.is_empty()).then(|| label.trim_start_matches('@').to_owned())
 }
 
 fn param_origin(effect: &RichTextEffectDescriptor) -> Option<RichTextTransformOrigin> {
@@ -3478,6 +3604,7 @@ impl WindowState {
         self.rich_text = page.rich_text.clone();
         self.layout_frame.clone_from(&page.layout_frame);
         self.animation_started_at = Instant::now();
+        self.effect_state.clear();
         self.has_timed_effects = window_page_has_timed_effects(page);
         self.prepare_rich_text();
         self.window.request_redraw();
@@ -6043,6 +6170,68 @@ mod tests {
             Some(RichTextTransformOrigin::Center)
         );
         assert_eq!(pulse_early.affine_target, Some(RichTextEffectTarget::Run));
+    }
+
+    #[test]
+    fn native_builtin_motion_uses_animation_function_id() {
+        let motion = RichTextEffectDescriptor {
+            id: "motion".to_owned(),
+            params: BTreeMap::from([
+                (
+                    "fn".to_owned(),
+                    RichTextParam::Raw {
+                        value: "breath_orbit".to_owned(),
+                    },
+                ),
+                (
+                    "amp".to_owned(),
+                    RichTextParam::Milli { value: Milli(5000) },
+                ),
+                (
+                    "angle".to_owned(),
+                    RichTextParam::Milli { value: Milli(9000) },
+                ),
+                (
+                    "scale".to_owned(),
+                    RichTextParam::Milli { value: Milli(140) },
+                ),
+                (
+                    "speed".to_owned(),
+                    RichTextParam::Milli { value: Milli(750) },
+                ),
+                (
+                    "seed".to_owned(),
+                    RichTextParam::Raw {
+                        value: "breath".to_owned(),
+                    },
+                ),
+            ]),
+            target: RichTextEffectTarget::Glyph,
+            phase: RichTextEffectPhase::GlyphTransform,
+            state_scope: RichTextStateScope::Glyph,
+        };
+        let mut early = test_native_glyph_placement(0, 2);
+        let mut late = test_native_glyph_placement(0, 2);
+        apply_builtin_descriptor("line.motion", &motion, 4, 0.15, &mut early);
+        apply_builtin_descriptor("line.motion", &motion, 4, 0.65, &mut late);
+
+        assert!(
+            (early.x - late.x).abs() > 0.5 || (early.y - late.y).abs() > 0.5,
+            "motion should translate over effect time: early={early:?} late={late:?}"
+        );
+        assert!(
+            (early.rotate_degrees - late.rotate_degrees).abs() > 0.25,
+            "motion should rotate over effect time: early={early:?} late={late:?}"
+        );
+        assert!(
+            (early.scale_x - late.scale_x).abs() > 0.01,
+            "motion should scale over effect time: early={early:?} late={late:?}"
+        );
+        assert_eq!(
+            early.affine_origin,
+            Some(RichTextTransformOrigin::GlyphCenter)
+        );
+        assert_eq!(early.affine_target, Some(RichTextEffectTarget::Glyph));
     }
 
     #[test]
