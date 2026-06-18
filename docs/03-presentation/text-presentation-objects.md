@@ -92,6 +92,12 @@ with the same measured text range/bbox but its own proxy id, type, role, layer,
 depth, hit-test flag, params, capture refs, and object-id color. This lets authors
 attach separate semantic objects such as a choice hit target and a hover/depth
 proxy to the same visible text without losing either object.
+Page and line text objects also aggregate proxy metadata for the text range they
+cover. Their own primary hit region remains `text_page` or `text_line`, while
+additional `text_object_proxy` hit regions use the decorated proxy's measured
+post-transform native bounds and local proxy depth/layer. This lets a debugger
+inspect a broad page or line object and still recover the concrete clickable or
+depth-aware text proxies inside it.
 
 ## Depth And Hit Testing
 

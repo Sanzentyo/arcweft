@@ -35,6 +35,12 @@ captures through the normal native element path. This keeps custom
 `#[text_proxy]` / `[object ...]` spans aligned with image/model-like debug
 objects that have their own object id, hit region, layer/depth metadata, and
 capture refs.
+Rich-text page and line child objects now aggregate the proxy metadata in their
+covered text ranges as native-bounds-backed `text_object_proxy` hit regions.
+The page/line primary bbox still describes the broad text object, but its
+`rich_text_ref.object_layer`, `object_depth`, and proxy hit regions expose the
+deepest nested proxy targets inside the range without substituting a fallback
+rectangle.
 Native text shaping disables standard/contextual ligatures for submitted body
 and ruby buffers. The current layout model maps styled/rich-text source ranges
 to per-character layout glyphs before native shaping, so ligature clusters such

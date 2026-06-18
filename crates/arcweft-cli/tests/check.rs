@@ -1973,6 +1973,7 @@ flow @flow.main main {
         hover["rich_text_ref"]["presentation"]["object_proxies"][0]["layer"],
         "ui"
     );
+    assert_rich_text_page_and_line_aggregate_proxy_metadata(&observe_json);
     let x = agent_json_bbox_x(&hover["bbox"]) + agent_json_bbox_width(&hover["bbox"]) / 2;
     let y = agent_json_bbox_y(&hover["bbox"]) + agent_json_bbox_height(&hover["bbox"]) / 2;
 
@@ -2025,6 +2026,32 @@ flow @flow.main main {
             .any(|hit| hit["region"]["proxy_id"] == "hotspot" && hit["depth"] == 4000),
         "shallower nested proxy should remain visible as a lower-ranked hit: {hit_json}"
     );
+}
+
+fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_json::Value) {
+    let objects = observe_json["objects"]
+        .as_array()
+        .expect("observed objects are listed");
+    let page = objects
+        .iter()
+        .find(|object| object["id"] == "object.dialogue.0.0.page.0")
+        .expect("proxy text page object is observed");
+    assert_eq!(page["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
+    let page_hover_hit = rich_text_proxy_hit_region(page, "hover", 0, 3);
+    assert_eq!(page_hover_hit["proxy_type"], "HoverHit");
+    assert_eq!(page_hover_hit["proxy_layer"], "ui");
+    assert_eq!(page_hover_hit["depth"], 7000);
+
+    let line = objects
+        .iter()
+        .find(|object| object["id"] == "object.dialogue.0.0.line.0")
+        .expect("proxy text line object is observed");
+    assert_eq!(line["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
+    let line_keyword_hit = rich_text_proxy_hit_region(line, "hotspot", 0, 3);
+    assert_eq!(line_keyword_hit["proxy_type"], "KeywordHit");
+    assert_eq!(line_keyword_hit["depth"], 4000);
 }
 
 #[test]

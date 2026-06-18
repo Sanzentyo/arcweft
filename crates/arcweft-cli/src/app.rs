@@ -5052,6 +5052,7 @@ fn agent_rich_text_child_objects(
         textbox,
         viewport,
         time_seconds,
+        native_bounds,
     ));
     children.extend(agent_rich_text_line_objects(
         step,
@@ -5059,6 +5060,7 @@ fn agent_rich_text_child_objects(
         textbox,
         viewport,
         time_seconds,
+        native_bounds,
     ));
     for (run_index, run) in textbox.rich_text.display_map.text_runs.iter().enumerate() {
         if matches!(
@@ -5115,6 +5117,10 @@ fn agent_rich_text_page_objects(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
     time_seconds: f32,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Vec<AgentObservedObject> {
     agent_rich_text_page_ranges(&textbox.rich_text)
         .into_iter()
@@ -5134,6 +5140,13 @@ fn agent_rich_text_page_objects(
                 time_seconds,
             )?;
             let range = RichTextRange::new(page_range.start, page_range.end);
+            let mut hit_regions =
+                vec![agent_hit_region(AgentHitRegionKind::TextPage, &bbox, range)];
+            hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
+                &textbox.rich_text,
+                range,
+                native_bounds,
+            ));
             let object_id = format!("object.dialogue.{step}.{index}.page.{page_index}");
             Some(agent_rich_text_child_object(
                 step,
@@ -5156,14 +5169,10 @@ fn agent_rich_text_page_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        object_layer: None,
+                        object_layer: agent_rich_text_range_object_layer(&textbox.rich_text, range),
                         object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
                         hit_test: true,
-                        hit_regions: vec![agent_hit_region(
-                            AgentHitRegionKind::TextPage,
-                            &bbox,
-                            range,
-                        )],
+                        hit_regions,
                     },
                     page: page_index,
                 },
@@ -5178,6 +5187,10 @@ fn agent_rich_text_line_objects(
     textbox: &AgentObservedObject,
     viewport: &AgentViewport,
     time_seconds: f32,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
 ) -> Vec<AgentObservedObject> {
     agent_rich_text_line_ranges(&textbox.rich_text)
         .into_iter()
@@ -5199,6 +5212,13 @@ fn agent_rich_text_line_objects(
                 range,
                 time_seconds,
             )?;
+            let mut hit_regions =
+                vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)];
+            hit_regions.extend(agent_rich_text_range_proxy_hit_regions(
+                &textbox.rich_text,
+                range,
+                native_bounds,
+            ));
             let object_id = format!("object.dialogue.{step}.{index}.line.{line_index}");
             Some(agent_rich_text_child_object(
                 step,
@@ -5221,14 +5241,10 @@ fn agent_rich_text_line_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        object_layer: None,
+                        object_layer: agent_rich_text_range_object_layer(&textbox.rich_text, range),
                         object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
                         hit_test: true,
-                        hit_regions: vec![agent_hit_region(
-                            AgentHitRegionKind::TextLine,
-                            &bbox,
-                            range,
-                        )],
+                        hit_regions,
                     },
                     page,
                 },
@@ -5927,6 +5943,61 @@ fn agent_rich_text_page_object_depth(
         .filter(|run| agent_rich_text_ranges_overlap(run.range, range))
         .filter_map(|run| agent_object_depth(&run.presentation))
         .max()
+}
+
+fn agent_rich_text_range_object_layer(
+    frame: &LineDisplayFrame,
+    range: RichTextRange,
+) -> Option<String> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| agent_rich_text_ranges_overlap(run.range, range))
+        .filter_map(|run| {
+            agent_object_layer(&run.presentation)
+                .map(|layer| (agent_object_depth(&run.presentation).unwrap_or(0), layer))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, layer)| layer)
+}
+
+fn agent_rich_text_range_proxy_hit_regions(
+    frame: &LineDisplayFrame,
+    range: RichTextRange,
+    native_bounds: &BTreeMap<
+        arcweft_player_native::native::NativeFrameElement,
+        AgentNativeRichTextElementBounds,
+    >,
+) -> Vec<AgentHitRegion> {
+    frame
+        .display_map
+        .text_runs
+        .iter()
+        .enumerate()
+        .filter(|(_, run)| agent_rich_text_ranges_overlap(run.range, range))
+        .flat_map(|(run_index, run)| {
+            let hit_range = RichTextRange::new(
+                run.range.start.max(range.start),
+                run.range.end.min(range.end),
+            );
+            run.presentation
+                .object_proxies
+                .iter()
+                .enumerate()
+                .filter(|(_, proxy)| proxy.hit_test)
+                .filter_map(move |(proxy_index, proxy)| {
+                    native_bounds
+                        .get(
+                            &arcweft_player_native::native::NativeFrameElement::TextObjectProxy {
+                                run_index,
+                                proxy_index,
+                            },
+                        )
+                        .map(|bounds| agent_proxy_hit_region(&bounds.bbox, hit_range, proxy))
+                })
+        })
+        .collect()
 }
 
 fn agent_rich_text_ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
