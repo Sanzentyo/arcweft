@@ -211,7 +211,10 @@ For `text_object_proxy` hit regions, the region itself carries the proxy id,
 type, role, layer, depth, and `proxy_params`. `proxy_params` is the typed
 `RichTextParam` map after struct-attribute defaults and inline overrides have
 been resolved, and the same region shape is returned by `arcw agent hit-test`
-and MCP `arcweft.hit_test`.
+and MCP `arcweft.hit_test`. Hit-test hits also carry the observed object's
+`capture_refs`, including object-id color and color/object-id/mask resource
+URIs, so hit consumers can treat text objects as directly capturable debug
+objects without separately resolving the object list.
 
 ---
 

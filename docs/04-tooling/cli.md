@@ -340,7 +340,10 @@ region. The hit's top-level `layer` resolves through `region.proxy_layer`,
 `rich_text_ref.object_layer`, then the render layer, so input debuggers can treat
 text proxies and ordinary rich-text spans as image/model-like semantic layer
 targets. Semantic object layers do not rewrite the parent framebuffer layer
-capture.
+capture. Each hit also carries the observed object's `capture_refs`, including
+object-id color and color/object-id/mask resource URIs, so a debugger can crop
+or identify the selected text object without first walking the observation
+object list.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

@@ -533,6 +533,7 @@ pub struct AgentHitTestHit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub bbox: AgentBBox,
+    pub capture_refs: AgentObjectCaptureRefs,
     pub region: AgentHitRegion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
@@ -1153,6 +1154,45 @@ mod tests {
 
         assert_eq!(json["kind"], "text_object_proxy");
         assert_eq!(json["proxy_params"]["channel"]["value"], "choice");
+    }
+
+    #[test]
+    fn hit_test_hit_serializes_capture_refs() {
+        let bbox = AgentBBox {
+            space: AgentCoordinateSpace::Viewport,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+        };
+        let hit = AgentHitTestHit {
+            rank: 0,
+            object_id: "object.dialogue.0.0.proxy.0.0".to_owned(),
+            layer: "ui".to_owned(),
+            role: "rich_text_proxy".to_owned(),
+            text: Some("Hit".to_owned()),
+            bbox: bbox.clone(),
+            capture_refs: test_capture_refs(),
+            region: AgentHitRegion {
+                kind: AgentHitRegionKind::TextObjectProxy,
+                bbox,
+                range: RichTextRange::new(0, 3),
+                proxy_id: Some("hotspot".to_owned()),
+                proxy_type: Some("KeywordHit".to_owned()),
+                proxy_role: Some("keyword".to_owned()),
+                proxy_layer: Some("ui".to_owned()),
+                depth: Some(4000),
+                proxy_params: BTreeMap::new(),
+            },
+            rich_text_ref: None,
+            depth: Some(4000),
+        };
+
+        let json = serde_json::to_value(&hit).expect("hit serializes");
+
+        assert_eq!(json["layer"], "ui");
+        assert_eq!(json["capture_refs"]["object_id_color"]["alpha"], 255);
+        assert_eq!(json["capture_refs"]["captures"][0]["kind"], "mask");
     }
 
     #[test]

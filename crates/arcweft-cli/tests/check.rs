@@ -2017,6 +2017,7 @@ flow @flow.main main {
     assert_eq!(top["region"]["proxy_role"], "hover");
     assert_eq!(top["region"]["proxy_layer"], "ui");
     assert_eq!(top["layer"], "ui");
+    assert_agent_hit_capture_refs_match(top, hover);
     assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
     assert_eq!(top["depth"], 7000);
     let keyword_hit = hit_json["hits"]
@@ -2030,6 +2031,13 @@ flow @flow.main main {
     assert_eq!(
         keyword_hit["region"]["proxy_params"]["channel"]["value"],
         "choice"
+    );
+}
+
+fn assert_agent_hit_capture_refs_match(hit: &serde_json::Value, object: &serde_json::Value) {
+    assert_eq!(
+        hit["capture_refs"]["object_id_color"],
+        object["capture_refs"]["object_id_color"]
     );
 }
 
@@ -2174,6 +2182,7 @@ flow @flow.main main {
     assert_eq!(hit["top_object_id"], line["id"]);
     assert_eq!(hit["hits"][0]["role"], "rich_text_line");
     assert_eq!(hit["hits"][0]["layer"], "hud");
+    assert_agent_hit_capture_refs_match(&hit["hits"][0], line);
     assert_eq!(hit["hits"][0]["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(hit["hits"][0]["depth"], 7000);
 }
