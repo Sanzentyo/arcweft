@@ -20264,6 +20264,40 @@ fn assert_agent_read_uri_object_image_has_content(
     width: u64,
     height: u64,
 ) {
+    let resource = read_agent_observe_object_image_resource(path, uri);
+    assert_agent_read_uri_object_image_metadata(&resource, uri, object_id, width, height);
+    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn assert_agent_read_uri_object_id_image_matches_object_color(
+    path: &Path,
+    uri: &str,
+    object: &serde_json::Value,
+    width: u64,
+    height: u64,
+) {
+    let object_id = object["id"].as_str().expect("object id");
+    let resource = read_agent_observe_object_image_resource(path, uri);
+    assert_agent_read_uri_object_image_metadata(&resource, uri, object_id, width, height);
+    let content_pixels = resource["image"]["content_pixels"]
+        .as_u64()
+        .expect("object-id resource content pixels");
+    assert!(content_pixels > 0);
+    let bytes = raw_bytes_from_agent_image_resource(&resource, "object-id read-uri resource");
+    assert_eq!(
+        bytes.len() as u64,
+        width * height * 4,
+        "object-id read-uri raw image should match bbox RGBA dimensions"
+    );
+    assert_raw_object_id_tint_bytes(
+        &bytes,
+        agent_object_id_color_from_json(object),
+        content_pixels,
+        "object-id read-uri resource",
+    );
+}
+
+fn read_agent_observe_object_image_resource(path: &Path, uri: &str) -> serde_json::Value {
     let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -20284,8 +20318,16 @@ fn assert_agent_read_uri_object_image_has_content(
         "object image capture ref read should succeed, stderr: {}",
         String::from_utf8_lossy(&read_output.stderr)
     );
-    let resource: serde_json::Value =
-        serde_json::from_slice(&read_output.stdout).expect("object image capture ref read is JSON");
+    serde_json::from_slice(&read_output.stdout).expect("object image capture ref read is JSON")
+}
+
+fn assert_agent_read_uri_object_image_metadata(
+    resource: &serde_json::Value,
+    uri: &str,
+    object_id: &str,
+    width: u64,
+    height: u64,
+) {
     assert_eq!(resource["kind"], "image");
     assert_eq!(resource["uri"], uri);
     assert_eq!(resource["image"]["renderer"], "native");
@@ -20293,7 +20335,27 @@ fn assert_agent_read_uri_object_image_has_content(
     assert_eq!(resource["image"]["scope"]["id"], object_id);
     assert_eq!(resource["image"]["width"], width);
     assert_eq!(resource["image"]["height"], height);
-    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn raw_bytes_from_agent_image_resource(resource: &serde_json::Value, context: &str) -> Vec<u8> {
+    assert_eq!(
+        resource["mime_type"], "application/octet-stream",
+        "{context} should be a raw byte resource"
+    );
+    assert_eq!(
+        resource["body"]["body_kind"], "bytes_base64",
+        "{context} should use the bytes_base64 body envelope"
+    );
+    assert_eq!(
+        resource["body"]["body"]["encoding"], "base64",
+        "{context} should use base64 body encoding"
+    );
+    let data = resource["body"]["body"]["data"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{context} should carry base64 image data"));
+    general_purpose::STANDARD
+        .decode(data)
+        .unwrap_or_else(|error| panic!("{context} should decode as base64: {error}"))
 }
 
 #[test]
@@ -21028,6 +21090,15 @@ fn assert_raw_object_id_tint(
     context: &str,
 ) {
     let bytes = fs::read(raw_path).expect("read native long vertical ruby object-id raw crop");
+    assert_raw_object_id_tint_bytes(&bytes, expected, content_pixels, context);
+}
+
+fn assert_raw_object_id_tint_bytes(
+    bytes: &[u8],
+    expected: [u8; 4],
+    content_pixels: u64,
+    context: &str,
+) {
     let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
     let tinted_color = bytes
         .chunks_exact(4)
@@ -32124,23 +32195,31 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy["depth"], 4000);
     assert_eq!(proxy["hit_test"], true);
     assert_agent_observe_object_capture_refs(proxy_object);
-    for (kind, mime_type) in [
-        ("mask", "application/octet-stream"),
-        ("object_id", "application/octet-stream"),
-    ] {
-        let uri = rich_text_object_capture_uri(proxy_object, kind, mime_type);
-        assert_agent_read_uri_object_image_has_content(
-            source_path,
-            uri,
-            proxy_object["id"].as_str().expect("proxy object id"),
-            proxy_object["bbox"]["width"]
-                .as_u64()
-                .expect("proxy object bbox width"),
-            proxy_object["bbox"]["height"]
-                .as_u64()
-                .expect("proxy object bbox height"),
-        );
-    }
+    let proxy_object_id = proxy_object["id"].as_str().expect("proxy object id");
+    let proxy_object_width = proxy_object["bbox"]["width"]
+        .as_u64()
+        .expect("proxy object bbox width");
+    let proxy_object_height = proxy_object["bbox"]["height"]
+        .as_u64()
+        .expect("proxy object bbox height");
+    let proxy_mask_uri =
+        rich_text_object_capture_uri(proxy_object, "mask", "application/octet-stream");
+    assert_agent_read_uri_object_image_has_content(
+        source_path,
+        proxy_mask_uri,
+        proxy_object_id,
+        proxy_object_width,
+        proxy_object_height,
+    );
+    let proxy_object_id_uri =
+        rich_text_object_capture_uri(proxy_object, "object_id", "application/octet-stream");
+    assert_agent_read_uri_object_id_image_matches_object_color(
+        source_path,
+        proxy_object_id_uri,
+        proxy_object,
+        proxy_object_width,
+        proxy_object_height,
+    );
     let proxy_hit = rich_text_hit_region(
         proxy_object,
         "text_object_proxy",
