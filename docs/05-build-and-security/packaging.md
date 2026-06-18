@@ -84,6 +84,16 @@ game.awfb
     space
     path
     bytes
+  image_assets[]
+    id
+    file
+      space
+      path
+    format = png|jpeg|gif|webp
+    animation = static|animated
+    dimensions?
+      width
+      height
 ```
 
 The implemented `.awfb` codec is deterministic JSON owned by
@@ -98,6 +108,12 @@ The CLI includes `.arcweft/asset` by default and can opt into `.arcweft/save`,
 `.arcweft/temp`, and `.arcweft/export`. Packaged virtual paths use only normal
 relative components. Parent traversal, absolute paths, and host path prefixes
 are rejected or omitted before encoding.
+
+Image assets are typed bundle records that bind a stable asset id to one
+encoded asset virtual file. Static PNG/JPEG/WebP and animated GIF/WebP use the
+same `image_assets[]` section; adapters decode bytes after looking up the
+referenced virtual file, so bundle execution can use encoded payloads without
+re-reading or re-lowering source files.
 
 Future product bundle slices can replace structured JSON bytecode with a
 compact deterministic binary bytecode section and add graph indexes, entity

@@ -18,6 +18,8 @@ pub struct ArcweftBundle {
     pub adapter_manifests: Vec<BundleAdapterManifest>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub virtual_files: Vec<BundleVirtualFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_assets: Vec<BundleImageAsset>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -90,6 +92,45 @@ pub struct BundleVirtualFile {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleVirtualFileRef {
+    pub space: BundleVirtualFileSpace,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageAsset {
+    pub id: String,
+    pub file: BundleVirtualFileRef,
+    pub format: BundleImageFormat,
+    pub animation: BundleImageAnimation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<BundleImageDimensions>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleImageFormat {
+    Png,
+    Jpeg,
+    Gif,
+    #[serde(rename = "webp")]
+    WebP,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleImageAnimation {
+    Static,
+    Animated,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageDimensions {
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BundleVirtualFileSpace {
@@ -117,6 +158,12 @@ pub enum BundleCodecError {
     Encode(#[source] serde_json::Error),
     #[error("failed to decode Arcweft bundle JSON: {0}")]
     Decode(#[source] serde_json::Error),
+    #[error("bundle image asset `{asset_id}` references missing virtual file {space}:{path}")]
+    MissingImageFile {
+        asset_id: String,
+        space: BundleVirtualFileSpace,
+        path: String,
+    },
 }
 
 impl ArcweftBundle {
@@ -137,6 +184,7 @@ impl ArcweftBundle {
             display,
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
+            image_assets: Vec::new(),
         }
     }
 
@@ -168,6 +216,16 @@ impl ArcweftBundle {
         self
     }
 
+    #[must_use]
+    pub fn with_image_assets(mut self, assets: impl IntoIterator<Item = BundleImageAsset>) -> Self {
+        self.image_assets.extend(assets);
+        self.image_assets
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        self.image_assets
+            .dedup_by(|left, right| left.id == right.id);
+        self
+    }
+
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
         serde_json::to_vec_pretty(self).map_err(BundleCodecError::Encode)
     }
@@ -181,6 +239,45 @@ impl ArcweftBundle {
             });
         }
         Ok(bundle)
+    }
+
+    pub fn virtual_file(&self, file: &BundleVirtualFileRef) -> Option<&BundleVirtualFile> {
+        self.virtual_files
+            .iter()
+            .find(|candidate| candidate.space == file.space && candidate.path == file.path)
+    }
+
+    pub fn image_asset(&self, id: &str) -> Option<&BundleImageAsset> {
+        self.image_assets.iter().find(|asset| asset.id == id)
+    }
+
+    pub fn image_asset_bytes(&self, id: &str) -> Result<Option<&[u8]>, BundleCodecError> {
+        let Some(asset) = self.image_asset(id) else {
+            return Ok(None);
+        };
+        let Some(file) = self.virtual_file(&asset.file) else {
+            return Err(BundleCodecError::MissingImageFile {
+                asset_id: asset.id.clone(),
+                space: asset.file.space,
+                path: asset.file.path.clone(),
+            });
+        };
+        Ok(Some(file.bytes.as_slice()))
+    }
+}
+
+impl BundleVirtualFile {
+    pub fn file_ref(&self) -> BundleVirtualFileRef {
+        BundleVirtualFileRef {
+            space: self.space,
+            path: self.path.clone(),
+        }
+    }
+}
+
+impl BundleImageDimensions {
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
     }
 }
 
@@ -263,5 +360,101 @@ mod tests {
             ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes"),
             bundle
         );
+    }
+
+    #[test]
+    fn bundle_image_assets_resolve_encoded_virtual_file_bytes() {
+        let image_file = BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "images/logo.webp".to_owned(),
+            bytes: b"webp-bytes".to_vec(),
+        };
+        let bundle = empty_test_bundle()
+            .with_virtual_files([image_file.clone()])
+            .with_image_assets([BundleImageAsset {
+                id: "asset.ui.logo".to_owned(),
+                file: image_file.file_ref(),
+                format: BundleImageFormat::WebP,
+                animation: BundleImageAnimation::Animated,
+                dimensions: Some(BundleImageDimensions::new(320, 180)),
+            }]);
+
+        let bytes = bundle.to_json_bytes().expect("bundle encodes");
+        let json = String::from_utf8(bytes.clone()).expect("json is utf8");
+        assert!(json.contains("\"image_assets\""));
+        assert!(json.contains("\"format\": \"webp\""));
+        let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+
+        let asset = decoded
+            .image_asset("asset.ui.logo")
+            .expect("image asset is indexed");
+        assert_eq!(asset.animation, BundleImageAnimation::Animated);
+        assert_eq!(
+            decoded
+                .image_asset_bytes("asset.ui.logo")
+                .expect("image bytes resolve"),
+            Some(b"webp-bytes".as_slice())
+        );
+        assert_eq!(
+            decoded
+                .image_asset_bytes("asset.ui.missing")
+                .expect("unknown asset is not an error"),
+            None
+        );
+    }
+
+    #[test]
+    fn bundle_image_asset_reports_missing_virtual_file() {
+        let bundle = empty_test_bundle().with_image_assets([BundleImageAsset {
+            id: "asset.bg.room".to_owned(),
+            file: BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Asset,
+                path: "bg/room.png".to_owned(),
+            },
+            format: BundleImageFormat::Png,
+            animation: BundleImageAnimation::Static,
+            dimensions: None,
+        }]);
+
+        let error = bundle
+            .image_asset_bytes("asset.bg.room")
+            .expect_err("missing file is a structural bundle error");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::MissingImageFile {
+                asset_id,
+                space: BundleVirtualFileSpace::Asset,
+                path,
+            } if asset_id == "asset.bg.room" && path == "bg/room.png"
+        ));
+    }
+
+    fn empty_test_bundle() -> ArcweftBundle {
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: "main.arcw".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: Some("main".to_owned()),
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: 0,
+                    line_task_groups: 0,
+                    stream_plans: 0,
+                    source_plans: 0,
+                },
+            },
+            BundleSource {
+                label: "main.arcw".to_owned(),
+                text: "flow @flow.main main { return \"ok\" }".to_owned(),
+            },
+            BytecodeProgram::default(),
+            LineDisplayCatalog::default(),
+        )
     }
 }

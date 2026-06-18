@@ -53,6 +53,12 @@ and layout. This keeps Agent/renderer adapters from spelunking through generic
 display-list payloads when they need image-specific capture or observation
 metadata.
 
+`arcweft-bundle` now has a typed `image_assets` section. Each
+`BundleImageAsset` maps a stable asset id to a bundle virtual file, records the
+encoded format (`png`, `jpeg`, `gif`, or `webp`), records whether the asset is
+static or animated, and can resolve its encoded bytes without filesystem I/O or
+source lowering. Decode remains adapter work through `arcweft-image`.
+
 `arcweft-agent-protocol` now treats `object_layer` and `object_depth` as generic
 observed-object metadata instead of deriving them only from `rich_text_ref`.
 `AgentImageObjectRef` and the presentation tree preserve those fields for image
@@ -89,13 +95,13 @@ same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Wire Agent native observe to call the runtime-host image item API and UI
+1. Wire CLI bundling to populate `image_assets` from project asset declarations
+   and virtual files.
+2. Wire Agent native observe to call the runtime-host image item API and UI
    image display-list bridge, rather than only using direct render-native unit
    submissions.
-2. Make Agent observation, hit-test, MCP image metadata, and CLI capture
+3. Make Agent observation, hit-test, MCP image metadata, and CLI capture
    selection treat image objects the same way rich-text objects are treated.
-3. Add bundle/asset sidecar support so product-player `.awfb` execution can use
-   decoded or encoded image payloads without source execution.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
 5. Add regression tests for frame selection, decode, native capture pixels,
