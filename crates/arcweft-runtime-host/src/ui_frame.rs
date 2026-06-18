@@ -1,6 +1,6 @@
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
-use arcweft_ui::{DisplayList, UiLayerOutput};
+use arcweft_ui::{DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, UiLayerOutput};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -16,6 +16,15 @@ pub struct UiFrameLayer {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiFrameCommit {
     layers: Vec<UiFrameLayer>,
+}
+
+/// One image display item in a committed UI frame with its render layer context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiFrameImageItem {
+    layer: LayerId,
+    node: NodeId,
+    image: ImageId,
+    layout: LayoutBox,
 }
 
 /// Builder that validates UI frame output against the committed `LayerTree`.
@@ -55,6 +64,51 @@ impl UiFrameLayer {
     pub const fn semantics(&self) -> &SemanticTree {
         &self.semantics
     }
+
+    pub fn image_items(&self) -> Vec<UiFrameImageItem> {
+        self.display
+            .as_slice()
+            .iter()
+            .filter_map(|item| match item.kind() {
+                DisplayItemKind::Image(image) => Some(UiFrameImageItem::new(
+                    self.layer.clone(),
+                    item.node(),
+                    image,
+                    item.layout(),
+                )),
+                DisplayItemKind::Text(_)
+                | DisplayItemKind::RichText(_)
+                | DisplayItemKind::Custom(_) => None,
+            })
+            .collect()
+    }
+}
+
+impl UiFrameImageItem {
+    pub const fn new(layer: LayerId, node: NodeId, image: ImageId, layout: LayoutBox) -> Self {
+        Self {
+            layer,
+            node,
+            image,
+            layout,
+        }
+    }
+
+    pub const fn layer(&self) -> &LayerId {
+        &self.layer
+    }
+
+    pub const fn node(&self) -> NodeId {
+        self.node
+    }
+
+    pub const fn image(&self) -> ImageId {
+        self.image
+    }
+
+    pub const fn layout(&self) -> LayoutBox {
+        self.layout
+    }
 }
 
 impl UiFrameCommit {
@@ -69,6 +123,13 @@ impl UiFrameCommit {
             .flat_map(|layer| layer.semantics().as_slice().iter().cloned())
             .for_each(|node| tree.push(node));
         tree
+    }
+
+    pub fn image_items(&self) -> Vec<UiFrameImageItem> {
+        self.layers
+            .iter()
+            .flat_map(UiFrameLayer::image_items)
+            .collect()
     }
 
     pub fn into_vec(self) -> Vec<UiFrameLayer> {
@@ -121,7 +182,11 @@ mod tests {
     use arcweft_presentation::input::{ActionTarget, InteractionTarget};
     use arcweft_presentation::layer::{LayerKind, LayerNode, LayerOrder, RenderPhase};
     use arcweft_presentation::semantic::SemanticRole;
-    use arcweft_ui::{NodeKey, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
+    use arcweft_ui::{
+        FragmentKind, ImageId, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
+        NodeKey, StyleId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode,
+        ViewFragmentBuilder,
+    };
 
     fn public_id(name: &str) -> PublicId {
         PublicId::try_new(name).unwrap()
@@ -174,6 +239,36 @@ mod tests {
         UiLayerOutput::new(
             DisplayList::default(),
             semantic_fragment(key, layer, target, action),
+        )
+    }
+
+    fn image_layer_output(key: u64, image: ImageId, x: i32, y: i32) -> UiLayerOutput {
+        let mut fragment = ViewFragmentBuilder::default();
+        let image_node = fragment
+            .push_node(
+                NodeKey(key),
+                FragmentKind::Image(image),
+                StyleId(0),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = fragment.finish();
+        let layout_tree = LayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = LayoutResults::new(&layout_tree);
+        layouts
+            .set(
+                image_node,
+                LayoutBox::new(
+                    LayoutPoint::new(LayoutLength::px(x), LayoutLength::px(y)),
+                    LayoutSize::new(LayoutLength::px(64), LayoutLength::px(32)),
+                ),
+            )
+            .unwrap();
+        UiLayerOutput::new(
+            DisplayList::from_fragment(&fragment, &layouts).unwrap(),
+            UiSemanticFragment::default(),
         )
     }
 
@@ -330,5 +425,55 @@ mod tests {
             PresentationActionDestination::UiEntity
         );
         assert_eq!(dispatched.action().target(), &ActionTarget::Entity(button));
+    }
+
+    #[test]
+    fn ui_frame_commit_lists_image_items_in_render_order() {
+        let root = layer_id("root");
+        let hud = layer_id("hud");
+        let modal = layer_id("modal");
+        let mut layers = LayerTree::new(LayerNode::new(
+            root.clone(),
+            LayerKind::Root,
+            order(RenderPhase::Background, 0),
+        ));
+        layers
+            .insert(
+                LayerNode::new(
+                    hud.clone(),
+                    LayerKind::GameUi,
+                    order(RenderPhase::GameUi, 0),
+                )
+                .with_parent(root.clone()),
+            )
+            .unwrap();
+        layers
+            .insert(
+                LayerNode::new(
+                    modal.clone(),
+                    LayerKind::Modal,
+                    order(RenderPhase::Modal, 0),
+                )
+                .with_parent(root),
+            )
+            .unwrap();
+
+        let mut builder = UiFrameCommitBuilder::new(&layers);
+        builder
+            .push_layer(modal.clone(), image_layer_output(20, ImageId(2), 30, 40))
+            .unwrap();
+        builder
+            .push_layer(hud.clone(), image_layer_output(10, ImageId(1), 10, 20))
+            .unwrap();
+        let images = builder.finish().image_items();
+
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].layer(), &hud);
+        assert_eq!(images[0].image(), ImageId(1));
+        assert_eq!(images[0].node(), NodeId(0));
+        assert_eq!(images[0].layout().origin.x, LayoutLength::px(10));
+        assert_eq!(images[1].layer(), &modal);
+        assert_eq!(images[1].image(), ImageId(2));
+        assert_eq!(images[1].layout().origin.y, LayoutLength::px(40));
     }
 }

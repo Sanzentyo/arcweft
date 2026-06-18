@@ -44,4 +44,6 @@ pub use stats::{
     RuntimeExecutorPureCompileStatsSummary, RuntimeExecutorPureConfigSummary,
     RuntimeExecutorPureWorkerSummary, RuntimeExecutorStats, runtime_executor_stats,
 };
-pub use ui_frame::{UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameLayer};
+pub use ui_frame::{
+    UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameImageItem, UiFrameLayer,
+};

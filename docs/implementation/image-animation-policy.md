@@ -47,6 +47,12 @@ policy, typed params, and semantic actions. It lowers to `SemanticRole::Image`
 without renderer or filesystem dependencies, so hit-test, Agent observation,
 and native submission can consume one shared object model.
 
+`arcweft-runtime-host` exposes committed UI image display items as
+`UiFrameImageItem` values carrying render layer, frame-local node id, `ImageId`,
+and layout. This keeps Agent/renderer adapters from spelunking through generic
+display-list payloads when they need image-specific capture or observation
+metadata.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
@@ -74,8 +80,9 @@ same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Wire runtime-host and Agent native observe to call the UI image display-list
-   bridge, rather than only using direct render-native unit submissions.
+1. Wire Agent native observe to call the runtime-host image item API and UI
+   image display-list bridge, rather than only using direct render-native unit
+   submissions.
 2. Make Agent observation, hit-test, MCP image metadata, and CLI capture
    selection treat image objects the same way rich-text objects are treated.
 3. Add bundle/asset sidecar support so product-player `.awfb` execution can use
