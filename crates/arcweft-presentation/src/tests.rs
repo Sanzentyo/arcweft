@@ -2,6 +2,10 @@ use super::*;
 use crate::gesture::{GestureArena, GestureKind, GestureOutcome};
 use crate::hit::{HitRecord, HitRect, HitTree};
 use crate::hover::{HoverPath, HoverTransition};
+use crate::image::{
+    ImageAssetRef, ImageObjectAlignment, ImageObjectFit, ImageObjectId, ImageObjectParam,
+    ImageObjectPlayback, ImageObjectTransform, ImagePresentationObject,
+};
 use crate::input::{
     Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
     InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, KeyboardInput, PointerId,
@@ -212,6 +216,75 @@ fn layer_order(phase: RenderPhase, z: i32, stable_index: u32) -> LayerOrder {
 
 fn interaction_target(name: &str) -> InteractionTarget {
     InteractionTarget::new(PublicId::try_new(format!("target.{name}")).unwrap())
+}
+
+#[test]
+fn image_presentation_object_lowers_to_semantic_image_node() {
+    let inspect = PublicId::try_new("action.inspect").unwrap();
+    let object = ImagePresentationObject::new(
+        ImageObjectId::new(PublicId::try_new("image.hero.logo").unwrap()),
+        ImageAssetRef::new(PublicId::try_new("asset.logo.webp").unwrap()),
+        layer_id("hud"),
+        interaction_target("image.logo"),
+        HitRect::new(12.0, 24.0, 128.0, 64.0),
+    )
+    .with_fit(ImageObjectFit::Cover)
+    .with_alignment(ImageObjectAlignment::top_left())
+    .with_opacity_milli(750)
+    .with_depth_milli(2_500)
+    .with_transform(ImageObjectTransform::translation_milli(3_000, 4_000))
+    .with_param(
+        PublicId::try_new("param.role").unwrap(),
+        ImageObjectParam::Text("title-logo".to_owned()),
+    )
+    .with_action(inspect.clone());
+
+    assert_eq!(object.id().public_id().as_str(), "image.hero.logo");
+    assert_eq!(object.asset().public_id().as_str(), "asset.logo.webp");
+    assert_eq!(object.fit(), ImageObjectFit::Cover);
+    assert_eq!(object.alignment(), ImageObjectAlignment::top_left());
+    assert_eq!(object.opacity_milli(), 750);
+    assert_eq!(object.depth_milli(), 2_500);
+    assert_eq!(object.transform().tx_milli, 3_000);
+    assert_eq!(
+        object
+            .params()
+            .get(&PublicId::try_new("param.role").unwrap()),
+        Some(&ImageObjectParam::Text("title-logo".to_owned()))
+    );
+
+    let node = object.semantic_node();
+    assert_eq!(node.role(), SemanticRole::Image);
+    assert_eq!(node.layer(), object.layer());
+    assert_eq!(node.target(), object.target());
+    assert_eq!(node.bounds(), object.bounds());
+    assert_eq!(node.actions(), &[inspect]);
+
+    let mut semantics = SemanticTree::default();
+    semantics.push(node);
+    let hits = semantics.to_hit_tree();
+    assert_eq!(
+        hits.hit_in_layer(&layer_id("hud"), 20.0, 30.0)
+            .map(HitRecord::target),
+        Some(object.target())
+    );
+}
+
+#[test]
+fn image_playback_uses_visual_time_and_allows_pinned_capture_time() {
+    let running = ImageObjectPlayback::new(1_000).with_rate_milli(2_000);
+    assert_eq!(running.local_time_millis(1_250), 500);
+
+    let paused = ImageObjectPlayback::new(1_000)
+        .with_rate_milli(2_000)
+        .paused_at(1_500);
+    assert_eq!(paused.local_time_millis(2_000), 1_000);
+
+    let pinned = ImageObjectPlayback::new(1_000)
+        .with_rate_milli(2_000)
+        .paused_at(1_500)
+        .pinned_local_time(333);
+    assert_eq!(pinned.local_time_millis(9_000), 333);
 }
 
 #[test]

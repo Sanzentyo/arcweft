@@ -5,6 +5,7 @@ use std::collections::HashMap;
 pub mod gesture;
 pub mod hit;
 pub mod hover;
+pub mod image;
 pub mod input;
 pub mod interaction;
 pub mod layer;

@@ -39,6 +39,14 @@ to `UiImageSource` records containing decoded image data, fit/alignment policy,
 and deterministic playback state. Static and animated images therefore cross
 the retained-fragment/display-list boundary through the same `ImageId` path.
 
+`arcweft-presentation` owns the semantic image object descriptor:
+`ImagePresentationObject` binds an encoded asset reference to a stable image
+object id, object layer, interaction target, layer-local bounds, fit,
+alignment, opacity, depth, fixed-point transform, deterministic playback
+policy, typed params, and semantic actions. It lowers to `SemanticRole::Image`
+without renderer or filesystem dependencies, so hit-test, Agent observation,
+and native submission can consume one shared object model.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
@@ -63,17 +71,15 @@ the same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Add presentation image descriptors for object layer, depth, fit, alignment,
-   opacity, transform, and semantic params.
-2. Wire UI `DisplayItemKind::Image` through runtime-host/native renderer
+1. Wire UI `DisplayItemKind::Image` through runtime-host/native renderer
    submission using `UiImageSourceTable` and `capture_image_quads_rgba`.
-3. Make Agent observation, hit-test, MCP image metadata, and CLI capture
+2. Make Agent observation, hit-test, MCP image metadata, and CLI capture
    selection treat image objects the same way rich-text objects are treated.
-4. Add bundle/asset sidecar support so product-player `.awfb` execution can use
+3. Add bundle/asset sidecar support so product-player `.awfb` execution can use
    decoded or encoded image payloads without source execution.
-5. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
+4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
-6. Add regression tests for frame selection, decode, native capture pixels,
+5. Add regression tests for frame selection, decode, native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 
 ## Dependency Policy
