@@ -3245,6 +3245,75 @@ flow @flow.main main {
             .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
     );
 
+    let presentation_tree_resource_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--resource")
+        .arg("presentation-tree")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe returns presentation tree resource");
+
+    assert!(
+        presentation_tree_resource_output.status.success(),
+        "agent observe presentation tree resource should succeed, stderr: {}",
+        String::from_utf8_lossy(&presentation_tree_resource_output.stderr)
+    );
+    let presentation_tree_resource: serde_json::Value =
+        serde_json::from_slice(&presentation_tree_resource_output.stdout)
+            .expect("presentation tree resource output is JSON");
+    assert_eq!(presentation_tree_resource["kind"], "presentation_tree");
+    assert_eq!(
+        presentation_tree_resource["uri"],
+        "arcweft://session/cli/frame/0/presentation-tree.json"
+    );
+    assert_eq!(
+        presentation_tree_resource["body"]["body"]["root"],
+        "presentation.root"
+    );
+    assert!(
+        presentation_tree_resource["body"]["body"]["nodes"]
+            .as_array()
+            .expect("presentation tree nodes are returned")
+            .iter()
+            .any(|node| node["role"] == "rich_text_ruby")
+    );
+
+    let presentation_tree_read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/presentation-tree.json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reads presentation tree resource");
+
+    assert!(
+        presentation_tree_read_output.status.success(),
+        "agent observe presentation tree read-uri should succeed, stderr: {}",
+        String::from_utf8_lossy(&presentation_tree_read_output.stderr)
+    );
+    let presentation_tree_read: serde_json::Value =
+        serde_json::from_slice(&presentation_tree_read_output.stdout)
+            .expect("presentation tree read-uri output is JSON");
+    assert_eq!(presentation_tree_read["kind"], "presentation_tree");
+    assert_eq!(
+        presentation_tree_read["body"]["body"]["root"],
+        "presentation.root"
+    );
+
     let mcp_resource_list_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -3282,6 +3351,9 @@ flow @flow.main main {
         .expect("MCP resource list contains resources");
     assert!(resources.iter().any(|resource| {
         resource["name"] == "latest.json" && resource["mimeType"] == "application/json"
+    }));
+    assert!(resources.iter().any(|resource| {
+        resource["name"] == "presentation-tree.json" && resource["mimeType"] == "application/json"
     }));
     assert!(resources.iter().any(|resource| {
         resource["name"] == "layer.dialogue.object-id.png" && resource["mimeType"] == "image/png"
@@ -24432,6 +24504,12 @@ fn agent_mcp_stdio_lists_resource_templates_before_observe() {
                 .is_some_and(|uri| uri.contains("/{capture}.{extension}"))
     }));
     assert!(templates.iter().any(|template| {
+        template["name"] == "presentation-tree"
+            && template["uriTemplate"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/presentation-tree.json"))
+    }));
+    assert!(templates.iter().any(|template| {
         template["name"] == "layer-mask-capture"
             && template["uriTemplate"]
                 .as_str()
@@ -24645,6 +24723,18 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
                         .is_some_and(|uri| uri.contains("object.{object_id}.mask.{extension}"))
             })
     );
+    assert!(
+        info["resource_templates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|template| {
+                template["name"] == "presentation-tree"
+                    && template["uriTemplate"]
+                        .as_str()
+                        .is_some_and(|uri| uri.ends_with("/presentation-tree.json"))
+            })
+    );
     assert!(info["layers"].as_array().unwrap().iter().any(|layer| {
         layer["id"] == "dialogue.rich_text"
             && layer["capture_refs"]["captures"]
@@ -24676,6 +24766,13 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
             .unwrap()
             .iter()
             .any(|resource| resource["name"] == "objects.json")
+    );
+    assert!(
+        info["resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|resource| resource["name"] == "presentation-tree.json")
     );
 }
 

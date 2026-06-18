@@ -77,6 +77,21 @@ impl AgentObservationReport {
         })
     }
 
+    /// Builds the MCP-style presentation object tree JSON resource.
+    pub fn presentation_tree_resource(&self) -> Result<AgentResource, serde_json::Error> {
+        Ok(AgentResource {
+            uri: format!(
+                "arcweft://session/{}/frame/{}/presentation-tree.json",
+                self.session_id, self.tick
+            ),
+            kind: AgentResourceKind::PresentationTree,
+            mime_type: "application/json".to_owned(),
+            hash: self.render_hash.clone(),
+            image: None,
+            body: AgentResourceBody::Json(serde_json::to_value(&self.presentation_tree)?),
+        })
+    }
+
     /// Builds the MCP-style overlay SVG resource when the observation embeds one.
     pub fn overlay_svg_resource(&self) -> Option<AgentResource> {
         self.overlay_svg.as_ref().map(|overlay| AgentResource {
@@ -287,6 +302,7 @@ pub enum AgentBinaryEncoding {
 pub enum AgentResourceKind {
     ObservationLatest,
     Objects,
+    PresentationTree,
     OverlaySvg,
     Image,
     Logs,
@@ -1697,6 +1713,9 @@ mod tests {
             .observation_resource()
             .expect("latest resource serializes");
         let objects = report.objects_resource().expect("objects serialize");
+        let presentation_tree = report
+            .presentation_tree_resource()
+            .expect("presentation tree serializes");
         let overlay = report.overlay_svg_resource().expect("overlay exists");
         let image = report.image_resource(&report.images[0], b"\x89PNG\r\n\x1a\n");
         let raw_image = report.image_resource(&test_raw_mask_image_resource(), &[255; 48]);
@@ -1705,6 +1724,12 @@ mod tests {
         assert_eq!(latest.uri, "arcweft://session/cli/observation/latest.json");
         assert_eq!(latest.kind, AgentResourceKind::ObservationLatest);
         assert_eq!(objects.uri, "arcweft://session/cli/frame/7/objects.json");
+        assert_eq!(
+            presentation_tree.uri,
+            "arcweft://session/cli/frame/7/presentation-tree.json"
+        );
+        assert_eq!(presentation_tree.kind, AgentResourceKind::PresentationTree);
+        assert!(matches!(presentation_tree.body, AgentResourceBody::Json(_)));
         assert_eq!(overlay.uri, "arcweft://session/cli/frame/7/overlay.svg");
         assert_eq!(overlay.mime_type, "image/svg+xml");
         assert_eq!(image.uri, "arcweft://session/cli/frame/7/color.png");

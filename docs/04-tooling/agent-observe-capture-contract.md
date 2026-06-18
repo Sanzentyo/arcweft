@@ -160,6 +160,7 @@ CLI, and LSP clients can discover resources before reading bytes:
 
 ```text
 arcweft://session/{session}/frame/{frame}/observation.json
+arcweft://session/{session}/frame/{frame}/presentation-tree.json
 arcweft://session/{session}/frame/{frame}/viewport.png
 arcweft://session/{session}/frame/{frame}/viewport.rgba
 arcweft://session/{session}/frame/{frame}/layer.{id}.png
@@ -196,7 +197,10 @@ sibling debug images without re-reading `objects.json`.
 
 Observation reports include a typed `presentation_tree` alongside the flat
 `objects` array. The flat array remains the object descriptor table; the tree is
-the renderer/debug hierarchy:
+the renderer/debug hierarchy. The same tree is available as the standalone
+`arcweft://session/{session}/frame/{frame}/presentation-tree.json` resource so
+MCP and CLI tools can inspect object hierarchy and visual indexes without
+reading the full observation payload.
 
 ```json
 {

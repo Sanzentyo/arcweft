@@ -2833,6 +2833,16 @@ fn agent_observe_resource_by_uri_with_page_and_time(
     }
     if uri
         == format!(
+            "arcweft://session/{}/frame/{}/presentation-tree.json",
+            report.session_id, report.tick
+        )
+    {
+        return report
+            .presentation_tree_resource()
+            .map_err(|error| agent_json_error(&error));
+    }
+    if uri
+        == format!(
             "arcweft://session/{}/frame/{}/overlay.svg",
             report.session_id, report.tick
         )
@@ -4164,6 +4174,11 @@ fn agent_observe_resource(
                 .objects_resource()
                 .map_err(|error| agent_json_error(&error))?,
         )),
+        AgentObserveResourceKind::PresentationTree => AgentObserveResourceOutput::One(Box::new(
+            report
+                .presentation_tree_resource()
+                .map_err(|error| agent_json_error(&error))?,
+        )),
         AgentObserveResourceKind::Overlay => {
             let Some(resource) = report.overlay_svg_resource() else {
                 eprintln!("error: overlay resource was not generated");
@@ -4270,6 +4285,9 @@ fn agent_observe_base_resources(
             .map_err(|error| agent_json_error(&error))?,
         report
             .objects_resource()
+            .map_err(|error| agent_json_error(&error))?,
+        report
+            .presentation_tree_resource()
             .map_err(|error| agent_json_error(&error))?,
         report
             .logs_resource()
@@ -11067,6 +11085,7 @@ mod tests {
 enum AgentObserveResourceKind {
     Observation,
     Objects,
+    PresentationTree,
     Overlay,
     Image,
     Logs,

@@ -282,6 +282,13 @@ pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
             Some("application/json"),
         ),
         resource_template(
+            "arcweft://session/{session_id}/frame/{tick}/presentation-tree.json",
+            "presentation-tree",
+            "Presentation tree",
+            "Typed presentation object tree for the frame, including layer/object hierarchy and lightweight rich-text visual feature indexes.",
+            Some("application/json"),
+        ),
+        resource_template(
             "arcweft://session/{session_id}/frame/{tick}/{capture}.{extension}",
             "viewport-capture",
             "Viewport capture",
@@ -496,6 +503,7 @@ fn resource_title(resource: &AgentResource) -> String {
     match resource.kind {
         AgentResourceKind::ObservationLatest => "Latest observation",
         AgentResourceKind::Objects => "Observed objects",
+        AgentResourceKind::PresentationTree => "Presentation tree",
         AgentResourceKind::OverlaySvg => "Overlay SVG",
         AgentResourceKind::Image => "Captured image",
         AgentResourceKind::Logs => "Runtime logs",
