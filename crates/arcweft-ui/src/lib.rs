@@ -1,6 +1,7 @@
 //! Sans I/O UI component, entity, and fragment data for Arcweft presentation.
 
 pub mod component;
+pub mod display;
 pub mod entity;
 pub mod fragment;
 pub mod layout;
@@ -14,6 +15,7 @@ pub use component::{
     ComponentDescriptor, ComponentId, ComponentImplementation, ComponentRegistry,
     ComponentSchemaId, RustComponentId, UiProgramId,
 };
+pub use display::{DisplayItem, DisplayItemId, DisplayItemKind, DisplayList};
 pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
 pub use fragment::{
     ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
@@ -284,6 +286,152 @@ mod tests {
         assert_eq!(
             results.set(NodeId(99), layout),
             Err(UiError::InvalidFragmentNode(NodeId(99)))
+        );
+    }
+
+    #[test]
+    fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
+        let mut entities = EntityStore::default();
+        let component = entities
+            .insert(
+                DialogueSkinState {
+                    hovered_nameplate: false,
+                },
+                Some(ComponentId(1)),
+            )
+            .unwrap();
+        let mut builder = ViewFragmentBuilder::default();
+        let text = builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let rich_text = builder
+            .push_node(
+                NodeKey(2),
+                FragmentKind::RichText(RichTextSourceId(2)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let image = builder
+            .push_node(
+                NodeKey(3),
+                FragmentKind::Image(ImageId(3)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let mounted = builder
+            .push_node(
+                NodeKey(4),
+                FragmentKind::Component(component.raw()),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let custom = builder
+            .push_node(
+                NodeKey(5),
+                FragmentKind::Custom(CustomElementId(4)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let root = builder
+            .push_node(
+                NodeKey(6),
+                FragmentKind::Container(ContainerKind::Stack),
+                StyleId(1),
+                &[text, rich_text, image, mounted, custom],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = builder.finish();
+        let tree = LayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = LayoutResults::new(&tree);
+        for node in [text, rich_text, image, mounted, custom, root] {
+            let x = i32::try_from(node.0).unwrap();
+            layouts
+                .set(
+                    node,
+                    LayoutBox::new(
+                        LayoutPoint::new(LayoutLength::px(x), LayoutLength::px(0)),
+                        LayoutSize::new(LayoutLength::px(10), LayoutLength::px(10)),
+                    ),
+                )
+                .unwrap();
+        }
+
+        let display = DisplayList::from_fragment(&fragment, &layouts).unwrap();
+        let items = display.as_slice();
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0].node(), text);
+        assert_eq!(items[0].kind(), DisplayItemKind::Text(TextSourceId(1)));
+        assert_eq!(items[1].node(), rich_text);
+        assert_eq!(
+            items[1].kind(),
+            DisplayItemKind::RichText(RichTextSourceId(2))
+        );
+        assert_eq!(items[2].node(), image);
+        assert_eq!(items[2].kind(), DisplayItemKind::Image(ImageId(3)));
+        assert_eq!(items[3].node(), custom);
+        assert_eq!(items[3].kind(), DisplayItemKind::Custom(CustomElementId(4)));
+    }
+
+    #[test]
+    fn display_list_requires_layout_for_paint_nodes_only() {
+        let mut builder = ViewFragmentBuilder::default();
+        let text = builder
+            .push_node(
+                NodeKey(1),
+                FragmentKind::Text(TextSourceId(1)),
+                StyleId(1),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let root = builder
+            .push_node(
+                NodeKey(2),
+                FragmentKind::Container(ContainerKind::Block),
+                StyleId(1),
+                &[text],
+                &[],
+                None,
+            )
+            .unwrap();
+        let fragment = builder.finish();
+        let tree = LayoutTree::from_fragment(&fragment).unwrap();
+        let mut layouts = LayoutResults::new(&tree);
+        layouts
+            .set(
+                root,
+                LayoutBox::new(
+                    LayoutPoint::new(LayoutLength::px(0), LayoutLength::px(0)),
+                    LayoutSize::new(LayoutLength::px(100), LayoutLength::px(20)),
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(
+            DisplayList::from_fragment(&fragment, &layouts),
+            Err(UiError::MissingLayout(text))
         );
     }
 
