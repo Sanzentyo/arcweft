@@ -1,0 +1,626 @@
+{
+  "uri": "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=choice",
+  "kind": "presentation_tree",
+  "mime_type": "application/json",
+  "hash": "24e3f595ae3c9c4afeb72ccbe1b05223ae37ab4eb63b218e6f2f031fe7d59d61",
+  "body": {
+    "body_kind": "json",
+    "body": {
+      "nodes": [
+        {
+          "children": [
+            "presentation.layer.dialogue"
+          ],
+          "id": "presentation.root",
+          "kind": "root"
+        },
+        {
+          "children": [
+            "object.dialogue.0.7"
+          ],
+          "id": "presentation.layer.dialogue",
+          "kind": "layer",
+          "layer_id": "dialogue",
+          "parent_id": "presentation.root"
+        },
+        {
+          "children": [
+            "object.dialogue.0.7.page.0"
+          ],
+          "id": "object.dialogue.0.7",
+          "kind": "object",
+          "layer_id": "dialogue",
+          "object_id": "object.dialogue.0.7",
+          "parent_id": "presentation.layer.dialogue",
+          "role": "textbox"
+        },
+        {
+          "children": [
+            "object.dialogue.0.7.line.0"
+          ],
+          "effects": [
+            {
+              "id": "jitter",
+              "phase": "glyph_transform"
+            }
+          ],
+          "has_transform": true,
+          "id": "object.dialogue.0.7.page.0",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 7000,
+          "object_id": "object.dialogue.0.7.page.0",
+          "object_layer": "ui",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot2",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "inventory"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "HoverHit"
+              },
+              "depth": 7000,
+              "id": "hover",
+              "layer": "ui",
+              "params": {
+                "tone": {
+                  "kind": "raw",
+                  "value": "alert"
+                }
+              },
+              "role": "hover",
+              "type_name": "HoverHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "KeywordHit",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "typed"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot",
+            "hotspot2",
+            "hover",
+            "KeywordHit"
+          ],
+          "parent_id": "object.dialogue.0.7",
+          "rich_text_kind": "text_page",
+          "role": "rich_text_page",
+          "shaders": [
+            {
+              "id": "soft_glow",
+              "phase": "run_offscreen_pass"
+            }
+          ]
+        },
+        {
+          "children": [
+            "object.dialogue.0.7.run.11"
+          ],
+          "effects": [
+            {
+              "id": "jitter",
+              "phase": "glyph_transform"
+            }
+          ],
+          "has_transform": true,
+          "id": "object.dialogue.0.7.line.0",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 7000,
+          "object_id": "object.dialogue.0.7.line.0",
+          "object_layer": "ui",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot2",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "inventory"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "HoverHit"
+              },
+              "depth": 7000,
+              "id": "hover",
+              "layer": "ui",
+              "params": {
+                "tone": {
+                  "kind": "raw",
+                  "value": "alert"
+                }
+              },
+              "role": "hover",
+              "type_name": "HoverHit"
+            },
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "KeywordHit",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "typed"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot",
+            "hotspot2",
+            "hover",
+            "KeywordHit"
+          ],
+          "parent_id": "object.dialogue.0.7.page.0",
+          "rich_text_kind": "text_line",
+          "role": "rich_text_line",
+          "shaders": [
+            {
+              "id": "soft_glow",
+              "phase": "run_offscreen_pass"
+            }
+          ]
+        },
+        {
+          "children": [
+            "object.dialogue.0.7.proxy.11.0",
+            "object.dialogue.0.7.glyph.47.61.62",
+            "object.dialogue.0.7.glyph.48.62.63",
+            "object.dialogue.0.7.glyph.49.63.64",
+            "object.dialogue.0.7.glyph.50.64.65",
+            "object.dialogue.0.7.glyph.51.65.66",
+            "object.dialogue.0.7.cluster.47.61.62",
+            "object.dialogue.0.7.cluster.48.62.63",
+            "object.dialogue.0.7.cluster.49.63.64",
+            "object.dialogue.0.7.cluster.50.64.65",
+            "object.dialogue.0.7.cluster.51.65.66"
+          ],
+          "id": "object.dialogue.0.7.run.11",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.run.11",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.line.0",
+          "rich_text_kind": "text_run",
+          "role": "rich_text_run"
+        },
+        {
+          "id": "object.dialogue.0.7.proxy.11.0",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.proxy.11.0",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_object_proxy",
+          "role": "rich_text_proxy"
+        },
+        {
+          "id": "object.dialogue.0.7.glyph.47.61.62",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.glyph.47.61.62",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_glyph",
+          "role": "rich_text_glyph"
+        },
+        {
+          "id": "object.dialogue.0.7.glyph.48.62.63",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.glyph.48.62.63",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_glyph",
+          "role": "rich_text_glyph"
+        },
+        {
+          "id": "object.dialogue.0.7.glyph.49.63.64",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.glyph.49.63.64",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_glyph",
+          "role": "rich_text_glyph"
+        },
+        {
+          "id": "object.dialogue.0.7.glyph.50.64.65",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.glyph.50.64.65",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_glyph",
+          "role": "rich_text_glyph"
+        },
+        {
+          "id": "object.dialogue.0.7.glyph.51.65.66",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.glyph.51.65.66",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "text_glyph",
+          "role": "rich_text_glyph"
+        },
+        {
+          "id": "object.dialogue.0.7.cluster.47.61.62",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.cluster.47.61.62",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "glyph_cluster",
+          "role": "rich_text_cluster"
+        },
+        {
+          "id": "object.dialogue.0.7.cluster.48.62.63",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.cluster.48.62.63",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "glyph_cluster",
+          "role": "rich_text_cluster"
+        },
+        {
+          "id": "object.dialogue.0.7.cluster.49.63.64",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.cluster.49.63.64",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "glyph_cluster",
+          "role": "rich_text_cluster"
+        },
+        {
+          "id": "object.dialogue.0.7.cluster.50.64.65",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.cluster.50.64.65",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "glyph_cluster",
+          "role": "rich_text_cluster"
+        },
+        {
+          "id": "object.dialogue.0.7.cluster.51.65.66",
+          "kind": "object",
+          "layer_id": "dialogue.rich_text",
+          "object_depth": 4000,
+          "object_id": "object.dialogue.0.7.cluster.51.65.66",
+          "object_proxies": [
+            {
+              "declaration": {
+                "attribute": "text_proxy",
+                "struct_name": "KeywordHit"
+              },
+              "depth": 4000,
+              "id": "hotspot",
+              "params": {
+                "channel": {
+                  "kind": "raw",
+                  "value": "choice"
+                }
+              },
+              "role": "keyword",
+              "type_name": "KeywordHit"
+            }
+          ],
+          "object_proxy_ids": [
+            "hotspot"
+          ],
+          "parent_id": "object.dialogue.0.7.run.11",
+          "rich_text_kind": "glyph_cluster",
+          "role": "rich_text_cluster"
+        }
+      ],
+      "root": "presentation.root"
+    }
+  }
+}

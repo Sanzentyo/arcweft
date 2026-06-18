@@ -1,0 +1,113 @@
+[
+  {
+    "artifact": "proxy-hotspot-color.png",
+    "kind": "color",
+    "composition": "isolated_regions",
+    "object_id": "object.dialogue.0.7.proxy.11.0",
+    "width": 67,
+    "height": 30,
+    "content_pixels": 521,
+    "content_bbox": {
+      "x": 3,
+      "y": 10,
+      "width": 64,
+      "height": 20
+    },
+    "content_viewport_bbox": {
+      "x": 952,
+      "y": 558,
+      "width": 64,
+      "height": 20
+    },
+    "proxy": {
+      "id": "hotspot",
+      "type_name": "KeywordHit",
+      "role": "keyword",
+      "depth": 4000,
+      "declaration": {
+        "struct_name": "KeywordHit",
+        "attribute": "text_proxy"
+      },
+      "params": {
+        "channel": {
+          "kind": "raw",
+          "value": "choice"
+        }
+      }
+    }
+  },
+  {
+    "artifact": "proxy-hotspot-object-id.png",
+    "kind": "object_id",
+    "composition": "object_id_attachment",
+    "object_id": "object.dialogue.0.7.proxy.11.0",
+    "width": 67,
+    "height": 30,
+    "content_pixels": 521,
+    "content_bbox": {
+      "x": 3,
+      "y": 10,
+      "width": 64,
+      "height": 20
+    },
+    "content_viewport_bbox": {
+      "x": 952,
+      "y": 558,
+      "width": 64,
+      "height": 20
+    },
+    "proxy": {
+      "id": "hotspot",
+      "type_name": "KeywordHit",
+      "role": "keyword",
+      "depth": 4000,
+      "declaration": {
+        "struct_name": "KeywordHit",
+        "attribute": "text_proxy"
+      },
+      "params": {
+        "channel": {
+          "kind": "raw",
+          "value": "choice"
+        }
+      }
+    }
+  },
+  {
+    "artifact": "proxy-hotspot-mask.png",
+    "kind": "mask",
+    "composition": "mask_attachment",
+    "object_id": "object.dialogue.0.7.proxy.11.0",
+    "width": 67,
+    "height": 30,
+    "content_pixels": 521,
+    "content_bbox": {
+      "x": 3,
+      "y": 10,
+      "width": 64,
+      "height": 20
+    },
+    "content_viewport_bbox": {
+      "x": 952,
+      "y": 558,
+      "width": 64,
+      "height": 20
+    },
+    "proxy": {
+      "id": "hotspot",
+      "type_name": "KeywordHit",
+      "role": "keyword",
+      "depth": 4000,
+      "declaration": {
+        "struct_name": "KeywordHit",
+        "attribute": "text_proxy"
+      },
+      "params": {
+        "channel": {
+          "kind": "raw",
+          "value": "choice"
+        }
+      }
+    }
+  }
+]
