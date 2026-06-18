@@ -2294,6 +2294,12 @@ fn lower_effect_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
 }
 
 fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+    if effect_selector_is_host_event(attrs) {
+        return host_event(DialogueHostEvent::Effect {
+            id: host_event_effect_id(selector, attrs),
+            attrs: attrs.trim().to_owned(),
+        });
+    }
     if selector == "shader" {
         return vec![RichTextNode::StyleStart {
             style: RichTextStyle::Shader {
@@ -2306,6 +2312,23 @@ fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             effect: effect_from_selector(selector, attrs),
         },
     }]
+}
+
+fn effect_selector_is_host_event(attrs: &str) -> bool {
+    phase_attr(&parse_attrs(attrs)) == Some(RichTextEffectPhase::HostEvent)
+}
+
+fn host_event_effect_id(selector: &str, attrs: &str) -> String {
+    let attrs = parse_attrs(attrs);
+    match selector {
+        "host" => effect_descriptor_id(selector, &attrs),
+        "shader" => attrs
+            .get("id")
+            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| selector.to_owned()),
+        _ => selector.to_owned(),
+    }
 }
 
 fn lower_object_tag(
@@ -3170,6 +3193,67 @@ flow @flow.main main {
             })
             .expect("plain text run after inferred close");
         assert!(plain_run.presentation.effects.is_empty());
+    }
+
+    #[test]
+    fn host_event_phase_effect_lowers_to_typed_host_event() {
+        let parsed = parse_source(
+            r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[effect .wave phase=host_event amp=4px target=glyph]BC[/effect][.host id=sparkle phase=host_event channel=debug]DE[/][p]
+}
+",
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.host_event.effect".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+
+        assert_eq!(frame.text, "ABCDE");
+        assert!(frame.host_events.iter().any(|event| {
+            matches!(
+                event,
+                DialogueHostEvent::Effect { id, attrs }
+                    if id == "wave"
+                        && attrs.contains("phase=host_event")
+                        && attrs.contains("amp=4px")
+            )
+        }));
+        assert!(frame.host_events.iter().any(|event| {
+            matches!(
+                event,
+                DialogueHostEvent::Effect { id, attrs }
+                    if id == "sparkle"
+                        && attrs.contains("phase=host_event")
+                        && attrs.contains("channel=debug")
+            )
+        }));
+        assert!(
+            frame
+                .display_map
+                .text_runs
+                .iter()
+                .all(|run| run.presentation.effects.is_empty()),
+            "host_event phase effects should not become visual presentation effects: {:#?}",
+            frame.display_map.text_runs
+        );
     }
 
     #[test]

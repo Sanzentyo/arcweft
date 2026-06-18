@@ -20118,7 +20118,7 @@ fn agent_observe_native_renderer_reports_unsupported_builtin_effect_phase() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [effect .wave phase=host_event amp=4px]wave phase[/effect][p]
+    alice: [effect .wave phase=post_process amp=4px]wave phase[/effect][p]
 }
 ",
     );
@@ -20171,6 +20171,70 @@ flow @flow.main main {
 
     fs::remove_file(&path).expect("remove temp native builtin effect diagnostic source");
     fs::remove_dir_all(&dir).expect("remove temp native builtin effect diagnostic dir");
+}
+
+#[test]
+fn agent_observe_reports_host_event_phase_effects() {
+    let path = temp_arcw(
+        "agent-observe-host-event-phase-effect",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.host id=sparkle phase=host_event channel=debug]host cue[/][effect .wave phase=host_event amp=4px]wave cue[/effect][p]
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports host_event phase effects");
+
+    assert!(
+        output.status.success(),
+        "host_event phase effect observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("host_event phase report is JSON");
+    let object = json["objects"]
+        .as_array()
+        .expect("objects array")
+        .iter()
+        .find(|object| object["role"] == "textbox")
+        .expect("textbox object");
+    let host_events = object["rich_text"]["host_events"]
+        .as_array()
+        .expect("host events array");
+    assert!(
+        host_events.iter().any(|event| {
+            event["kind"] == "effect"
+                && event["id"] == "sparkle"
+                && event["attrs"]
+                    .as_str()
+                    .is_some_and(|attrs| attrs.contains("channel=debug"))
+        }),
+        "host_event .host should be observed as a typed effect event: {json}"
+    );
+    assert!(
+        host_events
+            .iter()
+            .any(|event| event["kind"] == "effect" && event["id"] == "wave"),
+        "host_event builtin effect should be observed as a typed effect event: {json}"
+    );
+    assert_eq!(object["text"], "host cuewave cue");
+
+    fs::remove_file(&path).expect("remove temp host_event phase source");
 }
 
 #[test]

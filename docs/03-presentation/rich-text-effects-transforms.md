@@ -176,6 +176,12 @@ with id `sparkle`. If no registry entry exists, the descriptor is preserved and
 observation reports it; rendering may no-op with a diagnostic, but must not
 silently reinterpret it as a different builtin.
 
+If an effect selector uses `phase=host_event`, it is not a visual presentation
+style. Lowering emits a typed `DialogueHostEvent::Effect` marker with the
+resolved effect id and raw attrs, while the span text remains ordinary display
+text. This lets authored rich-text cues address host systems without forcing a
+native renderer to reinterpret `host_event` as a glyph effect.
+
 ---
 
 ## Parameter model
@@ -259,9 +265,11 @@ native shader registry. The default registry provides `soft_glow` and
 `warm_glow`, and native adapters may register additional shader IDs through the
 shader registry. Unsupported shader ids, supported shader ids used at phases
 other than `run_offscreen_pass` / `glyph_color`, builtin effects used at
-unsupported phases, unregistered motion function ids, unregistered custom
-effects, post-process effects, and host-event phases must be diagnosed instead
-of being silently reinterpreted as placement effects. For builtin wave
+unsupported visual phases, unregistered motion function ids, unregistered
+custom effects, and post-process effects must be diagnosed instead of being
+silently reinterpreted as placement effects. `host_event` phase effects leave
+the visual effect pipeline during lowering and become typed host event markers.
+For builtin wave
 placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
 broader targets evaluate the placement as one group; shake and jitter grouping
 is controlled by `state_scope`.

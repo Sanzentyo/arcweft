@@ -6938,16 +6938,16 @@ mod tests {
             "glyph-targeted wave should evaluate per glyph"
         );
 
-        let host_event_phase = RichTextEffectDescriptor {
-            phase: RichTextEffectPhase::HostEvent,
+        let post_process_phase = RichTextEffectDescriptor {
+            phase: RichTextEffectPhase::PostProcess,
             ..run_scope
         };
         let mut placement = test_native_glyph_placement(0, 0);
-        apply_builtin_descriptor("line.scope", &host_event_phase, 1, 1.0, &mut placement);
+        apply_builtin_descriptor("line.scope", &post_process_phase, 1, 1.0, &mut placement);
         assert_eq!(
             (placement.x, placement.y),
             (0.0, 0.0),
-            "host_event phase should not apply glyph placement"
+            "post_process phase should not apply glyph placement"
         );
     }
 
@@ -9407,7 +9407,7 @@ mod tests {
 
     #[test]
     fn native_visual_plan_reports_unsupported_builtin_effect_phase() {
-        let frame = custom_effect_test_frame_with_phase("wave", RichTextEffectPhase::HostEvent);
+        let frame = custom_effect_test_frame_with_phase("wave", RichTextEffectPhase::PostProcess);
 
         let plan = visual_plan_from_frame_for_test(&frame, 0.0);
 

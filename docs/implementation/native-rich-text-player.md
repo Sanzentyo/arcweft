@@ -126,7 +126,8 @@ The display sidecar carries these value families:
   `style=font(...)` / `style=text_style(...)`, and direct line color/font/size options
 - effective interpolation failure policy lowered from global dialogue defaults, character
   `dialogue_style`, and line `inline_fallback` or `inline_error`
-- host events for voice, face, pose, show, hide, move, scale, rotate, anim, shake, call, signal, and conditionals
+- host events for voice, face, pose, show, hide, move, scale, rotate, anim,
+  shake, call, signal, rich-text `phase=host_event` effects, and conditionals
 - interpolation nodes that resolve against the runtime binding snapshot
 
 Headless output separates renderable `text`, structured `nodes`, `host_events`, and unresolved
@@ -244,10 +245,10 @@ metadata-only. Unknown shader IDs are not reinterpreted by the native renderer;
 they remain host-resolved shader references until a concrete native/filter
 implementation is added and are reported through renderer diagnostics.
 Native builtin rich-text effects also report `unsupported_builtin_effect_phase`
-when a recognized effect such as `.wave` is authored at a phase the native
-renderer cannot execute, such as `host_event` or `post_process`. The effect
-remains observable metadata and no-ops visually, but it is not allowed to fail
-silently in Agent/native diagnostics.
+when a recognized effect such as `.wave` is authored at a visual phase the
+native renderer cannot execute, such as `post_process`. `host_event` phase
+effects leave the visual pipeline during lowering and are exposed as typed
+`DialogueHostEvent::Effect` markers instead of renderer diagnostics.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

@@ -248,6 +248,7 @@ pub enum DialogueHostEvent {
     TimedCue { attrs: String },
     Call { attrs: String },
     Signal { attrs: String },
+    Effect { id: String, attrs: String },
     Conditional { name: String, attrs: String },
 }
 
