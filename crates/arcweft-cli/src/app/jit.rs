@@ -1,20 +1,38 @@
 use super::project::{CheckedModule, load_and_check_with_env};
 use super::shared::print_json;
-use super::{
-    AotPureFunctionBackend, AotPureI64Plan, Args, BorrowCheckProfileStats, Command,
-    CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend, DenseSeq, ExitCode,
-    HostSystemInfo, Instant, JitCommand, Path, PathBuf, PureFunctionBackendKind,
-    PureFunctionRequest, PureFunctionResult, PureFunctionStats, PureHelperCandidate,
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimeI64Args,
-    RuntimeIntrinsic, RuntimeProfilePhase, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType, RuntimeSeq,
-    RuntimeUnaryOp, RuntimeValue, ScriptBenchPureHelperBatchSummary,
+use crate::output::{
+    BorrowCheckProfileStats, RuntimeProfilePhase, ScriptBenchPureHelperBatchSummary,
     ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchPureHelperTimingSummary, TypeCheckEnv, TypeCheckProfileStats, ValueEnum,
-    VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend, host_system_info,
-    lower_pure_helper_candidates,
+    ScriptBenchPureHelperTimingSummary, TypeCheckProfileStats,
 };
+use arcweft_core::{
+    plan::{
+        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+        RuntimePureOutputType,
+    },
+    pure::{
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
+        PureFunctionResult, PureFunctionStats, RuntimeI64Args, VmPureFunctionBackend,
+        VmPureFunctionScratch, compare_pure_function_backend,
+    },
+    value::{
+        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+    },
+};
+use arcweft_lang_jit_cranelift::{
+    CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend,
+};
+use arcweft_lang_sema::env::TypeCheckEnv;
+use arcweft_runtime_host::{HostSystemInfo, host_system_info};
+use arcweft_runtime_plan::pure::{PureHelperCandidate, lower_pure_helper_candidates};
+use clap::{Args, ValueEnum};
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode};
+use std::time::Instant;
+
+use super::commands::JitCommand;
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct JitCheckOptions {

@@ -10,7 +10,7 @@ pub(in crate::app) mod verify;
 
 use self::agent::agent_command;
 use self::bundle::{bundle_command, run_bundle_command};
-use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand, JitCommand};
+use self::commands::{AgentCommand, BuildCommand, Cli, CliCommand};
 use self::jit::jit_command;
 use self::runtime::{
     runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
@@ -23,13 +23,11 @@ use crate::output::{
     RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
     RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary, RuntimeRunReport,
     RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, ScriptBenchDeterministicSummary,
-    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary, ScriptBenchPureHelperBatchSummary,
-    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
-    ScriptBenchPureHelperRuntimeBatchSummary, ScriptBenchPureHelperStatsSummary,
-    ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport,
-    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestFinalStatus,
-    ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus, TypeCheckProfileStats,
-    flow_status_label,
+    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
+    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
+    ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
+    ScriptBenchSectionRunSummary, ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary,
+    ScriptTestStatus, TypeCheckProfileStats, flow_status_label,
 };
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
@@ -50,21 +48,10 @@ use arcweft_core::step::{
     RuntimeStepResult, RuntimeStepStats,
 };
 use arcweft_core::{
-    pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
-        PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureCallBackend,
-        VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend,
-    },
-    value::{
-        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_f32,
-        runtime_sequence_values,
-    },
+    pure::RuntimePureCallBackend,
+    value::{RuntimeBinding, RuntimeValue, runtime_sequence_dense_f32, runtime_sequence_values},
 };
 use arcweft_host_adapter::HostCallPolicy;
-use arcweft_lang_jit_cranelift::{
-    CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend,
-};
 use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, parse_expr};
@@ -76,9 +63,9 @@ use arcweft_runtime_accelerator::{
 };
 use arcweft_runtime_host::{
     BundleRunnerExecutor, BundleRunnerPhase, BundleRunnerStepMode, BundleRunnerStepSummary,
-    HostSystemInfo, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,
-    NativeTaskClassCounts, NativeTaskStats, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats,
-    host_system_info, runtime_executor_stats,
+    NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
+    NativeTaskStats, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, host_system_info,
+    runtime_executor_stats,
 };
 use arcweft_runtime_plan::flow::{
     RuntimePlanLowerReport, RuntimePlanLowerStats, lower_runtime_plan_with_options,
@@ -95,7 +82,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 use std::time::Instant;
 
 /// Runs the Arcweft CLI with the standard native adapters.
