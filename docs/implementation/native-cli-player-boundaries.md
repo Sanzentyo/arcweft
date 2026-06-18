@@ -230,7 +230,10 @@ input must be `.awfb`, a minimal `.awfb` runs through the headless bundle path,
 and `.arcw` source input requires explicit `--source` plus the `dev-source`
 feature. The player binary's framebuffer `--capture` surface is similarly
 feature-gated behind `dev-capture`, keeping the default product-player argv
-focused on bundle execution. The remaining architectural cuts are:
+focused on bundle execution. The headless report API follows the same boundary:
+the `native_capture` JSON field and `NativePlayerCaptureMetadata` type exist
+only for `dev-capture` builds, so default product-player reports do not expose
+debug readback metadata. The remaining architectural cuts are:
 
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.
    The non-profiled CLI project-loading path now calls compiler-owned

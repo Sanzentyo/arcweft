@@ -8,6 +8,7 @@ use arcweft_core::plan::FlowEvent;
 use arcweft_core::step::{
     RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStopReason,
 };
+#[cfg(feature = "dev-capture")]
 use arcweft_render_native::NativeFrameContentBBox;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use serde::Serialize;
@@ -27,11 +28,13 @@ pub struct HeadlessPlayerReport {
     pub diagnostics: Vec<String>,
     pub steps: usize,
     pub status: String,
+    #[cfg(feature = "dev-capture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_capture: Option<NativePlayerCaptureMetadata>,
 }
 
 /// Metadata for a native offscreen framebuffer capture emitted by the player binary.
+#[cfg(feature = "dev-capture")]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct NativePlayerCaptureMetadata {
     pub renderer: String,
@@ -120,6 +123,7 @@ pub fn run_headless(
                 diagnostics,
                 steps,
                 status: flow_status_label(&engine.fiber().status),
+                #[cfg(feature = "dev-capture")]
                 native_capture: None,
             });
         }
@@ -129,6 +133,7 @@ pub fn run_headless(
         diagnostics,
         steps,
         status: flow_status_label(&engine.fiber().status),
+        #[cfg(feature = "dev-capture")]
         native_capture: None,
     })
 }
@@ -212,6 +217,63 @@ mod tests {
         .expect("program runs");
 
         assert_eq!(report.status, "done:Return(\"done\")");
+    }
+
+    #[cfg(not(feature = "dev-capture"))]
+    #[test]
+    fn headless_report_json_omits_capture_metadata_without_dev_capture() {
+        use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.main".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![FlowOp::Return("done".to_owned())],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let report = run_headless(
+            NativePlayerProgram {
+                plan,
+                display: LineDisplayCatalog::default(),
+            },
+            8,
+        )
+        .expect("program runs");
+        let json = serde_json::to_value(&report).expect("report serializes");
+
+        assert!(json.get("native_capture").is_none());
+    }
+
+    #[cfg(feature = "dev-capture")]
+    #[test]
+    fn headless_report_serializes_capture_metadata_with_dev_capture() {
+        let report = HeadlessPlayerReport {
+            frames: Vec::new(),
+            diagnostics: Vec::new(),
+            steps: 0,
+            status: "done".to_owned(),
+            native_capture: Some(NativePlayerCaptureMetadata {
+                renderer: "native_offscreen_wgpu_glyphon".to_owned(),
+                format: "png".to_owned(),
+                width: 1,
+                height: 1,
+                pixel_format: "rgba8_unorm".to_owned(),
+                row_stride_bytes: 4,
+                content_bbox: Some(NativeFrameContentBBox {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                }),
+                content_pixels: 1,
+                written: "capture.png".to_owned(),
+            }),
+        };
+        let json = serde_json::to_value(&report).expect("report serializes");
+
+        assert!(json.get("native_capture").is_some());
     }
 
     #[cfg(feature = "dev-source")]

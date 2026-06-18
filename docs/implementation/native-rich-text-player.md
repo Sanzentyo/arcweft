@@ -385,7 +385,8 @@ Bundles carry the line display catalog needed for native window presentation.
 Product/native player entry should use `.awfb` input; source input is a
 development convenience only. Native capture is a development/debug harness and
 is exposed by the `dev-capture` feature rather than the default product player
-argv.
+argv. The `native_capture` JSON report field and
+`NativePlayerCaptureMetadata` API are also present only in `dev-capture` builds.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:
