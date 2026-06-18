@@ -4,6 +4,10 @@ use crate::input::{
     InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, RawInputEvent,
     RawInputKind,
 };
+use crate::layer::{
+    LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
+    LayerTreeError, LayerVisibility, RenderPhase,
+};
 
 #[test]
 fn registry_clears_values_when_scope_exits() {
@@ -185,4 +189,134 @@ fn action_and_host_event_batches_preserve_ordered_owned_data() {
         events.as_slice()[1].payload().map(String::as_str),
         Some("ok")
     );
+}
+
+fn layer_id(name: &str) -> LayerId {
+    LayerId::new(PublicId::try_new(format!("layer.{name}")).unwrap())
+}
+
+fn layer_order(phase: RenderPhase, z: i32, stable_index: u32) -> LayerOrder {
+    LayerOrder {
+        phase,
+        z,
+        stable_index,
+    }
+}
+
+#[test]
+fn layer_tree_derives_render_and_input_order_from_same_nodes() {
+    let root = layer_id("root");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    let dialogue = layer_id("dialogue");
+    let modal = layer_id("modal");
+
+    tree.insert(
+        LayerNode::new(
+            dialogue.clone(),
+            LayerKind::TextBox,
+            layer_order(RenderPhase::Dialogue, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_content(LayerContent::TextBox(
+            PublicId::try_new("textbox.main").unwrap(),
+        ))
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("dialogue layer inserts");
+    tree.insert(
+        LayerNode::new(
+            modal.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root.clone())
+        .with_content(LayerContent::Activity(
+            PublicId::try_new("activity.pause_menu").unwrap(),
+        ))
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("modal layer inserts");
+
+    assert_eq!(tree.root(), &root);
+    assert_eq!(
+        tree.render_order(),
+        &[root.clone(), dialogue.clone(), modal.clone()]
+    );
+    assert_eq!(
+        tree.input_order(),
+        &[modal.clone(), dialogue.clone(), root.clone()]
+    );
+    assert_eq!(
+        tree.get(&root).map(LayerNode::children),
+        Some(&[dialogue, modal][..])
+    );
+    assert_eq!(
+        tree.get(&layer_id("dialogue")).map(LayerNode::content),
+        Some(&LayerContent::TextBox(
+            PublicId::try_new("textbox.main").unwrap()
+        ))
+    );
+}
+
+#[test]
+fn layer_tree_rejects_duplicate_and_missing_parent() {
+    let root = layer_id("root");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+
+    let duplicate = LayerNode::new(
+        root.clone(),
+        LayerKind::Debug,
+        layer_order(RenderPhase::Debug, 0, 0),
+    );
+    assert_eq!(
+        tree.insert(duplicate),
+        Err(LayerTreeError::DuplicateLayer(root.clone()))
+    );
+
+    let orphan = layer_id("orphan");
+    let missing = layer_id("missing");
+    assert_eq!(
+        tree.insert(
+            LayerNode::new(
+                orphan,
+                LayerKind::Activity,
+                layer_order(RenderPhase::World, 0, 0),
+            )
+            .with_parent(missing.clone())
+        ),
+        Err(LayerTreeError::MissingParent(missing))
+    );
+}
+
+#[test]
+fn hidden_layers_are_not_routable_or_rendered() {
+    let root = layer_id("root");
+    let hidden = layer_id("hidden");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+
+    tree.insert(
+        LayerNode::new(
+            hidden,
+            LayerKind::Debug,
+            layer_order(RenderPhase::Debug, 0, 0),
+        )
+        .with_parent(root.clone())
+        .with_visibility(LayerVisibility::Hidden),
+    )
+    .expect("hidden layer inserts");
+
+    assert_eq!(tree.render_order(), std::slice::from_ref(&root));
+    assert_eq!(tree.input_order(), std::slice::from_ref(&root));
 }

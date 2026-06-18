@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use std::collections::HashMap;
 
 pub mod input;
+pub mod layer;
 
 /// Named lifetime owner for presentation values.
 ///
