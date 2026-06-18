@@ -91,7 +91,7 @@ routine local loop:
 | --- | --- | ---: | --- |
 | `cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | current `just test-fast` smoke route, warm build | 1.970s wall | passed |
 | `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | current `just test-cli-native` direct native observe group | 12.452s wall | passed, 1 ignored |
-| `cargo test -p arcweft-cli --test check --quiet` | current `just test-cli-check` CLI integration binary, Tier 2 ignored | 7.260s wall | passed, 13 ignored |
+| `cargo test -p arcweft-cli --test check --quiet` | former full CLI integration binary route, Tier 2 ignored at the time | 7.260s wall | passed, 13 ignored |
 | `cargo test --workspace --lib --tests --quiet` | workspace lib and integration tests, Tier 2 ignored, doc-tests excluded | 22.210s wall | passed, 13 ignored |
 | `cargo test --workspace --doc --quiet` | workspace doc-tests only | 117.769s wall | passed |
 | `cargo test --workspace --quiet` | workspace default after the doc-test run warmed its artifacts | 24.801s wall | passed, 13 ignored |
@@ -109,6 +109,17 @@ The broad `agent_observe_native_renderer` prefix is no longer a Tier 1 shortcut.
 dialogue layer crop, textbox object crop, textbox mask, and textbox object-id
 capture. Use targeted exact tests for JLREQ or vertical-text work, and keep
 large prefix runs for explicit profiling or milestone validation.
+
+Rechecked on 2026-06-19 after the `check.rs` suite had grown enough that a
+full `cargo test -p arcweft-cli --test check --quiet` pass timed out locally at
+184.8s. The routine CLI target was split into a smoke recipe and an explicit
+full recipe:
+
+| Command | Scope | Time | Result |
+| --- | --- | ---: | --- |
+| `just test-cli-check` | bench/run/JIT JSON groups, Agent observe JSON, exact native observe smoke | 48.2s wall | passed |
+| `cargo test -p arcweft-cli --test check --quiet` | full `check.rs` integration binary, broad native/JLREQ matrix included | timed out at 184.8s | incomplete |
+| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture` | ignored rich-text effects animation milestone sweep | 186.3s wall / 182.78s test body | passed |
 
 `arcweft-cli --test check` is now a purpose-specific CLI integration suite, not
 part of the workspace fast path. `just test-workspace` excludes `arcweft-cli`
@@ -255,9 +266,13 @@ and milestone validation.
 `just test-cli-native` is the normal native rich-text/Agent observe smoke slice;
 it must remain exact-test based rather than using the broad
 `agent_observe_native_renderer` prefix.
-`just test-cli-check` is useful before a CLI-heavy cut point, but it is not
-required after every small parser, layout, or protocol edit and should not be
-used as the routine workspace fast path.
+`just test-cli-check` is the routine CLI integration smoke. It runs the
+bench/run/JIT JSON groups, Agent observe JSON reporting, and the exact native
+observe smoke list. It intentionally does not run the whole `check.rs` binary,
+because that binary now includes the broad native/JLREQ observe matrix and can
+exceed several minutes locally. Use `just test-cli-check-full` when an explicit
+full CLI integration pass is needed, and treat its result as a broader
+milestone or risky-cut-point signal rather than a tight-loop command.
 
 `just test-rich-text-object-goal` is the milestone gate for the current rich
 text typed-presentation-object work. It combines Agent protocol/MCP metadata
@@ -315,6 +330,7 @@ just test-visual-golden
 just native-visual-artifacts
 just verify-vendor-glyphon
 just test-rich-text-object-goal
+just test-cli-check-full
 just test-tier2
 just verify-full
 ```

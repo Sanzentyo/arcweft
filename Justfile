@@ -51,6 +51,13 @@ test-rich-text-object-goal:
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
 
 test-cli-check:
+    @cargo test -p arcweft-cli --test check bench_json --quiet
+    @cargo test -p arcweft-cli --test check run_json --quiet
+    @cargo test -p arcweft-cli --test check jit_check_json --quiet
+    @cargo test -p arcweft-cli --test check agent_observe_json --quiet
+    @just test-cli-native
+
+test-cli-check-full:
     @cargo test -p arcweft-cli --test check --quiet
 
 test-cli-native:

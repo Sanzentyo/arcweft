@@ -78,7 +78,8 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
   `just test-rich-text` or `just test-cli-native` for native rich-text/Agent
   observe smoke work, `just test-workspace` for the normal workspace fast path
   at main push cut points, `just test-cli-check` or focused exact `check.rs`
-  tests for broad CLI-heavy cut points,
+  tests for routine CLI-heavy smoke, `just test-cli-check-full` only when a full
+  `check.rs` pass is explicitly warranted,
   `just test-doc` for explicit doc-test validation, and `just test-tier2` only
   for explicit slow validation.
 - Keep public API intentional.
