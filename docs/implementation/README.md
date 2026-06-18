@@ -40,6 +40,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   requirement/evidence matrix for the rich-text typed-presentation-object goal;
   use it to separate completed evidence from remaining audit risk before
   claiming that goal is done.
+- `docs/implementation/rich-text-object-visual-evidence.md` indexes which
+  rich-text object goal evidence is fixed PNG/HTML visual review, temporary
+  raw/JSON regression output, or metadata-only contract coverage.
 - `arcw agent observe` exposes the first Agent Debug Bus-shaped observation
   slice for rich-text debugging. It keeps the runtime-plan display catalog,
   resolves emitted dialogue-line events against runtime bindings, and reports

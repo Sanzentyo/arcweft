@@ -27,7 +27,7 @@ execution without compatibility shims.
 | `capture_step` / `capture_time` sample animated text objects, not only typewriter alpha | `agent_hit_test_capture_time_follows_animated_text_proxy_bounds`; typewriter/text-combine/ruby capture-time tests; effects animation combo regression; `SVR-2026-06-17-036`; `SVR-2026-06-18-007` | Covered |
 | Registry-backed effects, shaders, and motion functions render through native/debug capture | `RichTextEffectRegistry`, `RichTextShaderRegistry`, `RichTextMotionRegistry`; `rich-text-effects-animation.arcw`; native and CLI regressions for glyph color, post-process, source-local pure helpers, and function motion; `SVR-2026-06-17-014` through `016`, `029` through `031`, `037`, and `SVR-2026-06-18-003` / `004` | Covered |
 | Missing/unsupported effect, shader, and motion paths are structured diagnostics in report and image resources | `agent_observe_native_rich_text_reports_structured_visual_diagnostics`; `agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources`; `image_resource_metadata_preserves_capture_diagnostics`; `docs/04-tooling/agent-observe-capture-contract.md`; `SVR-2026-06-18-008` | Covered |
-| Visual sample evidence exists for inspectable rendering outcomes, not only metadata | 2026-06-15 ruby/HTML comparison images, 2026-06-17 full grammar/effect captures, 2026-06-18 proxy/source-local post-process captures | Mostly covered |
+| Visual sample evidence exists for inspectable rendering outcomes, not only metadata | `docs/implementation/rich-text-object-visual-evidence.md`; 2026-06-15 ruby/HTML comparison images; 2026-06-16 horizontal ruby comparison; 2026-06-17 full grammar/effect captures; 2026-06-18 proxy/source-local post-process captures | Covered |
 | A single explicit milestone command exists for the current rich-text object goal gate | `just test-rich-text-object-goal` runs the protocol/MCP/native/player/CLI/sample checks listed below | Covered |
 
 ## Remaining Audit Risks
@@ -35,10 +35,10 @@ execution without compatibility shims.
 - The matrix is assembled from focused tests and review evidence. Use targeted
   regressions during development, then run `just test-rich-text-object-goal`
   before claiming completion or handing off the milestone.
-- Fixed PNG review artifacts exist for the major visual issues, but many newer
-  metadata/diagnostic guarantees intentionally use JSON/raw temporary evidence.
-  That is appropriate for metadata transport, but completion should mention
-  which requirements are visual and which are metadata-only.
+- `docs/implementation/rich-text-object-visual-evidence.md` classifies fixed
+  PNG/HTML review artifacts separately from temporary raw/JSON and
+  metadata-only regressions. Keep that index current when new visual sample
+  requirements or evidence classes are added.
 - Golden-image screenshot checks remain deferred until a stable local UI
   harness exists; the current goal is covered by native offscreen PNG/raw
   readback rather than a window screenshot harness.
