@@ -239,6 +239,11 @@ also changes actual native framebuffer/debug captures instead of being
 metadata-only. Unknown shader IDs are not reinterpreted by the native renderer;
 they remain host-resolved shader references until a concrete native/filter
 implementation is added and are reported through renderer diagnostics.
+Native builtin rich-text effects also report `unsupported_builtin_effect_phase`
+when a recognized effect such as `.wave` is authored at a phase the native
+renderer cannot execute, such as `host_event` or `post_process`. The effect
+remains observable metadata and no-ops visually, but it is not allowed to fail
+silently in Agent/native diagnostics.
 
 Inline dialogue function calls must declare per-call handling through `on_error`, `fallback`, or
 `discard_error`, unless the line or speaker preset supplies `inline_fallback` or `inline_error`.

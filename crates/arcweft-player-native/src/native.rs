@@ -648,6 +648,22 @@ impl<'a> NativeEffectExecution<'a> {
         registry.apply_host_effect(&effect.id, &mut ctx);
     }
 
+    fn observe_builtin_effect_phase(&mut self, effect: &RichTextEffectDescriptor) -> bool {
+        if builtin_effect_phase_supported(effect) {
+            return true;
+        }
+        self.push_diagnostic(
+            "unsupported_builtin_effect_phase",
+            NativeVisualDiagnosticSeverity::Warning,
+            effect,
+            format!(
+                "builtin rich-text effect `{}` uses unsupported native phase {:?}",
+                effect.id, effect.phase
+            ),
+        );
+        false
+    }
+
     fn observe_shaders<'b>(&mut self, shaders: impl IntoIterator<Item = &'b RichTextShaderRef>) {
         for shader in shaders {
             self.observe_shader(shader);
@@ -2427,6 +2443,9 @@ fn apply_builtin_descriptor_with_execution(
     effects: &mut NativeEffectExecution<'_>,
     placement: &mut NativeGlyphPlacement,
 ) -> bool {
+    if is_builtin_effect_id(&effect.id) && !effects.observe_builtin_effect_phase(effect) {
+        return true;
+    }
     apply_builtin_descriptor_inner(
         line_id,
         effect,
@@ -2546,6 +2565,23 @@ fn apply_builtin_descriptor_inner(
         _ => return false,
     }
     true
+}
+
+fn is_builtin_effect_id(id: &str) -> bool {
+    matches!(
+        id,
+        "wave" | "shake" | "jitter" | "arc" | "spin" | "pulse" | "motion" | "typewriter"
+    )
+}
+
+fn builtin_effect_phase_supported(effect: &RichTextEffectDescriptor) -> bool {
+    match effect.id.as_str() {
+        "wave" | "shake" | "jitter" | "arc" | "spin" | "pulse" | "motion" => {
+            effect_applies_to_glyph_transform(effect)
+        }
+        "typewriter" => effect_applies_to_glyph_mask(effect),
+        _ => true,
+    }
 }
 
 fn apply_builtin_spin(
@@ -9224,6 +9260,25 @@ mod tests {
         assert!(
             plan.pages[0].glyphs[0].x.abs() < f32::EPSILON,
             "missing custom effects should no-op instead of being reinterpreted"
+        );
+    }
+
+    #[test]
+    fn native_visual_plan_reports_unsupported_builtin_effect_phase() {
+        let frame = custom_effect_test_frame_with_phase("wave", RichTextEffectPhase::HostEvent);
+
+        let plan = visual_plan_from_frame_for_test(&frame, 0.0);
+
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert_eq!(
+            plan.diagnostics[0].severity,
+            NativeVisualDiagnosticSeverity::Warning
+        );
+        assert_eq!(plan.diagnostics[0].code, "unsupported_builtin_effect_phase");
+        assert_eq!(plan.diagnostics[0].effect_id.as_deref(), Some("wave"));
+        assert!(
+            plan.pages[0].glyphs[0].x.abs() < f32::EPSILON,
+            "unsupported builtin phases should no-op instead of being reinterpreted"
         );
     }
 

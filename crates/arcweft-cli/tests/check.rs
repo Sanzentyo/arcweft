@@ -20109,6 +20109,69 @@ flow @flow.main main {
 }
 
 #[test]
+fn agent_observe_native_renderer_reports_unsupported_builtin_effect_phase() {
+    let path = temp_arcw(
+        "agent-observe-native-unsupported-builtin-effect-phase",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [effect .wave phase=host_event amp=4px]wave phase[/effect][p]
+}
+",
+    );
+    let dir = temp_dir("agent-observe-native-unsupported-builtin-effect-phase");
+    let png_path = dir.join("native-unsupported-builtin-effect-phase.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--image")
+        .arg("png")
+        .arg("--object")
+        .arg("object.dialogue.0.0")
+        .arg("--out")
+        .arg(&png_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe reports native builtin effect diagnostics");
+
+    assert!(
+        output.status.success(),
+        "native builtin effect diagnostic capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native builtin effect report is JSON");
+    assert!(
+        json["diagnostics"].as_array().is_some_and(|diagnostics| {
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic["severity"] == "warning"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("unsupported_builtin_effect_phase"))
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("wave"))
+            })
+        }),
+        "native builtin effect capture should surface renderer diagnostics: {json}"
+    );
+    let bytes = fs::read(&png_path).expect("read native builtin effect diagnostic PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+
+    fs::remove_file(&path).expect("remove temp native builtin effect diagnostic source");
+    fs::remove_dir_all(&dir).expect("remove temp native builtin effect diagnostic dir");
+}
+
+#[test]
 fn agent_observe_native_renderer_dispatches_host_effect_registry() {
     let path = temp_arcw(
         "agent-observe-native-host-effect-registry",

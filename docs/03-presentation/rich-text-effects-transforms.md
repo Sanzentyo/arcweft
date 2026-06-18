@@ -244,8 +244,8 @@ renderer has not implemented every operation:
 - ruby base and annotation presentations
 
 Unsupported rendering behavior is reported as diagnostics or profile metadata.
-It must not introduce alternate syntax, compatibility aliases, or hidden
-fallback semantics.
+It must not introduce alternate syntax, compatibility aliases, hidden fallback
+semantics, or silent no-op behavior for a recognized effect at the wrong phase.
 The native rich-text placement renderer currently supports builtin placement
 effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
 typewriter masking for `glyph_mask`, registry-dispatched custom placement
@@ -254,9 +254,10 @@ visual-plan, and framebuffer capture paths. The native renderer also supports
 registered `run_offscreen_pass` shaders for text and ruby glyph submissions;
 the default registry provides `soft_glow` and `warm_glow`, and native adapters
 may register additional shader IDs through the shader registry. Unsupported
-shader ids, supported shader ids used at the wrong phase, unregistered motion
-function ids, unregistered custom effects, post-process effects, and host-event
-phases must be diagnosed instead of being silently reinterpreted as placement
-effects. For builtin wave placement, `target=glyph` evaluates the phase per
-glyph, while `target=run` and broader targets evaluate the placement as one
-group; shake and jitter grouping is controlled by `state_scope`.
+shader ids, supported shader ids used at the wrong phase, builtin effects used
+at unsupported phases, unregistered motion function ids, unregistered custom
+effects, post-process effects, and host-event phases must be diagnosed instead
+of being silently reinterpreted as placement effects. For builtin wave
+placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
+broader targets evaluate the placement as one group; shake and jitter grouping
+is controlled by `state_scope`.
