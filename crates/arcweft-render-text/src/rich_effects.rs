@@ -304,6 +304,8 @@ pub struct RichTextObjectProxy {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<Milli>,
     #[serde(default)]
     pub hit_test: bool,

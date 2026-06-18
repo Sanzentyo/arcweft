@@ -190,7 +190,8 @@ and vertical form when known.
 
 The observation should include the effective presentation summary needed to
 debug rich text: layout fields, ruby defaults/overrides, transforms, effects,
-shader refs, and source anchors.
+shader refs, object proxy metadata, hit-test regions, source anchors, and the
+resolved `object_layer` / `object_depth` used by text objects.
 
 ---
 

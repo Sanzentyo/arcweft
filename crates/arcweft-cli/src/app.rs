@@ -5153,6 +5153,7 @@ fn agent_rich_text_page_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        object_layer: None,
                         object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
                         hit_test: true,
                         hit_regions: vec![agent_hit_region(
@@ -5217,6 +5218,7 @@ fn agent_rich_text_line_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        object_layer: None,
                         object_depth: agent_rich_text_page_object_depth(&textbox.rich_text, range),
                         hit_test: true,
                         hit_regions: vec![agent_hit_region(
@@ -5377,6 +5379,7 @@ fn agent_rich_text_run_object(
                 vertical_form: None,
                 ruby_base_bbox: None,
                 ruby_annotation_bbox: None,
+                object_layer: agent_object_layer(&run.presentation),
                 object_depth: agent_object_depth(&run.presentation),
                 hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
                 hit_regions: agent_text_hit_regions(
@@ -5447,6 +5450,7 @@ fn agent_rich_text_proxy_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        object_layer: proxy.layer.clone(),
                         object_depth: proxy.depth.map(|depth| depth.0).or_else(|| {
                             (run.presentation.z_index != 0)
                                 .then_some(i32::from(run.presentation.z_index) * 1000)
@@ -5501,6 +5505,7 @@ fn agent_rich_text_ruby_object(
                 vertical_form: None,
                 ruby_base_bbox: bbox.ruby.as_ref().map(|ruby| ruby.base_bbox.clone()),
                 ruby_annotation_bbox: bbox.ruby.as_ref().map(|ruby| ruby.annotation_bbox.clone()),
+                object_layer: agent_object_layer(&ruby.presentation),
                 object_depth: agent_object_depth(&ruby.presentation),
                 hit_test: agent_presentation_has_hit_test_proxy(&ruby.presentation),
                 hit_regions,
@@ -5573,6 +5578,7 @@ fn agent_rich_text_glyph_objects(
                         }),
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        object_layer: agent_object_layer(&run.presentation),
                         object_depth: agent_object_depth(&run.presentation),
                         hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
                         hit_regions: agent_text_hit_regions(
@@ -5652,6 +5658,7 @@ fn agent_rich_text_cluster_objects(
                         }),
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
+                        object_layer: agent_object_layer(&run.presentation),
                         object_depth: agent_object_depth(&run.presentation),
                         hit_test: agent_presentation_has_hit_test_proxy(&run.presentation),
                         hit_regions: agent_text_hit_regions(
@@ -5692,6 +5699,7 @@ fn agent_hit_region(
         proxy_id: None,
         proxy_type: None,
         proxy_role: None,
+        proxy_layer: None,
         depth: None,
     }
 }
@@ -5746,8 +5754,23 @@ fn agent_proxy_hit_region(
         proxy_id: Some(proxy.id.clone()),
         proxy_type: proxy.type_name.clone(),
         proxy_role: proxy.role.clone(),
+        proxy_layer: proxy.layer.clone(),
         depth: proxy.depth.map(|depth| depth.0),
     }
+}
+
+fn agent_object_layer(presentation: &RichTextPresentation) -> Option<String> {
+    presentation
+        .object_proxies
+        .iter()
+        .filter_map(|proxy| {
+            proxy
+                .layer
+                .as_ref()
+                .map(|layer| (proxy.depth.map_or(0, |depth| depth.0), layer))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, layer)| layer.clone())
 }
 
 fn agent_object_depth(presentation: &RichTextPresentation) -> Option<i32> {

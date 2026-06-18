@@ -432,6 +432,8 @@ pub struct AgentRichTextElementRef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ruby_annotation_bbox: Option<AgentBBox>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_depth: Option<i32>,
     #[serde(default)]
     pub hit_test: bool,
@@ -464,6 +466,8 @@ pub struct AgentHitRegion {
     pub proxy_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<i32>,
 }
@@ -966,6 +970,7 @@ mod tests {
             vertical_form: None,
             ruby_base_bbox: None,
             ruby_annotation_bbox: None,
+            object_layer: None,
             object_depth: None,
             hit_test: false,
             hit_regions: vec![AgentHitRegion {
@@ -975,6 +980,7 @@ mod tests {
                 proxy_id: None,
                 proxy_type: None,
                 proxy_role: None,
+                proxy_layer: None,
                 depth: None,
             }],
         }

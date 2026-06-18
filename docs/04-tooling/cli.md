@@ -334,7 +334,10 @@ ordered by resolved depth descending, then by semantic specificity
 smaller hit bbox and stable object id. This makes nested custom text proxies
 usable as real headless hit targets: a deeper `HoverHit` proxy over the same
 visible glyphs ranks before the shallower `KeywordHit` proxy, while both remain
-available for debugging.
+available for debugging. Proxy layer metadata is reported as
+`rich_text_ref.object_layer` on the object and `region.proxy_layer` on the hit
+region; it remains semantic object metadata and does not rewrite the parent
+framebuffer layer capture.
 
 It uses the same checked-source and runtime execution path as `arcw run`, but it
 also keeps the `LineDisplayCatalog` produced during runtime-plan lowering. When

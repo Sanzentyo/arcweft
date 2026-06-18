@@ -81,30 +81,34 @@ alice.say[
 
 Inline attributes override declaration defaults. Unspecified proxy metadata is
 filled from the struct attribute: `kind` supplies the default proxy role,
-`default_hit` supplies hit-test policy, `depth` / `z` / `z_index` supplies local
-depth, and remaining attribute arguments become default typed proxy params.
+`layer` / `object_layer` supplies object-layer metadata, `default_hit` supplies
+hit-test policy, `depth` / `z` / `z_index` supplies local depth, and remaining
+attribute arguments become default typed proxy params.
 
 Proxy spans may be nested or otherwise overlap. The effective text run keeps all
 active proxies in source order instead of collapsing them into one object. Agent
 observation emits one `rich_text_proxy` child object per effective proxy, each
-with the same measured text range/bbox but its own proxy id, type, role, depth,
-hit-test flag, params, capture refs, and object-id color. This lets authors
+with the same measured text range/bbox but its own proxy id, type, role, layer,
+depth, hit-test flag, params, capture refs, and object-id color. This lets authors
 attach separate semantic objects such as a choice hit target and a hover/depth
 proxy to the same visible text without losing either object.
 
 ## Depth And Hit Testing
 
-`z`, `z_index`, or `depth` on an object proxy is object metadata. It does not
-replace renderer layer order, but it gives hit testing and debug capture a
-stable local ordering key. When both `RichTextPresentation.z_index` and proxy
-depth are present, the renderer sorts by layer, then presentation `z_index`,
-then proxy depth, then source order.
+`layer` / `object_layer`, `z`, `z_index`, or `depth` on an object proxy is
+object metadata. Proxy layer does not replace the parent render-layer group, but
+it is exposed as first-class object metadata so hit testing, object-id capture,
+and headless debuggers can distinguish semantic layers such as UI, dialogue,
+hotspot, or depth proxy. When both `RichTextPresentation.z_index` and proxy
+depth are present, renderers sort by the resolved render layer, then
+presentation `z_index`, then proxy depth, then source order.
 
 `hit=true` enables hit-test regions for the span. `hit=false` keeps the proxy
 observable but non-interactive. Hit regions are reported in Agent observation and
 must use the same post-transform bounds as object-id and color captures.
 Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
-`text_object_proxy`, the proxy id/type/role, and the resolved local depth. The
+`text_object_proxy`, the proxy id/type/role/layer, and the resolved local depth.
+The selected proxy layer is exposed as `rich_text_ref.object_layer`, and the
 same resolved maximum proxy depth is exposed as `rich_text_ref.object_depth` so
 debuggers can sort text objects with image/model-like presentation objects.
 `arcw agent hit-test` and MCP `arcweft.hit_test` consume those same observed

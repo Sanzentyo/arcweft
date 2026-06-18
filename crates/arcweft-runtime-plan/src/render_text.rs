@@ -53,6 +53,7 @@ pub(crate) struct DialogueSpeakerPreset {
 struct TextProxyTypeDefaults {
     type_name: String,
     role: Option<String>,
+    layer: Option<String>,
     depth: Option<Milli>,
     default_hit: Option<bool>,
     params: BTreeMap<String, RichTextParam>,
@@ -219,6 +220,11 @@ fn text_proxy_defaults_from_struct(item: &StructItem) -> Option<TextProxyTypeDef
         .or_else(|| attrs.get("kind"))
         .map(|value| trim_quotes(value).to_owned())
         .filter(|value| !value.is_empty());
+    let layer = attrs
+        .get("layer")
+        .or_else(|| attrs.get("object_layer"))
+        .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+        .filter(|value| !value.is_empty());
     let depth = attrs
         .get("depth")
         .or_else(|| attrs.get("z"))
@@ -238,6 +244,7 @@ fn text_proxy_defaults_from_struct(item: &StructItem) -> Option<TextProxyTypeDef
     Some(TextProxyTypeDefaults {
         type_name,
         role,
+        layer,
         depth,
         default_hit,
         params,
@@ -256,6 +263,8 @@ fn is_text_proxy_attribute_metadata_attr(key: &str) -> bool {
             | "name"
             | "role"
             | "kind"
+            | "layer"
+            | "object_layer"
             | "depth"
             | "z"
             | "z_index"
@@ -2353,6 +2362,12 @@ fn object_proxy_from_selector(
             .map(|value| trim_quotes(value).to_owned())
             .filter(|value| !value.is_empty())
             .or_else(|| defaults.and_then(|defaults| defaults.role.clone())),
+        layer: attrs
+            .get("layer")
+            .or_else(|| attrs.get("object_layer"))
+            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+            .filter(|value| !value.is_empty())
+            .or_else(|| defaults.and_then(|defaults| defaults.layer.clone())),
         depth: attrs
             .get("depth")
             .or_else(|| attrs.get("z"))
@@ -2387,6 +2402,8 @@ fn is_object_proxy_metadata_attr(key: &str) -> bool {
             | "struct"
             | "proxy"
             | "role"
+            | "layer"
+            | "object_layer"
             | "depth"
             | "z"
             | "z_index"
@@ -3309,7 +3326,7 @@ pub struct HoverHit {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[object .hotspot type=KeywordHit channel=inventory][object .hover type=HoverHit depth=7 hit=true tone=alert]BC[/object][/object]D[p]
+    alice: A[object .hotspot type=KeywordHit channel=inventory][object .hover type=HoverHit depth=7 hit=true layer=hud tone=alert]BC[/object][/object]D[p]
 }
 "#,
         );
@@ -3363,14 +3380,9 @@ flow @flow.main main {
         assert_eq!(hover.id, "hover");
         assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
         assert_eq!(hover.role.as_deref(), Some("hover"));
+        assert_eq!(hover.layer.as_deref(), Some("hud"));
         assert_eq!(hover.depth, Some(Milli(7000)));
         assert!(hover.hit_test);
-        assert_eq!(
-            hover.params.get("layer"),
-            Some(&RichTextParam::Raw {
-                value: "ui".to_owned()
-            })
-        );
         assert_eq!(
             hover.params.get("tone"),
             Some(&RichTextParam::Raw {
@@ -3378,7 +3390,9 @@ flow @flow.main main {
             })
         );
         assert!(
-            !hover.params.contains_key("type") && !hover.params.contains_key("hit"),
+            !hover.params.contains_key("type")
+                && !hover.params.contains_key("hit")
+                && !hover.params.contains_key("layer"),
             "proxy metadata keys should not be forwarded as custom params"
         );
     }
