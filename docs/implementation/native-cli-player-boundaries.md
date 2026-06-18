@@ -66,18 +66,21 @@ The unified UI design is adopted as the long-term boundary for future work:
 
 The current cuts remove the direct CLI dependency on `arcweft-player-native`,
 move renderer tests into `arcweft-render-native`, extract the Clap command
-surface into `app/commands.rs`, and move bundle/run-bundle implementation into
-`app/bundle.rs`. Tooling commands (`fmt`, `ids materialize`) are now isolated
-in `app/tooling.rs`. The remaining architectural cuts are:
+surface into `app/commands.rs`, move bundle/run-bundle implementation into
+`app/bundle.rs`, and isolate tooling commands (`fmt`, `ids materialize`) in
+`app/tooling.rs`. Agent observe / hit-test / MCP implementation now lives in
+`app/agent.rs`, keeping native observation logic out of the primary dispatch
+module while it is being moved toward the unified LayerTree / InputRouter /
+semantic observation model. The remaining architectural cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
-   prioritizing Agent observe/hit-test/native capture next because it is the
-   remaining native renderer dependency cluster.
-2. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
+   prioritizing runtime/profile/test/bench next so the primary module becomes
+   dispatch plus shared CLI context instead of a cross-layer implementation
+   sink.
+2. Feature-gate native renderer/capture in `arcweft-cli` now that the Agent
+   implementation is isolated in one module.
+3. Move non-profiled CLI compile paths toward `arcweft-compiler`, while keeping
    CLI-specific profiling and diagnostics in CLI modules.
-3. Make native renderer/capture a feature-gated CLI capability or move it to a
-   dedicated native Agent/debug binary once the Agent command surface can be
-   compiled without renderer types.
 4. Move remaining product-player host/task behavior onto `.awfb` execution.
    Source execution remains a developer mode, not the product-player model.
 5. Add the presentation input and future `arcweft-ui` crates according to the
