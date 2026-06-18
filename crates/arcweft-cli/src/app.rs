@@ -5490,13 +5490,21 @@ fn agent_rich_text_proxy_objects(
                         vertical_form: None,
                         ruby_base_bbox: None,
                         ruby_annotation_bbox: None,
-                        object_layer: proxy.layer.clone(),
+                        object_layer: proxy
+                            .layer
+                            .clone()
+                            .or_else(|| run.presentation.layer.clone()),
                         object_depth: proxy.depth.map(|depth| depth.0).or_else(|| {
                             (run.presentation.z_index != 0)
                                 .then_some(i32::from(run.presentation.z_index) * 1000)
                         }),
                         hit_test: proxy.hit_test,
-                        hit_regions: agent_proxy_hit_regions(&bbox, run.range, proxy),
+                        hit_regions: agent_proxy_hit_regions(
+                            &bbox,
+                            run.range,
+                            &run.presentation,
+                            proxy,
+                        ),
                     },
                     page,
                 },
@@ -5757,7 +5765,7 @@ fn agent_text_hit_regions(
             .object_proxies
             .iter()
             .filter(|proxy| proxy.hit_test)
-            .map(|proxy| agent_proxy_hit_region(bbox, range, proxy)),
+            .map(|proxy| agent_proxy_hit_region(bbox, range, presentation, proxy)),
     );
     regions
 }
@@ -5774,11 +5782,12 @@ fn agent_proxy_presentation(
 fn agent_proxy_hit_regions(
     bbox: &AgentBBox,
     range: RichTextRange,
+    presentation: &RichTextPresentation,
     proxy: &RichTextObjectProxy,
 ) -> Vec<AgentHitRegion> {
     proxy
         .hit_test
-        .then(|| agent_proxy_hit_region(bbox, range, proxy))
+        .then(|| agent_proxy_hit_region(bbox, range, presentation, proxy))
         .into_iter()
         .collect()
 }
@@ -5786,6 +5795,7 @@ fn agent_proxy_hit_regions(
 fn agent_proxy_hit_region(
     bbox: &AgentBBox,
     range: RichTextRange,
+    presentation: &RichTextPresentation,
     proxy: &RichTextObjectProxy,
 ) -> AgentHitRegion {
     AgentHitRegion {
@@ -5795,7 +5805,7 @@ fn agent_proxy_hit_region(
         proxy_id: Some(proxy.id.clone()),
         proxy_type: proxy.type_name.clone(),
         proxy_role: proxy.role.clone(),
-        proxy_layer: proxy.layer.clone(),
+        proxy_layer: proxy.layer.clone().or_else(|| presentation.layer.clone()),
         depth: proxy.depth.map(|depth| depth.0),
         proxy_params: proxy.params.clone(),
     }
@@ -5813,6 +5823,7 @@ fn agent_object_layer(presentation: &RichTextPresentation) -> Option<String> {
         })
         .max_by_key(|(depth, _)| *depth)
         .map(|(_, layer)| layer.clone())
+        .or_else(|| presentation.layer.clone())
 }
 
 fn agent_object_depth(presentation: &RichTextPresentation) -> Option<i32> {
@@ -6015,7 +6026,14 @@ fn agent_rich_text_range_proxy_hit_regions(
                                 proxy_index,
                             },
                         )
-                        .map(|bounds| agent_proxy_hit_region(&bounds.bbox, hit_range, proxy))
+                        .map(|bounds| {
+                            agent_proxy_hit_region(
+                                &bounds.bbox,
+                                hit_range,
+                                &run.presentation,
+                                proxy,
+                            )
+                        })
                 })
         })
         .collect()

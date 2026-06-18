@@ -252,13 +252,17 @@ Those inferred proxies therefore produce the same run/page/line metadata,
 `rich_text_proxy` observed objects, object-id/mask/color captures, and hit-test
 regions as explicit `[object ...]` syntax.
 Ordinary text objects also expose presentation scalar metadata without becoming
-proxies. Style-family selectors such as `[style .z_index 3]...[/style]` and
-`[style .opacity 0.8]...[/style]`, including inferred forms like
-`[.z_index 3]...[/]`, lower into `RichTextPresentation`. Agent observe reports
-the resolved `presentation.z_index` / `presentation.opacity` on runs, lines, and
-pages, and derives `rich_text_ref.object_depth = z_index * 1000` so ordinary
-text participates in the same depth-aware object ordering as images, models, and
-custom proxy spans.
+proxies. Style-family selectors such as `[style .layer hud]...[/style]`,
+`[style .z_index 3]...[/style]`, and `[style .opacity 0.8]...[/style]`,
+including inferred forms like `[.layer hud]...[/]` and `[.z_index 3]...[/]`,
+lower into `RichTextPresentation`. Agent observe reports the resolved
+`presentation.layer`, `presentation.z_index`, and `presentation.opacity` on
+runs, lines, and pages, maps presentation layer to `rich_text_ref.object_layer`,
+and derives `rich_text_ref.object_depth = z_index * 1000` so ordinary text
+participates in the same layer/depth-aware object ordering as images, models,
+and custom proxy spans. Proxy objects still keep their own layer/depth metadata;
+when a proxy layer is omitted it inherits the parent presentation layer for
+Agent hit-test reporting.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
 rich-text effects and honor `delay` before revealing glyphs. `delay` is
 interpreted as seconds, with renderer-local raw token support for `s` and `ms`

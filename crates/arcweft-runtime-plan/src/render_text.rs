@@ -2238,7 +2238,7 @@ enum InferredTagFamily {
 
 fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily> {
     match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "z" | "z_index" => {
+        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "z" | "z_index" => {
             Some(InferredTagFamily::Style)
         }
         "horizontal_tb"
@@ -2276,12 +2276,21 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
         "opacity" | "alpha" => RichTextStyle::Presentation {
             presentation: RichTextPresentationStyle {
                 opacity: Some(parse_milli_token(&style_scalar_attr(attrs, "opacity"))),
+                layer: None,
+                z_index: None,
+            },
+        },
+        "layer" | "object_layer" => RichTextStyle::Presentation {
+            presentation: RichTextPresentationStyle {
+                opacity: None,
+                layer: style_layer_attr(attrs),
                 z_index: None,
             },
         },
         "z" | "z_index" => RichTextStyle::Presentation {
             presentation: RichTextPresentationStyle {
                 opacity: None,
+                layer: None,
                 z_index: parse_z_index_token(&style_scalar_attr(attrs, "z_index")),
             },
         },
@@ -2297,9 +2306,20 @@ fn style_scalar_attr(attrs: &str, preferred: &str) -> String {
     let parsed = parse_attrs(attrs);
     parsed
         .get(preferred)
+        .or_else(|| match preferred {
+            "opacity" => parsed.get("alpha"),
+            "z_index" => parsed.get("z"),
+            "layer" => parsed.get("object_layer"),
+            _ => None,
+        })
         .or_else(|| parsed.get("value"))
         .or_else(|| parsed.get("amount"))
         .map_or_else(|| attrs.to_owned(), ToOwned::to_owned)
+}
+
+fn style_layer_attr(attrs: &str) -> Option<String> {
+    let value = style_scalar_attr(attrs, "layer");
+    (!value.trim().is_empty()).then(|| value.trim().to_owned())
 }
 
 fn lower_layout_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
@@ -3634,7 +3654,7 @@ flow @flow.main main {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.z_index 7][.opacity 0.5]BC[/][/]D[p]
+    alice: A[.layer hud][.z_index 7][.opacity 0.5]BC[/][/][/]D[p]
 }
 ",
         );
@@ -3671,6 +3691,7 @@ flow @flow.main main {
 
         assert_eq!(run.presentation.z_index, 7);
         assert_eq!(run.presentation.opacity, Some(Milli(500)));
+        assert_eq!(run.presentation.layer.as_deref(), Some("hud"));
     }
 
     #[test]

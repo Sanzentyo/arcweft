@@ -332,6 +332,8 @@ pub struct RichTextPresentation {
     pub oblique: Option<RichTextAngle>,
     #[serde(default)]
     pub opacity: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
     #[serde(default)]
     pub z_index: i16,
 }
@@ -354,6 +356,9 @@ impl RichTextPresentation {
         }
         if other.opacity.is_some() {
             self.opacity = other.opacity;
+        }
+        if other.layer.is_some() {
+            self.layer = other.layer;
         }
         if other.z_index != 0 {
             self.z_index = other.z_index;

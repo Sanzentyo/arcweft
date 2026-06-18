@@ -101,13 +101,22 @@ depth-aware text proxies inside it.
 
 ## Depth And Hit Testing
 
-`layer` / `object_layer`, `z`, `z_index`, or `depth` on an object proxy is
-object metadata. Proxy layer does not replace the parent render-layer group, but
-it is exposed as first-class object metadata so hit testing, object-id capture,
-and headless debuggers can distinguish semantic layers such as UI, dialogue,
-hotspot, or depth proxy. When both `RichTextPresentation.z_index` and proxy
-depth are present, renderers sort by the resolved render layer, then
-presentation `z_index`, then proxy depth, then source order.
+`layer` / `object_layer` authored in the `style` family is presentation metadata
+for the ordinary text object itself. It is exposed as
+`rich_text_ref.object_layer` on runs, glyphs, clusters, lines, pages, and ruby
+objects without creating a proxy. `z` / `z_index` works the same way for ordinary
+object depth, exposed as `rich_text_ref.object_depth = z_index * 1000`.
+
+`layer` / `object_layer`, `z`, `z_index`, or `depth` authored on an `object`
+proxy is proxy object metadata. Proxy layer does not replace the parent
+render-layer group, but it is exposed as first-class object metadata so hit
+testing, object-id capture, and headless debuggers can distinguish semantic
+layers such as UI, dialogue, hotspot, or depth proxy. When both
+`RichTextPresentation.z_index` and proxy depth are present, renderers sort by
+the resolved render layer, then presentation `z_index`, then proxy depth, then
+source order. A proxy with no explicit layer inherits the parent presentation
+layer for Agent hit-test reporting; an explicit proxy layer overrides it for
+that proxy object.
 
 `hit=true` enables hit-test regions for the span. `hit=false` keeps the proxy
 observable but non-interactive. Hit regions are reported in Agent observation and

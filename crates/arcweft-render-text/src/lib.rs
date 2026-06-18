@@ -237,6 +237,8 @@ pub struct RichTextPresentationStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity: Option<Milli>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_index: Option<i16>,
 }
 
@@ -506,12 +508,21 @@ impl RichTextStyle {
             "opacity" | "alpha" => Self::Presentation {
                 presentation: RichTextPresentationStyle {
                     opacity: Some(parse_milli_token(attrs)),
+                    layer: None,
+                    z_index: None,
+                },
+            },
+            "layer" | "object_layer" => Self::Presentation {
+                presentation: RichTextPresentationStyle {
+                    opacity: None,
+                    layer: (!attrs.trim().is_empty()).then(|| attrs.trim().to_owned()),
                     z_index: None,
                 },
             },
             "z" | "z_index" => Self::Presentation {
                 presentation: RichTextPresentationStyle {
                     opacity: None,
+                    layer: None,
                     z_index: parse_z_index_token(attrs),
                 },
             },
@@ -965,9 +976,8 @@ fn remove_active_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {
 pub fn canonical_style_name(name: &str) -> &str {
     match name {
         "" | "/" => "/",
-        "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "z" | "z_index" | "style" => {
-            "style"
-        }
+        "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "layer" | "object_layer"
+        | "z" | "z_index" | "style" => "style",
         "vertical"
         | "vertical_rl"
         | "vertical_lr"
@@ -1003,6 +1013,9 @@ pub fn presentation_from_styles<'a>(
                 RichTextStyle::Presentation { presentation } => {
                     if let Some(opacity) = presentation.opacity {
                         out.opacity = Some(opacity);
+                    }
+                    if let Some(layer) = &presentation.layer {
+                        out.layer = Some(layer.clone());
                     }
                     if let Some(z_index) = presentation.z_index {
                         out.z_index = z_index;

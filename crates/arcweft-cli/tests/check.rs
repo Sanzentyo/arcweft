@@ -2083,7 +2083,7 @@ fn agent_observe_reports_text_presentation_z_index_depth() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.z_index 7][.opacity 0.5]Depth[/][/] plain[p]
+    alice: [.layer hud][.z_index 7][.opacity 0.5]Depth[/][/][/] plain[p]
 }
 ",
     );
@@ -2108,8 +2108,10 @@ flow @flow.main main {
     let observe_json: serde_json::Value =
         serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
     let run = find_rich_text_run_object(&observe_json, "Depth");
+    assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 7);
     assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 500);
+    assert_eq!(run["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(run["rich_text_ref"]["object_depth"], 7000);
     assert_eq!(run["rich_text_ref"]["hit_test"], false);
 
@@ -2119,12 +2121,14 @@ flow @flow.main main {
         .iter()
         .find(|object| object["role"] == "rich_text_line")
         .expect("rich-text line object is observed");
+    assert_eq!(line["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
     let hit = hit_test_center_of_observed_object(&path, line);
     fs::remove_file(&path).expect("remove temp z-index source");
     assert_eq!(hit["status"], "ok");
     assert_eq!(hit["top_object_id"], line["id"]);
     assert_eq!(hit["hits"][0]["role"], "rich_text_line");
+    assert_eq!(hit["hits"][0]["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(hit["hits"][0]["depth"], 7000);
 }
 
@@ -33746,8 +33750,10 @@ fn assert_full_grammar_inferred_text_object_proxy(source_path: &Path, json: &ser
 
 fn assert_full_grammar_presentation_scalar_depth(json: &serde_json::Value) {
     let run = find_rich_text_run_object(json, "z depth");
+    assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 3);
     assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 800);
+    assert_eq!(run["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(run["rich_text_ref"]["object_depth"], 3000);
 }
 
