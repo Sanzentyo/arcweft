@@ -2032,6 +2032,110 @@ flow @flow.main main {
     );
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native observe and hit-test coverage"]
+fn agent_mcp_stdio_hit_test_reports_depth_sorted_rich_text_proxy() {
+    let path = temp_arcw(
+        "agent-mcp-hit-test-rich-text-proxy",
+        r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+pub struct HoverHit {
+    layer: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [object .hotspot type=KeywordHit][object .hover type=HoverHit]Hit[/object][/object][p]
+}
+"#,
+    );
+    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .output()
+        .expect("arcw agent observe runs MCP hit-test source");
+    assert!(
+        observe.status.success(),
+        "agent observe for MCP hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&observe.stderr)
+    );
+    let observe_json: serde_json::Value =
+        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
+    let hover = find_rich_text_proxy_object(&observe_json, "hover", "Hit");
+    let x = agent_json_bbox_x(&hover["bbox"]) + agent_json_bbox_width(&hover["bbox"]) / 2;
+    let y = agent_json_bbox_y(&hover["bbox"]) + agent_json_bbox_height(&hover["bbox"]) / 2;
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.hit_test",
+                "arguments": {
+                    "source": path.display().to_string(),
+                    "x": x,
+                    "y": y,
+                    "steps": 4,
+                    "max_ops": 64
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    fs::remove_file(&path).expect("remove temp MCP hit-test source");
+    assert!(
+        output.status.success(),
+        "agent MCP hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[1]["result"]["content"][0]["type"], "text");
+    let hit_json = mcp_content_metadata(
+        &responses[1]["result"]["content"][0],
+        "MCP hit-test result is JSON",
+    );
+    assert_eq!(hit_json["status"], "ok");
+    assert_eq!(hit_json["top_object_id"], hover["id"]);
+    let top = &hit_json["hits"][0];
+    assert_eq!(top["rank"], 0);
+    assert_eq!(top["object_id"], hover["id"]);
+    assert_eq!(top["role"], "rich_text_proxy");
+    assert_eq!(top["region"]["kind"], "text_object_proxy");
+    assert_eq!(top["region"]["proxy_id"], "hover");
+    assert_eq!(top["region"]["proxy_type"], "HoverHit");
+    assert_eq!(top["region"]["proxy_layer"], "ui");
+    assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(top["depth"], 7000);
+    let keyword_hit = hit_json["hits"]
+        .as_array()
+        .expect("MCP hit-test hits are listed")
+        .iter()
+        .find(|hit| hit["region"]["proxy_id"] == "hotspot" && hit["depth"] == 4000)
+        .unwrap_or_else(|| {
+            panic!("MCP hit-test should keep the lower-ranked proxy hit with params: {hit_json}")
+        });
+    assert_eq!(
+        keyword_hit["region"]["proxy_params"]["channel"]["value"],
+        "choice"
+    );
+}
+
 fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_json::Value) {
     let objects = observe_json["objects"]
         .as_array()
