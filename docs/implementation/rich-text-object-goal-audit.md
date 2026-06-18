@@ -11,7 +11,7 @@ Rich text and dialogue text should be debuggable like image or 3D model
 objects: every meaningful text unit must have typed object identity, metadata,
 hit-test behavior, depth/layer routing, object-id/mask/color capture, animation
 sampling, custom proxy metadata, and registry-backed effect/shader/motion
-execution without compatibility shims.
+execution without transitional fallback layers.
 
 ## Evidence Matrix
 
