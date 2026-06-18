@@ -43,10 +43,10 @@ test-rich-text-object-goal:
     @cargo test -p arcweft-render-native shader -- --nocapture
     @cargo test -p arcweft-render-native post_process -- --nocapture
     @cargo test -p arcweft-render-native typewriter -- --nocapture
-    @cargo test -p arcweft-cli --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
-    @cargo test -p arcweft-cli --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
-    @cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
-    @cargo test -p arcweft-cli --test check agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-full-grammar.arcw
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
 
@@ -54,14 +54,14 @@ test-cli-check:
     @cargo test -p arcweft-cli --test check bench_json --quiet
     @cargo test -p arcweft-cli --test check run_json --quiet
     @cargo test -p arcweft-cli --test check jit_check_json --quiet
-    @cargo test -p arcweft-cli --test check agent_observe_json --quiet
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_json --quiet
     @just test-cli-native
 
 test-cli-check-full:
-    @cargo test -p arcweft-cli --test check --quiet
+    @cargo test -p arcweft-cli --features native-capture --test check --quiet
 
 test-cli-native:
-    @foreach ($test in @("agent_observe_native_renderer_writes_framebuffer_png", "agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop", "agent_observe_native_renderer_writes_object_raw_crop", "agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry", "agent_observe_native_renderer_writes_textbox_object_id_as_glyph_geometry")) { cargo test -p arcweft-cli --test check $test --quiet -- --exact; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+    @foreach ($test in @("agent_observe_native_renderer_writes_framebuffer_png", "agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop", "agent_observe_native_renderer_writes_object_raw_crop", "agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry", "agent_observe_native_renderer_writes_textbox_object_id_as_glyph_geometry")) { cargo test -p arcweft-cli --features native-capture --test check $test --quiet -- --exact; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
 test-profile:
     @Write-Host "workspace-no-run"; Measure-Command { cargo test --workspace --no-run --quiet }
@@ -69,21 +69,21 @@ test-profile:
     @Write-Host "workspace-doc"; Measure-Command { cargo test --workspace --doc --quiet }
     @Write-Host "workspace-all"; Measure-Command { cargo test --workspace --quiet }
     @Write-Host "test-fast"; Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet }
-    @Write-Host "cli-check"; Measure-Command { cargo test -p arcweft-cli --test check --quiet }
+    @Write-Host "cli-check"; Measure-Command { cargo test -p arcweft-cli --features native-capture --test check --quiet }
     @Write-Host "cli-native"; Measure-Command { just test-cli-native }
     @Write-Host "bench-json"; Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }
     @Write-Host "run-json"; Measure-Command { cargo test -p arcweft-cli --test check run_json --quiet }
     @Write-Host "jit-check-json"; Measure-Command { cargo test -p arcweft-cli --test check jit_check_json --quiet }
 
 test-slow-mcp:
-    @cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
 
 test-visual-golden:
-    @cargo test -p arcweft-cli --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
 
 native-visual-artifacts out="target\\arcweft-native-capture-artifacts":
     @New-Item -ItemType Directory -Force -Path "{{out}}" | Out-Null
-    @cargo build --release -p arcweft-cli --quiet
+    @cargo build --release -p arcweft-cli --features native-capture --quiet
     @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{out}}\vertical_tutr_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_tutr_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{out}}\vertical_tutr_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_loose_golden.observe.json"
@@ -105,7 +105,7 @@ test-vendor-glyphon:
 verify-vendor-glyphon: check-vendor-glyphon clippy-vendor-glyphon test-vendor-glyphon
 
 test-slow-agent-observe:
-    @cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
 
 test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
 

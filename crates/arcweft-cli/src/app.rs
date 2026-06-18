@@ -25,23 +25,6 @@ use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use crate::{server_adapter, toolchain_profile};
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
-use arcweft_agent_mcp::{
-    McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
-    list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
-    tool_result_for_resources,
-};
-use arcweft_agent_protocol::{
-    AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
-    AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
-    AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
-    AgentHitTestHit, AgentHitTestReport, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
-    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentPresentationObjectProxyParamQuery,
-    AgentPresentationTree, AgentPresentationTreeQuery, AgentResource, AgentResourceBody,
-    AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
-};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
     BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileSpace,
@@ -52,9 +35,9 @@ use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_core::plan::{
-    FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
+    FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
+    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -88,11 +71,7 @@ use arcweft_lang_syntax::{
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
-use arcweft_render_text::{
-    LineDisplayCatalog, LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy,
-    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
-    RichTextTextSource, RuntimeLineContext,
-};
+use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
     RuntimePureWorkerCount, math::RuntimeMathBackend,
@@ -122,11 +101,8 @@ use arcweft_verify::{
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::{Args, Parser, ValueEnum};
-use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::fs;
-use std::io::{BufRead as _, Write as _};
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Component, Path, PathBuf};
@@ -5405,15 +5381,6 @@ impl From<CliRuntimePureWorkers> for RuntimePureWorkerCount {
             CliRuntimePureWorkers::Fixed(value) => Self::Fixed(value),
         }
     }
-}
-
-#[derive(Clone, Debug)]
-struct AgentObservationTrace {
-    viewport: AgentViewport,
-    objects: Vec<AgentObservedObject>,
-    diagnostics: Vec<AgentDiagnostic>,
-    task_request_count: usize,
-    tick: usize,
 }
 
 #[derive(serde::Serialize)]

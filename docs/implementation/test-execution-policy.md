@@ -28,17 +28,17 @@ Measured commands:
 
 | Command | Scope | Time |
 | --- | --- | ---: |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer -- --nocapture` | 10 native `agent observe` capture tests | 4.573s |
-| `cargo test -p arcweft-cli --test check agent_mcp_stdio -- --nocapture` | 11 MCP stdio tests | 353.251s |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer -- --nocapture` | 10 native `agent observe` capture tests | 4.573s |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --nocapture` | 11 MCP stdio tests | 353.251s |
 | `cargo test --workspace` | full workspace after warm build | 426.2s |
 
 Re-measured commands:
 
 | Command | Scope | Time | Result |
 | --- | --- | ---: | --- |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer -- --nocapture` | 12 direct native capture tests | 16.320s wall / 4.61s test body | failed on exact imq golden only |
-| `cargo test -p arcweft-cli --test check agent_mcp_stdio -- --nocapture` | 11 MCP stdio tests | 346.713s wall / 345.93s test body | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer -- --nocapture` | 11 direct native capture tests plus 1 ignored visual golden | 4.406s wall / 3.66s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer -- --nocapture` | 12 direct native capture tests | 16.320s wall / 4.61s test body | failed on exact imq golden only |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --nocapture` | 11 MCP stdio tests | 346.713s wall / 345.93s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer -- --nocapture` | 11 direct native capture tests plus 1 ignored visual golden | 4.406s wall / 3.66s test body | passed |
 | `cargo test --workspace` | full workspace with Tier 2 ignored | 78.467s wall / `check.rs` 38.14s test body | passed, 12 ignored |
 
 Re-measured while tightening the default policy:
@@ -47,14 +47,14 @@ Re-measured while tightening the default policy:
 | --- | --- | ---: | --- |
 | `cargo test --workspace --quiet` | full workspace before moving the slow observe matrix to Tier 2 | 54.028s wall / `check.rs` 39.78s test body | passed, 12 ignored |
 | `cargo test -p arcweft-cli --test check --quiet` | `check.rs` before moving the slow observe matrix to Tier 2 | 59.235s wall / 41.21s test body | passed, 12 ignored |
-| `cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images --quiet` | broad CLI observe image/resource matrix | 36.736s wall / 35.91s test body | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet -- --nocapture` | direct native renderer capture group | 4.507s wall / 3.78s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images --quiet` | broad CLI observe image/resource matrix | 36.736s wall / 35.91s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet -- --nocapture` | direct native renderer capture group | 4.507s wall / 3.78s test body | passed, 1 ignored |
 | `cargo test -p arcweft-cli --test check bench_json --quiet` | CLI bench JSON group | 1.599s wall / 0.82s test body | passed |
 | `cargo test -p arcweft-cli --test check run_json --quiet` | CLI run JSON group | 1.101s wall / 0.30s test body | passed |
 | `cargo test -p arcweft-cli --test check jit_check_json --quiet` | CLI JIT check group | 2.209s wall / 1.59s test body | passed |
 | `cargo test -p arcweft-cli --test regression_harness --quiet` | CLI source-tree regression harness | 1.620s wall / 0.38s test body | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images --quiet` | default run after moving matrix to Tier 2 | 5.850s wall / 0.00s test body | passed, 1 ignored |
-| `cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images --quiet -- --ignored --nocapture` | explicit Tier 2 run after policy change | 36.411s wall / 35.67s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images --quiet` | default run after moving matrix to Tier 2 | 5.850s wall / 0.00s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images --quiet -- --ignored --nocapture` | explicit Tier 2 run after policy change | 36.411s wall / 35.67s test body | passed |
 | `cargo test --workspace --quiet` | full workspace after moving matrix to Tier 2 | 27.968s wall / `check.rs` 5.47s test body | passed, 13 ignored |
 
 Re-measured after adding rich-text glyph-cluster observation work:
@@ -64,8 +64,8 @@ Re-measured after adding rich-text glyph-cluster observation work:
 | `cargo test --workspace --no-run --quiet` | compile all workspace test binaries after local edits | 28.6s wall | passed |
 | `cargo test --workspace --quiet` | full workspace, Tier 2 ignored | 25.872s wall / `check.rs` 6.51s test body | passed, 13 ignored |
 | `cargo test -p arcweft-cli --test check --quiet` | CLI integration test binary, Tier 2 ignored | 14.788s wall / 7.79s test body | passed, 13 ignored |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.241s wall / 4.43s test body | passed, 1 ignored |
-| `cargo test -p arcweft-cli --test check agent_observe_json --quiet` | Agent observe JSON report tests | 0.800s wall / 0.05s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.241s wall / 4.43s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_json --quiet` | Agent observe JSON report tests | 0.800s wall / 0.05s test body | passed |
 | `cargo test -p arcweft-cli --test check run_json --quiet` | CLI runtime JSON tests | 0.903s wall / 0.28s test body | passed |
 | `cargo test -p arcweft-cli --test check bench_json --quiet` | CLI bench JSON tests | 1.875s wall / 1.18s test body | passed |
 | `cargo test -p arcweft-cli --test check jit_check_json --quiet` | CLI JIT comparison tests | 1.993s wall / 1.26s test body | passed |
@@ -78,7 +78,7 @@ Re-profiled after the local loop was found too slow:
 | `cargo test --workspace --quiet` | full workspace, Tier 2 ignored, after local edits | 42.900s wall / `check.rs` 6.80s test body | passed, 13 ignored |
 | `cargo test -p arcweft-cli --test check --quiet` | CLI integration binary, Tier 2 ignored | 20.610s wall / 7.64s test body | passed, 13 ignored |
 | `cargo test -p arcweft-player-native --lib --quiet` | native player library tests | 7.550s wall / 1.38s test body | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.550s wall / 4.73s test body | passed, 1 ignored |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet` | direct native observe group | 5.550s wall / 4.73s test body | passed, 1 ignored |
 | `cargo test -p arcweft-cli --test regression_harness --quiet` | checked-in source-tree regression harness | 1.850s wall / 0.38s test body | passed |
 | `cargo test --workspace --no-run --quiet` | compile workspace test binaries only | 9.490s wall | passed |
 | `cargo test --workspace --quiet` | warm full workspace, Tier 2 ignored | 22.100s wall / `check.rs` 6.42s test body | passed, 13 ignored |
@@ -90,7 +90,7 @@ routine local loop:
 | Command | Scope | Time | Result |
 | --- | --- | ---: | --- |
 | `cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | current `just test-fast` smoke route, warm build | 1.970s wall | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | current `just test-cli-native` direct native observe group | 12.452s wall | passed, 1 ignored |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet` | current `just test-cli-native` direct native observe group | 12.452s wall | passed, 1 ignored |
 | `cargo test -p arcweft-cli --test check --quiet` | former full CLI integration binary route, Tier 2 ignored at the time | 7.260s wall | passed, 13 ignored |
 | `cargo test --workspace --lib --tests --quiet` | workspace lib and integration tests, Tier 2 ignored, doc-tests excluded | 22.210s wall | passed, 13 ignored |
 | `cargo test --workspace --doc --quiet` | workspace doc-tests only | 117.769s wall | passed |
@@ -101,7 +101,7 @@ cover JLREQ and vertical-text matrices:
 
 | Command | Scope | Time | Result |
 | --- | --- | ---: | --- |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer --quiet` | broad prefix, 204 selected tests | 230.6s wall | failed on stale textbox object crop expectations |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet` | broad prefix, 204 selected tests | 230.6s wall | failed on stale textbox object crop expectations |
 | `cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | rich-text/native library route | 3.6s wall | passed |
 
 The broad `agent_observe_native_renderer` prefix is no longer a Tier 1 shortcut.
@@ -119,7 +119,7 @@ full recipe:
 | --- | --- | ---: | --- |
 | `just test-cli-check` | bench/run/JIT JSON groups, Agent observe JSON, exact native observe smoke | 48.2s wall | passed |
 | `cargo test -p arcweft-cli --test check --quiet` | full `check.rs` integration binary, broad native/JLREQ matrix included | timed out at 184.8s | incomplete |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture` | ignored rich-text effects animation milestone sweep | 186.3s wall / 182.78s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture` | ignored rich-text effects animation milestone sweep | 186.3s wall / 182.78s test body | passed |
 
 `arcweft-cli --test check` is now a purpose-specific CLI integration suite, not
 part of the workspace fast path. `just test-workspace` excludes `arcweft-cli`
@@ -142,15 +142,15 @@ generation to lazy capture-ref descriptors:
 
 | Command | Scope | Time | Result |
 | --- | --- | ---: | --- |
-| `cargo test -p arcweft-cli --test check agent_mcp_stdio_observes_and_reads_rich_text_child_image -- --ignored --nocapture --exact` | observe, resources/list, capture, and resource readback through one MCP stdio session | 21.244s wall including rebuild / 3.43s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio_observes_and_reads_rich_text_child_image -- --ignored --nocapture --exact` | observe, resources/list, capture, and resource readback through one MCP stdio session | 21.244s wall including rebuild / 3.43s test body | passed |
 | `just test-slow-mcp` | 14 ignored MCP stdio native capture/resource tests | 20.2s wall / 18.38s test body | passed |
 
 Release-profile testing was checked for the long native/JLREQ integration path:
 
 | Command | Scope | Time | Result |
 | --- | --- | ---: | --- |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry -- --nocapture --exact` | one published JLREQ native geometry test, debug warm | 14.330s wall / 13.37s test body | passed |
-| `cargo test -p arcweft-cli --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry --release -- --nocapture --exact` | same exact test, release warm | 10.960s wall / 10.18s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry -- --nocapture --exact` | one published JLREQ native geometry test, debug warm | 14.330s wall / 13.37s test body | passed |
+| `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry --release -- --nocapture --exact` | same exact test, release warm | 10.960s wall / 10.18s test body | passed |
 | `cargo test -p arcweft-cli --test check --release --quiet` | full CLI integration binary, release warm after initial release build | 147.968s wall / 147.02s test body | passed, 16 ignored |
 
 Release mode helps CPU-heavy native integration tests, but the measured win was
@@ -241,7 +241,7 @@ native rich-text capture work, prefer the fast direct `agent observe` native
 group first:
 
 ```bash
-cargo test -p arcweft-cli --test check agent_observe_native_renderer -- --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer -- --nocapture
 ```
 
 For routine local execution through Justfile, use:
@@ -316,9 +316,9 @@ bounded visual golden output, or before a milestone handoff that explicitly
 needs full end-to-end evidence:
 
 ```bash
-cargo test -p arcweft-cli --test check agent_mcp_stdio -- --ignored --nocapture
-cargo test -p arcweft-cli --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
-cargo test -p arcweft-cli --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
 ```
 
 The equivalent Justfile targets are:
@@ -392,3 +392,4 @@ longer dominates the slow lane by itself.
 Local reports should state which tier was run and whether MCP stdio,
 broad Agent observe resource-matrix, exact visual-golden suites, and doc-tests
 were intentionally skipped or completed.
+

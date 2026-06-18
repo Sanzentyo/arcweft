@@ -18,7 +18,7 @@ arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-render-native = { path = "../arcweft-render-native" }
+arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
@@ -44,6 +44,7 @@ path = "src/main.rs"
 [features]
 default = []
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
+native-capture = ["dep:arcweft-render-native"]
 
 [dev-dependencies]
 base64.workspace = true
