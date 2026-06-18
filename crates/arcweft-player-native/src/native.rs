@@ -18,8 +18,8 @@ use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextColor, RichTextControl, RichTextDisplayMap,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily,
     RichTextNode, RichTextParam, RichTextPresentation, RichTextRange, RichTextShaderRef,
-    RichTextStateScope, RichTextStyle, RichTextTransformOrigin, RichTextWritingMode,
-    parse_decimal_milli, presentation_from_styles,
+    RichTextStateScope, RichTextStyle, RichTextTextRun, RichTextTransformOrigin,
+    RichTextWritingMode, parse_decimal_milli, presentation_from_styles,
 };
 use arcweft_runtime_plan::pure::{PureHelperCandidate, PureHelperLowerError};
 use arcweft_text_layout::{
@@ -1804,7 +1804,11 @@ impl NativeOffscreenCaptureSession {
             top: viewport.top,
         };
         let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
-        let page_layout = layout_page_range(
+        let selected_text = debug_selected_text_ranges(frame, &page_range, regions)
+            .into_iter()
+            .map(|(range, _)| range)
+            .collect::<Vec<_>>();
+        let page_layout = layout_page_range_with_selected_text(
             frame,
             page_range.clone(),
             native_text_layout_config_at(
@@ -1814,6 +1818,7 @@ impl NativeOffscreenCaptureSession {
                 origin.top,
                 viewport.time_seconds,
             ),
+            &selected_text,
         )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
@@ -1857,7 +1862,8 @@ impl NativeOffscreenCaptureSession {
             top: viewport.top,
         };
         let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
-        let page_layout = layout_page_range(
+        let selected_text = color_selected_text_ranges(frame, &page_range, regions);
+        let page_layout = layout_page_range_with_selected_text(
             frame,
             page_range.clone(),
             native_text_layout_config_at(
@@ -1867,6 +1873,7 @@ impl NativeOffscreenCaptureSession {
                 origin.top,
                 viewport.time_seconds,
             ),
+            &selected_text,
         )?;
         let Some(page) = page_from_display_map_range(frame, page_range.clone()) else {
             return Err(NativeWindowError::EmptyPages);
@@ -2300,6 +2307,90 @@ fn layout_page_range(
         text_run_indices,
         ruby_indices,
     })
+}
+
+fn layout_page_range_with_selected_text(
+    frame: &LineDisplayFrame,
+    page_range: Range<usize>,
+    config: TextLayoutConfig,
+    selected_text: &[Range<usize>],
+) -> Result<NativePageLayout, NativeWindowError> {
+    let page_start = page_range.start;
+    let (mut page_frame, text_run_indices, ruby_indices) =
+        page_local_layout_frame(frame, page_range)?;
+    let (text_runs, text_run_indices) = split_text_runs_for_capture_selection(
+        &page_frame.display_map.text_runs,
+        &text_run_indices,
+        selected_text,
+        &page_frame.text,
+    );
+    page_frame.display_map.text_runs = text_runs;
+    let layout = layout_frame(&page_frame, config)
+        .map_err(|error| NativeWindowError::TextLayout(error.to_string()))?;
+    Ok(NativePageLayout {
+        frame: page_frame,
+        page_start,
+        config,
+        layout,
+        text_run_indices,
+        ruby_indices,
+    })
+}
+
+fn split_text_runs_for_capture_selection(
+    runs: &[RichTextTextRun],
+    source_indices: &[usize],
+    selected_text: &[Range<usize>],
+    text: &str,
+) -> (Vec<RichTextTextRun>, Vec<usize>) {
+    let mut split_runs = Vec::new();
+    let mut split_source_indices = Vec::new();
+    for (run, source_index) in runs.iter().zip(source_indices.iter().copied()) {
+        let run_range = run.range.start..run.range.end;
+        let mut boundaries = vec![run_range.start, run_range.end];
+        boundaries.extend(selected_text.iter().flat_map(|range| {
+            [
+                range.start.clamp(run_range.start, run_range.end),
+                range.end.clamp(run_range.start, run_range.end),
+            ]
+        }));
+        boundaries.retain(|offset| *offset <= text.len() && text.is_char_boundary(*offset));
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        split_runs.extend(boundaries.windows(2).filter_map(|window| {
+            let start = window[0];
+            let end = window[1];
+            if start >= end {
+                return None;
+            }
+            let mut split = run.clone();
+            split.range = RichTextRange::new(start, end);
+            if !selected_text
+                .iter()
+                .any(|range| range.start <= start && end <= range.end)
+            {
+                split.presentation = capture_unselected_presentation(&split.presentation);
+            }
+            split_source_indices.push(source_index);
+            Some(split)
+        }));
+    }
+    (split_runs, split_source_indices)
+}
+
+fn capture_unselected_presentation(presentation: &RichTextPresentation) -> RichTextPresentation {
+    let mut out = presentation.clone();
+    out.transform = None;
+    out.shaders.clear();
+    out.effects.retain(|effect| {
+        matches!(
+            effect.phase,
+            RichTextEffectPhase::BeforeLayout | RichTextEffectPhase::LayoutTransform
+        )
+    });
+    out.object_proxies.clear();
+    out.opacity = None;
+    out
 }
 
 fn page_local_layout_frame(
@@ -7761,6 +7852,54 @@ mod tests {
     }
 
     #[test]
+    fn color_region_capture_strips_unselected_shader_passes() {
+        let frame = shader_selection_test_frame();
+        let mut session = NativeOffscreenCaptureSession::new().expect("capture session");
+        let bounds = session
+            .measure_frame_elements_at(&frame, 800, 600, 96.0, 572.0)
+            .expect("bounds resolve");
+        let glow_bbox = bounds
+            .iter()
+            .find_map(|bounds| {
+                matches!(bounds.element, NativeFrameElement::TextRun { index: 0 })
+                    .then_some(bounds.bbox)
+            })
+            .expect("glow run bbox resolves");
+        let selected_bbox = bounds
+            .iter()
+            .find_map(|bounds| {
+                matches!(bounds.element, NativeFrameElement::TextRun { index: 1 })
+                    .then_some(bounds.bbox)
+            })
+            .expect("selected run bbox resolves");
+        let capture = session
+            .capture_frame_color_regions_at(
+                &frame,
+                800,
+                600,
+                96.0,
+                572.0,
+                &[NativeFrameDebugRegion {
+                    element: Some(NativeFrameElement::TextRun { index: 1 }),
+                    fallback_bbox: selected_bbox,
+                    color: [255, 255, 255, 255],
+                }],
+            )
+            .expect("selected color capture resolves");
+
+        assert_eq!(capture.diagnostics, Vec::<NativeVisualDiagnostic>::new());
+        assert_eq!(
+            content_pixels_in_bbox(&capture, glow_bbox),
+            0,
+            "unselected shader passes should not leak into isolated color capture"
+        );
+        assert!(
+            content_pixels_in_bbox(&capture, selected_bbox) > 0,
+            "selected run should still render in isolated color capture"
+        );
+    }
+
+    #[test]
     fn native_visual_plan_reports_missing_shader_registry_entry() {
         let frame = shader_test_frame("missing_glow", RichTextEffectPhase::RunOffscreenPass);
 
@@ -7976,6 +8115,68 @@ mod tests {
         };
         spec.resolve_frame(&RuntimeLineContext::default())
             .expect("frame resolves")
+    }
+
+    fn shader_selection_test_frame() -> LineDisplayFrame {
+        LineDisplayFrame {
+            line: RuntimeLineId("say.test.shader.selection".to_owned()),
+            callee: "alice".to_owned(),
+            text: "glow plain".to_owned(),
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            nodes: Vec::new(),
+            display_map: RichTextDisplayMap {
+                text_runs: vec![
+                    RichTextTextRun {
+                        range: RichTextRange::new(0, 4),
+                        source: arcweft_render_text::RichTextTextSource::Text,
+                        node_index: 0,
+                        styles: Vec::new(),
+                        presentation: RichTextPresentation {
+                            shaders: vec![RichTextShaderRef {
+                                id: "soft_glow".to_owned(),
+                                params: BTreeMap::from([(
+                                    "amount".to_owned(),
+                                    RichTextParam::Milli { value: Milli::ONE },
+                                )]),
+                                phase: RichTextEffectPhase::RunOffscreenPass,
+                            }],
+                            ..RichTextPresentation::default()
+                        },
+                    },
+                    RichTextTextRun {
+                        range: RichTextRange::new(5, 10),
+                        source: arcweft_render_text::RichTextTextSource::Text,
+                        node_index: 1,
+                        styles: Vec::new(),
+                        presentation: RichTextPresentation::default(),
+                    },
+                ],
+                ruby_annotations: Vec::new(),
+                controls: Vec::new(),
+                host_events: Vec::new(),
+            },
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
+
+    fn content_pixels_in_bbox(capture: &NativeFrameCapture, bbox: NativeFrameContentBBox) -> u64 {
+        let width = capture.width as usize;
+        let x_end = bbox.x.saturating_add(bbox.width).min(capture.width);
+        let y_end = bbox.y.saturating_add(bbox.height).min(capture.height);
+        (bbox.y..y_end)
+            .flat_map(|y| (bbox.x..x_end).map(move |x| (x as usize, y as usize)))
+            .filter(|(x, y)| {
+                let offset = (y.saturating_mul(width).saturating_add(*x)).saturating_mul(4);
+                capture
+                    .rgba
+                    .get(offset..offset.saturating_add(4))
+                    .is_some_and(|pixel| pixel[3] > 0)
+            })
+            .count() as u64
     }
 
     fn motion_test_frame(function: &str) -> LineDisplayFrame {
