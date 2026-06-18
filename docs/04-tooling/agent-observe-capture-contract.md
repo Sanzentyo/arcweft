@@ -174,6 +174,9 @@ the object metadata associated with the captured pixels. Rich-text object
 captures preserve both the render `layer` and the semantic `object_layer` /
 `object_depth` resolved from `rich_text_ref`, so a saved crop remains
 self-describing when inspected without the original observation object list.
+`image.object.bbox` and `image.object.polygon` preserve the viewport geometry of
+the captured object, matching the object descriptor used for hit-testing and
+object-id capture.
 `image.object.capture_refs` repeats the captured object's color/object-id/mask
 resource descriptors, letting clients navigate from one returned crop to its
 sibling debug images without re-reading `objects.json`.
