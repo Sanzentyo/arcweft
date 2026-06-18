@@ -61,7 +61,8 @@ Activity, and UI-entity handlers. The same module can execute that plan against
 host-owned handler implementations while collecting follow-up `ActionBatch` and
 `HostEventBatch` output as pure data. A registration-backed
 `PresentationActionHandlerRegistry` is available for concrete host adapters:
-registered actions emit configured pure-data effects, while unregistered
+registered actions emit configured pure-data effects, duplicate
+destination/action registrations fail at registration time, and unregistered
 actions fail with structured handler errors instead of being ignored. This keeps
 semantic action partitioning and handler orchestration in the host layer
 instead of pushing TextBox, Activity, or UI routing concepts down into

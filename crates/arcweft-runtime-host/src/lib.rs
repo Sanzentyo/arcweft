@@ -29,9 +29,10 @@ pub use presentation_dispatch::{
     PresentationActionDispatchPlan, PresentationActionEffectTarget,
     PresentationActionExecutionError, PresentationActionHandlerEffect,
     PresentationActionHandlerError, PresentationActionHandlerOutput,
-    PresentationActionHandlerRegistration, PresentationActionHandlerRegistry,
-    PresentationActionHandlers, PresentationHostEventSource, dispatch_presentation_action,
-    dispatch_presentation_action_batch, dispatch_semantic_invoke, execute_presentation_action_plan,
+    PresentationActionHandlerRegistration, PresentationActionHandlerRegistrationError,
+    PresentationActionHandlerRegistry, PresentationActionHandlers, PresentationHostEventSource,
+    dispatch_presentation_action, dispatch_presentation_action_batch, dispatch_semantic_invoke,
+    execute_presentation_action_plan,
 };
 pub use stats::{
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,

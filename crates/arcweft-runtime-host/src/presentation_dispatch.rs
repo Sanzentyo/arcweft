@@ -64,6 +64,16 @@ pub enum PresentationActionHandlerError {
     },
 }
 
+/// Error while registering concrete presentation action handlers.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum PresentationActionHandlerRegistrationError {
+    #[error("duplicate presentation action handler for {destination:?} action `{action}`")]
+    Duplicate {
+        destination: PresentationActionDestination,
+        action: PublicId,
+    },
+}
+
 /// Error envelope for executing a routed presentation dispatch plan.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum PresentationActionExecutionError {
@@ -290,17 +300,21 @@ impl PresentationActionHandlerOutput {
 }
 
 impl PresentationActionHandlerRegistry {
-    pub fn register(&mut self, registration: PresentationActionHandlerRegistration) {
-        self.handlers.push(registration);
-    }
-
-    #[must_use]
-    pub fn with_registration(
-        mut self,
+    pub fn register(
+        &mut self,
         registration: PresentationActionHandlerRegistration,
-    ) -> Self {
-        self.register(registration);
-        self
+    ) -> Result<(), PresentationActionHandlerRegistrationError> {
+        if self.handlers.iter().any(|candidate| {
+            candidate.destination == registration.destination
+                && candidate.action == registration.action
+        }) {
+            return Err(PresentationActionHandlerRegistrationError::Duplicate {
+                destination: registration.destination,
+                action: registration.action,
+            });
+        }
+        self.handlers.push(registration);
+        Ok(())
     }
 
     pub fn registrations(&self) -> &[PresentationActionHandlerRegistration] {
@@ -857,8 +871,9 @@ mod tests {
             ),
         ));
 
-        let mut registry = PresentationActionHandlerRegistry::default()
-            .with_registration(
+        let mut registry = PresentationActionHandlerRegistry::default();
+        registry
+            .register(
                 PresentationActionHandlerRegistration::new(
                     PresentationActionDestination::TextBox,
                     public_id("action.advance"),
@@ -868,7 +883,9 @@ mod tests {
                     public_id("action.textbox.advance_committed"),
                 )),
             )
-            .with_registration(
+            .unwrap();
+        registry
+            .register(
                 PresentationActionHandlerRegistration::new(
                     PresentationActionDestination::Activity,
                     public_id("action.pause"),
@@ -877,7 +894,8 @@ mod tests {
                     PresentationHostEventSource::IncomingActivity,
                     public_id("host.activity.pause_requested"),
                 )),
-            );
+            )
+            .unwrap();
 
         let output = execute_presentation_action_plan(&plan, &mut registry).unwrap();
         assert_eq!(
@@ -926,16 +944,18 @@ mod tests {
             PresentationActionDestination::UiEntity,
             Action::new(ActionTarget::Entity(button), public_id("action.select")),
         ));
-        registry.register(
-            PresentationActionHandlerRegistration::new(
-                PresentationActionDestination::UiEntity,
-                public_id("action.select"),
+        registry
+            .register(
+                PresentationActionHandlerRegistration::new(
+                    PresentationActionDestination::UiEntity,
+                    public_id("action.select"),
+                )
+                .with_effect(PresentationActionHandlerEffect::host_event(
+                    PresentationHostEventSource::IncomingActivity,
+                    public_id("host.activity.invalid"),
+                )),
             )
-            .with_effect(PresentationActionHandlerEffect::host_event(
-                PresentationHostEventSource::IncomingActivity,
-                public_id("host.activity.invalid"),
-            )),
-        );
+            .unwrap();
         assert_eq!(
             execute_presentation_action_plan(&mismatched_plan, &mut registry),
             Err(PresentationActionExecutionError::Handler {
@@ -947,6 +967,30 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn registered_handlers_reject_duplicate_destination_action_pairs() {
+        let action = public_id("action.advance");
+        let mut registry = PresentationActionHandlerRegistry::default();
+        registry
+            .register(PresentationActionHandlerRegistration::new(
+                PresentationActionDestination::TextBox,
+                action.clone(),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            registry.register(PresentationActionHandlerRegistration::new(
+                PresentationActionDestination::TextBox,
+                action.clone(),
+            )),
+            Err(PresentationActionHandlerRegistrationError::Duplicate {
+                destination: PresentationActionDestination::TextBox,
+                action,
+            })
+        );
+        assert_eq!(registry.registrations().len(), 1);
     }
 
     #[derive(Default)]
