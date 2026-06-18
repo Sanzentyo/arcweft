@@ -174,7 +174,7 @@ Dialogue surface model:
 
 - `DialogueLine`
 - `SpeakerRef`
-- `TextBoxRef`
+- `TextBox` marker plus `Ref<TextBox>` window targets
 - `DialogueContent`
 - `DialogueTag`
 - `LinePlan`

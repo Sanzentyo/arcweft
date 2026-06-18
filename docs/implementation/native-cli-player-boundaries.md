@@ -135,10 +135,11 @@ now mostly dispatch and import wiring. The remaining architectural cuts are:
 4. Add the presentation input and future `arcweft-ui` crates according to the
    unified UI design, without adding public names such as `ActivityViewport`,
    `TextBoxComponent`, `UiEvent`, or per-Activity input routers.
-5. Replace the remaining `@textbox.0`, `TextBoxRef`, and Rust `text_box`
-   surfaces with the unified TextBox model: canonical `@textbox.main`,
-   dialogue `window`, and generic typed references. Do this as a direct model
-   change plus migration tooling, not as runtime aliases.
+5. Replace the remaining `@textbox.0` surfaces with the unified TextBox model:
+   canonical `@textbox.main`, dialogue `window`, and generic typed references.
+   Do this as a direct model change plus migration tooling, not as runtime
+   aliases. Rust dialogue APIs already use `window: Option<Ref<TextBox>>`
+   rather than `text_box` fields or a dedicated `TextBoxRef` wrapper.
 6. Add `ActionBatch` / `HostEventBatch` and routed input boundaries before
    expanding Activity or UI interaction APIs, so later Component and Activity
    work does not grow its own input router.

@@ -292,6 +292,7 @@ name = "arcweft-dialogue"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+ "arcweft-ref",
  "arcweft-source",
  "thiserror 2.0.18",
 ]

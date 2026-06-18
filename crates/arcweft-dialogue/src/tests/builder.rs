@@ -33,9 +33,9 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
     );
     assert_eq!(
         line.options()
-            .text_box
+            .window
             .as_ref()
-            .map(|text_box| text_box.id().as_str()),
+            .map(|window| window.id().entity_id().as_str()),
         Some("textbox.side")
     );
     assert!(matches!(line.options().voice, Some(VoicePolicy::Auto)));

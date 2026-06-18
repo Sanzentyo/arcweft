@@ -1,4 +1,5 @@
-use arcweft_id::{PublicId, TextKey};
+use arcweft_id::{EntityId, PublicId, TextKey};
+use arcweft_ref::{Id, Ref};
 use arcweft_source::SourceAnchor;
 use core::time::Duration;
 use thiserror::Error;
@@ -9,9 +10,7 @@ pub struct SpeakerRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TextBoxRef {
-    id: PublicId,
-}
+pub enum TextBox {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueLine {
@@ -28,7 +27,7 @@ pub struct SayOptions {
     pub text_key: Option<TextKey>,
     pub voice: Option<VoicePolicy>,
     pub look: Option<PublicId>,
-    pub text_box: Option<TextBoxRef>,
+    pub window: Option<Ref<TextBox>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -251,8 +250,8 @@ pub fn character(name: &str) -> SpeakerRef {
     SpeakerRef::new(domain_id("character", name))
 }
 
-pub fn textbox(name: &str) -> TextBoxRef {
-    TextBoxRef::new(domain_id("textbox", name))
+pub fn textbox(name: &str) -> Ref<TextBox> {
+    Ref::new(Id::new(entity_domain_id("textbox", name)))
 }
 
 /// Creates a dialogue line id from a full public id such as `say.opening.001`.
@@ -272,14 +271,8 @@ fn domain_id(domain: &str, name: &str) -> PublicId {
     PublicId::try_new(format!("{domain}.{name}")).expect("domain helper requires a valid public id")
 }
 
-impl TextBoxRef {
-    pub const fn new(id: PublicId) -> Self {
-        Self { id }
-    }
-
-    pub const fn id(&self) -> &PublicId {
-        &self.id
-    }
+fn entity_domain_id(domain: &str, name: &str) -> EntityId {
+    EntityId::try_new(format!("{domain}.{name}")).expect("domain helper requires a valid entity id")
 }
 
 impl DialogueLine {
@@ -343,7 +336,7 @@ impl SayOptions {
             text_key: None,
             voice: None,
             look: None,
-            text_box: None,
+            window: None,
         }
     }
 
@@ -360,8 +353,8 @@ impl SayOptions {
     }
 
     #[must_use]
-    pub fn with_text_box(mut self, text_box: TextBoxRef) -> Self {
-        self.text_box = Some(text_box);
+    pub fn with_window(mut self, window: Ref<TextBox>) -> Self {
+        self.window = Some(window);
         self
     }
 
@@ -371,7 +364,7 @@ impl SayOptions {
             text_key: override_options.text_key.or(self.text_key),
             voice: override_options.voice.or(self.voice),
             look: override_options.look.or(self.look),
-            text_box: override_options.text_box.or(self.text_box),
+            window: override_options.window.or(self.window),
         }
     }
 }
@@ -403,8 +396,8 @@ impl SpeakerPreset {
     }
 
     #[must_use]
-    pub fn window(mut self, text_box: TextBoxRef) -> Self {
-        self.options.text_box = Some(text_box);
+    pub fn window(mut self, window: Ref<TextBox>) -> Self {
+        self.options.window = Some(window);
         self
     }
 
@@ -696,8 +689,8 @@ impl DialogueLineBuilder {
     }
 
     #[must_use]
-    pub fn window(mut self, text_box: TextBoxRef) -> Self {
-        self.options.text_box = Some(text_box);
+    pub fn window(mut self, window: Ref<TextBox>) -> Self {
+        self.options.window = Some(window);
         self
     }
 
