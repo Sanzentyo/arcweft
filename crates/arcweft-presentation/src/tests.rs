@@ -1,5 +1,6 @@
 use super::*;
 use crate::hit::{HitRecord, HitRect, HitTree};
+use crate::hover::{HoverPath, HoverTransition};
 use crate::input::{
     Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
     InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, KeyboardInput, PointerId,
@@ -568,4 +569,86 @@ fn router_sends_pointer_events_to_active_capture_owner() {
             phase: PointerPhase::Move
         })
     ));
+}
+
+#[test]
+fn hover_transition_diffs_only_changed_suffix() {
+    let root = interaction_target("root");
+    let list = interaction_target("choice.list");
+    let listen = interaction_target("choice.listen");
+    let leave = interaction_target("choice.leave");
+    let previous = HoverPath::new(
+        PointerId(1),
+        vec![root.clone(), list.clone(), listen.clone()],
+    );
+    let next = HoverPath::new(PointerId(1), vec![root, list, leave.clone()]);
+
+    let transition = HoverTransition::diff(Some(&previous), Some(&next)).expect("diff exists");
+    assert_eq!(transition.exited(), std::slice::from_ref(&listen));
+    assert_eq!(transition.entered(), std::slice::from_ref(&leave));
+}
+
+#[test]
+fn router_hover_path_uses_hit_record_path_and_respects_modal_block() {
+    let root = layer_id("root");
+    let world = layer_id("world");
+    let modal = layer_id("modal");
+    let root_target = interaction_target("root");
+    let activity_target = interaction_target("activity.world");
+    let button_target = interaction_target("activity.button");
+    let modal_target = interaction_target("modal.close");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            world.clone(),
+            LayerKind::Activity,
+            layer_order(RenderPhase::World, 0, 10),
+        )
+        .with_parent(root.clone())
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("world inserts");
+    tree.insert(
+        LayerNode::new(
+            modal.clone(),
+            LayerKind::Modal,
+            layer_order(RenderPhase::Modal, 0, 20),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::Modal),
+    )
+    .expect("modal inserts");
+
+    let mut hits = HitTree::default();
+    hits.push(
+        HitRecord::new(
+            world,
+            button_target.clone(),
+            HitRect::new(0.0, 0.0, 100.0, 100.0),
+        )
+        .with_hover_path(vec![
+            root_target.clone(),
+            activity_target,
+            button_target.clone(),
+        ]),
+    );
+    hits.push(HitRecord::new(
+        modal,
+        modal_target.clone(),
+        HitRect::new(0.0, 0.0, 20.0, 20.0),
+    ));
+
+    let modal_path =
+        InputRouter::hover_path(PointerId(2), ViewportPoint::new(5.0, 5.0), &tree, &hits)
+            .expect("modal hover path");
+    assert_eq!(modal_path.targets(), std::slice::from_ref(&modal_target));
+
+    assert_eq!(
+        InputRouter::hover_path(PointerId(2), ViewportPoint::new(50.0, 50.0), &tree, &hits),
+        None
+    );
 }

@@ -15,6 +15,7 @@ pub struct HitRect {
 pub struct HitRecord {
     layer: LayerId,
     target: InteractionTarget,
+    hover_path: Vec<InteractionTarget>,
     bounds: HitRect,
     enabled: bool,
     visible: bool,
@@ -46,9 +47,10 @@ impl HitRect {
 }
 
 impl HitRecord {
-    pub const fn new(layer: LayerId, target: InteractionTarget, bounds: HitRect) -> Self {
+    pub fn new(layer: LayerId, target: InteractionTarget, bounds: HitRect) -> Self {
         Self {
             layer,
+            hover_path: vec![target.clone()],
             target,
             bounds,
             enabled: true,
@@ -68,12 +70,26 @@ impl HitRecord {
         self
     }
 
+    #[must_use]
+    pub fn with_hover_path(mut self, hover_path: Vec<InteractionTarget>) -> Self {
+        self.hover_path = if hover_path.is_empty() {
+            vec![self.target.clone()]
+        } else {
+            hover_path
+        };
+        self
+    }
+
     pub const fn layer(&self) -> &LayerId {
         &self.layer
     }
 
     pub const fn target(&self) -> &InteractionTarget {
         &self.target
+    }
+
+    pub fn hover_path(&self) -> &[InteractionTarget] {
+        &self.hover_path
     }
 
     pub const fn bounds(&self) -> HitRect {

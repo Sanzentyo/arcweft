@@ -1,6 +1,8 @@
 use crate::hit::{HitRecord, HitTree};
+use crate::hover::HoverPath;
 use crate::input::{
-    InputEvent, InputEventKind, KeyboardInput, RawInputEvent, RawInputKind, TextInput,
+    InputEvent, InputEventKind, KeyboardInput, PointerId, RawInputEvent, RawInputKind, TextInput,
+    ViewportPoint,
 };
 use crate::interaction::InteractionState;
 use crate::layer::{LayerId, LayerInputPolicy, LayerTree, LayerVisibility};
@@ -71,6 +73,16 @@ impl InputRouter {
         };
         RoutedInput::new(raw.epoch(), decision)
     }
+
+    pub fn hover_path(
+        pointer: PointerId,
+        position: ViewportPoint,
+        layers: &LayerTree,
+        hits: &HitTree,
+    ) -> Option<HoverPath> {
+        hit_record_at(layers, hits, position.x, position.y)
+            .map(|record| HoverPath::new(pointer, record.hover_path().to_vec()))
+    }
 }
 
 impl RoutedInput {
@@ -108,42 +120,21 @@ fn route_pointer(raw: &RawInputEvent, layers: &LayerTree, hits: &HitTree) -> Rou
     let x = pointer.position.x;
     let y = pointer.position.y;
 
-    for layer in layers.input_order() {
-        let Some(node) = layers.get(layer) else {
-            return RouteDecision::LayerUnavailable {
-                layer: layer.clone(),
-            };
-        };
-        match node.input_policy() {
-            LayerInputPolicy::Ignore | LayerInputPolicy::PassThrough => {}
-            LayerInputPolicy::HitTest | LayerInputPolicy::Capture => {
-                if let Some(record) = hits.hit_in_layer(layer, x, y) {
-                    return route_hit_record(
-                        raw,
-                        layers,
-                        record,
-                        InputEventKind::Pointer {
-                            phase: pointer.phase,
-                        },
-                    );
-                }
-            }
-            LayerInputPolicy::Modal => {
-                if let Some(record) = hits.hit_in_layer(layer, x, y) {
-                    return route_hit_record(
-                        raw,
-                        layers,
-                        record,
-                        InputEventKind::Pointer {
-                            phase: pointer.phase,
-                        },
-                    );
-                }
-                return RouteDecision::BlockedByModal {
-                    modal: layer.clone(),
-                };
-            }
+    match pointer_hit(layers, hits, x, y) {
+        PointerHit::Hit(record) => {
+            return route_hit_record(
+                raw,
+                layers,
+                record,
+                InputEventKind::Pointer {
+                    phase: pointer.phase,
+                },
+            );
         }
+        PointerHit::BlockedByModal(modal) => {
+            return RouteDecision::BlockedByModal { modal };
+        }
+        PointerHit::NoTarget => {}
     }
 
     RouteDecision::NoTarget
@@ -242,4 +233,45 @@ fn blocking_modal_for(layers: &LayerTree, target_layer: &LayerId) -> Option<Laye
         }
     }
     None
+}
+
+enum PointerHit<'a> {
+    Hit(&'a HitRecord),
+    BlockedByModal(LayerId),
+    NoTarget,
+}
+
+fn hit_record_at<'a>(
+    layers: &LayerTree,
+    hits: &'a HitTree,
+    x: f32,
+    y: f32,
+) -> Option<&'a HitRecord> {
+    match pointer_hit(layers, hits, x, y) {
+        PointerHit::Hit(record) => Some(record),
+        PointerHit::BlockedByModal(_) | PointerHit::NoTarget => None,
+    }
+}
+
+fn pointer_hit<'a>(layers: &LayerTree, hits: &'a HitTree, x: f32, y: f32) -> PointerHit<'a> {
+    for layer in layers.input_order() {
+        let Some(node) = layers.get(layer) else {
+            return PointerHit::NoTarget;
+        };
+        match node.input_policy() {
+            LayerInputPolicy::Ignore | LayerInputPolicy::PassThrough => {}
+            LayerInputPolicy::HitTest | LayerInputPolicy::Capture => {
+                if let Some(record) = hits.hit_in_layer(layer, x, y) {
+                    return PointerHit::Hit(record);
+                }
+            }
+            LayerInputPolicy::Modal => {
+                if let Some(record) = hits.hit_in_layer(layer, x, y) {
+                    return PointerHit::Hit(record);
+                }
+                return PointerHit::BlockedByModal(layer.clone());
+            }
+        }
+    }
+    PointerHit::NoTarget
 }

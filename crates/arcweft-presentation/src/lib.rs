@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use std::collections::HashMap;
 
 pub mod hit;
+pub mod hover;
 pub mod input;
 pub mod interaction;
 pub mod layer;
