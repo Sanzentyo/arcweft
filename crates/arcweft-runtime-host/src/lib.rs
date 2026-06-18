@@ -6,6 +6,7 @@ pub mod native_system;
 pub mod native_task;
 pub mod presentation_dispatch;
 pub mod stats;
+pub mod ui_frame;
 
 pub use arcweft_core::value::RuntimeBinding;
 pub use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -37,3 +38,4 @@ pub use stats::{
     RuntimeExecutorPureCompileStatsSummary, RuntimeExecutorPureConfigSummary,
     RuntimeExecutorPureWorkerSummary, RuntimeExecutorStats, runtime_executor_stats,
 };
+pub use ui_frame::{UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameLayer};

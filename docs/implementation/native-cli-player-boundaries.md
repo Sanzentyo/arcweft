@@ -55,6 +55,16 @@ semantic action partitioning and handler orchestration in the host layer
 instead of pushing TextBox, Activity, or UI routing concepts down into
 `arcweft-core`.
 
+`arcweft-runtime-host` also owns the first UI frame commit boundary. It depends
+on `arcweft-ui` as the host-layer join point and validates UI frame output
+against the committed `LayerTree`: `UiFrameCommitBuilder` accepts per-layer
+`DisplayList` plus `UiSemanticFragment`, rejects unknown or duplicate layers,
+orders committed UI layers by `LayerTree::render_order`, and exposes merged
+`SemanticTree` data for Agent observation and presentation action dispatch. This
+keeps `arcweft-presentation` independent from the higher-level UI crate while
+still giving host orchestration a typed place to combine Component output,
+display items, and semantics.
+
 ## UI / Activity / Input Direction
 
 The unified UI design is adopted as the long-term boundary for future work:
@@ -227,10 +237,11 @@ plus the `dev-source` feature. The remaining architectural cuts are:
    `TextBoxRef` wrapper.
 5. Register concrete TextBox, Activity, UI, and runtime action handlers through
    `PresentationActionHandlerRegistry` / `PresentationActionHandlers`, and have
-   future Component rendering feed `UiSemanticFragment` production. Later
-   Component and Activity work must use `ActionBatch`, `HostEventBatch`, routed `InputEvent`,
-   `LayerContent`, `LayerTransform`, `HoverPath`, `GestureArena`,
-   `RoutingHash`, `RouteDecision`, `SemanticTree`,
+   future Component rendering feed `UiFrameCommitBuilder` with `DisplayList`
+   and `UiSemanticFragment` output. Later Component and Activity work must use
+   `ActionBatch`, `HostEventBatch`, routed `InputEvent`, `LayerContent`,
+   `LayerTransform`, `HoverPath`, `GestureArena`, `RoutingHash`,
+   `RouteDecision`, `SemanticTree`, `UiFrameCommit`,
    `PresentationActionDispatchPlan`, `PresentationActionHandlers`, and
    `PresentationActionHandlerRegistry` instead of introducing per-Activity
    routers, `ActivityViewport`, `UiEvent` aliases, or Agent-only semantic

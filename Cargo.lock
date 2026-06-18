@@ -504,6 +504,7 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-scheduler",
+ "arcweft-ui",
  "num_cpus",
  "rayon",
  "serde",
