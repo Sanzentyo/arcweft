@@ -29,8 +29,9 @@ use arcweft_agent_protocol::{
     AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
     AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedLayer, AgentObservedObject, AgentResource, AgentResourceBody, AgentRgbaColor,
-    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentObservedLayer, AgentObservedObject, AgentPresentationTree, AgentResource,
+    AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef,
+    AgentUiTree, AgentViewport,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleLaunchKind, BundleManifest,
@@ -4608,6 +4609,7 @@ fn finish_agent_observation_report(
         })
         .collect::<Vec<_>>();
     let layers = agent_observed_layers("cli", tick, &objects);
+    let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let status = flow_status_label(&executor.fiber().status);
     let state_hash = hash_hex(
         format!(
@@ -4636,6 +4638,7 @@ fn finish_agent_observation_report(
         images: Vec::new(),
         layers,
         objects,
+        presentation_tree,
         actions,
         ui_tree: AgentUiTree {
             root: "ui.root".to_owned(),
@@ -10621,6 +10624,7 @@ mod tests {
             images: Vec::new(),
             layers: Vec::new(),
             objects: Vec::new(),
+            presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
             actions: Vec::new(),
             ui_tree: AgentUiTree {
                 root: "ui.root".to_owned(),

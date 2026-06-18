@@ -192,6 +192,51 @@ sibling debug images without re-reading `objects.json`.
 
 ---
 
+## Presentation tree
+
+Observation reports include a typed `presentation_tree` alongside the flat
+`objects` array. The flat array remains the object descriptor table; the tree is
+the renderer/debug hierarchy:
+
+```json
+{
+  "root": "presentation.root",
+  "nodes": [
+    {
+      "id": "presentation.root",
+      "kind": "root",
+      "children": ["presentation.layer.dialogue"]
+    },
+    {
+      "id": "presentation.layer.dialogue",
+      "kind": "layer",
+      "parent_id": "presentation.root",
+      "layer_id": "dialogue",
+      "children": ["object.dialogue.0.0"]
+    },
+    {
+      "id": "object.dialogue.0.0.proxy.2.0",
+      "kind": "object",
+      "parent_id": "object.dialogue.0.0",
+      "layer_id": "dialogue.rich_text",
+      "object_id": "object.dialogue.0.0.proxy.2.0",
+      "role": "rich_text_proxy",
+      "rich_text_kind": "text_object_proxy",
+      "object_depth": 4000
+    }
+  ]
+}
+```
+
+Layer nodes group top-level objects. Object nodes use the observed object id as
+their node id and repeat only the routing metadata needed to traverse the tree:
+primary render layer, role, optional rich-text kind, and resolved object
+layer/depth. The authoritative geometry, capture refs, source range, proxy
+metadata, and hit regions remain in `objects[]` and object-scoped
+`image.object` metadata.
+
+---
+
 ## Rich-text observation
 
 Rich-text objects expose display-map references so a debugger can connect a

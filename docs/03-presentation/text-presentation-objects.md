@@ -30,6 +30,9 @@ object-id capture color, source range, effective presentation metadata, and
 hit-test regions when hit testing is enabled. Renderers may also expose
 layer-specific children such as shader passes, IME caret objects, or selection
 handles, but those children must reference the text object they decorate.
+Agent observation exposes the flat object table and a typed `presentation_tree`;
+the tree is the canonical way to traverse layer, textbox, page, line, run,
+ruby, glyph/cluster, and proxy relationships without re-parsing object ids.
 
 ## Proxy Spans
 

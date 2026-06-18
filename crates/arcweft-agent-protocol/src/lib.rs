@@ -27,6 +27,7 @@ pub struct AgentObservationReport {
     pub images: Vec<AgentImageResource>,
     pub layers: Vec<AgentObservedLayer>,
     pub objects: Vec<AgentObservedObject>,
+    pub presentation_tree: AgentPresentationTree,
     pub actions: Vec<AgentActionTarget>,
     pub ui_tree: AgentUiTree,
     pub scene_graph: Vec<serde_json::Value>,
@@ -720,6 +721,151 @@ pub struct AgentUiTree {
     pub children: Vec<String>,
 }
 
+/// Typed presentation object tree for renderable and render-adjacent objects.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentPresentationTree {
+    pub root: String,
+    pub nodes: Vec<AgentPresentationTreeNode>,
+}
+
+/// One node in the typed presentation object tree.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentPresentationTreeNode {
+    pub id: String,
+    pub kind: AgentPresentationTreeNodeKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rich_text_kind: Option<AgentRichTextElementKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_depth: Option<i32>,
+}
+
+/// Presentation tree node category.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentPresentationTreeNodeKind {
+    Root,
+    Layer,
+    Object,
+}
+
+impl AgentPresentationTree {
+    /// Builds a stable layer/object tree from observed layers and objects.
+    pub fn from_layers_and_objects(
+        layers: &[AgentObservedLayer],
+        objects: &[AgentObservedObject],
+    ) -> Self {
+        let root = "presentation.root".to_owned();
+        let mut layer_ids = layers
+            .iter()
+            .map(|layer| layer.id.clone())
+            .collect::<Vec<_>>();
+        for object in objects {
+            if !layer_ids.iter().any(|layer_id| layer_id == &object.layer) {
+                layer_ids.push(object.layer.clone());
+            }
+        }
+
+        let object_ids = objects
+            .iter()
+            .map(|object| object.id.clone())
+            .collect::<Vec<_>>();
+        let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
+        children_by_parent.insert(
+            root.clone(),
+            layer_ids
+                .iter()
+                .map(|layer_id| presentation_layer_node_id(layer_id))
+                .collect(),
+        );
+        for layer_id in &layer_ids {
+            children_by_parent
+                .entry(presentation_layer_node_id(layer_id))
+                .or_default();
+        }
+        for object in objects {
+            let parent_id = object
+                .parent_id
+                .as_ref()
+                .filter(|parent_id| object_ids.iter().any(|object_id| object_id == *parent_id))
+                .cloned()
+                .unwrap_or_else(|| presentation_layer_node_id(&object.layer));
+            children_by_parent
+                .entry(parent_id)
+                .or_default()
+                .push(object.id.clone());
+        }
+
+        let mut nodes = Vec::with_capacity(1 + layer_ids.len() + objects.len());
+        nodes.push(AgentPresentationTreeNode {
+            id: root.clone(),
+            kind: AgentPresentationTreeNodeKind::Root,
+            parent_id: None,
+            children: children_by_parent.remove(&root).unwrap_or_default(),
+            layer_id: None,
+            object_id: None,
+            role: None,
+            rich_text_kind: None,
+            object_layer: None,
+            object_depth: None,
+        });
+        nodes.extend(layer_ids.iter().map(|layer_id| {
+            let node_id = presentation_layer_node_id(layer_id);
+            AgentPresentationTreeNode {
+                id: node_id.clone(),
+                kind: AgentPresentationTreeNodeKind::Layer,
+                parent_id: Some(root.clone()),
+                children: children_by_parent.remove(&node_id).unwrap_or_default(),
+                layer_id: Some(layer_id.clone()),
+                object_id: None,
+                role: None,
+                rich_text_kind: None,
+                object_layer: None,
+                object_depth: None,
+            }
+        }));
+        nodes.extend(objects.iter().map(|object| {
+            let parent_id = object
+                .parent_id
+                .as_ref()
+                .filter(|parent_id| object_ids.iter().any(|object_id| object_id == *parent_id))
+                .cloned()
+                .unwrap_or_else(|| presentation_layer_node_id(&object.layer));
+            let rich_text_ref = object.rich_text_ref.as_ref();
+            AgentPresentationTreeNode {
+                id: object.id.clone(),
+                kind: AgentPresentationTreeNodeKind::Object,
+                parent_id: Some(parent_id),
+                children: children_by_parent.remove(&object.id).unwrap_or_default(),
+                layer_id: Some(object.layer.clone()),
+                object_id: Some(object.id.clone()),
+                role: Some(object.role.clone()),
+                rich_text_kind: rich_text_ref.map(|rich_text_ref| rich_text_ref.kind),
+                object_layer: rich_text_ref
+                    .and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
+                object_depth: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_depth),
+            }
+        }));
+
+        Self { root, nodes }
+    }
+}
+
+fn presentation_layer_node_id(layer_id: &str) -> String {
+    format!("presentation.layer.{layer_id}")
+}
+
 /// Current audio observation slice.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentAudioState {
@@ -908,6 +1054,7 @@ mod tests {
             }],
             layers: Vec::new(),
             objects: Vec::new(),
+            presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
             actions: Vec::new(),
             ui_tree: AgentUiTree {
                 root: "ui.root".to_owned(),
@@ -942,6 +1089,28 @@ mod tests {
             width: 3,
             height: 4,
         };
+        let layers = vec![AgentObservedLayer {
+            id: "dialogue".to_owned(),
+            visible: true,
+            bbox: bbox.clone(),
+            object_count: 1,
+            capture_refs: test_layer_capture_refs(),
+        }];
+        let objects = vec![AgentObservedObject {
+            id: "object.dialogue.0.0".to_owned(),
+            parent_id: None,
+            entity: Some("alice".to_owned()),
+            layer: "dialogue".to_owned(),
+            role: "textbox".to_owned(),
+            visible: true,
+            polygon: bbox.polygon(),
+            bbox: bbox.clone(),
+            capture_refs: test_capture_refs(),
+            text: Some("Hello".to_owned()),
+            rich_text_ref: Some(test_rich_text_ref(&bbox)),
+            rich_text: test_line_display_frame(),
+        }];
+        let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
         AgentObservationReport {
             status: "ok".to_owned(),
             session_id: "cli".to_owned(),
@@ -976,27 +1145,9 @@ mod tests {
                 diagnostics: Vec::new(),
                 written: None,
             }],
-            layers: vec![AgentObservedLayer {
-                id: "dialogue".to_owned(),
-                visible: true,
-                bbox: bbox.clone(),
-                object_count: 1,
-                capture_refs: test_layer_capture_refs(),
-            }],
-            objects: vec![AgentObservedObject {
-                id: "object.dialogue.0.0".to_owned(),
-                parent_id: None,
-                entity: Some("alice".to_owned()),
-                layer: "dialogue".to_owned(),
-                role: "textbox".to_owned(),
-                visible: true,
-                polygon: bbox.polygon(),
-                bbox: bbox.clone(),
-                capture_refs: test_capture_refs(),
-                text: Some("Hello".to_owned()),
-                rich_text_ref: Some(test_rich_text_ref(&bbox)),
-                rich_text: test_line_display_frame(),
-            }],
+            layers,
+            objects,
+            presentation_tree,
             actions: vec![AgentActionTarget {
                 id: "action.advance_text.object.dialogue.0.0".to_owned(),
                 target: "object.dialogue.0.0".to_owned(),
@@ -1147,6 +1298,31 @@ mod tests {
         );
         assert_eq!(
             json["objects"][0]["rich_text_ref"]["hit_regions"][0]["kind"],
+            "text_run"
+        );
+        assert_eq!(json["presentation_tree"]["root"], "presentation.root");
+        assert_eq!(json["presentation_tree"]["nodes"][0]["kind"], "root");
+        assert_eq!(
+            json["presentation_tree"]["nodes"][0]["children"][0],
+            "presentation.layer.dialogue"
+        );
+        assert_eq!(json["presentation_tree"]["nodes"][1]["kind"], "layer");
+        assert_eq!(
+            json["presentation_tree"]["nodes"][1]["layer_id"],
+            "dialogue"
+        );
+        assert_eq!(
+            json["presentation_tree"]["nodes"][1]["children"][0],
+            "object.dialogue.0.0"
+        );
+        assert_eq!(json["presentation_tree"]["nodes"][2]["kind"], "object");
+        assert_eq!(
+            json["presentation_tree"]["nodes"][2]["object_id"],
+            "object.dialogue.0.0"
+        );
+        assert_eq!(json["presentation_tree"]["nodes"][2]["role"], "textbox");
+        assert_eq!(
+            json["presentation_tree"]["nodes"][2]["rich_text_kind"],
             "text_run"
         );
         assert_eq!(

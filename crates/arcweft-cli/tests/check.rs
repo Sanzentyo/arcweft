@@ -33731,6 +33731,23 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy_object["role"], "rich_text_proxy");
     let parent_id = rich_text_object_parent_id(proxy_object);
     assert_eq!(proxy_object["parent_id"], parent_id);
+    let proxy_object_id = proxy_object["id"].as_str().expect("proxy object id");
+    let parent_node = presentation_tree_node(json, parent_id);
+    assert!(
+        parent_node["children"]
+            .as_array()
+            .expect("parent tree node should expose children")
+            .iter()
+            .any(|child| child == proxy_object_id),
+        "presentation tree parent should list proxy child {proxy_object_id}: {parent_node}"
+    );
+    let proxy_node = presentation_tree_node(json, proxy_object_id);
+    assert_eq!(proxy_node["kind"], "object");
+    assert_eq!(proxy_node["parent_id"], parent_id);
+    assert_eq!(proxy_node["object_id"], proxy_object_id);
+    assert_eq!(proxy_node["role"], "rich_text_proxy");
+    assert_eq!(proxy_node["rich_text_kind"], "text_object_proxy");
+    assert_eq!(proxy_node["object_depth"], 4000);
     assert_eq!(proxy_object["text"], "proxy");
     assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy_object["rich_text_ref"]["index"], 0);
@@ -33752,7 +33769,6 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy["depth"], 4000);
     assert_eq!(proxy["hit_test"], true);
     assert_agent_observe_object_capture_refs(proxy_object);
-    let proxy_object_id = proxy_object["id"].as_str().expect("proxy object id");
     let proxy_object_width = proxy_object["bbox"]["width"]
         .as_u64()
         .expect("proxy object bbox width");
@@ -34524,6 +34540,18 @@ fn rich_text_object_parent_id(object: &serde_json::Value) -> &str {
             || panic!("rich-text object id should include a child suffix: {object_id}"),
             |(parent_id, _)| parent_id,
         )
+}
+
+fn presentation_tree_node<'a>(
+    report: &'a serde_json::Value,
+    node_id: &str,
+) -> &'a serde_json::Value {
+    report["presentation_tree"]["nodes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("presentation_tree nodes are reported: {report}"))
+        .iter()
+        .find(|node| node["id"] == node_id)
+        .unwrap_or_else(|| panic!("presentation_tree should contain node {node_id}: {report}"))
 }
 
 fn rich_text_cluster_column_count(report: &serde_json::Value) -> usize {
