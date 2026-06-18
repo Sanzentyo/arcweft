@@ -60,8 +60,11 @@ static or animated, and can resolve its encoded bytes without filesystem I/O or
 source lowering. Decode remains adapter work through `arcweft-image`. The CLI
 bundler now populates this section from `.arcweft/asset` PNG/JPEG/GIF/WebP
 files while preserving relative virtual paths and avoiding host path leakage.
-`arcw run-bundle` validates these references before materializing the bundle
-workspace, so broken image asset records fail before bytecode execution.
+`arcw bundle` also validates statically known `asset.image(@asset.id)` and
+`asset.image("asset.id")` runtime-plan references against `image_assets[]`.
+`arcw run-bundle` validates the encoded image asset records before
+materializing the bundle workspace, so broken image asset records fail before
+bytecode execution.
 
 `arcweft-agent-protocol` now treats observed object payload as typed content.
 Rich text objects carry `content.kind = "rich_text"` with a `LineDisplayFrame`;
@@ -112,8 +115,9 @@ same alpha-shaped geometry as color image capture.
 
 ## Required Follow-up Cuts
 
-1. Wire source/DSL asset declarations to the same bundle image asset ids instead
-   of relying only on project asset-root discovery.
+1. Add explicit source/DSL asset declaration syntax when the language design
+   settles it; static `asset.image(...)` references are already checked against
+   bundle image asset ids.
 2. Wire the live Agent native observe loop to feed actual runtime UI commits
    through the UI image item bridge, rather than only covering the adapter path
    in focused tests.

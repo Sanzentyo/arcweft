@@ -17,7 +17,7 @@ use arcweft_bundle::{
 };
 use arcweft_core::{
     plan::{FlowOp, RuntimePlan},
-    value::RuntimeBinding,
+    value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -166,6 +166,7 @@ fn compile_bundle_artifact(
     );
     let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
     let image_assets = collect_bundle_image_assets(&virtual_files);
+    validate_referenced_bundle_image_assets(&compiled.plan, &image_assets)?;
     Ok(ArcweftBundle::new(
         bundle_manifest(
             selection,
@@ -392,6 +393,144 @@ fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) ->
     ops.into_iter()
         .flat_map(collect_flow_op_host_calls)
         .collect()
+}
+
+fn validate_referenced_bundle_image_assets(
+    plan: &RuntimePlan,
+    image_assets: &[BundleImageAsset],
+) -> Result<(), ExitCode> {
+    let available = image_assets
+        .iter()
+        .map(|asset| asset.id.as_str())
+        .collect::<Vec<_>>();
+    let missing = static_image_asset_refs(plan)
+        .into_iter()
+        .filter(|id| !available.iter().any(|available_id| available_id == id))
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    eprintln!(
+        "error: bundle source references missing image asset(s): {}",
+        missing.join(", ")
+    );
+    Err(ExitCode::from(2))
+}
+
+fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
+    let mut refs = plan
+        .flows
+        .iter()
+        .flat_map(|flow| flow.ops.iter())
+        .flat_map(collect_flow_op_static_image_asset_refs)
+        .collect::<Vec<_>>();
+    refs.sort();
+    refs.dedup();
+    refs
+}
+
+fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
+    match op {
+        FlowOp::Await { target, .. } => static_image_asset_ref_for_template(&target.request)
+            .into_iter()
+            .collect(),
+        FlowOp::AwaitMany { target, .. } => static_image_asset_ref_for_template(&target.request)
+            .into_iter()
+            .collect(),
+        FlowOp::LetElse { else_ops, .. } => collect_flow_ops_static_image_asset_refs(else_ops),
+        FlowOp::If {
+            then_ops, else_ops, ..
+        }
+        | FlowOp::IfLet {
+            then_ops, else_ops, ..
+        } => collect_flow_ops_static_image_asset_refs(then_ops)
+            .into_iter()
+            .chain(collect_flow_ops_static_image_asset_refs(else_ops))
+            .collect(),
+        FlowOp::Match { arms, .. } => arms
+            .iter()
+            .flat_map(|arm| collect_flow_ops_static_image_asset_refs(&arm.ops))
+            .collect(),
+        FlowOp::Loop { body }
+        | FlowOp::LetLoop { body, .. }
+        | FlowOp::While { body, .. }
+        | FlowOp::WhileLet { body, .. }
+        | FlowOp::For { body, .. }
+        | FlowOp::Thread { body, .. } => collect_flow_ops_static_image_asset_refs(body),
+        FlowOp::LoopNext { body }
+        | FlowOp::WhileNext { body, .. }
+        | FlowOp::WhileLetNext { body, .. }
+        | FlowOp::ForNext { body, .. } => collect_flow_ops_static_image_asset_refs(body.iter()),
+        FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
+            collect_flow_ops_static_image_asset_refs(ops)
+        }
+        FlowOp::Bind(_)
+        | FlowOp::Let { .. }
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Break(_)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::GotoExpr(_)
+        | FlowOp::Return(_)
+        | FlowOp::ReturnExpr(_)
+        | FlowOp::Effect(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::ExitScopeBind { .. }
+        | FlowOp::Noop => Vec::new(),
+    }
+}
+
+fn collect_flow_ops_static_image_asset_refs<'a>(
+    ops: impl IntoIterator<Item = &'a FlowOp>,
+) -> Vec<String> {
+    ops.into_iter()
+        .flat_map(collect_flow_op_static_image_asset_refs)
+        .collect()
+}
+
+fn static_image_asset_ref_for_template(
+    request: &arcweft_core::task::HostTaskRequestTemplate,
+) -> Option<String> {
+    if request.capability.0 != "asset" || request.operation != "image" {
+        return None;
+    }
+    request
+        .args
+        .first()
+        .and_then(|arg| static_image_asset_ref_expr(arg.value()))
+}
+
+fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
+    match expr {
+        RuntimeExpr::EntityRef(id) => Some(id.clone()),
+        RuntimeExpr::Value(RuntimeValue::EntityRef(id) | RuntimeValue::String(id)) => {
+            Some(id.clone())
+        }
+        RuntimeExpr::Value(_)
+        | RuntimeExpr::Local(_)
+        | RuntimeExpr::Let { .. }
+        | RuntimeExpr::Tuple(_)
+        | RuntimeExpr::BracketSeq(_)
+        | RuntimeExpr::RepeatSeq { .. }
+        | RuntimeExpr::Record(_)
+        | RuntimeExpr::Variant { .. }
+        | RuntimeExpr::Field { .. }
+        | RuntimeExpr::ProjectTuple { .. }
+        | RuntimeExpr::ProjectRecord { .. }
+        | RuntimeExpr::Call { .. }
+        | RuntimeExpr::PureCall { .. }
+        | RuntimeExpr::SpreadArg(_)
+        | RuntimeExpr::MethodCall { .. }
+        | RuntimeExpr::Map { .. }
+        | RuntimeExpr::Sum { .. }
+        | RuntimeExpr::Unary { .. }
+        | RuntimeExpr::Binary { .. }
+        | RuntimeExpr::If { .. }
+        | RuntimeExpr::IfLet { .. }
+        | RuntimeExpr::Match { .. } => None,
+    }
 }
 
 fn host_call_id_for_template(capability: &str, operation: &str) -> String {
@@ -649,5 +788,79 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), ExitCode> {
     } else {
         eprintln!("error: bundle virtual file path must be relative and normalized");
         Err(ExitCode::FAILURE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow};
+    use arcweft_core::task::{
+        AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
+    };
+
+    fn image_await(id: &str) -> FlowOp {
+        FlowOp::Await {
+            binding: None,
+            target: AwaitTarget::new(
+                NeedId(format!("need.{id}")),
+                TaskId(format!("task.{id}")),
+                HostTaskRequestTemplate::new(
+                    "asset",
+                    "image",
+                    [HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
+                        id.to_owned(),
+                    ))],
+                ),
+            ),
+            pending: Vec::new(),
+        }
+    }
+
+    fn plan_with_ops(ops: Vec<FlowOp>) -> RuntimePlan {
+        RuntimePlan {
+            flows: vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.test".to_owned()),
+                ops,
+            }],
+            ..RuntimePlan::default()
+        }
+    }
+
+    fn image_asset(id: &str) -> BundleImageAsset {
+        BundleImageAsset {
+            id: id.to_owned(),
+            file: BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Asset,
+                path: "bg/room.png".to_owned(),
+            },
+            format: BundleImageFormat::Png,
+            animation: BundleImageAnimation::Static,
+            dimensions: None,
+        }
+    }
+
+    #[test]
+    fn static_image_asset_refs_collects_nested_asset_image_entity_refs() {
+        let plan = plan_with_ops(vec![FlowOp::If {
+            condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+            then_ops: vec![image_await("asset.bg.room")],
+            else_ops: vec![image_await("asset.ui.logo")],
+        }]);
+
+        assert_eq!(
+            static_image_asset_refs(&plan),
+            vec!["asset.bg.room".to_owned(), "asset.ui.logo".to_owned()]
+        );
+    }
+
+    #[test]
+    fn validate_referenced_bundle_image_assets_rejects_missing_static_refs() {
+        let plan = plan_with_ops(vec![image_await("asset.bg.room")]);
+
+        assert!(validate_referenced_bundle_image_assets(&plan, &[]).is_err());
+        assert!(
+            validate_referenced_bundle_image_assets(&plan, &[image_asset("asset.bg.room")]).is_ok()
+        );
     }
 }

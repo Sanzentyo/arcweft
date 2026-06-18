@@ -121,6 +121,12 @@ The CLI bundler derives image asset records for image files under
 PNG/JPEG are marked `static`; GIF/WebP are marked `animated` because they may
 carry multiple frames.
 
+When the lowered runtime plan contains a statically known
+`asset.image(@asset.id)` or `asset.image("asset.id")` request, `arcw bundle`
+requires that id to exist in `image_assets[]`. Dynamic image asset expressions
+remain runtime/adapter responsibility, but static source references cannot
+silently produce a bundle with no matching encoded image asset.
+
 `arcw run-bundle` validates `image_assets[]` before materializing the temporary
 bundle workspace. An image asset whose referenced virtual file is missing is a
 bundle structure error and fails before bytecode execution starts.
