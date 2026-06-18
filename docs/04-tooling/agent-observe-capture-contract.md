@@ -222,6 +222,9 @@ the renderer/debug hierarchy:
       "object_id": "object.dialogue.0.0.run.2",
       "role": "rich_text_run",
       "rich_text_kind": "text_run",
+      "shaders": [{ "id": "soft_glow", "phase": "run_offscreen_pass" }],
+      "effects": [{ "id": "motion", "phase": "glyph_transform" }],
+      "motion_function_ids": ["breath_orbit"],
       "children": ["object.dialogue.0.0.proxy.2.0"]
     },
     {
@@ -232,6 +235,7 @@ the renderer/debug hierarchy:
       "object_id": "object.dialogue.0.0.proxy.2.0",
       "role": "rich_text_proxy",
       "rich_text_kind": "text_object_proxy",
+      "object_proxy_ids": ["hotspot"],
       "object_depth": 4000
     }
   ]
@@ -241,7 +245,10 @@ the renderer/debug hierarchy:
 Layer nodes group top-level objects. Object nodes use the observed object id as
 their node id and repeat only the routing metadata needed to traverse the tree:
 primary render layer, role, optional rich-text kind, and resolved object
-layer/depth. The authoritative geometry, capture refs, source range, proxy
+layer/depth. Object nodes also expose lightweight visual indexes:
+`effects`, `shaders`, `object_proxy_ids`, `motion_function_ids`, and
+`has_transform`. These indexes are for discovery and routing only. The
+authoritative geometry, capture refs, source range, effect/shader params, proxy
 metadata, and hit regions remain in `objects[]` and object-scoped
 `image.object` metadata.
 

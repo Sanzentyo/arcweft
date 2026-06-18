@@ -6,8 +6,8 @@
 
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
-    RichTextRange, RichTextTextSource,
+    LineDisplayFrame, RichTextEffectPhase, RichTextObjectProxyDeclaration, RichTextParam,
+    RichTextPresentation, RichTextRange, RichTextTextSource,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -347,6 +347,11 @@ fn is_zero(value: &usize) -> bool {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero_u32(value: &u32) -> bool {
     *value == 0
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Renderer path that produced an image capture.
@@ -749,6 +754,32 @@ pub struct AgentPresentationTreeNode {
     pub object_layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_depth: Option<i32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<AgentPresentationEffectRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shaders: Vec<AgentPresentationShaderRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_proxy_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub motion_function_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub has_transform: bool,
+}
+
+/// Lightweight effect index attached to a presentation tree object node.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentPresentationEffectRef {
+    pub id: String,
+    #[serde(default)]
+    pub phase: RichTextEffectPhase,
+}
+
+/// Lightweight shader index attached to a presentation tree object node.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentPresentationShaderRef {
+    pub id: String,
+    #[serde(default)]
+    pub phase: RichTextEffectPhase,
 }
 
 /// Presentation tree node category.
@@ -767,98 +798,218 @@ impl AgentPresentationTree {
         objects: &[AgentObservedObject],
     ) -> Self {
         let root = "presentation.root".to_owned();
-        let mut layer_ids = layers
-            .iter()
-            .map(|layer| layer.id.clone())
-            .collect::<Vec<_>>();
-        for object in objects {
-            if !layer_ids.iter().any(|layer_id| layer_id == &object.layer) {
-                layer_ids.push(object.layer.clone());
-            }
-        }
-
+        let layer_ids = presentation_tree_layer_ids(layers, objects);
         let object_ids = objects
             .iter()
             .map(|object| object.id.clone())
             .collect::<Vec<_>>();
-        let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
-        children_by_parent.insert(
-            root.clone(),
-            layer_ids
-                .iter()
-                .map(|layer_id| presentation_layer_node_id(layer_id))
-                .collect(),
-        );
-        for layer_id in &layer_ids {
-            children_by_parent
-                .entry(presentation_layer_node_id(layer_id))
-                .or_default();
-        }
-        for object in objects {
-            let parent_id = object
-                .parent_id
-                .as_ref()
-                .filter(|parent_id| object_ids.iter().any(|object_id| object_id == *parent_id))
-                .cloned()
-                .unwrap_or_else(|| presentation_layer_node_id(&object.layer));
-            children_by_parent
-                .entry(parent_id)
-                .or_default()
-                .push(object.id.clone());
-        }
+        let mut children_by_parent =
+            presentation_tree_children_by_parent(&root, &layer_ids, &object_ids, objects);
 
         let mut nodes = Vec::with_capacity(1 + layer_ids.len() + objects.len());
-        nodes.push(AgentPresentationTreeNode {
-            id: root.clone(),
-            kind: AgentPresentationTreeNodeKind::Root,
-            parent_id: None,
-            children: children_by_parent.remove(&root).unwrap_or_default(),
-            layer_id: None,
-            object_id: None,
-            role: None,
-            rich_text_kind: None,
-            object_layer: None,
-            object_depth: None,
-        });
+        nodes.push(agent_presentation_root_node(
+            &root,
+            children_by_parent.remove(&root).unwrap_or_default(),
+        ));
         nodes.extend(layer_ids.iter().map(|layer_id| {
-            let node_id = presentation_layer_node_id(layer_id);
-            AgentPresentationTreeNode {
-                id: node_id.clone(),
-                kind: AgentPresentationTreeNodeKind::Layer,
-                parent_id: Some(root.clone()),
-                children: children_by_parent.remove(&node_id).unwrap_or_default(),
-                layer_id: Some(layer_id.clone()),
-                object_id: None,
-                role: None,
-                rich_text_kind: None,
-                object_layer: None,
-                object_depth: None,
-            }
+            agent_presentation_layer_node(&root, layer_id, &mut children_by_parent)
         }));
         nodes.extend(objects.iter().map(|object| {
-            let parent_id = object
-                .parent_id
-                .as_ref()
-                .filter(|parent_id| object_ids.iter().any(|object_id| object_id == *parent_id))
-                .cloned()
-                .unwrap_or_else(|| presentation_layer_node_id(&object.layer));
-            let rich_text_ref = object.rich_text_ref.as_ref();
-            AgentPresentationTreeNode {
-                id: object.id.clone(),
-                kind: AgentPresentationTreeNodeKind::Object,
-                parent_id: Some(parent_id),
-                children: children_by_parent.remove(&object.id).unwrap_or_default(),
-                layer_id: Some(object.layer.clone()),
-                object_id: Some(object.id.clone()),
-                role: Some(object.role.clone()),
-                rich_text_kind: rich_text_ref.map(|rich_text_ref| rich_text_ref.kind),
-                object_layer: rich_text_ref
-                    .and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
-                object_depth: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_depth),
-            }
+            agent_presentation_object_node(object, &object_ids, &mut children_by_parent)
         }));
 
         Self { root, nodes }
+    }
+}
+
+fn presentation_tree_layer_ids(
+    layers: &[AgentObservedLayer],
+    objects: &[AgentObservedObject],
+) -> Vec<String> {
+    let mut layer_ids = layers
+        .iter()
+        .map(|layer| layer.id.clone())
+        .collect::<Vec<_>>();
+    for object in objects {
+        if !layer_ids.iter().any(|layer_id| layer_id == &object.layer) {
+            layer_ids.push(object.layer.clone());
+        }
+    }
+    layer_ids
+}
+
+fn presentation_tree_children_by_parent(
+    root: &str,
+    layer_ids: &[String],
+    object_ids: &[String],
+    objects: &[AgentObservedObject],
+) -> BTreeMap<String, Vec<String>> {
+    let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
+    children_by_parent.insert(
+        root.to_owned(),
+        layer_ids
+            .iter()
+            .map(|layer_id| presentation_layer_node_id(layer_id))
+            .collect(),
+    );
+    for layer_id in layer_ids {
+        children_by_parent
+            .entry(presentation_layer_node_id(layer_id))
+            .or_default();
+    }
+    for object in objects {
+        children_by_parent
+            .entry(presentation_tree_object_parent_id(object, object_ids))
+            .or_default()
+            .push(object.id.clone());
+    }
+    children_by_parent
+}
+
+fn agent_presentation_root_node(root: &str, children: Vec<String>) -> AgentPresentationTreeNode {
+    AgentPresentationTreeNode {
+        id: root.to_owned(),
+        kind: AgentPresentationTreeNodeKind::Root,
+        parent_id: None,
+        children,
+        layer_id: None,
+        object_id: None,
+        role: None,
+        rich_text_kind: None,
+        object_layer: None,
+        object_depth: None,
+        effects: Vec::new(),
+        shaders: Vec::new(),
+        object_proxy_ids: Vec::new(),
+        motion_function_ids: Vec::new(),
+        has_transform: false,
+    }
+}
+
+fn agent_presentation_layer_node(
+    root: &str,
+    layer_id: &str,
+    children_by_parent: &mut BTreeMap<String, Vec<String>>,
+) -> AgentPresentationTreeNode {
+    let node_id = presentation_layer_node_id(layer_id);
+    AgentPresentationTreeNode {
+        id: node_id.clone(),
+        kind: AgentPresentationTreeNodeKind::Layer,
+        parent_id: Some(root.to_owned()),
+        children: children_by_parent.remove(&node_id).unwrap_or_default(),
+        layer_id: Some(layer_id.to_owned()),
+        object_id: None,
+        role: None,
+        rich_text_kind: None,
+        object_layer: None,
+        object_depth: None,
+        effects: Vec::new(),
+        shaders: Vec::new(),
+        object_proxy_ids: Vec::new(),
+        motion_function_ids: Vec::new(),
+        has_transform: false,
+    }
+}
+
+fn agent_presentation_object_node(
+    object: &AgentObservedObject,
+    object_ids: &[String],
+    children_by_parent: &mut BTreeMap<String, Vec<String>>,
+) -> AgentPresentationTreeNode {
+    let rich_text_ref = object.rich_text_ref.as_ref();
+    let presentation = rich_text_ref.and_then(|rich_text_ref| {
+        rich_text_ref
+            .presentation
+            .as_ref()
+            .map(agent_presentation_node_summary)
+    });
+    AgentPresentationTreeNode {
+        id: object.id.clone(),
+        kind: AgentPresentationTreeNodeKind::Object,
+        parent_id: Some(presentation_tree_object_parent_id(object, object_ids)),
+        children: children_by_parent.remove(&object.id).unwrap_or_default(),
+        layer_id: Some(object.layer.clone()),
+        object_id: Some(object.id.clone()),
+        role: Some(object.role.clone()),
+        rich_text_kind: rich_text_ref.map(|rich_text_ref| rich_text_ref.kind),
+        object_layer: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_layer.clone()),
+        object_depth: rich_text_ref.and_then(|rich_text_ref| rich_text_ref.object_depth),
+        effects: presentation
+            .as_ref()
+            .map_or_else(Vec::new, |summary| summary.effects.clone()),
+        shaders: presentation
+            .as_ref()
+            .map_or_else(Vec::new, |summary| summary.shaders.clone()),
+        object_proxy_ids: presentation
+            .as_ref()
+            .map_or_else(Vec::new, |summary| summary.object_proxy_ids.clone()),
+        motion_function_ids: presentation
+            .as_ref()
+            .map_or_else(Vec::new, |summary| summary.motion_function_ids.clone()),
+        has_transform: presentation.is_some_and(|summary| summary.has_transform),
+    }
+}
+
+fn presentation_tree_object_parent_id(
+    object: &AgentObservedObject,
+    object_ids: &[String],
+) -> String {
+    object
+        .parent_id
+        .as_ref()
+        .filter(|parent_id| object_ids.iter().any(|object_id| object_id == *parent_id))
+        .cloned()
+        .unwrap_or_else(|| presentation_layer_node_id(&object.layer))
+}
+
+#[derive(Clone, Debug, Default)]
+struct AgentPresentationNodeSummary {
+    effects: Vec<AgentPresentationEffectRef>,
+    shaders: Vec<AgentPresentationShaderRef>,
+    object_proxy_ids: Vec<String>,
+    motion_function_ids: Vec<String>,
+    has_transform: bool,
+}
+
+fn agent_presentation_node_summary(
+    presentation: &RichTextPresentation,
+) -> AgentPresentationNodeSummary {
+    AgentPresentationNodeSummary {
+        effects: presentation
+            .effects
+            .iter()
+            .map(|effect| AgentPresentationEffectRef {
+                id: effect.id.clone(),
+                phase: effect.phase,
+            })
+            .collect(),
+        shaders: presentation
+            .shaders
+            .iter()
+            .map(|shader| AgentPresentationShaderRef {
+                id: shader.id.clone(),
+                phase: shader.phase,
+            })
+            .collect(),
+        object_proxy_ids: presentation
+            .object_proxies
+            .iter()
+            .map(|proxy| proxy.id.clone())
+            .collect(),
+        motion_function_ids: presentation
+            .effects
+            .iter()
+            .filter(|effect| effect.id == "motion")
+            .filter_map(|effect| match effect.params.get("fn") {
+                Some(
+                    RichTextParam::Text { value }
+                    | RichTextParam::Raw { value }
+                    | RichTextParam::Selector { value },
+                ) => Some(value.clone()),
+                _ => None,
+            })
+            .collect(),
+        has_transform: presentation.transform.is_some(),
     }
 }
 
@@ -1324,6 +1475,14 @@ mod tests {
         assert_eq!(
             json["presentation_tree"]["nodes"][2]["rich_text_kind"],
             "text_run"
+        );
+        assert_eq!(
+            json["presentation_tree"]["nodes"][2]["effects"][0]["id"],
+            "shake"
+        );
+        assert_eq!(
+            json["presentation_tree"]["nodes"][2]["effects"][0]["phase"],
+            "glyph_transform"
         );
         assert_eq!(
             serde_json::to_value(AgentHitRegionKind::TextPage).expect("hit-region kind serializes"),
