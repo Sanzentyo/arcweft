@@ -332,6 +332,102 @@ mod tests {
     }
 
     #[test]
+    fn agent_image_object_mask_capture_uses_observed_geometry_without_textbox() {
+        let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
+        object.entity = Some("ui.image.7".to_owned());
+        object.layer = "hud".to_owned();
+        object.role = "image".to_owned();
+        object.object_layer = Some("hud".to_owned());
+        object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
+            source: "ui.image.7".to_owned(),
+            asset: Some("asset.ui.logo".to_owned()),
+            frame_index: Some(0),
+            local_time_millis: Some(0),
+            intrinsic_width: Some(30),
+            intrinsic_height: Some(40),
+        });
+        let mut report = test_agent_observation_report(None);
+        report.objects = vec![object];
+
+        let result = agent_native_image_object_geometry_capture(
+            &report,
+            &AgentCaptureReadRequest {
+                uri: "arcweft://session/cli/frame/3/object.object.image.logo.mask.rgba".to_owned(),
+                image_kind: AgentObserveImageKind::RawRgba,
+                capture_kind: AgentObserveCaptureKind::Mask,
+                scope: AgentCaptureScope::Object("object.image.logo".to_owned()),
+                page: 0,
+                capture_step: 3,
+                capture_time_seconds: 0.0,
+            },
+        )
+        .unwrap()
+        .expect("image object mask capture is produced from observed geometry");
+
+        assert_eq!(
+            result.image.composition,
+            AgentImageComposition::MaskAttachment
+        );
+        assert_eq!(result.image.width, 30);
+        assert_eq!(result.image.height, 40);
+        assert_eq!(
+            result.image.crop_origin,
+            Some(AgentImageCropOrigin {
+                space: AgentCoordinateSpace::Viewport,
+                x: 10,
+                y: 20,
+            })
+        );
+        assert_eq!(
+            result.image.content_bbox,
+            Some(AgentImageContentBBox {
+                x: 0,
+                y: 0,
+                width: 30,
+                height: 40,
+            })
+        );
+        assert_eq!(result.image.content_pixels, Some(1200));
+        assert!(
+            result
+                .bytes
+                .chunks_exact(4)
+                .all(|pixel| pixel == [255, 255, 255, 255])
+        );
+    }
+
+    #[test]
+    fn agent_image_object_color_capture_requires_image_pixels() {
+        let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
+        object.role = "image".to_owned();
+        object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
+            source: "ui.image.7".to_owned(),
+            asset: None,
+            frame_index: Some(0),
+            local_time_millis: Some(0),
+            intrinsic_width: Some(30),
+            intrinsic_height: Some(40),
+        });
+        let mut report = test_agent_observation_report(None);
+        report.objects = vec![object];
+
+        let result = agent_native_image_object_geometry_capture(
+            &report,
+            &AgentCaptureReadRequest {
+                uri: "arcweft://session/cli/frame/3/object.object.image.logo.rgba".to_owned(),
+                image_kind: AgentObserveImageKind::RawRgba,
+                capture_kind: AgentObserveCaptureKind::Color,
+                scope: AgentCaptureScope::Object("object.image.logo".to_owned()),
+                page: 0,
+                capture_step: 3,
+                capture_time_seconds: 0.0,
+            },
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
         use arcweft_id::PublicId;
         use arcweft_image::{
@@ -2299,6 +2395,9 @@ fn agent_native_capture_image_with_session(
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
+    if let Some(result) = agent_native_image_object_geometry_capture(report, request)? {
+        return Ok(result);
+    }
     let Some(textbox) = agent_native_textbox_for_capture(report, &request.scope) else {
         eprintln!("error: native renderer requires an observed textbox frame");
         return Err(ExitCode::from(2));
@@ -2334,8 +2433,16 @@ fn agent_native_capture_image_with_session(
         request.capture_kind,
         Some(native_session),
     )?;
+    agent_native_capture_result_from_raster(report, request, &capture)
+}
+
+fn agent_native_capture_result_from_raster(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    capture: &AgentRasterCapture,
+) -> Result<AgentNativeCaptureImageResult, ExitCode> {
     let (mime_type, bytes) = match request.image_kind {
-        AgentObserveImageKind::Png => ("image/png", agent_encode_png(&capture)?),
+        AgentObserveImageKind::Png => ("image/png", agent_encode_png(capture)?),
         AgentObserveImageKind::RawRgba => ("application/octet-stream", capture.rgba.clone()),
         AgentObserveImageKind::Overlay => unreachable!("overlay is not a raster capture"),
     };
@@ -2363,6 +2470,68 @@ fn agent_native_capture_image_with_session(
         written: None,
     };
     Ok(AgentNativeCaptureImageResult { image, bytes })
+}
+
+fn agent_native_image_object_geometry_capture(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+) -> Result<Option<AgentNativeCaptureImageResult>, ExitCode> {
+    let AgentCaptureScope::Object(object_id) = &request.scope else {
+        return Ok(None);
+    };
+    let Some(object) = report.objects.iter().find(|object| object.id == *object_id) else {
+        return Ok(None);
+    };
+    if !matches!(object.content, AgentObservedObjectContent::Image(_)) {
+        return Ok(None);
+    }
+    if request.capture_kind == AgentObserveCaptureKind::Color {
+        eprintln!(
+            "error: native image object color capture requires decoded image pixels in the observation frame"
+        );
+        return Err(ExitCode::from(2));
+    }
+    let capture = agent_observed_object_geometry_capture(
+        report.viewport.width,
+        report.viewport.height,
+        object,
+        request.capture_kind,
+    );
+    agent_native_capture_result_from_raster(report, request, &capture).map(Some)
+}
+
+fn agent_observed_object_geometry_capture(
+    viewport_width: u32,
+    viewport_height: u32,
+    object: &AgentObservedObject,
+    capture_kind: AgentObserveCaptureKind,
+) -> AgentRasterCapture {
+    let (x, y, width, height) = agent_clamped_bbox_rect(
+        viewport_width,
+        viewport_height,
+        object.bbox.x,
+        object.bbox.y,
+        object.bbox.width,
+        object.bbox.height,
+    );
+    let color = match capture_kind {
+        AgentObserveCaptureKind::Color => [0, 0, 0, 0],
+        AgentObserveCaptureKind::ObjectId => agent_object_id_color(&object.id),
+        AgentObserveCaptureKind::Mask => [255, 255, 255, 255],
+    };
+    let composition = match capture_kind {
+        AgentObserveCaptureKind::Color => AgentImageComposition::FramebufferCrop,
+        AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
+        AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
+    };
+    let mut full = AgentRasterCapture::new(
+        viewport_width.max(1),
+        viewport_height.max(1),
+        [0, 0, 0, 0],
+        composition,
+    );
+    agent_fill_raster_rect(&mut full, x, y, width, height, color);
+    agent_crop_raster_capture(&full, x, y, width, height)
 }
 
 fn agent_image_object_for_capture_scope(
@@ -2835,6 +3004,30 @@ fn agent_copy_native_framebuffer_rect(
             continue;
         };
         target_row.copy_from_slice(source_row);
+    }
+}
+
+fn agent_fill_raster_rect(
+    target: &mut AgentRasterCapture,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color: [u8; 4],
+) {
+    let target_width = usize::try_from(target.width).unwrap_or(0);
+    for row in y..y.saturating_add(height).min(target.height) {
+        for col in x..x.saturating_add(width).min(target.width) {
+            let start = usize::try_from(row)
+                .unwrap_or(0)
+                .saturating_mul(target_width)
+                .saturating_add(usize::try_from(col).unwrap_or(0))
+                .saturating_mul(4);
+            let Some(pixel) = target.rgba.get_mut(start..start.saturating_add(4)) else {
+                continue;
+            };
+            pixel.copy_from_slice(&color);
+        }
     }
 }
 
