@@ -3293,6 +3293,97 @@ flow @flow.main main {
     }
 
     #[test]
+    fn nested_text_proxy_struct_attributes_accumulate_with_inline_overrides() {
+        let parsed = parse_source(
+            r#"
+#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+pub struct KeywordHit {
+    channel: String
+}
+
+#[text_proxy(kind="hover", default_hit=false, depth=2, layer=ui)]
+pub struct HoverHit {
+    layer: String
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[object .hotspot type=KeywordHit channel=inventory][object .hover type=HoverHit depth=7 hit=true tone=alert]BC[/object][/object]D[p]
+}
+"#,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            RuntimeLineId("say.rich_text.object.proxy.nested".to_owned()),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        let frame = spec
+            .resolve_frame(&RuntimeLineContext::default())
+            .expect("rich text frame resolves");
+        let object_proxies = frame
+            .display_map
+            .text_runs
+            .iter()
+            .find(|run| {
+                frame
+                    .text
+                    .get(run.range.start..run.range.end)
+                    .is_some_and(|text| text == "BC")
+            })
+            .map(|run| run.presentation.object_proxies.as_slice())
+            .expect("nested object proxy text run");
+        let [keyword, hover] = object_proxies else {
+            panic!("nested object run should carry two proxies: {object_proxies:?}");
+        };
+
+        assert_eq!(keyword.id, "hotspot");
+        assert_eq!(keyword.type_name.as_deref(), Some("KeywordHit"));
+        assert_eq!(keyword.role.as_deref(), Some("keyword"));
+        assert_eq!(keyword.depth, Some(Milli(4000)));
+        assert!(keyword.hit_test);
+        assert_eq!(
+            keyword.params.get("channel"),
+            Some(&RichTextParam::Raw {
+                value: "inventory".to_owned()
+            })
+        );
+
+        assert_eq!(hover.id, "hover");
+        assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
+        assert_eq!(hover.role.as_deref(), Some("hover"));
+        assert_eq!(hover.depth, Some(Milli(7000)));
+        assert!(hover.hit_test);
+        assert_eq!(
+            hover.params.get("layer"),
+            Some(&RichTextParam::Raw {
+                value: "ui".to_owned()
+            })
+        );
+        assert_eq!(
+            hover.params.get("tone"),
+            Some(&RichTextParam::Raw {
+                value: "alert".to_owned()
+            })
+        );
+        assert!(
+            !hover.params.contains_key("type") && !hover.params.contains_key("hit"),
+            "proxy metadata keys should not be forwarded as custom params"
+        );
+    }
+
+    #[test]
     fn host_effect_selector_resolves_registry_id_from_metadata_attrs() {
         let parsed = parse_source(
             r"

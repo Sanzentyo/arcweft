@@ -18719,6 +18719,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         && proxy["params"]["channel"]["value"] == "choice",));
     assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
+    assert_full_grammar_nested_text_object_proxies(&source_path, &json);
     assert_full_grammar_text_page_object_readback(&source_path, &json);
     assert_full_grammar_text_line_object_readback(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
@@ -32357,6 +32358,130 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy_hit["depth"], 4000);
 }
 
+fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &serde_json::Value) {
+    let proxy_run = find_rich_text_run_object(json, "multi proxy");
+    assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
+    assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 7000);
+    let proxies = proxy_run["rich_text_ref"]["presentation"]["object_proxies"]
+        .as_array()
+        .expect("nested proxy run should expose object_proxies");
+    assert_eq!(
+        proxies.len(),
+        2,
+        "nested proxy run should carry both authored proxy objects: {proxy_run}"
+    );
+    let keyword = proxies
+        .iter()
+        .find(|proxy| proxy["id"] == "hotspot2")
+        .expect("nested proxy run should keep outer keyword proxy");
+    assert_eq!(keyword["type_name"], "KeywordHit");
+    assert_eq!(keyword["role"], "keyword");
+    assert_eq!(keyword["depth"], 4000);
+    assert_eq!(keyword["hit_test"], true);
+    assert_eq!(keyword["params"]["channel"]["value"], "inventory");
+    let hover = proxies
+        .iter()
+        .find(|proxy| proxy["id"] == "hover")
+        .expect("nested proxy run should keep inner hover proxy");
+    assert_eq!(hover["type_name"], "HoverHit");
+    assert_eq!(hover["role"], "hover");
+    assert_eq!(hover["depth"], 7000);
+    assert_eq!(hover["hit_test"], true);
+    assert_eq!(hover["params"]["layer"]["value"], "ui");
+    assert_eq!(hover["params"]["tone"]["value"], "alert");
+
+    let range_start = proxy_run["rich_text_ref"]["range"]["start"]
+        .as_u64()
+        .expect("nested proxy range start");
+    let range_end = proxy_run["rich_text_ref"]["range"]["end"]
+        .as_u64()
+        .expect("nested proxy range end");
+    let keyword_hit = rich_text_proxy_hit_region(proxy_run, "hotspot2", range_start, range_end);
+    assert_eq!(keyword_hit["proxy_type"], "KeywordHit");
+    assert_eq!(keyword_hit["proxy_role"], "keyword");
+    assert_eq!(keyword_hit["depth"], 4000);
+    let hover_hit = rich_text_proxy_hit_region(proxy_run, "hover", range_start, range_end);
+    assert_eq!(hover_hit["proxy_type"], "HoverHit");
+    assert_eq!(hover_hit["proxy_role"], "hover");
+    assert_eq!(hover_hit["depth"], 7000);
+
+    assert_full_grammar_nested_proxy_observed_object(
+        source_path,
+        json,
+        "hotspot2",
+        "KeywordHit",
+        "keyword",
+        4000,
+        ("channel", "inventory"),
+    );
+    assert_full_grammar_nested_proxy_observed_object(
+        source_path,
+        json,
+        "hover",
+        "HoverHit",
+        "hover",
+        7000,
+        ("tone", "alert"),
+    );
+}
+
+fn assert_full_grammar_nested_proxy_observed_object(
+    source_path: &Path,
+    json: &serde_json::Value,
+    proxy_id: &str,
+    proxy_type: &str,
+    proxy_role: &str,
+    depth: i64,
+    expected_param: (&str, &str),
+) {
+    let proxy_object = find_rich_text_proxy_object(json, proxy_id, "multi proxy");
+    assert_eq!(proxy_object["role"], "rich_text_proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["kind"], "text_object_proxy");
+    assert_eq!(proxy_object["rich_text_ref"]["hit_test"], true);
+    assert_eq!(proxy_object["rich_text_ref"]["object_depth"], depth);
+    let proxies = proxy_object["rich_text_ref"]["presentation"]["object_proxies"]
+        .as_array()
+        .expect("proxy object presentation should expose object_proxies");
+    let [proxy] = proxies.as_slice() else {
+        panic!("observed proxy object should carry only its selected proxy: {proxy_object}");
+    };
+    assert_eq!(proxy["id"], proxy_id);
+    assert_eq!(proxy["type_name"], proxy_type);
+    assert_eq!(proxy["role"], proxy_role);
+    assert_eq!(proxy["depth"], depth);
+    assert_eq!(proxy["hit_test"], true);
+    assert_eq!(
+        proxy["params"][expected_param.0]["value"], expected_param.1,
+        "observed proxy object should keep typed params: {proxy_object}"
+    );
+    assert_agent_observe_object_capture_refs(proxy_object);
+    let proxy_object_id = proxy_object["id"].as_str().expect("nested proxy object id");
+    let proxy_object_width = proxy_object["bbox"]["width"]
+        .as_u64()
+        .expect("nested proxy object bbox width");
+    let proxy_object_height = proxy_object["bbox"]["height"]
+        .as_u64()
+        .expect("nested proxy object bbox height");
+    let proxy_object_id_uri =
+        rich_text_object_capture_uri(proxy_object, "object_id", "application/octet-stream");
+    assert_agent_read_uri_object_id_image_matches_object_color(
+        source_path,
+        proxy_object_id_uri,
+        proxy_object,
+        proxy_object_width,
+        proxy_object_height,
+    );
+    let proxy_mask_uri =
+        rich_text_object_capture_uri(proxy_object, "mask", "application/octet-stream");
+    assert_agent_read_uri_object_image_has_content(
+        source_path,
+        proxy_mask_uri,
+        proxy_object_id,
+        proxy_object_width,
+        proxy_object_height,
+    );
+}
+
 fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serde_json::Value) {
     let page_object = find_rich_text_page_object_by_line(json, "say.full.006", 0);
     assert_eq!(page_object["role"], "rich_text_page");
@@ -32710,6 +32835,29 @@ fn rich_text_hit_region<'a>(
         })
         .unwrap_or_else(|| {
             panic!("rich-text object should expose {kind} hit region {range_start}..{range_end}: {object}")
+        })
+}
+
+fn rich_text_proxy_hit_region<'a>(
+    object: &'a serde_json::Value,
+    proxy_id: &str,
+    range_start: u64,
+    range_end: u64,
+) -> &'a serde_json::Value {
+    object["rich_text_ref"]["hit_regions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("rich-text object should expose hit_regions: {object}"))
+        .iter()
+        .find(|region| {
+            region["kind"] == "text_object_proxy"
+                && region["proxy_id"] == proxy_id
+                && region["range"]["start"].as_u64() == Some(range_start)
+                && region["range"]["end"].as_u64() == Some(range_end)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "rich-text object should expose text_object_proxy hit region for {proxy_id} {range_start}..{range_end}: {object}"
+            )
         })
 }
 

@@ -83,6 +83,14 @@ filled from the struct attribute: `kind` supplies the default proxy role,
 `default_hit` supplies hit-test policy, `depth` / `z` / `z_index` supplies local
 depth, and remaining attribute arguments become default typed proxy params.
 
+Proxy spans may be nested or otherwise overlap. The effective text run keeps all
+active proxies in source order instead of collapsing them into one object. Agent
+observation emits one `rich_text_proxy` child object per effective proxy, each
+with the same measured text range/bbox but its own proxy id, type, role, depth,
+hit-test flag, params, capture refs, and object-id color. This lets authors
+attach separate semantic objects such as a choice hit target and a hover/depth
+proxy to the same visible text without losing either object.
+
 ## Depth And Hit Testing
 
 `z`, `z_index`, or `depth` on an object proxy is object metadata. It does not
