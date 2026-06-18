@@ -79,9 +79,10 @@ stack. Runtime plan/run/profile/serve/test/bench implementation now lives in
 check/verify/verify-types/unsafe implementation now lives in `app/verify.rs`.
 Shared source/profile selection, adapter manifest resolution, typecheck
 environment construction, and checked-module loading now live in
-`app/project.rs`. The primary `app.rs` is smaller, but it still owns command
-option types and cross-command helper parsing. The remaining architectural cuts
-are:
+`app/project.rs`. Bundle/run-bundle option types and bundle-only helper
+conversion now live in `app/bundle.rs`. The primary `app.rs` is smaller, but it
+still owns most runtime command option types and cross-command helper parsing.
+The remaining architectural cuts are:
 
 1. Continue splitting `arcweft-cli/src/app.rs` by command implementation,
    prioritizing command option / value parser organization next so the primary

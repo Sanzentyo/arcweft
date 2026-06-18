@@ -7,13 +7,100 @@ use super::runtime::{
     report_path, run_profile_phase,
 };
 use super::{
-    AdapterManifest, ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest,
-    BundleOptions, BundleRunnerError, BundleRunnerOptions, BundleRuntimeSummary, BundleSource,
-    BundleVirtualFile, BundleVirtualFileSpace, CliRuntimeExecutorTier, Component, ExitCode, FlowOp,
-    INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, Path, RunBundleOptions,
-    RuntimeExecutorTier, RuntimePlan, RuntimeProfilePhase, bundle_launch_kind, fs,
-    internal_scheduler_manifest, print_json, run_bundle_file_with_native_adapters, standard,
+    AdapterManifest, ArcweftBundle, Args, BundleAdapterHostCall, BundleAdapterManifest,
+    BundleLaunchKind, BundleManifest, BundleRunnerError, BundleRunnerOptions, BundleRuntimeSummary,
+    BundleSource, BundleVirtualFile, BundleVirtualFileSpace, CliRuntimeExecutorTier,
+    CliRuntimeStepMode, Component, ExitCode, FlowOp, INTERNAL_SCHEDULER_ADAPTER_ID, LaunchKind,
+    NativeAdapterRegistrar, Path, PathBuf, ProfileOptions, RuntimeBinding, RuntimeExecutorTier,
+    RuntimePlan, RuntimeProfilePhase, RuntimePureAcceleratorConfig, fs,
+    internal_scheduler_manifest, parse_runtime_binding_arg, print_json,
+    run_bundle_file_with_native_adapters, standard,
 };
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct BundleOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(short, long)]
+    output: PathBuf,
+    #[command(flatten)]
+    virtual_files: BundleVirtualFileOptions,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct BundleVirtualFileOptions {
+    #[arg(long)]
+    include_save: bool,
+    #[arg(long)]
+    include_temp: bool,
+    #[arg(long)]
+    include_export: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct RunBundleOptions {
+    bundle: PathBuf,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, default_value_t = 8)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+impl BundleOptions {
+    fn include_spaces(&self) -> Vec<BundleVirtualFileSpace> {
+        let mut spaces = vec![BundleVirtualFileSpace::Asset];
+        if self.virtual_files.include_save {
+            spaces.push(BundleVirtualFileSpace::Save);
+        }
+        if self.virtual_files.include_temp {
+            spaces.push(BundleVirtualFileSpace::Temp);
+        }
+        if self.virtual_files.include_export {
+            spaces.push(BundleVirtualFileSpace::Export);
+        }
+        spaces
+    }
+}
+
+impl From<&RunBundleOptions> for BundleRunnerOptions {
+    fn from(options: &RunBundleOptions) -> Self {
+        Self {
+            entry: options.entry.clone(),
+            flow: options.flow.clone(),
+            executor: options.executor.into(),
+            steps: options.steps,
+            mode: options.mode.into(),
+            max_ops: options.max_ops,
+            values: options.values.clone(),
+            pure_config: RuntimePureAcceleratorConfig::default(),
+        }
+    }
+}
+
+fn bundle_launch_kind(kind: LaunchKind) -> BundleLaunchKind {
+    match kind {
+        LaunchKind::Game => BundleLaunchKind::Game,
+        LaunchKind::Cli => BundleLaunchKind::Cli,
+        LaunchKind::Server => BundleLaunchKind::Server,
+        LaunchKind::Test => BundleLaunchKind::Test,
+        LaunchKind::Bench => BundleLaunchKind::Bench,
+    }
+}
 
 pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;

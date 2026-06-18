@@ -1,10 +1,10 @@
 use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions};
+use super::bundle::{BundleOptions, RunBundleOptions};
 use super::jit::JitCheckOptions;
 use super::verify::{CheckOptions, UnsafeOptions, VerifyOptions, VerifyTypesOptions};
 use super::{
-    BundleOptions, CliRunOptions, PlanOptions, RunBundleOptions, RuntimeProfileOptions,
-    RuntimeRunOptions, ScriptBenchOptions, ScriptTestOptions, ServeOptions,
-    ToolchainProfileOptions, ToolingCommandOptions,
+    CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
+    ScriptTestOptions, ServeOptions, ToolchainProfileOptions, ToolingCommandOptions,
 };
 use clap::{Parser, Subcommand};
 
