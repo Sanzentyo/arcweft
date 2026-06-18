@@ -4463,6 +4463,9 @@ fn run_agent_observation(
         diagnostics.extend(output.diagnostics.iter().map(|diagnostic| AgentDiagnostic {
             step: step_index,
             severity: AgentDiagnosticSeverity::Error,
+            source: Some("runtime".to_owned()),
+            code: None,
+            effect_id: None,
             message: diagnostic.message.clone(),
         }));
         for event in &output.flow_events {
@@ -4525,6 +4528,9 @@ fn agent_observed_objects_for_flow_event(
         return Err(AgentDiagnostic {
             step,
             severity: AgentDiagnosticSeverity::Warning,
+            source: Some("runtime_plan".to_owned()),
+            code: Some("missing_display_catalog_entry".to_owned()),
+            effect_id: None,
             message: format!("missing display catalog entry for line {}", line.0),
         });
     };
@@ -4533,6 +4539,9 @@ fn agent_observed_objects_for_flow_event(
         .map_err(|error| AgentDiagnostic {
             step,
             severity: AgentDiagnosticSeverity::Error,
+            source: Some("render_text".to_owned()),
+            code: Some("line_display_resolve_failed".to_owned()),
+            effect_id: None,
             message: error.to_string(),
         })?;
     let mut textbox = agent_textbox_object(step, textbox_index, frame, viewport, options);
@@ -4819,6 +4828,9 @@ fn agent_native_visual_diagnostics(
                     AgentDiagnosticSeverity::Info
                 }
             },
+            source: Some("native_rich_text".to_owned()),
+            code: Some(diagnostic.code.clone()),
+            effect_id: diagnostic.effect_id.clone(),
             message: format!(
                 "native rich-text {}: {}",
                 diagnostic.code, diagnostic.message

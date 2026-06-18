@@ -235,6 +235,26 @@ capture resources.
 
 ---
 
+## Diagnostics
+
+Observation diagnostics keep the human-readable `message`, and may also expose
+structured debugger fields:
+
+- `source` identifies the subsystem that produced the diagnostic, such as
+  `runtime`, `runtime_plan`, `render_text`, or `native_rich_text`.
+- `code` is a stable subsystem-local diagnostic id, such as
+  `missing_shader`, `missing_custom_effect`, or
+  `unsupported_custom_effect_phase`.
+- `effect_id` identifies the rich-text effect, shader, or motion function when
+  the diagnostic is tied to one presentation descriptor.
+
+Native rich-text capture diagnostics must use these structured fields when a
+registered custom effect, shader, or motion function is missing or uses an
+unsupported phase. This lets Agent clients distinguish unsupported visual
+behavior from ordinary runtime errors without parsing `message`.
+
+---
+
 ## CLI and MCP mapping
 
 CLI examples:

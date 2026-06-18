@@ -729,6 +729,12 @@ pub struct AgentAssignment {
 pub struct AgentDiagnostic {
     pub step: usize,
     pub severity: AgentDiagnosticSeverity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect_id: Option<String>,
     pub message: String,
 }
 
@@ -1000,6 +1006,9 @@ mod tests {
             diagnostics: vec![AgentDiagnostic {
                 step: 0,
                 severity: AgentDiagnosticSeverity::Info,
+                source: None,
+                code: None,
+                effect_id: None,
                 message: "ready".to_owned(),
             }],
             steps: 1,

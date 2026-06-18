@@ -19822,6 +19822,27 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
 }
 
+#[test]
+fn agent_observe_native_rich_text_reports_structured_visual_diagnostics() {
+    let path = temp_arcw(
+        "agent-observe-native-rich-text-structured-diagnostics",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [effect .missing_fx amp=2px]missing effect[/effect] and [effect .shader id=ghost_glow phase=run_offscreen_pass]missing shader[/effect][p]
+}
+",
+    );
+
+    let json = observe_native_rich_text_layer_report(&path);
+    fs::remove_file(&path).expect("remove temp structured diagnostics source");
+
+    assert_native_rich_text_layer_image_has_content(&json);
+    assert_agent_native_visual_diagnostic(&json, "missing_custom_effect", "missing_fx");
+    assert_agent_native_visual_diagnostic(&json, "missing_shader", "ghost_glow");
+}
+
 fn assert_effects_animation_function_motion_run_changes_over_time(
     source_path: &Path,
     json: &serde_json::Value,
@@ -34139,6 +34160,28 @@ fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {
     assert_eq!(image["composition"], "isolated_regions");
     assert_eq!(image["mime_type"], "image/png");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn assert_agent_native_visual_diagnostic(report: &serde_json::Value, code: &str, effect_id: &str) {
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics are reported")
+        .iter()
+        .find(|diagnostic| {
+            diagnostic["source"] == "native_rich_text"
+                && diagnostic["code"] == code
+                && diagnostic["effect_id"] == effect_id
+        })
+        .unwrap_or_else(|| {
+            panic!("native rich-text diagnostic {code}/{effect_id} should be structured: {report}")
+        });
+    assert_eq!(diagnostic["severity"], "warning");
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .is_some_and(|message| message.contains(code)),
+        "diagnostic message should retain the human-readable code: {diagnostic}"
+    );
 }
 
 fn find_rich_text_run_object<'a>(
