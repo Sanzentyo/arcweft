@@ -29,9 +29,7 @@ use crate::output::{
     ScriptBenchSectionRunSummary, ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary,
     ScriptTestStatus, TypeCheckProfileStats, flow_status_label,
 };
-use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
-use crate::toolchain_profile::ToolchainProfileOptions;
-use crate::{server_adapter, toolchain_profile};
+use crate::toolchain_profile;
 use arcweft_bundle::BundleRuntimeSummary;
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};

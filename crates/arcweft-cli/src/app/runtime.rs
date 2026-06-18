@@ -16,21 +16,20 @@ use super::{
     BundleRunnerStepMode, BundleRunnerStepSummary, BundleRuntimeSummary, BytecodeProfileStats,
     BytecodeProgram, BytecodeStats, BytecodeVmExecutor, CallArg, DenseMatrixF32, DenseMatrixF64,
     DenseTensorF32, DenseTensorF64, ExitCode, Expr, FlowFiberStatus, FlowRuntimeId, HostCallPolicy,
-    Instant, LaunchKind, LineDisplayCatalog, Literal, NativeAdapterRegistrar,
-    NativeHttpServerConfig, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
-    NativeTaskStats, Path, PathBuf, PureHelperCandidate, PureHelperLowerError, RuntimeBinding,
-    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutor,
-    RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimeMathBackend,
-    RuntimePlan, RuntimePlanLowerReport, RuntimePlanLowerStats, RuntimePlanProfileStats,
-    RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase, RuntimeProfileReport,
-    RuntimeProfileRuntime, RuntimePureAccelerator, RuntimePureAcceleratorConfig,
-    RuntimePureBackendMode, RuntimePureCallBackend, RuntimePureCallStats,
-    RuntimePureCallStatsSummary, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType, RuntimePureWorkerCount, RuntimeRouteSpec,
-    RuntimeRunReport, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
-    RuntimeStepResult, RuntimeStepRunSummary, RuntimeStepStats, RuntimeTypeValidationProfileStats,
-    RuntimeTypeValidationStats, RuntimeValue, ScriptBench, ScriptBenchDeterministicSummary,
-    ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
+    Instant, LaunchKind, LineDisplayCatalog, Literal, NativeAdapterRegistrar, NativeSchedulerStats,
+    NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats, Path, PathBuf, PureHelperCandidate,
+    PureHelperLowerError, RuntimeBinding, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeExecutor, RuntimeExecutorMathStatsSummary, RuntimeExecutorStats, RuntimeExecutorTier,
+    RuntimeMathBackend, RuntimePlan, RuntimePlanLowerReport, RuntimePlanLowerStats,
+    RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
+    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureAccelerator,
+    RuntimePureAcceleratorConfig, RuntimePureBackendMode, RuntimePureCallBackend,
+    RuntimePureCallStats, RuntimePureCallStatsSummary, RuntimePureHelper, RuntimePureHelperId,
+    RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType, RuntimePureWorkerCount,
+    RuntimeRouteSpec, RuntimeRunReport, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
+    RuntimeStepOptions, RuntimeStepResult, RuntimeStepRunSummary, RuntimeStepStats,
+    RuntimeTypeValidationProfileStats, RuntimeTypeValidationStats, RuntimeValue, ScriptBench,
+    ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
     ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
     ScriptBenchPureHelperTimingSamples, ScriptBenchRunReport, ScriptBenchRunSummary,
     ScriptBenchSectionRunSummary, ScriptStep, ScriptTest, ScriptTestFinalStatus,
@@ -38,9 +37,10 @@ use super::{
     TypeCheckProfileStats, TypeCheckReport, ValueEnum, catch_unwind, collect_script_tests,
     flow_status_label, fs, host_system_info, lower_pure_helper_candidates,
     lower_runtime_plan_with_options, lower_runtime_plan_with_stats_and_options, parse_expr,
-    runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values, serve_native_http,
+    runtime_executor_stats, runtime_sequence_dense_f32, runtime_sequence_values,
     validate_runtime_plan_types,
 };
+use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 
 impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
     fn from(value: BundleRunnerExecutor) -> Self {
@@ -1211,7 +1211,7 @@ struct ServeRouteReport {
 #[derive(serde::Serialize)]
 struct ServeRunReport {
     plan: ServePlanReport,
-    server: super::server_adapter::NativeHttpServerReport,
+    server: crate::server_adapter::NativeHttpServerReport,
 }
 
 #[derive(Default)]
