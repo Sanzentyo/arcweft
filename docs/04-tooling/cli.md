@@ -898,8 +898,15 @@ dot rich-text selectors such as `[.shake]...[/]` to explicit family tags such as
 zero-width `[mark .name]` tags, removing a paired `[/]` when the selector was
 written as a span. Unknown dot selectors with attributes become custom effect
 spans such as `[effect .sparkle amp=2px]...[/effect]`, because markers do not
-carry parameters. It does not expand unrelated dialogue sugar such as `$(expr)`,
-ruby shorthand, `[page]`, or speaker-line sugar.
+carry parameters. When a visible `#[text_proxy]` / `#[rich_text_proxy]` struct
+is referenced by `type=`, `struct=`, or `proxy=`, the selector canonicalizes to
+a text presentation object span instead, for example
+`[.hotspot type=KeywordHit]...[/]` becomes
+`[object .hotspot type=KeywordHit]...[/object]`. If the selector itself names a
+visible proxy struct, `[.KeywordHit]...[/]` becomes
+`[object .KeywordHit type=KeywordHit]...[/object]`. It does not expand unrelated
+dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or speaker-line
+sugar.
 
 Declaration canonicalization uses the same diagnostic names as LSP. Source-level
 lint names are domain namespaces, while JSON diagnostics and CI logs also carry

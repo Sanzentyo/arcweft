@@ -148,11 +148,15 @@ hit-testing, depth ordering, object-id capture, and renderer/tooling registries
 without reinterpreting the span as a visual effect. The declaration-time proxy
 type may be marked with normal Arcweft attributes such as `#[text_proxy(...)]`;
 inline dialogue text refers to it with `type=Name`, `struct=Name`, or
-`proxy=Name` so it does not conflict with `#[expr]` interpolation. Runtime-plan
-lowering uses the struct attribute as proxy defaults: `kind` becomes the default
-role, `default_hit` becomes the default hit-test policy, `depth` / `z` /
-`z_index` becomes default local depth, and any remaining attribute arguments
-become default typed proxy params unless the inline object span overrides them.
+`proxy=Name` so it does not conflict with `#[expr]` interpolation. Canonical
+tooling may infer the object family from `[.id type=Name]...[/]` or
+`[.Name]...[/]` only when `Name` is a visible `#[text_proxy]` /
+`#[rich_text_proxy]` struct, and rewrites that surface to explicit
+`[object ...]...[/object]` form. Runtime-plan lowering uses the struct attribute
+as proxy defaults: `kind` becomes the default role, `default_hit` becomes the
+default hit-test policy, `depth` / `z` / `z_index` becomes default local depth,
+and any remaining attribute arguments become default typed proxy params unless
+the inline object span overrides them.
 
 Effect and shader parameters preserve unknown values as raw authoring tokens.
 The parser does not infer comma-separated values or expression-like strings as

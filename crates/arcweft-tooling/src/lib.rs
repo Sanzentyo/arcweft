@@ -14,7 +14,7 @@ use arcweft_lang_syntax::{
             DialogueDefaultsItem,
         },
         flow::{AwaitBranch, FlowItem, Stmt},
-        items::{EntityDeclKind, Item},
+        items::{Attribute, EntityDeclKind, Item},
         line_plan::LinePlanItem,
         pattern::Pattern,
     },
@@ -34,7 +34,7 @@ use thiserror::Error;
 pub struct FormatOptions {
     /// Rewrite script-friendly sugar into canonical block/call forms.
     pub expand_sugar: bool,
-    /// Rewrite inferred rich-text tags into explicit style/layout/transform/effect spans.
+    /// Rewrite inferred rich-text tags into explicit style/layout/transform/effect/object spans.
     pub canonical_rich_text: bool,
 }
 
@@ -341,7 +341,8 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
             edits.push(edit);
         }
     }
-    for edit in dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::All) {
+    let context = DialogueSugarContext::from_parsed(&parsed);
+    for edit in dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::All, &context) {
         if !edits.iter().any(|existing| edits_overlap(existing, &edit)) {
             edits.push(edit);
         }
@@ -857,13 +858,27 @@ fn redundant_decl_identity_edit(source: &str, id_start: usize, id_end: usize) ->
 
 fn rich_text_canonical_edits(source: &str) -> Vec<TextEdit> {
     let parsed = parse_source(source);
-    dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::RichTextOnly)
+    let context = DialogueSugarContext::from_parsed(&parsed);
+    dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::RichTextOnly, &context)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DialogueSugarMode {
     All,
     RichTextOnly,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct DialogueSugarContext {
+    text_proxy_types: BTreeSet<String>,
+}
+
+impl DialogueSugarContext {
+    fn from_parsed(parsed: &ParsedSource) -> Self {
+        Self {
+            text_proxy_types: collect_text_proxy_type_names(parsed),
+        }
+    }
 }
 
 fn edits_overlap(lhs: &TextEdit, rhs: &TextEdit) -> bool {
@@ -874,10 +889,11 @@ fn dialogue_text_sugar_edits(
     source: &str,
     parsed: &ParsedSource,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) -> Vec<TextEdit> {
     let mut edits = Vec::new();
     for item in parsed.typed_tree().items() {
-        collect_dialogue_text_sugar_edits_from_item(source, item, &mut edits, mode);
+        collect_dialogue_text_sugar_edits_from_item(source, item, &mut edits, mode, context);
     }
     edits
 }
@@ -887,15 +903,18 @@ fn collect_dialogue_text_sugar_edits_from_item(
     item: &Item,
     edits: &mut Vec<TextEdit>,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) {
     match item {
         Item::Flow(flow) => {
             for item in flow.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                collect_dialogue_text_sugar_edits_from_flow_item(
+                    source, item, edits, mode, context,
+                );
             }
         }
         Item::FlowItem(item) => {
-            collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+            collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode, context);
         }
         _ => {}
     }
@@ -906,84 +925,112 @@ fn collect_dialogue_text_sugar_edits_from_flow_item(
     item: &FlowItem,
     edits: &mut Vec<TextEdit>,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) {
     match item {
         FlowItem::SpeakerLine(line) => {
-            collect_dialogue_content_sugar_edits(source, line.content(), edits, mode);
+            collect_dialogue_content_sugar_edits(source, line.content(), edits, mode, context);
         }
         FlowItem::ContentCall(call) => {
-            collect_dialogue_content_sugar_edits(source, call.content(), edits, mode);
+            collect_dialogue_content_sugar_edits(source, call.content(), edits, mode, context);
         }
-        FlowItem::Scope(scope) => {
-            for item in scope.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
+        FlowItem::Stmt(stmt) => {
+            collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
         }
-        FlowItem::If(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
-        FlowItem::IfLet(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
+        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+        _ => collect_dialogue_text_sugar_edits_from_flow_item_children(
+            source, item, edits, mode, context,
+        ),
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_flow_item_children(
+    source: &str,
+    item: &FlowItem,
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
+) {
+    if let Some(body) = flow_item_body(item) {
+        collect_dialogue_text_sugar_edits_from_flow_items(source, body, edits, mode, context);
+        return;
+    }
+    match item {
         FlowItem::Match(block) => {
             for arm in block.arms() {
-                for item in arm.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-                }
-            }
-        }
-        FlowItem::Loop(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
-        FlowItem::While(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
-        FlowItem::WhileLet(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
-        FlowItem::For(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                collect_dialogue_text_sugar_edits_from_flow_items(
+                    source,
+                    arm.body(),
+                    edits,
+                    mode,
+                    context,
+                );
             }
         }
         FlowItem::Select(block) => {
             for branch in block.branches() {
-                for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-                }
-            }
-        }
-        FlowItem::BorrowBlock(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-            }
-        }
-        FlowItem::SourceLocale(block) => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                collect_dialogue_text_sugar_edits_from_flow_items(
+                    source,
+                    branch.body(),
+                    edits,
+                    mode,
+                    context,
+                );
             }
         }
         FlowItem::AwaitWith(await_with) => {
             for branch in await_with.branches() {
-                for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
-                }
+                collect_dialogue_text_sugar_edits_from_flow_items(
+                    source,
+                    branch.body(),
+                    edits,
+                    mode,
+                    context,
+                );
             }
         }
-        FlowItem::Stmt(stmt) => {
-            collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
-        }
-        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
+        FlowItem::Scope(_)
+        | FlowItem::If(_)
+        | FlowItem::IfLet(_)
+        | FlowItem::Loop(_)
+        | FlowItem::While(_)
+        | FlowItem::WhileLet(_)
+        | FlowItem::For(_)
+        | FlowItem::BorrowBlock(_)
+        | FlowItem::SourceLocale(_)
+        | FlowItem::SpeakerLine(_)
+        | FlowItem::ContentCall(_)
+        | FlowItem::Stmt(_)
+        | FlowItem::Choice(_)
+        | FlowItem::Include(_)
+        | FlowItem::Raw(_) => {}
+    }
+}
+
+fn flow_item_body(item: &FlowItem) -> Option<&[FlowItem]> {
+    match item {
+        FlowItem::Scope(block) => Some(block.body()),
+        FlowItem::If(block) => Some(block.body()),
+        FlowItem::IfLet(block) => Some(block.body()),
+        FlowItem::Loop(block) => Some(block.body()),
+        FlowItem::While(block) => Some(block.body()),
+        FlowItem::WhileLet(block) => Some(block.body()),
+        FlowItem::For(block) => Some(block.body()),
+        FlowItem::BorrowBlock(block) => Some(block.body()),
+        FlowItem::SourceLocale(block) => Some(block.body()),
+        _ => None,
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_flow_items(
+    source: &str,
+    items: &[FlowItem],
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
+) {
+    for item in items {
+        collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode, context);
     }
 }
 
@@ -992,6 +1039,7 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
     stmt: &Stmt,
     edits: &mut Vec<TextEdit>,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) {
     match stmt {
         Stmt::Let {
@@ -1005,32 +1053,39 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
             expr_range.as_ref(),
             edits,
             mode,
+            context,
         ),
         Stmt::LetElse { else_body, .. } => {
             for stmt in else_body {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
             }
         }
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
             }
         }
         Stmt::LetLoop { block, .. } => {
             for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                collect_dialogue_text_sugar_edits_from_flow_item(
+                    source, item, edits, mode, context,
+                );
             }
         }
         Stmt::LetAwait { await_with, .. } => {
             for branch in await_with.branches() {
                 for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                    collect_dialogue_text_sugar_edits_from_flow_item(
+                        source, item, edits, mode, context,
+                    );
                 }
             }
         }
         Stmt::Thread(thread) => {
             for item in thread.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(source, item, edits, mode);
+                collect_dialogue_text_sugar_edits_from_flow_item(
+                    source, item, edits, mode, context,
+                );
             }
         }
         Stmt::DeferBlock { statements, .. }
@@ -1056,13 +1111,13 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
             body: statements, ..
         } => {
             for stmt in statements {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
             }
         }
         Stmt::Match { arms, .. } => {
             for arm in arms {
                 for stmt in arm.body() {
-                    collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode);
+                    collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
                 }
             }
         }
@@ -1090,6 +1145,7 @@ fn collect_dialogue_text_sugar_edits_from_expr(
     expr_range: Option<&arcweft_lang_syntax::ast::common::TextRange>,
     edits: &mut Vec<TextEdit>,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) {
     match expr {
         Expr::DialogueCall { content, .. } => {
@@ -1103,10 +1159,18 @@ fn collect_dialogue_text_sugar_edits_from_expr(
                 content,
                 expr_range.start() + content_start,
                 mode,
+                context,
             ));
         }
         Expr::Try { expr } => {
-            collect_dialogue_text_sugar_edits_from_expr(expr, expr_source, expr_range, edits, mode);
+            collect_dialogue_text_sugar_edits_from_expr(
+                expr,
+                expr_source,
+                expr_range,
+                edits,
+                mode,
+                context,
+            );
         }
         _ => {}
     }
@@ -1117,11 +1181,17 @@ fn collect_dialogue_content_sugar_edits(
     content: &DialogueContent,
     edits: &mut Vec<TextEdit>,
     mode: DialogueSugarMode,
+    sugar_context: &DialogueSugarContext,
 ) {
     let Some(base) = dialogue_content_source_base(source, content) else {
         return;
     };
-    edits.extend(dialogue_text_canonical_edits(content.raw(), base, mode));
+    edits.extend(dialogue_text_canonical_edits(
+        content.raw(),
+        base,
+        mode,
+        sugar_context,
+    ));
 }
 
 fn dialogue_content_source_base(source: &str, content: &DialogueContent) -> Option<usize> {
@@ -1140,7 +1210,12 @@ fn dialogue_content_source_base(source: &str, content: &DialogueContent) -> Opti
     source.find(content.raw())
 }
 
-fn dialogue_text_canonical_edits(raw: &str, base: usize, mode: DialogueSugarMode) -> Vec<TextEdit> {
+fn dialogue_text_canonical_edits(
+    raw: &str,
+    base: usize,
+    mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
+) -> Vec<TextEdit> {
     let mut edits = Vec::new();
     let mut cursor = 0;
     let mut inferred_span_stack = Vec::new();
@@ -1193,7 +1268,7 @@ fn dialogue_text_canonical_edits(raw: &str, base: usize, mode: DialogueSugarMode
             }
             '[' => {
                 if let Some((end, replacement)) =
-                    bracket_dialogue_edit(raw, cursor, &mut inferred_span_stack, mode)
+                    bracket_dialogue_edit(raw, cursor, &mut inferred_span_stack, mode, context)
                 {
                     edits.push(TextEdit {
                         start: base + cursor,
@@ -1271,6 +1346,7 @@ fn bracket_dialogue_edit(
     start: usize,
     inferred_span_stack: &mut Vec<Option<&'static str>>,
     mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
 ) -> Option<(usize, String)> {
     if mode == DialogueSugarMode::All
         && let Some(body) = raw.get(start..)?.strip_prefix("[raw:")
@@ -1307,8 +1383,13 @@ fn bracket_dialogue_edit(
     }
     if inside.starts_with('.') && inside.len() > 1 {
         let (selector, attrs) = split_dialogue_tag_head(inside);
-        if let Some(family) = inferred_rich_text_family(selector.trim_start_matches('.'), attrs) {
+        let selector_name = selector.trim_start_matches('.');
+        let family = inferred_rich_text_family(selector_name, attrs, context);
+        if let Some(family) = family {
             inferred_span_stack.push(Some(family));
+            let attrs = canonical_object_attrs(selector_name, attrs, context)
+                .filter(|_| family == "object")
+                .unwrap_or_else(|| attrs.to_owned());
             let replacement = if attrs.is_empty() {
                 format!("[{family} {selector}]")
             } else {
@@ -1381,7 +1462,11 @@ fn split_dialogue_tag_head(source: &str) -> (&str, &str) {
     )
 }
 
-fn inferred_rich_text_family(selector: &str, attrs: &str) -> Option<&'static str> {
+fn inferred_rich_text_family(
+    selector: &str,
+    attrs: &str,
+    context: &DialogueSugarContext,
+) -> Option<&'static str> {
     match selector {
         "italic" | "oblique" => Some("style"),
         "horizontal_tb"
@@ -1394,9 +1479,71 @@ fn inferred_rich_text_family(selector: &str, attrs: &str) -> Option<&'static str
         "offset" | "pos" | "rotate" | "scale" | "skew" => Some("transform"),
         "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter" | "jitter"
         | "shader" | "host" => Some("effect"),
+        _ if inferred_text_proxy_type(selector, attrs, context).is_some() => Some("object"),
         _ if !attrs.trim().is_empty() => Some("effect"),
         _ => None,
     }
+}
+
+fn inferred_text_proxy_type<'a>(
+    selector: &'a str,
+    attrs: &'a str,
+    context: &'a DialogueSugarContext,
+) -> Option<&'a str> {
+    text_proxy_type_attr(attrs)
+        .filter(|name| context.text_proxy_types.contains(*name))
+        .or_else(|| {
+            context
+                .text_proxy_types
+                .contains(selector)
+                .then_some(selector)
+        })
+}
+
+fn canonical_object_attrs(
+    selector: &str,
+    attrs: &str,
+    context: &DialogueSugarContext,
+) -> Option<String> {
+    let proxy_type = inferred_text_proxy_type(selector, attrs, context)?;
+    if text_proxy_type_attr(attrs).is_some() {
+        Some(attrs.to_owned())
+    } else {
+        Some(format!("type={proxy_type}"))
+    }
+}
+
+fn text_proxy_type_attr(attrs: &str) -> Option<&str> {
+    find_tag_attr(attrs, "type")
+        .or_else(|| find_tag_attr(attrs, "struct"))
+        .or_else(|| find_tag_attr(attrs, "proxy"))
+}
+
+fn find_tag_attr<'a>(attrs: &'a str, key: &str) -> Option<&'a str> {
+    attrs.split_whitespace().find_map(|part| {
+        let (name, value) = part.split_once('=')?;
+        (name == key).then(|| value.trim_matches('"'))
+    })
+}
+
+fn collect_text_proxy_type_names(parsed: &ParsedSource) -> BTreeSet<String> {
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(item)
+                if item.attrs().iter().any(is_text_proxy_attribute) && !item.name().is_empty() =>
+            {
+                Some(item.name().to_owned())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn is_text_proxy_attribute(attr: &Attribute) -> bool {
+    matches!(attr.name(), "text_proxy" | "rich_text_proxy")
 }
 
 fn rb_tag_edit(raw: &str, _start: usize, inside: &str, open_end: usize) -> Option<(usize, String)> {
@@ -2160,7 +2307,12 @@ fn speaker_line_edit(
 }
 
 fn canonical_dialogue_text_for_speaker_line(text: &str) -> String {
-    let edits = dialogue_text_canonical_edits(text, 0, DialogueSugarMode::All);
+    let edits = dialogue_text_canonical_edits(
+        text,
+        0,
+        DialogueSugarMode::All,
+        &DialogueSugarContext::default(),
+    );
     apply_text_edits(text, &edits).unwrap_or_else(|_| text.to_owned())
 }
 
@@ -2447,6 +2599,37 @@ mod tests {
                 .contains("[layout .vertical_rl]縦[/layout][p]")
         );
         assert!(report.output.contains("[page]"));
+    }
+
+    #[test]
+    fn canonical_rich_text_expands_inferred_text_proxy_objects() {
+        let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=choice]proxy[/][.KeywordHit]typed[/][.sparkle amp=2px]effect[/][p]\n}\n";
+        let report = format_source(
+            source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report
+                .output
+                .contains("[object .hotspot type=KeywordHit channel=choice]proxy[/object]")
+        );
+        assert!(
+            report
+                .output
+                .contains("[object .KeywordHit type=KeywordHit]typed[/object]")
+        );
+        assert!(
+            report
+                .output
+                .contains("[effect .sparkle amp=2px]effect[/effect]")
+        );
+        assert!(!report.output.contains("[effect .hotspot"));
+        assert!(!report.output.contains("[effect .KeywordHit"));
     }
 
     #[test]

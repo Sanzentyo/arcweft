@@ -48,8 +48,11 @@ effect/shader registries may consume.
 
 Unknown dot selectors with attributes still infer to custom effects. This keeps
 `[.sparkle amp=2px]...[/]` unambiguous. Text object proxy spans use
-`[object .name ...]...[/object]` until project tooling can prove a custom dot
-selector has no effect/layout/marker collision.
+`[object .name ...]...[/object]` as their canonical form. Tooling may infer that
+family from `[.id type=ProxyType]...[/]`, `[.id struct=ProxyType]...[/]`,
+`[.id proxy=ProxyType]...[/]`, or `[.ProxyType]...[/]` only when `ProxyType` is
+a visible `#[text_proxy]` / `#[rich_text_proxy]` struct; the canonical output
+still writes the explicit `object` family.
 
 ## Attribute-Defined Proxy Types
 

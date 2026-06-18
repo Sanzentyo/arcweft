@@ -32,6 +32,9 @@
   - rewrites inferred dot selectors such as `[.shake]...[/]` into explicit
     family tags such as `[effect .shake]...[/effect]`
   - rewrites unknown dot selectors to `[mark .name]`
+  - rewrites inferred text proxy object selectors to `[object ...]` when the
+    selector references a visible `#[text_proxy]` / `#[rich_text_proxy]` struct
+    through `type=`, `struct=`, `proxy=`, or by using the struct name itself
   - does not expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand,
     `[page]`, or speaker-line sugar
 - ID code actions:
