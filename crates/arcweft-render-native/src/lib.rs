@@ -5414,7 +5414,7 @@ impl WindowRichTextBuilder {
             RichTextNode::Interpolation { expr, .. } => {
                 self.push_text(expr, self.current_style());
             }
-            RichTextNode::HostEvent(_) => {}
+            RichTextNode::HostEvent { .. } => {}
         }
     }
 

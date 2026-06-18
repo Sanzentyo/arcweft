@@ -368,29 +368,30 @@ line-local options, so later style entries override earlier entries in renderer 
 
 ## Usage
 
-Run a source file without opening a window:
-
-```bash
-cargo run -p arcweft-player-native -- --headless --json path/to/file.arcw
-```
-
 Run an `.awfb` bytecode bundle without source compilation:
 
 ```bash
 cargo run -p arcweft-cli --quiet -- bundle path/to/file.arcw --output target/game.awfb
-cargo run -p arcweft-player-native --quiet -- --headless --json --bundle target/game.awfb
+cargo run -p arcweft-player-native --quiet -- --headless --json target/game.awfb
+```
+
+Run a source file in explicit developer mode:
+
+```bash
+cargo run -p arcweft-player-native -- --headless --json --source path/to/file.arcw
 ```
 
 Bundles carry the line display catalog needed for native window presentation and
-rich-text capture, so `--bundle` can be combined with the same `--capture`
-options used for source developer mode.
+rich-text capture, so `.awfb` input can be combined with the same `--capture`
+options used for source developer mode. Product/native player entry should use
+`.awfb` input; source input is a development convenience only.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:
 
 ```bash
-cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png path/to/file.arcw
-cargo run -p arcweft-player-native -- --headless --json --capture raw-rgba --capture-out native.rgba --capture-width 960 --capture-height 540 path/to/file.arcw
+cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png target/game.awfb
+cargo run -p arcweft-player-native -- --headless --json --capture raw-rgba --capture-out native.rgba --capture-width 960 --capture-height 540 target/game.awfb
 ```
 
 The native capture path renders to an offscreen texture, copies the texture to a
@@ -554,7 +555,7 @@ cargo run -p arcweft-cli -- agent observe path/to/file.arcw --image raw-rgba --o
 Open the first resolved frame in a native text window:
 
 ```bash
-cargo run -p arcweft-player-native -- path/to/file.arcw
+cargo run -p arcweft-player-native -- target/game.awfb
 ```
 
 ## Verified
@@ -585,8 +586,9 @@ cargo test -p arcweft-cli agent_observe_native_renderer_writes_ruby_mask_raw_cro
 cargo test -p arcweft-cli agent_mcp_stdio_captures_source_ruby_object_id_with_native_renderer --test check -- --exact
 cargo test -p arcweft-cli agent_mcp_stdio_observes_and_reads_rich_text_child_image -- --exact
 cargo clippy -p arcweft-player-native --all-targets --all-features
-cargo run -p arcweft-player-native -- --headless --json path/to/file.arcw
-cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png --capture-width 480 --capture-height 270 path/to/file.arcw
+cargo run -p arcweft-player-native -- --headless --json target/game.awfb
+cargo run -p arcweft-player-native -- --headless --json --source path/to/file.arcw
+cargo run -p arcweft-player-native -- --headless --json --capture png --capture-out native.png --capture-width 480 --capture-height 270 target/game.awfb
 ```
 
 No absolute host paths are required in tracked docs or generated player reports.

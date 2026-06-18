@@ -142,7 +142,9 @@ pub enum RichTextNode {
         fallback_source: String,
         on_error: InlineFailurePolicy,
     },
-    HostEvent(DialogueHostEvent),
+    HostEvent {
+        event: DialogueHostEvent,
+    },
 }
 
 /// Failure handling policy for one runtime interpolation expression.
@@ -691,7 +693,10 @@ impl<'a> LineDisplayFrameResolver<'a> {
         node_index: usize,
         node: &RichTextNode,
     ) -> Result<(), LineDisplayError> {
-        if let RichTextNode::HostEvent(event @ DialogueHostEvent::Conditional { .. }) = node {
+        if let RichTextNode::HostEvent {
+            event: event @ DialogueHostEvent::Conditional { .. },
+        } = node
+        {
             self.push_conditional_event(event, node_index);
             return Ok(());
         }
@@ -726,7 +731,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
                 fallback_source,
                 on_error,
             } => self.push_interpolation_node(expr, fallback_source, on_error, node_index),
-            RichTextNode::HostEvent(event) => {
+            RichTextNode::HostEvent { event } => {
                 self.push_host_event(event, node_index);
                 Ok(())
             }
@@ -1469,24 +1474,30 @@ mod tests {
                 RichTextNode::Text {
                     text: "A".to_owned(),
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "if".to_owned(),
-                    attrs: "flag".to_owned(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "if".to_owned(),
+                        attrs: "flag".to_owned(),
+                    },
+                },
                 RichTextNode::Text {
                     text: "yes".to_owned(),
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "else".to_owned(),
-                    attrs: String::new(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "else".to_owned(),
+                        attrs: String::new(),
+                    },
+                },
                 RichTextNode::Text {
                     text: "no".to_owned(),
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "endif".to_owned(),
-                    attrs: String::new(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "endif".to_owned(),
+                        attrs: String::new(),
+                    },
+                },
                 RichTextNode::Text {
                     text: "Z".to_owned(),
                 },
@@ -1531,32 +1542,40 @@ mod tests {
             style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(vec![
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "if".to_owned(),
-                    attrs: "flag".to_owned(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "if".to_owned(),
+                        attrs: "flag".to_owned(),
+                    },
+                },
                 RichTextNode::StyleStart {
                     style: RichTextStyle::from_tag("color", "#ff0000"),
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Voice {
-                    attrs: "hidden".to_owned(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Voice {
+                        attrs: "hidden".to_owned(),
+                    },
+                },
                 RichTextNode::Interpolation {
                     expr: "missing".to_owned(),
                     fallback_source: "missing".to_owned(),
                     on_error: InlineFailurePolicy::FailLine,
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "else".to_owned(),
-                    attrs: String::new(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "else".to_owned(),
+                        attrs: String::new(),
+                    },
+                },
                 RichTextNode::Text {
                     text: "shown".to_owned(),
                 },
-                RichTextNode::HostEvent(DialogueHostEvent::Conditional {
-                    name: "endif".to_owned(),
-                    attrs: String::new(),
-                }),
+                RichTextNode::HostEvent {
+                    event: DialogueHostEvent::Conditional {
+                        name: "endif".to_owned(),
+                        attrs: String::new(),
+                    },
+                },
                 RichTextNode::Text {
                     text: " plain".to_owned(),
                 },

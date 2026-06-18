@@ -2952,7 +2952,7 @@ fn trim_quotes(value: &str) -> &str {
 }
 
 fn host_event(event: DialogueHostEvent) -> Vec<RichTextNode> {
-    vec![RichTextNode::HostEvent(event)]
+    vec![RichTextNode::HostEvent { event }]
 }
 
 fn inline_failure_policy(
@@ -3176,25 +3176,16 @@ flow @flow.main main {
                 RichTextNode::Ruby { base, ruby } if base == "夢" && ruby == "ゆめ"
             )
         }));
-        assert!(spec.content.nodes.iter().any(|node| {
-            matches!(
-                node,
-                RichTextNode::HostEvent(DialogueHostEvent::Voice { .. })
-            )
-        }));
-        assert!(spec.content.nodes.iter().any(|node| {
-            matches!(
-                node,
-                RichTextNode::HostEvent(DialogueHostEvent::TimedCue { attrs })
-                    if attrs == "0.2s call=flash"
-            )
-        }));
-        assert!(spec.content.nodes.iter().any(|node| {
-            matches!(
-                node,
-                RichTextNode::HostEvent(DialogueHostEvent::Signal { .. })
-            )
-        }));
+        assert_has_host_event(&spec.content.nodes, |event| {
+            matches!(event, DialogueHostEvent::Voice { .. })
+        });
+        assert_has_host_event(
+            &spec.content.nodes,
+            |event| matches!(event, DialogueHostEvent::TimedCue { attrs } if attrs == "0.2s call=flash"),
+        );
+        assert_has_host_event(&spec.content.nodes, |event| {
+            matches!(event, DialogueHostEvent::Signal { .. })
+        });
         assert!(spec.content.nodes.iter().any(|node| {
             matches!(
                 node,
@@ -3204,6 +3195,16 @@ flow @flow.main main {
                     }
                 }
             )
+        }));
+    }
+
+    fn assert_has_host_event(
+        nodes: &[RichTextNode],
+        predicate: impl Fn(&DialogueHostEvent) -> bool,
+    ) {
+        assert!(nodes.iter().any(|node| match node {
+            RichTextNode::HostEvent { event } => predicate(event),
+            _ => false,
         }));
     }
 

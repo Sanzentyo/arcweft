@@ -5,7 +5,7 @@ use arcweft_player_native::{
 use arcweft_render_native as native;
 use clap::{Parser, ValueEnum};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Debug, Parser)]
@@ -17,9 +17,9 @@ struct Args {
     /// Emit JSON in headless mode.
     #[arg(long)]
     json: bool,
-    /// Treat path as an .awfb bundle and execute bytecode without source compilation.
+    /// Treat path as an .arcw source file and compile it before execution.
     #[arg(long)]
-    bundle: bool,
+    source: bool,
     /// Maximum runtime steps.
     #[arg(long, default_value_t = 64)]
     steps: usize,
@@ -35,7 +35,7 @@ struct Args {
     /// Native capture height in pixels.
     #[arg(long, default_value_t = 540)]
     capture_height: u32,
-    /// Arcweft source file.
+    /// Arcweft bundle file by default, or an Arcweft source file with --source.
     path: PathBuf,
 }
 
@@ -57,9 +57,14 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &Args) -> Result<(), String> {
-    if args.bundle {
-        return run_bundle(args);
+    if args.source {
+        return run_source(args);
     }
+    run_bundle(args)
+}
+
+fn run_source(args: &Args) -> Result<(), String> {
+    ensure_extension(&args.path, "arcw", "--source expects an .arcw source file")?;
     let source = fs::read_to_string(&args.path)
         .map_err(|error| format!("failed to read source file: {error}"))?;
     let program = compile_source(&source).map_err(|error| error.to_string())?;
@@ -67,6 +72,11 @@ fn run(args: &Args) -> Result<(), String> {
 }
 
 fn run_bundle(args: &Args) -> Result<(), String> {
+    ensure_extension(
+        &args.path,
+        "awfb",
+        "native player expects an .awfb bundle; pass --source for .arcw dev input",
+    )?;
     let bytes =
         fs::read(&args.path).map_err(|error| format!("failed to read bundle file: {error}"))?;
     let bundle = ArcweftBundle::from_json_slice(&bytes).map_err(|error| error.to_string())?;
@@ -117,6 +127,13 @@ fn run_program(args: &Args, program: NativePlayerProgram) -> Result<(), String> 
     }
     let report = run_headless(program, args.steps).map_err(|error| error.to_string())?;
     native::run_frames_window("Arcweft Player", &report.frames).map_err(|error| error.to_string())
+}
+
+fn ensure_extension(path: &Path, expected: &str, message: &str) -> Result<(), String> {
+    if path.extension().and_then(|extension| extension.to_str()) == Some(expected) {
+        return Ok(());
+    }
+    Err(format!("{message}: {}", path.display()))
 }
 
 fn native_capture_bytes(

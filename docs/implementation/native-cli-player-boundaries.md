@@ -116,4 +116,6 @@ now mostly dispatch and import wiring. The remaining architectural cuts are:
   debug resources must share the same deterministic presentation model.
 - Native player `.awfb` execution must not invoke the source compiler. Bundles
   carry line display sidecars so native window presentation and capture can
-  resolve dialogue frames from bytecode input.
+  resolve dialogue frames from bytecode input. The `arcweft-player-native`
+  binary treats `.awfb` as its default input; `.arcw` source execution requires
+  the explicit `--source` developer-mode flag.
