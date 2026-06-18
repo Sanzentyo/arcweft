@@ -385,15 +385,19 @@ real native framebuffer readback path. `arcw agent observe --image png` and MCP 
 capture path accepts `--page N` and MCP `page: N` for 0-based rendered rich-text
 pages, so LLM/debugger tools can capture text after `[p]`, line waits, or
 `[clear]` without opening the native window. Non-zero page selection is handled by the native renderer.
-It also accepts `--capture-time SECONDS` and MCP `capture_time` for
-visibility-only glyph effects such as typewriter reveal; the same resolved
-Agent geometry is reused while the native GlyphArea colors are updated for the
-requested capture time. Native Agent tests cover both ordinary vertical
-clusters and text-combine-upright digit clusters, so multi-instance combined
-cells are checked against the same visibility/readback rule. Ruby annotation
+It also accepts `--capture-time SECONDS` and MCP `capture_time` as the native
+rich-text animation sample time for glyph effects, shaders, registry-backed
+motion functions, typewriter visibility, animated proxy bounds, hit-testing,
+and image capture. Source ranges and object ids remain stable, while the native
+measurement and render paths sample visual bboxes, hit regions, GlyphArea
+alpha/color, object-id/mask attachments, and object crops at the requested
+time. Native Agent tests cover ordinary vertical clusters,
+text-combine-upright digit clusters, animated proxy objects, ruby objects, and
+function-backed motion/effect/shader runs, so combined cells and source-local
+registry paths are checked against the same readback rule. Ruby annotation
 GlyphAreas use the annotation presentation as well, so ruby object masks can be
-captured before and after reveal without changing the observed ruby base and
-annotation bboxes.
+captured before and after reveal while keeping stable ruby source identity and
+page-local object ids.
 For animation/debugging workflows that need a deterministic runtime state, the
 same Agent path accepts `--capture-step N` and MCP `capture_step`. This overrides
 the normal `--steps` loop, advances observation through exactly `N` runtime

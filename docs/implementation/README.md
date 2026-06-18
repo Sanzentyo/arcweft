@@ -36,6 +36,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   and report image-local `content_bbox`, viewport-space
   `content_viewport_bbox`, and `content_pixels` metadata. See
   `docs/implementation/native-rich-text-player.md`.
+- `docs/implementation/rich-text-object-goal-audit.md` tracks the current
+  requirement/evidence matrix for the rich-text typed-presentation-object goal;
+  use it to separate completed evidence from remaining audit risk before
+  claiming that goal is done.
 - `arcw agent observe` exposes the first Agent Debug Bus-shaped observation
   slice for rich-text debugging. It keeps the runtime-plan display catalog,
   resolves emitted dialogue-line events against runtime bindings, and reports
