@@ -34,6 +34,18 @@ frames, normalizes zero or too-small animation delays, and exposes
 `frame_at_time_millis` for deterministic native rendering, Agent capture, and
 tests.
 
+`arcweft-ui` owns the first UI image source table. `ImageId` values now resolve
+to `UiImageSource` records containing decoded image data, fit/alignment policy,
+and deterministic playback state. Static and animated images therefore cross
+the retained-fragment/display-list boundary through the same `ImageId` path.
+
+`arcweft-render-native` owns the first real native image rendering path:
+`capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
+renders them as textured quads into the same offscreen RGBA readback surface
+used by native captures. This is intentionally not a debug raster fallback; it
+is the native renderer's image submission primitive that later UI/Agent paths
+will call.
+
 ## Presentation Rules
 
 - An image is a semantic presentation object, like text, rich text, Activity, or
@@ -49,19 +61,17 @@ tests.
 
 ## Required Follow-up Cuts
 
-1. Wire `arcweft-image` into UI display items with an image source table instead
-   of bare integer-only `ImageId` metadata.
-2. Add presentation image descriptors for object layer, depth, fit, alignment,
+1. Add presentation image descriptors for object layer, depth, fit, alignment,
    opacity, transform, and semantic params.
-3. Add native renderer upload and textured quad submission for decoded RGBA8
-   image frames.
-4. Make native capture, object-id, mask, Agent observation, hit-test, and MCP
+2. Wire UI `DisplayItemKind::Image` through runtime-host/native renderer
+   submission using `UiImageSourceTable` and `capture_image_quads_rgba`.
+3. Make native capture, object-id, mask, Agent observation, hit-test, and MCP
    image metadata treat image objects the same way rich-text objects are treated.
-5. Add bundle/asset sidecar support so product-player `.awfb` execution can use
+4. Add bundle/asset sidecar support so product-player `.awfb` execution can use
    decoded or encoded image payloads without source execution.
-6. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
+5. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
-7. Add regression tests for frame selection, decode, native capture pixels,
+6. Add regression tests for frame selection, decode, native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 
 ## Dependency Policy

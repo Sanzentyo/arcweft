@@ -35,12 +35,18 @@ use std::sync::mpsc;
 use std::time::Instant;
 use thiserror::Error;
 use wgpu::{
-    BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoderDescriptor,
-    CompositeAlphaMode, DeviceDescriptor, Extent3d, Instance, LoadOp, MapMode, MultisampleState,
-    Operations, Origin3d, PollType, PresentMode, RenderPassColorAttachment, RenderPassDescriptor,
-    RequestAdapterOptions, SurfaceConfiguration, TexelCopyBufferInfo, TexelCopyBufferLayout,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
+    BindingResource, BindingType, BlendState, BufferDescriptor, BufferUsages,
+    COPY_BYTES_PER_ROW_ALIGNMENT, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
+    CompositeAlphaMode, DeviceDescriptor, Extent3d, FilterMode, FragmentState, Instance, LoadOp,
+    MapMode, MultisampleState, Operations, Origin3d, PipelineCompilationOptions,
+    PipelineLayoutDescriptor, PollType, PresentMode, PrimitiveState, PrimitiveTopology,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+    RequestAdapterOptions, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, SurfaceConfiguration, TexelCopyBufferInfo, TexelCopyBufferLayout,
     TexelCopyTextureInfo, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
+    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
+    VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
 use winit::{
     application::ApplicationHandler,
@@ -62,6 +68,8 @@ pub enum NativeWindowError {
     Readback(String),
     #[error("text layout failed: {0}")]
     TextLayout(String),
+    #[error("image render failed: {0}")]
+    Image(String),
 }
 
 /// Raw framebuffer capture produced by the native rich-text renderer.
@@ -79,6 +87,24 @@ pub struct NativeFrameCapture {
     pub content_pixels: u64,
     /// Renderer diagnostics produced while preparing the captured glyph areas.
     pub diagnostics: Vec<NativeVisualDiagnostic>,
+}
+
+/// Pixel-space destination rectangle for a native image quad.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeImageRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// RGBA8 image frame submitted as a textured quad to the native renderer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeImageQuad<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+    pub dst: NativeImageRect,
 }
 
 /// Pixel-space bounds of non-background framebuffer content.
@@ -1468,6 +1494,37 @@ impl NativeOffscreenCaptureSession {
         &mut self.effect_state
     }
 
+    /// Renders RGBA image quads through the native wgpu textured-quad path.
+    pub fn capture_image_quads_rgba(
+        &mut self,
+        quads: &[NativeImageQuad<'_>],
+        width: u32,
+        height: u32,
+    ) -> Result<NativeFrameCapture, NativeWindowError> {
+        let width = width.max(1);
+        let height = height.max(1);
+        let background = [0, 0, 0, 0];
+        let texture = render_image_quads_texture(
+            &self.device,
+            &self.queue,
+            quads,
+            width,
+            height,
+            self.format,
+            wgpu::Color::TRANSPARENT,
+        )?;
+        let rgba = readback_texture_rgba(&self.device, &self.queue, &texture, width, height)?;
+        let stats = native_frame_content_stats(&rgba, width, height, background);
+        Ok(NativeFrameCapture {
+            width,
+            height,
+            rgba,
+            content_bbox: stats.content_bbox,
+            content_pixels: stats.content_pixels,
+            diagnostics: Vec::new(),
+        })
+    }
+
     /// Measures first-page rich-text element bounds with this session's custom effects.
     pub fn measure_frame_elements_at(
         &mut self,
@@ -1980,6 +2037,15 @@ pub fn capture_frame_rgba_at_page(
         frame,
         NativeCaptureViewport::new(width, height, left, top, page_index),
     )
+}
+
+/// Renders image quads into an offscreen native RGBA framebuffer.
+pub fn capture_image_quads_rgba(
+    quads: &[NativeImageQuad<'_>],
+    width: u32,
+    height: u32,
+) -> Result<NativeFrameCapture, NativeWindowError> {
+    NativeOffscreenCaptureSession::new()?.capture_image_quads_rgba(quads, width, height)
 }
 
 /// Measures first-page rich-text element bounds using the same native text layout as rendering.
@@ -6223,6 +6289,308 @@ impl NativeOffscreenTextRenderer {
     }
 }
 
+const IMAGE_QUAD_SHADER: &str = r"
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+    var output: VertexOutput;
+    output.position = vec4<f32>(input.position, 0.0, 1.0);
+    output.uv = input.uv;
+    return output;
+}
+
+@group(0) @binding(0)
+var image_texture: texture_2d<f32>;
+
+@group(0) @binding(1)
+var image_sampler: sampler;
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(image_texture, image_sampler, input.uv);
+}
+";
+
+fn render_image_quads_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    quads: &[NativeImageQuad<'_>],
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+    clear: wgpu::Color,
+) -> Result<wgpu::Texture, NativeWindowError> {
+    for quad in quads {
+        validate_native_image_quad(*quad)?;
+    }
+
+    let output = create_image_output_texture(device, width, height, format);
+    let output_view = output.create_view(&TextureViewDescriptor::default());
+    let (bind_group_layout, pipeline, sampler) = create_image_quad_pipeline(device, format);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("arcweft native image capture encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("arcweft native image capture pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &output_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(clear),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        for quad in quads {
+            let texture = upload_native_image_quad(device, queue, *quad);
+            let texture_view = texture.create_view(&TextureViewDescriptor::default());
+            let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                label: Some("arcweft native image bind group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&texture_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+            let vertices = image_quad_vertices(*quad, width, height);
+            let vertex_bytes = bytemuck::cast_slice(&vertices);
+            let vertex_buffer = device.create_buffer(&BufferDescriptor {
+                label: Some("arcweft native image vertex buffer"),
+                size: u64::try_from(vertex_bytes.len()).map_err(|_| {
+                    NativeWindowError::Image("image vertex buffer is too large".to_owned())
+                })?,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&vertex_buffer, 0, vertex_bytes);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..6, 0..1);
+        }
+    }
+    queue.submit(Some(encoder.finish()));
+    Ok(output)
+}
+
+fn create_image_output_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+) -> wgpu::Texture {
+    device.create_texture(&TextureDescriptor {
+        label: Some("arcweft native image capture texture"),
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+fn create_image_quad_pipeline(
+    device: &wgpu::Device,
+    format: TextureFormat,
+) -> (wgpu::BindGroupLayout, wgpu::RenderPipeline, wgpu::Sampler) {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("arcweft native image quad shader"),
+        source: ShaderSource::Wgsl(IMAGE_QUAD_SHADER.into()),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("arcweft native image bind group layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("arcweft native image pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let vertex_layout = VertexBufferLayout {
+        array_stride: 16,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 8,
+                shader_location: 1,
+            },
+        ],
+    };
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("arcweft native image pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[vertex_layout],
+            compilation_options: PipelineCompilationOptions::default(),
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(ColorTargetState {
+                format,
+                blend: Some(BlendState::ALPHA_BLENDING),
+                write_mask: ColorWrites::default(),
+            })],
+            compilation_options: PipelineCompilationOptions::default(),
+        }),
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("arcweft native image sampler"),
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        ..Default::default()
+    });
+    (bind_group_layout, pipeline, sampler)
+}
+
+fn upload_native_image_quad(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    quad: NativeImageQuad<'_>,
+) -> wgpu::Texture {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("arcweft native image source texture"),
+        size: Extent3d {
+            width: quad.width,
+            height: quad.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8UnormSrgb,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        quad.rgba,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(quad.width.saturating_mul(4)),
+            rows_per_image: Some(quad.height),
+        },
+        Extent3d {
+            width: quad.width,
+            height: quad.height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
+}
+
+fn validate_native_image_quad(quad: NativeImageQuad<'_>) -> Result<(), NativeWindowError> {
+    if quad.width == 0 || quad.height == 0 {
+        return Err(NativeWindowError::Image(
+            "image quad dimensions must be non-zero".to_owned(),
+        ));
+    }
+    if quad.dst.width <= 0.0 || quad.dst.height <= 0.0 {
+        return Err(NativeWindowError::Image(
+            "image quad destination dimensions must be positive".to_owned(),
+        ));
+    }
+    let expected = usize::try_from(u64::from(quad.width) * u64::from(quad.height) * 4)
+        .map_err(|_| NativeWindowError::Image("image quad is too large".to_owned()))?;
+    if quad.rgba.len() != expected {
+        return Err(NativeWindowError::Image(format!(
+            "image quad RGBA length {} does not match expected {expected}",
+            quad.rgba.len()
+        )));
+    }
+    Ok(())
+}
+
+fn image_quad_vertices(quad: NativeImageQuad<'_>, width: u32, height: u32) -> [[f32; 4]; 6] {
+    let x0 = pixel_x_to_ndc(quad.dst.x, width);
+    let x1 = pixel_x_to_ndc(quad.dst.x + quad.dst.width, width);
+    let y0 = pixel_y_to_ndc(quad.dst.y, height);
+    let y1 = pixel_y_to_ndc(quad.dst.y + quad.dst.height, height);
+    [
+        [x0, y0, 0.0, 0.0],
+        [x1, y0, 1.0, 0.0],
+        [x1, y1, 1.0, 1.0],
+        [x0, y0, 0.0, 0.0],
+        [x1, y1, 1.0, 1.0],
+        [x0, y1, 0.0, 1.0],
+    ]
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn pixel_x_to_ndc(x: f32, width: u32) -> f32 {
+    (x / width.max(1) as f32) * 2.0 - 1.0
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn pixel_y_to_ndc(y: f32, height: u32) -> f32 {
+    1.0 - (y / height.max(1) as f32) * 2.0
+}
+
 fn readback_texture_rgba(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -7650,6 +8018,52 @@ mod tests {
             .expect("frame resolves");
         frame.nodes.clear();
         frame
+    }
+
+    #[test]
+    fn native_capture_renders_image_quad_pixels() {
+        let rgba = vec![
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ];
+        let quad = NativeImageQuad {
+            width: 2,
+            height: 2,
+            rgba: &rgba,
+            dst: NativeImageRect {
+                x: 1.0,
+                y: 1.0,
+                width: 2.0,
+                height: 2.0,
+            },
+        };
+
+        let capture = capture_image_quads_rgba(&[quad], 4, 4).expect("image quad renders");
+
+        assert_eq!(capture.width, 4);
+        assert_eq!(capture.height, 4);
+        assert_eq!(capture.content_pixels, 4);
+        assert_eq!(
+            capture.content_bbox,
+            Some(NativeFrameContentBBox {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            })
+        );
+        assert_eq!(pixel_at(&capture, 1, 1), [255, 0, 0, 255]);
+        assert_eq!(pixel_at(&capture, 2, 1), [0, 255, 0, 255]);
+        assert_eq!(pixel_at(&capture, 1, 2), [0, 0, 255, 255]);
+        assert_eq!(pixel_at(&capture, 2, 2), [255, 255, 255, 255]);
+    }
+
+    fn pixel_at(capture: &NativeFrameCapture, x: u32, y: u32) -> [u8; 4] {
+        let index = usize::try_from(y)
+            .unwrap()
+            .saturating_mul(usize::try_from(capture.width).unwrap())
+            .saturating_add(usize::try_from(x).unwrap())
+            .saturating_mul(4);
+        capture.rgba[index..index + 4].try_into().unwrap()
     }
 
     fn vertical_ruby_text_combine_frame(writing_mode: RichTextWritingMode) -> LineDisplayFrame {

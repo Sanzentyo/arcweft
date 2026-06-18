@@ -456,6 +456,7 @@ dependencies = [
  "arcweft-glyphon",
  "arcweft-render-text",
  "arcweft-text-layout",
+ "bytemuck",
  "glyphon",
  "pollster",
  "serde",
