@@ -127,17 +127,23 @@ fn agent_script_run_json_executes_cli_session_smoke() {
         "target/codex-agent-script-run-test/trace-{}.arcwx",
         std::process::id()
     ));
+    let bundle_trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/bundle-trace-{}.arcwx",
+        std::process::id()
+    ));
     let bundle_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/agent-{}.awfb",
         std::process::id()
     ));
     let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_file(&bundle_trace_path);
     let _ = fs::remove_file(&bundle_path);
 
     assert_agent_script_build(&bundle_path);
-    assert_agent_script_bundle_run(&bundle_path);
+    assert_agent_script_bundle_run(&bundle_path, &bundle_trace_path);
     assert_agent_script_source_run_trace(&trace_path);
     assert_agent_script_trace_report(&trace_path);
+    assert_agent_script_replay_matches(&trace_path, &bundle_trace_path);
 }
 
 fn assert_agent_script_build(bundle_path: &Path) {
@@ -169,13 +175,15 @@ fn assert_agent_script_build(bundle_path: &Path) {
     assert_eq!(bundle_json["agent"]["agent_id"], "agent.cli.run_smoke");
 }
 
-fn assert_agent_script_bundle_run(bundle_path: &Path) {
+fn assert_agent_script_bundle_run(bundle_path: &Path, trace_path: &Path) {
     let bundle_run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
         .arg("run")
         .arg(bundle_path)
         .arg("--json")
+        .arg("--trace-out")
+        .arg(trace_path)
         .output()
         .expect("arcw agent script run executes built bundle");
     assert!(
@@ -189,6 +197,7 @@ fn assert_agent_script_bundle_run(bundle_path: &Path) {
     assert_eq!(bundle_run_json["ok"], true);
     assert_eq!(bundle_run_json["agents"], 1);
     assert_eq!(bundle_run_json["host_calls"], 1);
+    assert_eq!(bundle_run_json["trace_records"], 5);
     assert_eq!(bundle_run_json["responses"][0]["kind"], "observation");
 }
 
@@ -249,6 +258,34 @@ fn assert_agent_script_trace_report(trace_path: &Path) {
     assert_eq!(trace_report["started"], true);
     assert_eq!(trace_report["finished"], true);
     assert_eq!(trace_report["kinds"]["vm_step"], 2);
+}
+
+fn assert_agent_script_replay_matches(trace_path: &Path, expected_path: &Path) {
+    let replay_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("replay")
+        .arg(trace_path)
+        .arg("--expect")
+        .arg(expected_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script replay compares traces");
+    assert!(
+        replay_output.status.success(),
+        "agent script replay should match source and bundle traces\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stdout),
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    let replay_report: serde_json::Value =
+        serde_json::from_slice(&replay_output.stdout).expect("replay output is JSON");
+    assert_eq!(replay_report["ok"], true);
+    assert_eq!(replay_report["events"], 5);
+    assert_eq!(replay_report["matched_expected"], true);
+    assert_eq!(
+        replay_report["logical_sequence"][2]["kind"],
+        "observation_received"
+    );
 }
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {

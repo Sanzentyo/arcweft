@@ -216,6 +216,15 @@ pub(super) struct AgentScriptRunOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+pub(super) struct AgentScriptReplayOptions {
+    path: PathBuf,
+    #[arg(long)]
+    expect: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptTraceOptions {
     path: PathBuf,
     #[arg(long)]
@@ -295,6 +304,7 @@ pub(super) fn agent_script_command(command: AgentScriptCommand) -> Result<(), Ex
     match command {
         AgentScriptCommand::Build(options) => agent_script_build_command(&options),
         AgentScriptCommand::Check(options) => agent_script_check_command(&options),
+        AgentScriptCommand::Replay(options) => agent_script_replay_command(&options),
         AgentScriptCommand::Run(options) => agent_script_run_command(&options),
         AgentScriptCommand::Trace(options) => agent_script_trace_command(&options),
     }
@@ -476,6 +486,35 @@ struct AgentScriptTraceReport {
     blob_refs: usize,
     kinds: BTreeMap<String, usize>,
     error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentScriptReplayReport {
+    path: String,
+    ok: bool,
+    records: usize,
+    events: usize,
+    expected_path: Option<String>,
+    matched_expected: Option<bool>,
+    first_mismatch: Option<AgentScriptReplayMismatch>,
+    logical_sequence: Vec<AgentScriptReplayEvent>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+struct AgentScriptReplayEvent {
+    sequence: u64,
+    kind: String,
+    tick: Option<u64>,
+    payload_hash: String,
+    blob_refs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+struct AgentScriptReplayMismatch {
+    index: usize,
+    actual: Option<AgentScriptReplayEvent>,
+    expected: Option<AgentScriptReplayEvent>,
 }
 
 fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitCode> {
@@ -686,6 +725,125 @@ fn agent_script_run_error_report(
 
 fn agent_cli_session_id() -> SessionId {
     SessionId::new("session.cli").expect("static session id")
+}
+
+fn agent_script_replay_command(options: &AgentScriptReplayOptions) -> Result<(), ExitCode> {
+    let report =
+        agent_script_replay_report(options).unwrap_or_else(|error| AgentScriptReplayReport {
+            path: options.path.display().to_string(),
+            ok: false,
+            records: 0,
+            events: 0,
+            expected_path: options
+                .expect
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            matched_expected: None,
+            first_mismatch: None,
+            logical_sequence: Vec::new(),
+            error: Some(error),
+        });
+    if options.json {
+        print_json(&report)?;
+    } else if report.ok {
+        if let Some(expected) = &report.expected_path {
+            println!(
+                "{}: replay ok ({} event(s), matched {})",
+                report.path, report.events, expected
+            );
+        } else {
+            println!("{}: replay ok ({} event(s))", report.path, report.events);
+        }
+    } else if let Some(error) = &report.error {
+        eprintln!("{}: {error}", report.path);
+    }
+    if report.ok {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
+fn agent_script_replay_report(
+    options: &AgentScriptReplayOptions,
+) -> Result<AgentScriptReplayReport, String> {
+    let records = read_and_validate_agent_trace_records(&options.path)?;
+    let sequence = agent_trace_replay_sequence(&records);
+    let expected = options
+        .expect
+        .as_ref()
+        .map(|path| read_and_validate_agent_trace_records(path).map(|records| (path, records)))
+        .transpose()?;
+    let comparison = expected.as_ref().map(|(_, records)| {
+        compare_agent_trace_replay(&sequence, &agent_trace_replay_sequence(records))
+    });
+    let matched_expected = comparison.as_ref().map(Option::is_none);
+    let first_mismatch = comparison.flatten();
+    Ok(AgentScriptReplayReport {
+        path: options.path.display().to_string(),
+        ok: first_mismatch.is_none(),
+        records: records.len(),
+        events: sequence.len(),
+        expected_path: expected.map(|(path, _)| path.display().to_string()),
+        matched_expected,
+        first_mismatch: first_mismatch.clone(),
+        logical_sequence: sequence,
+        error: first_mismatch.map(|mismatch| {
+            format!(
+                "trace logical sequence diverged at replay event {}",
+                mismatch.index
+            )
+        }),
+    })
+}
+
+fn read_and_validate_agent_trace_records(path: &Path) -> Result<Vec<AgentTraceRecord>, String> {
+    let records = read_agent_trace_records(path)?;
+    validate_agent_trace(path, &records)?;
+    Ok(records)
+}
+
+fn agent_trace_replay_sequence(records: &[AgentTraceRecord]) -> Vec<AgentScriptReplayEvent> {
+    records
+        .iter()
+        .map(|record| AgentScriptReplayEvent {
+            sequence: record.sequence,
+            kind: agent_trace_kind_name(record.kind).to_owned(),
+            tick: record.tick,
+            payload_hash: record.payload_hash.as_str().to_owned(),
+            blob_refs: record
+                .blob_refs
+                .iter()
+                .map(|hash| hash.as_str().to_owned())
+                .collect(),
+        })
+        .collect()
+}
+
+fn compare_agent_trace_replay(
+    actual: &[AgentScriptReplayEvent],
+    expected: &[AgentScriptReplayEvent],
+) -> Option<AgentScriptReplayMismatch> {
+    actual
+        .iter()
+        .zip(expected)
+        .position(|(actual, expected)| !agent_trace_replay_events_match(actual, expected))
+        .or_else(|| (actual.len() != expected.len()).then_some(actual.len().min(expected.len())))
+        .map(|index| AgentScriptReplayMismatch {
+            index,
+            actual: actual.get(index).cloned(),
+            expected: expected.get(index).cloned(),
+        })
+}
+
+fn agent_trace_replay_events_match(
+    actual: &AgentScriptReplayEvent,
+    expected: &AgentScriptReplayEvent,
+) -> bool {
+    actual.kind == expected.kind
+        && actual.tick == expected.tick
+        && actual.payload_hash == expected.payload_hash
+        && actual.blob_refs == expected.blob_refs
 }
 
 fn agent_script_trace_command(options: &AgentScriptTraceOptions) -> Result<(), ExitCode> {
