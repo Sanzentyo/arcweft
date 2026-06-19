@@ -1,5 +1,6 @@
 use crate::{
     AgentActionTarget,
+    artifact::RequiredEntity,
     ids::{AgentResourceUri, PublicId},
     predicate::Predicate,
     value::AgentValue,
@@ -12,6 +13,8 @@ use std::collections::BTreeMap;
 pub struct AgentSessionInfo {
     pub session_id: String,
     pub program_hash: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub project_entities: Vec<RequiredEntity>,
     pub profile: Option<String>,
     pub capabilities: Vec<String>,
 }

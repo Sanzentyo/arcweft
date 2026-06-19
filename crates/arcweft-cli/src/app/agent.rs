@@ -7,6 +7,7 @@ use super::runtime::{
 use super::shared::print_json;
 use arcweft_agent_protocol::{
     AgentResource, AgentResourceBody, AgentResourceKind,
+    artifact::RequiredEntity,
     ids::{AgentResourceUri, AgentRunId, PublicId as AgentPublicId, SessionId, StableHash},
     protocol::{
         ActionResult, AgentAction, AgentHostResponse, AgentSessionInfo, CaptureFormat,
@@ -1086,6 +1087,8 @@ struct AgentScriptRunReport {
 struct AgentScriptRunInput {
     path: String,
     agents: usize,
+    program_hash: String,
+    project_entities: Vec<RequiredEntity>,
     bundle: ArcweftBundle,
 }
 
@@ -1203,7 +1206,7 @@ fn agent_script_run_input(options: &AgentScriptRunOptions) -> Result<AgentScript
         return agent_script_run_source_input(options);
     }
     if is_awfb_path(&options.path) {
-        return agent_script_run_bundle_input(&options.path);
+        return agent_script_run_bundle_input(options);
     }
     Err(format!(
         "{} is not an .awfagent source file or .awfb Agent bundle",
@@ -1217,16 +1220,23 @@ fn agent_script_run_source_input(
     let source = fs::read_to_string(&options.path)
         .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
     let project = agent_script_compile_project_index(options)?;
+    let program_hash = project.program_hash().as_str().to_owned();
+    let project_entities = agent_project_entities(&project)?;
     let compiled = arcweft_compiler::compile_agent_bundle_with_project(source, &project)
         .map_err(|error| error.to_string())?;
     Ok(AgentScriptRunInput {
         path: options.path.display().to_string(),
         agents: compiled.hir.agents().len(),
+        program_hash,
+        project_entities,
         bundle: compiled.bundle,
     })
 }
 
-fn agent_script_run_bundle_input(path: &Path) -> Result<AgentScriptRunInput, String> {
+fn agent_script_run_bundle_input(
+    options: &AgentScriptRunOptions,
+) -> Result<AgentScriptRunInput, String> {
+    let path = &options.path;
     let bytes =
         fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     let bundle = ArcweftBundle::from_json_slice(&bytes)
@@ -1238,10 +1248,15 @@ fn agent_script_run_bundle_input(path: &Path) -> Result<AgentScriptRunInput, Str
             bundle.bundle_kind
         ));
     }
+    let project = agent_script_compile_project_index(options)?;
+    let program_hash = project.program_hash().as_str().to_owned();
+    let project_entities = agent_project_entities(&project)?;
     let agents = usize::from(bundle.agent.is_some());
     Ok(AgentScriptRunInput {
         path: path.display().to_string(),
         agents,
+        program_hash,
+        project_entities,
         bundle,
     })
 }
@@ -1257,7 +1272,12 @@ fn agent_script_run_bundle(
     if agent_script_run_uses_native_session(options) {
         return native::agent_script_run_native_bundle(options, input, adapter_registrars);
     }
-    let session = CliAgentSession::new(options.signals.clone(), options.states.clone());
+    let session = CliAgentSession::new(
+        options.signals.clone(),
+        options.states.clone(),
+        input.program_hash.clone(),
+        input.project_entities.clone(),
+    );
     let mut runner = AgentRunner::new(
         session,
         CollectingDebugSink::default(),
@@ -2059,6 +2079,11 @@ fn agent_script_project_index(
     Ok(project)
 }
 
+fn agent_project_entities(project: &ProjectSemanticIndex) -> Result<Vec<RequiredEntity>, String> {
+    arcweft_compiler::agent_required_entities_from_project(project)
+        .map_err(|error| error.to_string())
+}
+
 fn agent_script_signal_symbols(
     signals: &[AgentScriptSignalArg],
 ) -> Result<Vec<EntitySymbol>, String> {
@@ -2082,6 +2107,8 @@ fn agent_script_signal_symbol(signal: &AgentScriptSignalArg, id: SemaPublicId) -
 
 #[derive(Debug)]
 struct CliAgentSession {
+    program_hash: String,
+    project_entities: Vec<RequiredEntity>,
     tick: u64,
     signals: BTreeMap<String, AgentValue>,
     states: BTreeMap<String, AgentValue>,
@@ -2090,8 +2117,15 @@ struct CliAgentSession {
 }
 
 impl CliAgentSession {
-    fn new(signals: Vec<AgentScriptSignalArg>, states: Vec<AgentScriptStateArg>) -> Self {
+    fn new(
+        signals: Vec<AgentScriptSignalArg>,
+        states: Vec<AgentScriptStateArg>,
+        program_hash: String,
+        project_entities: Vec<RequiredEntity>,
+    ) -> Self {
         Self {
+            program_hash,
+            project_entities,
             tick: 0,
             signals: signals
                 .into_iter()
@@ -2133,7 +2167,8 @@ impl AgentSession for CliAgentSession {
     fn info(&mut self) -> Result<AgentSessionInfo, Self::Error> {
         Ok(AgentSessionInfo {
             session_id: "session.cli".to_owned(),
-            program_hash: "cli-agent-run".to_owned(),
+            program_hash: self.program_hash.clone(),
+            project_entities: self.project_entities.clone(),
             profile: Some("cli".to_owned()),
             capabilities: vec![
                 "agent.observe".to_owned(),

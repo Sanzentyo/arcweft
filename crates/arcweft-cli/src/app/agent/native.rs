@@ -27,6 +27,7 @@ use arcweft_agent_mcp::{
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
     tool_result_for_resources, trace_resource,
 };
+use arcweft_agent_protocol::artifact::RequiredEntity;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, StableHash};
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
 use arcweft_agent_protocol::protocol::{
@@ -2687,8 +2688,17 @@ fn agent_repl_eval_compiled_cell(
             return agent_repl_compile_error_report(index, input, state, parse_report, &message);
         }
     };
+    let project_entities = match arcweft_compiler::agent_required_entities_from_project(&project) {
+        Ok(entities) => entities,
+        Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
+    };
     let mut runner = AgentRunner::new(
-        CliAgentSession::new(Vec::new(), Vec::new()),
+        CliAgentSession::new(
+            Vec::new(),
+            Vec::new(),
+            project.program_hash().as_str().to_owned(),
+            project_entities,
+        ),
         CollectingDebugSink::default(),
         NoopRagService,
         RuntimeAgentPolicy::new([
@@ -6039,7 +6049,12 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
     input: &AgentScriptRunInput,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentScriptRunReport, ExitCode> {
-    let session = NativeAgentScriptSession::new(options, adapter_registrars);
+    let session = NativeAgentScriptSession::new(
+        options,
+        adapter_registrars,
+        input.program_hash.clone(),
+        input.project_entities.clone(),
+    );
     let mut runner = AgentRunner::new(
         session,
         CollectingDebugSink::default(),
@@ -6097,6 +6112,8 @@ enum NativeAgentScriptSessionError {
 struct NativeAgentScriptSession<'a> {
     options: AgentObserveOptions,
     adapter_registrars: &'a [NativeAdapterRegistrar],
+    program_hash: String,
+    project_entities: Vec<RequiredEntity>,
     runtime: Option<NativeAgentRuntimeState>,
     observed: Option<NativeAgentObservedSnapshot>,
     capture_blobs: Vec<AgentCaptureBlob>,
@@ -6106,6 +6123,8 @@ impl<'a> NativeAgentScriptSession<'a> {
     fn new(
         options: &AgentScriptRunOptions,
         adapter_registrars: &'a [NativeAdapterRegistrar],
+        program_hash: String,
+        project_entities: Vec<RequiredEntity>,
     ) -> Self {
         Self {
             options: AgentObserveOptions {
@@ -6142,6 +6161,8 @@ impl<'a> NativeAgentScriptSession<'a> {
                 json: true,
             },
             adapter_registrars,
+            program_hash,
+            project_entities,
             runtime: None,
             observed: None,
             capture_blobs: Vec::new(),
@@ -6361,7 +6382,8 @@ impl AgentSession for NativeAgentScriptSession<'_> {
     fn info(&mut self) -> Result<AgentSessionInfo, Self::Error> {
         Ok(AgentSessionInfo {
             session_id: "session.native".to_owned(),
-            program_hash: "native-agent-run".to_owned(),
+            program_hash: self.program_hash.clone(),
+            project_entities: self.project_entities.clone(),
             profile: self.options.profile.profile.clone(),
             capabilities: vec![
                 "agent.observe".to_owned(),

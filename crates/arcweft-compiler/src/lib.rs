@@ -355,11 +355,7 @@ fn agent_artifact_manifest(
         project_binding: ProjectBinding {
             program_hash: StableHash::new(project.program_hash().as_str().to_owned())?,
             mode: ProjectBindingMode::Compatible,
-            required_entities: project
-                .entities()
-                .values()
-                .map(required_agent_entity)
-                .collect::<Result<Vec<_>, _>>()?,
+            required_entities: agent_required_entities_from_project(project)?,
         },
         declared_effects: declared_agent_effects(agent),
         budget: AgentBudget::default(),
@@ -373,6 +369,17 @@ fn agent_public_id(agent: &HirAgent) -> Result<AgentPublicId, CompileAgentError>
         |id| id.body().to_owned(),
     ))
     .map_err(CompileAgentError::ArtifactIdentifier)
+}
+
+/// Builds the Agent artifact entity compatibility snapshot for a project index.
+pub fn agent_required_entities_from_project(
+    project: &ProjectSemanticIndex,
+) -> Result<Vec<RequiredEntity>, arcweft_agent_protocol::ids::IdentifierError> {
+    project
+        .entities()
+        .values()
+        .map(required_agent_entity)
+        .collect()
 }
 
 fn required_agent_entity(

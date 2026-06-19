@@ -7,7 +7,7 @@
 
 use arcweft_agent_protocol::{
     AgentActionTarget, AgentResource,
-    artifact::{ProjectBinding, ProjectBindingMode},
+    artifact::{ProjectBinding, ProjectBindingMode, RequiredEntity},
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
@@ -171,12 +171,13 @@ where
     #[error("Agent controller bundle is missing its Agent artifact manifest")]
     MissingAgentManifest,
     #[error(
-        "Agent controller project binding mismatch: expected program hash {expected_program_hash}, actual {actual_program_hash}, mode {mode:?}"
+        "Agent controller project binding mismatch: expected program hash {expected_program_hash}, actual {actual_program_hash}, mode {mode:?}: {detail}"
     )]
     ProjectBindingMismatch {
         expected_program_hash: String,
         actual_program_hash: String,
         mode: ProjectBindingMode,
+        detail: String,
     },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
@@ -498,14 +499,30 @@ where
                 if binding.program_hash.as_str() == session_info.program_hash {
                     Ok(())
                 } else {
-                    Err(AgentRunError::ProjectBindingMismatch {
-                        expected_program_hash: binding.program_hash.as_str().to_owned(),
-                        actual_program_hash: session_info.program_hash,
-                        mode: binding.mode,
-                    })
+                    Err(project_binding_mismatch(
+                        binding,
+                        &session_info,
+                        "strict program hash mismatch".to_owned(),
+                    ))
                 }
             }
-            ProjectBindingMode::Compatible => Ok(()),
+            ProjectBindingMode::Compatible => {
+                let runtime_entities = session_info
+                    .project_entities
+                    .iter()
+                    .map(|entity| (entity.public_id.as_str(), entity))
+                    .collect::<BTreeMap<_, _>>();
+                if let Some(detail) = binding.required_entities.iter().find_map(|required| {
+                    compatible_entity_mismatch(
+                        required,
+                        runtime_entities.get(required.public_id.as_str()).copied(),
+                    )
+                }) {
+                    Err(project_binding_mismatch(binding, &session_info, detail))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
@@ -576,6 +593,53 @@ where
         };
         self.debug.append(&event).map_err(AgentRunError::Debug)
     }
+}
+
+fn project_binding_mismatch<SessionError, DebugError, RagError>(
+    binding: &ProjectBinding,
+    session_info: &AgentSessionInfo,
+    detail: String,
+) -> AgentRunError<SessionError, DebugError, RagError>
+where
+    SessionError: std::error::Error + Send + Sync + 'static,
+    DebugError: std::error::Error + Send + Sync + 'static,
+    RagError: std::error::Error + Send + Sync + 'static,
+{
+    AgentRunError::ProjectBindingMismatch {
+        expected_program_hash: binding.program_hash.as_str().to_owned(),
+        actual_program_hash: session_info.program_hash.clone(),
+        mode: binding.mode,
+        detail,
+    }
+}
+
+fn compatible_entity_mismatch(
+    required: &RequiredEntity,
+    actual: Option<&RequiredEntity>,
+) -> Option<String> {
+    let Some(actual) = actual else {
+        return Some(format!(
+            "required entity {} is missing",
+            required.public_id.as_str()
+        ));
+    };
+    if required.kind != actual.kind {
+        return Some(format!(
+            "required entity {} kind mismatch: expected {}, actual {}",
+            required.public_id.as_str(),
+            required.kind,
+            actual.kind
+        ));
+    }
+    if required.type_fingerprint != actual.type_fingerprint {
+        return Some(format!(
+            "required entity {} type fingerprint mismatch: expected {}, actual {}",
+            required.public_id.as_str(),
+            required.type_fingerprint.as_str(),
+            actual.type_fingerprint.as_str()
+        ));
+    }
+    None
 }
 
 fn agent_host_request_from_effect(effect: &LineEffectRequest) -> Result<AgentHostRequest, String> {
@@ -2297,6 +2361,7 @@ mod tests {
             Ok(AgentSessionInfo {
                 session_id: "session.test".to_owned(),
                 program_hash: "hash".to_owned(),
+                project_entities: Vec::new(),
                 profile: None,
                 capabilities: Vec::new(),
             })
@@ -3219,7 +3284,53 @@ mod tests {
                 expected_program_hash,
                 actual_program_hash,
                 mode: ProjectBindingMode::Strict,
-            } if expected_program_hash == "different-program" && actual_program_hash == "hash"
+                detail,
+            } if expected_program_hash == "different-program"
+                && actual_program_hash == "hash"
+                && detail == "strict program hash mismatch"
+        ));
+        assert_eq!(runner.session_mut().observations.len(), 1);
+        assert!(runner.debug_mut().events.is_empty());
+    }
+
+    #[test]
+    fn controller_bundle_rejects_compatible_project_entity_mismatch_before_execution() {
+        let session = TestSession {
+            observations: vec![observation(1, true)],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            RecordingDebugSink::default(),
+            NoopRagService,
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::DebugRecord,
+            ]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+        let mut bundle = observe_checkpoint_bundle();
+        let manifest = bundle.agent.as_mut().expect("agent manifest exists");
+        manifest.project_binding.required_entities = vec![RequiredEntity {
+            public_id: PublicId::new("signal.ready").expect("valid public id"),
+            kind: "signal".to_owned(),
+            type_fingerprint: StableHash::new("shape.signal.ready.v1")
+                .expect("valid type fingerprint"),
+        }];
+
+        let error = runner
+            .run_controller_bundle(&bundle, AgentControllerRunConfig::default())
+            .expect_err("compatible entity mismatch is rejected");
+
+        assert!(matches!(
+            error,
+            AgentRunError::ProjectBindingMismatch {
+                expected_program_hash,
+                actual_program_hash,
+                mode: ProjectBindingMode::Compatible,
+                detail,
+            } if expected_program_hash == "program-test"
+                && actual_program_hash == "hash"
+                && detail == "required entity signal.ready is missing"
         ));
         assert_eq!(runner.session_mut().observations.len(), 1);
         assert!(runner.debug_mut().events.is_empty());
