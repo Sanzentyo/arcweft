@@ -365,7 +365,11 @@ fn agent_controller_plan_lowers_composite_wait_predicates_to_host_task() {
 agent @agent.wait_composite wait_composite()
 effects { agent.wait, agent.observe }
 {
-    let obs = wait(any(exists(signal(@signal.ready)), metric(@metric.fps).ge(55.0f32)), timeout = 5ms)
+    let obs = wait(any([
+        exists(signal(@signal.ready)),
+        metric(@metric.fps).ge(55.0f32),
+        diagnostics().has_error(),
+    ]), timeout = 5ms)
     return obs.tick
 }
 ",
@@ -393,6 +397,7 @@ effects { agent.wait, agent.observe }
             && matches!(&field.value, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "any")
     }));
     assert!(format!("{predicate:?}").contains("greater_or_equal"));
+    assert!(format!("{predicate:?}").contains("diagnostics_has_error"));
 }
 
 #[test]

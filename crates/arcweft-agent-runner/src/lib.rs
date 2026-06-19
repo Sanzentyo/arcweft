@@ -956,6 +956,7 @@ fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
             .map(|predicate| Predicate::Not {
                 predicate: Box::new(predicate),
             }),
+        "diagnostics_has_error" => Ok(Predicate::DiagnosticsHasError),
         other => Err(format!("unsupported predicate kind `{other}`")),
     }
 }
@@ -1074,9 +1075,50 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
             runtime_field("byte_len", RuntimeValue::u64(result.byte_len)),
         ]),
         AgentHostResponse::Resource(value) => runtime_resource_payload(value),
-        AgentHostResponse::RagContext(value) => RuntimeValue::String(value.to_string()),
+        AgentHostResponse::RagContext(value) => runtime_rag_context_payload(value),
         AgentHostResponse::Unit => RuntimeValue::Unit,
     })
+}
+
+fn runtime_rag_context_payload(value: &serde_json::Value) -> RuntimeValue {
+    let item_count = value
+        .get("items")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    RuntimeValue::Record(vec![
+        runtime_field("summary", RuntimeValue::String(rag_context_summary(value))),
+        runtime_field(
+            "item_count",
+            RuntimeValue::usize(u64::try_from(item_count).unwrap_or(u64::MAX)),
+        ),
+        runtime_field(
+            "truncated",
+            RuntimeValue::Bool(
+                value
+                    .get("truncated")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+            ),
+        ),
+        runtime_field("json", RuntimeValue::String(value.to_string())),
+    ])
+}
+
+fn rag_context_summary(value: &serde_json::Value) -> String {
+    let query = value
+        .get("query")
+        .and_then(|query| query.get("text"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let item_count = value
+        .get("items")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if query.is_empty() {
+        format!("{item_count} RAG context item(s)")
+    } else {
+        format!("{item_count} RAG context item(s) for `{query}`")
+    }
 }
 
 fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValue {
@@ -2020,6 +2062,7 @@ fn predicate_matches(predicate: &Predicate, observation: &ObservationEnvelope) -
             .is_some_and(|actual| compare_values(&actual, *op, value)),
         Predicate::Exists { probe } => observation_value(probe, observation).is_some(),
         Predicate::ActionEnabled { .. } => false,
+        Predicate::DiagnosticsHasError => diagnostics_has_error(observation),
         Predicate::All { predicates } => predicates
             .iter()
             .all(|predicate| predicate_matches(predicate, observation)),
@@ -2028,6 +2071,21 @@ fn predicate_matches(predicate: &Predicate, observation: &ObservationEnvelope) -
             .any(|predicate| predicate_matches(predicate, observation)),
         Predicate::Not { predicate } => !predicate_matches(predicate, observation),
     }
+}
+
+fn diagnostics_has_error(observation: &ObservationEnvelope) -> bool {
+    observation
+        .payload
+        .get("diagnostics")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|diagnostics| {
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic
+                    .get("severity")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("error")
+            })
+        })
 }
 
 fn observation_value(probe: &Probe, observation: &ObservationEnvelope) -> Option<AgentValue> {
@@ -2958,6 +3016,61 @@ mod tests {
     }
 
     #[test]
+    fn wait_matches_diagnostics_has_error_predicate() {
+        let session = TestSession {
+            observations: vec![
+                ObservationEnvelope {
+                    tick: 1,
+                    frame_id: "frame.1".to_owned(),
+                    state_hash: "state.1".to_owned(),
+                    render_hash: "render.1".to_owned(),
+                    actions: Vec::new(),
+                    signals: BTreeMap::new(),
+                    payload: serde_json::json!({
+                        "diagnostics": [
+                            { "severity": "warning", "message": "not fatal" }
+                        ]
+                    }),
+                },
+                ObservationEnvelope {
+                    tick: 2,
+                    frame_id: "frame.2".to_owned(),
+                    state_hash: "state.2".to_owned(),
+                    render_hash: "render.2".to_owned(),
+                    actions: Vec::new(),
+                    signals: BTreeMap::new(),
+                    payload: serde_json::json!({
+                        "diagnostics": [
+                            { "severity": "error", "message": "render mismatch" }
+                        ]
+                    }),
+                },
+            ],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+                predicate: Predicate::DiagnosticsHasError,
+                timeout_millis: 5,
+                stable_frames: 1,
+                poll_frames: 1,
+            })))
+            .expect("diagnostic wait succeeds");
+
+        assert!(matches!(
+            report.response,
+            AgentHostResponse::Observation(observation) if observation.tick == 2
+        ));
+    }
+
+    #[test]
     fn capture_requires_policy_capability() {
         let mut runner = AgentRunner::new(
             TestSession::default(),
@@ -3228,6 +3341,40 @@ mod tests {
         assert_eq!(
             runtime_record_string(value_fields, "data").expect("body value data is a string"),
             "aGVsbG8="
+        );
+    }
+
+    #[test]
+    fn rag_context_runtime_payload_exposes_summary_fields() {
+        let rag_payload = runtime_rag_context_payload(&serde_json::json!({
+            "query": {
+                "text": "why did opening flow stall?"
+            },
+            "items": [
+                { "id": "item.1" },
+                { "id": "item.2" }
+            ],
+            "truncated": true
+        }));
+        let RuntimeValue::Record(fields) = rag_payload else {
+            panic!("RAG context payload is a record");
+        };
+
+        assert_eq!(
+            runtime_record_string(&fields, "summary").expect("summary is a string"),
+            "2 RAG context item(s) for `why did opening flow stall?`"
+        );
+        assert_eq!(
+            runtime_record_get(&fields, "item_count").expect("item_count exists"),
+            &RuntimeValue::usize(2)
+        );
+        assert!(matches!(
+            runtime_record_get(&fields, "truncated").expect("truncated exists"),
+            RuntimeValue::Bool(true)
+        ));
+        assert_eq!(
+            runtime_record_string(&fields, "json").expect("json is a string"),
+            "{\"items\":[{\"id\":\"item.1\"},{\"id\":\"item.2\"}],\"query\":{\"text\":\"why did opening flow stall?\"},\"truncated\":true}"
         );
     }
 

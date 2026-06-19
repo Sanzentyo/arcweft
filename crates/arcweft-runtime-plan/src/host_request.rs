@@ -326,13 +326,7 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
         }
         Expr::Call { callee, args } if matches!(expr_label(callee).as_str(), "all" | "any") => {
             let kind = expr_label(callee);
-            let predicates = args
-                .iter()
-                .map(|arg| match arg {
-                    CallArg::Positional(value) => lower_agent_predicate_expr(value),
-                    CallArg::Named { .. } | CallArg::Spread { .. } => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let predicates = lower_agent_predicate_args(args)?;
             Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&kind)),
                 runtime_field_expr("predicates", RuntimeExpr::Tuple(predicates)),
@@ -347,8 +341,40 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
                 runtime_field_expr("predicate", lower_agent_predicate_expr(predicate)?),
             ]))
         }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if is_agent_diagnostics_call(receiver)
+            && method_name(method) == "has_error"
+            && args.is_empty() =>
+        {
+            Some(runtime_record_expr([runtime_field_expr(
+                "kind",
+                runtime_string_expr("diagnostics_has_error"),
+            )]))
+        }
         _ => None,
     }
+}
+
+fn is_agent_diagnostics_call(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { callee, args } if expr_label(callee) == "diagnostics" && args.is_empty()
+    )
+}
+
+fn lower_agent_predicate_args(args: &[CallArg]) -> Option<Vec<RuntimeExpr>> {
+    if let [CallArg::Positional(Expr::BracketSeq(items))] = args {
+        return items.iter().map(lower_agent_predicate_expr).collect();
+    }
+    args.iter()
+        .map(|arg| match arg {
+            CallArg::Positional(value) => lower_agent_predicate_expr(value),
+            CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        })
+        .collect()
 }
 
 fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {

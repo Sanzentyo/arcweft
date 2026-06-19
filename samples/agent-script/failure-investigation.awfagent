@@ -1,0 +1,47 @@
+#[agent(version = 1)]
+
+#[launch(profile = "game.dev")]
+#[bind(program = compatible)]
+#[budget(timeout = 45s, steps = 192usize, captures = 8usize, rag_queries = 4usize)]
+agent @agent.debug.opening_route investigate_opening_route()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    debug.record,
+    rag.query,
+}
+{
+    let before = try observe()
+    note(fmt("initial tick={before.tick} state={before.state_hash}"))
+
+    let result = try choose(@choice.opening.listen)
+    checkpoint("choice-dispatched")
+
+    let after = try wait(
+        any([
+            signal(@signal.current_flow).eq(@flow.alice_intro),
+            diagnostics().has_error(),
+        ]),
+        timeout = 8s,
+    )
+
+    if after.signals.get(@signal.current_flow) != @flow.alice_intro {
+        let context = try rag.query(
+            "opening listen choice did not reach alice_intro",
+            roots = [@choice.opening.listen, @flow.alice_intro],
+            graph_depth = 2u32,
+            limit = 12usize,
+        )
+        note(context.summary())
+
+        let image = try capture(viewport(), name = "route-failure")
+        attach(image)
+
+        expect(false, message = "opening route failed; investigation context attached")
+    }
+
+    expect(result.accepted)
+    Ok(())
+}

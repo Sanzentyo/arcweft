@@ -784,6 +784,11 @@ impl TypeChecker<'_> {
                 "observation field path",
                 &TypeKind::String,
             )),
+            "diagnostics" => Some(self.check_agent_no_arg_intrinsic(
+                name,
+                args,
+                TypeKind::Named("Diagnostics".to_owned()),
+            )),
             "exists" => Some(self.check_agent_exists_intrinsic(name, args)),
             "all" | "any" => Some(self.check_agent_predicate_list_intrinsic(name, args)),
             "not" => Some(self.check_agent_not_predicate_intrinsic(name, args)),
@@ -1254,6 +1259,17 @@ impl TypeChecker<'_> {
                 "{name} requires at least one predicate argument"
             )));
         }
+        if let [CallArg::Positional(Expr::BracketSeq(items))] = args {
+            if items.is_empty() {
+                self.errors.push(TypeCheckError::new(format!(
+                    "{name} predicate list cannot be empty"
+                )));
+            }
+            for item in items {
+                self.expect_expr_type(item, &TypeKind::Predicate, name);
+            }
+            return TypeKind::Predicate;
+        }
         for arg in args {
             match arg {
                 CallArg::Positional(value) => {
@@ -1648,7 +1664,7 @@ impl TypeChecker<'_> {
                     name: arg_name,
                     value,
                 } if arg_name == "roots" => {
-                    self.check_expr(value);
+                    self.check_agent_rag_roots_arg(value);
                 }
                 CallArg::Named {
                     name: arg_name,
@@ -1687,6 +1703,39 @@ impl TypeChecker<'_> {
         TypeKind::Result {
             ok: Box::new(TypeKind::RagContextPack),
             error: Box::new(TypeKind::Named("RagError".to_owned())),
+        }
+    }
+
+    fn check_agent_rag_roots_arg(&mut self, value: &Expr) {
+        if let Expr::BracketSeq(items) = value {
+            for item in items {
+                self.expect_agent_rag_root_expr(item);
+            }
+            return;
+        }
+
+        let Some(actual) = self.check_expr(value) else {
+            return;
+        };
+        let Some(item) = spread_item_type(&actual) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "rag.query roots must be a sequence of entity references, found {actual:?}"
+            )));
+            return;
+        };
+        if !matches!(item, TypeKind::Ref(_)) {
+            self.errors.push(TypeCheckError::new(format!(
+                "rag.query roots items must be entity references, found {item:?}"
+            )));
+        }
+    }
+
+    fn expect_agent_rag_root_expr(&mut self, value: &Expr) {
+        match self.check_expr(value) {
+            Some(TypeKind::Ref(_)) | None => {}
+            Some(actual) => self.errors.push(TypeCheckError::new(format!(
+                "rag.query roots items must be entity references, found {actual:?}"
+            ))),
         }
     }
 
@@ -2200,6 +2249,21 @@ impl TypeChecker<'_> {
         {
             return Some(self.check_probe_compare_method(method_name, inner.as_ref(), args));
         }
+        if receiver_type == TypeKind::Named("Diagnostics".to_owned()) && method_name == "has_error"
+        {
+            return Some(self.check_no_arg_method(
+                "Diagnostics.has_error",
+                args,
+                TypeKind::Predicate,
+            ));
+        }
+        if receiver_type == TypeKind::RagContextPack && method_name == "summary" {
+            return Some(self.check_no_arg_method(
+                "RagContextPack.summary",
+                args,
+                TypeKind::DisplayText,
+            ));
+        }
         if matches!(method_name, "context" | "with_context") {
             return self.check_context_method_call(receiver_type, args);
         }
@@ -2270,6 +2334,23 @@ impl TypeChecker<'_> {
             }
         }
         TypeKind::Predicate
+    }
+
+    fn check_no_arg_method(
+        &mut self,
+        method_name: &str,
+        args: &[CallArg],
+        return_type: TypeKind,
+    ) -> TypeKind {
+        if !args.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "{method_name} requires no arguments"
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+        }
+        return_type
     }
 
     fn check_context_method_call(

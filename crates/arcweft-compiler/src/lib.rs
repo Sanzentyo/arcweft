@@ -1207,6 +1207,91 @@ effects {
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_failure_investigation_surface() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption)
+            .with_entity(EntitySymbol::new(
+                public_id("signal.current_flow"),
+                EntityType::new(
+                    EntityKind::Signal,
+                    Some(TypeKind::entity_ref(EntityKind::Flow)),
+                ),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.signal.current_flow.v1"),
+            ))
+            .with_entity(EntitySymbol::new(
+                public_id("flow.alice_intro"),
+                EntityType::new(EntityKind::Flow, None),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.flow.alice_intro.v1"),
+            ));
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug.opening_route investigate_opening_route()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    debug.record,
+    rag.query,
+}
+{
+    let before = try observe()
+    note(fmt("initial tick={before.tick} state={before.state_hash}"))
+
+    let result = try choose(@choice.opening.listen)
+    checkpoint("choice-dispatched")
+
+    let after = try wait(
+        any([
+            signal(@signal.current_flow).eq(@flow.alice_intro),
+            diagnostics().has_error(),
+        ]),
+        timeout = 8s,
+    )
+
+    if after.signals.get(@signal.current_flow) != @flow.alice_intro {
+        let context = try rag.query(
+            "opening listen choice did not reach alice_intro",
+            roots = [@choice.opening.listen, @flow.alice_intro],
+            graph_depth = 2u32,
+            limit = 12usize,
+        )
+        note(context.summary())
+
+        let image = try capture(viewport(), name = "route-failure")
+        attach(image)
+
+        expect(false, message = "opening route failed; investigation context attached")
+    }
+
+    expect(result.accepted)
+    Ok(())
+}
+"#,
+            &project,
+        )
+        .expect("failure investigation surface typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Predicate)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::RagContextPack)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_invoke_intrinsic() {
         let project = project_with_agent_action(
             "activity.inventory",

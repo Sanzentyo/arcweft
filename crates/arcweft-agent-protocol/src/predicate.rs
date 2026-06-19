@@ -38,6 +38,7 @@ pub enum Predicate {
     ActionEnabled {
         target: PublicId,
     },
+    DiagnosticsHasError,
     All {
         predicates: Vec<Self>,
     },

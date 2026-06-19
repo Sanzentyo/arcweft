@@ -4843,6 +4843,10 @@ fn agent_mcp_predicate_matches(predicate: &Predicate, report: &AgentObservationR
             .actions
             .iter()
             .any(|action| action.enabled && action.target == target.as_str()),
+        Predicate::DiagnosticsHasError => report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == AgentDiagnosticSeverity::Error),
         Predicate::All { predicates } => predicates
             .iter()
             .all(|predicate| agent_mcp_predicate_matches(predicate, report)),

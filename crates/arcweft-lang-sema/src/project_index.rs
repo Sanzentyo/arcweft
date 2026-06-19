@@ -99,6 +99,7 @@ pub enum AgentIntrinsic {
     MetricProbe,
     StateProbe,
     ObservationProbe,
+    Diagnostics,
     PredicateExists,
     PredicateAll,
     PredicateAny,
@@ -1433,11 +1434,22 @@ pub fn agent_prelude_env() -> TypeCheckEnv {
             [FunctionParam::required("expected", TypeKind::Bool)],
         ),
     )
+    .with_method_signature(
+        TypeKind::Named("Diagnostics".to_owned()),
+        "has_error",
+        FunctionSignature::return_only(TypeKind::Predicate),
+    )
+    .with_method_signature(
+        TypeKind::RagContextPack,
+        "summary",
+        FunctionSignature::return_only(TypeKind::DisplayText),
+    )
 }
 
 fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
     agent_observation_callables()
         .into_iter()
+        .chain(agent_probe_callables())
         .chain(agent_predicate_callables())
         .chain(agent_action_callables())
         .chain(agent_capture_callables())
@@ -1506,6 +1518,11 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::Wait),
             ),
         ),
+    ]
+}
+
+fn agent_probe_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![
         (
             "signal",
             CallableSymbol::new(
@@ -1546,6 +1563,14 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
                 ),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::ObservationProbe),
+            ),
+        ),
+        (
+            "diagnostics",
+            CallableSymbol::new(
+                FunctionSignature::return_only(TypeKind::Named("Diagnostics".to_owned())),
+                [EffectCapability::new("agent.observe")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Diagnostics),
             ),
         ),
     ]

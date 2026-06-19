@@ -695,6 +695,14 @@ fn lower_strict_method_call_expr(
             }
         });
     }
+    if runtime_method_name(method) == "summary" && args.is_empty() {
+        return lower_runtime_expr_strict_with_helpers(receiver, helpers).map(|source| {
+            RuntimeExpr::Field {
+                target: Box::new(source),
+                field: "summary".to_owned(),
+            }
+        });
+    }
     Ok(RuntimeExpr::MethodCall {
         receiver: Box::new(lower_runtime_expr_strict_with_helpers(receiver, helpers)?),
         method: runtime_method_name(method).to_owned(),
