@@ -144,6 +144,7 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_agent_script_source_run_trace(&trace_path);
     assert_agent_script_trace_report(&trace_path);
     assert_agent_script_replay_matches(&trace_path, &bundle_trace_path);
+    assert_agent_rag_query_trace(&trace_path);
 }
 
 #[test]
@@ -719,6 +720,49 @@ fn assert_agent_script_replay_matches(trace_path: &Path, expected_path: &Path) {
         replay_report["logical_sequence"][2]["kind"],
         "observation_received"
     );
+}
+
+fn assert_agent_rag_query_trace(trace_path: &Path) {
+    let rag_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--trace")
+        .arg(trace_path)
+        .arg("--query")
+        .arg("observation_received")
+        .arg("--root")
+        .arg("observation_received")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query reads trace");
+    assert!(
+        rag_output.status.success(),
+        "agent rag query should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rag_output.stdout),
+        String::from_utf8_lossy(&rag_output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&rag_output.stdout).expect("RAG output is JSON");
+    assert_eq!(pack["schema_version"], 1);
+    assert_eq!(pack["query"]["text"], "observation_received");
+    assert_eq!(
+        pack["query"]["roots"],
+        serde_json::json!(["observation_received"])
+    );
+    assert!(
+        pack["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(pack["items"].as_array().unwrap().iter().any(|item| {
+        item["title"]
+            .as_str()
+            .is_some_and(|title| title.contains("observation_received"))
+            && item["channels"]
+                .as_array()
+                .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
+    }));
 }
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {

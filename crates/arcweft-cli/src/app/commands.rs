@@ -68,10 +68,19 @@ pub(super) enum AgentCommand {
     Observe(AgentObserveOptions),
     HitTest(AgentHitTestOptions),
     Mcp(AgentMcpOptions),
+    Rag {
+        #[command(subcommand)]
+        command: AgentRagCommand,
+    },
     Script {
         #[command(subcommand)]
         command: AgentScriptCommand,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum AgentRagCommand {
+    Query(super::agent::AgentRagQueryOptions),
 }
 
 #[derive(Debug, Subcommand)]

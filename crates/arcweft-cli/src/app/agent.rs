@@ -1,4 +1,4 @@
-use super::commands::{AgentCommand, AgentScriptCommand};
+use super::commands::{AgentCommand, AgentRagCommand, AgentScriptCommand};
 use super::project::ProfileOptions;
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
@@ -7,7 +7,7 @@ use super::runtime::{
 use super::shared::print_json;
 use arcweft_agent_protocol::{
     AgentResource, AgentResourceBody, AgentResourceKind,
-    ids::{AgentResourceUri, AgentRunId, SessionId, StableHash},
+    ids::{AgentResourceUri, AgentRunId, PublicId as AgentPublicId, SessionId, StableHash},
     protocol::{
         ActionResult, AgentAction, AgentHostResponse, AgentSessionInfo, CaptureFormat,
         CaptureRequest, CaptureResult, ObservationEnvelope, ObserveRequest,
@@ -22,7 +22,9 @@ use arcweft_agent_runner::{
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_debug_model::{
+    chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
     event::{DebugEvent, DebugEventKind},
+    rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     sink::DebugEventSink,
 };
 use arcweft_id::PublicId as SemaPublicId;
@@ -30,6 +32,7 @@ use arcweft_lang_sema::{
     project_index::{EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash},
     types::{EntityKind, EntityType, TypeKind},
 };
+use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_source::SourceAnchor;
 use clap::{Args, ValueEnum};
@@ -183,6 +186,24 @@ pub(super) struct AgentHitTestOptions {
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentMcpOptions {}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct AgentRagQueryOptions {
+    #[arg(long)]
+    trace: PathBuf,
+    #[arg(long)]
+    query: String,
+    #[arg(long = "root")]
+    roots: Vec<String>,
+    #[arg(long, default_value_t = 1)]
+    graph_depth: u32,
+    #[arg(long, default_value_t = 8)]
+    limit: usize,
+    #[arg(long, default_value_t = 32 * 1024)]
+    max_context_bytes: usize,
+    #[arg(long)]
+    json: bool,
+}
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptCheckOptions {
@@ -354,6 +375,7 @@ pub(super) fn agent_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
+        AgentCommand::Rag { command } => agent_rag_command(command),
         AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
         command => native::agent_command(command, adapter_registrars),
     }
@@ -365,12 +387,391 @@ pub(super) fn agent_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
+        AgentCommand::Rag { command } => agent_rag_command(command),
         AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
         AgentCommand::Observe(_) | AgentCommand::HitTest(_) | AgentCommand::Mcp(_) => {
             eprintln!("error: this arcw agent command requires the native-capture feature");
             Err(ExitCode::FAILURE)
         }
     }
+}
+
+fn agent_rag_command(command: AgentRagCommand) -> Result<(), ExitCode> {
+    match command {
+        AgentRagCommand::Query(options) => agent_rag_query_command(&options),
+    }
+}
+
+fn agent_rag_query_command(options: &AgentRagQueryOptions) -> Result<(), ExitCode> {
+    match agent_rag_query_pack(options) {
+        Ok(pack) => {
+            if options.json {
+                print_json(&pack)?;
+            } else {
+                println!(
+                    "{}: {} item(s), truncated={}",
+                    options.trace.display(),
+                    pack.items.len(),
+                    pack.truncated
+                );
+                for item in &pack.items {
+                    println!(
+                        "- {} [{}] score={:.6}",
+                        item.title,
+                        item.chunk_id.as_str(),
+                        item.fused_score
+                    );
+                }
+            }
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("{}: {error}", options.trace.display());
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AgentTraceRagCandidate {
+    chunk: DebugChunk,
+    preferred_channel: SearchChannel,
+}
+
+fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack, String> {
+    let query_text = options.query.trim();
+    if query_text.is_empty() {
+        return Err("agent rag query requires a non-empty --query".to_owned());
+    }
+    if options.limit == 0 {
+        return Err("agent rag query --limit must be at least 1".to_owned());
+    }
+    if options.max_context_bytes == 0 {
+        return Err("agent rag query --max-context-bytes must be at least 1".to_owned());
+    }
+    let roots = agent_rag_roots(&options.roots)?;
+    let records = read_and_validate_agent_trace_records(&options.trace)?;
+    let trace_report = validate_agent_trace(&options.trace, &records, None)?;
+    let candidates = agent_trace_rag_candidates(&trace_report, &records)?;
+    let program_hash = agent_trace_rag_program_hash(&options.trace, &records)?;
+    let query = RagQuery {
+        query_id: agent_content_hash(format!(
+            "{}:{}:{}:{}:{}",
+            query_text,
+            program_hash.as_str(),
+            options.graph_depth,
+            options.limit,
+            options.max_context_bytes
+        )),
+        text: query_text.to_owned(),
+        program_hash,
+        roots,
+        graph_depth: options.graph_depth,
+        limit: options.limit,
+        max_context_bytes: options.max_context_bytes,
+    };
+    let fused = reciprocal_rank_fusion(
+        &agent_trace_rag_ranked_lists(&candidates, &query),
+        &FusionConfig::default(),
+        options.limit,
+    );
+    let by_id = candidates
+        .iter()
+        .map(|candidate| (candidate.chunk.id.clone(), &candidate.chunk))
+        .collect::<BTreeMap<_, _>>();
+    let mut items = Vec::new();
+    let mut used_bytes = 0usize;
+    let mut truncated = false;
+    for hit in fused {
+        let Some(chunk) = by_id.get(&hit.chunk_id).copied() else {
+            continue;
+        };
+        let remaining = options.max_context_bytes.saturating_sub(used_bytes);
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let (body, body_truncated) = truncate_utf8(&chunk.body, remaining);
+        truncated |= body_truncated;
+        used_bytes = used_bytes.saturating_add(body.len());
+        items.push(RagContextItem {
+            chunk_id: chunk.id.clone(),
+            kind: chunk.source_kind,
+            title: chunk.title.clone(),
+            body,
+            fused_score: hit.fused_score,
+            channels: hit.channels,
+            entity_ids: chunk.entity_ids.clone(),
+            source_anchor: chunk.source_anchor.clone(),
+        });
+        if body_truncated {
+            break;
+        }
+    }
+    Ok(RagContextPack {
+        schema_version: 1,
+        query,
+        items,
+        truncated,
+    })
+}
+
+fn agent_trace_rag_candidates(
+    trace_report: &AgentScriptTraceReport,
+    records: &[AgentTraceRecord],
+) -> Result<Vec<AgentTraceRagCandidate>, String> {
+    let mut candidates = Vec::with_capacity(records.len() + 1);
+    candidates.push(agent_trace_rag_json_candidate(
+        "trace.summary",
+        "Agent trace summary",
+        ChunkSourceKind::GraphSummary,
+        SearchChannel::Summary,
+        &serde_json::to_value(trace_report)
+            .map_err(|error| format!("failed to serialize trace summary: {error}"))?,
+        Vec::new(),
+    )?);
+    candidates.extend(
+        records
+            .iter()
+            .map(|record| {
+                agent_trace_rag_json_candidate(
+                    &format!("trace.record.{}", record.sequence),
+                    &format!(
+                        "Trace record {} {}",
+                        record.sequence,
+                        agent_trace_kind_name(record.kind)
+                    ),
+                    ChunkSourceKind::AgentTrace,
+                    SearchChannel::Trace,
+                    &serde_json::to_value(record)
+                        .map_err(|error| format!("failed to serialize trace record: {error}"))?,
+                    agent_trace_record_entity_ids(record),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    Ok(candidates)
+}
+
+fn agent_trace_rag_json_candidate(
+    source_key: &str,
+    title: &str,
+    source_kind: ChunkSourceKind,
+    preferred_channel: SearchChannel,
+    value: &serde_json::Value,
+    entity_ids: Vec<AgentPublicId>,
+) -> Result<AgentTraceRagCandidate, String> {
+    let body = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("failed to serialize RAG candidate body: {error}"))?;
+    let content_hash = agent_content_hash(&body);
+    Ok(AgentTraceRagCandidate {
+        chunk: DebugChunk {
+            id: ChunkId::new(format!("cli:{source_key}:{content_hash}")),
+            program_hash: None,
+            source_kind,
+            source_key: source_key.to_owned(),
+            title: title.to_owned(),
+            body,
+            content_hash: StableHash::new(content_hash)
+                .expect("generated content hash is non-empty"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids,
+            privacy: PrivacyClass::Project,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        },
+        preferred_channel,
+    })
+}
+
+fn agent_trace_record_entity_ids(record: &AgentTraceRecord) -> Vec<AgentPublicId> {
+    [
+        Some(record.run_id.as_str()),
+        record.session_id.as_ref().map(SessionId::as_str),
+        Some(agent_trace_kind_name(record.kind)),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|value| AgentPublicId::new(value.to_owned()).ok())
+    .collect()
+}
+
+fn agent_trace_rag_ranked_lists(
+    candidates: &[AgentTraceRagCandidate],
+    query: &RagQuery,
+) -> Vec<Vec<SearchHit>> {
+    [
+        SearchChannel::ExactEntity,
+        SearchChannel::Lexical,
+        SearchChannel::Graph,
+        SearchChannel::Trace,
+        SearchChannel::Summary,
+    ]
+    .into_iter()
+    .filter_map(|channel| {
+        let mut scored = candidates
+            .iter()
+            .filter_map(|candidate| {
+                agent_trace_rag_score(candidate, query, channel).map(|score| (candidate, score))
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| {
+            right
+                .1
+                .total_cmp(&left.1)
+                .then_with(|| left.0.chunk.id.cmp(&right.0.chunk.id))
+        });
+        (!scored.is_empty()).then(|| {
+            scored
+                .into_iter()
+                .enumerate()
+                .map(|(index, (candidate, score))| SearchHit {
+                    chunk_id: candidate.chunk.id.clone(),
+                    channel,
+                    rank: index + 1,
+                    score: Some(score),
+                })
+                .collect()
+        })
+    })
+    .collect()
+}
+
+fn agent_trace_rag_score(
+    candidate: &AgentTraceRagCandidate,
+    query: &RagQuery,
+    channel: SearchChannel,
+) -> Option<f64> {
+    let haystack = agent_trace_rag_haystack(candidate);
+    match channel {
+        SearchChannel::ExactEntity => {
+            let root_match = query.roots.iter().any(|root| {
+                candidate
+                    .chunk
+                    .entity_ids
+                    .iter()
+                    .any(|entity| entity == root)
+                    || candidate.chunk.source_key == root.as_str()
+                    || candidate.chunk.title.contains(root.as_str())
+            });
+            let query_match = candidate
+                .chunk
+                .entity_ids
+                .iter()
+                .any(|entity| entity.as_str() == query.text)
+                || candidate.chunk.source_key == query.text
+                || candidate.chunk.title == query.text;
+            (root_match || query_match).then_some(1.0)
+        }
+        SearchChannel::Lexical => {
+            let query_lower = query.text.to_lowercase();
+            let phrase = f64::from(u8::from(haystack.contains(&query_lower)));
+            let token_score = agent_count_as_f64(
+                agent_rag_tokens(&query.text)
+                    .into_iter()
+                    .filter(|token| haystack.contains(token))
+                    .count(),
+            );
+            (phrase + token_score > 0.0).then_some(phrase.mul_add(4.0, token_score))
+        }
+        SearchChannel::Graph => {
+            let root_score = if query.graph_depth > 0 {
+                agent_count_as_f64(
+                    query
+                        .roots
+                        .iter()
+                        .filter(|root| haystack.contains(&root.as_str().to_lowercase()))
+                        .count(),
+                )
+            } else {
+                0.0
+            };
+            let channel_score = f64::from(u8::from(
+                candidate.preferred_channel == SearchChannel::Graph,
+            ));
+            (root_score + channel_score > 0.0).then_some(root_score + channel_score)
+        }
+        SearchChannel::Trace | SearchChannel::Summary => {
+            if candidate.preferred_channel != channel {
+                return None;
+            }
+            let token_score = agent_count_as_f64(
+                agent_rag_tokens(&query.text)
+                    .into_iter()
+                    .filter(|token| haystack.contains(token))
+                    .count(),
+            );
+            (token_score > 0.0).then_some(token_score)
+        }
+        SearchChannel::Vector | SearchChannel::History | SearchChannel::Diagnostics => None,
+    }
+}
+
+fn agent_trace_rag_haystack(candidate: &AgentTraceRagCandidate) -> String {
+    let mut haystack = format!(
+        "{}\n{}\n{}",
+        candidate.chunk.source_key, candidate.chunk.title, candidate.chunk.body
+    )
+    .to_lowercase();
+    for entity in &candidate.chunk.entity_ids {
+        haystack.push('\n');
+        haystack.push_str(&entity.as_str().to_lowercase());
+    }
+    haystack
+}
+
+fn agent_rag_roots(values: &[String]) -> Result<Vec<AgentPublicId>, String> {
+    values
+        .iter()
+        .map(|root| {
+            let root = root.trim();
+            AgentPublicId::new(root.to_owned())
+                .map_err(|_| "agent rag query --root values must not be empty".to_owned())
+        })
+        .collect()
+}
+
+fn agent_rag_tokens(text: &str) -> BTreeSet<String> {
+    text.split(|character: char| {
+        !(character.is_alphanumeric() || character == '.' || character == '_' || character == '-')
+    })
+    .map(str::trim)
+    .filter(|token| !token.is_empty())
+    .map(str::to_lowercase)
+    .collect()
+}
+
+fn agent_trace_rag_program_hash(
+    path: &Path,
+    records: &[AgentTraceRecord],
+) -> Result<StableHash, String> {
+    let seed = records
+        .iter()
+        .map(|record| record.payload_hash.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    StableHash::new(agent_content_hash(format!("{}:{seed}", path.display())))
+        .map_err(|_| "failed to build Agent RAG program hash".to_owned())
+}
+
+fn agent_content_hash(bytes: impl AsRef<[u8]>) -> String {
+    format!("blake3:{}", blake3::hash(bytes.as_ref()).to_hex())
+}
+
+fn agent_count_as_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).unwrap_or(u32::MAX))
+}
+
+fn truncate_utf8(text: &str, max_bytes: usize) -> (String, bool) {
+    if text.len() <= max_bytes {
+        return (text.to_owned(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (text[..end].to_owned(), true)
 }
 
 pub(super) fn agent_script_command(

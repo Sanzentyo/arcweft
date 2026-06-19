@@ -1761,6 +1761,7 @@ pub(super) fn agent_command(
         AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
         AgentCommand::HitTest(options) => agent_hit_test_command(&options, adapter_registrars),
         AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
+        AgentCommand::Rag { command } => super::agent_rag_command(command),
         AgentCommand::Script { command } => {
             super::agent_script_command(command, adapter_registrars)
         }
