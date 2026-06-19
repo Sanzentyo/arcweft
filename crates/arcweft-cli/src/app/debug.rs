@@ -93,6 +93,7 @@ struct DebugDbStatsReport {
     chunks: u64,
     embeddings: u64,
     rag_queries: u64,
+    repl_cells: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -825,6 +826,7 @@ fn stats_report(stats: DebugStoreStats) -> DebugDbStatsReport {
         chunks: stats.chunks,
         embeddings: stats.embeddings,
         rag_queries: stats.rag_queries,
+        repl_cells: stats.repl_cells,
     }
 }
 

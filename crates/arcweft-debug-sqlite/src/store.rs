@@ -1,5 +1,5 @@
 use crate::encoding::{VectorBlobError, decode_f32_le, encode_f32_le};
-use arcweft_agent_protocol::ids::{AgentRunId, PublicId, SessionId, StableHash};
+use arcweft_agent_protocol::ids::{AgentRunId, IdentifierError, PublicId, SessionId, StableHash};
 use arcweft_debug_model::{
     chunk::{ChunkId, DebugChunk, PrivacyClass},
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
@@ -7,6 +7,7 @@ use arcweft_debug_model::{
     graph::{DebugGraphEdge, DebugGraphSymbol},
     history::DebugHistoryEntry,
     rag::{SearchChannel, SearchHit},
+    repl::DebugReplCell,
     sink::DebugEventSink,
 };
 use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
@@ -35,6 +36,8 @@ pub enum DebugStoreError {
     InvalidPrivacyClass(String),
     #[error(transparent)]
     VectorSearch(#[from] VectorSearchError),
+    #[error(transparent)]
+    Identifier(#[from] IdentifierError),
 }
 
 /// One chunk search result returned from a debug-store search channel.
@@ -62,6 +65,7 @@ pub struct DebugStoreStats {
     pub chunks: u64,
     pub embeddings: u64,
     pub rag_queries: u64,
+    pub repl_cells: u64,
 }
 
 /// Result of a debug-store integrity validation pass.
@@ -141,6 +145,7 @@ impl DebugStore {
             chunks: self.table_count("chunks")?,
             embeddings: self.table_count("embeddings")?,
             rag_queries: self.table_count("rag_queries")?,
+            repl_cells: self.table_count("repl_cells")?,
         })
     }
 
@@ -580,6 +585,114 @@ impl DebugStore {
         Ok(())
     }
 
+    pub fn upsert_repl_cell(&self, cell: &DebugReplCell) -> Result<(), DebugStoreError> {
+        self.connection.execute(
+            "INSERT INTO repl_cells(
+               cell_id, session_id, run_id, ordinal, source, source_hash, status,
+               inferred_type_json, display_json, partially_effectful,
+               diagnostic_ids_json, created_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(cell_id) DO UPDATE SET
+               session_id = excluded.session_id,
+               run_id = excluded.run_id,
+               ordinal = excluded.ordinal,
+               source = excluded.source,
+               source_hash = excluded.source_hash,
+               status = excluded.status,
+               inferred_type_json = excluded.inferred_type_json,
+               display_json = excluded.display_json,
+               partially_effectful = excluded.partially_effectful,
+               diagnostic_ids_json = excluded.diagnostic_ids_json,
+               created_unix_ms = excluded.created_unix_ms",
+            params![
+                &cell.cell_id,
+                cell.session_id.as_str(),
+                cell.run_id.as_ref().map(AgentRunId::as_str),
+                cell.ordinal,
+                &cell.source,
+                cell.source_hash.as_str(),
+                &cell.status,
+                cell.inferred_type
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+                cell.display
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+                i64::from(cell.partially_effectful),
+                serde_json::to_string(&cell.diagnostic_ids)?,
+                cell.created_unix_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn repl_cells_for_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<DebugReplCell>, DebugStoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT cell_id, session_id, run_id, ordinal, source, source_hash, status,
+                    inferred_type_json, display_json, partially_effectful,
+                    diagnostic_ids_json, created_unix_ms
+             FROM repl_cells
+             WHERE session_id = ?1
+             ORDER BY ordinal, cell_id",
+        )?;
+        let rows = statement.query_map([session_id.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, i64>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, i64>(11)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (
+                cell_id,
+                session_id,
+                run_id,
+                ordinal,
+                source,
+                source_hash,
+                status,
+                inferred_type_json,
+                display_json,
+                partially_effectful,
+                diagnostic_ids_json,
+                created_unix_ms,
+            ) = row?;
+            Ok(DebugReplCell {
+                cell_id,
+                session_id: SessionId::new(session_id)?,
+                run_id: run_id.map(AgentRunId::new).transpose()?,
+                ordinal,
+                source,
+                source_hash: StableHash::new(source_hash)?,
+                status,
+                inferred_type: inferred_type_json
+                    .map(|value| serde_json::from_str(&value))
+                    .transpose()?,
+                display: display_json
+                    .map(|value| serde_json::from_str(&value))
+                    .transpose()?,
+                partially_effectful: partially_effectful != 0,
+                diagnostic_ids: serde_json::from_str(&diagnostic_ids_json)?,
+                created_unix_ms,
+            })
+        })
+        .collect()
+    }
+
     pub fn history_search_with_max_privacy(
         &self,
         query: &str,
@@ -961,6 +1074,7 @@ mod tests {
         embedding::StoredEmbedding,
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
+        repl::DebugReplCell,
     };
     use std::collections::BTreeMap;
 
@@ -1274,6 +1388,37 @@ mod tests {
         assert_eq!(project_hits[0].hit.channel, SearchChannel::Graph);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
         assert!(project_hits[0].title.contains("@flow.opening"));
+    }
+
+    #[test]
+    fn repl_cell_round_trips_for_session() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let session = SessionId::new("session.repl").expect("session id");
+        store
+            .start_session(&session, None, "repl", "cli", 0)
+            .expect("session row");
+        let cell = DebugReplCell {
+            cell_id: "repl:session.repl:1".to_owned(),
+            session_id: session.clone(),
+            run_id: None,
+            ordinal: 1,
+            source: "let observed = observe()".to_owned(),
+            source_hash: hash("blake3:repl-cell"),
+            status: "ok".to_owned(),
+            inferred_type: None,
+            display: Some(serde_json::json!({ "host_calls": 1 })),
+            partially_effectful: true,
+            diagnostic_ids: vec!["diag.1".to_owned()],
+            created_unix_ms: 0,
+        };
+        store.upsert_repl_cell(&cell).expect("repl cell");
+
+        let cells = store
+            .repl_cells_for_session(&session)
+            .expect("load repl cells");
+
+        assert_eq!(cells, vec![cell]);
+        assert_eq!(store.stats().expect("stats").repl_cells, 1);
     }
 
     #[test]

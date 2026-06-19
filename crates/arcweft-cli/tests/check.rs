@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
 };
-use arcweft_agent_protocol::ids::StableHash;
+use arcweft_agent_protocol::ids::{SessionId, StableHash};
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
@@ -598,6 +598,11 @@ fn agent_script_run_native_source_dispatches_semantic_invoke_action() {
 #[test]
 #[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
 fn agent_repl_observes_and_lists_actions_from_input_session() {
+    let debug_db_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-cells-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&debug_db_path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("repl")
@@ -608,6 +613,8 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
         .arg("1")
         .arg("--max-ops")
         .arg("64")
+        .arg("--debug-db")
+        .arg(&debug_db_path)
         .arg("--json")
         .output()
         .expect("arcw agent repl runs deterministic input session");
@@ -622,6 +629,8 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
 
     assert_eq!(report["ok"], true);
     assert_eq!(report["final_tick"], 0);
+    assert_eq!(report["debug_db"], debug_db_path.display().to_string());
+    assert_eq!(report["persisted_cells"], 1);
     let cells = report["cells"].as_array().expect("cells are present");
     assert!(cells.iter().any(|cell| cell["input"] == ":observe"));
     let actions = cells
@@ -660,6 +669,7 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
     assert_eq!(cell["kind"], "cell");
     assert_eq!(cell["value"]["compiled"], true);
     assert_eq!(cell["value"]["host_calls"], 1);
+    assert_eq!(cell["value"]["persisted"], true);
     let binding_list = bindings["value"]["bindings"]
         .as_array()
         .expect("bindings are listed");
@@ -680,6 +690,29 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
             .as_array()
             .is_some_and(|history| history.iter().any(|cell| cell["input"] == ":query opening")),
         "history cell should include previous query cell: {history}"
+    );
+
+    assert_repl_debug_cell_persisted(&debug_db_path);
+}
+
+fn assert_repl_debug_cell_persisted(debug_db_path: &Path) {
+    let store = DebugStore::open(debug_db_path).expect("open REPL debug database");
+    let session = SessionId::new("session.cli").expect("CLI session id is valid");
+    let repl_cells = store
+        .repl_cells_for_session(&session)
+        .expect("load persisted REPL cells");
+    assert_eq!(repl_cells.len(), 1);
+    let persisted = &repl_cells[0];
+    assert_eq!(persisted.ordinal, 6);
+    assert_eq!(persisted.source, "let observed = observe()");
+    assert_eq!(persisted.status, "ok");
+    assert!(persisted.partially_effectful);
+    assert_eq!(
+        persisted
+            .display
+            .as_ref()
+            .and_then(|display| display["host_calls"].as_u64()),
+        Some(1)
     );
 }
 

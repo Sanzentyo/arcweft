@@ -248,6 +248,9 @@ pub(super) struct AgentReplOptions {
     #[cfg(feature = "native-capture")]
     #[arg(long = "capture-time")]
     capture_time_seconds: Option<f32>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "debug-db")]
+    debug_db: Option<PathBuf>,
     #[arg(long)]
     input: Option<PathBuf>,
     #[arg(long)]

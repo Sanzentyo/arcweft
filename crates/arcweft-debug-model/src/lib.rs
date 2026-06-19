@@ -6,4 +6,5 @@ pub mod event;
 pub mod graph;
 pub mod history;
 pub mod rag;
+pub mod repl;
 pub mod sink;

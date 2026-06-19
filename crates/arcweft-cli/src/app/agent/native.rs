@@ -3,14 +3,14 @@ use super::super::runtime::{
 };
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCaptureBlob,
-    AgentCommand, AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions,
-    AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
-    AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
-    AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport, AgentSession,
-    CliAgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode,
-    FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService,
-    Path, PathBuf, ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
-    RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
+    AgentCommand, AgentControllerRunConfig, AgentControllerRunReport, AgentHitTestOptions,
+    AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat,
+    AgentObserveOptions, AgentObserveResourceKind, AgentReplOptions, AgentRunner,
+    AgentRunnerConfig, AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport,
+    AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink,
+    ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge,
+    NoopRagService, Path, PathBuf, ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy,
+    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
     agent_script_run_report_from_result, flow_status_label, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
@@ -52,6 +52,7 @@ use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
+    repl::DebugReplCell,
 };
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::HostCallPolicy;
@@ -1851,6 +1852,9 @@ struct AgentReplState {
     report: Option<AgentObservationReport>,
     history: Vec<AgentReplHistoryEntry>,
     bindings: BTreeMap<String, AgentReplBinding>,
+    debug_store: Option<DebugStore>,
+    persisted_cells: u64,
+    debug_db_path: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1876,6 +1880,8 @@ struct AgentReplRunReport {
     ok: bool,
     cells: Vec<AgentReplCellReport>,
     final_tick: Option<usize>,
+    debug_db: Option<String>,
+    persisted_cells: u64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1890,6 +1896,29 @@ struct AgentReplCellReport {
     value: Option<serde_json::Value>,
     #[serde(default)]
     quit: bool,
+}
+
+impl AgentReplCellReport {
+    fn with_persistence(mut self, result: Result<bool, String>) -> Self {
+        match result {
+            Ok(false) => self,
+            Ok(true) => {
+                if let Some(serde_json::Value::Object(value)) = &mut self.value {
+                    value.insert("persisted".to_owned(), serde_json::Value::Bool(true));
+                }
+                self
+            }
+            Err(error) => Self {
+                index: self.index,
+                input: self.input,
+                kind: self.kind,
+                status: "error".to_owned(),
+                message: Some(error),
+                value: self.value,
+                quit: false,
+            },
+        }
+    }
 }
 
 pub(super) fn agent_command(
@@ -1913,7 +1942,12 @@ fn agent_repl_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     let source = agent_repl_input(options)?;
-    let mut state = AgentReplState::default();
+    let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
+    let mut state = AgentReplState {
+        debug_store,
+        debug_db_path,
+        ..AgentReplState::default()
+    };
     let mut cells = Vec::new();
     let mut ok = true;
 
@@ -1946,9 +1980,42 @@ fn agent_repl_command(
             ok,
             cells,
             final_tick: state.report.as_ref().map(|report| report.tick),
+            debug_db: state.debug_db_path.clone(),
+            persisted_cells: state.persisted_cells,
         })?;
     }
     if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+fn agent_repl_debug_store(
+    options: &AgentReplOptions,
+) -> Result<(Option<DebugStore>, Option<String>), ExitCode> {
+    let Some(path) = &options.debug_db else {
+        return Ok((None, None));
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            eprintln!("error: failed to create {}: {error}", parent.display());
+            ExitCode::FAILURE
+        })?;
+    }
+    let store = DebugStore::open(path).map_err(|error| {
+        eprintln!(
+            "error: failed to open REPL debug database {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    store
+        .start_session(&agent_cli_session_id(), None, "repl", "cli", 0)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to initialize REPL debug database session {}: {error}",
+                path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    Ok((Some(store), Some(path.display().to_string())))
 }
 
 fn agent_repl_input(options: &AgentReplOptions) -> Result<String, ExitCode> {
@@ -2032,6 +2099,7 @@ fn agent_repl_eval_meta(
             state.report = None;
             state.history.clear();
             state.bindings.clear();
+            state.persisted_cells = 0;
             agent_repl_ok(index, input, "meta", serde_json::json!({ "reset": true }))
         }
         ":quit" => AgentReplCellReport {
@@ -2290,15 +2358,7 @@ fn agent_repl_eval_compiled_cell(
     let parse_report = agent_repl_fragment_report(&fragment);
     if !matches!(fragment.completion(), ParseCompletion::Complete) || !fragment.errors().is_empty()
     {
-        return AgentReplCellReport {
-            index,
-            input: input.to_owned(),
-            kind: "cell".to_owned(),
-            status: "error".to_owned(),
-            message: Some("REPL cell is not a complete Agent fragment".to_owned()),
-            value: Some(parse_report),
-            quit: false,
-        };
+        return agent_repl_invalid_fragment_report(index, input, state, &fragment, parse_report);
     }
 
     let source = agent_repl_cell_source(index, input, &fragment);
@@ -2309,15 +2369,8 @@ fn agent_repl_eval_compiled_cell(
     let compiled = match arcweft_compiler::compile_agent_bundle_with_project(source, &project) {
         Ok(compiled) => compiled,
         Err(error) => {
-            return AgentReplCellReport {
-                index,
-                input: input.to_owned(),
-                kind: "cell".to_owned(),
-                status: "error".to_owned(),
-                message: Some(error.to_string()),
-                value: Some(parse_report),
-                quit: false,
-            };
+            let message = error.to_string();
+            return agent_repl_compile_error_report(index, input, state, parse_report, &message);
         }
     };
     let mut runner = AgentRunner::new(
@@ -2341,50 +2394,178 @@ fn agent_repl_eval_compiled_cell(
         },
     );
     match run_result {
-        Ok(report) => {
-            let binding_name = format!("cell.{index}");
-            let final_status = report
-                .final_status
-                .as_ref()
-                .map(|status| format!("{status:?}"));
-            let responses = report.responses.len();
-            state.bindings.insert(
-                binding_name.clone(),
-                AgentReplBinding {
-                    name: binding_name.clone(),
-                    source: input.to_owned(),
-                    status: "ok".to_owned(),
-                    final_status: final_status.clone(),
-                    host_calls: report.host_calls,
-                    responses,
-                },
-            );
-            agent_repl_ok(
-                index,
-                input,
-                "cell",
-                serde_json::json!({
-                    "binding": binding_name,
-                    "compiled": true,
-                    "steps": report.steps,
-                    "host_calls": report.host_calls,
-                    "responses": report.responses,
-                    "events_emitted": report.events_emitted,
-                    "final_status": final_status,
-                    "parse": parse_report,
-                }),
-            )
+        Ok(report) => agent_repl_run_success_report(index, input, state, &parse_report, &report),
+        Err(error) => {
+            let message = error.to_string();
+            agent_repl_run_error_report(index, input, state, parse_report, &message)
         }
-        Err(error) => AgentReplCellReport {
-            index,
-            input: input.to_owned(),
-            kind: "cell".to_owned(),
-            status: "error".to_owned(),
-            message: Some(error.to_string()),
-            value: Some(parse_report),
-            quit: false,
-        },
     }
+}
+
+fn agent_repl_invalid_fragment_report(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    fragment: &ParsedFragment,
+    parse_report: serde_json::Value,
+) -> AgentReplCellReport {
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "error".to_owned(),
+        message: Some("REPL cell is not a complete Agent fragment".to_owned()),
+        value: Some(parse_report),
+        quit: false,
+    }
+    .with_persistence(agent_repl_persist_cell(
+        state,
+        index,
+        input,
+        "error",
+        serde_json::json!({
+            "parse": fragment
+                .errors()
+                .iter()
+                .map(|error| error.message().to_owned())
+                .collect::<Vec<_>>()
+        }),
+        false,
+    ))
+}
+
+fn agent_repl_compile_error_report(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    parse_report: serde_json::Value,
+    message: &str,
+) -> AgentReplCellReport {
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "error".to_owned(),
+        message: Some(message.to_owned()),
+        value: Some(parse_report),
+        quit: false,
+    }
+    .with_persistence(agent_repl_persist_cell(
+        state,
+        index,
+        input,
+        "error",
+        serde_json::json!({ "compile_error": message }),
+        false,
+    ))
+}
+
+fn agent_repl_run_success_report(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    parse_report: &serde_json::Value,
+    report: &AgentControllerRunReport,
+) -> AgentReplCellReport {
+    let binding_name = format!("cell.{index}");
+    let final_status = report
+        .final_status
+        .as_ref()
+        .map(|status| format!("{status:?}"));
+    let responses = report.responses.len();
+    let value = serde_json::json!({
+        "binding": binding_name,
+        "compiled": true,
+        "steps": report.steps,
+        "host_calls": report.host_calls,
+        "responses": report.responses,
+        "events_emitted": report.events_emitted,
+        "final_status": final_status,
+        "parse": parse_report,
+    });
+    let persisted = agent_repl_persist_cell(
+        state,
+        index,
+        input,
+        "ok",
+        value.clone(),
+        report.host_calls > 0,
+    );
+    state.bindings.insert(
+        binding_name.clone(),
+        AgentReplBinding {
+            name: binding_name.clone(),
+            source: input.to_owned(),
+            status: "ok".to_owned(),
+            final_status,
+            host_calls: report.host_calls,
+            responses,
+        },
+    );
+    agent_repl_ok(index, input, "cell", value).with_persistence(persisted)
+}
+
+fn agent_repl_run_error_report(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    parse_report: serde_json::Value,
+    message: &str,
+) -> AgentReplCellReport {
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "error".to_owned(),
+        message: Some(message.to_owned()),
+        value: Some(parse_report),
+        quit: false,
+    }
+    .with_persistence(agent_repl_persist_cell(
+        state,
+        index,
+        input,
+        "error",
+        serde_json::json!({ "run_error": message }),
+        true,
+    ))
+}
+
+fn agent_repl_persist_cell(
+    state: &mut AgentReplState,
+    index: usize,
+    input: &str,
+    status: &str,
+    display: serde_json::Value,
+    partially_effectful: bool,
+) -> Result<bool, String> {
+    let Some(store) = &state.debug_store else {
+        return Ok(false);
+    };
+    let ordinal = i64::try_from(index).map_err(|_| "REPL cell index is too large".to_owned())?;
+    let source_hash = StableHash::new(format!(
+        "blake3:{}",
+        blake3::hash(input.as_bytes()).to_hex()
+    ))
+    .expect("generated REPL cell hash is nonempty");
+    store
+        .upsert_repl_cell(&DebugReplCell {
+            cell_id: format!("repl:session.cli:{ordinal}"),
+            session_id: agent_cli_session_id(),
+            run_id: None,
+            ordinal,
+            source: input.to_owned(),
+            source_hash,
+            status: status.to_owned(),
+            inferred_type: None,
+            display: Some(display),
+            partially_effectful,
+            diagnostic_ids: Vec::new(),
+            created_unix_ms: 0,
+        })
+        .map_err(|error| format!("failed to persist REPL cell {index}: {error}"))?;
+    state.persisted_cells = state.persisted_cells.saturating_add(1);
+    Ok(true)
 }
 
 fn agent_repl_cell_source(index: usize, input: &str, fragment: &ParsedFragment) -> String {

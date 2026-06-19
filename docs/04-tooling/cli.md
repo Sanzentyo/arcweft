@@ -382,7 +382,7 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `image(... target=..., action=...)` can therefore be exercised headlessly with
 `invoke(@target..., "action...")`.
 
-`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--json]`
+`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--debug-db <path>] [--json]`
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:parse`,
 `:observe`, `:actions`, `:query TEXT`, `:history`, `:bindings`, `:reset`, and
@@ -395,9 +395,11 @@ session. Non-meta cells are classified with the shared Agent fragment parser;
 complete Agent fragments are wrapped in a one-cell Agent controller, compiled
 through `arcweft-compiler`, and executed through `arcweft-agent-runner`'s
 deterministic CLI session path. Successful cells are recorded as in-session
-`cell.N` binding artifacts shown by `:bindings`. VM-local variable extraction
-and SQLite-backed `repl_cells` persistence remain separate follow-up work, so
-the CLI still does not grow a second Agent evaluator.
+`cell.N` binding artifacts shown by `:bindings`. With `--debug-db <path>`,
+non-meta cells are also persisted to the rebuildable debug SQLite
+`repl_cells` table with their source, stable source hash, status, display JSON,
+and partial-effect marker. VM-local variable extraction remains separate
+follow-up work, so the CLI still does not grow a second Agent evaluator.
 
 ## Agent Observation
 
