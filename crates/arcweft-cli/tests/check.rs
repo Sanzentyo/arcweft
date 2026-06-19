@@ -262,6 +262,60 @@ fn assert_agent_script_trace_rejects_missing_capture_blob_ref(path: &Path) {
 }
 
 #[test]
+#[ignore = "tier 2 native Agent Script E2E: requires native-capture feature subprocess"]
+fn agent_script_run_native_source_captures_native_resource() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/native-capture-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_capture_smoke_path())
+        .arg("--native-source")
+        .arg(rich_text_showcase_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run captures native source");
+    assert!(
+        output.status.success(),
+        "native agent script capture should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native run output is JSON");
+    let capture = &run_json["responses"][0]["response"];
+    assert_eq!(run_json["ok"], true);
+    assert_eq!(run_json["responses"][0]["kind"], "capture");
+    assert!(
+        capture["uri"]
+            .as_str()
+            .expect("native capture uri")
+            .starts_with("arcweft://session/cli/frame/0/")
+    );
+    assert_eq!(capture["media_type"], "image/png");
+    assert!(capture["byte_len"].as_u64().unwrap_or(0) > 0);
+    assert_ne!(capture["content_hash"], "cli-capture-0000000000000001");
+
+    let trace: serde_json::Value = serde_json::from_slice(
+        &fs::read(&trace_path).expect("native agent script run writes .arcwx trace"),
+    )
+    .expect("native trace is JSON");
+    let trace_capture = trace
+        .as_array()
+        .expect("trace is array")
+        .iter()
+        .find(|record| record["kind"] == "capture_stored")
+        .expect("trace records native capture event");
+    assert_eq!(trace_capture["blob_refs"][0], capture["content_hash"]);
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
@@ -491,6 +545,10 @@ fn agent_script_cli_run_smoke_path() -> PathBuf {
 
 fn agent_script_cli_capture_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-capture-smoke.awfagent")
+}
+
+fn rich_text_showcase_path() -> PathBuf {
+    workspace_path("samples/rich-text-showcase.arcw")
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {

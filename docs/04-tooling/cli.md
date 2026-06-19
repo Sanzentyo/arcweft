@@ -310,6 +310,18 @@ run must exercise the wgpu backend; without that feature, explicit `wgpu`
 requests report that the GPU backend is unavailable instead of silently
 changing backend.
 
+## Agent Script
+
+`arcw agent script run <file.awfagent|file.awfb> [--native-source <file.arcw>|--profile <id>] [--trace-out <file.arcwx>] [--json]`
+executes one compiled Agent controller through `arcweft-agent-runner`. Without a
+native source or launch profile, it uses the deterministic CLI session adapter
+for parser/compiler/runner smoke coverage. With `native-capture` enabled and a
+native source or launch profile, the controller observes, captures, and reads
+resources through the same native Agent Debug Bus path as `arcw agent observe`.
+Native capture results return `arcweft://session/...` resource URIs, native
+resource hashes, media types, and byte lengths; `.arcwx` trace records carry the
+capture content hash in `blob_refs`.
+
 ## Agent Observation
 
 `arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`

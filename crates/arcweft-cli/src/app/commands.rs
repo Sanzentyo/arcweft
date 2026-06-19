@@ -79,7 +79,7 @@ pub(super) enum AgentScriptCommand {
     Build(super::agent::AgentScriptBuildOptions),
     Check(super::agent::AgentScriptCheckOptions),
     Replay(super::agent::AgentScriptReplayOptions),
-    Run(super::agent::AgentScriptRunOptions),
+    Run(Box<super::agent::AgentScriptRunOptions>),
     Trace(super::agent::AgentScriptTraceOptions),
 }
 

@@ -16,8 +16,8 @@ use arcweft_agent_protocol::{
     value::AgentValue,
 };
 use arcweft_agent_runner::{
-    AgentControllerRunConfig, AgentControllerRunReport, AgentRunError, AgentRunner,
-    AgentRunnerConfig, AgentSession, NoopRagService, RuntimeAgentCapability, RuntimeAgentPolicy,
+    AgentControllerRunConfig, AgentControllerRunReport, AgentRunner, AgentRunnerConfig,
+    AgentSession, NoopRagService, RuntimeAgentCapability, RuntimeAgentPolicy,
 };
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::value::RuntimeBinding;
@@ -203,6 +203,63 @@ pub(super) struct AgentScriptRunOptions {
     path: PathBuf,
     #[arg(long)]
     json: bool,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "native-source")]
+    native_source: Option<PathBuf>,
+    #[cfg(feature = "native-capture")]
+    #[command(flatten)]
+    native_profile: ProfileOptions,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "native-steps", default_value_t = 8)]
+    native_steps: usize,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "native-mode", value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    native_mode: CliRuntimeStepMode,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "native-max-ops", default_value_t = 64)]
+    native_max_ops: usize,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
+    viewport_width: u32,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
+    viewport_height: u32,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "textbox-height")]
+    textbox_height: Option<u32>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "capture-time")]
+    capture_time_seconds: Option<f32>,
     #[arg(long, default_value_t = 256)]
     max_steps: usize,
     #[arg(long, default_value_t = 1024)]
@@ -281,7 +338,7 @@ pub(super) fn agent_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
-        AgentCommand::Script { command } => agent_script_command(command),
+        AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
         command => native::agent_command(command, adapter_registrars),
     }
 }
@@ -289,10 +346,10 @@ pub(super) fn agent_command(
 #[cfg(not(feature = "native-capture"))]
 pub(super) fn agent_command(
     command: AgentCommand,
-    _adapter_registrars: &[NativeAdapterRegistrar],
+    adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
-        AgentCommand::Script { command } => agent_script_command(command),
+        AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
         AgentCommand::Observe(_) | AgentCommand::HitTest(_) | AgentCommand::Mcp(_) => {
             eprintln!("error: this arcw agent command requires the native-capture feature");
             Err(ExitCode::FAILURE)
@@ -300,12 +357,15 @@ pub(super) fn agent_command(
     }
 }
 
-pub(super) fn agent_script_command(command: AgentScriptCommand) -> Result<(), ExitCode> {
+pub(super) fn agent_script_command(
+    command: AgentScriptCommand,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
     match command {
         AgentScriptCommand::Build(options) => agent_script_build_command(&options),
         AgentScriptCommand::Check(options) => agent_script_check_command(&options),
         AgentScriptCommand::Replay(options) => agent_script_replay_command(&options),
-        AgentScriptCommand::Run(options) => agent_script_run_command(&options),
+        AgentScriptCommand::Run(options) => agent_script_run_command(&options, adapter_registrars),
         AgentScriptCommand::Trace(options) => agent_script_trace_command(&options),
     }
 }
@@ -470,8 +530,6 @@ struct AgentScriptRunInput {
     bundle: ArcweftBundle,
 }
 
-type CliAgentRunError = AgentRunError<Infallible, Infallible, Infallible>;
-
 #[derive(serde::Serialize)]
 struct AgentScriptTraceReport {
     path: String,
@@ -517,9 +575,12 @@ struct AgentScriptReplayMismatch {
     expected: Option<AgentScriptReplayEvent>,
 }
 
-fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitCode> {
+fn agent_script_run_command(
+    options: &AgentScriptRunOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
     let report = match agent_script_run_input(options) {
-        Ok(input) => agent_script_run_bundle(options, &input)?,
+        Ok(input) => agent_script_run_bundle(options, &input, adapter_registrars)?,
         Err(error) => AgentScriptRunReport {
             path: options.path.display().to_string(),
             ok: false,
@@ -602,7 +663,14 @@ fn agent_script_run_bundle_input(path: &Path) -> Result<AgentScriptRunInput, Str
 fn agent_script_run_bundle(
     options: &AgentScriptRunOptions,
     input: &AgentScriptRunInput,
+    adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentScriptRunReport, ExitCode> {
+    #[cfg(not(feature = "native-capture"))]
+    let _ = adapter_registrars;
+    #[cfg(feature = "native-capture")]
+    if agent_script_run_uses_native_session(options) {
+        return native::agent_script_run_native_bundle(options, input, adapter_registrars);
+    }
     let session = CliAgentSession::new(options.signals.clone());
     let mut runner = AgentRunner::new(
         session,
@@ -638,10 +706,15 @@ fn agent_script_run_bundle(
     ))
 }
 
+#[cfg(feature = "native-capture")]
+fn agent_script_run_uses_native_session(options: &AgentScriptRunOptions) -> bool {
+    options.native_source.is_some() || options.native_profile.profile.is_some()
+}
+
 fn agent_script_run_report_from_result(
     options: &AgentScriptRunOptions,
     input: &AgentScriptRunInput,
-    run_result: Result<AgentControllerRunReport, CliAgentRunError>,
+    run_result: Result<AgentControllerRunReport, impl std::fmt::Display>,
     run_id: &AgentRunId,
     debug_events: &[DebugEvent],
 ) -> AgentScriptRunReport {

@@ -3,11 +3,14 @@ use super::super::runtime::{
 };
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    AgentHitTestOptions, AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind,
-    AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind, CliRuntimeExecutorTier,
-    CliRuntimeStepMode, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
-    NativeTaskBridge, Path, PathBuf, ProfileOptions, RuntimeStepInput, RuntimeStepResult,
-    flow_status_label, fs, load_and_check_selection,
+    AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions, AgentObserveCaptureKind,
+    AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind,
+    AgentRunner, AgentRunnerConfig, AgentScriptRunInput, AgentScriptRunOptions,
+    AgentScriptRunReport, AgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode,
+    CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
+    NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, RuntimeAgentCapability,
+    RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult, agent_cli_session_id,
+    agent_script_run_report_from_result, flow_status_label, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
@@ -20,6 +23,11 @@ use arcweft_agent_mcp::{
     McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
     tool_result_for_resources, trace_resource,
+};
+use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId};
+use arcweft_agent_protocol::protocol::{
+    ActionResult, AgentAction, AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult,
+    CaptureTarget, ObservationEnvelope, ObserveRequest,
 };
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
@@ -51,6 +59,7 @@ use arcweft_ui::UiImageSourceTable;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{BufRead as _, Write as _};
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 struct AgentObservationTrace {
@@ -1588,7 +1597,9 @@ pub(super) fn agent_command(
         AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
         AgentCommand::HitTest(options) => agent_hit_test_command(&options, adapter_registrars),
         AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
-        AgentCommand::Script { command } => super::agent_script_command(command),
+        AgentCommand::Script { command } => {
+            super::agent_script_command(command, adapter_registrars)
+        }
     }
 }
 
@@ -2645,6 +2656,284 @@ fn agent_observation_for_options(
         image_frames: observed.image_frames,
         native_session,
     })
+}
+
+pub(in crate::app::agent) fn agent_script_run_native_bundle(
+    options: &AgentScriptRunOptions,
+    input: &AgentScriptRunInput,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentScriptRunReport, ExitCode> {
+    let session = NativeAgentScriptSession::new(options, adapter_registrars);
+    let mut runner = AgentRunner::new(
+        session,
+        CollectingDebugSink::default(),
+        NoopRagService,
+        RuntimeAgentPolicy::new([
+            RuntimeAgentCapability::Observe,
+            RuntimeAgentCapability::Act,
+            RuntimeAgentCapability::Capture,
+            RuntimeAgentCapability::ResourceRead,
+            RuntimeAgentCapability::Rag,
+        ]),
+        AgentRunnerConfig::new(agent_cli_session_id()),
+    );
+    let run_result = runner.run_controller_bundle(
+        &input.bundle,
+        AgentControllerRunConfig {
+            max_steps: options.max_steps,
+            max_ops_per_step: options.max_ops,
+        },
+    );
+    let debug_events = runner.debug_mut().events.clone();
+    let run_id = AgentRunId::new(options.run_id.clone()).map_err(|error| {
+        eprintln!("error: invalid run id: {error}");
+        ExitCode::from(2)
+    })?;
+    Ok(agent_script_run_report_from_result(
+        options,
+        input,
+        run_result,
+        &run_id,
+        &debug_events,
+    ))
+}
+
+#[derive(Debug, Error)]
+enum NativeAgentScriptSessionError {
+    #[error("native Agent Script observation failed")]
+    Observe,
+    #[error("native Agent Script capture failed")]
+    Capture,
+    #[error("native Agent Script resource read failed")]
+    ResourceRead,
+    #[error("native Agent Script action dispatch is not implemented yet")]
+    Action,
+}
+
+struct NativeAgentScriptSession<'a> {
+    options: AgentObserveOptions,
+    adapter_registrars: &'a [NativeAdapterRegistrar],
+    observed: Option<AgentObservationState>,
+}
+
+impl<'a> NativeAgentScriptSession<'a> {
+    fn new(
+        options: &AgentScriptRunOptions,
+        adapter_registrars: &'a [NativeAdapterRegistrar],
+    ) -> Self {
+        Self {
+            options: AgentObserveOptions {
+                path: options.native_source.clone(),
+                profile: options.native_profile.clone(),
+                entry: options.entry.clone(),
+                flow: options.flow.clone(),
+                executor: options.executor,
+                pure_backend: options.pure_backend,
+                pure_workers: options.pure_workers,
+                pure_batch_min_len: options.pure_batch_min_len,
+                pure_object_artifacts: options.pure_object_artifacts,
+                math_backend: options.math_backend,
+                math_wgpu_min_elements: options.math_wgpu_min_elements,
+                steps: options.native_steps,
+                capture_step: None,
+                mode: options.native_mode,
+                max_ops: options.native_max_ops,
+                values: options.values.clone(),
+                viewport_width: options.viewport_width,
+                viewport_height: options.viewport_height,
+                textbox_height: options.textbox_height,
+                image: None,
+                capture: None,
+                layer: None,
+                object: None,
+                page: None,
+                capture_time_seconds: options.capture_time_seconds,
+                resource: None,
+                read_uri: None,
+                mcp: false,
+                mcp_format: AgentObserveMcpFormat::Read,
+                out: None,
+                json: true,
+            },
+            adapter_registrars,
+            observed: None,
+        }
+    }
+
+    fn observe_report(&mut self) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
+        if self.observed.is_none() {
+            self.refresh_observation()?;
+        }
+        self.observed
+            .as_ref()
+            .map(|observed| &observed.report)
+            .ok_or(NativeAgentScriptSessionError::Observe)
+    }
+
+    fn refresh_observation(
+        &mut self,
+    ) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
+        let observed = agent_observation_for_options(&self.options, self.adapter_registrars)
+            .map_err(|_| NativeAgentScriptSessionError::Observe)?;
+        self.observed = Some(observed);
+        self.observe_report()
+    }
+
+    fn resource_for_uri(
+        &mut self,
+        uri: &str,
+    ) -> Result<AgentResource, NativeAgentScriptSessionError> {
+        let Some(observed) = self.observed.as_mut() else {
+            self.refresh_observation()?;
+            return self.resource_for_uri(uri);
+        };
+        agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+            &observed.report,
+            uri,
+            None,
+            agent_report_capture_time_seconds(&observed.report),
+            Some(&mut observed.native_session),
+            &observed.image_frames,
+        )
+        .map_err(|_| NativeAgentScriptSessionError::ResourceRead)
+    }
+}
+
+impl AgentSession for NativeAgentScriptSession<'_> {
+    type Error = NativeAgentScriptSessionError;
+
+    fn info(&mut self) -> Result<AgentSessionInfo, Self::Error> {
+        Ok(AgentSessionInfo {
+            session_id: "session.native".to_owned(),
+            program_hash: "native-agent-run".to_owned(),
+            profile: self.options.profile.profile.clone(),
+            capabilities: vec![
+                "agent.observe".to_owned(),
+                "agent.wait".to_owned(),
+                "agent.capture".to_owned(),
+                "agent.resource.read".to_owned(),
+            ],
+        })
+    }
+
+    fn observe(&mut self, _request: ObserveRequest) -> Result<ObservationEnvelope, Self::Error> {
+        let report = self.refresh_observation()?;
+        Ok(native_agent_observation_envelope(report))
+    }
+
+    fn act(&mut self, _action: AgentAction) -> Result<ActionResult, Self::Error> {
+        Err(NativeAgentScriptSessionError::Action)
+    }
+
+    fn capture(&mut self, request: CaptureRequest) -> Result<CaptureResult, Self::Error> {
+        let report = self.observe_report()?;
+        let uri = native_agent_capture_uri(report, &request)?;
+        let resource = self.resource_for_uri(&uri)?;
+        Ok(CaptureResult {
+            uri: AgentResourceUri::new(resource.uri)
+                .map_err(|_| NativeAgentScriptSessionError::Capture)?,
+            content_hash: resource.hash,
+            media_type: resource.mime_type,
+            byte_len: agent_resource_body_len(&resource.body),
+        })
+    }
+
+    fn read_resource(&mut self, uri: &str) -> Result<AgentResource, Self::Error> {
+        self.resource_for_uri(uri)
+    }
+
+    fn step_frames(&mut self, count: u32) -> Result<ObservationEnvelope, Self::Error> {
+        let additional = usize::try_from(count.max(1)).unwrap_or(usize::MAX);
+        self.options.steps = self.options.steps.saturating_add(additional);
+        let report = self.refresh_observation()?;
+        Ok(native_agent_observation_envelope(report))
+    }
+}
+
+fn native_agent_observation_envelope(report: &AgentObservationReport) -> ObservationEnvelope {
+    ObservationEnvelope {
+        tick: u64::try_from(report.tick).unwrap_or(u64::MAX),
+        frame_id: report.frame_id.clone(),
+        state_hash: report.state_hash.clone(),
+        render_hash: report.render_hash.clone(),
+        signals: report
+            .signals
+            .iter()
+            .map(|signal| (signal.name.clone(), agent_assignment_value(signal)))
+            .collect(),
+        payload: serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
+    }
+}
+
+fn native_agent_capture_uri(
+    report: &AgentObservationReport,
+    request: &CaptureRequest,
+) -> Result<String, NativeAgentScriptSessionError> {
+    let image_kind = native_agent_capture_image_kind(request.format)?;
+    let capture_kind = native_agent_capture_kind(&request.capture_kind);
+    let extension = match image_kind {
+        AgentObserveImageKind::Png => "png",
+        AgentObserveImageKind::RawRgba => "rgba",
+        AgentObserveImageKind::Overlay => return Err(NativeAgentScriptSessionError::Capture),
+    };
+    let name = match &request.target {
+        CaptureTarget::Viewport => capture_kind.resource_name().to_owned(),
+        CaptureTarget::Layer { id } => {
+            agent_scoped_capture_name("layer", id.as_str(), capture_kind.resource_name())
+        }
+        CaptureTarget::Object { id } => {
+            agent_scoped_capture_name("object", id, capture_kind.resource_name())
+        }
+    };
+    Ok(agent_frame_capture_uri_for_page(
+        &report.session_id,
+        report.tick,
+        &name,
+        extension,
+        0,
+    ))
+}
+
+fn native_agent_capture_image_kind(
+    format: CaptureFormat,
+) -> Result<AgentObserveImageKind, NativeAgentScriptSessionError> {
+    match format {
+        CaptureFormat::Png => Ok(AgentObserveImageKind::Png),
+        CaptureFormat::RawRgba => Ok(AgentObserveImageKind::RawRgba),
+        CaptureFormat::Svg => Err(NativeAgentScriptSessionError::Capture),
+    }
+}
+
+fn native_agent_capture_kind(value: &str) -> AgentObserveCaptureKind {
+    match value {
+        "object-id" | "object_id" => AgentObserveCaptureKind::ObjectId,
+        "mask" => AgentObserveCaptureKind::Mask,
+        _ => AgentObserveCaptureKind::Color,
+    }
+}
+
+fn agent_assignment_value(signal: &AgentAssignment) -> arcweft_agent_protocol::value::AgentValue {
+    match signal.value.as_str() {
+        "true" => arcweft_agent_protocol::value::AgentValue::Bool(true),
+        "false" => arcweft_agent_protocol::value::AgentValue::Bool(false),
+        value => value.parse::<i64>().map_or_else(
+            |_| arcweft_agent_protocol::value::AgentValue::String(value.to_owned()),
+            arcweft_agent_protocol::value::AgentValue::I64,
+        ),
+    }
+}
+
+fn agent_resource_body_len(body: &AgentResourceBody) -> u64 {
+    match body {
+        AgentResourceBody::Json(value) => serde_json::to_vec(value)
+            .ok()
+            .and_then(|bytes| u64::try_from(bytes.len()).ok())
+            .unwrap_or(0),
+        AgentResourceBody::Text(text) => u64::try_from(text.len()).unwrap_or(u64::MAX),
+        AgentResourceBody::BytesBase64(body) => {
+            u64::try_from(body.data.len().saturating_mul(3) / 4).unwrap_or(u64::MAX)
+        }
+    }
 }
 
 fn agent_hit_test_command(
