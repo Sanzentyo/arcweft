@@ -34,7 +34,8 @@ use arcweft_agent_protocol::{
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
 use arcweft_presentation::image::{
-    ImageObjectParam, ImageObjectPlayback, ImageObjectProxy, ImageObjectTransform,
+    ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
+    ImageObjectTransform,
 };
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextParam,
@@ -1187,6 +1188,73 @@ mod tests {
             observation.image_frames.get(&object.id).unwrap().rgba,
             vec![10, 40, 220, 255, 40, 220, 120, 255]
         );
+    }
+
+    #[test]
+    fn agent_runtime_image_call_alignment_controls_fitted_object_geometry() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[RuntimeCall {
+                callee: "image".to_owned(),
+                args: vec![
+                    "asset = @asset.bg.poster".to_owned(),
+                    "id = @image.test.aligned_poster".to_owned(),
+                    "x = 10px".to_owned(),
+                    "y = 20px".to_owned(),
+                    "width = 100px".to_owned(),
+                    "height = 100px".to_owned(),
+                    "fit = intrinsic".to_owned(),
+                    "alignment.x = right".to_owned(),
+                    "alignment.y = bottom".to_owned(),
+                ],
+            }],
+            0.0,
+        );
+
+        assert!(diagnostics.is_empty());
+        let object = &observation.objects[0];
+        assert_eq!(object.bbox.x, 108);
+        assert_eq!(object.bbox.y, 119);
+        assert_eq!(object.bbox.width, 2);
+        assert_eq!(object.bbox.height, 1);
+        assert_eq!(
+            object.polygon,
+            vec![
+                AgentPoint { x: 108, y: 119 },
+                AgentPoint { x: 110, y: 119 },
+                AgentPoint { x: 110, y: 120 },
+                AgentPoint { x: 108, y: 120 },
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_image_call_alignment_parses_ratio_milli_and_keywords() {
+        let call = RuntimeCall {
+            callee: "image".to_owned(),
+            args: vec![
+                "alignment.x = 0.25".to_owned(),
+                "align.y = bottom".to_owned(),
+            ],
+        };
+        let alignment = agent_image_call_alignment(&call);
+
+        assert_eq!(alignment.x_milli(), 250);
+        assert_eq!(alignment.y_milli(), 1_000);
+        assert_eq!(agent_image_alignment_component_milli("500", "x"), Some(500));
+        assert_eq!(agent_image_alignment_component_milli("1", "y"), Some(1_000));
     }
 
     #[test]
@@ -5562,6 +5630,7 @@ struct AgentRuntimeImageCall {
     layer: arcweft_id::PublicId,
     bounds: arcweft_presentation::hit::HitRect,
     fit: arcweft_presentation::image::ImageObjectFit,
+    alignment: ImageObjectAlignment,
     opacity_milli: u16,
     playback: ImageObjectPlayback,
     transform: ImageObjectTransform,
@@ -5640,6 +5709,7 @@ fn agent_background_runtime_image_call(
             viewport.height.to_string().parse().unwrap_or(0.0),
         ),
         fit: arcweft_presentation::image::ImageObjectFit::Cover,
+        alignment: agent_image_call_alignment(call),
         opacity_milli: 1_000,
         playback: agent_image_call_playback(call),
         transform: ImageObjectTransform::identity(),
@@ -5687,6 +5757,7 @@ fn agent_object_runtime_image_call(
     let fit = agent_call_named_value(call, "fit")
         .and_then(agent_image_fit_from_call_arg)
         .unwrap_or_default();
+    let alignment = agent_image_call_alignment(call);
     let depth_milli = agent_call_named_value(call, "depth")
         .and_then(agent_image_call_milli)
         .unwrap_or_default();
@@ -5708,6 +5779,7 @@ fn agent_object_runtime_image_call(
         layer,
         bounds: arcweft_presentation::hit::HitRect::new(x, y, width, height),
         fit,
+        alignment,
         opacity_milli,
         playback,
         transform,
@@ -5787,6 +5859,43 @@ fn agent_image_fit_from_call_arg(
         "intrinsic" => Some(arcweft_presentation::image::ImageObjectFit::Intrinsic),
         _ => None,
     }
+}
+
+fn agent_image_call_alignment(call: &RuntimeCall) -> ImageObjectAlignment {
+    ImageObjectAlignment::new(
+        agent_call_named_value(call, "alignment.x")
+            .or_else(|| agent_call_named_value(call, "align.x"))
+            .and_then(|value| agent_image_alignment_component_milli(value, "x"))
+            .unwrap_or_else(|| ImageObjectAlignment::default().x_milli()),
+        agent_call_named_value(call, "alignment.y")
+            .or_else(|| agent_call_named_value(call, "align.y"))
+            .and_then(|value| agent_image_alignment_component_milli(value, "y"))
+            .unwrap_or_else(|| ImageObjectAlignment::default().y_milli()),
+    )
+}
+
+fn agent_image_alignment_component_milli(value: &str, axis: &str) -> Option<i32> {
+    let value = value.trim().trim_matches('"').trim_matches('\'');
+    match (axis, value) {
+        ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
+        ("x" | "y", "center" | "middle") => return Some(500),
+        ("x", "right" | "end") | ("y", "bottom" | "end") => return Some(1_000),
+        _ => {}
+    }
+    if let Ok(integer) = value.parse::<i32>() {
+        return Some(if (0..=1).contains(&integer) {
+            integer.saturating_mul(1_000)
+        } else {
+            integer.clamp(0, 1_000)
+        });
+    }
+    let decimal = value.parse::<f64>().ok()?;
+    if !decimal.is_finite() {
+        return None;
+    }
+    format!("{:.0}", (decimal * 1_000.0).round().clamp(0.0, 1_000.0))
+        .parse()
+        .ok()
 }
 
 fn agent_image_call_actions(call: &RuntimeCall) -> Vec<arcweft_id::PublicId> {
@@ -6084,6 +6193,7 @@ fn agent_image_presentation_input(
         call.bounds,
     )
     .with_fit(call.fit)
+    .with_alignment(call.alignment)
     .with_opacity_milli(call.opacity_milli)
     .with_playback(call.playback)
     .with_transform(call.transform)

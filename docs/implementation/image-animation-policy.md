@@ -161,8 +161,8 @@ different `--capture-time` values so native object PNG/raw captures can prove
 that visual-time frame selection, not wall-clock time, drives the active image
 frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
-id, target, layer, bounds, fit, opacity, depth, semantic action, custom
-`playback.*` timing, `transform.*` matrix/translation metadata,
+id, target, layer, bounds, fit, alignment, opacity, depth, semantic action,
+custom `playback.*` timing, `transform.*` matrix/translation metadata,
 enabled/visible lifecycle flags, `param.*` metadata, and animated frame
 timing. The `image_clipped_object` flow
 places a bounded animated image partially outside the viewport so object color
@@ -183,6 +183,8 @@ image(
   width = 360px,
   height = 180px,
   fit = "stretch",
+  alignment.x = "center",
+  alignment.y = "center",
   opacity = 0.5,
   playback.local_time = 50ms,
   transform.tx = 24px,
@@ -206,6 +208,10 @@ image(
 `opacity` accepts either a ratio form (`0`, `0.5`, `1`) or a milli form from
 `2` through `1000`; both lower to the presentation model's `opacity_milli`
 field.
+`alignment.x` / `alignment.y` (or the short `align.x` / `align.y`) accept
+keywords (`left`, `center`, `right`, `top`, `bottom`, `start`, `end`), ratio
+values from `0` through `1`, or milli values from `0` through `1000`; they lower
+to `ImageObjectAlignment` before native fit and transform resolution.
 `playback.start`, `playback.paused_at`, and `playback.local_time` accept
 non-negative durations (`150ms`, `0.15s`, or a bare seconds number).
 `playback.rate` accepts either a ratio (`0.5`) or milli value (`500`), and all

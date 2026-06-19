@@ -22665,6 +22665,31 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
 }
 
 #[test]
+fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let observe =
+        observe_image_animation_sample_flow_at(&source_path, "image_alignment_object", "0");
+    let image_object = observe["objects"]
+        .as_array()
+        .expect("image alignment sample reports objects")
+        .iter()
+        .find(|object| {
+            object["content"]["kind"] == "image"
+                && object["content"]["object"] == "image.sample.aligned_poster"
+        })
+        .expect("aligned static image object is observed");
+
+    assert_eq!(image_object["bbox"]["x"], 454);
+    assert_eq!(image_object["bbox"]["y"], 251);
+    assert_eq!(image_object["bbox"]["width"], 2);
+    assert_eq!(image_object["bbox"]["height"], 1);
+    assert_eq!(
+        image_object["content"]["asset"], "asset.bg.poster",
+        "alignment sample should preserve static image asset metadata"
+    );
+}
+
+#[test]
 fn agent_observe_native_captures_clipped_animated_image_object() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =

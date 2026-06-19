@@ -87,3 +87,14 @@ flow image_clipped_object {
 
     return "image_clipped_object"
 }
+
+flow image_alignment_object {
+    bg(@asset.bg.room)
+    image(asset = @asset.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
+
+    narrator.say(id=@say.image.alignment_object, voice=auto)[
+        Static image object alignment places intrinsic pixels inside authored bounds.[p]
+    ]
+
+    return "image_alignment_object"
+}
