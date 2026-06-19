@@ -8,7 +8,7 @@ use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
 use arcweft_lang_syntax::source::ParsedSource;
 use arcweft_render_text::LineDisplayCatalog;
 pub use arcweft_runtime_plan::flow::{
@@ -37,6 +37,12 @@ pub struct CompiledSource {
     pub runtime_plan_stats: RuntimePlanLowerStats,
 }
 
+/// Agent controller compilation result before bytecode/runtime artifact lowering.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledAgent {
+    pub hir: arcweft_lang_hir::model::HirModule,
+}
+
 /// Source compiler diagnostics for the shared driver.
 #[derive(Debug, Error)]
 pub enum CompileSourceError {
@@ -52,6 +58,17 @@ pub enum CompileSourceError {
     Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
     #[error("runtime-plan lowering errors: {0:?}")]
     RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
+}
+
+/// Agent controller compiler diagnostics.
+#[derive(Debug, Error)]
+pub enum CompileAgentError {
+    #[error("parse errors: {0:?}")]
+    Parse(Vec<arcweft_lang_syntax::parser::recovery::ParseError>),
+    #[error("HIR lowering errors: {0:?}")]
+    Hir(Vec<arcweft_lang_hir::model::HirLowerError>),
+    #[error("agent source did not declare a top-level `agent` item")]
+    MissingAgent,
 }
 
 /// HIR semantic validation diagnostics for the shared compiler driver.
@@ -102,6 +119,16 @@ pub fn parse_source_text(source: impl Into<String>) -> ParsedSource {
     parse_source(source)
 }
 
+/// Parses Agent dialect source text into the shared syntax parser output.
+pub fn parse_agent_source_text(source: impl Into<String>) -> ParsedSource {
+    parse_document(
+        source,
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    )
+}
+
 /// Runs syntax-level source lints on a typed syntax tree.
 pub fn lint_source_tree(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
     lint_id_policy(tree)
@@ -127,6 +154,19 @@ pub fn lower_source_tree(
     tree: &TypedSyntaxTree,
 ) -> Result<HirModule, Vec<arcweft_lang_hir::model::HirLowerError>> {
     lower_to_hir(tree)
+}
+
+/// Compiles `.awfagent` source through the shared parser and HIR lowering path.
+pub fn compile_agent_source(source: impl Into<String>) -> Result<CompiledAgent, CompileAgentError> {
+    let parsed = parse_agent_source_text(source);
+    if !parsed.errors().is_empty() {
+        return Err(CompileAgentError::Parse(parsed.errors().to_vec()));
+    }
+    let hir = lower_source_tree(parsed.typed_tree()).map_err(CompileAgentError::Hir)?;
+    if hir.agents().is_empty() {
+        return Err(CompileAgentError::MissingAgent);
+    }
+    Ok(CompiledAgent { hir })
 }
 
 /// Validates and type-checks HIR with a supplied environment.
@@ -330,6 +370,31 @@ flow @flow.main main {
 
         assert!(!compiled.plan.entries.is_empty());
         assert!(!compiled.display.lines().is_empty());
+    }
+
+    #[test]
+    fn compiles_agent_source_through_agent_dialect() {
+        let compiled = compile_agent_source(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+        )
+        .expect("agent source compiles");
+
+        assert_eq!(compiled.hir.agents().len(), 1);
+        assert_eq!(compiled.hir.agents()[0].item().name(), "opening_smoke");
+    }
+
+    #[test]
+    fn compile_agent_source_rejects_legacy_line_commands() {
+        let error = compile_agent_source("observe\n").expect_err("legacy command fails");
+
+        assert!(matches!(error, CompileAgentError::Parse(_)));
     }
 
     #[test]

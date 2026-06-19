@@ -9,7 +9,12 @@ use crate::cst::{
     split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
-use crate::{ast::items::Item, parser::parse_source};
+use crate::{
+    ast::ids::EntityRef,
+    ast::items::Item,
+    expr::Expr,
+    parser::{ParseOptions, SourceDialect, parse_document, parse_source},
+};
 
 #[test]
 fn parsed_source_always_keeps_lossless_syntax() {
@@ -19,6 +24,50 @@ fn parsed_source_always_keeps_lossless_syntax() {
     assert_eq!(parsed.syntax().kind(), SyntaxKind::Root);
     assert_eq!(parsed.syntax().text().to_string(), "flow @flow.bad bad {");
     assert_eq!(parsed.typed_tree().source(), "flow @flow.bad bad {");
+}
+
+#[test]
+fn agent_dialect_parses_top_level_agent_item() {
+    let parsed = parse_document(
+        r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
+        panic!("expected exactly one parsed agent item");
+    };
+    assert_eq!(agent.name(), "opening_smoke");
+    assert_eq!(agent.id().map(EntityRef::body), Some("agent.opening_smoke"));
+    assert!(agent.signature().is_some());
+    assert_eq!(agent.contracts().len(), 1);
+    assert!(matches!(agent.body_value(), Some(Expr::Call { .. })));
+}
+
+#[test]
+fn agent_dialect_rejects_legacy_line_command_fallback() {
+    let parsed = parse_document(
+        "observe\n",
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    );
+
+    assert!(parsed.typed_tree().items().is_empty());
+    assert!(parsed.errors().iter().any(|error| {
+        error
+            .message()
+            .contains("unsupported top-level item in Agent dialect")
+    }));
 }
 
 #[test]

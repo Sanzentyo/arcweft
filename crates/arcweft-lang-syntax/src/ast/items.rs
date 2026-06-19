@@ -24,6 +24,7 @@ pub struct TypedSyntaxTree {
 pub enum Item {
     Flow(Flow),
     Function(FunctionItem),
+    Agent(AgentItem),
     Callable(CallableItem),
     State(StateItem),
     Trait(TraitItem),
@@ -238,6 +239,40 @@ pub struct FunctionItem {
     body_statements: Vec<Stmt>,
     body_value: Option<Expr>,
     range: TextRange,
+}
+
+/// Agent controller entry point declared in an Agent dialect source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentItem {
+    attrs: Vec<Attribute>,
+    doc: Option<DocBlock>,
+    visibility: Option<Visibility>,
+    id: Option<EntityRef>,
+    name: String,
+    signature: Option<FnSignature>,
+    signature_text: Option<String>,
+    contracts: Vec<ContractClause>,
+    body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
+    range: TextRange,
+}
+
+/// Internal initializer for an agent controller item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AgentItemInit {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) doc: Option<DocBlock>,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) id: Option<EntityRef>,
+    pub(crate) name: String,
+    pub(crate) signature: Option<FnSignature>,
+    pub(crate) signature_text: Option<String>,
+    pub(crate) contracts: Vec<ContractClause>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) body_value: Option<Expr>,
+    pub(crate) range: TextRange,
 }
 
 /// Top-level function category.
@@ -708,6 +743,73 @@ impl FunctionItem {
 
     pub fn signature_text(&self) -> &str {
         &self.signature_text
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl AgentItem {
+    pub(crate) fn new(init: AgentItemInit) -> Self {
+        Self {
+            attrs: init.attrs,
+            doc: init.doc,
+            visibility: init.visibility,
+            id: init.id,
+            name: init.name,
+            signature: init.signature,
+            signature_text: init.signature_text,
+            contracts: init.contracts,
+            body: init.body,
+            body_statements: init.body_statements,
+            body_value: init.body_value,
+            range: init.range,
+        }
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn signature(&self) -> Option<&FnSignature> {
+        self.signature.as_ref()
+    }
+
+    pub fn signature_text(&self) -> Option<&str> {
+        self.signature_text.as_deref()
     }
 
     pub fn contracts(&self) -> &[ContractClause] {

@@ -12,6 +12,7 @@ use crate::ast::{
     items::{Item, RawItem},
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
+use crate::parser::SourceDialect;
 
 impl Parser<'_> {
     pub(super) fn parse_top_level_line(
@@ -142,6 +143,11 @@ impl Parser<'_> {
                     items.push(Item::Function(function));
                 }
             }
+            CstTopLevelItemKind::Agent => {
+                if let Some(agent) = self.parse_agent_item() {
+                    items.push(Item::Agent(agent));
+                }
+            }
             CstTopLevelItemKind::FlowBodyItemOrRaw => {
                 self.parse_top_level_flow_item_or_raw(trimmed, range, items);
             }
@@ -200,6 +206,7 @@ impl Parser<'_> {
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::Flow
+            | CstTopLevelItemKind::Agent
             | CstTopLevelItemKind::Function
             | CstTopLevelItemKind::FlowBodyItemOrRaw => None,
         }
@@ -213,6 +220,17 @@ impl Parser<'_> {
     ) {
         self.reject_pending_doc(range);
         self.reject_pending_attrs(range);
+        if self.source_dialect == SourceDialect::Agent {
+            self.push_error(
+                range,
+                "unsupported top-level item in Agent dialect",
+                ["agent @agent.id name() { ... }"],
+                Some(trimmed),
+                ["wrap Agent work in a top-level `agent` item"],
+            );
+            self.index += 1;
+            return;
+        }
         if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
             items.push(Item::FlowItem(Box::new(flow_item)));
         } else {

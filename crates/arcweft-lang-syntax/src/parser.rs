@@ -29,6 +29,7 @@ pub mod choice;
 pub mod control_flow;
 pub mod dialogue;
 pub mod flow;
+pub mod fragment;
 pub mod headers;
 pub mod helpers;
 pub mod hooks;
@@ -43,6 +44,10 @@ use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr, parse_scope_expr_body,
     parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
+};
+pub use fragment::{
+    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, SourceDialect,
+    parse_document, parse_fragment,
 };
 use helpers::{
     PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items, collect_wiki_links,
@@ -67,9 +72,14 @@ use statements::{
 /// Parses an Arcweft source string.
 #[must_use]
 pub fn parse_source(source: impl Into<String>) -> ParsedSource {
+    parse_document(source, ParseOptions::default())
+}
+
+fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
     let source = source.into();
     let syntax = crate::cst::parse_cst(&source);
     let mut parser = Parser::from_syntax(&source, &syntax);
+    parser.source_dialect = options.source_dialect;
     let (tree, errors, syntax_stats) = parser.parse();
     ParsedSource::new(source, syntax, tree, errors, syntax_stats)
 }
@@ -115,6 +125,7 @@ struct Parser<'a> {
     pending_doc: Option<DocBlock>,
     pending_attrs: Vec<Attribute>,
     syntax_stats: SyntaxParseStats,
+    source_dialect: SourceDialect,
 }
 
 impl<'a> Parser<'a> {
@@ -152,6 +163,7 @@ impl<'a> Parser<'a> {
             pending_doc: None,
             pending_attrs: Vec::new(),
             syntax_stats,
+            source_dialect: SourceDialect::Game,
         }
     }
 

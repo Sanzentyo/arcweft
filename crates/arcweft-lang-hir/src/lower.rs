@@ -1,6 +1,6 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
-use crate::model::{HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::items::{Attribute, FunctionItem, Item, TypedSyntaxTree};
+use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
+use arcweft_lang_syntax::ast::items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree};
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
@@ -20,6 +20,7 @@ struct HirLoweringState {
     attributes: Vec<Attribute>,
     flows: Vec<crate::model::HirFlow>,
     functions: Vec<HirFunction>,
+    agents: Vec<HirAgent>,
     declarations: Vec<HirTopLevelDecl>,
     top_level_items: Vec<crate::model::HirFlowItem>,
     errors: Vec<HirLowerError>,
@@ -36,6 +37,9 @@ impl HirLoweringState {
             },
             Item::Function(function) => {
                 self.functions.push(lower_function(function));
+            }
+            Item::Agent(agent) => {
+                self.agents.push(lower_agent(agent));
             }
             Item::FlowItem(item) => match lower_flow_item(item) {
                 Ok(item) => {
@@ -126,7 +130,11 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::TypeAlias(item.clone()));
             }
-            Item::Flow(_) | Item::Function(_) | Item::FlowItem(_) | Item::Raw(_) => {}
+            Item::Flow(_)
+            | Item::Function(_)
+            | Item::Agent(_)
+            | Item::FlowItem(_)
+            | Item::Raw(_) => {}
         }
     }
 
@@ -136,12 +144,20 @@ impl HirLoweringState {
                 attributes: self.attributes,
                 flows: self.flows,
                 functions: self.functions,
+                agents: self.agents,
                 declarations: self.declarations,
                 top_level_items: self.top_level_items,
             })
         } else {
             Err(self.errors)
         }
+    }
+}
+
+fn lower_agent(agent: &AgentItem) -> HirAgent {
+    HirAgent {
+        attributes: agent.attrs().to_vec(),
+        item: agent.clone(),
     }
 }
 
@@ -160,7 +176,10 @@ fn lower_function(function: &FunctionItem) -> HirFunction {
 #[cfg(test)]
 mod tests {
     use super::lower_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::{
+        ast::ids::EntityRef,
+        parser::{ParseOptions, SourceDialect, parse_document, parse_source},
+    };
 
     #[test]
     fn lowering_preserves_flow_attributes() {
@@ -183,6 +202,35 @@ flow @flow.opening opening {
             Some("id::flow_module_mismatch")
         );
         assert!(flow.has_attribute("allow"));
+    }
+
+    #[test]
+    fn lowering_preserves_agent_items() {
+        let parsed = parse_document(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        );
+        assert_eq!(parsed.errors(), &[]);
+
+        let module = lower_to_hir(parsed.typed_tree()).expect("agent lowers");
+
+        assert_eq!(module.agents().len(), 1);
+        let agent = &module.agents()[0];
+        assert!(agent.has_attribute("agent"));
+        assert_eq!(agent.item().name(), "opening_smoke");
+        assert_eq!(
+            agent.item().id().map(EntityRef::body),
+            Some("agent.opening_smoke")
+        );
     }
 
     #[test]

@@ -176,6 +176,7 @@ pub(crate) enum CstTopLevelLineKind {
 pub(crate) enum CstTopLevelItemKind {
     Flow,
     Function,
+    Agent,
     Callable,
     State,
     Trait,
@@ -1197,6 +1198,8 @@ fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Flow
     } else if looks_like_function_item(trimmed) {
         CstTopLevelItemKind::Function
+    } else if looks_like_agent_item(trimmed) {
+        CstTopLevelItemKind::Agent
     } else if looks_like_callable_item(trimmed) {
         CstTopLevelItemKind::Callable
     } else if looks_like_state_item(trimmed) {
@@ -1276,6 +1279,10 @@ fn looks_like_function_item(trimmed: &str) -> bool {
         || rest.starts_with("task fn ")
         || rest.starts_with("dialogue fn ")
         || rest.starts_with("stream fn ")
+}
+
+fn looks_like_agent_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("agent ")
 }
 
 fn looks_like_callable_item(trimmed: &str) -> bool {

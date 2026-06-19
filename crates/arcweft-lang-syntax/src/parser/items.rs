@@ -1,11 +1,12 @@
 use crate::ast::common::TextRange;
+use crate::ast::ids::EntityRef;
 use crate::ast::items::{
-    CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem,
-    EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant,
-    ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem, ExternModMember,
-    ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn,
-    ParserItem, StateField, StateItem, StructField, StructItem, TraitItem, TraitMember,
-    TypeAliasItem,
+    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem,
+    EntryDeclItem, EntryItem, EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
+    EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem,
+    ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImplItem,
+    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
+    TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
@@ -176,6 +177,82 @@ impl Parser<'_> {
             doc,
             kind,
             visibility,
+            signature,
+            signature_text,
+            contracts,
+            body: body.into_owned(),
+            body_statements,
+            body_value,
+            range: TextRange::new(start_line.start, end),
+        }))
+    }
+
+    pub(super) fn parse_agent_item(&mut self) -> Option<AgentItem> {
+        let attrs = self.take_pending_attrs();
+        let doc = self.take_pending_doc();
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_function_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing agent",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the agent body"],
+            );
+            return None;
+        }
+
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let (agent_head, contract_lines) = split_function_header_lines(&header_lines)?;
+        let (visibility, rest) = parse_visibility_prefix(&agent_head);
+        let rest = rest.trim_start().strip_prefix("agent")?.trim_start();
+        let (id, rest) = if rest.starts_with('@') {
+            match parse_required_entity_ref(rest, start_line.start, &mut self.errors) {
+                Some((id, rest)) => (Some(id), rest.trim_start()),
+                None => (None, rest),
+            }
+        } else {
+            (None, rest)
+        };
+        let (explicit_name, signature_tail) = parse_name_and_tail(rest);
+        let name = explicit_name
+            .or_else(|| id.as_ref().map(agent_name_from_id))
+            .unwrap_or_else(|| "agent".to_owned());
+        let signature_text = parse_agent_signature_text(&name, &signature_tail);
+        let signature = match signature_text.as_deref() {
+            Some(text) => {
+                if let Ok(signature) = parse_fn_signature(text) {
+                    Some(signature)
+                } else {
+                    self.push_error(
+                        TextRange::new(start_line.start, start_line.end),
+                        "invalid agent signature",
+                        ["agent @agent.id name(...)"],
+                        Some(agent_head.as_str()),
+                        ["write the agent item with a valid function-style signature tail"],
+                    );
+                    return None;
+                }
+            }
+            None => None,
+        };
+        let contracts = contract_lines
+            .iter()
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
+
+        Some(AgentItem::new(AgentItemInit {
+            attrs,
+            doc,
+            visibility,
+            id,
+            name,
             signature,
             signature_text,
             contracts,
@@ -1014,4 +1091,18 @@ fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
         .map(str::to_owned)
         .collect();
     (source[..open].trim().to_owned(), params)
+}
+
+fn parse_agent_signature_text(name: &str, signature_tail: &str) -> Option<String> {
+    let tail = signature_tail.trim();
+    (tail.starts_with('(') || tail.starts_with('<')).then(|| format!("fn {name}{tail}"))
+}
+
+fn agent_name_from_id(id: &EntityRef) -> String {
+    id.body()
+        .rsplit('.')
+        .next()
+        .filter(|suffix| !suffix.is_empty())
+        .unwrap_or("agent")
+        .to_owned()
 }

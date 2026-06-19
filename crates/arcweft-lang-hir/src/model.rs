@@ -6,9 +6,9 @@ use arcweft_lang_syntax::{
         flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
-            Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem, ExternCapabilityItem,
-            ExternModItem, FunctionKind, HookItem, ImplItem, MemoFn, ParserItem, StateItem,
-            StructItem, TraitItem, TypeAliasItem,
+            AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
+            ExternCapabilityItem, ExternModItem, FunctionKind, HookItem, ImplItem, MemoFn,
+            ParserItem, StateItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -30,6 +30,7 @@ pub struct HirModule {
     pub(crate) attributes: Vec<Attribute>,
     pub(crate) flows: Vec<HirFlow>,
     pub(crate) functions: Vec<HirFunction>,
+    pub(crate) agents: Vec<HirAgent>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
     pub(crate) top_level_items: Vec<HirFlowItem>,
 }
@@ -56,6 +57,13 @@ pub struct HirFunction {
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) statements: Vec<Stmt>,
     pub(crate) value: Option<Expr>,
+}
+
+/// HIR-facing Agent controller item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirAgent {
+    pub(crate) attributes: Vec<Attribute>,
+    pub(crate) item: AgentItem,
 }
 
 /// HIR-facing top-level declaration preserved for later semantic passes.
@@ -324,6 +332,10 @@ impl HirModule {
         &self.functions
     }
 
+    pub fn agents(&self) -> &[HirAgent] {
+        &self.agents
+    }
+
     pub fn declarations(&self) -> &[HirTopLevelDecl] {
         &self.declarations
     }
@@ -406,6 +418,22 @@ impl HirFunction {
 
     pub const fn value(&self) -> Option<&Expr> {
         self.value.as_ref()
+    }
+}
+
+impl HirAgent {
+    pub fn attributes(&self) -> &[Attribute] {
+        &self.attributes
+    }
+
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|attribute| attribute.name() == name)
+    }
+
+    pub const fn item(&self) -> &AgentItem {
+        &self.item
     }
 }
 
