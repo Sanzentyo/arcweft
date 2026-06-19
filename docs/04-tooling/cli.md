@@ -397,9 +397,9 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--debug-db <path>] [--json]`
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:type`,
-`:ast`, `:hir`, `:bytecode`, `:parse`, `:observe`, `:actions`, `:capture`,
-`:complete`, `:highlight`, `:query TEXT`, `:history`, `:bindings`, `:drop`,
-`:load`, `:save`, `:reset`, `:connect`, and `:quit`. `:observe` uses the same native Agent
+`:ast`, `:hir`, `:bytecode`, `:parse`, `:classify`, `:observe`, `:actions`,
+`:capture`, `:complete`, `:highlight`, `:query TEXT`, `:history`,
+`:bindings`, `:drop`, `:load`, `:save`, `:reset`, `:connect`, and `:quit`. `:observe` uses the same native Agent
 observation path as `arcw agent observe`; `:actions` reports the enabled
 semantic action targets from the latest REPL observation. `:capture
 [viewport|layer ID|object ID]` reuses the native Agent image capture path and
@@ -411,7 +411,10 @@ kind-filtered entity IDs such as `choose(@...)` returning only choice options.
 `:highlight SOURCE` exposes Sans I/O byte-range highlight tokens for the same
 future terminal editor, including meta commands, keywords, Prelude calls, entity
 IDs, effect capability selectors, literals, comments, punctuation, and lexical
-errors such as unterminated strings.
+errors such as unterminated strings. `:classify SOURCE` exposes the shared Agent
+fragment parser's cell completeness report and selected fragment family so the
+future terminal editor does not reimplement bracket, string, or item/statement
+boundary rules.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells; remote `stdio:` endpoints are rejected until a real retained remote REPL

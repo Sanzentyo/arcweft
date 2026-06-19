@@ -1,6 +1,7 @@
 # Agent REPL inspection and capture session.
 :help
 :type 1u32
+:classify let frame = try observe()
 :ast signal("ready").eq(true)
 :hir return "ok"
 :bytecode return "ok"

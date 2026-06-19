@@ -66,10 +66,7 @@ use arcweft_lang_syntax::ast::{
     flow::Stmt,
     pattern::{Pattern, VariantPatternPayload},
 };
-use arcweft_lang_syntax::parser::{
-    ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
-    SourceDialect, parse_fragment,
-};
+use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
     ImageObjectTransform,
@@ -81,8 +78,9 @@ use arcweft_render_text::{
     RichTextTextSource, RuntimeLineContext,
 };
 use arcweft_tooling::agent_repl::{
-    AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_completions,
-    agent_repl_highlight_tokens,
+    AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_classification_from_fragment,
+    agent_repl_classify_cell, agent_repl_completions, agent_repl_highlight_tokens,
+    agent_repl_parse_fragment,
 };
 
 const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
@@ -2223,7 +2221,7 @@ fn agent_repl_eval_meta(
             }),
         ),
         ":connect" => agent_repl_connect(index, input, rest, options, state),
-        ":drop" | ":load" | ":save" | ":parse" => {
+        ":drop" | ":load" | ":save" | ":parse" | ":classify" => {
             agent_repl_eval_binding_meta(index, input, command, rest, state)
         }
         ":reset" => {
@@ -2344,7 +2342,13 @@ fn agent_repl_eval_binding_meta(
             "meta",
             ":parse requires a fragment".to_owned(),
         ),
-        ":parse" => agent_repl_ok(index, input, "meta", agent_repl_parse_cell(rest)),
+        ":classify" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":classify requires a fragment".to_owned(),
+        ),
+        ":parse" | ":classify" => agent_repl_ok(index, input, "meta", agent_repl_parse_cell(rest)),
         _ => agent_repl_error(
             index,
             input,
@@ -2376,6 +2380,7 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":load FILE.awfagent",
                 ":save FILE.awfagent",
                 ":parse EXPR_OR_STMT",
+                ":classify EXPR_OR_STMT",
                 ":reset",
                 ":connect current|source PATH|profile ID [--manifest PATH]",
                 ":complete SOURCE_BEFORE_CURSOR",
@@ -3042,80 +3047,13 @@ fn agent_repl_observe_options(
 }
 
 fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
-    let fragment = agent_repl_parse_fragment(input);
-    agent_repl_fragment_report(&fragment)
-}
-
-fn agent_repl_parse_fragment(input: &str) -> ParsedFragment {
-    if input.starts_with("agent ") {
-        parse_fragment(
-            input,
-            FragmentKind::Items,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        )
-    } else if input.starts_with("let ")
-        || input.starts_with("try ")
-        || input.starts_with("expect(")
-        || input.starts_with("deny(")
-        || input.starts_with("wait(")
-    {
-        parse_fragment(
-            input,
-            FragmentKind::Statements,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        )
-    } else {
-        let expression = parse_fragment(
-            input,
-            FragmentKind::Expression,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        );
-        if matches!(expression.completion(), ParseCompletion::Complete) {
-            expression
-        } else {
-            parse_fragment(
-                input,
-                FragmentKind::Statements,
-                ParseOptions {
-                    source_dialect: SourceDialect::Agent,
-                },
-            )
-        }
-    }
+    serde_json::to_value(agent_repl_classify_cell(input))
+        .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }))
 }
 
 fn agent_repl_fragment_report(fragment: &ParsedFragment) -> serde_json::Value {
-    let completion = match fragment.completion() {
-        ParseCompletion::Complete => serde_json::json!({ "kind": "complete" }),
-        ParseCompletion::Incomplete { expected } => serde_json::json!({
-            "kind": "incomplete",
-            "expected": expected
-                .iter()
-                .map(ExpectedToken::text)
-                .collect::<Vec<_>>(),
-        }),
-        ParseCompletion::Invalid => serde_json::json!({ "kind": "invalid" }),
-    };
-    serde_json::json!({
-        "completion": completion,
-        "errors": fragment
-            .errors()
-            .iter()
-            .map(|error| {
-                serde_json::json!({
-                    "message": error.message(),
-                    "expected": error.expected(),
-                    "found": error.found(),
-                })
-            })
-        .collect::<Vec<_>>(),
-    })
+    serde_json::to_value(agent_repl_classification_from_fragment(fragment))
+        .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }))
 }
 
 fn agent_repl_compile_fragment(

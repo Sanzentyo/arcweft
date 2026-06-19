@@ -768,6 +768,13 @@ fn agent_repl_inspects_fragments_and_captures_from_input_session() {
     assert_eq!(report["ok"], true);
     let cells = report["cells"].as_array().expect("cells are present");
     assert_agent_repl_meta_ok(cells, ":type 1u32");
+    let classify = cells
+        .iter()
+        .find(|cell| cell["input"] == ":classify let frame = try observe()")
+        .expect("classify cell is present");
+    assert_eq!(classify["status"], "ok");
+    assert_eq!(classify["value"]["completion"]["kind"], "complete");
+    assert_eq!(classify["value"]["fragment_kind"], "statements");
     assert_agent_repl_meta_ok(cells, ":ast signal(\"ready\").eq(true)");
     assert_agent_repl_meta_ok(cells, ":hir return \"ok\"");
     assert_agent_repl_meta_ok(cells, ":bytecode return \"ok\"");
