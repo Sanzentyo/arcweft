@@ -210,6 +210,10 @@ pub struct AgentImageMetadata {
     pub composition: AgentImageComposition,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub capture_step: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub capture_time_millis: u32,
     pub width: u32,
     pub height: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,6 +286,8 @@ impl AgentImageMetadata {
             scope: image.scope.clone(),
             composition: image.composition,
             page: image.page,
+            capture_step: image.capture_step,
+            capture_time_millis: image.capture_time_millis,
             width: image.width,
             height: image.height,
             crop_origin: image.crop_origin,
@@ -2555,6 +2561,8 @@ mod tests {
                 scope: AgentImageScope::Viewport,
                 composition: AgentImageComposition::Framebuffer,
                 page: 0,
+                capture_step: 0,
+                capture_time_millis: 0,
                 width: 1280,
                 height: 720,
                 crop_origin: None,
@@ -2577,6 +2585,8 @@ mod tests {
                 },
                 composition: AgentImageComposition::MaskAttachment,
                 page: 0,
+                capture_step: 0,
+                capture_time_millis: 0,
                 width: 3,
                 height: 4,
                 crop_origin: Some(AgentImageCropOrigin {

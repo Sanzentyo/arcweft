@@ -26465,6 +26465,89 @@ flow @flow.main main {
 }
 
 #[test]
+#[ignore = "tier 2 MCP stdio E2E: animated image live resource readback"]
+fn agent_mcp_stdio_reads_animated_image_layer_resource() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let layer_uri = "arcweft://session/cli/frame/0/layer.layer.foreground.rgba";
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.observe",
+                "arguments": {
+                    "source": source_path.display().to_string(),
+                    "flow": "image_sprite_overlay",
+                    "steps": 2,
+                    "capture_time": 0.15,
+                    "max_ops": 64
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.resource.read",
+                "arguments": {
+                    "uri": layer_uri
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "resources/read",
+            "params": {
+                "uri": layer_uri
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp animated image layer resource read should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 4);
+    assert_eq!(responses[1]["result"]["isError"], false);
+
+    let metadata = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "animated image MCP tool resource metadata is JSON",
+    );
+    assert_eq!(metadata["uri"], layer_uri);
+    assert_eq!(metadata["image"]["renderer"], "native");
+    assert_eq!(metadata["image"]["scope"]["kind"], "layer");
+    assert_eq!(metadata["image"]["scope"]["id"], "layer.foreground");
+    assert_eq!(metadata["image"]["composition"], "framebuffer_crop");
+    assert_eq!(metadata["image"]["capture_time_millis"], 150);
+    assert_eq!(metadata["image"]["width"], 360);
+    assert_eq!(metadata["image"]["height"], 180);
+    assert_eq!(metadata["image"]["crop_origin"]["x"], 120);
+    assert_eq!(metadata["image"]["crop_origin"]["y"], 84);
+    assert_eq!(metadata["image"]["content_pixels"], 64_800);
+    let tool_bytes = mcp_raw_capture_bytes(&responses[2]);
+    assert_eq!(tool_bytes.len(), 360 * 180 * 4);
+    assert_eq!(&tool_bytes[..4], &[176, 131, 11, 127]);
+
+    let content = &responses[3]["result"]["contents"][0];
+    assert_eq!(content["uri"], layer_uri);
+    assert_eq!(content["mimeType"], "application/octet-stream");
+    let read_blob = content["blob"]
+        .as_str()
+        .expect("animated image resources/read returns a blob");
+    let read_bytes = general_purpose::STANDARD
+        .decode(read_blob)
+        .expect("animated image resources/read blob is base64");
+    assert_eq!(read_bytes, tool_bytes);
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_ruby_element_with_native_renderer() {
     let path = temp_arcw(

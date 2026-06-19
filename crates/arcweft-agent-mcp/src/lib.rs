@@ -615,6 +615,8 @@ mod tests {
                 },
                 composition: AgentImageComposition::MaskedFramebufferCrop,
                 page: 0,
+                capture_step: 0,
+                capture_time_millis: 0,
                 width: 320,
                 height: 180,
                 crop_origin: Some(AgentImageCropOrigin {
@@ -957,6 +959,8 @@ mod tests {
                     },
                     composition: AgentImageComposition::ObjectIdAttachment,
                     page: 0,
+                    capture_step: 0,
+                    capture_time_millis: 0,
                     width: 320,
                     height: 180,
                     crop_origin: None,

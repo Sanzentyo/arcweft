@@ -258,11 +258,13 @@ image capture.
    proxies. Depth, transforms, lifecycle flags, semantic actions, and custom
    `param.*` metadata are now present on the bounded source-level call path and
    Agent observation path.
-3. Add clipped object capture fixtures and live MCP resource-read fixtures that
-   exercise non-fullscreen image geometry. Bounded animated image pinned-frame
-   readback is covered for direct object and layer `--read-uri`; image-object
-   proxy hit-test metadata is covered against the same sample; and MCP
-   tool-content preservation is covered with serialized metadata fixtures.
+3. Add clipped object capture fixtures that exercise non-fullscreen image
+   geometry. Bounded animated image pinned-frame readback is covered for direct
+   object and layer `--read-uri`; image-object proxy hit-test metadata is
+   covered against the same sample; MCP tool-content preservation is covered
+   with serialized metadata fixtures; and live MCP `arcweft.resource.read` plus
+   protocol `resources/read` are covered for the bounded animated image layer
+   raw resource.
 4. Add more regression tests for native capture pixels, object metadata, and no
    wall-clock dependence.
 

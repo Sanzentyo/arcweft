@@ -5083,6 +5083,8 @@ fn agent_capture_ref_resource(
             scope: spec.scope,
             composition: agent_capture_ref_composition(spec.kind),
             page: spec.page,
+            capture_step: 0,
+            capture_time_millis: report.capture_time_millis.unwrap_or_default(),
             width: spec.width,
             height: spec.height,
             crop_origin: None,
