@@ -333,6 +333,13 @@ the root, exists, and matches the indexed byte length. `arcw debug db delete
 --unreferenced-blobs --blob-dir <dir>` deletes unreferenced blob records and
 their corresponding safe relative files while preserving files still referenced
 by captures.
+`arcw agent rag query --trace <file.arcwx> --query <text>
+[--max-privacy public|project|sensitive|secret] [--json]` builds the same
+explainable `RagContextPack` shape used by Agent MCP. The default privacy
+ceiling is `project`; chunks whose `privacy_class` / `privacy` is above the
+ceiling are excluded before ranking and byte trimming. Trace records without an
+explicit privacy field default to `project`, so `--max-privacy public` returns
+only records deliberately marked public.
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return

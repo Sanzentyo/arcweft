@@ -76,6 +76,29 @@ impl PrivacyClass {
             Self::Secret => "secret",
         }
     }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "public" => Some(Self::Public),
+            "project" => Some(Self::Project),
+            "sensitive" => Some(Self::Sensitive),
+            "secret" => Some(Self::Secret),
+            _ => None,
+        }
+    }
+
+    pub const fn is_allowed_by(self, max: Self) -> bool {
+        matches!(
+            (self, max),
+            (Self::Public, _)
+                | (
+                    Self::Project,
+                    Self::Project | Self::Sensitive | Self::Secret
+                )
+                | (Self::Sensitive, Self::Sensitive | Self::Secret)
+                | (Self::Secret, Self::Secret)
+        )
+    }
 }
 
 impl ChunkSourceKind {

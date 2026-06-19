@@ -145,6 +145,7 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_agent_script_trace_report(&trace_path);
     assert_agent_script_replay_matches(&trace_path, &bundle_trace_path);
     assert_agent_rag_query_trace(&trace_path);
+    assert_agent_rag_query_trace_respects_privacy(&trace_path);
 }
 
 #[test]
@@ -763,6 +764,32 @@ fn assert_agent_rag_query_trace(trace_path: &Path) {
                 .as_array()
                 .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
     }));
+}
+
+fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {
+    let rag_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--trace")
+        .arg(trace_path)
+        .arg("--query")
+        .arg("observation_received")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query enforces privacy");
+    assert!(
+        rag_output.status.success(),
+        "agent rag query with public privacy should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rag_output.stdout),
+        String::from_utf8_lossy(&rag_output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&rag_output.stdout).expect("RAG output is JSON");
+    assert_eq!(pack["query"]["text"], "observation_received");
+    assert_eq!(pack["items"].as_array().unwrap().len(), 0);
 }
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {

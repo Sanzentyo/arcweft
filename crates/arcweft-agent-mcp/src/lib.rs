@@ -378,7 +378,13 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
                 },
                 "graph_depth": { "type": "integer", "minimum": 0, "default": 1 },
                 "limit": { "type": "integer", "minimum": 1, "default": 8 },
-                "max_context_bytes": { "type": "integer", "minimum": 1, "default": 32768 }
+                "max_context_bytes": { "type": "integer", "minimum": 1, "default": 32768 },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed in returned context items."
+                }
             },
             "required": ["query"]
         }),
@@ -1468,6 +1474,10 @@ mod tests {
         assert_eq!(
             rag.input_schema["properties"]["max_context_bytes"]["minimum"],
             1
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
         );
     }
 

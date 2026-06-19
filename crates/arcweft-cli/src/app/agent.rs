@@ -201,6 +201,8 @@ pub(super) struct AgentRagQueryOptions {
     limit: usize,
     #[arg(long, default_value_t = 32 * 1024)]
     max_context_bytes: usize,
+    #[arg(long, value_parser = parse_agent_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
     #[arg(long)]
     json: bool,
 }
@@ -452,16 +454,20 @@ fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack
     let roots = agent_rag_roots(&options.roots)?;
     let records = read_and_validate_agent_trace_records(&options.trace)?;
     let trace_report = validate_agent_trace(&options.trace, &records, None)?;
-    let candidates = agent_trace_rag_candidates(&trace_report, &records)?;
+    let candidates = agent_trace_rag_candidates(&trace_report, &records)?
+        .into_iter()
+        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(options.max_privacy))
+        .collect::<Vec<_>>();
     let program_hash = agent_trace_rag_program_hash(&options.trace, &records)?;
     let query = RagQuery {
         query_id: agent_content_hash(format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}",
             query_text,
             program_hash.as_str(),
             options.graph_depth,
             options.limit,
-            options.max_context_bytes
+            options.max_context_bytes,
+            options.max_privacy.as_str()
         )),
         text: query_text.to_owned(),
         program_hash,
@@ -529,6 +535,7 @@ fn agent_trace_rag_candidates(
         &serde_json::to_value(trace_report)
             .map_err(|error| format!("failed to serialize trace summary: {error}"))?,
         Vec::new(),
+        PrivacyClass::Project,
     )?);
     candidates.extend(
         records
@@ -546,6 +553,7 @@ fn agent_trace_rag_candidates(
                     &serde_json::to_value(record)
                         .map_err(|error| format!("failed to serialize trace record: {error}"))?,
                     agent_trace_record_entity_ids(record),
+                    agent_trace_record_privacy(record),
                 )
             })
             .collect::<Result<Vec<_>, _>>()?,
@@ -560,6 +568,7 @@ fn agent_trace_rag_json_candidate(
     preferred_channel: SearchChannel,
     value: &serde_json::Value,
     entity_ids: Vec<AgentPublicId>,
+    privacy: PrivacyClass,
 ) -> Result<AgentTraceRagCandidate, String> {
     let body = serde_json::to_string_pretty(value)
         .map_err(|error| format!("failed to serialize RAG candidate body: {error}"))?;
@@ -577,12 +586,34 @@ fn agent_trace_rag_json_candidate(
             semantic_hash: None,
             source_anchor: None,
             entity_ids,
-            privacy: PrivacyClass::Project,
+            privacy,
             metadata: BTreeMap::new(),
             created_unix_ms: 0,
         },
         preferred_channel,
     })
+}
+
+fn agent_trace_record_privacy(record: &AgentTraceRecord) -> PrivacyClass {
+    record
+        .payload
+        .get("privacy_class")
+        .or_else(|| record.payload.get("privacy"))
+        .or_else(|| {
+            record
+                .payload
+                .get("payload")
+                .and_then(|payload| payload.get("privacy_class"))
+        })
+        .or_else(|| {
+            record
+                .payload
+                .get("payload")
+                .and_then(|payload| payload.get("privacy"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .and_then(PrivacyClass::parse)
+        .unwrap_or(PrivacyClass::Project)
 }
 
 fn agent_trace_record_entity_ids(record: &AgentTraceRecord) -> Vec<AgentPublicId> {
@@ -730,6 +761,12 @@ fn agent_rag_roots(values: &[String]) -> Result<Vec<AgentPublicId>, String> {
                 .map_err(|_| "agent rag query --root values must not be empty".to_owned())
         })
         .collect()
+}
+
+fn parse_agent_privacy_class(value: &str) -> Result<PrivacyClass, String> {
+    PrivacyClass::parse(value).ok_or_else(|| {
+        format!("privacy class must be one of public, project, sensitive, or secret: `{value}`")
+    })
 }
 
 fn agent_rag_tokens(text: &str) -> BTreeSet<String> {

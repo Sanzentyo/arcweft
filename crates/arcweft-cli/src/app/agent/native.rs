@@ -411,6 +411,58 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn agent_mcp_rag_query_enforces_max_privacy() {
+        let mut state = AgentMcpState {
+            trace_resources: vec![AgentResource {
+                uri: "arcweft://run/run.test/trace.arcwx".to_owned(),
+                kind: arcweft_agent_protocol::AgentResourceKind::Trace,
+                mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+                hash: "trace:test".to_owned(),
+                image: None,
+                body: AgentResourceBody::Json(serde_json::json!([
+                    {
+                        "kind": "diagnostic_emitted",
+                        "privacy_class": "public",
+                        "payload": { "message": "public route note" }
+                    },
+                    {
+                        "kind": "diagnostic_emitted",
+                        "privacy_class": "secret",
+                        "payload": { "message": "secret token should not appear" }
+                    }
+                ])),
+            }],
+            ..AgentMcpState::default()
+        };
+
+        let rag_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "diagnostic_emitted",
+                "max_privacy": "public",
+                "limit": 8
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("RAG query succeeds");
+        let pack = mcp_text_json(&rag_result);
+        let items = pack["items"].as_array().expect("items array");
+
+        assert_eq!(items.len(), 1);
+        assert!(
+            items[0]["body"]
+                .as_str()
+                .expect("body string")
+                .contains("public route note")
+        );
+        assert!(
+            !serde_json::to_string(&pack)
+                .expect("pack serializes")
+                .contains("secret token")
+        );
+    }
+
     fn mcp_text_json(result: &McpCallToolResult) -> serde_json::Value {
         let [McpContentBlock::Text { text }] = result.content.as_slice() else {
             panic!("expected one text block");
@@ -2222,6 +2274,8 @@ fn agent_mcp_call_rag_query(
     let graph_depth =
         agent_mcp_u32_argument(arguments, "graph_depth", "arcweft.rag.query")?.unwrap_or(1);
     let roots = agent_mcp_rag_roots(arguments)?;
+    let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
+        .unwrap_or(PrivacyClass::Project);
     let pack = agent_mcp_rag_context_pack(
         state,
         query_text,
@@ -2229,6 +2283,7 @@ fn agent_mcp_call_rag_query(
         graph_depth,
         limit,
         max_context_bytes,
+        max_privacy,
     )?;
     let value = serde_json::to_value(pack)
         .map_err(|error| format!("failed to serialize Agent RAG context pack: {error}"))?;
@@ -2248,19 +2303,24 @@ fn agent_mcp_rag_context_pack(
     graph_depth: u32,
     limit: usize,
     max_context_bytes: usize,
+    max_privacy: PrivacyClass,
 ) -> Result<RagContextPack, String> {
-    let candidates = agent_mcp_rag_candidates(state)?;
+    let candidates = agent_mcp_rag_candidates(state)?
+        .into_iter()
+        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(max_privacy))
+        .collect::<Vec<_>>();
     if candidates.is_empty() {
         return Err(
-            "arcweft.rag.query requires a prior arcweft.observe call, arcweft.trace.read call, arguments.source, or arguments.profile"
+            "arcweft.rag.query found no context allowed by max_privacy; observe a source/profile, read a trace, or raise arguments.max_privacy"
                 .to_owned(),
         );
     }
     let program_hash = agent_mcp_rag_program_hash(state, &candidates)?;
     let query_id_seed = format!(
-        "{}:{}:{graph_depth}:{limit}:{max_context_bytes}",
+        "{}:{}:{graph_depth}:{limit}:{max_context_bytes}:{}",
         query_text,
-        program_hash.as_str()
+        program_hash.as_str(),
+        max_privacy.as_str()
     );
     let query = RagQuery {
         query_id: agent_mcp_content_hash(query_id_seed),
@@ -2328,6 +2388,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
             SearchChannel::Summary,
             &summary,
             Vec::new(),
+            PrivacyClass::Project,
         )?);
         candidates.push(agent_mcp_rag_json_candidate(
             "observation.actions",
@@ -2337,6 +2398,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
             &serde_json::to_value(&report.actions)
                 .map_err(|error| format!("failed to serialize Agent actions: {error}"))?,
             Vec::new(),
+            PrivacyClass::Project,
         )?);
         for object in &report.objects {
             candidates.push(agent_mcp_rag_json_candidate(
@@ -2347,6 +2409,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
                 &serde_json::to_value(object)
                     .map_err(|error| format!("failed to serialize observed object: {error}"))?,
                 agent_mcp_object_entity_ids(object),
+                PrivacyClass::Project,
             )?);
         }
         for signal in &report.signals {
@@ -2358,6 +2421,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
                 &serde_json::to_value(signal)
                     .map_err(|error| format!("failed to serialize Agent signal: {error}"))?,
                 agent_mcp_public_ids([signal.name.as_str()]),
+                PrivacyClass::Project,
             )?);
         }
         for metric in &report.metrics {
@@ -2369,6 +2433,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
                 &serde_json::to_value(metric)
                     .map_err(|error| format!("failed to serialize Agent metric: {error}"))?,
                 agent_mcp_public_ids([metric.name.as_str()]),
+                PrivacyClass::Project,
             )?);
         }
         for (index, log) in report.logs.iter().enumerate() {
@@ -2380,6 +2445,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
                 &serde_json::to_value(log)
                     .map_err(|error| format!("failed to serialize runtime log: {error}"))?,
                 Vec::new(),
+                PrivacyClass::Project,
             )?);
         }
         for diagnostic in &report.diagnostics {
@@ -2401,6 +2467,7 @@ fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCand
                     .into_iter()
                     .flatten(),
                 ),
+                PrivacyClass::Project,
             )?);
         }
     }
@@ -2417,6 +2484,7 @@ fn agent_mcp_rag_json_candidate(
     preferred_channel: SearchChannel,
     value: &serde_json::Value,
     entity_ids: Vec<PublicId>,
+    privacy: PrivacyClass,
 ) -> Result<AgentMcpRagCandidate, String> {
     let body = serde_json::to_string_pretty(value)
         .map_err(|error| format!("failed to serialize RAG candidate body: {error}"))?;
@@ -2427,6 +2495,7 @@ fn agent_mcp_rag_json_candidate(
         preferred_channel,
         body,
         entity_ids,
+        privacy,
     ))
 }
 
@@ -2437,6 +2506,7 @@ fn agent_mcp_rag_text_candidate(
     preferred_channel: SearchChannel,
     body: String,
     entity_ids: Vec<PublicId>,
+    privacy: PrivacyClass,
 ) -> AgentMcpRagCandidate {
     let content_hash = agent_mcp_content_hash(&body);
     AgentMcpRagCandidate {
@@ -2452,7 +2522,7 @@ fn agent_mcp_rag_text_candidate(
             semantic_hash: None,
             source_anchor: None,
             entity_ids,
-            privacy: PrivacyClass::Project,
+            privacy,
             metadata: BTreeMap::new(),
             created_unix_ms: 0,
         },
@@ -2471,6 +2541,7 @@ fn agent_mcp_trace_resource_rag_candidates(
             SearchChannel::Trace,
             agent_mcp_resource_body_text(resource)?,
             Vec::new(),
+            PrivacyClass::Project,
         )]);
     };
     let Some(records) = value.as_array() else {
@@ -2481,6 +2552,7 @@ fn agent_mcp_trace_resource_rag_candidates(
             SearchChannel::Trace,
             value,
             Vec::new(),
+            PrivacyClass::Project,
         )?]);
     };
     records
@@ -2501,9 +2573,29 @@ fn agent_mcp_trace_resource_rag_candidates(
                 SearchChannel::Trace,
                 record,
                 Vec::new(),
+                agent_mcp_json_privacy(record),
             )
         })
         .collect()
+}
+
+fn agent_mcp_json_privacy(value: &serde_json::Value) -> PrivacyClass {
+    value
+        .get("privacy_class")
+        .or_else(|| value.get("privacy"))
+        .or_else(|| {
+            value
+                .get("payload")
+                .and_then(|payload| payload.get("privacy_class"))
+        })
+        .or_else(|| {
+            value
+                .get("payload")
+                .and_then(|payload| payload.get("privacy"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .and_then(PrivacyClass::parse)
+        .unwrap_or(PrivacyClass::Project)
 }
 
 fn agent_mcp_resource_body_text(resource: &AgentResource) -> Result<String, String> {
@@ -2674,6 +2766,23 @@ fn agent_mcp_rag_roots(arguments: &serde_json::Value) -> Result<Vec<PublicId>, S
                 .map_err(|_| "arcweft.rag.query roots must not be empty".to_owned())
         })
         .collect()
+}
+
+fn agent_mcp_privacy_class_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+) -> Result<Option<PrivacyClass>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    let value = value
+        .as_str()
+        .ok_or_else(|| format!("arcweft.rag.query argument {name} must be a string"))?;
+    PrivacyClass::parse(value).map(Some).ok_or_else(|| {
+        format!(
+            "arcweft.rag.query argument {name} must be one of public, project, sensitive, or secret"
+        )
+    })
 }
 
 fn agent_mcp_object_entity_ids(object: &AgentObservedObject) -> Vec<PublicId> {
