@@ -1,0 +1,49 @@
+#[agent(version = 1)]
+
+#[launch(profile = "game.dev")]
+#[bind(program = compatible)]
+#[budget(
+    timeout = 30s,
+    steps = 128usize,
+    captures = 8usize,
+    rag_queries = 2usize,
+    stored_bytes = 33_554_432u64,
+)]
+agent @agent.opening.listen opening_listen()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    debug.record,
+}
+{
+    let first = try observe()
+    expect(
+        first.actions.contains(choice_action(@choice.opening.listen)),
+        message = "opening choice is not currently selectable",
+    )
+
+    scope choose_listen {
+        let action = try choose(@choice.opening.listen)
+        expect(action.accepted)
+
+        let next = try wait(
+            signal(@signal.current_flow).eq(@flow.alice_intro),
+            timeout = 5s,
+            stable_frames = 2u32,
+            poll_frames = 1u32,
+        )
+        expect(next.signals.get(@signal.current_flow) == @flow.alice_intro)
+    }
+
+    let image = try capture(
+        viewport(),
+        format = .png,
+        name = "after-choice",
+    )
+    attach(image)
+    checkpoint("opening-listen-complete")
+
+    Ok(())
+}

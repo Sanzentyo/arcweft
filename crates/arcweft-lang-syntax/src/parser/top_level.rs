@@ -28,6 +28,9 @@ impl Parser<'_> {
                     *sinks.source_attrs_open = false;
                     self.push_pending_attr(attribute);
                     self.index += 1;
+                } else if let Some(attribute) = self.take_multiline_outer_attribute() {
+                    *sinks.source_attrs_open = false;
+                    self.push_pending_attr(attribute);
                 } else if let Some(attribute) = parse_inner_attribute(trimmed, range) {
                     if *sinks.source_attrs_open
                         && self.pending_doc.is_none()

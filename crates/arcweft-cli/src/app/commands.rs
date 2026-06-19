@@ -1,5 +1,6 @@
 use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions};
 use super::bundle::{BundleOptions, RunBundleOptions};
+use super::debug::DebugCommand;
 use super::jit::JitCheckOptions;
 use super::runtime::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
@@ -23,6 +24,10 @@ pub(super) enum CliCommand {
     Agent {
         #[command(subcommand)]
         command: AgentCommand,
+    },
+    Debug {
+        #[command(subcommand)]
+        command: DebugCommand,
     },
     Verify(VerifyOptions),
     VerifyTypes(VerifyTypesOptions),
@@ -63,6 +68,15 @@ pub(super) enum AgentCommand {
     Observe(AgentObserveOptions),
     HitTest(AgentHitTestOptions),
     Mcp(AgentMcpOptions),
+    Script {
+        #[command(subcommand)]
+        command: AgentScriptCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum AgentScriptCommand {
+    Check(super::agent::AgentScriptCheckOptions),
 }
 
 #[derive(Debug, Subcommand)]

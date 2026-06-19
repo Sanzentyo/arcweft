@@ -271,6 +271,7 @@ dependencies = [
  "arcweft-bundle",
  "arcweft-compiler",
  "arcweft-core",
+ "arcweft-debug-sqlite",
  "arcweft-desktop-native",
  "arcweft-host-adapter",
  "arcweft-id",

@@ -54,6 +54,40 @@ effects { agent.observe }
 }
 
 #[test]
+fn agent_dialect_parses_multiline_attributes_and_effect_prelude() {
+    let parsed = parse_document(
+        r"
+#[agent(version = 1)]
+#[budget(
+    timeout = 30s,
+    steps = 128usize,
+)]
+agent @agent.opening.listen opening_listen()
+effects {
+    agent.observe,
+    agent.wait,
+}
+{
+    let first = try observe()
+    Ok(first)
+}
+",
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
+        panic!("expected exactly one parsed agent item");
+    };
+    assert_eq!(agent.attrs().len(), 2);
+    assert_eq!(agent.contracts().len(), 1);
+    assert_eq!(agent.body_statements().len(), 1);
+    assert!(matches!(agent.body_value(), Some(Expr::Call { .. })));
+}
+
+#[test]
 fn agent_dialect_rejects_legacy_line_command_fallback() {
     let parsed = parse_document(
         "observe\n",

@@ -1,14 +1,16 @@
-use super::commands::AgentCommand;
+use super::commands::{AgentCommand, AgentScriptCommand};
 use super::project::ProfileOptions;
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
     CliRuntimeStepMode, parse_runtime_binding_arg, parse_runtime_pure_workers,
 };
+use super::shared::print_json;
 use arcweft_core::value::RuntimeBinding;
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use clap::{Args, ValueEnum};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::{fs, path::Path};
 
 #[cfg(feature = "native-capture")]
 use super::project::{
@@ -18,8 +20,6 @@ use super::project::{
 
 #[cfg(feature = "native-capture")]
 use super::runtime::step_options;
-#[cfg(feature = "native-capture")]
-use super::shared::print_json;
 #[cfg(feature = "native-capture")]
 use crate::output::flow_status_label;
 #[cfg(feature = "native-capture")]
@@ -32,10 +32,6 @@ use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
 use arcweft_render_text::LineDisplayCatalog;
 #[cfg(feature = "native-capture")]
 use arcweft_runtime_host::NativeTaskBridge;
-#[cfg(feature = "native-capture")]
-use std::fs;
-#[cfg(feature = "native-capture")]
-use std::path::Path;
 
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
@@ -157,6 +153,13 @@ pub(super) struct AgentHitTestOptions {
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentMcpOptions {}
 
+#[derive(Args, Clone, Debug)]
+pub(super) struct AgentScriptCheckOptions {
+    path: PathBuf,
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum AgentObserveImageKind {
     Overlay,
@@ -199,14 +202,81 @@ pub(super) fn agent_command(
     command: AgentCommand,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
-    native::agent_command(command, adapter_registrars)
+    match command {
+        AgentCommand::Script { command } => agent_script_command(command),
+        command => native::agent_command(command, adapter_registrars),
+    }
 }
 
 #[cfg(not(feature = "native-capture"))]
 pub(super) fn agent_command(
-    _command: AgentCommand,
+    command: AgentCommand,
     _adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
-    eprintln!("error: arcw agent requires the native-capture feature in this build");
-    Err(ExitCode::FAILURE)
+    match command {
+        AgentCommand::Script { command } => agent_script_command(command),
+        AgentCommand::Observe(_) | AgentCommand::HitTest(_) | AgentCommand::Mcp(_) => {
+            eprintln!("error: this arcw agent command requires the native-capture feature");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+pub(super) fn agent_script_command(command: AgentScriptCommand) -> Result<(), ExitCode> {
+    match command {
+        AgentScriptCommand::Check(options) => agent_script_check_command(&options),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct AgentScriptCheckReport {
+    path: String,
+    ok: bool,
+    agents: usize,
+    error: Option<String>,
+}
+
+fn agent_script_check_command(options: &AgentScriptCheckOptions) -> Result<(), ExitCode> {
+    if !is_awfagent_path(&options.path) {
+        eprintln!(
+            "error: {} is not an .awfagent source file",
+            options.path.display()
+        );
+        return Err(ExitCode::from(2));
+    }
+    let source = fs::read_to_string(&options.path).map_err(|error| {
+        eprintln!("error: failed to read {}: {error}", options.path.display());
+        ExitCode::FAILURE
+    })?;
+    let report = match arcweft_compiler::compile_agent_source(source) {
+        Ok(compiled) => AgentScriptCheckReport {
+            path: options.path.display().to_string(),
+            ok: true,
+            agents: compiled.hir.agents().len(),
+            error: None,
+        },
+        Err(error) => AgentScriptCheckReport {
+            path: options.path.display().to_string(),
+            ok: false,
+            agents: 0,
+            error: Some(error.to_string()),
+        },
+    };
+    if options.json {
+        print_json(&report)?;
+    } else if report.ok {
+        println!("{}: ok ({} agent item(s))", report.path, report.agents);
+    } else if let Some(error) = &report.error {
+        eprintln!("{}: {error}", report.path);
+    }
+    if report.ok {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
+fn is_awfagent_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "awfagent")
 }

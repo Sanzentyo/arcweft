@@ -519,7 +519,6 @@ impl<'a> CstLineEvents<'a> {
         let mut virtual_len = 0usize;
 
         while let Some(line) = self.get(index) {
-            let trimmed = line.trimmed();
             if index > start {
                 virtual_len += 1;
             }
@@ -540,9 +539,7 @@ impl<'a> CstLineEvents<'a> {
                 last_brace_close = Some(line_offset + close);
             }
             if matches!(rule, CstBlockOpenRule::FunctionBody)
-                && (trimmed == "{"
-                    || line.has_unclosed_top_level_brace_open()
-                    || (looks_like_function_item(trimmed) && line.has_top_level_brace_open()))
+                && function_body_line_starts_body(line)
             {
                 seen_body_open = true;
             }
@@ -1637,6 +1634,14 @@ fn flow_line_starts_body(line: &CstLine, is_first_line: bool) -> bool {
     let trimmed = line.trimmed();
     trimmed == "{"
         || (is_first_line && line.has_top_level_brace_open() && !trimmed.starts_with("effects"))
+}
+
+fn function_body_line_starts_body(line: &CstLine) -> bool {
+    let trimmed = line.trimmed();
+    trimmed == "{"
+        || (line.has_unclosed_top_level_brace_open() && !trimmed.starts_with("effects"))
+        || ((looks_like_function_item(trimmed) || looks_like_agent_item(trimmed))
+            && line.has_top_level_brace_open())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

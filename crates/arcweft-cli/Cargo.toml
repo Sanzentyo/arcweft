@@ -14,6 +14,7 @@ arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-compiler = { path = "../arcweft-compiler" }
+arcweft-debug-sqlite = { path = "../arcweft-debug-sqlite" }
 arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-id = { path = "../arcweft-id" }

@@ -541,6 +541,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
         use arcweft_id::PublicId;
         use arcweft_image::{
@@ -727,6 +728,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
         use arcweft_id::PublicId;
         use arcweft_image::{
@@ -1024,6 +1026,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn agent_runtime_image_call_builds_bounded_layered_image_object() {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -1585,6 +1588,7 @@ pub(super) fn agent_command(
         AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
         AgentCommand::HitTest(options) => agent_hit_test_command(&options, adapter_registrars),
         AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
+        AgentCommand::Script { command } => super::agent_script_command(command),
     }
 }
 

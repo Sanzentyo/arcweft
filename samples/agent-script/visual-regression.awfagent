@@ -1,0 +1,42 @@
+#[agent(version = 1)]
+
+#[launch(profile = "game.visual-ci")]
+#[bind(program = strict)]
+#[budget(timeout = 20s, steps = 96usize, captures = 12usize)]
+agent @agent.visual.dialogue visual_dialogue()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    debug.record,
+}
+{
+    try wait(
+        signal(@signal.current_flow).eq(@flow.opening),
+        timeout = 5s,
+    )
+
+    let frame = try observe()
+    let textbox = try frame.objects.require_role("dialogue_textbox")
+
+    let color = try capture(
+        object(textbox.id),
+        format = .png,
+        kind = .color,
+        name = "dialogue-textbox-color",
+    )
+    let mask = try capture(
+        object(textbox.id),
+        format = .raw_rgba,
+        kind = .mask,
+        name = "dialogue-textbox-mask",
+    )
+
+    attach(color)
+    attach(mask)
+    expect(textbox.bbox.width > 0u32)
+    expect(textbox.bbox.height > 0u32)
+
+    Ok(())
+}

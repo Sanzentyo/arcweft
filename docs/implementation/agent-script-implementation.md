@@ -16,6 +16,9 @@ It is implementation state, not the stable language specification.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
 - `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls.
 - `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
+- `arcw agent script check <file.awfagent>` validates Agent dialect parsing/HIR lowering without requiring the `native-capture` feature.
+- `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
+- `samples/agent-script/opening-smoke.awfagent` and `samples/agent-script/visual-regression.awfagent` mirror the package examples and currently pass `agent script check`.
 
 ## Deliberate boundaries
 
@@ -34,6 +37,14 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite`
 - `cargo clippy -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite --all-targets --all-features -- -D warnings`
 - The `arcweft-debug-sqlite` tests were run on Windows and validate migration, FTS5 Japanese search, and embedding blob round trips.
+- `cargo fmt --check`
+- `cargo check -p arcweft-cli -p arcweft-lang-syntax`
+- `cargo check -p arcweft-cli --features native-capture`
+- `cargo test -p arcweft-lang-syntax agent_dialect -- --nocapture`
+- `cargo clippy -p arcweft-cli -p arcweft-lang-syntax --all-targets --all-features -- -D warnings`
+- `cargo run -p arcweft-cli -- agent script check samples/agent-script/opening-smoke.awfagent --json`
+- `cargo run -p arcweft-cli -- agent script check samples/agent-script/visual-regression.awfagent --json`
+- `cargo run -p arcweft-cli -- debug db status --path target/codex-agent-script-final/agent-debug-test.sqlite3 --json`
 
 ## Other platforms
 

@@ -1,6 +1,7 @@
 mod agent;
 mod bundle;
 mod commands;
+mod debug;
 mod image_declarations;
 pub(in crate::app) mod jit;
 pub(crate) mod project;
@@ -12,6 +13,7 @@ pub(in crate::app) mod verify;
 use self::agent::agent_command;
 use self::bundle::{bundle_command, run_bundle_command};
 use self::commands::{BuildCommand, Cli, CliCommand};
+use self::debug::debug_command;
 use self::jit::jit_command;
 use self::runtime::{
     runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
@@ -68,6 +70,7 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
     match cli.command {
         CliCommand::Check(options) => check_command(&options),
         CliCommand::Agent { command } => agent_command(command, adapter_registrars),
+        CliCommand::Debug { command } => debug_command(command),
         CliCommand::Verify(options) => verify_command(&options),
         CliCommand::VerifyTypes(options) => verify_types_command(&options, adapter_registrars),
         CliCommand::Unsafe(options) => unsafe_command(&options),

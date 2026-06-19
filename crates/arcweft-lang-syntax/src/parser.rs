@@ -56,9 +56,10 @@ use helpers::{
     parse_computation_block_kind, parse_dialogue_call_expr_source, parse_expr_lossy,
     parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
     parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
-    parse_memo_block_options, parse_with_brace_label, parse_with_indent_label, source_take,
-    split_brace_item, split_brace_item_with_scan, split_call_head, split_comma_args,
-    split_optional_block_label, split_speaker_line, split_top_level_binding,
+    parse_memo_block_options, parse_outer_attribute, parse_with_brace_label,
+    parse_with_indent_label, source_take, split_brace_item, split_brace_item_with_scan,
+    split_call_head, split_comma_args, split_optional_block_label, split_speaker_line,
+    split_top_level_binding,
 };
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
@@ -417,6 +418,33 @@ impl<'a> Parser<'a> {
             self.index += 1;
         }
         Some(DocBlock::new(lines.join("\n"), TextRange::new(start, end)))
+    }
+
+    fn take_multiline_outer_attribute(&mut self) -> Option<Attribute> {
+        let first = self.events.get(self.index)?;
+        if !first.trimmed().starts_with("#[") || first.trimmed().ends_with(']') {
+            return None;
+        }
+        let start = first.start;
+        let mut end = first.end;
+        let mut source = String::new();
+        let mut depth = CstPunctuationDeltas::default();
+        while let Some(line) = self.events.get(self.index) {
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            source.push_str(line.trimmed());
+            end = line.end;
+            let deltas = line.punctuation_deltas();
+            depth.brace += deltas.brace;
+            depth.paren += deltas.paren;
+            depth.bracket += deltas.bracket;
+            self.index += 1;
+            if depth.brace + depth.paren + depth.bracket <= 0 && line.trimmed().ends_with(']') {
+                break;
+            }
+        }
+        parse_outer_attribute(source.trim(), TextRange::new(start, end))
     }
 
     fn take_pending_doc(&mut self) -> Option<DocBlock> {
