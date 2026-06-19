@@ -11,7 +11,8 @@ use super::{
     ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge,
     NoopRagService, Path, PathBuf, ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy,
     RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
-    agent_script_run_report_from_result, flow_status_label, fs, load_and_check_selection,
+    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
+    flow_status_label, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
@@ -2985,6 +2986,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP wait result: {error}"))
         }
+        "arcweft.script.run" => {
+            let tool = agent_mcp_call_script_run(&arguments, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP script run result: {error}"))
+        }
         "arcweft.session.info" => {
             let tool = agent_mcp_call_session_info(state)?;
             serde_json::to_value(tool)
@@ -3267,6 +3273,125 @@ fn agent_mcp_call_wait(
         })
     });
     agent_mcp_json_tool_error(&value, "wait timeout")
+}
+
+fn agent_mcp_call_script_run(
+    arguments: &serde_json::Value,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    let options = agent_mcp_script_run_options(arguments)?;
+    let report = match agent_script_run_input(&options) {
+        Ok(input) => agent_script_run_bundle(&options, &input, adapter_registrars)
+            .map_err(|code| format!("arcweft.script.run failed with exit code {code:?}"))?,
+        Err(error) => AgentScriptRunReport {
+            path: options.path.display().to_string(),
+            ok: false,
+            agents: 0,
+            steps: 0,
+            host_calls: 0,
+            events_emitted: 0,
+            final_status: None,
+            trace_path: None,
+            trace_records: 0,
+            blob_dir: options
+                .blob_dir
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            blobs_written: 0,
+            blob_bytes: 0,
+            responses: Vec::new(),
+            error: Some(error),
+        },
+    };
+    let value = serde_json::to_value(&report)
+        .map_err(|error| format!("failed to serialize Agent Script run report: {error}"))?;
+    if report.ok {
+        agent_mcp_json_tool_result(&value, "script run")
+    } else {
+        agent_mcp_json_tool_error(&value, "script run")
+    }
+}
+
+fn agent_mcp_script_run_options(
+    arguments: &serde_json::Value,
+) -> Result<AgentScriptRunOptions, String> {
+    let path = arguments
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
+        .ok_or_else(|| "arcweft.script.run requires arguments.path".to_owned())?;
+    let native_source = arguments
+        .get("native_source")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from);
+    let profile = arguments
+        .get("profile")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    if native_source.is_some() && profile.is_some() {
+        return Err(
+            "arcweft.script.run arguments.native_source and arguments.profile are mutually exclusive"
+                .to_owned(),
+        );
+    }
+    Ok(AgentScriptRunOptions {
+        path,
+        json: true,
+        native_source,
+        native_profile: ProfileOptions {
+            profile,
+            manifest: arguments
+                .get("manifest")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| PathBuf::from("arcw.toml"), PathBuf::from),
+        },
+        entry: arguments
+            .get("entry")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        flow: arguments
+            .get("flow")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned),
+        executor: CliRuntimeExecutorTier::BytecodeVm,
+        pure_backend: None,
+        pure_workers: None,
+        pure_batch_min_len: None,
+        pure_object_artifacts: false,
+        math_backend: None,
+        math_wgpu_min_elements: None,
+        native_steps: agent_mcp_usize_argument(arguments, "native_steps").unwrap_or(8),
+        native_mode: CliRuntimeStepMode::Drain,
+        native_max_ops: agent_mcp_usize_argument(arguments, "native_max_ops").unwrap_or(64),
+        values: Vec::new(),
+        viewport_width: agent_mcp_u32_argument(arguments, "viewport_width", "arcweft.script.run")?
+            .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
+        viewport_height: agent_mcp_u32_argument(
+            arguments,
+            "viewport_height",
+            "arcweft.script.run",
+        )?
+        .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
+        textbox_height: agent_mcp_u32_argument(arguments, "textbox_height", "arcweft.script.run")?,
+        capture_time_seconds: agent_mcp_capture_time_argument(arguments, "arcweft.script.run")?,
+        max_steps: agent_mcp_usize_argument(arguments, "max_steps").unwrap_or(256),
+        max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(1024),
+        signals: Vec::new(),
+        states: Vec::new(),
+        trace_out: arguments
+            .get("trace_out")
+            .and_then(serde_json::Value::as_str)
+            .map(PathBuf::from),
+        blob_dir: arguments
+            .get("blob_dir")
+            .and_then(serde_json::Value::as_str)
+            .map(PathBuf::from),
+        run_id: arguments
+            .get("run_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("run.cli")
+            .to_owned(),
+    })
 }
 
 fn agent_mcp_store_frame(state: &mut AgentMcpState, frame: AgentMcpFrame) {

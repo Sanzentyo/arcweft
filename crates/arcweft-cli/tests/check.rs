@@ -922,6 +922,52 @@ fn agent_mcp_stdio_waits_for_observation_predicate() {
     );
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: shared Agent Script runner subprocess with native-capture feature"]
+fn agent_mcp_stdio_runs_agent_script() {
+    let script = agent_script_cli_run_smoke_path();
+    let requests = vec![
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.script.run",
+                "arguments": {
+                    "path": script.display().to_string(),
+                    "max_steps": 16,
+                    "max_ops": 64
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp script.run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.script.run")
+    );
+    assert_eq!(responses[2]["result"]["isError"], false);
+    let text = responses[2]["result"]["content"][0]["text"]
+        .as_str()
+        .expect("script.run result text");
+    let run: serde_json::Value = serde_json::from_str(text).expect("script.run result is JSON");
+    assert_eq!(run["ok"], true);
+    assert_eq!(run["agents"], 1);
+    assert_eq!(run["host_calls"], 1);
+    assert_eq!(run["final_status"], "Done(Return(\"done\"))");
+}
+
 fn assert_agent_script_build(bundle_path: &Path) {
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")

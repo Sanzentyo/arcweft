@@ -351,6 +351,7 @@ Tools:
 arcweft.observe
 arcweft.action
 arcweft.wait
+arcweft.script.run
 arcweft.capture
 arcweft.resource.read
 arcweft.hit_test

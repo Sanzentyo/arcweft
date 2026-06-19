@@ -141,6 +141,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_observe_tool_descriptor(),
         agent_action_tool_descriptor(),
         agent_wait_tool_descriptor(),
+        agent_script_run_tool_descriptor(),
         agent_resource_read_tool_descriptor(),
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
@@ -152,6 +153,37 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
+}
+
+fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.script.run".to_owned(),
+        title: Some("Run Arcweft Agent Script".to_owned()),
+        description: "Runs a .awfagent source or .awfb Agent controller bundle through the shared Agent Script runner and returns the structured run report.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Path to a .awfagent source file or .awfb Agent controller bundle." },
+                "native_source": { "type": "string", "description": "Optional .arcw source to run the Agent script against using the native Agent session." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based native Agent session. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile for the native Agent session. Mutually exclusive with native_source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "native_steps": { "type": "integer", "minimum": 1, "default": 8 },
+                "native_max_ops": { "type": "integer", "minimum": 1, "default": 64 },
+                "max_steps": { "type": "integer", "minimum": 1, "default": 256 },
+                "max_ops": { "type": "integer", "minimum": 1, "default": 1024 },
+                "trace_out": { "type": "string", "description": "Optional .arcwx trace output path." },
+                "blob_dir": { "type": "string", "description": "Optional directory for byte-backed capture blobs." },
+                "run_id": { "type": "string", "default": "run.cli" },
+                "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
+                "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
+                "textbox_height": { "type": "integer", "minimum": 1 },
+                "capture_time": { "type": "number", "minimum": 0 }
+            },
+            "required": ["path"]
+        }),
+    }
 }
 
 fn agent_wait_tool_descriptor() -> McpToolDescriptor {
@@ -910,6 +942,28 @@ mod tests {
         assert_eq!(
             wait.input_schema["properties"]["predicate"]["type"],
             "object"
+        );
+    }
+
+    #[test]
+    fn tool_descriptors_include_script_run_surface() {
+        let tools = agent_tool_descriptors();
+        let script_run = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.script.run")
+            .expect("script run tool is listed");
+
+        assert_eq!(
+            script_run.title.as_deref(),
+            Some("Run Arcweft Agent Script")
+        );
+        assert_eq!(
+            script_run.input_schema["required"],
+            serde_json::json!(["path"])
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["path"]["type"],
+            "string"
         );
     }
 
