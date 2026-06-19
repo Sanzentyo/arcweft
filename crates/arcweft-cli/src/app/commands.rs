@@ -76,6 +76,7 @@ pub(super) enum AgentCommand {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum AgentScriptCommand {
+    Build(super::agent::AgentScriptBuildOptions),
     Check(super::agent::AgentScriptCheckOptions),
     Run(super::agent::AgentScriptRunOptions),
     Trace(super::agent::AgentScriptTraceOptions),

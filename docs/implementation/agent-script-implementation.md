@@ -24,6 +24,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-bundle` can now encode `.awfb` bundles as `bundle_kind = agent_controller` with an embedded `AgentArtifactManifest`, while ordinary game bundles remain the default. The game `arcweft-runtime-host` bundle runner rejects Agent controller bundles instead of executing them as game bytecode.
 - `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
 - `arcw agent script check <file.awfagent>` validates Agent dialect parsing/HIR lowering without requiring the `native-capture` feature.
+- `arcw agent script build <file.awfagent> --output <file.awfb>` compiles a single Agent controller through the typed project-index path and writes the shared `.awfb` bundle JSON with `bundle_kind = agent_controller` and the embedded `AgentArtifactManifest`. It does not create a separate Agent-only artifact container.
 - `arcw agent script run <file.awfagent>` compiles a single Agent controller bundle and executes it through `arcweft-agent-runner` using a deterministic CLI session adapter. The command is intentionally not the native game adapter yet; it validates the script -> bundle -> runner host-call path and emits a JSON run report. `--signal id=value` supplies typed boolean/integer/string signals to both the project semantic index and the CLI observation state. `--trace-out <file.arcwx>` writes a JSON `AgentTraceRecord` stream derived from the runner debug events, with deterministic `blake3:` payload hashes and explicit run/session IDs.
 - `arcw agent script trace <file.arcwx>` reads a trace through the shared `AgentTraceRecord` protocol type and validates the `.arcwx` extension, JSON shape, schema version, payload hash, run-id consistency, first/last record kinds, and strictly increasing sequence numbers. It is a read-only validation surface for future replay/MCP trace resources, not a second runner.
 - `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
@@ -83,6 +84,7 @@ It is implementation state, not the stable language specification.
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/opening-smoke.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/visual-regression.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/cli-run-smoke.awfagent --json`
+- `cargo run -p arcweft-cli -- agent script build samples/agent-script/cli-run-smoke.awfagent --output target/codex-agent-script-final/cli-run-smoke.awfb --json`
 - `cargo run -p arcweft-cli -- agent script run samples/agent-script/cli-run-smoke.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script run samples/agent-script/cli-run-smoke.awfagent --json --trace-out target/codex-agent-script-final/cli-run-smoke.arcwx`
 - `cargo run -p arcweft-cli -- agent script trace target/codex-agent-script-final/cli-run-smoke.arcwx --json`
@@ -100,6 +102,6 @@ It is implementation state, not the stable language specification.
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Extend Agent predicate lowering beyond the currently executable `signal(...).eq(...)` path as the Agent Prelude grows comparison and boolean-combinator surface syntax.
 - Extend `.arcwx` beyond CLI run trace writing and validation: add replay commands, MCP trace resources, native game-adapter trace capture, and trace validation for captured blobs.
-- Extend CLI script run from the deterministic CLI session adapter to native game-adapter sessions, then add replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes. Add the matching MCP surfaces.
+- Extend CLI script run from the deterministic CLI session adapter to native game-adapter sessions, then add bundle input execution, replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes. Add the matching MCP surfaces.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

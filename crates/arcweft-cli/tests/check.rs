@@ -127,7 +127,41 @@ fn agent_script_run_json_executes_cli_session_smoke() {
         "target/codex-agent-script-run-test/trace-{}.arcwx",
         std::process::id()
     ));
+    let bundle_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/agent-{}.awfb",
+        std::process::id()
+    ));
     let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_file(&bundle_path);
+    let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("build")
+        .arg(workspace_path(
+            "samples/agent-script/cli-run-smoke.awfagent",
+        ))
+        .arg("--output")
+        .arg(&bundle_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script build writes an agent bundle");
+    assert!(
+        build_output.status.success(),
+        "agent script build should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+    let build_json: serde_json::Value =
+        serde_json::from_slice(&build_output.stdout).expect("build output is JSON");
+    assert_eq!(build_json["ok"], true);
+    assert_eq!(build_json["bundle_kind"], "agent_controller");
+    assert_eq!(build_json["agent_id"], "agent.cli.run_smoke");
+    let bundle_json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&bundle_path).expect("build writes .awfb bundle"))
+            .expect("bundle is JSON");
+    assert_eq!(bundle_json["bundle_kind"], "agent_controller");
+    assert_eq!(bundle_json["agent"]["agent_id"], "agent.cli.run_smoke");
+
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")

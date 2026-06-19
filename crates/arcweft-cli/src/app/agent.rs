@@ -187,6 +187,17 @@ pub(super) struct AgentScriptCheckOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+pub(super) struct AgentScriptBuildOptions {
+    path: PathBuf,
+    #[arg(long, short = 'o')]
+    output: PathBuf,
+    #[arg(long)]
+    json: bool,
+    #[arg(long = "signal", value_parser = parse_agent_script_signal_arg)]
+    signals: Vec<AgentScriptSignalArg>,
+}
+
+#[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptRunOptions {
     path: PathBuf,
     #[arg(long)]
@@ -281,6 +292,7 @@ pub(super) fn agent_command(
 
 pub(super) fn agent_script_command(command: AgentScriptCommand) -> Result<(), ExitCode> {
     match command {
+        AgentScriptCommand::Build(options) => agent_script_build_command(&options),
         AgentScriptCommand::Check(options) => agent_script_check_command(&options),
         AgentScriptCommand::Run(options) => agent_script_run_command(&options),
         AgentScriptCommand::Trace(options) => agent_script_trace_command(&options),
@@ -293,6 +305,97 @@ struct AgentScriptCheckReport {
     ok: bool,
     agents: usize,
     error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentScriptBuildReport {
+    path: String,
+    output: String,
+    ok: bool,
+    agents: usize,
+    agent_id: Option<String>,
+    bundle_kind: Option<String>,
+    bytecode_instructions: usize,
+    bytes: usize,
+    error: Option<String>,
+}
+
+fn agent_script_build_command(options: &AgentScriptBuildOptions) -> Result<(), ExitCode> {
+    if !is_awfagent_path(&options.path) {
+        eprintln!(
+            "error: {} is not an .awfagent source file",
+            options.path.display()
+        );
+        return Err(ExitCode::from(2));
+    }
+    if !is_awfb_path(&options.output) {
+        eprintln!(
+            "error: {} is not an .awfb bundle output path",
+            options.output.display()
+        );
+        return Err(ExitCode::from(2));
+    }
+    let report =
+        agent_script_build_report(options).unwrap_or_else(|error| AgentScriptBuildReport {
+            path: options.path.display().to_string(),
+            output: options.output.display().to_string(),
+            ok: false,
+            agents: 0,
+            agent_id: None,
+            bundle_kind: None,
+            bytecode_instructions: 0,
+            bytes: 0,
+            error: Some(error),
+        });
+    if options.json {
+        print_json(&report)?;
+    } else if report.ok {
+        println!(
+            "{}: wrote {} ({} bytecode instruction(s))",
+            report.path, report.output, report.bytecode_instructions
+        );
+    } else if let Some(error) = &report.error {
+        eprintln!("{}: {error}", report.path);
+    }
+    if report.ok {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
+fn agent_script_build_report(
+    options: &AgentScriptBuildOptions,
+) -> Result<AgentScriptBuildReport, String> {
+    let source = fs::read_to_string(&options.path)
+        .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
+    let project = agent_script_project_index(&options.signals)?;
+    let compiled = arcweft_compiler::compile_agent_bundle_with_project(source, &project)
+        .map_err(|error| error.to_string())?;
+    let bytes = compiled
+        .bundle
+        .to_json_bytes()
+        .map_err(|error| error.to_string())?;
+    write_agent_bundle(&options.output, &bytes)?;
+    Ok(AgentScriptBuildReport {
+        path: options.path.display().to_string(),
+        output: options.output.display().to_string(),
+        ok: true,
+        agents: compiled.hir.agents().len(),
+        agent_id: Some(compiled.manifest.agent_id.as_str().to_owned()),
+        bundle_kind: Some(compiled.bundle.bundle_kind.to_string()),
+        bytecode_instructions: compiled.bundle.manifest.runtime.bytecode_instructions,
+        bytes: bytes.len(),
+        error: None,
+    })
+}
+
+fn write_agent_bundle(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+    fs::write(path, bytes).map_err(|error| format!("failed to write {}: {error}", path.display()))
 }
 
 fn agent_script_check_command(options: &AgentScriptCheckOptions) -> Result<(), ExitCode> {
@@ -728,6 +831,11 @@ fn agent_trace_kind_name(kind: AgentTraceKind) -> &'static str {
 fn is_awfagent_path(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension == "awfagent")
+}
+
+fn is_awfb_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "awfb")
 }
 
 fn is_arcwx_path(path: &Path) -> bool {
