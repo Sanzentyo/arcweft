@@ -28,6 +28,7 @@ use arcweft_debug_model::{
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     sink::DebugEventSink,
 };
+use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_id::PublicId as SemaPublicId;
 use arcweft_lang_sema::{
     project_index::{EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash},
@@ -280,6 +281,8 @@ pub(super) struct AgentRagQueryOptions {
     max_context_bytes: usize,
     #[arg(long, value_parser = parse_agent_privacy_class, default_value = "project")]
     max_privacy: PrivacyClass,
+    #[arg(long = "debug-db")]
+    debug_db: Option<PathBuf>,
     #[arg(long)]
     json: bool,
 }
@@ -485,8 +488,15 @@ fn agent_rag_command(command: AgentRagCommand) -> Result<(), ExitCode> {
 }
 
 fn agent_rag_query_command(options: &AgentRagQueryOptions) -> Result<(), ExitCode> {
-    match agent_rag_query_pack(options) {
-        Ok(pack) => {
+    match agent_rag_query_result(options) {
+        Ok(result) => {
+            if let Some(path) = &options.debug_db
+                && let Err(error) = persist_agent_rag_query_result(path, &result)
+            {
+                eprintln!("{}: {error}", path.display());
+                return Err(ExitCode::FAILURE);
+            }
+            let pack = result.pack;
             if options.json {
                 print_json(&pack)?;
             } else {
@@ -520,7 +530,12 @@ struct AgentTraceRagCandidate {
     preferred_channel: SearchChannel,
 }
 
-fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack, String> {
+struct AgentRagQueryResult {
+    pack: RagContextPack,
+    candidates: Vec<AgentTraceRagCandidate>,
+}
+
+fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQueryResult, String> {
     let query_text = options.query.trim();
     if query_text.is_empty() {
         return Err("agent rag query requires a non-empty --query".to_owned());
@@ -534,10 +549,8 @@ fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack
     let roots = agent_rag_roots(&options.roots)?;
     let records = read_and_validate_agent_trace_records(&options.trace)?;
     let trace_report = validate_agent_trace(&options.trace, &records, None)?;
-    let candidates = agent_trace_rag_candidates(&trace_report, &records)?
-        .into_iter()
-        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(options.max_privacy))
-        .collect::<Vec<_>>();
+    let candidates = agent_trace_rag_candidates(&trace_report, &records)?;
+    let query_candidates = agent_rag_query_allowed_candidates(options, &candidates);
     let program_hash = agent_trace_rag_program_hash(&options.trace, &records)?;
     let query = RagQuery {
         query_id: agent_content_hash(format!(
@@ -556,8 +569,17 @@ fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack
         limit: options.limit,
         max_context_bytes: options.max_context_bytes,
     };
+    let pack = agent_trace_rag_pack_from_candidates(options, query, &query_candidates);
+    Ok(AgentRagQueryResult { pack, candidates })
+}
+
+fn agent_trace_rag_pack_from_candidates(
+    options: &AgentRagQueryOptions,
+    query: RagQuery,
+    candidates: &[AgentTraceRagCandidate],
+) -> RagContextPack {
     let fused = reciprocal_rank_fusion(
-        &agent_trace_rag_ranked_lists(&candidates, &query),
+        &agent_trace_rag_ranked_lists(candidates, &query),
         &FusionConfig::default(),
         options.limit,
     );
@@ -594,12 +616,41 @@ fn agent_rag_query_pack(options: &AgentRagQueryOptions) -> Result<RagContextPack
             break;
         }
     }
-    Ok(RagContextPack {
+    RagContextPack {
         schema_version: 1,
         query,
         items,
         truncated,
-    })
+    }
+}
+
+fn agent_rag_query_allowed_candidates(
+    options: &AgentRagQueryOptions,
+    candidates: &[AgentTraceRagCandidate],
+) -> Vec<AgentTraceRagCandidate> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(options.max_privacy))
+        .cloned()
+        .collect()
+}
+
+fn persist_agent_rag_query_result(path: &Path, result: &AgentRagQueryResult) -> Result<(), String> {
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("agent rag query failed to open debug DB: {error}"))?;
+    store
+        .upsert_program(&result.pack.query.program_hash, None, None, 0)
+        .map_err(|error| format!("agent rag query failed to index RAG program: {error}"))?;
+    for candidate in &result.candidates {
+        let mut chunk = candidate.chunk.clone();
+        chunk.program_hash = Some(result.pack.query.program_hash.clone());
+        store
+            .upsert_chunk(&chunk)
+            .map_err(|error| format!("agent rag query failed to index RAG chunk: {error}"))?;
+    }
+    store
+        .record_rag_context_pack(&result.pack, None, None, None, "selected", 0)
+        .map_err(|error| format!("agent rag query failed to record RAG audit: {error}"))
 }
 
 fn agent_trace_rag_candidates(

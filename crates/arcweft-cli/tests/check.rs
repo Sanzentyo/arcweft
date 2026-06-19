@@ -1767,12 +1767,21 @@ fn assert_agent_script_replay_matches(trace_path: &Path, expected_path: &Path) {
 }
 
 fn assert_agent_rag_query_trace(trace_path: &Path) {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-rag-cli-smoke/rag-audit-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("RAG audit DB parent"))
+        .expect("create RAG audit DB parent");
     let rag_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("rag")
         .arg("query")
         .arg("--trace")
         .arg(trace_path)
+        .arg("--debug-db")
+        .arg(&db_path)
         .arg("--query")
         .arg("observation_received")
         .arg("--root")
@@ -1807,6 +1816,63 @@ fn assert_agent_rag_query_trace(trace_path: &Path) {
                 .as_array()
                 .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
     }));
+    assert_agent_rag_query_persisted_debug_store(&db_path);
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_agent_rag_query_persisted_debug_store(db_path: &Path) {
+    let status_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("status")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw debug db status reads RAG audit DB");
+    assert!(
+        status_output.status.success(),
+        "debug db status should read RAG audit DB\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: serde_json::Value =
+        serde_json::from_slice(&status_output.stdout).expect("debug db status JSON");
+    assert_eq!(status["stats"]["rag_queries"], 1);
+    assert!(
+        status["stats"]["chunks"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "agent rag query should index trace-derived chunks: {status}"
+    );
+
+    let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--query")
+        .arg("observation_received")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db search reads indexed RAG chunks");
+    assert!(
+        search_output.status.success(),
+        "debug db search should find RAG chunks\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&search_output.stdout),
+        String::from_utf8_lossy(&search_output.stderr)
+    );
+    let search: serde_json::Value =
+        serde_json::from_slice(&search_output.stdout).expect("debug db search JSON");
+    assert!(
+        search["hits"]
+            .as_array()
+            .is_some_and(|hits| !hits.is_empty()),
+        "agent rag query should create searchable RAG chunks: {search}"
+    );
 }
 
 fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {
