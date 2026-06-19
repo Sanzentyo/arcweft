@@ -4,7 +4,7 @@ use arcweft_core::{
         RuntimeWaitTarget,
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
-    plan::{FlowOp, FlowRuntimeId},
+    plan::{FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget},
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
     time::LogicalDuration,
@@ -15,10 +15,12 @@ use arcweft_lang_sema::check::validate_typecheck_ready;
 use arcweft_lang_syntax::{
     ast::items::TypedSyntaxTree,
     expr::{Expr, parse_expr},
-    parser::parse_source,
+    parser::{ParseOptions, SourceDialect, parse_document, parse_source},
 };
 use arcweft_runtime_plan::{
-    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
+    flow::{
+        lower_agent_controller_plan_with_stats, lower_runtime_plan, lower_runtime_plan_with_stats,
+    },
     line_task::lower_line_task_groups,
 };
 
@@ -27,6 +29,21 @@ fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
+        parsed.errors()
+    );
+    parsed.into_typed_tree()
+}
+
+fn parse_agent_ok(source: impl Into<String>) -> TypedSyntaxTree {
+    let parsed = parse_document(
+        source,
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    );
+    assert!(
+        parsed.errors().is_empty(),
+        "expected agent source to parse without errors, got {:?}",
         parsed.errors()
     );
     parsed.into_typed_tree()
@@ -140,6 +157,43 @@ flow @flow.second second { return "right" }
         plan.entry_flow
             .as_ref()
             .is_some_and(|id| id.0 == "flow.second")
+    );
+}
+
+#[test]
+fn agent_controller_plan_lowers_body_to_entry_flow() {
+    let tree = parse_agent_ok(
+        r"
+#[agent(version = 1)]
+agent @agent.observe_smoke observe_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    assert_eq!(
+        report.plan.entry_flow.as_ref().map(|id| id.0.as_str()),
+        Some("agent.observe_smoke")
+    );
+    assert_eq!(report.plan.flows.len(), 1);
+    assert_eq!(report.plan.flows[0].id.0, "agent.observe_smoke");
+    assert!(!report.plan.flows[0].ops.is_empty());
+    assert_eq!(report.plan.entries.len(), 1);
+    assert_eq!(report.plan.entries[0].id.0, "entry.agent.observe_smoke");
+    assert_eq!(
+        report.plan.entries[0].kind,
+        RuntimeEntryKind::Custom("agent_controller".to_owned())
+    );
+    assert_eq!(
+        report.plan.entries[0].target,
+        RuntimeEntryTarget::Flow(FlowRuntimeId("agent.observe_smoke".to_owned()))
     );
 }
 

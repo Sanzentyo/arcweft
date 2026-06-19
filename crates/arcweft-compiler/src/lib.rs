@@ -1,15 +1,28 @@
 //! Source-to-runtime-plan compiler driver for Arcweft.
 
+use arcweft_agent_protocol::{
+    artifact::{
+        AgentArtifactManifest, AgentBudget, AgentBundleKind,
+        EffectCapability as AgentEffectCapability, ProjectBinding, ProjectBindingMode,
+        RequiredEntity,
+    },
+    ids::{PublicId as AgentPublicId, StableHash},
+};
+use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::plan::{RuntimePlan, RuntimePureHelperOrigin};
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_hir::model::{HirFunction, HirModule};
+use arcweft_lang_hir::model::{HirAgent, HirFunction, HirModule};
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_lang_sema::resolve::{
     registry_from_hir, registry_from_hir_and_project, validate_hir_references,
 };
+use arcweft_lang_sema::types::EntityKind;
+use arcweft_lang_syntax::ast::flow::ContractClause;
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
 use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
 use arcweft_lang_syntax::source::ParsedSource;
@@ -18,8 +31,8 @@ pub use arcweft_runtime_plan::flow::{
     RuntimePlanLowerOptions, RuntimePlanLowerReport, RuntimePlanLowerStats,
 };
 use arcweft_runtime_plan::flow::{
-    lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
-    lower_runtime_plan_with_stats_and_options,
+    lower_agent_controller_plan_with_stats, lower_runtime_plan_with_options,
+    lower_runtime_plan_with_stats, lower_runtime_plan_with_stats_and_options,
 };
 pub use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_runtime_plan::line_task::lower_line_task_groups;
@@ -51,6 +64,16 @@ pub struct CompiledAgent {
 pub struct TypecheckedAgent {
     pub hir: arcweft_lang_hir::model::HirModule,
     pub typecheck_report: TypeCheckReport,
+}
+
+/// Agent controller bundle compilation result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledAgentBundle {
+    pub bundle: ArcweftBundle,
+    pub manifest: AgentArtifactManifest,
+    pub hir: arcweft_lang_hir::model::HirModule,
+    pub typecheck_report: TypeCheckReport,
+    pub runtime_plan_stats: RuntimePlanLowerStats,
 }
 
 /// Source compiler diagnostics for the shared driver.
@@ -85,6 +108,12 @@ pub enum CompileAgentError {
     Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
     #[error("agent source did not declare a top-level `agent` item")]
     MissingAgent,
+    #[error("agent bundle compilation requires exactly one top-level `agent` item, found {0}")]
+    MultipleAgents(usize),
+    #[error("agent runtime-plan lowering errors: {0:?}")]
+    RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
+    #[error("agent artifact identifier error: {0}")]
+    ArtifactIdentifier(#[from] arcweft_agent_protocol::ids::IdentifierError),
 }
 
 /// HIR semantic validation diagnostics for the shared compiler driver.
@@ -205,6 +234,69 @@ pub fn compile_agent_source_with_project(
     })
 }
 
+/// Compiles one `.awfagent` controller into an Agent controller `.awfb` bundle
+/// data object using the shared runtime-plan and bytecode shapes.
+pub fn compile_agent_bundle_with_project(
+    source: impl Into<String>,
+    project: &ProjectSemanticIndex,
+) -> Result<CompiledAgentBundle, CompileAgentError> {
+    let source = source.into();
+    let parsed = parse_agent_source_text(source.clone());
+    if !parsed.errors().is_empty() {
+        return Err(CompileAgentError::Parse(parsed.errors().to_vec()));
+    }
+    let source_hash = parsed.source_hash();
+    let hir = lower_source_tree(parsed.typed_tree()).map_err(CompileAgentError::Hir)?;
+    let agent = single_agent(&hir)?;
+    let registry = registry_from_hir_and_project(&hir, project);
+    validate_hir_references(&hir, &registry).map_err(CompileAgentError::Resolve)?;
+    validate_hir_typecheck_ready(&hir).map_err(CompileAgentError::Readiness)?;
+    let typecheck_report = analyze_types(&hir, &project.typecheck_env());
+    typecheck_report
+        .clone()
+        .into_result()
+        .map_err(CompileAgentError::Type)?;
+    let runtime_report = lower_agent_controller_plan_with_stats(&hir, agent)
+        .map_err(CompileAgentError::RuntimePlan)?;
+    let bytecode = BytecodeProgram::from_runtime_plan(runtime_report.plan);
+    let bytecode_stats = bytecode.stats();
+    let manifest = agent_artifact_manifest(agent, source_hash, project)?;
+    let source_label = format!("{}.awfagent", manifest.agent_id.as_str());
+    let bundle = ArcweftBundle::new(
+        BundleManifest {
+            source_label: source_label.clone(),
+            profile_id: None,
+            profile_kind: None,
+            entry: Some(format!("entry.{}", manifest.agent_id.as_str())),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: bytecode.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                flows: bytecode_stats.flows,
+                bytecode_instructions: bytecode_stats.instructions,
+                line_task_groups: bytecode_stats.line_task_groups,
+                stream_plans: bytecode_stats.stream_plans,
+                source_plans: bytecode_stats.source_plans,
+            },
+        },
+        BundleSource {
+            label: source_label,
+            text: source,
+        },
+        bytecode,
+        runtime_report.line_display_catalog,
+    )
+    .with_agent_manifest(manifest.clone());
+    Ok(CompiledAgentBundle {
+        bundle,
+        manifest,
+        hir,
+        typecheck_report,
+        runtime_plan_stats: runtime_report.stats,
+    })
+}
+
 /// Validates and type-checks HIR with a supplied environment.
 pub fn validate_hir_with_env(
     hir: &HirModule,
@@ -238,6 +330,161 @@ pub fn typecheck_hir_with_env(
     let report = analyze_types(hir, env);
     report.clone().into_result()?;
     Ok(report)
+}
+
+fn single_agent(hir: &HirModule) -> Result<&HirAgent, CompileAgentError> {
+    match hir.agents() {
+        [] => Err(CompileAgentError::MissingAgent),
+        [agent] => Ok(agent),
+        agents => Err(CompileAgentError::MultipleAgents(agents.len())),
+    }
+}
+
+fn agent_artifact_manifest(
+    agent: &HirAgent,
+    source_hash: arcweft_lang_syntax::source::SourceHash,
+    project: &ProjectSemanticIndex,
+) -> Result<AgentArtifactManifest, CompileAgentError> {
+    let agent_id = agent_public_id(agent)?;
+    Ok(AgentArtifactManifest {
+        schema_version: 1,
+        bundle_kind: AgentBundleKind::AgentController,
+        agent_id,
+        source_hash: StableHash::new(format!("blake3:{}", source_hash.to_hex()))?,
+        compiler_version: format!("arcweft-compiler/{}", env!("CARGO_PKG_VERSION")),
+        project_binding: ProjectBinding {
+            program_hash: StableHash::new(project.program_hash().as_str().to_owned())?,
+            mode: ProjectBindingMode::Compatible,
+            required_entities: project
+                .entities()
+                .values()
+                .map(required_agent_entity)
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        declared_effects: declared_agent_effects(agent),
+        budget: AgentBudget::default(),
+        debug_map_hash: None,
+    })
+}
+
+fn agent_public_id(agent: &HirAgent) -> Result<AgentPublicId, CompileAgentError> {
+    AgentPublicId::new(agent.item().id().map_or_else(
+        || format!("agent.{}", agent.item().name()),
+        |id| id.body().to_owned(),
+    ))
+    .map_err(CompileAgentError::ArtifactIdentifier)
+}
+
+fn required_agent_entity(
+    entity: &arcweft_lang_sema::project_index::EntitySymbol,
+) -> Result<RequiredEntity, arcweft_agent_protocol::ids::IdentifierError> {
+    Ok(RequiredEntity {
+        public_id: AgentPublicId::new(entity.id().as_str().to_owned())?,
+        kind: entity_kind_label(entity.ty().kind()).to_owned(),
+        type_fingerprint: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
+    })
+}
+
+fn declared_agent_effects(agent: &HirAgent) -> Vec<AgentEffectCapability> {
+    let mut effects = agent
+        .item()
+        .contracts()
+        .iter()
+        .filter_map(|contract| match contract {
+            ContractClause::Effects(effects) => Some(effects),
+            _ => None,
+        })
+        .flat_map(|effects| effects.iter().filter_map(effect_label))
+        .map(AgentEffectCapability::new)
+        .collect::<Vec<_>>();
+    effects.sort();
+    effects.dedup();
+    effects
+}
+
+fn effect_label(expr: &Expr) -> Option<String> {
+    if let Expr::Call { callee, args } = expr
+        && effect_path_label(callee).as_deref() == Some("state.write")
+    {
+        return state_write_effect_label(args);
+    }
+    if let Expr::MethodCall {
+        receiver,
+        method,
+        args,
+    } = expr
+        && method == "write"
+        && effect_path_label(receiver).as_deref() == Some("state")
+    {
+        return state_write_effect_label(args);
+    }
+    match expr {
+        Expr::MethodCall {
+            receiver, method, ..
+        } => effect_path_label(receiver).map(|receiver| format!("{receiver}.{method}")),
+        Expr::Call { callee, .. } => effect_label(callee),
+        _ => effect_path_label(expr),
+    }
+}
+
+fn effect_path_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => Some(path.clone()),
+        Expr::Field { target, field } => {
+            effect_path_label(target).map(|target| format!("{target}.{field}"))
+        }
+        _ => None,
+    }
+}
+
+fn state_write_effect_label(args: &[CallArg]) -> Option<String> {
+    args.first().and_then(|arg| match arg.value() {
+        Expr::LifetimePath { key, .. } => Some(format!("state.write({})", key.scope().as_str())),
+        Expr::Path(path) => path
+            .strip_prefix('\'')
+            .map(|scope| format!("state.write({scope})")),
+        _ => None,
+    })
+}
+
+fn entity_kind_label(kind: &EntityKind) -> &str {
+    match kind {
+        EntityKind::Agent => "agent",
+        EntityKind::Entry => "entry",
+        EntityKind::Flow => "flow",
+        EntityKind::Fragment => "fragment",
+        EntityKind::Choice => "choice",
+        EntityKind::ChoiceOption => "choice_option",
+        EntityKind::Character => "character",
+        EntityKind::Component => "component",
+        EntityKind::Activity => "activity",
+        EntityKind::Textbox => "textbox",
+        EntityKind::DialogueLine => "dialogue_line",
+        EntityKind::Text => "text",
+        EntityKind::Asset => "asset",
+        EntityKind::Image => "image",
+        EntityKind::Animation => "animation",
+        EntityKind::Capture => "capture",
+        EntityKind::Hook => "hook",
+        EntityKind::Signal => "signal",
+        EntityKind::Metric => "metric",
+        EntityKind::Scene => "scene",
+        EntityKind::Source => "source",
+        EntityKind::Test => "test",
+        EntityKind::Bench => "bench",
+        EntityKind::Layer => "layer",
+        EntityKind::Voice => "voice",
+        EntityKind::Se => "se",
+        EntityKind::Bgm => "bgm",
+        EntityKind::AudioBus => "audio_bus",
+        EntityKind::MixerSnapshot => "mixer_snapshot",
+        EntityKind::Ducking => "ducking",
+        EntityKind::Motion => "motion",
+        EntityKind::Rig => "rig",
+        EntityKind::Slot => "slot",
+        EntityKind::Target => "target",
+        EntityKind::Other(value) => value.as_str(),
+    }
 }
 
 /// Lowers dialogue line plans from HIR into runtime task groups.
@@ -386,6 +633,7 @@ impl TextPureHelperCandidateReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::BundleKind;
     use arcweft_id::PublicId;
     use arcweft_lang_sema::project_index::{
         AgentActionParam, AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex,
@@ -862,6 +1110,49 @@ agent @agent.debug_context debug_context()
         .expect_err("rag.query requires declared effect");
 
         assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_bundle_with_project_builds_agent_controller_bundle() {
+        let compiled = compile_agent_bundle_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.observe_smoke observe_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("agent bundle compiles");
+
+        assert_eq!(compiled.bundle.bundle_kind, BundleKind::AgentController);
+        assert_eq!(compiled.manifest.agent_id.as_str(), "agent.observe_smoke");
+        assert_eq!(
+            compiled
+                .manifest
+                .declared_effects
+                .iter()
+                .map(AgentEffectCapability::as_str)
+                .collect::<Vec<_>>(),
+            vec!["agent.observe"]
+        );
+        assert_eq!(compiled.bundle.bytecode.program.flows.len(), 1);
+        assert!(
+            compiled.bundle.manifest.runtime.bytecode_instructions > 0,
+            "Agent body should lower into bytecode operations"
+        );
+
+        let bytes = compiled.bundle.to_json_bytes().expect("bundle encodes");
+        let decoded =
+            arcweft_bundle::ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+
+        assert_eq!(decoded.bundle_kind, BundleKind::AgentController);
+        assert_eq!(
+            decoded.agent.as_ref().map(|agent| agent.agent_id.as_str()),
+            Some("agent.observe_smoke")
+        );
     }
 
     #[test]

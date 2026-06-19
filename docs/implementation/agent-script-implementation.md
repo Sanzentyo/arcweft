@@ -16,6 +16,7 @@ It is implementation state, not the stable language specification.
 - The type checker now visits Agent item bodies and can check Agent Prelude calls such as `choose(@choice...)` against project-index entity types and declared Agent effects.
 - Agent intrinsic typing includes `expect(condition, message?)`, `deny(condition, message?)`, `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable_frames`/`poll_frames` values required to be at least 1, `choose(Ref<ChoiceOption>) -> ActionResult`, `invoke(target, action, args?) -> ActionResult` against project-index Agent action signatures with named payload parameter validation, `capture(viewport|layer|object, ...) -> CaptureRef`, `attach(CaptureRef)`, `checkpoint(String)`, `note(DisplayText)`, and `rag.query(String, roots=..., graph_depth=..., limit=...) -> RagContextPack`.
 - `arcweft-compiler` exposes `compile_agent_source_with_project`, which resolves `.awfagent` entity references against the module plus `ProjectSemanticIndex` and returns a `TypeCheckReport`.
+- `arcweft-runtime-plan` can lower a typed single Agent controller body into the shared runtime-plan shape, and `arcweft-compiler` exposes `compile_agent_bundle_with_project` to produce an Agent controller `.awfb` data object with bytecode, embedded source, and `AgentArtifactManifest`.
 - `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values. Large host request/response enum payloads are boxed so the Rust protocol API does not carry oversized enum variants while preserving the same serde JSON shape.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
@@ -30,7 +31,7 @@ It is implementation state, not the stable language specification.
 
 - Agent Script reuses the existing expression, statement, block, attribute, contract/effect, and HIR lowering path.
 - No compatibility shim for the old line-command syntax is present.
-- `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point. Bytecode artifact lowering, controller VM execution, and host-call dispatch remain separate follow-up work.
+- `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point; `compile_agent_bundle_with_project` is the typed artifact entry point. Controller VM execution and host-call dispatch remain separate follow-up work.
 - Agent source defaults such as omitted signature return type are preserved as syntax/HIR shape for later semantic/compiler resolution rather than being string-rewritten in the parser.
 - `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
@@ -53,7 +54,11 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-lang-sema project_index -- --nocapture`
 - `cargo test -p arcweft-lang-sema typecheck -- --nocapture`
 - `cargo test -p arcweft-compiler compile_agent_source_with_project -- --nocapture`
+- `cargo test -p arcweft-runtime-plan agent_controller_plan_lowers_body_to_entry_flow -- --nocapture`
+- `cargo test -p arcweft-compiler compile_agent_bundle -- --nocapture`
+- `cargo check -p arcweft-runtime-plan -p arcweft-compiler`
 - `cargo test -p arcweft-compiler -- --nocapture`
+- `cargo clippy -p arcweft-agent-protocol --all-targets --all-features -- -D warnings`
 - `cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
@@ -78,8 +83,7 @@ It is implementation state, not the stable language specification.
 ## Remaining zip-derived work
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
-- Lower typed Agent controllers into executable Agent controller `.awfb` bytecode bundles using the `bundle_kind = agent_controller` container support.
-- Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
+- Connect Agent controller `.awfb` bytecode execution to `arcweft-agent-runner` host-call dispatch and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

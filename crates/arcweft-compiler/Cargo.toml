@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }

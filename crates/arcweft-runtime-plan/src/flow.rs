@@ -27,8 +27,8 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeSeq, RuntimeValue};
 use arcweft_lang_hir::model::{
-    HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
-    HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
+    HirAgent, HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop,
+    HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
@@ -185,6 +185,50 @@ pub fn lower_runtime_plan_with_stats_and_options(
                 plan,
                 stats,
                 line_display_catalog,
+            }
+        })
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
+}
+
+/// Lowers a checked Agent controller body to the same runtime-plan/bytecode
+/// shape used by ordinary flows.
+pub fn lower_agent_controller_plan_with_stats(
+    module: &HirModule,
+    agent: &HirAgent,
+) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| RuntimePlanLowerError::new(error.to_string()))
+            .collect::<Vec<_>>()
+    })?;
+    let mut stats = RuntimePlanLowerStats {
+        pure_candidate_functions_seen: pure_candidate_report.stats.functions_seen,
+        pure_candidate_lower_attempts: pure_candidate_report.stats.lower_attempts,
+        pure_candidate_lower_failures_inferred: pure_candidate_report.stats.lower_failures_inferred,
+        pure_expr_lowered_nodes: pure_candidate_report.stats.expr_lowered_nodes,
+        ..RuntimePlanLowerStats::default()
+    };
+    let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
+    let pure_map = pure_helper_map(&pure_helpers);
+    let lowered = lower_agent_controller_flow(module, agent, &pure_map)?;
+    let entry_flow = lowered.id.clone();
+    stats.pure_helpers = pure_helpers.len();
+    RuntimePlan::new(Some(entry_flow.clone()), vec![lowered], Vec::new())
+        .map(|plan| {
+            let plan = finalize_runtime_plan(
+                plan.with_entries(vec![RuntimeEntrySpec {
+                    id: EntryRuntimeId(format!("entry.{}", entry_flow.0)),
+                    kind: RuntimeEntryKind::Custom("agent_controller".to_owned()),
+                    target: RuntimeEntryTarget::Flow(entry_flow),
+                }])
+                .with_pure_helpers(pure_helpers),
+                &mut stats,
+            );
+            RuntimePlanLowerReport {
+                plan,
+                stats,
+                line_display_catalog: LineDisplayCatalog::default(),
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
@@ -1238,6 +1282,36 @@ pub(crate) fn lower_runtime_flows(
             line_task_groups: lowerer.line_task_groups,
             line_display_catalog: lowerer.line_display_catalog,
         })
+    } else {
+        Err(lowerer.errors)
+    }
+}
+
+fn lower_agent_controller_flow(
+    module: &HirModule,
+    agent: &HirAgent,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
+    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let mut lowerer = FlowRuntimeLowerer {
+        line_task_groups: Vec::new(),
+        line_display_catalog: LineDisplayCatalog::default(),
+        display_defaults,
+        speaker_preset_scopes: Vec::new(),
+        errors: Vec::new(),
+        pure_helpers,
+    };
+    let id = agent.item().id().map_or_else(
+        || FlowRuntimeId(format!("agent.{}", agent.item().name())),
+        flow_runtime_id,
+    );
+    let mut ops = lowerer.lower_flow_stmt_list(agent.item().body_statements());
+    if let Some(value) = agent.item().body_value() {
+        ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value)));
+    }
+    if lowerer.errors.is_empty() {
+        Ok(RuntimeFlow { id, ops })
     } else {
         Err(lowerer.errors)
     }

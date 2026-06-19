@@ -308,6 +308,8 @@ dependencies = [
 name = "arcweft-compiler"
 version = "0.1.0"
 dependencies = [
+ "arcweft-agent-protocol",
+ "arcweft-bundle",
  "arcweft-core",
  "arcweft-id",
  "arcweft-lang-hir",
