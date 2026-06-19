@@ -2112,6 +2112,7 @@ impl CliAgentSession {
             frame_id: format!("cli.frame.{}", self.tick),
             state_hash: format!("cli.state.{}", self.tick),
             render_hash: format!("cli.render.{}", self.tick),
+            actions: Vec::new(),
             signals: self.signals.clone(),
             payload: serde_json::json!({
                 "source": "arcw agent script run",

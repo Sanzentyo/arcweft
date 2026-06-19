@@ -6,7 +6,7 @@
 //! RAG service.
 
 use arcweft_agent_protocol::{
-    AgentResource,
+    AgentActionTarget, AgentResource,
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
@@ -1045,6 +1045,8 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
                 "render_hash",
                 RuntimeValue::String(observation.render_hash.clone()),
             ),
+            runtime_field("actions", runtime_action_targets(&observation.actions)),
+            runtime_field("signals", runtime_agent_value_fields(&observation.signals)),
         ]),
         AgentHostResponse::Action(result) => RuntimeValue::Record(vec![
             runtime_field("accepted", RuntimeValue::Bool(result.accepted)),
@@ -1085,6 +1087,75 @@ fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValue {
         runtime_field("hash", runtime_json_string_field(value, "hash")),
         runtime_field("body", runtime_resource_body_payload(value.get("body"))),
     ])
+}
+
+fn runtime_action_targets(actions: &[AgentActionTarget]) -> RuntimeValue {
+    RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
+        actions
+            .iter()
+            .map(|action| {
+                RuntimeValue::Record(vec![
+                    runtime_field("id", RuntimeValue::String(action.id.clone())),
+                    runtime_field("target", RuntimeValue::String(action.target.clone())),
+                    runtime_field(
+                        "action",
+                        RuntimeValue::String(agent_action_kind_label(action.action).to_owned()),
+                    ),
+                    runtime_field(
+                        "kind",
+                        RuntimeValue::String(agent_action_dispatch_label(action.kind).to_owned()),
+                    ),
+                    runtime_field("enabled", RuntimeValue::Bool(action.enabled)),
+                ])
+            })
+            .collect(),
+    ))
+}
+
+fn runtime_agent_value_fields(values: &BTreeMap<String, AgentValue>) -> RuntimeValue {
+    RuntimeValue::Record(
+        values
+            .iter()
+            .map(|(name, value)| runtime_field(name, runtime_agent_value_payload(value)))
+            .collect(),
+    )
+}
+
+fn runtime_agent_value_payload(value: &AgentValue) -> RuntimeValue {
+    match value {
+        AgentValue::Null => RuntimeValue::Unit,
+        AgentValue::Bool(value) => RuntimeValue::Bool(*value),
+        AgentValue::I64(value) => RuntimeValue::i64(*value),
+        AgentValue::U64(value) => RuntimeValue::u64(*value),
+        AgentValue::F64(value) => RuntimeValue::F64(*value),
+        AgentValue::String(value) => RuntimeValue::String(value.clone()),
+        AgentValue::Entity(value) => RuntimeValue::EntityRef(value.as_str().to_owned()),
+        AgentValue::List(values) => RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
+            values.iter().map(runtime_agent_value_payload).collect(),
+        )),
+        AgentValue::Map(values) => RuntimeValue::Record(
+            values
+                .iter()
+                .map(|(name, value)| runtime_field(name, runtime_agent_value_payload(value)))
+                .collect(),
+        ),
+    }
+}
+
+fn agent_action_kind_label(kind: arcweft_agent_protocol::AgentActionKind) -> &'static str {
+    match kind {
+        arcweft_agent_protocol::AgentActionKind::AdvanceText => "advance_text",
+        arcweft_agent_protocol::AgentActionKind::SelectChoice => "select_choice",
+        arcweft_agent_protocol::AgentActionKind::Invoke => "invoke",
+        arcweft_agent_protocol::AgentActionKind::PointerClick => "pointer_click",
+    }
+}
+
+fn agent_action_dispatch_label(kind: arcweft_agent_protocol::AgentActionDispatch) -> &'static str {
+    match kind {
+        arcweft_agent_protocol::AgentActionDispatch::Semantic => "semantic",
+        arcweft_agent_protocol::AgentActionDispatch::Physical => "physical",
+    }
 }
 
 fn runtime_json_string_field(value: &serde_json::Value, field: &str) -> RuntimeValue {
@@ -2083,7 +2154,7 @@ fn compare_order(order: std::cmp::Ordering) -> i32 {
 mod tests {
     use super::*;
     use arcweft_agent_protocol::{
-        AgentResourceBody, AgentResourceKind,
+        AgentActionDispatch, AgentActionKind, AgentResourceBody, AgentResourceKind,
         artifact::{
             AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding, ProjectBindingMode,
         },
@@ -2189,6 +2260,7 @@ mod tests {
             frame_id: format!("frame.{tick}"),
             state_hash: format!("state.{tick}"),
             render_hash: format!("render.{tick}"),
+            actions: Vec::new(),
             signals: BTreeMap::from([("signal.ready".to_owned(), AgentValue::Bool(ready))]),
             payload: serde_json::json!({}),
         }
@@ -2204,6 +2276,7 @@ mod tests {
             frame_id: format!("frame.{tick}"),
             state_hash: format!("state.{tick}"),
             render_hash: format!("render.{tick}"),
+            actions: Vec::new(),
             signals: BTreeMap::from([(signal.to_owned(), value)]),
             payload: serde_json::json!({}),
         }
@@ -2716,6 +2789,42 @@ mod tests {
     }
 
     #[test]
+    fn observation_payload_exposes_action_targets_for_contains_checks() {
+        let response = AgentHostResponse::Observation(Box::new(ObservationEnvelope {
+            tick: 7,
+            frame_id: "frame.7".to_owned(),
+            state_hash: "state.7".to_owned(),
+            render_hash: "render.7".to_owned(),
+            actions: vec![AgentActionTarget {
+                id: "action.select_choice.choice.opening.listen".to_owned(),
+                target: "choice.opening.listen".to_owned(),
+                action: AgentActionKind::SelectChoice,
+                kind: AgentActionDispatch::Semantic,
+                enabled: true,
+            }],
+            signals: BTreeMap::new(),
+            payload: serde_json::json!({}),
+        }));
+
+        let RuntimeValue::Record(fields) = runtime_payload_from_response(&response).0 else {
+            panic!("observation payload is a record");
+        };
+        let RuntimeValue::Seq(actions) =
+            &runtime_record_get(&fields, "actions").expect("actions field exists")
+        else {
+            panic!("actions field is a sequence");
+        };
+
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(
+            actions.value_at(0),
+            RuntimeValue::Record(ref fields)
+                if runtime_record_get(fields, "target")
+                    == Ok(&RuntimeValue::String("choice.opening.listen".to_owned()))
+        ));
+    }
+
+    #[test]
     fn effect_form_wait_call_lowers_composite_predicate() {
         let request = agent_host_request_from_call(&RuntimeCall {
             callee: "wait".to_owned(),
@@ -2743,6 +2852,7 @@ mod tests {
                 frame_id: "frame.1".to_owned(),
                 state_hash: "state.1".to_owned(),
                 render_hash: "render.1".to_owned(),
+                actions: Vec::new(),
                 signals: BTreeMap::from([
                     ("signal.ready".to_owned(), AgentValue::Bool(true)),
                     ("metric.fps".to_owned(), AgentValue::F64(60.0)),
@@ -2754,10 +2864,7 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::new([
-                RuntimeAgentCapability::Observe,
-                RuntimeAgentCapability::DebugRecord,
-            ]),
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
 
@@ -2801,6 +2908,7 @@ mod tests {
                 frame_id: "frame.2".to_owned(),
                 state_hash: "state.2".to_owned(),
                 render_hash: "render.2".to_owned(),
+                actions: Vec::new(),
                 signals: BTreeMap::new(),
                 payload: serde_json::json!({
                     "state": {

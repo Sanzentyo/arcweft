@@ -3669,7 +3669,21 @@ impl PureEvaluator {
             }
             (RuntimeValue::String(value), "to_string", []) => Ok(RuntimeValue::String(value)),
             (RuntimeValue::Seq(seq), "len", []) => Ok(runtime_len_value(seq.len())),
+            (RuntimeValue::Seq(seq), "contains", [needle]) => Ok(RuntimeValue::Bool(
+                seq.into_values().iter().any(|item| item == needle),
+            )),
             (RuntimeValue::Tuple(items), "len", []) => Ok(runtime_len_value(items.len())),
+            (RuntimeValue::Tuple(items), "contains", [needle]) => {
+                Ok(RuntimeValue::Bool(items.iter().any(|item| item == needle)))
+            }
+            (
+                RuntimeValue::Record(fields),
+                "get",
+                [RuntimeValue::String(key) | RuntimeValue::EntityRef(key)],
+            ) => Ok(fields
+                .iter()
+                .find(|field| field.name == *key)
+                .map_or(RuntimeValue::Unit, |field| field.value.clone())),
             (receiver, _, _) => Err(RuntimeEvalError::UnsupportedPure {
                 name: method.to_owned(),
                 reason: format!(

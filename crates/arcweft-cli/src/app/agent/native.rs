@@ -6219,6 +6219,7 @@ fn native_agent_observation_envelope(report: &AgentObservationReport) -> Observa
         frame_id: report.frame_id.clone(),
         state_hash: report.state_hash.clone(),
         render_hash: report.render_hash.clone(),
+        actions: report.actions.clone(),
         signals: report
             .signals
             .iter()

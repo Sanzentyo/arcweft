@@ -3715,7 +3715,21 @@ fn evaluate_runtime_method_call(
         }
         (RuntimeValue::String(value), "to_string", []) => RuntimeValue::String(value),
         (RuntimeValue::Seq(seq), "len", []) => runtime_len_value(seq.len()),
+        (RuntimeValue::Seq(seq), "contains", [needle]) => {
+            RuntimeValue::Bool(seq.into_values().iter().any(|item| item == needle))
+        }
         (RuntimeValue::Tuple(items), "len", []) => runtime_len_value(items.len()),
+        (RuntimeValue::Tuple(items), "contains", [needle]) => {
+            RuntimeValue::Bool(items.iter().any(|item| item == needle))
+        }
+        (
+            RuntimeValue::Record(fields),
+            "get",
+            [RuntimeValue::String(key) | RuntimeValue::EntityRef(key)],
+        ) => fields
+            .iter()
+            .find(|field| field.name == *key)
+            .map_or(RuntimeValue::Unit, |field| field.value.clone()),
         (receiver, method, args) => RuntimeValue::String(format!(
             "{}.{method}({})",
             runtime_value_label(&receiver),

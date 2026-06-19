@@ -88,10 +88,12 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         },
-        Expr::Call { callee, args } => RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(expr_label(callee)),
-            args: args.iter().map(lower_runtime_call_arg).collect(),
-        },
+        Expr::Call { callee, args } => {
+            lower_choice_action_call(callee, args).unwrap_or_else(|| RuntimeExpr::Call {
+                callee: RuntimeCallTarget::from_label(expr_label(callee)),
+                args: args.iter().map(lower_runtime_call_arg).collect(),
+            })
+        }
         Expr::MethodCall {
             receiver,
             method,
@@ -259,6 +261,47 @@ fn lower_runtime_numeric_bracket_seq(
         Some("usize") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_usize),
         _ => runtime_sequence_dense_i64(seq.values().to_vec()),
     })
+}
+
+fn lower_choice_action_call(callee: &Expr, args: &[CallArg]) -> Option<RuntimeExpr> {
+    if expr_label(callee) != "choice_action" {
+        return None;
+    }
+    let [CallArg::Positional(choice)] = args else {
+        return Some(RuntimeExpr::Value(RuntimeValue::String(format!(
+            "choice_action({})",
+            args.iter()
+                .map(call_arg_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))));
+    };
+    let choice = expr_label(choice).trim_start_matches('@').to_owned();
+    Some(RuntimeExpr::Record(vec![
+        runtime_field_expr(
+            "id",
+            RuntimeExpr::Value(RuntimeValue::String(format!(
+                "action.select_choice.{choice}"
+            ))),
+        ),
+        runtime_field_expr("target", RuntimeExpr::Value(RuntimeValue::String(choice))),
+        runtime_field_expr(
+            "action",
+            RuntimeExpr::Value(RuntimeValue::String("select_choice".to_owned())),
+        ),
+        runtime_field_expr(
+            "kind",
+            RuntimeExpr::Value(RuntimeValue::String("semantic".to_owned())),
+        ),
+        runtime_field_expr("enabled", RuntimeExpr::Value(RuntimeValue::Bool(true))),
+    ]))
+}
+
+fn runtime_field_expr(name: &str, value: RuntimeExpr) -> RuntimeFieldExpr {
+    RuntimeFieldExpr {
+        name: name.to_owned(),
+        value,
+    }
 }
 
 fn collect_dense<T, E>(
@@ -611,6 +654,9 @@ fn lower_strict_call_expr(
     args: &[CallArg],
     helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
+    if let Some(lowered) = lower_choice_action_call(callee, args) {
+        return Ok(lowered);
+    }
     lower_constructor_call(callee, args, helpers).map_or_else(
         || {
             let callee = expr_label(callee);

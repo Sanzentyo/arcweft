@@ -758,6 +758,7 @@ impl TypeChecker<'_> {
                 &TypeKind::DisplayText,
             )),
             "attach" => Some(self.check_agent_attach_intrinsic(name, args)),
+            "choice_action" => Some(self.check_agent_choice_action_intrinsic(name, args)),
             "viewport" => {
                 Some(self.check_agent_no_arg_intrinsic(name, args, TypeKind::CaptureTarget))
             }
@@ -880,6 +881,18 @@ impl TypeChecker<'_> {
         };
         self.expect_expr_type(arg, &agent_attach_resource_type(), "attach resource");
         TypeKind::Unit
+    }
+
+    fn check_agent_choice_action_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::ActionTarget;
+        };
+        self.expect_expr_type(
+            arg,
+            &TypeKind::entity_ref(EntityKind::ChoiceOption),
+            "choice_action choice",
+        );
+        TypeKind::ActionTarget
     }
 
     fn check_agent_no_arg_intrinsic(
@@ -2155,6 +2168,12 @@ impl TypeChecker<'_> {
         if method_name == "sum" {
             return self.check_vec_sum_method_call(&receiver_type, args);
         }
+        if method_name == "contains" {
+            return Some(self.check_sequence_contains_method_call(&receiver_type, args));
+        }
+        if method_name == "get" {
+            return self.check_map_get_method_call(&receiver_type, args);
+        }
         if matches!(
             method_name,
             "eq" | "ne"
@@ -2384,6 +2403,86 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_sequence_contains_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> TypeKind {
+        let Some(item) = spread_item_type(receiver_type) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "contains receiver must be an iterable sequence, found {receiver_type:?}"
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return TypeKind::Bool;
+        };
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "contains requires exactly one positional argument".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return TypeKind::Bool;
+        };
+        match arg {
+            CallArg::Positional(value) => {
+                self.expect_expr_type(value, item, "contains item");
+            }
+            CallArg::Named { name, value } => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "contains arguments must be positional, got named `{name}`"
+                )));
+                self.check_expr(value);
+            }
+            CallArg::Spread { value } => {
+                self.errors.push(TypeCheckError::new(
+                    "contains arguments cannot be spread".to_owned(),
+                ));
+                self.check_expr(value);
+            }
+        }
+        TypeKind::Bool
+    }
+
+    fn check_map_get_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let TypeKind::Map { key, value, .. } = receiver_type else {
+            return None;
+        };
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "get requires exactly one positional argument".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return Some(value.as_ref().clone());
+        };
+        match arg {
+            CallArg::Positional(expr) => {
+                self.expect_expr_type(expr, key.as_ref(), "map key");
+            }
+            CallArg::Named { name, value } => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "get arguments must be positional, got named `{name}`"
+                )));
+                self.check_expr(value);
+            }
+            CallArg::Spread { value } => {
+                self.errors.push(TypeCheckError::new(
+                    "get arguments cannot be spread".to_owned(),
+                ));
+                self.check_expr(value);
+            }
+        }
+        Some(value.as_ref().clone())
     }
 
     fn check_traverse_method_call(
@@ -3011,6 +3110,12 @@ fn agent_observation_field_type(field: &str) -> Option<TypeKind> {
     Some(match field {
         "tick" => TypeKind::U64,
         "frame_id" | "state_hash" | "render_hash" => TypeKind::String,
+        "actions" => TypeKind::Vec(Box::new(TypeKind::ActionTarget)),
+        "signals" => TypeKind::Map {
+            kind: MapKind::BTree,
+            key: Box::new(TypeKind::AgentValue),
+            value: Box::new(TypeKind::AgentValue),
+        },
         _ => return None,
     })
 }

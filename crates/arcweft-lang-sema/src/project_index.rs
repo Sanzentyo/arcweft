@@ -91,6 +91,7 @@ pub enum AgentIntrinsic {
     Observe,
     AdvanceText,
     Choose,
+    ChoiceAction,
     Invoke,
     ViewportPoint,
     PointerClick,
@@ -1595,6 +1596,20 @@ fn agent_predicate_callables() -> Vec<(&'static str, CallableSymbol)> {
 
 fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
     vec![
+        (
+            "choice_action",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::ActionTarget,
+                    [FunctionParam::required(
+                        "choice",
+                        TypeKind::entity_ref(EntityKind::ChoiceOption),
+                    )],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::ChoiceAction),
+            ),
+        ),
         (
             "viewport_point",
             CallableSymbol::new(

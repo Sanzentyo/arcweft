@@ -1094,6 +1094,33 @@ effects { agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_observation_action_contains() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.action_probe action_probe()
+effects { agent.observe }
+{
+    let frame = observe()
+    expect(frame.actions.contains(choice_action(@choice.opening.listen)))
+}
+",
+            &project,
+        )
+        .expect("observation action contains expression typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionTarget)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_invoke_intrinsic() {
         let project = project_with_agent_action(
             "activity.inventory",

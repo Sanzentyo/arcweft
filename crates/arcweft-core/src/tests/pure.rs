@@ -10,12 +10,13 @@ use crate::pure::{
 };
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
-    RuntimeFieldValue, RuntimeIntrinsic, RuntimeValue, runtime_sequence_dense_bool,
-    runtime_sequence_dense_bytes, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
-    runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
-    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
-    runtime_sequence_dense_usize, runtime_sequence_from_literal_values, runtime_sequence_values,
+    RuntimeFieldExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
+    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
+    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
+    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+    runtime_sequence_dense_u128, runtime_sequence_dense_usize,
+    runtime_sequence_from_literal_values, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -355,6 +356,54 @@ fn vm_pure_backend_reads_dense_sequence_len_without_materializing_values() {
 
     assert_eq!(result.value, RuntimeValue::usize(4));
     assert_eq!(result.stats.evaluated_method_calls, 1);
+}
+
+#[test]
+fn vm_pure_backend_checks_sequence_contains_and_record_get() {
+    let contains = PureFunctionRequest::new(
+        "has_choice",
+        RuntimeExpr::MethodCall {
+            receiver: Box::new(RuntimeExpr::Local("actions".to_owned())),
+            method: "contains".to_owned(),
+            args: vec![RuntimeExpr::Record(vec![RuntimeFieldExpr {
+                name: "target".to_owned(),
+                value: RuntimeExpr::Value(RuntimeValue::String("choice.opening.listen".to_owned())),
+            }])],
+        },
+        [RuntimeBinding {
+            name: "actions".to_owned(),
+            value: RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Record(vec![
+                RuntimeFieldValue {
+                    name: "target".to_owned(),
+                    value: RuntimeValue::String("choice.opening.listen".to_owned()),
+                },
+            ])])),
+        }],
+    );
+    let contains = VmPureFunctionBackend
+        .evaluate(&contains)
+        .expect("pure helper evaluates contains");
+    assert_eq!(contains.value, RuntimeValue::Bool(true));
+
+    let get = PureFunctionRequest::new(
+        "signal_value",
+        RuntimeExpr::MethodCall {
+            receiver: Box::new(RuntimeExpr::Local("signals".to_owned())),
+            method: "get".to_owned(),
+            args: vec![RuntimeExpr::EntityRef("signal.ready".to_owned())],
+        },
+        [RuntimeBinding {
+            name: "signals".to_owned(),
+            value: RuntimeValue::Record(vec![RuntimeFieldValue {
+                name: "signal.ready".to_owned(),
+                value: RuntimeValue::Bool(true),
+            }]),
+        }],
+    );
+    let get = VmPureFunctionBackend
+        .evaluate(&get)
+        .expect("pure helper evaluates record get");
+    assert_eq!(get.value, RuntimeValue::Bool(true));
 }
 
 #[test]

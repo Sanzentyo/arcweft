@@ -76,6 +76,7 @@ pub enum TypeKind {
     Predicate,
     Observation,
     ActionName,
+    ActionTarget,
     ActionResult,
     AgentValue,
     CaptureTarget,

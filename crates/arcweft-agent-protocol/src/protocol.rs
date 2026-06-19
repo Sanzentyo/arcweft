@@ -1,4 +1,5 @@
 use crate::{
+    AgentActionTarget,
     ids::{AgentResourceUri, PublicId},
     predicate::Predicate,
     value::AgentValue,
@@ -155,6 +156,8 @@ pub struct ObservationEnvelope {
     pub frame_id: String,
     pub state_hash: String,
     pub render_hash: String,
+    #[serde(default)]
+    pub actions: Vec<AgentActionTarget>,
     pub signals: BTreeMap<String, AgentValue>,
     pub payload: serde_json::Value,
 }
