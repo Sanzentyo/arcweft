@@ -244,6 +244,31 @@ fn agent_script_run_trace_records_capture_blob_refs() {
     assert_agent_script_trace_rejects_missing_capture_blob_ref(&invalid_trace_path);
 }
 
+#[test]
+fn agent_script_run_json_executes_advance_text_smoke() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_advance_text_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes advance_text smoke");
+
+    assert!(
+        output.status.success(),
+        "agent script advance_text run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("advance_text run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 1);
+    assert_eq!(json["responses"][0]["kind"], "action");
+    assert_eq!(json["responses"][0]["response"]["accepted"], true);
+}
+
 fn agent_test_blob_path(root: &Path, content_hash: &str) -> PathBuf {
     let hex = content_hash
         .strip_prefix("blake3:")
@@ -702,6 +727,10 @@ fn agent_script_cli_run_smoke_path() -> PathBuf {
 
 fn agent_script_cli_capture_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-capture-smoke.awfagent")
+}
+
+fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-advance-text-smoke.awfagent")
 }
 
 fn agent_script_native_flow_wait_smoke_path() -> PathBuf {

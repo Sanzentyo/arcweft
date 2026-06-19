@@ -89,6 +89,7 @@ pub enum CallableLowering {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentIntrinsic {
     Observe,
+    AdvanceText,
     Choose,
     Invoke,
     SignalProbe,
@@ -1591,6 +1592,14 @@ fn agent_predicate_callables() -> Vec<(&'static str, CallableSymbol)> {
 fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
     vec![
         (
+            "advance_text",
+            CallableSymbol::new(
+                FunctionSignature::new(TypeKind::ActionResult, []),
+                [EffectCapability::new("agent.act.semantic")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::AdvanceText),
+            ),
+        ),
+        (
             "choose",
             CallableSymbol::new(
                 FunctionSignature::new(
@@ -1821,6 +1830,22 @@ mod tests {
                 .map(EffectCapability::as_str)
                 .collect::<Vec<_>>(),
             vec!["agent.wait", "agent.observe"]
+        );
+
+        let advance_text = prelude
+            .get(&QualifiedName::new("advance_text"))
+            .expect("advance_text intrinsic");
+        assert_eq!(
+            advance_text.lowering(),
+            &CallableLowering::AgentIntrinsic(AgentIntrinsic::AdvanceText)
+        );
+        assert_eq!(
+            advance_text
+                .effects()
+                .iter()
+                .map(EffectCapability::as_str)
+                .collect::<Vec<_>>(),
+            vec!["agent.act.semantic"]
         );
     }
 

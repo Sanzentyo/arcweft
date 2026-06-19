@@ -259,6 +259,34 @@ mod tests {
     }
 
     #[test]
+    fn native_agent_advance_text_requires_enabled_semantic_action() {
+        let mut report = test_agent_observation_report(None);
+        report.actions.push(AgentActionTarget {
+            id: "action.advance_text.object.dialogue.0.0".to_owned(),
+            target: "object.dialogue.0.0".to_owned(),
+            action: AgentActionKind::AdvanceText,
+            kind: AgentActionDispatch::Semantic,
+            enabled: false,
+        });
+
+        assert!(matches!(
+            native_agent_advance_text_input_events(&report),
+            Err(NativeAgentScriptSessionError::ActionUnavailable)
+        ));
+
+        report.actions[0].enabled = true;
+        let events = native_agent_advance_text_input_events(&report)
+            .expect("enabled semantic advance_text action dispatches");
+        assert_eq!(
+            events,
+            vec![RuntimeInputEvent {
+                kind: "advance".to_owned(),
+                payload: None,
+            }]
+        );
+    }
+
+    #[test]
     fn uri_capture_request_preserves_report_capture_time() {
         let report = test_agent_observation_report(Some(2000));
         let request = agent_capture_request_from_uri(
@@ -2936,12 +2964,11 @@ impl<'a> NativeAgentScriptSession<'a> {
         match action {
             AgentAction::SelectChoice { choice } => {
                 let choice_id = choice.as_str();
-                let selectable = report.actions.iter().any(|target| {
-                    target.enabled
-                        && target.kind == AgentActionDispatch::Semantic
-                        && target.action == AgentActionKind::SelectChoice
-                        && target.target == choice_id
-                });
+                let selectable = native_agent_report_has_action(
+                    report,
+                    AgentActionKind::SelectChoice,
+                    choice_id,
+                );
                 selectable
                     .then(|| {
                         vec![RuntimeInputEvent {
@@ -2951,9 +2978,8 @@ impl<'a> NativeAgentScriptSession<'a> {
                     })
                     .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
             }
-            AgentAction::AdvanceText
-            | AgentAction::Invoke { .. }
-            | AgentAction::PointerClick { .. } => {
+            AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
+            AgentAction::Invoke { .. } | AgentAction::PointerClick { .. } => {
                 Err(NativeAgentScriptSessionError::UnsupportedAction)
             }
         }
@@ -2971,6 +2997,39 @@ impl<'a> NativeAgentScriptSession<'a> {
             after_state_hash: after.state_hash.clone(),
         }
     }
+}
+
+fn native_agent_report_has_action(
+    report: &AgentObservationReport,
+    kind: AgentActionKind,
+    target: &str,
+) -> bool {
+    report.actions.iter().any(|candidate| {
+        candidate.enabled
+            && candidate.kind == AgentActionDispatch::Semantic
+            && candidate.action == kind
+            && candidate.target == target
+    })
+}
+
+fn native_agent_advance_text_input_events(
+    report: &AgentObservationReport,
+) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
+    report
+        .actions
+        .iter()
+        .any(|candidate| {
+            candidate.enabled
+                && candidate.kind == AgentActionDispatch::Semantic
+                && candidate.action == AgentActionKind::AdvanceText
+        })
+        .then(|| {
+            vec![RuntimeInputEvent {
+                kind: "advance".to_owned(),
+                payload: None,
+            }]
+        })
+        .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
 }
 
 impl AgentSession for NativeAgentScriptSession<'_> {

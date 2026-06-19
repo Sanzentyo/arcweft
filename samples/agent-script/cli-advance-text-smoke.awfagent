@@ -1,0 +1,7 @@
+#[agent(version = 1)]
+agent @agent.cli.advance_text advance_text()
+effects { agent.act.semantic }
+{
+    advance_text()
+    return "done"
+}

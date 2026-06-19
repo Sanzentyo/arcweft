@@ -546,6 +546,12 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 .and_then(|arg| parse_string_label(arg))
                 .unwrap_or_else(|| call.args.first().cloned().unwrap_or_default()),
         }),
+        "advance_text" => {
+            if !call.args.is_empty() {
+                return Err("advance_text does not accept arguments".to_owned());
+            }
+            Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
+        }
         "choose" => {
             let choice = call
                 .args
@@ -606,6 +612,12 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
             Ok(AgentHostRequest::Act(Box::new(AgentAction::SelectChoice {
                 choice,
             })))
+        }
+        "advance_text" => {
+            if args.positional(0).is_some() || !args.named.is_empty() {
+                return Err("advance_text does not accept arguments".to_owned());
+            }
+            Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
         }
         "invoke" => {
             runtime_invoke_action(&args).map(|action| AgentHostRequest::Act(Box::new(action)))
@@ -2062,6 +2074,20 @@ mod tests {
                 op: CompareOp::Eq,
                 value: AgentValue::Entity(ref value),
             } if target.as_str() == "signal.current_flow" && value.as_str() == "flow.opening"
+        ));
+    }
+
+    #[test]
+    fn effect_form_advance_text_call_lowers_to_host_action() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "advance_text".to_owned(),
+            args: Vec::new(),
+        })
+        .expect("effect-form advance_text lowers");
+
+        assert!(matches!(
+            request,
+            AgentHostRequest::Act(action) if matches!(*action, AgentAction::AdvanceText)
         ));
     }
 

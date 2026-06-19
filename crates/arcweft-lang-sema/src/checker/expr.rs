@@ -786,6 +786,10 @@ impl TypeChecker<'_> {
             "all" | "any" => Some(self.check_agent_predicate_list_intrinsic(name, args)),
             "not" => Some(self.check_agent_not_predicate_intrinsic(name, args)),
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
+            "advance_text" => {
+                self.check_function_effects(name);
+                Some(self.check_agent_no_arg_intrinsic(name, args, TypeKind::ActionResult))
+            }
             "invoke" => Some(self.check_agent_invoke_intrinsic(name, args)),
             "rag.query" => Some(self.check_agent_rag_query_intrinsic(name, args)),
             _ => None,

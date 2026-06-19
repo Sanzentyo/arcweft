@@ -152,6 +152,7 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
         Expr::Call { callee, args } => {
             let operation = match expr_label(callee).as_str() {
                 "observe" => "observe",
+                "advance_text" => "advance_text",
                 "capture" => "capture",
                 "wait" => "wait",
                 "choose" => "choose",
