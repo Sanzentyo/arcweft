@@ -2089,7 +2089,7 @@ pub(super) fn agent_command(
         AgentCommand::Repl(options) => agent_repl_command(&options, adapter_registrars),
         AgentCommand::Rag { command } => super::agent_rag_command(command),
         AgentCommand::Script { command } => {
-            super::agent_script_command(command, adapter_registrars)
+            super::agent_script_command(*command, adapter_registrars)
         }
     }
 }
@@ -3428,6 +3428,17 @@ fn agent_repl_run_success_report(
         "bindings": binding_names,
         "parse": parse_report,
     });
+    if let Some(error) = agent_repl_unsupported_snapshot_error(binding_names, serialized_bindings) {
+        return agent_repl_snapshot_escape_error_report(
+            index,
+            input,
+            state,
+            parse_report,
+            &error,
+            report.host_calls,
+            report.events_emitted,
+        );
+    }
     let persisted = agent_repl_persist_cell(
         state,
         index,
@@ -3477,6 +3488,58 @@ fn agent_repl_run_success_report(
         );
     }
     agent_repl_ok(index, input, "cell", value).with_persistence(persisted)
+}
+
+fn agent_repl_unsupported_snapshot_error(
+    binding_names: &[String],
+    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
+) -> Option<String> {
+    let unsupported = binding_names
+        .iter()
+        .filter(|name| !serialized_bindings.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    (!unsupported.is_empty()).then(|| {
+        format!(
+            "REPL local binding(s) cannot cross cells without a supported snapshot: {}",
+            unsupported.join(", ")
+        )
+    })
+}
+
+fn agent_repl_snapshot_escape_error_report(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    parse_report: &serde_json::Value,
+    message: &str,
+    host_calls: usize,
+    events_emitted: u64,
+) -> AgentReplCellReport {
+    let value = serde_json::json!({
+        "parse": parse_report,
+        "snapshot_error": message,
+        "host_calls": host_calls,
+        "events_emitted": events_emitted,
+        "partially_effectful": host_calls > 0,
+    });
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "error".to_owned(),
+        message: Some(message.to_owned()),
+        value: Some(value.clone()),
+        quit: false,
+    }
+    .with_persistence(agent_repl_persist_cell(
+        state,
+        index,
+        input,
+        "error",
+        value,
+        host_calls > 0,
+    ))
 }
 
 fn agent_repl_run_error_report(

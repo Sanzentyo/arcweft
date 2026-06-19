@@ -446,10 +446,11 @@ with a normalized `serialized_source`. Self-contained `observe(...)` and
 `read_resource(...)` let-bindings plus self-contained `rag.query(...)`
 let-bindings are stored as `observation`, `resource`, or `rag_context`
 snapshot expressions with their original source. Serializable locals are
-reintroduced as explicit `let` bindings before later REPL cells;
-non-snapshotable locals remain visible in
-`:bindings` with `serializable = false` and an explicit reason instead of being
-silently reused. With `--debug-db
+reintroduced as explicit `let` bindings before later REPL cells. If an
+otherwise successful `let` cell would expose a local that cannot be represented
+as a supported snapshot, the REPL reports a snapshot escape error, persists the
+cell as failed, marks it `partially_effectful` when host calls already ran, and
+does not commit that local into `:bindings`. With `--debug-db
 <path>`, non-meta cells are also persisted to the rebuildable debug SQLite
 `repl_cells` table with their source, stable source hash, status, display JSON,
 and partial-effect marker. The CLI still does not grow a second Agent

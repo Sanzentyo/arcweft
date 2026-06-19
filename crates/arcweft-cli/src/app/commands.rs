@@ -63,11 +63,10 @@ pub(super) enum IdsCommand {
 }
 
 #[derive(Debug, Subcommand)]
-#[allow(clippy::large_enum_variant)]
 pub(super) enum AgentCommand {
-    Observe(AgentObserveOptions),
-    HitTest(AgentHitTestOptions),
-    Mcp(AgentMcpOptions),
+    Observe(Box<AgentObserveOptions>),
+    HitTest(Box<AgentHitTestOptions>),
+    Mcp(Box<AgentMcpOptions>),
     Repl(Box<AgentReplOptions>),
     Rag {
         #[command(subcommand)]
@@ -75,7 +74,7 @@ pub(super) enum AgentCommand {
     },
     Script {
         #[command(subcommand)]
-        command: AgentScriptCommand,
+        command: Box<AgentScriptCommand>,
     },
 }
 

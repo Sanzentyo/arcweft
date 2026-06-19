@@ -455,7 +455,7 @@ pub(super) fn agent_command(
 ) -> Result<(), ExitCode> {
     match command {
         AgentCommand::Rag { command } => agent_rag_command(command),
-        AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
+        AgentCommand::Script { command } => agent_script_command(*command, adapter_registrars),
         command => native::agent_command(command, adapter_registrars),
     }
 }
@@ -467,7 +467,7 @@ pub(super) fn agent_command(
 ) -> Result<(), ExitCode> {
     match command {
         AgentCommand::Rag { command } => agent_rag_command(command),
-        AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
+        AgentCommand::Script { command } => agent_script_command(*command, adapter_registrars),
         AgentCommand::Observe(_)
         | AgentCommand::HitTest(_)
         | AgentCommand::Mcp(_)

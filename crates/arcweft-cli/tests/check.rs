@@ -1204,7 +1204,7 @@ fn agent_repl_marks_failed_cells_partially_effectful_from_host_events() {
     let _ = fs::remove_file(&debug_db_path);
     fs::write(
         &input_path,
-        "while true {}\nexpect(false, message = \"boom\")\n",
+        "while true {}\nexpect(false, message = \"boom\")\nlet shot = capture(viewport())\n:bindings\n",
     )
     .expect("write REPL partial-effects input");
 
@@ -1230,13 +1230,23 @@ fn agent_repl_marks_failed_cells_partially_effectful_from_host_events() {
     let cells = report["cells"].as_array().expect("cells are present");
     assert_repl_failed_cell_effect_summary(cells, "while true {}", 0, false);
     assert_repl_failed_cell_effect_summary(cells, "expect(false, message = \"boom\")", 1, true);
+    assert_repl_failed_cell_effect_summary(cells, "let shot = capture(viewport())", 1, true);
+    let bindings = cells
+        .iter()
+        .find(|cell| cell["input"] == ":bindings")
+        .and_then(|cell| cell["value"]["bindings"].as_array());
+    let bindings = bindings.expect(":bindings cell reports visible bindings");
+    assert!(
+        !bindings.iter().any(|binding| binding["name"] == "shot"),
+        "failed snapshot escape must not commit `shot` binding: {cells:?}"
+    );
 
     let store = DebugStore::open(&debug_db_path).expect("open REPL debug database");
     let session = SessionId::new("session.cli").expect("CLI session id is valid");
     let repl_cells = store
         .repl_cells_for_session(&session)
         .expect("load persisted REPL cells");
-    assert_eq!(repl_cells.len(), 2);
+    assert_eq!(repl_cells.len(), 3);
     assert_eq!(repl_cells[0].source, "while true {}");
     assert!(!repl_cells[0].partially_effectful);
     assert_eq!(
@@ -1254,6 +1264,15 @@ fn agent_repl_marks_failed_cells_partially_effectful_from_host_events() {
             .as_ref()
             .and_then(|display| display["host_calls"].as_u64()),
         Some(1)
+    );
+    assert_eq!(repl_cells[2].source, "let shot = capture(viewport())");
+    assert!(repl_cells[2].partially_effectful);
+    assert_eq!(
+        repl_cells[2]
+            .display
+            .as_ref()
+            .and_then(|display| display["snapshot_error"].as_str()),
+        Some("REPL local binding(s) cannot cross cells without a supported snapshot: shot")
     );
 }
 
