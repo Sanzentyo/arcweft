@@ -124,6 +124,14 @@ call wins, avoiding duplicate background object ids. Missing image assets
 produce structured `image_asset_unavailable` diagnostics rather than a debug
 rectangle or a panic.
 
+Agent observe uses an observation-local source image decode cache keyed by
+public asset id. The cache stores successful decoded `DecodedImage` values for
+the duration of one observation build, so repeated `bg(...)` / `image(...)`
+uses of the same static or animated asset reuse decoded frames while preserving
+deterministic `capture_time` frame selection. Failed filesystem lookups or
+decode errors are not cached, and long-lived eviction policy remains an adapter
+concern.
+
 `samples/image-animation.arcw` is the first source-level image sample. It has
 separate flows for static PNG, static JPEG, static WebP, animated GIF, and
 animated WebP backgrounds. The animated flows are intended to be observed with
@@ -189,6 +197,9 @@ same alpha-shaped geometry as color image capture.
   ids or coordinates.
 - Decode is adapter work over bytes. Filesystem reads, asset lookup, cache
   eviction, and GPU upload are outside the pure data model.
+- Short-lived adapter decode caches may reuse decoded `DecodedImage` values,
+  but animation playback state remains presentation-time based and is not
+  advanced by cache access.
 
 ## Required Follow-up Cuts
 

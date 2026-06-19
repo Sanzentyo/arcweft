@@ -1019,6 +1019,29 @@ mod tests {
     }
 
     #[test]
+    fn agent_source_image_decode_cache_reuses_decoded_animated_assets() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let mut cache = AgentSourceImageDecodeCache::default();
+
+        let first = cache
+            .decode_source_image_asset(&source, "asset.bg.pulse")
+            .expect("animated gif asset decodes");
+        let second = cache
+            .decode_source_image_asset(&source, "asset.bg.pulse")
+            .expect("animated gif asset is returned from cache");
+
+        assert_eq!(cache.misses(), 1);
+        assert_eq!(cache.hits(), 1);
+        assert_eq!(first, second);
+        assert!(second.is_animated());
+        assert_eq!(second.frame_at_time_millis(150).unwrap().index(), 1);
+    }
+
+    #[test]
     fn agent_asset_call_parser_accepts_only_public_asset_refs() {
         assert_eq!(
             agent_asset_id_from_call_arg("@asset.bg.room")
@@ -5096,6 +5119,7 @@ fn agent_runtime_presentation_image_observation(
     let mut inputs = Vec::new();
     let mut background_input = None;
     let mut diagnostics = Vec::new();
+    let mut image_decode_cache = AgentSourceImageDecodeCache::default();
     for (call_index, call) in calls.iter().enumerate() {
         let image_call = match agent_runtime_image_call(call, call_index, viewport) {
             Ok(Some(image_call)) => image_call,
@@ -5112,7 +5136,7 @@ fn agent_runtime_presentation_image_observation(
                 continue;
             }
         };
-        match agent_decode_source_image_asset(source_path, image_call.asset.as_str()) {
+        match image_decode_cache.decode_source_image_asset(source_path, image_call.asset.as_str()) {
             Ok(image) => {
                 let input = agent_image_presentation_input(&image_call, image);
                 if image_call.background_slot {
@@ -5192,6 +5216,40 @@ struct AgentRuntimeImageCall {
     actions: Vec<arcweft_id::PublicId>,
     params: BTreeMap<arcweft_id::PublicId, ImageObjectParam>,
     background_slot: bool,
+}
+
+#[derive(Debug, Default)]
+struct AgentSourceImageDecodeCache {
+    images: BTreeMap<String, arcweft_image::DecodedImage>,
+    hits: usize,
+    misses: usize,
+}
+
+impl AgentSourceImageDecodeCache {
+    fn decode_source_image_asset(
+        &mut self,
+        source_path: &Path,
+        asset_id: &str,
+    ) -> Result<arcweft_image::DecodedImage, String> {
+        if let Some(image) = self.images.get(asset_id) {
+            self.hits = self.hits.saturating_add(1);
+            return Ok(image.clone());
+        }
+        let image = agent_decode_source_image_asset(source_path, asset_id)?;
+        self.misses = self.misses.saturating_add(1);
+        self.images.insert(asset_id.to_owned(), image.clone());
+        Ok(image)
+    }
+
+    #[cfg(test)]
+    fn hits(&self) -> usize {
+        self.hits
+    }
+
+    #[cfg(test)]
+    fn misses(&self) -> usize {
+        self.misses
+    }
 }
 
 fn agent_runtime_image_call(
