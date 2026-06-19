@@ -346,6 +346,13 @@ Debug Bus path as `arcw agent observe`. Native capture results return
 `arcweft://session/...` resource URIs, native resource hashes, media types, and
 byte lengths; `.arcwx` trace records carry the capture content hash in
 `blob_refs`.
+Native Agent Script actions are semantic-first. `choose(@choice...)`,
+`advance_text()`, and `invoke(target, action, args?)` are accepted only when the
+latest observation exposes a matching enabled semantic action target; the
+native session then emits a runtime input for that semantic action instead of
+synthesizing a pointer click. Inline presentation image actions projected from
+`image(... target=..., action=...)` can therefore be exercised headlessly with
+`invoke(@target..., "action...")`.
 
 ## Agent Observation
 

@@ -562,6 +562,7 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 choice,
             })))
         }
+        "invoke" => invoke_action(&call.args).map(|action| AgentHostRequest::Act(Box::new(action))),
         "capture" => Ok(AgentHostRequest::Capture(Box::new(capture_request(
             &call.args,
         )?))),
@@ -1220,6 +1221,44 @@ fn wait_request(args: &[String]) -> Result<WaitRequest, String> {
     Ok(request)
 }
 
+fn invoke_action(args: &[String]) -> Result<AgentAction, String> {
+    let mut target = None;
+    let mut action = None;
+    let mut call_args = None;
+    let mut positional = Vec::new();
+    for arg in args {
+        if arg.trim_start().starts_with('{') {
+            positional.push(arg.as_str());
+            continue;
+        }
+        match named_arg(arg) {
+            Some(("target", value)) => target = Some(value),
+            Some(("action", value)) => action = Some(value),
+            Some(("args", value)) => call_args = Some(value),
+            Some((name, _)) => return Err(format!("invoke has no parameter named `{name}`")),
+            None => positional.push(arg.as_str()),
+        }
+    }
+    let target = target
+        .or_else(|| positional.first().copied())
+        .ok_or_else(|| "invoke requires a target argument".to_owned())
+        .and_then(parse_public_id_arg)?;
+    let action = action
+        .or_else(|| positional.get(1).copied())
+        .ok_or_else(|| "invoke requires an action argument".to_owned())
+        .map(parse_action_label)?;
+    let call_args = call_args
+        .or_else(|| positional.get(2).copied())
+        .map(parse_agent_value_map_label)
+        .transpose()?
+        .unwrap_or_default();
+    Ok(AgentAction::Invoke {
+        target,
+        action,
+        args: Box::new(call_args),
+    })
+}
+
 fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
     let value = value.trim();
     if let Some(body) = value
@@ -1348,6 +1387,26 @@ fn parse_agent_value_label(value: &str) -> Result<AgentValue, String> {
     }
 }
 
+fn parse_agent_value_map_label(value: &str) -> Result<BTreeMap<String, AgentValue>, String> {
+    let Some(body) = value
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+    else {
+        return Err(format!("expected invoke args record, got `{value}`"));
+    };
+    split_top_level_args(body)
+        .into_iter()
+        .map(|field| {
+            record_field_arg(field)
+                .ok_or_else(|| format!("expected invoke arg field, got `{field}`"))
+                .and_then(|(name, value)| {
+                    parse_agent_value_label(value).map(|value| (name.to_owned(), value))
+                })
+        })
+        .collect()
+}
+
 fn parse_duration_millis_label(value: &str) -> Result<u64, String> {
     if let Some(amount) = value.strip_suffix("ms") {
         return parse_integer_millis(amount, value);
@@ -1449,6 +1508,12 @@ fn named_arg(arg: &str) -> Option<(&str, &str)> {
         .map(|(name, value)| (name.trim(), value.trim()))
 }
 
+fn record_field_arg(arg: &str) -> Option<(&str, &str)> {
+    arg.split_once('=')
+        .map(|(name, value)| (name.trim(), value.trim()))
+        .filter(|(name, _)| !name.is_empty())
+}
+
 fn parse_bool_label(value: &str) -> Result<bool, String> {
     match value {
         "true" => Ok(true),
@@ -1462,6 +1527,10 @@ fn parse_string_label(value: &str) -> Option<String> {
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
         .map(str::to_owned)
+}
+
+fn parse_action_label(value: &str) -> String {
+    parse_string_label(value).unwrap_or_else(|| value.strip_prefix('.').unwrap_or(value).to_owned())
 }
 
 fn parse_public_id_arg(value: &str) -> Result<PublicId, String> {
@@ -2089,6 +2158,39 @@ mod tests {
             request,
             AgentHostRequest::Act(action) if matches!(*action, AgentAction::AdvanceText)
         ));
+    }
+
+    #[test]
+    fn effect_form_invoke_call_lowers_to_host_action() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "invoke".to_owned(),
+            args: vec![
+                "@activity.inventory".to_owned(),
+                ".open".to_owned(),
+                r#"{ label = "main", index = 7u32, focused = true }"#.to_owned(),
+            ],
+        })
+        .expect("effect-form invoke lowers");
+
+        let AgentHostRequest::Act(action) = request else {
+            panic!("expected action host request");
+        };
+        let AgentAction::Invoke {
+            target,
+            action,
+            args,
+        } = *action
+        else {
+            panic!("expected invoke action");
+        };
+        assert_eq!(target.as_str(), "activity.inventory");
+        assert_eq!(action, "open");
+        assert_eq!(
+            args.get("label"),
+            Some(&AgentValue::String("main".to_owned()))
+        );
+        assert_eq!(args.get("index"), Some(&AgentValue::U64(7)));
+        assert_eq!(args.get("focused"), Some(&AgentValue::Bool(true)));
     }
 
     #[test]

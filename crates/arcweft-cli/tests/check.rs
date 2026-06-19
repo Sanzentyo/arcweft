@@ -500,6 +500,48 @@ fn agent_script_run_native_source_dispatches_semantic_choice_action() {
 }
 
 #[test]
+#[ignore = "tier 2 native Agent Script E2E: requires native-capture feature subprocess"]
+fn agent_script_run_native_source_dispatches_semantic_invoke_action() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/native-invoke-action-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_native_invoke_action_path())
+        .arg("--native-source")
+        .arg(image_animation_sample_path())
+        .arg("--flow")
+        .arg("image_clipped_object")
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run dispatches native semantic invoke action");
+    assert!(
+        output.status.success(),
+        "native agent script semantic invoke dispatch should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native invoke dispatch output is JSON");
+
+    assert_eq!(run_json["ok"], true);
+    assert_eq!(run_json["responses"][0]["kind"], "observation");
+    assert_eq!(run_json["responses"][1]["kind"], "action");
+    assert_eq!(run_json["responses"][1]["response"]["accepted"], true);
+    assert!(
+        trace_path.exists(),
+        "native semantic invoke dispatch should write trace at {}",
+        trace_path.display()
+    );
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
@@ -816,12 +858,20 @@ fn agent_script_native_choice_dispatch_source_path() -> PathBuf {
     workspace_path("samples/agent-script/native-choice-dispatch.arcw")
 }
 
+fn agent_script_native_invoke_action_path() -> PathBuf {
+    workspace_path("samples/agent-script/native-invoke-action.awfagent")
+}
+
 fn agent_script_native_project_index_path() -> PathBuf {
     workspace_path("samples/agent-script/native-project-index.arcw")
 }
 
 fn rich_text_showcase_path() -> PathBuf {
     workspace_path("samples/rich-text-showcase.arcw")
+}
+
+fn image_animation_sample_path() -> PathBuf {
+    workspace_path("samples/image-animation.arcw")
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {

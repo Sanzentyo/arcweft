@@ -292,6 +292,40 @@ mod tests {
     }
 
     #[test]
+    fn native_agent_invoke_requires_enabled_semantic_action() {
+        let mut report = test_agent_observation_report(None);
+        let target = PublicId::new("target.sample.pulse").expect("valid target id");
+        report.actions.push(AgentActionTarget {
+            id: "action.inspect.pulse".to_owned(),
+            target: "target.sample.pulse".to_owned(),
+            action: AgentActionKind::Invoke,
+            kind: AgentActionDispatch::Semantic,
+            enabled: false,
+        });
+
+        assert!(matches!(
+            native_agent_invoke_input_events(&report, &target, "action.inspect.pulse"),
+            Err(NativeAgentScriptSessionError::ActionUnavailable)
+        ));
+
+        report.actions[0].enabled = true;
+        let events = native_agent_invoke_input_events(&report, &target, "action.inspect.pulse")
+            .expect("enabled semantic invoke action dispatches");
+        assert_eq!(
+            events,
+            vec![RuntimeInputEvent {
+                kind: "invoke".to_owned(),
+                payload: Some("action.inspect.pulse".to_owned()),
+            }]
+        );
+
+        assert!(matches!(
+            native_agent_invoke_input_events(&report, &target, "action.inspect.other"),
+            Err(NativeAgentScriptSessionError::ActionUnavailable)
+        ));
+    }
+
+    #[test]
     fn agent_mcp_debug_read_tools_return_cached_observation_data() {
         let mut report = test_agent_observation_report(None);
         report.final_status = "running".to_owned();
@@ -3910,7 +3944,10 @@ impl<'a> NativeAgentScriptSession<'a> {
                     .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
             }
             AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
-            AgentAction::Invoke { .. } | AgentAction::PointerClick { .. } => {
+            AgentAction::Invoke { target, action, .. } => {
+                native_agent_invoke_input_events(report, &target, &action)
+            }
+            AgentAction::PointerClick { .. } => {
                 Err(NativeAgentScriptSessionError::UnsupportedAction)
             }
         }
@@ -3958,6 +3995,31 @@ fn native_agent_advance_text_input_events(
             vec![RuntimeInputEvent {
                 kind: "advance".to_owned(),
                 payload: None,
+            }]
+        })
+        .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
+}
+
+fn native_agent_invoke_input_events(
+    report: &AgentObservationReport,
+    target: &PublicId,
+    action: &str,
+) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
+    let target = target.as_str();
+    report
+        .actions
+        .iter()
+        .any(|candidate| {
+            candidate.enabled
+                && candidate.kind == AgentActionDispatch::Semantic
+                && candidate.action == AgentActionKind::Invoke
+                && candidate.target == target
+                && candidate.id == action
+        })
+        .then(|| {
+            vec![RuntimeInputEvent {
+                kind: "invoke".to_owned(),
+                payload: Some(action.to_owned()),
             }]
         })
         .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
