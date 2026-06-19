@@ -2,7 +2,7 @@
 
 use crate::{
     CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, RichTextSourceId,
-    TextSourceId, UiError, ViewFragment,
+    SemanticSpecId, TextSourceId, UiError, ViewFragment,
 };
 
 /// Frame-local display item identifier.
@@ -24,6 +24,7 @@ pub struct DisplayItem {
     node: NodeId,
     kind: DisplayItemKind,
     layout: LayoutBox,
+    semantics: Option<SemanticSpecId>,
 }
 
 /// Ordered UI display list for renderer submission.
@@ -43,6 +44,10 @@ impl DisplayItem {
 
     pub const fn layout(self) -> LayoutBox {
         self.layout
+    }
+
+    pub const fn semantics(self) -> Option<SemanticSpecId> {
+        self.semantics
     }
 }
 
@@ -71,6 +76,7 @@ impl DisplayList {
                     node: id,
                     kind,
                     layout,
+                    semantics: node.semantics(),
                 }))
             })
             .collect::<Result<Vec<_>, UiError>>()?;

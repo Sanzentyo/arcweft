@@ -3,8 +3,8 @@
 use crate::{
     DisplayList, FragmentKind, ImageAlignment, ImageFit, ImagePlayback, LayoutBox, LayoutLength,
     LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey, SemanticSpecId, StyleId, UiError,
-    UiImageSource, UiImageSourceTable, UiLayerOutput, UiSemanticFragmentBuilder, UiSemanticNode,
-    ViewFragmentBuilder,
+    UiImagePresentationMetadata, UiImageSource, UiImageSourceTable, UiLayerOutput,
+    UiSemanticFragmentBuilder, UiSemanticNode, ViewFragmentBuilder,
 };
 use arcweft_image::DecodedImage;
 use arcweft_presentation::hit::HitRect;
@@ -69,7 +69,8 @@ impl UiImagePresentationFrame {
                 UiImageSource::new(image)
                     .with_fit(ui_image_fit(object.fit()))
                     .with_alignment(ui_image_alignment(object.alignment()))
-                    .with_playback(ui_image_playback(object.playback())),
+                    .with_playback(ui_image_playback(object.playback()))
+                    .with_presentation(ui_image_presentation_metadata(&object)),
             )?;
             let layer = object.layer().clone();
             let assembly = layers.entry(layer).or_default();
@@ -186,6 +187,18 @@ fn image_object_node_key(object: &ImagePresentationObject, fallback: usize) -> N
     }
 }
 
+fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePresentationMetadata {
+    UiImagePresentationMetadata::new(
+        object.id().public_id().clone(),
+        object.asset().public_id().clone(),
+        object.target().id().clone(),
+        object.layer().public_id().clone(),
+        object.depth_milli(),
+    )
+    .with_params(object.params().clone())
+    .with_actions(object.actions().to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,6 +274,15 @@ mod tests {
         assert_eq!(resolved.frame().index(), 1);
         assert_eq!(resolved.fit(), ImageFit::Cover);
         assert_eq!(resolved.alignment(), ImageAlignment::top_left());
+        let metadata = images
+            .get(crate::ImageId(0))
+            .and_then(UiImageSource::presentation)
+            .expect("presentation image metadata is preserved with source");
+        assert_eq!(metadata.object().as_str(), "image.logo");
+        assert_eq!(metadata.asset().as_str(), "asset.logo");
+        assert_eq!(metadata.target().as_str(), "target.logo");
+        assert_eq!(metadata.layer().as_str(), "layer.hud");
+        assert_eq!(metadata.actions(), &[action.clone()]);
 
         let semantics = output.semantics().as_slice();
         assert_eq!(semantics.len(), 1);

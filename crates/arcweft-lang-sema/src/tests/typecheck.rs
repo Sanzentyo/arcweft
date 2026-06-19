@@ -803,7 +803,7 @@ fn typechecks_presentation_image_object_call_with_named_asset_and_bounds() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening {
-    let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch")
+    let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", depth = 2500, action = "action.inspect.pulse", param.role = "animated-hotspot")
 }
 "#,
     );

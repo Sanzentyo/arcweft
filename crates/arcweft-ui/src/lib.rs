@@ -27,8 +27,8 @@ pub use fragment::{
 };
 pub use frame::UiLayerOutput;
 pub use image::{
-    ImageAlignment, ImageFit, ImagePlayback, UiImageSource, UiImageSourceTable,
-    UiResolvedImageFrame,
+    ImageAlignment, ImageFit, ImagePlayback, UiImagePresentationMetadata, UiImageSource,
+    UiImageSourceTable, UiResolvedImageFrame,
 };
 pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,

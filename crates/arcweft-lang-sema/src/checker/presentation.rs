@@ -1,6 +1,6 @@
 use crate::diagnostics::TypeCheckError;
 use crate::types::{EntityKind, TypeKind};
-use arcweft_lang_syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 
 use super::{TypeChecker, entity_kind};
 
@@ -20,11 +20,7 @@ impl TypeChecker<'_> {
             }
             "image" | "image.show" => {
                 self.check_presentation_asset_arg(args, "image asset");
-                for arg in args {
-                    if let CallArg::Named { value, .. } = arg {
-                        self.check_expr(value);
-                    }
-                }
+                self.check_presentation_image_named_args(args);
                 Some(TypeKind::Named(
                     "PresentationHandle<ImageSurface>".to_owned(),
                 ))
@@ -160,6 +156,75 @@ impl TypeChecker<'_> {
                 _ => {
                     self.check_expr(value);
                 }
+            }
+        }
+    }
+
+    fn check_presentation_image_named_args(&mut self, args: &[CallArg]) {
+        for arg in args {
+            let CallArg::Named { name, value } = arg else {
+                continue;
+            };
+            match name.as_str() {
+                "asset" => {}
+                "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
+                "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
+                "id" | "action" | "actions" | "fit" => {
+                    self.check_presentation_image_loose_value(value);
+                }
+                "depth" => {
+                    self.expect_expr_type(value, &TypeKind::I32, "image depth");
+                }
+                "x" | "y" | "width" | "height" => {
+                    self.check_expr(value);
+                }
+                custom if custom.starts_with("param.") => {
+                    self.check_presentation_image_param_value(value);
+                }
+                _ => {
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
+    fn check_presentation_image_id_value(&mut self, expr: &Expr, expected: &EntityKind) {
+        match expr {
+            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+                Some(kind) if &kind == expected => {}
+                actual => self.errors.push(TypeCheckError::new(format!(
+                    "presentation image id must be a {expected:?} reference or public-id string, found {actual:?}"
+                ))),
+            },
+            Expr::Literal(Literal::String(_)) => {}
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_image_loose_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::EntityRef(_) | Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_image_param_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::EntityRef(_)
+            | Expr::Literal(Literal::String(_) | Literal::Bool(_))
+            | Expr::Path(_) => {}
+            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::I64, "image param integer");
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::F64, "image param float");
+            }
+            other => {
+                self.check_expr(other);
             }
         }
     }

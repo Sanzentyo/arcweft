@@ -1,6 +1,9 @@
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
-use arcweft_ui::{DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, UiLayerOutput};
+use arcweft_ui::{
+    DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, UiLayerOutput, UiSemanticFragment,
+    UiSemanticNode,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -9,6 +12,7 @@ use thiserror::Error;
 pub struct UiFrameLayer {
     layer: LayerId,
     display: DisplayList,
+    semantic_fragment: UiSemanticFragment,
     semantics: SemanticTree,
 }
 
@@ -19,12 +23,13 @@ pub struct UiFrameCommit {
 }
 
 /// One image display item in a committed UI frame with its render layer context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiFrameImageItem {
     layer: LayerId,
     node: NodeId,
     image: ImageId,
     layout: LayoutBox,
+    semantic: Option<UiSemanticNode>,
 }
 
 /// Builder that validates UI frame output against the committed `LayerTree`.
@@ -45,10 +50,16 @@ pub enum UiFrameCommitError {
 }
 
 impl UiFrameLayer {
-    pub fn new(layer: LayerId, display: DisplayList, semantics: SemanticTree) -> Self {
+    pub fn new(
+        layer: LayerId,
+        display: DisplayList,
+        semantic_fragment: UiSemanticFragment,
+    ) -> Self {
+        let semantics = semantic_fragment.to_semantic_tree();
         Self {
             layer,
             display,
+            semantic_fragment,
             semantics,
         }
     }
@@ -65,6 +76,10 @@ impl UiFrameLayer {
         &self.semantics
     }
 
+    pub const fn semantic_fragment(&self) -> &UiSemanticFragment {
+        &self.semantic_fragment
+    }
+
     pub fn image_items(&self) -> Vec<UiFrameImageItem> {
         self.display
             .as_slice()
@@ -75,6 +90,12 @@ impl UiFrameLayer {
                     item.node(),
                     image,
                     item.layout(),
+                    item.semantics().and_then(|semantic| {
+                        self.semantic_fragment()
+                            .as_slice()
+                            .get(semantic.0 as usize)
+                            .cloned()
+                    }),
                 )),
                 DisplayItemKind::Text(_)
                 | DisplayItemKind::RichText(_)
@@ -85,12 +106,19 @@ impl UiFrameLayer {
 }
 
 impl UiFrameImageItem {
-    pub const fn new(layer: LayerId, node: NodeId, image: ImageId, layout: LayoutBox) -> Self {
+    pub const fn new(
+        layer: LayerId,
+        node: NodeId,
+        image: ImageId,
+        layout: LayoutBox,
+        semantic: Option<UiSemanticNode>,
+    ) -> Self {
         Self {
             layer,
             node,
             image,
             layout,
+            semantic,
         }
     }
 
@@ -108,6 +136,10 @@ impl UiFrameImageItem {
 
     pub const fn layout(&self) -> LayoutBox {
         self.layout
+    }
+
+    pub const fn semantic(&self) -> Option<&UiSemanticNode> {
+        self.semantic.as_ref()
     }
 }
 
@@ -158,7 +190,7 @@ impl UiFrameCommitBuilder {
             return Err(UiFrameCommitError::DuplicateLayer(layer));
         }
         let (display, semantics) = output.into_parts();
-        let frame_layer = UiFrameLayer::new(layer.clone(), display, semantics.to_semantic_tree());
+        let frame_layer = UiFrameLayer::new(layer.clone(), display, semantics);
         self.layers.insert(layer, frame_layer);
         Ok(())
     }

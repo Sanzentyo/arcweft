@@ -22,16 +22,17 @@ use arcweft_agent_protocol::{
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
     AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
     AgentHitTestHit, AgentHitTestReport, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectRef,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentLayerCaptureRef,
-    AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
-    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
-    AgentPresentationObjectProxyParamQuery, AgentPresentationTree, AgentPresentationTreeQuery,
-    AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
-    AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectParam,
+    AgentImageObjectRef, AgentImageRenderer, AgentImageResource, AgentImageScope,
+    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentObservationReport, AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
+    AgentObservedObjectContent, AgentPresentationObjectProxyParamQuery, AgentPresentationTree,
+    AgentPresentationTreeQuery, AgentResource, AgentResourceBody, AgentRgbaColor,
+    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
+use arcweft_presentation::image::ImageObjectParam;
 use arcweft_render_text::{
     LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
     RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
@@ -341,11 +342,15 @@ mod tests {
         object.object_layer = Some("hud".to_owned());
         object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
+            object: None,
+            target: None,
             asset: Some("asset.ui.logo".to_owned()),
             frame_index: Some(0),
             local_time_millis: Some(0),
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
+            actions: Vec::new(),
+            params: BTreeMap::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -403,11 +408,15 @@ mod tests {
         object.role = "image".to_owned();
         object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
+            object: None,
+            target: None,
             asset: None,
             frame_index: Some(0),
             local_time_millis: Some(0),
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
+            actions: Vec::new(),
+            params: BTreeMap::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -434,11 +443,15 @@ mod tests {
         object.role = "image".to_owned();
         object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
+            object: None,
+            target: None,
             asset: None,
             frame_index: Some(0),
             local_time_millis: Some(0),
             intrinsic_width: Some(2),
             intrinsic_height: Some(2),
+            actions: Vec::new(),
+            params: BTreeMap::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -924,6 +937,10 @@ mod tests {
                     "width = 56px".to_owned(),
                     "height = 78px".to_owned(),
                     "fit = stretch".to_owned(),
+                    "depth = 2500".to_owned(),
+                    "action = action.inspect.pulse".to_owned(),
+                    "param.role = animated-hotspot".to_owned(),
+                    "param.hit_channel = channel.preview".to_owned(),
                 ],
             }],
             0.15,
@@ -934,6 +951,9 @@ mod tests {
         let object = &observation.objects[0];
         assert_eq!(object.id, "object.image.layer.foreground.0.0");
         assert_eq!(object.layer, "layer.foreground");
+        assert_eq!(object.entity.as_deref(), Some("image.test.pulse"));
+        assert_eq!(object.object_layer.as_deref(), Some("layer.foreground"));
+        assert_eq!(object.object_depth, Some(2500));
         assert_eq!(object.bbox.x, 12);
         assert_eq!(object.bbox.y, 34);
         assert_eq!(object.bbox.width, 56);
@@ -950,8 +970,24 @@ mod tests {
         let AgentObservedObjectContent::Image(content) = &object.content else {
             panic!("image call should become Agent image content");
         };
+        assert_eq!(content.object.as_deref(), Some("image.test.pulse"));
+        assert_eq!(content.target.as_deref(), Some("target.test.pulse"));
+        assert_eq!(content.asset.as_deref(), Some("asset.bg.pulse"));
         assert_eq!(content.frame_index, Some(1));
         assert_eq!(content.local_time_millis, Some(150));
+        assert_eq!(content.actions, vec!["action.inspect.pulse"]);
+        assert_eq!(
+            content.params.get("param.role"),
+            Some(&AgentImageObjectParam::Text {
+                value: "animated-hotspot".to_owned()
+            })
+        );
+        assert_eq!(
+            content.params.get("param.hit_channel"),
+            Some(&AgentImageObjectParam::Text {
+                value: "channel.preview".to_owned()
+            })
+        );
         assert_eq!(
             observation.image_frames.get(&object.id).unwrap().rgba,
             vec![240, 180, 20, 255, 220, 30, 180, 255]
@@ -5152,6 +5188,9 @@ struct AgentRuntimeImageCall {
     layer: arcweft_id::PublicId,
     bounds: arcweft_presentation::hit::HitRect,
     fit: arcweft_presentation::image::ImageObjectFit,
+    depth_milli: i32,
+    actions: Vec<arcweft_id::PublicId>,
+    params: BTreeMap<arcweft_id::PublicId, ImageObjectParam>,
     background_slot: bool,
 }
 
@@ -5187,6 +5226,9 @@ fn agent_background_runtime_image_call(
             viewport.height.to_string().parse().unwrap_or(0.0),
         ),
         fit: arcweft_presentation::image::ImageObjectFit::Cover,
+        depth_milli: 0,
+        actions: Vec::new(),
+        params: BTreeMap::new(),
         background_slot: true,
     })
 }
@@ -5225,6 +5267,9 @@ fn agent_object_runtime_image_call(
     let fit = agent_call_named_value(call, "fit")
         .and_then(agent_image_fit_from_call_arg)
         .unwrap_or_default();
+    let depth_milli = agent_call_named_value(call, "depth")
+        .and_then(agent_image_call_milli)
+        .unwrap_or_default();
     Ok(AgentRuntimeImageCall {
         asset,
         object,
@@ -5232,6 +5277,9 @@ fn agent_object_runtime_image_call(
         layer,
         bounds: arcweft_presentation::hit::HitRect::new(x, y, width, height),
         fit,
+        depth_milli,
+        actions: agent_image_call_actions(call),
+        params: agent_image_call_params(call),
         background_slot: false,
     })
 }
@@ -5304,6 +5352,63 @@ fn agent_image_fit_from_call_arg(
     }
 }
 
+fn agent_image_call_actions(call: &RuntimeCall) -> Vec<arcweft_id::PublicId> {
+    call.args
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            matches!(name.trim(), "action" | "actions").then_some(value)
+        })
+        .flat_map(|value| value.split(','))
+        .filter_map(agent_public_id_from_call_arg)
+        .collect()
+}
+
+fn agent_image_call_params(call: &RuntimeCall) -> BTreeMap<arcweft_id::PublicId, ImageObjectParam> {
+    call.args
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            let key = name.trim().strip_prefix("param.")?;
+            let key = arcweft_id::PublicId::try_new(format!("param.{key}")).ok()?;
+            Some((key, agent_image_call_param(value.trim())))
+        })
+        .collect()
+}
+
+fn agent_image_call_param(value: &str) -> ImageObjectParam {
+    let trimmed = value.trim();
+    if let Some(id) = agent_public_id_from_call_arg(trimmed).filter(|_| trimmed.starts_with('@')) {
+        return ImageObjectParam::Id(id);
+    }
+    let unquoted = trimmed.trim_matches('"').trim_matches('\'');
+    match unquoted {
+        "true" => ImageObjectParam::Bool(true),
+        "false" => ImageObjectParam::Bool(false),
+        _ => agent_image_call_milli(unquoted).map_or_else(
+            || ImageObjectParam::Text(unquoted.to_owned()),
+            ImageObjectParam::Milli,
+        ),
+    }
+}
+
+fn agent_image_call_milli(value: &str) -> Option<i32> {
+    let value = value.trim().trim_matches('"').trim_matches('\'');
+    if let Ok(integer) = value.parse::<i32>() {
+        return Some(integer);
+    }
+    let decimal = value.parse::<f64>().ok()?;
+    if !decimal.is_finite() {
+        return None;
+    }
+    (decimal * 1_000.0)
+        .round()
+        .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
+        .to_string()
+        .parse()
+        .ok()
+}
+
 fn agent_decode_source_image_asset(
     source_path: &Path,
     asset_id: &str,
@@ -5356,7 +5461,17 @@ fn agent_image_presentation_input(
         arcweft_presentation::input::InteractionTarget::new(call.target.clone()),
         call.bounds,
     )
-    .with_fit(call.fit);
+    .with_fit(call.fit)
+    .with_depth_milli(call.depth_milli);
+    let object = call.actions.iter().cloned().fold(
+        object,
+        arcweft_presentation::image::ImagePresentationObject::with_action,
+    );
+    let object = call
+        .params
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .fold(object, |object, (key, value)| object.with_param(key, value));
     arcweft_ui::UiImagePresentationInput::new(object, image)
 }
 
@@ -5937,6 +6052,8 @@ fn agent_image_observation_from_ui_item(
     let local_time_millis = source.playback().local_time_millis(visual_time_millis);
     let frame = source.image().frame_at_time_millis(local_time_millis)?;
     let bbox = agent_bbox_from_layout(item.layout(), viewport);
+    let presentation = source.presentation();
+    let semantic = item.semantic();
     let object_id = format!(
         "object.image.{}.{}.{}",
         agent_uri_component(item.layer().public_id().as_str()),
@@ -5944,30 +6061,80 @@ fn agent_image_observation_from_ui_item(
         item.image().0
     );
     let source_id = format!("ui.image.{}", item.image().0);
+    let entity = presentation.map_or_else(
+        || source_id.clone(),
+        |presentation| presentation.object().as_str().to_owned(),
+    );
+    let object_layer = presentation.map_or_else(
+        || item.layer().public_id().as_str().to_owned(),
+        |presentation| presentation.layer().as_str().to_owned(),
+    );
+    let object_depth = presentation.map(arcweft_ui::UiImagePresentationMetadata::depth_milli);
+    let object_target = presentation
+        .map(|presentation| presentation.target().as_str().to_owned())
+        .or_else(|| semantic.map(|semantic| semantic.target().id().as_str().to_owned()));
+    let actions = presentation.map_or_else(
+        || {
+            semantic
+                .map(|semantic| {
+                    semantic
+                        .actions()
+                        .iter()
+                        .map(|action| action.as_str().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default()
+        },
+        |presentation| {
+            presentation
+                .actions()
+                .iter()
+                .map(|action| action.as_str().to_owned())
+                .collect()
+        },
+    );
+    let params = presentation
+        .map(|presentation| {
+            presentation
+                .params()
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.as_str().to_owned(),
+                        agent_image_object_param(value.clone()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let dimensions = source.image().dimensions();
     let frame_dimensions = frame.dimensions();
     Some((
         AgentObservedObject {
             id: object_id.clone(),
             parent_id: None,
-            entity: Some(source_id.clone()),
+            entity: Some(entity),
             layer: item.layer().public_id().as_str().to_owned(),
             role: "image".to_owned(),
-            visible: true,
+            visible: semantic.is_none_or(arcweft_ui::UiSemanticNode::visible),
             bbox: bbox.clone(),
             polygon: bbox.polygon(),
             capture_refs: agent_object_capture_refs(session_id, step, &object_id, &bbox),
-            object_layer: Some(item.layer().public_id().as_str().to_owned()),
-            object_depth: None,
+            object_layer: Some(object_layer),
+            object_depth,
             text: None,
             rich_text_ref: None,
             content: AgentObservedObjectContent::Image(AgentObservedImageContent {
                 source: source_id,
-                asset: None,
+                object: presentation.map(|presentation| presentation.object().as_str().to_owned()),
+                target: object_target,
+                asset: presentation.map(|presentation| presentation.asset().as_str().to_owned()),
                 frame_index: usize::try_from(frame.index()).ok(),
                 local_time_millis: Some(local_time_millis),
                 intrinsic_width: Some(dimensions.width()),
                 intrinsic_height: Some(dimensions.height()),
+                actions,
+                params,
             }),
         },
         AgentStoredImageFrame {
@@ -5976,6 +6143,18 @@ fn agent_image_observation_from_ui_item(
             rgba: frame.rgba().to_vec(),
         },
     ))
+}
+
+fn agent_image_object_param(value: ImageObjectParam) -> AgentImageObjectParam {
+    match value {
+        ImageObjectParam::Bool(value) => AgentImageObjectParam::Bool { value },
+        ImageObjectParam::Integer(value) => AgentImageObjectParam::Integer { value },
+        ImageObjectParam::Milli(value) => AgentImageObjectParam::Milli { value },
+        ImageObjectParam::Text(value) => AgentImageObjectParam::Text { value },
+        ImageObjectParam::Id(value) => AgentImageObjectParam::Id {
+            value: value.as_str().to_owned(),
+        },
+    }
 }
 
 fn agent_bbox_from_layout(layout: LayoutBox, viewport: &AgentViewport) -> AgentBBox {

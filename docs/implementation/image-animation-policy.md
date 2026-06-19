@@ -126,7 +126,36 @@ different `--capture-time` values so native object PNG/raw captures can prove
 that visual-time frame selection, not wall-clock time, drives the active image
 frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
-id, target, layer, bounds, fit, and animated frame timing.
+id, target, layer, bounds, fit, depth, semantic action, custom `param.*`
+metadata, and animated frame timing.
+
+The source-level `image(...)` surface now accepts image object metadata in the
+same call that defines the visual object:
+
+```arcw
+image(
+  asset = @asset.bg.pulse,
+  id = "image.sample.pulse_sprite",
+  target = "target.sample.pulse_sprite",
+  layer = "layer.foreground",
+  x = 96px,
+  y = 72px,
+  width = 360px,
+  height = 180px,
+  fit = "stretch",
+  depth = 2500,
+  action = "action.inspect.pulse_sprite",
+  param.role = "animated-hotspot"
+)
+```
+
+`param.*` is parsed as a dotted named argument, not as an ad hoc string parse.
+The UI display list preserves the semantic spec id for image nodes, and
+`UiImageSource` preserves presentation metadata for source-table based frame
+resolution. Agent observation therefore emits the authored image object id,
+target, asset, action list, custom typed params, object layer, object depth,
+active frame index, local image time, and intrinsic dimensions from the same
+presentation object that native capture and hit-test use.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -150,6 +179,9 @@ same alpha-shaped geometry as color image capture.
   time. Agent capture must be able to pin it with `capture_time`.
 - Static and animated images share hit-test, object-id, mask, layer, depth, and
   metadata behavior.
+- Authored image object metadata must survive lowering through UI frame commit
+  and Agent observation; downstream debug tools should not infer it from object
+  ids or coordinates.
 - Decode is adapter work over bytes. Filesystem reads, asset lookup, cache
   eviction, and GPU upload are outside the pure data model.
 
@@ -160,7 +192,9 @@ same alpha-shaped geometry as color image capture.
    bundle image asset ids.
 2. Generalize the source-level image surface from the current `bg(...)` and
    bounded `image(...)` calls into declared image objects with transforms,
-   depth, hit-test proxies, semantic actions, and lifecycle semantics.
+   hit-test proxies, and lifecycle semantics. Depth, semantic actions, and
+   custom `param.*` metadata are now present on the bounded source-level call
+   path and Agent observation path.
 3. Add clipped object capture, layer capture, and pinned-frame readback
    fixtures that exercise non-fullscreen image geometry through direct
    `--read-uri` and MCP resource reads.

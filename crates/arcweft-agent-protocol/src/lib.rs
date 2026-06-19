@@ -506,6 +506,10 @@ pub enum AgentObservedObjectContent {
 pub struct AgentObservedImageContent {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_index: Option<usize>,
@@ -515,6 +519,21 @@ pub struct AgentObservedImageContent {
     pub intrinsic_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, AgentImageObjectParam>,
+}
+
+/// Typed custom parameter attached to an observed image presentation object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentImageObjectParam {
+    Bool { value: bool },
+    Integer { value: i64 },
+    Milli { value: i32 },
+    Text { value: String },
+    Id { value: String },
 }
 
 impl AgentImageObjectRef {
@@ -2254,11 +2273,20 @@ mod tests {
             rich_text_ref: None,
             content: AgentObservedObjectContent::Image(AgentObservedImageContent {
                 source: "ui.image.7".to_owned(),
+                object: Some("image.logo".to_owned()),
+                target: Some("target.logo".to_owned()),
                 asset: Some("asset.logo.webp".to_owned()),
                 frame_index: Some(1),
                 local_time_millis: Some(250),
                 intrinsic_width: Some(64),
                 intrinsic_height: Some(32),
+                actions: vec!["action.inspect".to_owned()],
+                params: BTreeMap::from([(
+                    "param.role".to_owned(),
+                    AgentImageObjectParam::Text {
+                        value: "title-logo".to_owned(),
+                    },
+                )]),
             }),
         };
 
@@ -2285,6 +2313,9 @@ mod tests {
         assert_eq!(image_node.role.as_deref(), Some("image"));
         assert_eq!(image_node.object_layer.as_deref(), Some("hud.foreground"));
         assert_eq!(image_node.object_depth, Some(2500));
+
+        let json = serde_json::to_value(&tree).expect("presentation tree serializes");
+        assert_eq!(json["nodes"][2]["object_layer"], "hud.foreground");
     }
 
     #[test]

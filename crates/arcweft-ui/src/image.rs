@@ -1,7 +1,9 @@
 //! UI image source table and deterministic animated-frame selection.
 
 use crate::{ImageId, LayoutBox, UiError};
+use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
+use arcweft_presentation::image::ImageObjectParam;
 use std::collections::BTreeMap;
 
 /// How an image's intrinsic pixels map into a layout box.
@@ -41,6 +43,19 @@ pub struct UiImageSource {
     fit: ImageFit,
     alignment: ImageAlignment,
     playback: ImagePlayback,
+    presentation: Option<UiImagePresentationMetadata>,
+}
+
+/// Presentation-object metadata preserved with an image source for Agent/debug output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiImagePresentationMetadata {
+    object: PublicId,
+    asset: PublicId,
+    target: PublicId,
+    layer: PublicId,
+    depth_milli: i32,
+    params: BTreeMap<PublicId, ImageObjectParam>,
+    actions: Vec<PublicId>,
 }
 
 /// Resolved image frame ready for renderer submission.
@@ -152,6 +167,7 @@ impl UiImageSource {
             fit: ImageFit::default(),
             alignment: ImageAlignment::default(),
             playback: ImagePlayback::new(0),
+            presentation: None,
         }
     }
 
@@ -173,6 +189,12 @@ impl UiImageSource {
         self
     }
 
+    #[must_use]
+    pub fn with_presentation(mut self, presentation: UiImagePresentationMetadata) -> Self {
+        self.presentation = Some(presentation);
+        self
+    }
+
     pub const fn image(&self) -> &DecodedImage {
         &self.image
     }
@@ -189,9 +211,73 @@ impl UiImageSource {
         self.playback
     }
 
+    pub fn presentation(&self) -> Option<&UiImagePresentationMetadata> {
+        self.presentation.as_ref()
+    }
+
     pub fn frame_at_time(&self, visual_time_millis: u64) -> Option<&DecodedImageFrame> {
         self.image
             .frame_at_time_millis(self.playback.local_time_millis(visual_time_millis))
+    }
+}
+
+impl UiImagePresentationMetadata {
+    pub fn new(
+        object: PublicId,
+        asset: PublicId,
+        target: PublicId,
+        layer: PublicId,
+        depth_milli: i32,
+    ) -> Self {
+        Self {
+            object,
+            asset,
+            target,
+            layer,
+            depth_milli,
+            params: BTreeMap::new(),
+            actions: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_params(mut self, params: BTreeMap<PublicId, ImageObjectParam>) -> Self {
+        self.params = params;
+        self
+    }
+
+    #[must_use]
+    pub fn with_actions(mut self, actions: Vec<PublicId>) -> Self {
+        self.actions = actions;
+        self
+    }
+
+    pub const fn object(&self) -> &PublicId {
+        &self.object
+    }
+
+    pub const fn asset(&self) -> &PublicId {
+        &self.asset
+    }
+
+    pub const fn target(&self) -> &PublicId {
+        &self.target
+    }
+
+    pub const fn layer(&self) -> &PublicId {
+        &self.layer
+    }
+
+    pub const fn depth_milli(&self) -> i32 {
+        self.depth_milli
+    }
+
+    pub const fn params(&self) -> &BTreeMap<PublicId, ImageObjectParam> {
+        &self.params
+    }
+
+    pub fn actions(&self) -> &[PublicId] {
+        &self.actions
     }
 }
 

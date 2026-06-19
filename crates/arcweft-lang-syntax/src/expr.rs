@@ -1297,12 +1297,7 @@ impl ExprParser {
     }
 
     fn parse_arg_expr(&mut self) -> Result<CallArg, ExprParseError> {
-        if let (Token::Ident(name), Some(Token::Op("="))) =
-            (self.peek(), self.tokens.get(self.cursor + 1))
-        {
-            let name = name.clone();
-            self.bump();
-            self.bump();
+        if let Some(name) = self.parse_named_arg_name() {
             return Ok(CallArg::Named {
                 name,
                 value: Box::new(self.parse_expr_bp(0)?),
@@ -1326,6 +1321,27 @@ impl ExprParser {
             });
         }
         Ok(CallArg::Positional(expr))
+    }
+
+    fn parse_named_arg_name(&mut self) -> Option<String> {
+        let mut cursor = self.cursor;
+        let Token::Ident(first) = self.tokens.get(cursor)? else {
+            return None;
+        };
+        let mut parts = vec![first.clone()];
+        cursor += 1;
+        while matches!(self.tokens.get(cursor), Some(Token::Dot)) {
+            let Some(Token::Ident(part)) = self.tokens.get(cursor + 1) else {
+                return None;
+            };
+            parts.push(part.clone());
+            cursor += 2;
+        }
+        if self.tokens.get(cursor) != Some(&Token::Op("=")) {
+            return None;
+        }
+        self.cursor = cursor + 1;
+        Some(parts.join("."))
     }
 
     fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {
