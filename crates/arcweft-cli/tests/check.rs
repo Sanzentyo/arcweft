@@ -501,6 +501,53 @@ fn agent_script_run_native_source_dispatches_semantic_choice_action() {
 
 #[test]
 #[ignore = "tier 2 native Agent Script E2E: requires native-capture feature subprocess"]
+fn agent_script_run_native_source_dispatches_advance_text_in_game_mode() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/native-advance-text-game-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_native_advance_text_game_path())
+        .arg("--native-source")
+        .arg(rich_text_showcase_path())
+        .arg("--native-mode")
+        .arg("game")
+        .arg("--native-steps")
+        .arg("1")
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run dispatches native advance_text in game mode");
+    assert!(
+        output.status.success(),
+        "native agent script advance_text game-mode dispatch should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native advance_text output is JSON");
+
+    assert_eq!(run_json["ok"], true);
+    assert_eq!(run_json["responses"][0]["kind"], "observation");
+    assert_eq!(run_json["responses"][0]["response"]["tick"], 0);
+    assert_eq!(run_json["responses"][1]["kind"], "action");
+    assert_eq!(run_json["responses"][1]["response"]["accepted"], true);
+    assert_eq!(run_json["responses"][1]["response"]["before_tick"], 0);
+    assert_eq!(run_json["responses"][1]["response"]["after_tick"], 1);
+    assert!(
+        trace_path.exists(),
+        "native advance_text game-mode dispatch should write trace at {}",
+        trace_path.display()
+    );
+}
+
+#[test]
+#[ignore = "tier 2 native Agent Script E2E: requires native-capture feature subprocess"]
 fn agent_script_run_native_source_dispatches_semantic_invoke_action() {
     let trace_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/native-invoke-action-trace-{}.arcwx",
@@ -844,6 +891,10 @@ fn agent_script_cli_capture_smoke_path() -> PathBuf {
 
 fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-advance-text-smoke.awfagent")
+}
+
+fn agent_script_native_advance_text_game_path() -> PathBuf {
+    workspace_path("samples/agent-script/native-advance-text-game.awfagent")
 }
 
 fn agent_script_native_flow_wait_smoke_path() -> PathBuf {

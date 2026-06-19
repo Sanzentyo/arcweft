@@ -1,0 +1,11 @@
+#[agent(version = 1)]
+
+agent @agent.native.advance_text_game native_advance_text_game()
+effects { agent.observe, agent.act.semantic }
+{
+    observe()
+
+    advance_text()
+
+    return "done"
+}
