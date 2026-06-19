@@ -388,10 +388,21 @@ fn record_field_ordinal(target: &Expr, field: &str) -> Option<usize> {
 }
 
 fn lower_runtime_index_expr(target: &Expr, index: &Expr) -> Option<RuntimeExpr> {
-    tuple_index_ordinal(target, index).map(|ordinal| RuntimeExpr::ProjectTuple {
-        target: Box::new(lower_runtime_expr(target)),
-        ordinal,
-    })
+    tuple_index_ordinal(target, index).map_or_else(
+        || {
+            Some(RuntimeExpr::MethodCall {
+                receiver: Box::new(lower_runtime_expr(target)),
+                method: "__index".to_owned(),
+                args: vec![lower_runtime_expr(index)],
+            })
+        },
+        |ordinal| {
+            Some(RuntimeExpr::ProjectTuple {
+                target: Box::new(lower_runtime_expr(target)),
+                ordinal,
+            })
+        },
+    )
 }
 
 fn lower_strict_index_expr(
@@ -401,9 +412,10 @@ fn lower_strict_index_expr(
 ) -> Result<RuntimeExpr, String> {
     tuple_index_ordinal(target, index).map_or_else(
         || {
-            unsupported_strict_runtime_expr(&Expr::Index {
-                target: Box::new(target.clone()),
-                index: Box::new(index.clone()),
+            Ok(RuntimeExpr::MethodCall {
+                receiver: Box::new(lower_runtime_expr_strict_with_helpers(target, helpers)?),
+                method: "__index".to_owned(),
+                args: vec![lower_runtime_expr_strict_with_helpers(index, helpers)?],
             })
         },
         |ordinal| {

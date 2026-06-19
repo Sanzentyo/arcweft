@@ -1128,6 +1128,47 @@ effects { agent.observe }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_action_target_fields() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.action_fields action_fields()
+effects { agent.observe }
+{
+    let frame = try observe()
+    let expected = choice_action(@choice.opening.listen)
+    expect(expected.id == "action.select_choice.choice.opening.listen")
+    expect(expected.target == "choice.opening.listen")
+    expect(expected.action == "select_choice")
+    expect(expected.kind == "semantic")
+    expect(expected.enabled)
+    expect(frame.actions[0].enabled)
+    expect(frame.actions[0].target == expected.target)
+}
+"#,
+            &project,
+        )
+        .expect("ActionTarget field projections typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Bool)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::String)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_opening_smoke_try_surface() {
         let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption)
             .with_entity(EntitySymbol::new(

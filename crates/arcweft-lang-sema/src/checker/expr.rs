@@ -2728,6 +2728,7 @@ impl TypeChecker<'_> {
         }
         match self.check_expr(target) {
             Some(TypeKind::Observation) => agent_observation_field_type(field),
+            Some(TypeKind::ActionTarget) => agent_action_target_field_type(field),
             Some(TypeKind::ActionResult) => agent_action_result_field_type(field),
             Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
             Some(TypeKind::AgentResource) => agent_resource_field_type(field),
@@ -3216,6 +3217,14 @@ fn agent_action_result_field_type(field: &str) -> Option<TypeKind> {
         "accepted" => TypeKind::Bool,
         "before_tick" | "after_tick" => TypeKind::U64,
         "before_state_hash" | "after_state_hash" => TypeKind::String,
+        _ => return None,
+    })
+}
+
+fn agent_action_target_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "id" | "target" | "action" | "kind" => TypeKind::String,
+        "enabled" => TypeKind::Bool,
         _ => return None,
     })
 }

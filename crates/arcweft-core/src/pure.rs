@@ -4,7 +4,7 @@ use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
     RuntimeExactInteger, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic,
-    RuntimeSeq, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
     evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_unary, runtime_binary_op_label,
     runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
@@ -3672,10 +3672,16 @@ impl PureEvaluator {
             (RuntimeValue::Seq(seq), "contains", [needle]) => Ok(RuntimeValue::Bool(
                 seq.into_values().iter().any(|item| item == needle),
             )),
+            (RuntimeValue::Seq(seq), "__index", [index]) => {
+                Ok(runtime_sequence_index_value(&seq, index))
+            }
             (RuntimeValue::Tuple(items), "len", []) => Ok(runtime_len_value(items.len())),
             (RuntimeValue::Tuple(items), "contains", [needle]) => {
                 Ok(RuntimeValue::Bool(items.iter().any(|item| item == needle)))
             }
+            (RuntimeValue::Tuple(items), "__index", [index]) => Ok(runtime_index_arg(index)
+                .and_then(|index| items.get(index).cloned())
+                .unwrap_or(RuntimeValue::Unit)),
             (
                 RuntimeValue::Record(fields),
                 "get",
@@ -3721,6 +3727,36 @@ impl PureEvaluator {
 
 fn runtime_len_value(len: usize) -> RuntimeValue {
     RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
+}
+
+fn runtime_sequence_index_value(seq: &RuntimeSeq, index: &RuntimeValue) -> RuntimeValue {
+    runtime_index_arg(index)
+        .filter(|index| *index < seq.len())
+        .map_or(RuntimeValue::Unit, |index| seq.value_at(index))
+}
+
+fn runtime_index_arg(value: &RuntimeValue) -> Option<usize> {
+    match value {
+        RuntimeValue::Int(value) => value.try_into_i64().and_then(|value| {
+            if value < 0 {
+                None
+            } else {
+                usize::try_from(value).ok()
+            }
+        }),
+        RuntimeValue::UInt(value) => runtime_uint_to_usize(*value),
+        _ => None,
+    }
+}
+
+fn runtime_uint_to_usize(value: RuntimeUInt) -> Option<usize> {
+    match value {
+        RuntimeUInt::U8(value) => Some(usize::from(value)),
+        RuntimeUInt::U16(value) => Some(usize::from(value)),
+        RuntimeUInt::U32(value) => usize::try_from(value).ok(),
+        RuntimeUInt::U64(value) | RuntimeUInt::USize(value) => usize::try_from(value).ok(),
+        RuntimeUInt::U128(value) => usize::try_from(value).ok(),
+    }
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {

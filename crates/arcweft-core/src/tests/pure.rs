@@ -385,6 +385,34 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
         .expect("pure helper evaluates contains");
     assert_eq!(contains.value, RuntimeValue::Bool(true));
 
+    let index = PureFunctionRequest::new(
+        "first_action",
+        RuntimeExpr::MethodCall {
+            receiver: Box::new(RuntimeExpr::Local("actions".to_owned())),
+            method: "__index".to_owned(),
+            args: vec![RuntimeExpr::Value(RuntimeValue::i64(0))],
+        },
+        [RuntimeBinding {
+            name: "actions".to_owned(),
+            value: RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Record(vec![
+                RuntimeFieldValue {
+                    name: "target".to_owned(),
+                    value: RuntimeValue::String("choice.opening.listen".to_owned()),
+                },
+            ])])),
+        }],
+    );
+    let index = VmPureFunctionBackend
+        .evaluate(&index)
+        .expect("pure helper evaluates sequence index");
+    assert_eq!(
+        index.value,
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "target".to_owned(),
+            value: RuntimeValue::String("choice.opening.listen".to_owned()),
+        }])
+    );
+
     let get = PureFunctionRequest::new(
         "signal_value",
         RuntimeExpr::MethodCall {

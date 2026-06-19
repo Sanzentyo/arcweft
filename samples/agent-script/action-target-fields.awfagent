@@ -1,0 +1,13 @@
+#[agent(version = 1)]
+agent @agent.action_fields action_fields()
+effects { agent.observe, debug.record }
+{
+    let frame = try observe()
+    let expected = choice_action(@choice.opening.listen)
+    let expected_target = expected.target
+    let observed = frame.actions[0]
+
+    checkpoint("action-target-fields-observed")
+
+    observed.target
+}
