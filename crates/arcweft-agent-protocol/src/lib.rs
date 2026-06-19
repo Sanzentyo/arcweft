@@ -533,6 +533,8 @@ pub struct AgentObservedImageContent {
     pub actions: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, AgentImageObjectParam>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxies: Vec<AgentPresentationObjectProxyRef>,
 }
 
 /// Fixed-point affine transform attached to an observed image object.
@@ -712,6 +714,7 @@ pub struct AgentHitTestHit {
 #[serde(rename_all = "snake_case")]
 pub enum AgentHitRegionKind {
     Object,
+    ObjectProxy,
     TextPage,
     TextLine,
     TextRun,
@@ -943,6 +946,8 @@ pub struct AgentPresentationObjectProxyRef {
     pub depth: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration: Option<RichTextObjectProxyDeclaration>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hit_test: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, RichTextParam>,
 }
@@ -1261,12 +1266,14 @@ fn agent_presentation_object_node(
     children_by_parent: &mut BTreeMap<String, Vec<String>>,
 ) -> AgentPresentationTreeNode {
     let rich_text_ref = object.rich_text_ref.as_ref();
-    let presentation = rich_text_ref.and_then(|rich_text_ref| {
-        rich_text_ref
-            .presentation
-            .as_ref()
-            .map(agent_presentation_node_summary)
-    });
+    let presentation = rich_text_ref
+        .and_then(|rich_text_ref| {
+            rich_text_ref
+                .presentation
+                .as_ref()
+                .map(agent_presentation_node_summary)
+        })
+        .or_else(|| agent_image_presentation_node_summary(object));
     AgentPresentationTreeNode {
         id: object.id.clone(),
         kind: AgentPresentationTreeNodeKind::Object,
@@ -1366,6 +1373,23 @@ fn agent_presentation_node_summary(
     }
 }
 
+fn agent_image_presentation_node_summary(
+    object: &AgentObservedObject,
+) -> Option<AgentPresentationNodeSummary> {
+    let AgentObservedObjectContent::Image(content) = &object.content else {
+        return None;
+    };
+    (!content.proxies.is_empty()).then(|| AgentPresentationNodeSummary {
+        object_proxy_ids: content
+            .proxies
+            .iter()
+            .map(|proxy| proxy.id.clone())
+            .collect(),
+        object_proxies: content.proxies.clone(),
+        ..AgentPresentationNodeSummary::default()
+    })
+}
+
 fn agent_presentation_object_proxy_ref(
     proxy: &RichTextObjectProxy,
 ) -> AgentPresentationObjectProxyRef {
@@ -1376,6 +1400,7 @@ fn agent_presentation_object_proxy_ref(
         layer: proxy.layer.clone(),
         depth: proxy.depth.map(|depth| depth.0),
         declaration: proxy.declaration.clone(),
+        hit_test: proxy.hit_test,
         params: proxy.params.clone(),
     }
 }
@@ -1862,6 +1887,11 @@ mod tests {
             "object"
         );
         assert_eq!(
+            serde_json::to_value(AgentHitRegionKind::ObjectProxy)
+                .expect("hit-region kind serializes"),
+            "object_proxy"
+        );
+        assert_eq!(
             serde_json::to_value(AgentHitRegionKind::TextPage).expect("hit-region kind serializes"),
             "text_page"
         );
@@ -1976,6 +2006,7 @@ mod tests {
                             struct_name: "KeywordHit".to_owned(),
                             attribute: "text_proxy".to_owned(),
                         }),
+                        hit_test: true,
                         params: BTreeMap::from([(
                             "channel".to_owned(),
                             RichTextParam::Selector {
@@ -2319,6 +2350,21 @@ mod tests {
                         value: "title-logo".to_owned(),
                     },
                 )]),
+                proxies: vec![AgentPresentationObjectProxyRef {
+                    id: "proxy.logo.hotspot".to_owned(),
+                    type_name: Some("LogoHotspot".to_owned()),
+                    role: Some("inspect".to_owned()),
+                    layer: Some("hud.hit".to_owned()),
+                    depth: Some(2600),
+                    declaration: None,
+                    hit_test: true,
+                    params: BTreeMap::from([(
+                        "param.channel".to_owned(),
+                        RichTextParam::Text {
+                            value: "preview".to_owned(),
+                        },
+                    )]),
+                }],
             }),
         };
 
@@ -2356,9 +2402,18 @@ mod tests {
         assert_eq!(image_node.role.as_deref(), Some("image"));
         assert_eq!(image_node.object_layer.as_deref(), Some("hud.foreground"));
         assert_eq!(image_node.object_depth, Some(2500));
+        assert_eq!(
+            image_node.object_proxy_ids,
+            vec!["proxy.logo.hotspot".to_owned()]
+        );
+        assert_eq!(
+            image_node.object_proxies[0].type_name.as_deref(),
+            Some("LogoHotspot")
+        );
 
         let json = serde_json::to_value(&tree).expect("presentation tree serializes");
         assert_eq!(json["nodes"][2]["object_layer"], "hud.foreground");
+        assert_eq!(json["nodes"][2]["object_proxies"][0]["hit_test"], true);
     }
 
     #[test]

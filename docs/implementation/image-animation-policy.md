@@ -170,7 +170,14 @@ image(
   enabled = true,
   visible = true,
   action = "action.inspect.pulse_sprite",
-  param.role = "animated-hotspot"
+  param.role = "animated-hotspot",
+  proxy.id = "proxy.pulse_sprite.hotspot",
+  proxy.type = "PulseSpriteHotspot",
+  proxy.role = "inspect",
+  proxy.layer = "layer.hit",
+  proxy.depth = "2600",
+  proxy.hit_test = true,
+  proxy.param.channel = "preview"
 )
 ```
 
@@ -184,15 +191,22 @@ components and default to the identity matrix.
 `visible = false` omits the image object from UI lowering and Agent
 observation. `enabled = false` keeps the observed object and hit-test geometry
 available, but emitted semantic actions for that object are marked disabled.
+`proxy.*` defines image-object proxy metadata on the same presentation object:
+`proxy.id` creates the proxy, `proxy.type` and `proxy.role` classify it,
+`proxy.layer` / `proxy.depth` override hit-test ordering metadata, and
+`proxy.hit_test = true` emits an `object_proxy` hit region over the image's
+actual transformed polygon. `proxy.param.*` is separate from image-level
+`param.*`; it is preserved under `content.proxies[]`, presentation-tree
+`object_proxies[]`, and hit-test `region.proxy_params`.
 The UI display list preserves the semantic spec id for image nodes, and
 `UiImageSource` preserves presentation metadata for source-table based frame
 resolution. Agent observation therefore emits the authored image object id,
 target, asset, action list, custom typed params, object layer, object opacity,
-object transform, object depth, active frame index, local image time, and
-intrinsic dimensions from the same presentation object that native capture and
-hit-test use. Authored image actions are also exposed in the Agent top-level
-`actions[]` list as semantic `invoke` targets, using the authored interaction
-target when present.
+object transform, object depth, object proxies, active frame index, local image
+time, and intrinsic dimensions from the same presentation object that native
+capture and hit-test use. Authored image actions are also exposed in the Agent
+top-level `actions[]` list as semantic `invoke` targets, using the authored
+interaction target when present.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and

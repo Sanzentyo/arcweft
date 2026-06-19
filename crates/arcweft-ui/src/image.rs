@@ -3,7 +3,7 @@
 use crate::{ImageId, LayoutBox, UiError};
 use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
-use arcweft_presentation::image::{ImageObjectParam, ImageObjectTransform};
+use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy, ImageObjectTransform};
 use std::collections::BTreeMap;
 
 /// How an image's intrinsic pixels map into a layout box.
@@ -59,6 +59,7 @@ pub struct UiImagePresentationMetadata {
     depth_milli: i32,
     transform: ImageObjectTransform,
     params: BTreeMap<PublicId, ImageObjectParam>,
+    proxies: Vec<ImageObjectProxy>,
     actions: Vec<PublicId>,
 }
 
@@ -268,6 +269,7 @@ impl UiImagePresentationMetadata {
             depth_milli,
             transform,
             params: BTreeMap::new(),
+            proxies: Vec::new(),
             actions: Vec::new(),
         }
     }
@@ -275,6 +277,12 @@ impl UiImagePresentationMetadata {
     #[must_use]
     pub fn with_params(mut self, params: BTreeMap<PublicId, ImageObjectParam>) -> Self {
         self.params = params;
+        self
+    }
+
+    #[must_use]
+    pub fn with_proxies(mut self, proxies: Vec<ImageObjectProxy>) -> Self {
+        self.proxies = proxies;
         self
     }
 
@@ -314,6 +322,10 @@ impl UiImagePresentationMetadata {
 
     pub const fn params(&self) -> &BTreeMap<PublicId, ImageObjectParam> {
         &self.params
+    }
+
+    pub fn proxies(&self) -> &[ImageObjectProxy] {
+        &self.proxies
     }
 
     pub fn actions(&self) -> &[PublicId] {

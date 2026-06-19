@@ -64,6 +64,18 @@ pub enum ImageObjectParam {
     Id(PublicId),
 }
 
+/// Typed proxy metadata attached to an image presentation object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageObjectProxy {
+    id: PublicId,
+    type_name: Option<String>,
+    role: Option<String>,
+    layer: Option<PublicId>,
+    depth_milli: Option<i32>,
+    hit_test: bool,
+    params: BTreeMap<PublicId, ImageObjectParam>,
+}
+
 /// First-class image presentation object shared by render, hit-test, and Agent observation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImagePresentationObject {
@@ -79,6 +91,7 @@ pub struct ImagePresentationObject {
     playback: ImageObjectPlayback,
     transform: ImageObjectTransform,
     params: BTreeMap<PublicId, ImageObjectParam>,
+    proxies: Vec<ImageObjectProxy>,
     actions: Vec<PublicId>,
     enabled: bool,
     visible: bool,
@@ -213,6 +226,84 @@ impl ImageObjectTransform {
     }
 }
 
+impl ImageObjectProxy {
+    pub fn new(id: PublicId) -> Self {
+        Self {
+            id,
+            type_name: None,
+            role: None,
+            layer: None,
+            depth_milli: None,
+            hit_test: false,
+            params: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_type_name(mut self, type_name: impl Into<String>) -> Self {
+        self.type_name = Some(type_name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_role(mut self, role: impl Into<String>) -> Self {
+        self.role = Some(role.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_layer(mut self, layer: PublicId) -> Self {
+        self.layer = Some(layer);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_depth_milli(mut self, depth_milli: i32) -> Self {
+        self.depth_milli = Some(depth_milli);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_hit_test(mut self, hit_test: bool) -> Self {
+        self.hit_test = hit_test;
+        self
+    }
+
+    #[must_use]
+    pub fn with_param(mut self, key: PublicId, value: ImageObjectParam) -> Self {
+        self.params.insert(key, value);
+        self
+    }
+
+    pub const fn id(&self) -> &PublicId {
+        &self.id
+    }
+
+    pub fn type_name(&self) -> Option<&str> {
+        self.type_name.as_deref()
+    }
+
+    pub fn role(&self) -> Option<&str> {
+        self.role.as_deref()
+    }
+
+    pub const fn layer(&self) -> Option<&PublicId> {
+        self.layer.as_ref()
+    }
+
+    pub const fn depth_milli(&self) -> Option<i32> {
+        self.depth_milli
+    }
+
+    pub const fn hit_test(&self) -> bool {
+        self.hit_test
+    }
+
+    pub fn params(&self) -> &BTreeMap<PublicId, ImageObjectParam> {
+        &self.params
+    }
+}
+
 impl ImagePresentationObject {
     pub fn new(
         id: ImageObjectId,
@@ -234,6 +325,7 @@ impl ImagePresentationObject {
             playback: ImageObjectPlayback::new(0),
             transform: ImageObjectTransform::identity(),
             params: BTreeMap::new(),
+            proxies: Vec::new(),
             actions: Vec::new(),
             enabled: true,
             visible: true,
@@ -279,6 +371,12 @@ impl ImagePresentationObject {
     #[must_use]
     pub fn with_param(mut self, key: PublicId, value: ImageObjectParam) -> Self {
         self.params.insert(key, value);
+        self
+    }
+
+    #[must_use]
+    pub fn with_proxy(mut self, proxy: ImageObjectProxy) -> Self {
+        self.proxies.push(proxy);
         self
     }
 
@@ -346,6 +444,10 @@ impl ImagePresentationObject {
 
     pub fn params(&self) -> &BTreeMap<PublicId, ImageObjectParam> {
         &self.params
+    }
+
+    pub fn proxies(&self) -> &[ImageObjectProxy] {
+        &self.proxies
     }
 
     pub fn actions(&self) -> &[PublicId] {

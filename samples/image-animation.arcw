@@ -68,7 +68,7 @@ flow image_animated_webp {
 
 flow image_sprite_overlay {
     bg(@asset.bg.room)
-    image(asset = @asset.bg.pulse, id = "image.sample.pulse_sprite", target = "target.sample.pulse_sprite", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", opacity = 0.5, transform.tx = 24px, transform.ty = 12px, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse_sprite", param.role = "animated-hotspot", param.hit_channel = "channel.preview")
+    image(asset = @asset.bg.pulse, id = "image.sample.pulse_sprite", target = "target.sample.pulse_sprite", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", opacity = 0.5, transform.tx = 24px, transform.ty = 12px, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse_sprite", param.role = "animated-hotspot", param.hit_channel = "channel.preview", proxy.id = "proxy.pulse_sprite.hotspot", proxy.type = "PulseSpriteHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = "2600", proxy.hit_test = true, proxy.param.channel = "preview")
 
     narrator.say(id=@say.image.sprite_overlay, voice=auto)[
         Foreground image object uses authored bounds, layer, object capture, and animation timing.[p]

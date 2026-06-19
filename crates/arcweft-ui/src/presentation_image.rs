@@ -200,6 +200,7 @@ fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePr
         object.transform(),
     )
     .with_params(object.params().clone())
+    .with_proxies(object.proxies().to_vec())
     .with_actions(object.actions().to_vec())
 }
 
@@ -295,7 +296,7 @@ mod tests {
         assert_eq!(metadata.opacity_milli(), 625);
         assert_eq!(metadata.transform().tx_milli, 5_000);
         assert_eq!(metadata.transform().ty_milli, 7_000);
-        assert_eq!(metadata.actions(), &[action.clone()]);
+        assert_eq!(metadata.actions(), std::slice::from_ref(&action));
 
         let semantics = output.semantics().as_slice();
         assert_eq!(semantics.len(), 1);

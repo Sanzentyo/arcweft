@@ -27,16 +27,17 @@ use arcweft_agent_protocol::{
     AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef,
     AgentObjectCaptureRefs, AgentObservationReport, AgentObservedImageContent, AgentObservedLayer,
     AgentObservedObject, AgentObservedObjectContent, AgentPoint,
-    AgentPresentationObjectProxyParamQuery, AgentPresentationTree, AgentPresentationTreeQuery,
-    AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
-    AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef, AgentPresentationTree,
+    AgentPresentationTreeQuery, AgentResource, AgentResourceBody, AgentRgbaColor,
+    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
-use arcweft_presentation::image::{ImageObjectParam, ImageObjectTransform};
+use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy, ImageObjectTransform};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
-    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource, RuntimeLineContext,
+    LineDisplayFrame, Milli, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextParam,
+    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
+    RichTextTextSource, RuntimeLineContext,
 };
 use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
 use arcweft_ui::UiImageSourceTable;
@@ -376,6 +377,7 @@ mod tests {
             intrinsic_height: Some(40),
             actions: Vec::new(),
             params: BTreeMap::new(),
+            proxies: Vec::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -444,6 +446,7 @@ mod tests {
             intrinsic_height: Some(40),
             actions: Vec::new(),
             params: BTreeMap::new(),
+            proxies: Vec::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -481,6 +484,7 @@ mod tests {
             intrinsic_height: Some(2),
             actions: Vec::new(),
             params: BTreeMap::new(),
+            proxies: Vec::new(),
         });
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
@@ -994,6 +998,13 @@ mod tests {
                     "action = action.inspect.pulse".to_owned(),
                     "param.role = animated-hotspot".to_owned(),
                     "param.hit_channel = channel.preview".to_owned(),
+                    "proxy.id = @proxy.pulse.hotspot".to_owned(),
+                    "proxy.type = PulseHotspot".to_owned(),
+                    "proxy.role = inspect".to_owned(),
+                    "proxy.layer = @layer.hit".to_owned(),
+                    "proxy.depth = 2600".to_owned(),
+                    "proxy.hit_test = true".to_owned(),
+                    "proxy.param.channel = preview".to_owned(),
                 ],
             }],
             0.15,
@@ -1073,6 +1084,22 @@ mod tests {
                 value: "channel.preview".to_owned()
             })
         );
+        assert_eq!(content.proxies.len(), 1);
+        assert_eq!(content.proxies[0].id, "proxy.pulse.hotspot");
+        assert_eq!(
+            content.proxies[0].type_name.as_deref(),
+            Some("PulseHotspot")
+        );
+        assert_eq!(content.proxies[0].role.as_deref(), Some("inspect"));
+        assert_eq!(content.proxies[0].layer.as_deref(), Some("layer.hit"));
+        assert_eq!(content.proxies[0].depth, Some(2600));
+        assert!(content.proxies[0].hit_test);
+        assert_eq!(
+            content.proxies[0].params.get("param.channel"),
+            Some(&RichTextParam::Text {
+                value: "preview".to_owned()
+            })
+        );
         assert_eq!(
             observation.image_frames.get(&object.id).unwrap().rgba,
             vec![240, 180, 20, 255, 220, 30, 180, 255]
@@ -1081,6 +1108,19 @@ mod tests {
         let mut report = test_agent_observation_report(None);
         report.viewport = viewport;
         report.objects = observation.objects.clone();
+        let hit_report = agent_hit_test_report(&report, 40, 50);
+        assert_eq!(hit_report.hits.len(), 2);
+        assert_eq!(
+            hit_report.hits[0].region.kind,
+            AgentHitRegionKind::ObjectProxy
+        );
+        assert_eq!(
+            hit_report.hits[0].region.proxy_id.as_deref(),
+            Some("proxy.pulse.hotspot")
+        );
+        assert_eq!(hit_report.hits[0].layer, "layer.hit");
+        assert_eq!(hit_report.hits[0].depth, Some(2600));
+
         let mut native_session =
             arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
         let result = agent_native_capture_image_with_frame_store(
@@ -2456,7 +2496,7 @@ fn agent_hit_test_object_hits(
     y: u32,
 ) -> Vec<AgentHitTestHit> {
     let Some(rich_text_ref) = &object.rich_text_ref else {
-        return agent_generic_object_hit(object, x, y).into_iter().collect();
+        return agent_image_or_generic_object_hits(object, x, y);
     };
     if !rich_text_ref.hit_test {
         return Vec::new();
@@ -2485,41 +2525,85 @@ fn agent_hit_test_object_hits(
         .collect()
 }
 
-fn agent_generic_object_hit(
+fn agent_image_or_generic_object_hits(
     object: &AgentObservedObject,
     x: u32,
     y: u32,
-) -> Option<AgentHitTestHit> {
+) -> Vec<AgentHitTestHit> {
     if !agent_object_contains_point(object, x, y) {
-        return None;
+        return Vec::new();
     }
-    Some(AgentHitTestHit {
-        rank: 0,
-        object_id: object.id.clone(),
-        object: AgentImageObjectRef::from_observed(object),
-        layer: object
-            .resolved_object_layer()
-            .unwrap_or_else(|| object.layer.clone()),
-        role: object.role.clone(),
-        text: object.text.clone(),
-        bbox: object.bbox.clone(),
-        polygon: object.polygon.clone(),
-        capture_refs: object.capture_refs.clone(),
-        region: AgentHitRegion {
-            kind: AgentHitRegionKind::Object,
+    agent_image_or_generic_hit_regions(object)
+        .into_iter()
+        .map(|region| AgentHitTestHit {
+            rank: 0,
+            object_id: object.id.clone(),
+            object: AgentImageObjectRef::from_observed(object),
+            layer: region
+                .proxy_layer
+                .clone()
+                .or_else(|| object.resolved_object_layer())
+                .unwrap_or_else(|| object.layer.clone()),
+            role: object.role.clone(),
+            text: object.text.clone(),
             bbox: object.bbox.clone(),
-            range: RichTextRange::new(0, 0),
-            proxy_id: None,
-            proxy_type: None,
-            proxy_declaration: None,
-            proxy_role: None,
-            proxy_layer: object.resolved_object_layer(),
-            depth: object.resolved_object_depth(),
-            proxy_params: BTreeMap::new(),
-        },
-        rich_text_ref: None,
+            polygon: object.polygon.clone(),
+            capture_refs: object.capture_refs.clone(),
+            depth: region.depth.or(object.resolved_object_depth()),
+            region,
+            rich_text_ref: None,
+        })
+        .collect()
+}
+
+fn agent_image_or_generic_hit_regions(object: &AgentObservedObject) -> Vec<AgentHitRegion> {
+    let mut regions = vec![agent_generic_object_hit_region(object)];
+    if let AgentObservedObjectContent::Image(content) = &object.content {
+        regions.extend(
+            content
+                .proxies
+                .iter()
+                .filter(|proxy| proxy.hit_test)
+                .map(|proxy| agent_image_proxy_hit_region(object, proxy)),
+        );
+    }
+    regions
+}
+
+fn agent_generic_object_hit_region(object: &AgentObservedObject) -> AgentHitRegion {
+    AgentHitRegion {
+        kind: AgentHitRegionKind::Object,
+        bbox: object.bbox.clone(),
+        range: RichTextRange::new(0, 0),
+        proxy_id: None,
+        proxy_type: None,
+        proxy_declaration: None,
+        proxy_role: None,
+        proxy_layer: object.resolved_object_layer(),
         depth: object.resolved_object_depth(),
-    })
+        proxy_params: BTreeMap::new(),
+    }
+}
+
+fn agent_image_proxy_hit_region(
+    object: &AgentObservedObject,
+    proxy: &AgentPresentationObjectProxyRef,
+) -> AgentHitRegion {
+    AgentHitRegion {
+        kind: AgentHitRegionKind::ObjectProxy,
+        bbox: object.bbox.clone(),
+        range: RichTextRange::new(0, 0),
+        proxy_id: Some(proxy.id.clone()),
+        proxy_type: proxy.type_name.clone(),
+        proxy_declaration: proxy.declaration.clone(),
+        proxy_role: proxy.role.clone(),
+        proxy_layer: proxy
+            .layer
+            .clone()
+            .or_else(|| object.resolved_object_layer()),
+        depth: proxy.depth.or_else(|| object.resolved_object_depth()),
+        proxy_params: proxy.params.clone(),
+    }
 }
 
 fn agent_object_contains_point(object: &AgentObservedObject, x: u32, y: u32) -> bool {
@@ -2564,6 +2648,7 @@ fn agent_hit_test_hit_order(left: &AgentHitTestHit, right: &AgentHitTestHit) -> 
 const fn agent_hit_test_region_priority(kind: AgentHitRegionKind) -> u8 {
     match kind {
         AgentHitRegionKind::TextObjectProxy => 0,
+        AgentHitRegionKind::ObjectProxy => 5,
         AgentHitRegionKind::TextGlyph => 10,
         AgentHitRegionKind::GlyphCluster => 20,
         AgentHitRegionKind::RubyAnnotation => 30,
@@ -5416,6 +5501,7 @@ struct AgentRuntimeImageCall {
     depth_milli: i32,
     actions: Vec<arcweft_id::PublicId>,
     params: BTreeMap<arcweft_id::PublicId, ImageObjectParam>,
+    proxies: Vec<ImageObjectProxy>,
     background_slot: bool,
     enabled: bool,
     visible: bool,
@@ -5492,6 +5578,7 @@ fn agent_background_runtime_image_call(
         depth_milli: 0,
         actions: Vec::new(),
         params: BTreeMap::new(),
+        proxies: Vec::new(),
         background_slot: true,
         enabled: true,
         visible: true,
@@ -5557,6 +5644,7 @@ fn agent_object_runtime_image_call(
         depth_milli,
         actions: agent_image_call_actions(call),
         params: agent_image_call_params(call),
+        proxies: agent_image_call_proxies(call),
         background_slot: false,
         enabled,
         visible,
@@ -5649,6 +5737,53 @@ fn agent_image_call_params(call: &RuntimeCall) -> BTreeMap<arcweft_id::PublicId,
         .filter_map(|arg| {
             let (name, value) = arg.split_once(" = ")?;
             let key = name.trim().strip_prefix("param.")?;
+            let key = arcweft_id::PublicId::try_new(format!("param.{key}")).ok()?;
+            Some((key, agent_image_call_param(value.trim())))
+        })
+        .collect()
+}
+
+fn agent_image_call_proxies(call: &RuntimeCall) -> Vec<ImageObjectProxy> {
+    let Some(id) = agent_call_named_value(call, "proxy.id").and_then(agent_public_id_from_call_arg)
+    else {
+        return Vec::new();
+    };
+    let mut proxy = ImageObjectProxy::new(id);
+    if let Some(value) = agent_call_named_value(call, "proxy.type") {
+        proxy = proxy.with_type_name(value.trim().trim_matches('"').trim_matches('\''));
+    }
+    if let Some(value) = agent_call_named_value(call, "proxy.role") {
+        proxy = proxy.with_role(value.trim().trim_matches('"').trim_matches('\''));
+    }
+    if let Some(layer) =
+        agent_call_named_value(call, "proxy.layer").and_then(agent_public_id_from_call_arg)
+    {
+        proxy = proxy.with_layer(layer);
+    }
+    if let Some(depth) =
+        agent_call_named_value(call, "proxy.depth").and_then(agent_image_call_milli)
+    {
+        proxy = proxy.with_depth_milli(depth);
+    }
+    if let Some(hit_test) =
+        agent_call_named_value(call, "proxy.hit_test").and_then(agent_image_call_bool)
+    {
+        proxy = proxy.with_hit_test(hit_test);
+    }
+    for (key, value) in agent_image_call_proxy_params(call) {
+        proxy = proxy.with_param(key, value);
+    }
+    vec![proxy]
+}
+
+fn agent_image_call_proxy_params(
+    call: &RuntimeCall,
+) -> BTreeMap<arcweft_id::PublicId, ImageObjectParam> {
+    call.args
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            let key = name.trim().strip_prefix("proxy.param.")?;
             let key = arcweft_id::PublicId::try_new(format!("param.{key}")).ok()?;
             Some((key, agent_image_call_param(value.trim())))
         })
@@ -5827,6 +5962,10 @@ fn agent_image_presentation_input(
     let object = call.actions.iter().cloned().fold(
         object,
         arcweft_presentation::image::ImagePresentationObject::with_action,
+    );
+    let object = call.proxies.iter().cloned().fold(
+        object,
+        arcweft_presentation::image::ImagePresentationObject::with_proxy,
     );
     let object = call
         .params
@@ -6491,6 +6630,7 @@ fn agent_image_observation_from_ui_item(
                 intrinsic_height: Some(dimensions.height()),
                 actions: metadata.actions,
                 params: metadata.params,
+                proxies: metadata.proxies,
             }),
         },
         AgentStoredImageFrame {
@@ -6513,6 +6653,7 @@ struct AgentImageObservationMetadata {
     target: Option<String>,
     actions: Vec<String>,
     params: BTreeMap<String, AgentImageObjectParam>,
+    proxies: Vec<AgentPresentationObjectProxyRef>,
 }
 
 fn agent_image_observation_metadata(
@@ -6546,6 +6687,15 @@ fn agent_image_observation_metadata(
                             agent_image_object_param(value.clone()),
                         )
                     })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        proxies: presentation
+            .map(|presentation| {
+                presentation
+                    .proxies()
+                    .iter()
+                    .map(agent_image_object_proxy_ref)
                     .collect()
             })
             .unwrap_or_default(),
@@ -6585,6 +6735,42 @@ fn agent_image_object_param(value: ImageObjectParam) -> AgentImageObjectParam {
         ImageObjectParam::Milli(value) => AgentImageObjectParam::Milli { value },
         ImageObjectParam::Text(value) => AgentImageObjectParam::Text { value },
         ImageObjectParam::Id(value) => AgentImageObjectParam::Id {
+            value: value.as_str().to_owned(),
+        },
+    }
+}
+
+fn agent_image_object_proxy_ref(proxy: &ImageObjectProxy) -> AgentPresentationObjectProxyRef {
+    AgentPresentationObjectProxyRef {
+        id: proxy.id().as_str().to_owned(),
+        type_name: proxy.type_name().map(str::to_owned),
+        role: proxy.role().map(str::to_owned),
+        layer: proxy.layer().map(|layer| layer.as_str().to_owned()),
+        depth: proxy.depth_milli(),
+        declaration: None,
+        hit_test: proxy.hit_test(),
+        params: proxy
+            .params()
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.as_str().to_owned(),
+                    agent_image_object_proxy_param(value.clone()),
+                )
+            })
+            .collect(),
+    }
+}
+
+fn agent_image_object_proxy_param(value: ImageObjectParam) -> RichTextParam {
+    match value {
+        ImageObjectParam::Bool(value) => RichTextParam::Bool { value },
+        ImageObjectParam::Integer(value) => RichTextParam::Int { value },
+        ImageObjectParam::Milli(value) => RichTextParam::Milli {
+            value: Milli(value),
+        },
+        ImageObjectParam::Text(value) => RichTextParam::Text { value },
+        ImageObjectParam::Id(value) => RichTextParam::Selector {
             value: value.as_str().to_owned(),
         },
     }
