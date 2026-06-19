@@ -7,6 +7,7 @@ members = [
     "crates/arcweft-debug-model",
     "crates/arcweft-rag",
     "crates/arcweft-agent-runner",
+    "crates/arcweft-debug-sqlite",
     "crates/arcweft-adt",
     "crates/arcweft-adapter-context",
     "crates/arcweft-adapter-desktop",
@@ -85,6 +86,7 @@ pollster = "0.4.0"
 rayon = "1.12.0"
 rfd = "0.17.2"
 rowan = "0.16.1"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = "1.0.228"
 serde_json = "1.0.149"
 proc-macro2 = "1.0.106"

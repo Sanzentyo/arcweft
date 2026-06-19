@@ -23,7 +23,7 @@ pub struct SearchHit {
     pub chunk_id: ChunkId,
     pub channel: SearchChannel,
     pub rank: usize,
-    pub score: Option<f32>,
+    pub score: Option<f64>,
 }
 
 /// Query supplied by Agent Script, REPL, CLI, or MCP.

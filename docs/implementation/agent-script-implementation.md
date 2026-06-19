@@ -15,6 +15,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
 - `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls.
+- `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
 
 ## Deliberate boundaries
 
@@ -25,6 +26,19 @@ It is implementation state, not the stable language specification.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
 - `arcweft-agent-runner` currently executes typed host requests. It does not yet start or step the shared bytecode VM; the VM will call this host-call boundary.
+- `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite` and keeps database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
+
+## Windows validation
+
+- `cargo check -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite`
+- `cargo test -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite`
+- `cargo clippy -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite --all-targets --all-features -- -D warnings`
+- The `arcweft-debug-sqlite` tests were run on Windows and validate migration, FTS5 Japanese search, and embedding blob round trips.
+
+## Other platforms
+
+- Linux/macOS should run the same check/test/clippy commands above.
+- No Linux/macOS runtime validation has been performed in this workspace yet.
 
 ## Remaining zip-derived work
 
@@ -33,5 +47,5 @@ It is implementation state, not the stable language specification.
 - Add Agent artifact manifest / bundle support for `bundle_kind = agent_controller`.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.
-- Add SQLite/FTS5 debug store, privacy classification enforcement, and reindex/delete validation.
-- Document Windows validation, plus Linux/macOS validation procedure and current status, once runner/CLI behavior exists.
+- Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
+- Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

@@ -84,7 +84,7 @@ pub fn rank_vectors(
             chunk_id,
             channel: SearchChannel::Vector,
             rank: index + 1,
-            score: Some(score),
+            score: Some(f64::from(score)),
         })
         .collect())
 }
