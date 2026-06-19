@@ -3,6 +3,7 @@ use arcweft_lang_syntax::expr::LifetimeScopeKind;
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EntityKind {
+    Agent,
     Entry,
     Flow,
     Fragment,
@@ -64,6 +65,12 @@ pub enum TypeKind {
     Range,
     DisplayText,
     Ref(EntityKind),
+    Probe(Box<TypeKind>),
+    Predicate,
+    Observation,
+    ActionResult,
+    CaptureRef,
+    RagContextPack,
     Vec(Box<TypeKind>),
     Array {
         item: Box<TypeKind>,

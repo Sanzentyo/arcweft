@@ -9,7 +9,7 @@ use super::{
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::diagnostics::TypeCheckWarning;
-use arcweft_lang_hir::model::{HirFlow, HirFunction};
+use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem,
@@ -40,12 +40,63 @@ impl TypeChecker<'_> {
         self.bind_extern_capability_functions(module);
         self.flow_params = collect_flow_params(module);
 
+        self.check_module_agents(module.agents());
         self.check_module_flows(module.flows());
         self.check_module_functions(module.functions());
         for declaration in module.declarations() {
             self.check_top_level_decl(declaration);
         }
         self.check_flow_items(module.top_level_items());
+    }
+
+    fn check_module_agents(&mut self, agents: &[HirAgent]) {
+        for agent in agents {
+            self.clear_borrow_state();
+            self.locals.clear();
+            self.loop_stack.clear();
+            self.yield_stack.clear();
+            self.active_presentation_defaults.clear();
+            let item = agent.item();
+            if let Some(id) = item.id() {
+                self.expect_entity_kind(id, &EntityKind::Agent, "agent id");
+            }
+            let expected_return = item
+                .signature()
+                .and_then(FnSignature::return_type)
+                .map(type_ref_kind);
+            if let Some(signature) = item.signature() {
+                self.check_signature_type_refs(signature);
+                for group in signature.param_groups() {
+                    for param in group.params() {
+                        self.bind_function_param(
+                            param.pattern(),
+                            &function_param_local_type(param),
+                        );
+                    }
+                }
+            }
+            for contract in item.contracts() {
+                self.check_contract_clause(contract);
+            }
+            let effect_scope = EffectScope::from_contracts(item.contracts());
+            let effect_snapshot = self.apply_effect_scope(&effect_scope);
+            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
+                this.check_function_body_expr(
+                    item.body_statements(),
+                    item.body_value(),
+                    expected_return.as_ref(),
+                )
+            });
+            self.effect_capabilities = effect_snapshot;
+            if let (Some(expected), Some(actual)) = (expected_return, actual)
+                && !self.types_compatible(&expected, &actual)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "agent `{}` returns {expected:?}, but body has {actual:?}",
+                    item.name()
+                )));
+            }
+        }
     }
 
     fn check_module_flows(&mut self, flows: &[HirFlow]) {

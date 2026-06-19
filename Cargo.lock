@@ -308,11 +308,13 @@ name = "arcweft-compiler"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-render-text",
  "arcweft-runtime-plan",
+ "arcweft-source",
  "thiserror 2.0.18",
 ]
 
@@ -446,8 +448,10 @@ dependencies = [
 name = "arcweft-lang-sema"
 version = "0.1.0"
 dependencies = [
+ "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
+ "arcweft-source",
  "thiserror 2.0.18",
 ]
 

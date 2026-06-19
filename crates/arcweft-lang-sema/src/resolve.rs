@@ -1,3 +1,4 @@
+use crate::project_index::ProjectSemanticIndex;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::EntityKind;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -37,6 +38,11 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             register_flow_item(item, &mut registry);
         }
     }
+    for agent in module.agents() {
+        if let Some(id) = agent.item().id() {
+            registry.insert(id.body(), EntityKind::Agent);
+        }
+    }
     for declaration in module.declarations() {
         match declaration {
             HirTopLevelDecl::Source(source) => {
@@ -62,6 +68,19 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             }
             _ => {}
         }
+    }
+    registry
+}
+
+/// Builds a registry from one HIR module plus an Agent project semantic index.
+#[must_use]
+pub fn registry_from_hir_and_project(
+    module: &HirModule,
+    project: &ProjectSemanticIndex,
+) -> NameRegistry {
+    let mut registry = registry_from_hir(module);
+    for entity in project.entities().values() {
+        registry.insert(entity.id().as_str(), entity.ty().kind().clone());
     }
     registry
 }

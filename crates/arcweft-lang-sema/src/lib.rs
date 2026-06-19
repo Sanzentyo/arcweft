@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod env;
 pub mod fact_layer;
 pub mod lifetime;
+pub mod project_index;
 pub mod resolve;
 pub mod semantic;
 pub mod symbols;

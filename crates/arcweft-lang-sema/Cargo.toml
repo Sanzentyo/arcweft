@@ -7,8 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-id = { path = "../arcweft-id" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-source = { path = "../arcweft-source" }
 thiserror.workspace = true
 
 [lib]

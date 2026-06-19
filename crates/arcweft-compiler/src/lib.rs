@@ -5,7 +5,10 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
+use arcweft_lang_sema::project_index::ProjectSemanticIndex;
+use arcweft_lang_sema::resolve::{
+    registry_from_hir, registry_from_hir_and_project, validate_hir_references,
+};
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
 use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
@@ -43,6 +46,13 @@ pub struct CompiledAgent {
     pub hir: arcweft_lang_hir::model::HirModule,
 }
 
+/// Agent controller compilation result checked against a project semantic index.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypecheckedAgent {
+    pub hir: arcweft_lang_hir::model::HirModule,
+    pub typecheck_report: TypeCheckReport,
+}
+
 /// Source compiler diagnostics for the shared driver.
 #[derive(Debug, Error)]
 pub enum CompileSourceError {
@@ -67,6 +77,12 @@ pub enum CompileAgentError {
     Parse(Vec<arcweft_lang_syntax::parser::recovery::ParseError>),
     #[error("HIR lowering errors: {0:?}")]
     Hir(Vec<arcweft_lang_hir::model::HirLowerError>),
+    #[error("reference resolution errors: {0:?}")]
+    Resolve(Vec<arcweft_lang_sema::resolve::NameResolutionError>),
+    #[error("type-check readiness errors: {0:?}")]
+    Readiness(Vec<arcweft_lang_sema::diagnostics::TypeCheckReadinessError>),
+    #[error("type errors: {0:?}")]
+    Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
     #[error("agent source did not declare a top-level `agent` item")]
     MissingAgent,
 }
@@ -167,6 +183,26 @@ pub fn compile_agent_source(source: impl Into<String>) -> Result<CompiledAgent, 
         return Err(CompileAgentError::MissingAgent);
     }
     Ok(CompiledAgent { hir })
+}
+
+/// Compiles `.awfagent` source and checks it against a project semantic index.
+pub fn compile_agent_source_with_project(
+    source: impl Into<String>,
+    project: &ProjectSemanticIndex,
+) -> Result<TypecheckedAgent, CompileAgentError> {
+    let compiled = compile_agent_source(source)?;
+    let registry = registry_from_hir_and_project(&compiled.hir, project);
+    validate_hir_references(&compiled.hir, &registry).map_err(CompileAgentError::Resolve)?;
+    validate_hir_typecheck_ready(&compiled.hir).map_err(CompileAgentError::Readiness)?;
+    let typecheck_report = analyze_types(&compiled.hir, &project.typecheck_env());
+    typecheck_report
+        .clone()
+        .into_result()
+        .map_err(CompileAgentError::Type)?;
+    Ok(TypecheckedAgent {
+        hir: compiled.hir,
+        typecheck_report,
+    })
 }
 
 /// Validates and type-checks HIR with a supplied environment.
@@ -350,7 +386,26 @@ impl TextPureHelperCandidateReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_id::PublicId;
+    use arcweft_lang_sema::project_index::{
+        EntitySymbol, EntityType, ProgramHash, ProjectSemanticIndex, SemanticHash,
+    };
+    use arcweft_lang_sema::types::{EntityKind, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
+    use arcweft_source::SourceAnchor;
+
+    fn public_id(value: &str) -> PublicId {
+        PublicId::try_new(value).expect("valid public id")
+    }
+
+    fn project_with_entity(id: &str, kind: EntityKind) -> ProjectSemanticIndex {
+        ProjectSemanticIndex::new(ProgramHash::new("program-test")).with_entity(EntitySymbol::new(
+            public_id(id),
+            EntityType::new(kind, None),
+            SourceAnchor::generated(),
+            SemanticHash::new(format!("shape.{id}.v1")),
+        ))
+    }
 
     #[test]
     fn compiles_dialogue_source_to_plan_and_display_catalog() {
@@ -395,6 +450,71 @@ effects { agent.observe }
         let error = compile_agent_source("observe\n").expect_err("legacy command fails");
 
         assert!(matches!(error, CompileAgentError::Parse(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_choose_intrinsic() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.act.semantic }
+{
+    choose(@choice.opening.listen)
+}
+",
+            &project,
+        )
+        .expect("agent source typechecks against project index");
+
+        assert_eq!(compiled.hir.agents().len(), 1);
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionResult)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_choose_family_mismatch() {
+        let project = project_with_entity("flow.main", EntityKind::Flow);
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.act.semantic }
+{
+    choose(@flow.main)
+}
+",
+            &project,
+        )
+        .expect_err("flow is not a choice option");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_unresolved_project_entity() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.act.semantic }
+{
+    choose(@choice.opening.listen)
+}
+",
+            &project,
+        )
+        .expect_err("missing project entity");
+
+        assert!(matches!(error, CompileAgentError::Resolve(_)));
     }
 
     #[test]

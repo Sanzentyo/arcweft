@@ -7,6 +7,7 @@ use super::{
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     let head = entity.body().split(['.', '@', ':']).next()?;
     Some(match head {
+        "agent" => EntityKind::Agent,
         "entry" => EntityKind::Entry,
         "flow" => EntityKind::Flow,
         "frag" | "fragment" => EntityKind::Fragment,
@@ -896,6 +897,12 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         TypeKind::Range => "Range".to_owned(),
         TypeKind::DisplayText => "DisplayText".to_owned(),
         TypeKind::Ref(kind) => format!("Ref<{kind:?}>"),
+        TypeKind::Probe(inner) => format!("Probe<{}>", type_kind_label(inner)),
+        TypeKind::Predicate => "Predicate".to_owned(),
+        TypeKind::Observation => "Observation".to_owned(),
+        TypeKind::ActionResult => "ActionResult".to_owned(),
+        TypeKind::CaptureRef => "CaptureRef".to_owned(),
+        TypeKind::RagContextPack => "RagContextPack".to_owned(),
         TypeKind::Vec(inner) => format!("Vec<{}>", type_kind_label(inner)),
         TypeKind::Array { item, len } => format!("Array<{}, {len}>", type_kind_label(item)),
         TypeKind::Slice(inner) => format!("[{}]", type_kind_label(inner)),

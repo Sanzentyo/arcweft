@@ -57,6 +57,21 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_expr(value, &mut uses);
         }
     }
+    for agent in module.agents() {
+        let item = agent.item();
+        if let Some(id) = item.id() {
+            push_entity(&mut uses, id);
+        }
+        for contract in item.contracts() {
+            collect_contract_clause(contract, &mut uses);
+        }
+        for stmt in item.body_statements() {
+            collect_stmt(stmt, &mut uses);
+        }
+        if let Some(value) = item.body_value() {
+            collect_expr(value, &mut uses);
+        }
+    }
     for declaration in module.declarations() {
         collect_top_level_decl(declaration, &mut uses);
     }

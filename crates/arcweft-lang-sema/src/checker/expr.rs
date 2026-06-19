@@ -165,6 +165,9 @@ impl TypeChecker<'_> {
     }
 
     fn check_entity_ref_expr(&mut self, entity: &EntityRefSyntax) -> Option<TypeKind> {
+        if let Some(ty) = self.symbol_type(entity.body()).cloned() {
+            return Some(ty);
+        }
         entity
             .as_absolute()
             .and_then(entity_kind)
