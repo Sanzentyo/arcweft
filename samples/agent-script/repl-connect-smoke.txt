@@ -1,0 +1,7 @@
+# Agent REPL connection switching smoke session.
+:help
+:connect source samples/rich-text-showcase.arcw
+:observe
+:actions
+:capture viewport
+:quit

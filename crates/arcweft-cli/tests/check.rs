@@ -784,6 +784,79 @@ fn agent_repl_inspects_fragments_and_captures_from_input_session() {
     );
 }
 
+#[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_connects_source_from_input_session() {
+    let input_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-connect-{}.txt",
+        std::process::id()
+    ));
+    fs::create_dir_all(input_path.parent().expect("input target dir"))
+        .expect("create REPL connect input target dir");
+    let _ = fs::remove_file(&input_path);
+    fs::write(
+        &input_path,
+        format!(
+            ":help\n:connect source {}\n:observe\n:actions\n:capture viewport\n:quit\n",
+            rich_text_showcase_path().display()
+        ),
+    )
+    .expect("write REPL connect input");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl connects from input session");
+    assert!(
+        output.status.success(),
+        "agent repl connect session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["final_tick"], 0);
+    let cells = report["cells"].as_array().expect("cells are present");
+    let connect = cells
+        .iter()
+        .find(|cell| {
+            cell["input"]
+                .as_str()
+                .is_some_and(|input| input.starts_with(":connect source "))
+        })
+        .expect("connect cell is present");
+    assert_eq!(connect["status"], "ok");
+    assert_eq!(connect["value"]["connected"], true);
+    assert_eq!(connect["value"]["connection"]["kind"], "source");
+    assert_eq!(
+        connect["value"]["connection"]["path"],
+        rich_text_showcase_path().display().to_string()
+    );
+    assert_agent_repl_meta_ok(cells, ":observe");
+    assert_agent_repl_meta_ok(cells, ":actions");
+    let capture = cells
+        .iter()
+        .find(|cell| cell["input"] == ":capture viewport")
+        .expect("capture cell is present");
+    assert_eq!(capture["status"], "ok");
+    assert!(
+        capture["value"]["images"]
+            .as_array()
+            .is_some_and(|images| !images.is_empty()),
+        "connected capture should expose image resources: {capture}"
+    );
+}
+
 fn assert_agent_repl_meta_ok(cells: &[serde_json::Value], input: &str) {
     let cell = cells
         .iter()

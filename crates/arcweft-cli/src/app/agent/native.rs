@@ -1973,9 +1973,17 @@ struct AgentReplState {
     report: Option<AgentObservationReport>,
     history: Vec<AgentReplHistoryEntry>,
     bindings: BTreeMap<String, AgentReplBinding>,
+    connection: Option<AgentReplConnection>,
     debug_store: Option<DebugStore>,
     persisted_cells: u64,
     debug_db_path: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum AgentReplConnection {
+    Source { path: String },
+    Profile { id: String, manifest: String },
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2190,6 +2198,7 @@ fn agent_repl_eval_meta(
             command,
             rest,
             options,
+            state,
             adapter_registrars,
         ),
         ":query" => agent_repl_eval_query_meta(index, input, rest, state),
@@ -2207,6 +2216,7 @@ fn agent_repl_eval_meta(
                 "bindings": state.bindings.values().collect::<Vec<_>>(),
             }),
         ),
+        ":connect" => agent_repl_connect(index, input, rest, options, state),
         ":drop" | ":load" | ":save" | ":parse" => {
             agent_repl_eval_binding_meta(index, input, command, rest, state)
         }
@@ -2214,6 +2224,7 @@ fn agent_repl_eval_meta(
             state.report = None;
             state.history.clear();
             state.bindings.clear();
+            state.connection = None;
             state.persisted_cells = 0;
             agent_repl_ok(index, input, "meta", serde_json::json!({ "reset": true }))
         }
@@ -2241,6 +2252,7 @@ fn agent_repl_eval_inspection_meta(
     command: &str,
     rest: &str,
     options: &AgentReplOptions,
+    state: &AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
     match command {
@@ -2266,7 +2278,7 @@ fn agent_repl_eval_inspection_meta(
             ":bytecode requires a fragment".to_owned(),
         ),
         ":bytecode" => agent_repl_bytecode(index, input, rest),
-        ":capture" => agent_repl_capture(index, input, rest, options, adapter_registrars),
+        ":capture" => agent_repl_capture(index, input, rest, options, state, adapter_registrars),
         _ => agent_repl_error(
             index,
             input,
@@ -2357,6 +2369,7 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":save FILE.awfagent",
                 ":parse EXPR_OR_STMT",
                 ":reset",
+                ":connect current|source PATH|profile ID [--manifest PATH]",
                 ":quit"
             ]
         }),
@@ -2371,7 +2384,7 @@ fn agent_repl_observe(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
     match agent_observation_report_for_options(
-        &agent_repl_observe_options(options),
+        &agent_repl_observe_options(options, state),
         adapter_registrars,
     ) {
         Ok(report) => {
@@ -2414,6 +2427,114 @@ fn agent_repl_actions(index: usize, input: &str, state: &AgentReplState) -> Agen
             ":actions requires :observe first".to_owned(),
         ),
     }
+}
+
+fn agent_repl_connect(
+    index: usize,
+    input: &str,
+    target: &str,
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let target = target.trim();
+    if target.is_empty() {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":connect requires a target".to_owned(),
+        );
+    }
+
+    let connection = match agent_repl_parse_connection(target, options) {
+        Ok(connection) => connection,
+        Err(message) => return agent_repl_error(index, input, "meta", message),
+    };
+    state.connection = connection;
+    state.report = None;
+
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "connected": true,
+            "connection": state.connection,
+        }),
+    )
+}
+
+fn agent_repl_parse_connection(
+    target: &str,
+    options: &AgentReplOptions,
+) -> Result<Option<AgentReplConnection>, String> {
+    if target == "current" {
+        if options.path.is_none() && options.profile.profile.is_none() {
+            return Err(
+                ":connect current requires the REPL to start with a source path or --profile"
+                    .to_owned(),
+            );
+        }
+        return Ok(None);
+    }
+    if let Some(endpoint) = target
+        .strip_prefix("stdio:")
+        .or_else(|| target.strip_prefix("mcp:"))
+    {
+        return Err(format!(
+            "remote REPL endpoint `{endpoint}` is not implemented; use `source PATH` or `profile ID`"
+        ));
+    }
+    if let Some(path) = target.strip_prefix("source ") {
+        let path = path.trim();
+        if path.is_empty() {
+            return Err(":connect source requires a path".to_owned());
+        }
+        return Ok(Some(AgentReplConnection::Source {
+            path: path.to_owned(),
+        }));
+    }
+    if let Some(rest) = target.strip_prefix("profile ") {
+        return agent_repl_parse_profile_connection(rest, options);
+    }
+    if Path::new(target)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("arcw"))
+    {
+        return Ok(Some(AgentReplConnection::Source {
+            path: target.to_owned(),
+        }));
+    }
+    Ok(Some(AgentReplConnection::Profile {
+        id: target.to_owned(),
+        manifest: options.profile.manifest.display().to_string(),
+    }))
+}
+
+fn agent_repl_parse_profile_connection(
+    rest: &str,
+    options: &AgentReplOptions,
+) -> Result<Option<AgentReplConnection>, String> {
+    let mut parts = rest.split_whitespace();
+    let id = parts
+        .next()
+        .ok_or_else(|| ":connect profile requires an id".to_owned())?;
+    let mut manifest = options.profile.manifest.display().to_string();
+    while let Some(flag) = parts.next() {
+        match flag {
+            "--manifest" => {
+                parts
+                    .next()
+                    .ok_or_else(|| ":connect profile --manifest requires a path".to_owned())?
+                    .clone_into(&mut manifest);
+            }
+            _ => return Err(format!("unsupported :connect profile option `{flag}`")),
+        }
+    }
+    Ok(Some(AgentReplConnection::Profile {
+        id: id.to_owned(),
+        manifest,
+    }))
 }
 
 fn agent_repl_type(index: usize, input: &str, fragment_source: &str) -> AgentReplCellReport {
@@ -2512,9 +2633,10 @@ fn agent_repl_capture(
     input: &str,
     target: &str,
     options: &AgentReplOptions,
+    state: &AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
-    let mut observe_options = agent_repl_observe_options(options);
+    let mut observe_options = agent_repl_observe_options(options, state);
     observe_options.image = Some(AgentObserveImageKind::Png);
     observe_options.capture = Some(AgentObserveCaptureKind::Color);
     if let Err(message) = apply_agent_repl_capture_target(target, &mut observe_options) {
@@ -2764,8 +2886,11 @@ fn agent_repl_saved_source(state: &AgentReplState) -> String {
     )
 }
 
-fn agent_repl_observe_options(options: &AgentReplOptions) -> AgentObserveOptions {
-    AgentObserveOptions {
+fn agent_repl_observe_options(
+    options: &AgentReplOptions,
+    state: &AgentReplState,
+) -> AgentObserveOptions {
+    let mut observe_options = AgentObserveOptions {
         path: options.path.clone(),
         profile: options.profile.clone(),
         entry: options.entry.clone(),
@@ -2797,7 +2922,20 @@ fn agent_repl_observe_options(options: &AgentReplOptions) -> AgentObserveOptions
         mcp_format: AgentObserveMcpFormat::Read,
         out: None,
         json: true,
+    };
+    match &state.connection {
+        Some(AgentReplConnection::Source { path }) => {
+            observe_options.path = Some(PathBuf::from(path));
+            observe_options.profile.profile = None;
+        }
+        Some(AgentReplConnection::Profile { id, manifest }) => {
+            observe_options.path = None;
+            observe_options.profile.profile = Some(id.clone());
+            observe_options.profile.manifest = PathBuf::from(manifest);
+        }
+        None => {}
     }
+    observe_options
 }
 
 fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
