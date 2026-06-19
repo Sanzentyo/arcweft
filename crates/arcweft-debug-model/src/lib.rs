@@ -3,5 +3,6 @@
 pub mod chunk;
 pub mod embedding;
 pub mod event;
+pub mod history;
 pub mod rag;
 pub mod sink;

@@ -59,6 +59,8 @@ pub(super) struct DebugDbSearchOptions {
     query: Option<String>,
     #[arg(long = "query-vector")]
     query_vector: Option<String>,
+    #[arg(long = "history-query")]
+    history_query: Option<String>,
     #[arg(long = "model-id")]
     model_id: Option<String>,
     #[arg(long = "model-revision")]
@@ -138,6 +140,7 @@ struct DebugDbSearchReport {
     path: String,
     query: Option<String>,
     query_vector_dimensions: Option<usize>,
+    history_query: Option<String>,
     model: Option<DebugDbSearchModelReport>,
     limit: usize,
     max_privacy: PrivacyClass,
@@ -308,12 +311,24 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
             ExitCode::from(2)
         })?;
     let has_query_vector = query_vector.is_some();
-    if query.is_none() && !has_query_vector {
-        eprintln!("error: debug db search requires either a non-empty --query or --query-vector");
+    let history_query = options
+        .history_query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty());
+    let selector_count = usize::from(query.is_some())
+        + usize::from(has_query_vector)
+        + usize::from(history_query.is_some());
+    if selector_count == 0 {
+        eprintln!(
+            "error: debug db search requires one of --query, --query-vector, or --history-query"
+        );
         return Err(ExitCode::from(2));
     }
-    if query.is_some() && has_query_vector {
-        eprintln!("error: debug db search accepts only one of --query or --query-vector");
+    if selector_count > 1 {
+        eprintln!(
+            "error: debug db search accepts only one of --query, --query-vector, or --history-query"
+        );
         return Err(ExitCode::from(2));
     }
     if options.limit == 0 {
@@ -335,6 +350,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         options,
         query,
         query_vector.as_deref(),
+        history_query,
         model.as_ref(),
     )
     .map_err(|error| {
@@ -362,6 +378,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         path,
         query: query.map(str::to_owned),
         query_vector_dimensions: query_vector.as_ref().map(Vec::len),
+        history_query: history_query.map(str::to_owned),
         model: model.map(|model| DebugDbSearchModelReport {
             model_id: model.model_id,
             model_revision: model.model_revision,
@@ -400,10 +417,14 @@ fn debug_db_search_hits(
     options: &DebugDbSearchOptions,
     query: Option<&str>,
     query_vector: Option<&[f32]>,
+    history_query: Option<&str>,
     model: Option<&EmbeddingModelDescriptor>,
 ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
     if let Some(query) = query {
         return store.lexical_search_with_max_privacy(query, options.limit, options.max_privacy);
+    }
+    if let Some(query) = history_query {
+        return store.history_search_with_max_privacy(query, options.limit, options.max_privacy);
     }
     let vector = query_vector.expect("query vector is validated before search");
     let model = model.expect("embedding model is validated before vector search");

@@ -4,6 +4,7 @@ use arcweft_debug_model::{
     chunk::{ChunkId, DebugChunk, PrivacyClass},
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
     event::DebugEvent,
+    history::DebugHistoryEntry,
     rag::{SearchChannel, SearchHit},
     sink::DebugEventSink,
 };
@@ -377,6 +378,108 @@ impl DebugStore {
             .collect()
     }
 
+    pub fn upsert_history_entry(&self, entry: &DebugHistoryEntry) -> Result<(), DebugStoreError> {
+        let program_id = entry
+            .program_hash
+            .as_ref()
+            .map(|hash| self.require_program_id(hash))
+            .transpose()?;
+        self.connection.execute(
+            "INSERT INTO history_entries(
+               history_id, program_id, symbol_id, change_id, operation_id, ordinal,
+               semantic_hash_before, semantic_hash_after, summary, metadata_json, created_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(history_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               symbol_id = excluded.symbol_id,
+               change_id = excluded.change_id,
+               operation_id = excluded.operation_id,
+               ordinal = excluded.ordinal,
+               semantic_hash_before = excluded.semantic_hash_before,
+               semantic_hash_after = excluded.semantic_hash_after,
+               summary = excluded.summary,
+               metadata_json = excluded.metadata_json,
+               created_unix_ms = excluded.created_unix_ms",
+            params![
+                &entry.history_id,
+                program_id,
+                entry.symbol_id.as_deref(),
+                &entry.change_id,
+                entry.operation_id.as_deref(),
+                entry.ordinal,
+                entry.semantic_hash_before.as_ref().map(StableHash::as_str),
+                entry.semantic_hash_after.as_ref().map(StableHash::as_str),
+                &entry.summary,
+                serde_json::to_string(&entry.metadata)?,
+                entry.created_unix_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn history_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        if query.trim().is_empty()
+            || limit == 0
+            || !PrivacyClass::Project.is_allowed_by(max_privacy)
+        {
+            return Ok(Vec::new());
+        }
+        let like_query = query.trim().to_lowercase();
+        let mut statement = self.connection.prepare(
+            "SELECT history_id, change_id, operation_id, ordinal, summary
+             FROM history_entries
+             WHERE instr(lower(change_id), ?1) > 0
+                OR instr(lower(coalesce(operation_id, '')), ?1) > 0
+                OR instr(lower(summary), ?1) > 0
+             ORDER BY ordinal DESC, history_id
+             LIMIT ?2",
+        )?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DebugStoreError::IntegerOverflow("history_entries.limit"))?;
+        let rows = statement.query_map(params![like_query, limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .enumerate()
+            .map(
+                |(index, (history_id, change_id, operation_id, ordinal, summary))| {
+                    let title = format!("History {change_id}");
+                    let body = operation_id.map_or_else(
+                        || format!("ordinal={ordinal}\n{summary}"),
+                        |operation_id| {
+                            format!("operation={operation_id}\nordinal={ordinal}\n{summary}")
+                        },
+                    );
+                    Ok(ChunkSearchResult {
+                        hit: SearchHit {
+                            chunk_id: ChunkId::new(format!("history:{history_id}")),
+                            channel: SearchChannel::History,
+                            rank: index + 1,
+                            score: Some(history_score(query, &change_id, &body)),
+                        },
+                        title,
+                        body,
+                        source_kind: "history".to_owned(),
+                        source_key: history_id,
+                        privacy: PrivacyClass::Project,
+                    })
+                },
+            )
+            .collect()
+    }
+
     pub fn upsert_embedding(&self, embedding: &StoredEmbedding) -> Result<(), DebugStoreError> {
         if embedding.values.len() != embedding.model.dimensions as usize {
             return Err(DebugStoreError::StoredDimensionMismatch);
@@ -629,12 +732,24 @@ fn sqlite_i64(value: u64, column: &'static str) -> Result<i64, DebugStoreError> 
     i64::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(column))
 }
 
+fn history_score(query: &str, change_id: &str, body: &str) -> f64 {
+    let query = query.trim().to_lowercase();
+    if change_id.eq_ignore_ascii_case(&query) {
+        2.0
+    } else if body.to_lowercase().contains(&query) {
+        1.0
+    } else {
+        0.5
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use arcweft_debug_model::{
         chunk::{ChunkSourceKind, PrivacyClass},
         embedding::StoredEmbedding,
+        history::DebugHistoryEntry,
     };
     use std::collections::BTreeMap;
 
@@ -850,6 +965,41 @@ mod tests {
         assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:public-vector");
         assert_eq!(hits[0].hit.channel, SearchChannel::Vector);
         assert_eq!(hits[0].privacy, PrivacyClass::Public);
+    }
+
+    #[test]
+    fn history_search_filters_project_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let entry = DebugHistoryEntry {
+            history_id: "history:opening-fix".to_owned(),
+            program_hash: None,
+            symbol_id: None,
+            change_id: "change-opening-fix".to_owned(),
+            operation_id: Some("op.1".to_owned()),
+            ordinal: 7,
+            semantic_hash_before: None,
+            semantic_hash_after: None,
+            summary: "Fixed opening choice dispatch regression".to_owned(),
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        };
+        store.upsert_history_entry(&entry).expect("history");
+
+        let public_hits = store
+            .history_search_with_max_privacy("opening", 1, PrivacyClass::Public)
+            .expect("public history search");
+        assert_eq!(public_hits, Vec::new());
+
+        let project_hits = store
+            .history_search_with_max_privacy("opening", 1, PrivacyClass::Project)
+            .expect("project history search");
+        assert_eq!(project_hits.len(), 1);
+        assert_eq!(
+            project_hits[0].hit.chunk_id.as_str(),
+            "history:history:opening-fix"
+        );
+        assert_eq!(project_hits[0].hit.channel, SearchChannel::History);
+        assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
     }
 
     #[test]

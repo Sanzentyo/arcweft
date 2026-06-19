@@ -14,6 +14,7 @@ use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
+use arcweft_debug_model::history::DebugHistoryEntry;
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
@@ -1056,6 +1057,70 @@ fn debug_db_search_vector_filters_chunks_by_privacy() {
     assert_eq!(hits[0]["channel"], "vector");
 }
 
+#[test]
+fn debug_db_search_history_filters_chunks_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/history-search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug history search target dir"))
+        .expect("create debug history search target dir");
+    seed_debug_search_db(&db_path);
+
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--history-query")
+        .arg("opening")
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db history search public runs");
+    assert!(public_output.status.success());
+    let public_report: serde_json::Value =
+        serde_json::from_slice(&public_output.stdout).expect("history public output is JSON");
+    assert_eq!(public_report["hits"].as_array().map(Vec::len), Some(0));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--history-query")
+        .arg("opening")
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("project")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db history search runs");
+    assert!(
+        output.status.success(),
+        "debug db history search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db history search output is JSON");
+
+    assert_eq!(report["history_query"], "opening");
+    assert_eq!(report["max_privacy"], "project");
+    let hits = report["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], "history:history:opening-fix");
+    assert_eq!(hits[0]["privacy"], "project");
+    assert_eq!(hits[0]["channel"], "history");
+}
+
 fn seed_debug_search_db(path: &Path) {
     let store = DebugStore::open(path).expect("open debug search db");
     let model = EmbeddingModelDescriptor {
@@ -1113,6 +1178,21 @@ fn seed_debug_search_db(path: &Path) {
             .upsert_embedding(&embedding)
             .expect("upsert debug embedding");
     }
+    store
+        .upsert_history_entry(&DebugHistoryEntry {
+            history_id: "history:opening-fix".to_owned(),
+            program_hash: None,
+            symbol_id: None,
+            change_id: "change-opening-fix".to_owned(),
+            operation_id: Some("op.1".to_owned()),
+            ordinal: 7,
+            semantic_hash_before: None,
+            semantic_hash_after: None,
+            summary: "Fixed opening choice dispatch regression".to_owned(),
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        })
+        .expect("upsert debug history");
 }
 
 fn stable_hash(value: &str) -> StableHash {
