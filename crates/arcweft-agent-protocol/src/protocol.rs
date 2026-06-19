@@ -34,7 +34,7 @@ pub enum AgentAction {
     Invoke {
         target: PublicId,
         action: String,
-        args: BTreeMap<String, AgentValue>,
+        args: Box<BTreeMap<String, AgentValue>>,
     },
     PointerClick {
         x: u32,
@@ -150,4 +150,39 @@ pub struct ObservationEnvelope {
     pub render_hash: String,
     pub signals: BTreeMap<String, AgentValue>,
     pub payload: serde_json::Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn invoke_action_keeps_flat_wire_args() {
+        let action = AgentAction::Invoke {
+            target: PublicId::new("@object.dialogue").expect("valid public id"),
+            action: "highlight".to_owned(),
+            args: Box::new(BTreeMap::from([(
+                "intensity".to_owned(),
+                AgentValue::I64(7),
+            )])),
+        };
+
+        let value = serde_json::to_value(&action).expect("serializes invoke action");
+
+        assert_eq!(
+            value,
+            json!({
+                "kind": "invoke",
+                "target": "@object.dialogue",
+                "action": "highlight",
+                "args": {
+                    "intensity": {
+                        "kind": "i64",
+                        "value": 7
+                    }
+                }
+            })
+        );
+    }
 }

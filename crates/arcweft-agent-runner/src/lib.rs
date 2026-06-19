@@ -771,7 +771,7 @@ fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, Str
     Ok(AgentAction::Invoke {
         target,
         action,
-        args: call_args,
+        args: Box::new(call_args),
     })
 }
 
