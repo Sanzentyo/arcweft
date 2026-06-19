@@ -175,6 +175,9 @@ impl TypeChecker<'_> {
                 "depth" => {
                     self.expect_expr_type(value, &TypeKind::I32, "image depth");
                 }
+                "opacity" => {
+                    self.check_presentation_image_opacity_value(value);
+                }
                 "x" | "y" | "width" | "height" => {
                     self.check_expr(value);
                 }
@@ -222,6 +225,20 @@ impl TypeChecker<'_> {
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
                 self.expect_expr_type(expr, &TypeKind::F64, "image param float");
+            }
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_image_opacity_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::I32, "image opacity milli");
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::F64, "image opacity ratio");
             }
             other => {
                 self.check_expr(other);

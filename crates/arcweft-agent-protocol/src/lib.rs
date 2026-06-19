@@ -516,6 +516,8 @@ pub struct AgentObservedImageContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_time_millis: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity_milli: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_height: Option<u32>,
@@ -2278,6 +2280,7 @@ mod tests {
                 asset: Some("asset.logo.webp".to_owned()),
                 frame_index: Some(1),
                 local_time_millis: Some(250),
+                opacity_milli: Some(750),
                 intrinsic_width: Some(64),
                 intrinsic_height: Some(32),
                 actions: vec!["action.inspect".to_owned()],
@@ -2294,6 +2297,12 @@ mod tests {
         assert_eq!(image_object.object_layer.as_deref(), Some("hud.foreground"));
         assert_eq!(image_object.object_depth, Some(2500));
         assert!(image_object.rich_text_ref.is_none());
+
+        let object_json = serde_json::to_value(&object).expect("image object serializes");
+        assert_eq!(
+            object_json["content"]["opacity_milli"],
+            serde_json::json!(750)
+        );
 
         let tree = AgentPresentationTree::from_layers_and_objects(
             &[AgentObservedLayer {

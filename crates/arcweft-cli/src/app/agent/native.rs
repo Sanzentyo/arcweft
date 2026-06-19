@@ -347,6 +347,7 @@ mod tests {
             asset: Some("asset.ui.logo".to_owned()),
             frame_index: Some(0),
             local_time_millis: Some(0),
+            opacity_milli: None,
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
             actions: Vec::new(),
@@ -413,6 +414,7 @@ mod tests {
             asset: None,
             frame_index: Some(0),
             local_time_millis: Some(0),
+            opacity_milli: None,
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
             actions: Vec::new(),
@@ -448,6 +450,7 @@ mod tests {
             asset: None,
             frame_index: Some(0),
             local_time_millis: Some(0),
+            opacity_milli: None,
             intrinsic_width: Some(2),
             intrinsic_height: Some(2),
             actions: Vec::new(),
@@ -746,6 +749,7 @@ mod tests {
             InteractionTarget::new(public_id("target.logo")),
             HitRect::new(10.0, 20.0, 2.0, 1.0),
         )
+        .with_opacity_milli(750)
         .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150));
         let frame =
             UiImagePresentationFrame::from_inputs([UiImagePresentationInput::new(object, image)])
@@ -777,6 +781,7 @@ mod tests {
         };
         assert_eq!(content.frame_index, Some(1));
         assert_eq!(content.local_time_millis, Some(150));
+        assert_eq!(content.opacity_milli, Some(750));
         let mut report = test_agent_observation_report(None);
         report.viewport = AgentViewport {
             width: 64,
@@ -801,7 +806,7 @@ mod tests {
             &observation.image_frames,
         )
         .unwrap();
-        assert_eq!(result.bytes, vec![30, 40, 50, 255, 60, 70, 80, 255]);
+        assert_eq!(result.bytes, vec![25, 34, 43, 191, 52, 60, 69, 191]);
     }
 
     #[test]
@@ -937,6 +942,7 @@ mod tests {
                     "width = 56px".to_owned(),
                     "height = 78px".to_owned(),
                     "fit = stretch".to_owned(),
+                    "opacity = 0.5".to_owned(),
                     "depth = 2500".to_owned(),
                     "action = action.inspect.pulse".to_owned(),
                     "param.role = animated-hotspot".to_owned(),
@@ -975,6 +981,7 @@ mod tests {
         assert_eq!(content.asset.as_deref(), Some("asset.bg.pulse"));
         assert_eq!(content.frame_index, Some(1));
         assert_eq!(content.local_time_millis, Some(150));
+        assert_eq!(content.opacity_milli, Some(500));
         assert_eq!(content.actions, vec!["action.inspect.pulse"]);
         assert_eq!(
             content.params.get("param.role"),
@@ -1015,7 +1022,16 @@ mod tests {
         .unwrap();
         assert_eq!(result.image.width, 56);
         assert_eq!(result.image.height, 78);
-        assert_eq!(&result.bytes[0..4], &[240, 180, 20, 255]);
+        assert_eq!(&result.bytes[0..4], &[176, 131, 11, 127]);
+    }
+
+    #[test]
+    fn agent_image_call_opacity_accepts_ratio_and_milli_forms() {
+        assert_eq!(agent_image_call_opacity_milli("0"), Some(0));
+        assert_eq!(agent_image_call_opacity_milli("1"), Some(1_000));
+        assert_eq!(agent_image_call_opacity_milli("0.5"), Some(500));
+        assert_eq!(agent_image_call_opacity_milli("500"), Some(500));
+        assert_eq!(agent_image_call_opacity_milli("2.0"), Some(1_000));
     }
 
     #[test]
@@ -3242,7 +3258,14 @@ fn agent_native_image_frame_capture(
         object.bbox.width,
         object.bbox.height,
     );
-    let quad = agent_native_image_quad_for_rect(frame, x, y, width, height);
+    let quad = agent_native_image_quad_for_rect(
+        frame,
+        x,
+        y,
+        width,
+        height,
+        agent_image_object_opacity_milli(object),
+    );
     let capture = match capture_kind {
         AgentObserveCaptureKind::Color => native_session.capture_image_quads_rgba(
             &[quad],
@@ -3293,6 +3316,7 @@ fn agent_native_image_quad<'a>(
         object.bbox.y,
         object.bbox.width,
         object.bbox.height,
+        agent_image_object_opacity_milli(object),
     )
 }
 
@@ -3303,17 +3327,28 @@ fn agent_native_image_quad_for_rect(
     y: u32,
     width: u32,
     height: u32,
+    opacity_milli: u16,
 ) -> arcweft_render_native::NativeImageQuad<'_> {
     arcweft_render_native::NativeImageQuad {
         width: frame.width,
         height: frame.height,
         rgba: &frame.rgba,
+        opacity_milli,
         dst: arcweft_render_native::NativeImageRect {
             x: x as f32,
             y: y as f32,
             width: width as f32,
             height: height as f32,
         },
+    }
+}
+
+fn agent_image_object_opacity_milli(object: &AgentObservedObject) -> u16 {
+    match &object.content {
+        AgentObservedObjectContent::Image(content) => content.opacity_milli.unwrap_or(1_000),
+        AgentObservedObjectContent::RichText { .. } | AgentObservedObjectContent::Custom { .. } => {
+            1_000
+        }
     }
 }
 
@@ -5212,6 +5247,7 @@ struct AgentRuntimeImageCall {
     layer: arcweft_id::PublicId,
     bounds: arcweft_presentation::hit::HitRect,
     fit: arcweft_presentation::image::ImageObjectFit,
+    opacity_milli: u16,
     depth_milli: i32,
     actions: Vec<arcweft_id::PublicId>,
     params: BTreeMap<arcweft_id::PublicId, ImageObjectParam>,
@@ -5284,6 +5320,7 @@ fn agent_background_runtime_image_call(
             viewport.height.to_string().parse().unwrap_or(0.0),
         ),
         fit: arcweft_presentation::image::ImageObjectFit::Cover,
+        opacity_milli: 1_000,
         depth_milli: 0,
         actions: Vec::new(),
         params: BTreeMap::new(),
@@ -5328,6 +5365,9 @@ fn agent_object_runtime_image_call(
     let depth_milli = agent_call_named_value(call, "depth")
         .and_then(agent_image_call_milli)
         .unwrap_or_default();
+    let opacity_milli = agent_call_named_value(call, "opacity")
+        .and_then(agent_image_call_opacity_milli)
+        .unwrap_or(1_000);
     Ok(AgentRuntimeImageCall {
         asset,
         object,
@@ -5335,6 +5375,7 @@ fn agent_object_runtime_image_call(
         layer,
         bounds: arcweft_presentation::hit::HitRect::new(x, y, width, height),
         fit,
+        opacity_milli,
         depth_milli,
         actions: agent_image_call_actions(call),
         params: agent_image_call_params(call),
@@ -5467,6 +5508,26 @@ fn agent_image_call_milli(value: &str) -> Option<i32> {
         .ok()
 }
 
+fn agent_image_call_opacity_milli(value: &str) -> Option<u16> {
+    let value = value.trim().trim_matches('"').trim_matches('\'');
+    if let Ok(integer) = value.parse::<u16>() {
+        if integer <= 1 {
+            return Some(integer.saturating_mul(1_000));
+        }
+        return Some(integer.min(1_000));
+    }
+    let decimal = value.parse::<f64>().ok()?;
+    if !decimal.is_finite() {
+        return None;
+    }
+    (decimal * 1_000.0)
+        .round()
+        .clamp(0.0, 1_000.0)
+        .to_string()
+        .parse()
+        .ok()
+}
+
 fn agent_decode_source_image_asset(
     source_path: &Path,
     asset_id: &str,
@@ -5520,6 +5581,7 @@ fn agent_image_presentation_input(
         call.bounds,
     )
     .with_fit(call.fit)
+    .with_opacity_milli(call.opacity_milli)
     .with_depth_milli(call.depth_milli);
     let object = call.actions.iter().cloned().fold(
         object,
@@ -6128,6 +6190,7 @@ fn agent_image_observation_from_ui_item(
         |presentation| presentation.layer().as_str().to_owned(),
     );
     let object_depth = presentation.map(arcweft_ui::UiImagePresentationMetadata::depth_milli);
+    let opacity_milli = source.opacity_milli();
     let object_target = presentation
         .map(|presentation| presentation.target().as_str().to_owned())
         .or_else(|| semantic.map(|semantic| semantic.target().id().as_str().to_owned()));
@@ -6189,6 +6252,7 @@ fn agent_image_observation_from_ui_item(
                 asset: presentation.map(|presentation| presentation.asset().as_str().to_owned()),
                 frame_index: usize::try_from(frame.index()).ok(),
                 local_time_millis: Some(local_time_millis),
+                opacity_milli: Some(opacity_milli),
                 intrinsic_width: Some(dimensions.width()),
                 intrinsic_height: Some(dimensions.height()),
                 actions,

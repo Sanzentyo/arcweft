@@ -42,6 +42,7 @@ pub struct UiImageSource {
     image: DecodedImage,
     fit: ImageFit,
     alignment: ImageAlignment,
+    opacity_milli: u16,
     playback: ImagePlayback,
     presentation: Option<UiImagePresentationMetadata>,
 }
@@ -53,6 +54,7 @@ pub struct UiImagePresentationMetadata {
     asset: PublicId,
     target: PublicId,
     layer: PublicId,
+    opacity_milli: u16,
     depth_milli: i32,
     params: BTreeMap<PublicId, ImageObjectParam>,
     actions: Vec<PublicId>,
@@ -65,6 +67,7 @@ pub struct UiResolvedImageFrame<'a> {
     frame: &'a DecodedImageFrame,
     fit: ImageFit,
     alignment: ImageAlignment,
+    opacity_milli: u16,
     layout: LayoutBox,
 }
 
@@ -166,6 +169,7 @@ impl UiImageSource {
             image,
             fit: ImageFit::default(),
             alignment: ImageAlignment::default(),
+            opacity_milli: 1_000,
             playback: ImagePlayback::new(0),
             presentation: None,
         }
@@ -180,6 +184,12 @@ impl UiImageSource {
     #[must_use]
     pub const fn with_alignment(mut self, alignment: ImageAlignment) -> Self {
         self.alignment = alignment;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_opacity_milli(mut self, opacity_milli: u16) -> Self {
+        self.opacity_milli = opacity_milli;
         self
     }
 
@@ -207,6 +217,10 @@ impl UiImageSource {
         self.alignment
     }
 
+    pub const fn opacity_milli(&self) -> u16 {
+        self.opacity_milli
+    }
+
     pub const fn playback(&self) -> ImagePlayback {
         self.playback
     }
@@ -227,6 +241,7 @@ impl UiImagePresentationMetadata {
         asset: PublicId,
         target: PublicId,
         layer: PublicId,
+        opacity_milli: u16,
         depth_milli: i32,
     ) -> Self {
         Self {
@@ -234,6 +249,7 @@ impl UiImagePresentationMetadata {
             asset,
             target,
             layer,
+            opacity_milli,
             depth_milli,
             params: BTreeMap::new(),
             actions: Vec::new(),
@@ -268,6 +284,10 @@ impl UiImagePresentationMetadata {
         &self.layer
     }
 
+    pub const fn opacity_milli(&self) -> u16 {
+        self.opacity_milli
+    }
+
     pub const fn depth_milli(&self) -> i32 {
         self.depth_milli
     }
@@ -296,6 +316,10 @@ impl<'a> UiResolvedImageFrame<'a> {
 
     pub const fn alignment(self) -> ImageAlignment {
         self.alignment
+    }
+
+    pub const fn opacity_milli(self) -> u16 {
+        self.opacity_milli
     }
 
     pub const fn layout(self) -> LayoutBox {
@@ -338,6 +362,7 @@ impl UiImageSourceTable {
             frame,
             fit: source.fit,
             alignment: source.alignment,
+            opacity_milli: source.opacity_milli,
             layout,
         })
     }

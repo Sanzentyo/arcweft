@@ -108,6 +108,7 @@ pub struct NativeImageQuad<'a> {
     pub width: u32,
     pub height: u32,
     pub rgba: &'a [u8],
+    pub opacity_milli: u16,
     pub dst: NativeImageRect,
 }
 
@@ -1554,6 +1555,7 @@ impl NativeOffscreenCaptureSession {
                 width: source.quad.width,
                 height: source.quad.height,
                 rgba,
+                opacity_milli: 1_000,
                 dst: source.quad.dst,
             })
             .collect::<Vec<_>>();
@@ -2119,6 +2121,7 @@ pub fn native_image_quad_from_resolved_frame(
         width: dimensions.width(),
         height: dimensions.height(),
         rgba: frame.rgba(),
+        opacity_milli: resolved.opacity_milli(),
         dst: native_image_rect_for_layout(
             resolved.layout(),
             resolved.fit(),
@@ -6612,6 +6615,7 @@ fn upload_native_image_quad(
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    let upload_rgba = image_quad_upload_rgba(quad);
     queue.write_texture(
         TexelCopyTextureInfo {
             texture: &texture,
@@ -6619,7 +6623,7 @@ fn upload_native_image_quad(
             origin: Origin3d::ZERO,
             aspect: TextureAspect::All,
         },
-        quad.rgba,
+        upload_rgba.as_ref(),
         TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(quad.width.saturating_mul(4)),
@@ -6632,6 +6636,25 @@ fn upload_native_image_quad(
         },
     );
     texture
+}
+
+fn image_quad_upload_rgba(quad: NativeImageQuad<'_>) -> std::borrow::Cow<'_, [u8]> {
+    if quad.opacity_milli >= 1_000 {
+        return std::borrow::Cow::Borrowed(quad.rgba);
+    }
+    let rgba = quad
+        .rgba
+        .chunks_exact(4)
+        .flat_map(|pixel| {
+            [
+                pixel[0],
+                pixel[1],
+                pixel[2],
+                scaled_alpha_milli(pixel[3], quad.opacity_milli),
+            ]
+        })
+        .collect::<Vec<_>>();
+    std::borrow::Cow::Owned(rgba)
 }
 
 fn native_image_rect_for_layout(
@@ -6739,18 +6762,25 @@ fn recolor_image_debug_quad(quad: NativeImageDebugQuad<'_>) -> Result<Vec<u8>, N
     validate_native_image_quad(quad.quad)?;
     let mut rgba = Vec::with_capacity(quad.quad.rgba.len());
     for pixel in quad.quad.rgba.chunks_exact(4) {
-        if pixel[3] == 0 {
+        let source_alpha = scaled_alpha_milli(pixel[3], quad.quad.opacity_milli);
+        if source_alpha == 0 {
             rgba.extend_from_slice(&[0, 0, 0, 0]);
         } else {
             rgba.extend_from_slice(&[
                 quad.color[0],
                 quad.color[1],
                 quad.color[2],
-                scaled_alpha_u8(quad.color[3], pixel[3]),
+                scaled_alpha_u8(quad.color[3], source_alpha),
             ]);
         }
     }
     Ok(rgba)
+}
+
+fn scaled_alpha_milli(source_alpha: u8, opacity_milli: u16) -> u8 {
+    let opacity = opacity_milli.min(1_000);
+    let value = u32::from(source_alpha).saturating_mul(u32::from(opacity)) / 1_000;
+    u8::try_from(value).unwrap_or(u8::MAX)
 }
 
 fn scaled_alpha_u8(color_alpha: u8, source_alpha: u8) -> u8 {
@@ -8275,6 +8305,7 @@ mod tests {
         assert_eq!(quads[0].width, 2);
         assert_eq!(quads[0].height, 1);
         assert_eq!(quads[0].rgba, &[0, 255, 0, 255, 255, 255, 0, 255]);
+        assert_eq!(quads[0].opacity_milli, 1_000);
         assert_eq!(
             quads[0].dst,
             NativeImageRect {
@@ -8295,6 +8326,7 @@ mod tests {
             width: 2,
             height: 2,
             rgba: &rgba,
+            opacity_milli: 1_000,
             dst: NativeImageRect {
                 x: 1.0,
                 y: 1.0,
@@ -8331,6 +8363,7 @@ mod tests {
                 width: 2,
                 height: 1,
                 rgba: &rgba,
+                opacity_milli: 1_000,
                 dst: NativeImageRect {
                     x: 1.0,
                     y: 1.0,
@@ -8355,6 +8388,36 @@ mod tests {
         );
         assert_eq!(pixel_at(&capture, 1, 1), [40, 80, 120, 255]);
         assert_eq!(pixel_at(&capture, 2, 1), [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn native_capture_applies_image_quad_opacity_to_color_and_debug_alpha() {
+        let rgba = vec![255, 0, 0, 255];
+        let quad = NativeImageQuad {
+            width: 1,
+            height: 1,
+            rgba: &rgba,
+            opacity_milli: 500,
+            dst: NativeImageRect {
+                x: 1.0,
+                y: 1.0,
+                width: 1.0,
+                height: 1.0,
+            },
+        };
+        let color = capture_image_quads_rgba(&[quad], 3, 3).expect("opacity quad renders");
+        assert_eq!(pixel_at(&color, 1, 1), [187, 0, 0, 127]);
+
+        let debug = capture_image_debug_quads_rgba(
+            &[NativeImageDebugQuad {
+                quad,
+                color: [10, 20, 30, 255],
+            }],
+            3,
+            3,
+        )
+        .expect("debug opacity quad renders");
+        assert_eq!(pixel_at(&debug, 1, 1), [5, 11, 19, 127]);
     }
 
     fn pixel_at(capture: &NativeFrameCapture, x: u32, y: u32) -> [u8; 4] {

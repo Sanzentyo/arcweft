@@ -69,6 +69,7 @@ impl UiImagePresentationFrame {
                 UiImageSource::new(image)
                     .with_fit(ui_image_fit(object.fit()))
                     .with_alignment(ui_image_alignment(object.alignment()))
+                    .with_opacity_milli(object.opacity_milli())
                     .with_playback(ui_image_playback(object.playback()))
                     .with_presentation(ui_image_presentation_metadata(&object)),
             )?;
@@ -193,6 +194,7 @@ fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePr
         object.asset().public_id().clone(),
         object.target().id().clone(),
         object.layer().public_id().clone(),
+        object.opacity_milli(),
         object.depth_milli(),
     )
     .with_params(object.params().clone())
@@ -243,6 +245,7 @@ mod tests {
         )
         .with_fit(ImageObjectFit::Cover)
         .with_alignment(ImageObjectAlignment::top_left())
+        .with_opacity_milli(625)
         .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150))
         .with_action(action.clone());
 
@@ -274,6 +277,7 @@ mod tests {
         assert_eq!(resolved.frame().index(), 1);
         assert_eq!(resolved.fit(), ImageFit::Cover);
         assert_eq!(resolved.alignment(), ImageAlignment::top_left());
+        assert_eq!(resolved.opacity_milli(), 625);
         let metadata = images
             .get(crate::ImageId(0))
             .and_then(UiImageSource::presentation)
@@ -282,6 +286,7 @@ mod tests {
         assert_eq!(metadata.asset().as_str(), "asset.logo");
         assert_eq!(metadata.target().as_str(), "target.logo");
         assert_eq!(metadata.layer().as_str(), "layer.hud");
+        assert_eq!(metadata.opacity_milli(), 625);
         assert_eq!(metadata.actions(), &[action.clone()]);
 
         let semantics = output.semantics().as_slice();

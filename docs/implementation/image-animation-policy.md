@@ -78,8 +78,9 @@ bytecode execution.
 `arcweft-agent-protocol` now treats observed object payload as typed content.
 Rich text objects carry `content.kind = "rich_text"` with a `LineDisplayFrame`;
 image objects carry `content.kind = "image"` with a source id, optional bundle
-asset id, optional active frame index, optional pinned local time, and optional
-intrinsic dimensions; and custom objects can use `content.kind = "custom"`.
+asset id, optional active frame index, optional pinned local time, optional
+object opacity, and optional intrinsic dimensions; and custom objects can use
+`content.kind = "custom"`.
 `object_layer` and
 `object_depth` are generic observed-object metadata instead of deriving only
 from `rich_text_ref`. `AgentImageObjectRef` and the presentation tree preserve
@@ -94,17 +95,19 @@ display items to observed image objects and their capture pixels. Given a
 `UiFrameCommit`, `UiImageSourceTable`, and pinned visual time, the adapter
 resolves the active decoded frame once, converts the UI layout box to a
 viewport bbox, emits `content.kind = "image"` with source id, frame index,
-local time, and intrinsic dimensions, and stores the same active RGBA frame in
-an object-id keyed frame store for native capture. This bridge is adapter-side
-and does not add an Agent dependency to `arcweft-runtime-host`.
+local time, object opacity, and intrinsic dimensions, and stores the same
+active RGBA frame in an object-id keyed frame store for native capture. This
+bridge is adapter-side and does not add an Agent dependency to
+`arcweft-runtime-host`.
 
 Agent native object capture now recognizes typed image objects without walking
 through a parent rich-text textbox. When the same observation context carries a
 decoded image frame store, color capture uses the native textured-quad renderer,
-and object-id/mask capture can use the same image alpha through native debug
-quads. Without stored frame pixels, object-id and mask captures can still be
-produced from observed image object geometry, while color capture intentionally
-fails; returning a filled rectangle as color output would mix a debug geometry
+applies image object opacity in the same RGBA upload path, and object-id/mask
+capture can use the same image alpha and opacity through native debug quads.
+Without stored frame pixels, object-id and mask captures can still be produced
+from observed image object geometry, while color capture intentionally fails;
+returning a filled rectangle as color output would mix a debug geometry
 fallback into the product image renderer path.
 
 CLI and MCP observation state now carry the image frame store alongside the
@@ -139,8 +142,8 @@ different `--capture-time` values so native object PNG/raw captures can prove
 that visual-time frame selection, not wall-clock time, drives the active image
 frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
-id, target, layer, bounds, fit, depth, semantic action, custom `param.*`
-metadata, and animated frame timing.
+id, target, layer, bounds, fit, opacity, depth, semantic action, custom
+`param.*` metadata, and animated frame timing.
 
 The source-level `image(...)` surface now accepts image object metadata in the
 same call that defines the visual object:
@@ -156,6 +159,7 @@ image(
   width = 360px,
   height = 180px,
   fit = "stretch",
+  opacity = 0.5,
   depth = 2500,
   action = "action.inspect.pulse_sprite",
   param.role = "animated-hotspot"
@@ -163,12 +167,15 @@ image(
 ```
 
 `param.*` is parsed as a dotted named argument, not as an ad hoc string parse.
+`opacity` accepts either a ratio form (`0`, `0.5`, `1`) or a milli form from
+`2` through `1000`; both lower to the presentation model's `opacity_milli`
+field.
 The UI display list preserves the semantic spec id for image nodes, and
 `UiImageSource` preserves presentation metadata for source-table based frame
 resolution. Agent observation therefore emits the authored image object id,
-target, asset, action list, custom typed params, object layer, object depth,
-active frame index, local image time, and intrinsic dimensions from the same
-presentation object that native capture and hit-test use.
+target, asset, action list, custom typed params, object layer, object opacity,
+object depth, active frame index, local image time, and intrinsic dimensions
+from the same presentation object that native capture and hit-test use.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -180,7 +187,7 @@ native quads, applying deterministic visual-time frame selection and
 fit/alignment rectangle calculation before GPU submission.
 `capture_image_debug_quads_rgba` uses the same textured-quad path after
 recoloring non-transparent image pixels, giving object-id and mask capture the
-same alpha-shaped geometry as color image capture.
+same alpha-shaped geometry and object opacity as color image capture.
 
 ## Presentation Rules
 
