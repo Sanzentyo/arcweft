@@ -35,6 +35,8 @@ use arcweft_debug_model::{
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
+const AGENT_NAMED_ARGS_VARIANT: &str = "named_args";
+
 /// Target application boundary used by the controller runner.
 pub trait AgentSession {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -627,7 +629,9 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
                 .map_or_else(|| Ok("checkpoint".to_owned()), runtime_string)?;
             Ok(AgentHostRequest::Checkpoint { name })
         }
-        "wait" => Err("wait task calls require a structured Predicate payload".to_owned()),
+        "wait" => {
+            runtime_wait_request(&args).map(|request| AgentHostRequest::Wait(Box::new(request)))
+        }
         other => Err(format!("unsupported Agent task operation `{other}`")),
     }
 }
@@ -644,7 +648,15 @@ impl<'a> RuntimeAgentArgs<'a> {
         let mut named = BTreeMap::new();
         for arg in args {
             match arg.value() {
-                RuntimeValue::Record(fields) => {
+                RuntimeValue::Variant {
+                    path,
+                    name,
+                    payload: Some(payload),
+                } if path.as_deref() == Some("agent") && name == AGENT_NAMED_ARGS_VARIANT => {
+                    let RuntimeValue::Record(fields) = payload.as_ref() else {
+                        positionals.push(arg.value());
+                        continue;
+                    };
                     named.extend(
                         fields
                             .iter()
@@ -721,6 +733,25 @@ fn runtime_rag_request(args: &RuntimeAgentArgs<'_>) -> Result<RagRequest, String
     })
 }
 
+fn runtime_wait_request(args: &RuntimeAgentArgs<'_>) -> Result<WaitRequest, String> {
+    let predicate = args
+        .positional(0)
+        .or_else(|| args.named("predicate"))
+        .ok_or_else(|| "wait requires a predicate argument".to_owned())
+        .and_then(runtime_predicate)?;
+    let timeout_millis = args
+        .positional(1)
+        .or_else(|| args.named("timeout"))
+        .ok_or_else(|| "wait requires timeout".to_owned())
+        .and_then(runtime_duration_millis)?;
+    Ok(WaitRequest {
+        predicate,
+        timeout_millis,
+        stable_frames: args.named("stable_frames").map_or(Ok(1), runtime_u32)?,
+        poll_frames: args.named("poll_frames").map_or(Ok(1), runtime_u32)?,
+    })
+}
+
 fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, String> {
     let target = args
         .positional(0)
@@ -741,6 +772,101 @@ fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, Str
         action,
         args: call_args,
     })
+}
+
+fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
+    let fields = runtime_record_fields(value, "predicate")?;
+    match runtime_record_string(fields, "kind")?.as_str() {
+        "compare" => Ok(Predicate::Compare {
+            probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
+            op: runtime_record_get(fields, "op").and_then(runtime_compare_op)?,
+            value: runtime_record_get(fields, "value").and_then(runtime_agent_value)?,
+        }),
+        "exists" => Ok(Predicate::Exists {
+            probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
+        }),
+        "all" => runtime_record_get(fields, "predicates")
+            .and_then(runtime_predicate_list)
+            .map(|predicates| Predicate::All { predicates }),
+        "any" => runtime_record_get(fields, "predicates")
+            .and_then(runtime_predicate_list)
+            .map(|predicates| Predicate::Any { predicates }),
+        "not" => runtime_record_get(fields, "predicate")
+            .and_then(runtime_predicate)
+            .map(|predicate| Predicate::Not {
+                predicate: Box::new(predicate),
+            }),
+        other => Err(format!("unsupported predicate kind `{other}`")),
+    }
+}
+
+fn runtime_predicate_list(value: &RuntimeValue) -> Result<Vec<Predicate>, String> {
+    let RuntimeValue::Tuple(values) = value else {
+        return Err(format!(
+            "expected predicate tuple, got `{}`",
+            value_label(value)
+        ));
+    };
+    values.iter().map(runtime_predicate).collect()
+}
+
+fn runtime_probe(value: &RuntimeValue) -> Result<Probe, String> {
+    let fields = runtime_record_fields(value, "probe")?;
+    match runtime_record_string(fields, "kind")?.as_str() {
+        "signal" => Ok(Probe::Signal {
+            target: runtime_record_get(fields, "target").and_then(runtime_public_id)?,
+        }),
+        "metric" => Ok(Probe::Metric {
+            target: runtime_record_get(fields, "target").and_then(runtime_public_id)?,
+        }),
+        "state" | "state_path" => Ok(Probe::StatePath {
+            path: runtime_record_string(fields, "path")?,
+        }),
+        "observation" | "observation_field" => Ok(Probe::ObservationField {
+            path: runtime_record_string(fields, "path")?,
+        }),
+        other => Err(format!("unsupported probe kind `{other}`")),
+    }
+}
+
+fn runtime_compare_op(value: &RuntimeValue) -> Result<CompareOp, String> {
+    match runtime_string(value)?.as_str() {
+        "eq" => Ok(CompareOp::Eq),
+        "not_eq" | "ne" => Ok(CompareOp::NotEq),
+        "greater" | "gt" => Ok(CompareOp::Greater),
+        "greater_or_equal" | "ge" => Ok(CompareOp::GreaterOrEqual),
+        "less" | "lt" => Ok(CompareOp::Less),
+        "less_or_equal" | "le" => Ok(CompareOp::LessOrEqual),
+        other => Err(format!("unsupported compare op `{other}`")),
+    }
+}
+
+fn runtime_record_fields<'a>(
+    value: &'a RuntimeValue,
+    label: &str,
+) -> Result<&'a [RuntimeFieldValue], String> {
+    let RuntimeValue::Record(fields) = value else {
+        return Err(format!(
+            "expected {label} record, got `{}`",
+            value_label(value)
+        ));
+    };
+    Ok(fields)
+}
+
+fn runtime_record_get<'a>(
+    fields: &'a [RuntimeFieldValue],
+    name: &str,
+) -> Result<&'a RuntimeValue, String> {
+    fields
+        .iter()
+        .find(|field| field.name == name)
+        .map(|field| &field.value)
+        .ok_or_else(|| format!("record is missing `{name}`"))
+}
+
+fn runtime_record_string(fields: &[RuntimeFieldValue], name: &str) -> Result<String, String> {
+    runtime_record_get(fields, name).and_then(runtime_string)
 }
 
 fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload {
@@ -855,6 +981,38 @@ fn runtime_usize(value: &RuntimeValue) -> Result<usize, String> {
             .map_err(|_| format!("expected usize-compatible integer, got `{value}`")),
         other => Err(format!(
             "expected integer value, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_duration_millis(value: &RuntimeValue) -> Result<u64, String> {
+    match value {
+        RuntimeValue::Duration(duration) => {
+            let nanos = duration.as_nanos();
+            Ok(if nanos == 0 {
+                0
+            } else {
+                nanos.saturating_add(999_999) / 1_000_000
+            })
+        }
+        RuntimeValue::UInt(value) => value
+            .exact_u64()
+            .or_else(|| {
+                value
+                    .try_into_i64()
+                    .and_then(|value| u64::try_from(value).ok())
+            })
+            .ok_or_else(|| format!("expected millisecond duration, got `{}`", value.label())),
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or_else(|| format!("expected millisecond duration, got `{}`", value.label())),
+        RuntimeValue::String(value) => value
+            .parse::<u64>()
+            .map_err(|_| format!("expected millisecond duration, got `{value}`")),
+        other => Err(format!(
+            "expected duration value, got `{}`",
             value_label(other)
         )),
     }
@@ -1169,6 +1327,7 @@ mod tests {
         pattern::RuntimePattern,
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
         task::{AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId},
+        time::LogicalDuration,
         value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue},
     };
     use arcweft_debug_model::sink::NullDebugEventSink;
@@ -1358,6 +1517,100 @@ mod tests {
         )
     }
 
+    fn wait_binding_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.wait_binding".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.wait_binding".to_owned()),
+                    ops: vec![
+                        FlowOp::Await {
+                            binding: Some(RuntimePattern::Ident("obs".to_owned())),
+                            target: AwaitTarget::new(
+                                NeedId("need.agent.wait".to_owned()),
+                                TaskId("task.agent.wait".to_owned()),
+                                HostTaskRequestTemplate::new(
+                                    "agent",
+                                    "wait",
+                                    [
+                                        HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
+                                            RuntimeFieldExpr {
+                                                name: "kind".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    "compare".to_owned(),
+                                                )),
+                                            },
+                                            RuntimeFieldExpr {
+                                                name: "probe".to_owned(),
+                                                value: RuntimeExpr::Record(vec![
+                                                    RuntimeFieldExpr {
+                                                        name: "kind".to_owned(),
+                                                        value: RuntimeExpr::Value(
+                                                            RuntimeValue::String(
+                                                                "signal".to_owned(),
+                                                            ),
+                                                        ),
+                                                    },
+                                                    RuntimeFieldExpr {
+                                                        name: "target".to_owned(),
+                                                        value: RuntimeExpr::Value(
+                                                            RuntimeValue::String(
+                                                                "signal.ready".to_owned(),
+                                                            ),
+                                                        ),
+                                                    },
+                                                ]),
+                                            },
+                                            RuntimeFieldExpr {
+                                                name: "op".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    "eq".to_owned(),
+                                                )),
+                                            },
+                                            RuntimeFieldExpr {
+                                                name: "value".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+                                            },
+                                        ])),
+                                        HostTaskArgTemplate::positional(RuntimeExpr::Variant {
+                                            path: Some("agent".to_owned()),
+                                            name: "named_args".to_owned(),
+                                            payload: Some(Box::new(RuntimeExpr::Record(vec![
+                                                RuntimeFieldExpr {
+                                                    name: "timeout".to_owned(),
+                                                    value: RuntimeExpr::Value(
+                                                        RuntimeValue::Duration(
+                                                            LogicalDuration::from_nanos(5_000_000),
+                                                        ),
+                                                    ),
+                                                },
+                                                RuntimeFieldExpr {
+                                                    name: "stable_frames".to_owned(),
+                                                    value: RuntimeExpr::Value(RuntimeValue::u32(2)),
+                                                },
+                                                RuntimeFieldExpr {
+                                                    name: "poll_frames".to_owned(),
+                                                    value: RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                                },
+                                            ]))),
+                                        }),
+                                    ],
+                                ),
+                            ),
+                            pending: Vec::new(),
+                        },
+                        FlowOp::ReturnExpr(RuntimeExpr::Field {
+                            target: Box::new(RuntimeExpr::Local("obs".to_owned())),
+                            field: "tick".to_owned(),
+                        }),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
     #[test]
     fn wait_requires_stable_predicate_matches() {
         let session = TestSession {
@@ -1505,6 +1758,38 @@ mod tests {
             report.final_status,
             Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
                 if value == "agent://capture/test"
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_resumes_bound_wait_response() {
+        let session = TestSession {
+            observations: vec![
+                observation(1, false),
+                observation(2, true),
+                observation(3, true),
+            ],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(wait_binding_program(), AgentControllerRunConfig::default())
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.host_calls, 1);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::Observation(observation) if observation.tick == 3
+        ));
+        assert!(matches!(
+            report.final_status,
+            Some(FlowFiberStatus::Done(FlowExit::Return(ref value))) if value == "3"
         ));
     }
 }

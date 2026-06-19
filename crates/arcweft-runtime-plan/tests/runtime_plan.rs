@@ -232,6 +232,36 @@ effects { agent.capture }
 }
 
 #[test]
+fn agent_controller_plan_lowers_wait_predicate_to_host_task() {
+    let tree = parse_agent_ok(
+        r"
+#[agent(version = 1)]
+agent @agent.wait_smoke wait_smoke()
+effects { agent.wait, agent.observe }
+{
+    let obs = wait(signal(@signal.ready).eq(true), timeout = 5ms, stable_frames = 2u32, poll_frames = 1u32)
+    return obs.tick
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected wait let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "wait");
+    assert_eq!(target.request.args.len(), 2);
+}
+
+#[test]
 fn lowers_dialogue_line_plan_to_core_task_group() {
     let tree = parse_ok(
         r"

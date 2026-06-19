@@ -8,7 +8,9 @@ use crate::expr::lower_runtime_expr_strict;
 use crate::labels::expr_label;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
+
+const AGENT_NAMED_ARGS_VARIANT: &str = "named_args";
 
 struct CallParts<'a> {
     capability: String,
@@ -40,6 +42,9 @@ pub(crate) fn lower_host_task_request(expr: &Expr) -> HostTaskRequestTemplate {
 /// the generic `HostTaskRequest::Custom` shape carries positional payloads.
 pub(crate) fn lower_agent_host_task_request(expr: &Expr) -> Option<HostTaskRequestTemplate> {
     let call = agent_call_parts(expr)?;
+    if call.operation == "wait" {
+        return Some(lower_agent_wait_task_request(call));
+    }
     let mut positional = Vec::new();
     let mut named = Vec::new();
     for arg in call.args {
@@ -63,13 +68,58 @@ pub(crate) fn lower_agent_host_task_request(expr: &Expr) -> Option<HostTaskReque
         }
     }
     if !named.is_empty() {
-        positional.push(HostTaskArgTemplate::positional(RuntimeExpr::Record(named)));
+        positional.push(HostTaskArgTemplate::positional(agent_named_args_expr(
+            named,
+        )));
     }
     Some(HostTaskRequestTemplate::new(
         "agent",
         call.operation,
         positional,
     ))
+}
+
+fn lower_agent_wait_task_request(call: CallParts<'_>) -> HostTaskRequestTemplate {
+    let mut positional = Vec::new();
+    let mut named = Vec::new();
+    let mut positional_index = 0usize;
+    for arg in call.args {
+        match arg {
+            CallArg::Positional(value) => {
+                let lowered = if positional_index == 0 {
+                    lower_agent_predicate_expr(value)
+                        .unwrap_or_else(|| lower_agent_host_arg_expr(value))
+                } else {
+                    lower_agent_host_arg_expr(value)
+                };
+                positional.push(HostTaskArgTemplate::positional(lowered));
+                positional_index += 1;
+            }
+            CallArg::Named { name, value } => {
+                let lowered = if name == "predicate" {
+                    lower_agent_predicate_expr(value)
+                        .unwrap_or_else(|| lower_agent_host_arg_expr(value))
+                } else {
+                    lower_agent_host_arg_expr(value)
+                };
+                named.push(RuntimeFieldExpr {
+                    name: name.clone(),
+                    value: lowered,
+                });
+            }
+            CallArg::Spread { value } => {
+                positional.push(HostTaskArgTemplate::spread(lower_agent_host_arg_expr(
+                    value,
+                )));
+            }
+        }
+    }
+    if !named.is_empty() {
+        positional.push(HostTaskArgTemplate::positional(agent_named_args_expr(
+            named,
+        )));
+    }
+    HostTaskRequestTemplate::new("agent", call.operation, positional)
 }
 
 fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
@@ -177,4 +227,126 @@ fn lower_agent_host_arg_expr(expr: &Expr) -> RuntimeExpr {
         }
         _ => lower_host_arg_expr(expr),
     }
+}
+
+fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {
+    RuntimeExpr::Variant {
+        path: Some("agent".to_owned()),
+        name: AGENT_NAMED_ARGS_VARIANT.to_owned(),
+        payload: Some(Box::new(RuntimeExpr::Record(fields))),
+    }
+}
+
+fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
+    match expr {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if method_name(method) == "eq" => {
+            let [CallArg::Positional(value)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr("compare")),
+                runtime_field_expr("probe", lower_agent_probe_expr(receiver)?),
+                runtime_field_expr("op", runtime_string_expr("eq")),
+                runtime_field_expr("value", lower_agent_host_arg_expr(value)),
+            ]))
+        }
+        Expr::Call { callee, args } if expr_label(callee) == "exists" => {
+            let [CallArg::Positional(probe)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr("exists")),
+                runtime_field_expr("probe", lower_agent_probe_expr(probe)?),
+            ]))
+        }
+        Expr::Call { callee, args } if matches!(expr_label(callee).as_str(), "all" | "any") => {
+            let kind = expr_label(callee);
+            let predicates = args
+                .iter()
+                .map(|arg| match arg {
+                    CallArg::Positional(value) => lower_agent_predicate_expr(value),
+                    CallArg::Named { .. } | CallArg::Spread { .. } => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr(&kind)),
+                runtime_field_expr("predicates", RuntimeExpr::Tuple(predicates)),
+            ]))
+        }
+        Expr::Call { callee, args } if expr_label(callee) == "not" => {
+            let [CallArg::Positional(predicate)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr("not")),
+                runtime_field_expr("predicate", lower_agent_predicate_expr(predicate)?),
+            ]))
+        }
+        _ => None,
+    }
+}
+
+fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {
+    match expr {
+        Expr::Call { callee, args }
+            if matches!(expr_label(callee).as_str(), "signal" | "metric") =>
+        {
+            let [CallArg::Positional(target)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr(&expr_label(callee))),
+                runtime_field_expr("target", runtime_string_expr(&agent_id_label(target)?)),
+            ]))
+        }
+        Expr::Call { callee, args }
+            if matches!(expr_label(callee).as_str(), "state" | "observation") =>
+        {
+            let [CallArg::Positional(path)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr(&expr_label(callee))),
+                runtime_field_expr("path", runtime_string_expr(&agent_string_label(path)?)),
+            ]))
+        }
+        _ => None,
+    }
+}
+
+fn agent_id_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        Expr::Path(path) => Some(path.trim_start_matches('@').to_owned()),
+        Expr::Literal(Literal::String(value)) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn agent_string_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Some(value.clone()),
+        Expr::Path(path) => Some(path.clone()),
+        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        _ => None,
+    }
+}
+
+fn runtime_record_expr(fields: impl IntoIterator<Item = RuntimeFieldExpr>) -> RuntimeExpr {
+    RuntimeExpr::Record(fields.into_iter().collect())
+}
+
+fn runtime_field_expr(name: &str, value: RuntimeExpr) -> RuntimeFieldExpr {
+    RuntimeFieldExpr {
+        name: name.to_owned(),
+        value,
+    }
+}
+
+fn runtime_string_expr(value: &str) -> RuntimeExpr {
+    RuntimeExpr::Value(RuntimeValue::String(value.to_owned()))
 }

@@ -36,7 +36,7 @@ It is implementation state, not the stable language specification.
 - `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
-- `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for both effect-form calls and suspended Agent host-call expressions. It bridges `agent` custom host tasks to the same `AgentHostRequest` boundary and resumes the VM with a typed record payload. `wait(...)` expression lowering still needs a structured `Predicate` payload path before it can be rebound through the same task bridge; direct `AgentHostRequest::Wait` remains implemented at the runner boundary.
+- `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for both effect-form calls and suspended Agent host-call expressions. It bridges `agent` custom host tasks to the same `AgentHostRequest` boundary and resumes the VM with a typed record payload. `wait(...)` expression tasks lower `signal(...).eq(...)` predicates to structured predicate records and execute through the same suspend/resume bridge as `capture(...)`.
 - `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite` and keeps database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
 
 ## Windows validation
@@ -64,8 +64,10 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo test -p arcweft-agent-protocol -p arcweft-runtime-plan -p arcweft-agent-runner`
 - `cargo test -p arcweft-runtime-plan agent_controller_plan_lowers_host_call_let_to_await -- --nocapture`
+- `cargo test -p arcweft-runtime-plan agent_controller_plan_lowers_wait_predicate_to_host_task -- --nocapture`
 - `cargo test -p arcweft-agent-runner controller_bytecode_dispatches_effect_calls_to_runner_host_boundary -- --nocapture`
 - `cargo test -p arcweft-agent-runner controller_bytecode_resumes_bound_capture_response -- --nocapture`
+- `cargo test -p arcweft-agent-runner controller_bytecode_resumes_bound_wait_response -- --nocapture`
 - `cargo test -p arcweft-agent-runner controller_bundle_runs_through_bytecode_host_boundary -- --nocapture`
 - `cargo clippy -p arcweft-agent-protocol -p arcweft-runtime-plan -p arcweft-agent-runner --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-bundle -p arcweft-runtime-host`
@@ -88,7 +90,7 @@ It is implementation state, not the stable language specification.
 ## Remaining zip-derived work
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
-- Add structured `Predicate` lowering for `wait(...)` expression tasks so the suspend/resume bridge can execute rebound waits without string reconstruction.
+- Extend Agent predicate lowering beyond the currently executable `signal(...).eq(...)` path as the Agent Prelude grows comparison and boolean-combinator surface syntax.
 - Persist runner debug events as `.arcwx` trace artifacts from CLI/MCP run and replay commands.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
