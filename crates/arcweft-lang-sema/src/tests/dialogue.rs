@@ -85,7 +85,7 @@ flow @flow.opening opening {
 
     let hir = lower_to_hir(&tree).expect("dialogue callee fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("alice2", TypeKind::Named("SpeakerPreset".to_owned()));
 
     typecheck_hir(&hir, &env).expect("dialogue callee forms typecheck");
@@ -111,7 +111,7 @@ flow @flow.opening opening {
 ",
     );
     let hir = lower_to_hir(&tree).expect("extensible speaker options lower");
-    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("unresolved dialogue atoms are rejected");
     assert!(
         errors
@@ -152,7 +152,7 @@ flow @flow.opening opening {
 ",
     );
     let hir = lower_to_hir(&tree).expect("resolved speaker options lower");
-    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     typecheck_hir(&hir, &env).expect("short variant atom options typecheck");
 }
 
@@ -253,8 +253,8 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("地の文", TypeKind::Ref(EntityKind::Character))
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+            .with_symbol("地の文", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect("typecheck succeeds");
 }
@@ -487,7 +487,7 @@ flow @flow.opening opening {
 
     typecheck_hir(
         &hir,
-        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect("shorthand mark is visible to line plan handler");
 }

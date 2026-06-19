@@ -84,7 +84,11 @@ impl TypeChecker<'_> {
                 self.reject_borrow_escape(ty.as_ref(), "line-plan out value");
             }
             Stmt::Goto(expr) => {
-                self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
+                self.expect_expr_type(
+                    expr,
+                    &TypeKind::entity_ref(EntityKind::Flow),
+                    "goto destination",
+                );
             }
             Stmt::Thread(thread) => {
                 self.check_thread_body(thread.body());

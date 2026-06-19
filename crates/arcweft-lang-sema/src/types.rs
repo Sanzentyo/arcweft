@@ -40,6 +40,13 @@ pub enum EntityKind {
     Other(String),
 }
 
+/// Entity reference type with optional payload type.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct EntityType {
+    kind: EntityKind,
+    value: Option<Box<TypeKind>>,
+}
+
 /// Minimal semantic type used by parser/HIR contract tests.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeKind {
@@ -64,7 +71,7 @@ pub enum TypeKind {
     Duration,
     Range,
     DisplayText,
-    Ref(EntityKind),
+    Ref(EntityType),
     Probe(Box<TypeKind>),
     Predicate,
     Observation,
@@ -126,7 +133,39 @@ pub enum TypeKind {
     Never,
 }
 
+impl EntityType {
+    pub fn new(kind: EntityKind, value: Option<TypeKind>) -> Self {
+        Self {
+            kind,
+            value: value.map(Box::new),
+        }
+    }
+
+    pub const fn kind(&self) -> &EntityKind {
+        &self.kind
+    }
+
+    pub fn value(&self) -> Option<&TypeKind> {
+        self.value.as_deref()
+    }
+}
+
 impl TypeKind {
+    #[must_use]
+    pub fn entity_ref(kind: EntityKind) -> Self {
+        Self::Ref(EntityType::new(kind, None))
+    }
+
+    #[must_use]
+    pub fn entity_ref_with_value(kind: EntityKind, value: TypeKind) -> Self {
+        Self::Ref(EntityType::new(kind, Some(value)))
+    }
+
+    #[must_use]
+    pub fn is_entity_ref_kind(&self, kind: &EntityKind) -> bool {
+        matches!(self, Self::Ref(entity) if entity.kind() == kind)
+    }
+
     #[must_use]
     pub const fn is_integer(&self) -> bool {
         matches!(

@@ -388,9 +388,9 @@ mod tests {
     use super::*;
     use arcweft_id::PublicId;
     use arcweft_lang_sema::project_index::{
-        EntitySymbol, EntityType, ProgramHash, ProjectSemanticIndex, SemanticHash,
+        EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash,
     };
-    use arcweft_lang_sema::types::{EntityKind, TypeKind};
+    use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
     use arcweft_source::SourceAnchor;
 

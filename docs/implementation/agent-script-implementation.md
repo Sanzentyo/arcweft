@@ -12,6 +12,7 @@ It is implementation state, not the stable language specification.
 - HIR preserves Agent controllers in `HirModule::agents()` as `HirAgent`.
 - `arcweft-compiler` exposes `parse_agent_source_text` and `compile_agent_source`, which parse Agent dialect source and lower it through the shared HIR path.
 - `arcweft-lang-sema` exposes `project_index`, including `ProjectSemanticIndex`, typed entity payload metadata, Agent intrinsic lowering tags, and an Agent Prelude projection into `TypeCheckEnv`.
+- `TypeKind::Ref` now carries `EntityType`, preserving an entity family and optional payload type through project-index projection into `TypeCheckEnv`.
 - The type checker now visits Agent item bodies and can check Agent Prelude calls such as `choose(@choice...)` against project-index entity types and declared Agent effects.
 - `arcweft-compiler` exposes `compile_agent_source_with_project`, which resolves `.awfagent` entity references against the module plus `ProjectSemanticIndex` and returns a `TypeCheckReport`.
 - `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values.
@@ -28,7 +29,6 @@ It is implementation state, not the stable language specification.
 - Agent Script reuses the existing expression, statement, block, attribute, contract/effect, and HIR lowering path.
 - No compatibility shim for the old line-command syntax is present.
 - `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point. Bytecode artifact lowering, controller VM execution, and host-call dispatch remain separate follow-up work.
-- `ProjectSemanticIndex` currently projects entity refs to the existing `TypeKind::Ref(EntityKind)` checker shape while preserving payload type in `EntityType`. The destructive replacement with payload-bearing `TypeKind::Ref(EntityType)` is still pending.
 - Agent source defaults such as omitted signature return type are preserved as syntax/HIR shape for later semantic/compiler resolution rather than being string-rewritten in the parser.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
@@ -48,6 +48,7 @@ It is implementation state, not the stable language specification.
 - `cargo clippy -p arcweft-cli -p arcweft-lang-syntax --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-lang-sema -p arcweft-compiler`
 - `cargo test -p arcweft-lang-sema project_index -- --nocapture`
+- `cargo test -p arcweft-lang-sema typecheck -- --nocapture`
 - `cargo test -p arcweft-compiler compile_agent_source_with_project -- --nocapture`
 - `cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features -- -D warnings`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/opening-smoke.awfagent --json`
@@ -62,7 +63,7 @@ It is implementation state, not the stable language specification.
 ## Remaining zip-derived work
 
 - Complete Agent semantic intrinsic rules for `observe`, `invoke`, `wait`, `capture`, `expect`, `deny`, `checkpoint`, `attach`, `note`, and `rag.query`, including structured diagnostics and policy denial.
-- Replace the remaining `TypeKind::Ref(EntityKind)` checker surface with payload-bearing entity refs, then type Agent references against actions, probes, metrics, signals, and resources without losing payload type.
+- Type Agent references against actions, probes, metrics, signals, and resources using the payload-bearing entity refs.
 - Add Agent artifact manifest / bundle support for `bundle_kind = agent_controller`.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.

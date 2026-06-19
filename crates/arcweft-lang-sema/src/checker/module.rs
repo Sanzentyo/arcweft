@@ -259,8 +259,10 @@ impl TypeChecker<'_> {
                 continue;
             };
             for alias in entity_symbol_aliases(item) {
-                self.global_symbols
-                    .insert(alias, TypeKind::Ref(entity_kind_for_decl(item.kind())));
+                self.global_symbols.insert(
+                    alias,
+                    TypeKind::entity_ref(entity_kind_for_decl(item.kind())),
+                );
             }
         }
     }

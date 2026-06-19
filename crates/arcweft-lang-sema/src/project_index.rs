@@ -5,7 +5,7 @@
 //! without adding parser-specific command shapes.
 
 use crate::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
-use crate::types::{EntityKind, TypeKind};
+use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_id::PublicId;
 use arcweft_source::SourceAnchor;
 use std::collections::BTreeMap;
@@ -32,13 +32,6 @@ pub struct QualifiedName(String);
 /// Named type key exported by a source project, bundle, or remote session.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TypeName(String);
-
-/// Entity reference type with optional payload type.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EntityType {
-    kind: EntityKind,
-    value: Option<Box<TypeKind>>,
-}
 
 /// Project entity symbol available to Agent Script.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,27 +167,6 @@ impl TypeName {
 
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl EntityType {
-    pub fn new(kind: EntityKind, value: Option<TypeKind>) -> Self {
-        Self {
-            kind,
-            value: value.map(Box::new),
-        }
-    }
-
-    pub const fn kind(&self) -> &EntityKind {
-        &self.kind
-    }
-
-    pub fn value(&self) -> Option<&TypeKind> {
-        self.value.as_deref()
-    }
-
-    pub fn legacy_ref_type(&self) -> TypeKind {
-        TypeKind::Ref(self.kind.clone())
     }
 }
 
@@ -385,7 +357,7 @@ impl ProjectSemanticIndex {
     pub fn typecheck_env(&self) -> TypeCheckEnv {
         let mut env = agent_prelude_env();
         for entity in self.entities.values() {
-            env = env.with_symbol(entity.id.as_str(), entity.ty.legacy_ref_type());
+            env = env.with_symbol(entity.id.as_str(), TypeKind::Ref(entity.ty.clone()));
         }
         for (name, callable) in &self.callables {
             env = env
@@ -473,7 +445,7 @@ fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
                     TypeKind::ActionResult,
                     [FunctionParam::required(
                         "choice",
-                        TypeKind::Ref(EntityKind::ChoiceOption),
+                        TypeKind::entity_ref(EntityKind::ChoiceOption),
                     )],
                 ),
                 [EffectCapability::new("agent.act.semantic")],
@@ -547,6 +519,13 @@ mod tests {
         assert_eq!(stored.ty().kind(), &EntityKind::Signal);
         assert_eq!(stored.ty().value(), Some(&TypeKind::Bool));
         assert_eq!(stored.semantic_hash().as_str(), "shape.signal.ready.v1");
+        assert_eq!(
+            index.typecheck_env().symbol_type("signal.ready"),
+            Some(&TypeKind::entity_ref_with_value(
+                EntityKind::Signal,
+                TypeKind::Bool
+            ))
+        );
     }
 
     #[test]
@@ -563,7 +542,7 @@ mod tests {
 
         assert_eq!(
             env.symbol_type("choice.opening.listen"),
-            Some(&TypeKind::Ref(EntityKind::ChoiceOption))
+            Some(&TypeKind::entity_ref(EntityKind::ChoiceOption))
         );
         assert_eq!(
             env.function_signature("choose")

@@ -151,7 +151,7 @@ ensures no_effect network.request
             "result.affection",
             TypeKind::Named("OrderedMap<Character, i64>".to_owned()),
         )
-        .with_symbol("character", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("character", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
         .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
         .with_symbol("network.request", TypeKind::Named("Effect".to_owned()))

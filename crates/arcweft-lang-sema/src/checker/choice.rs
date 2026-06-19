@@ -163,7 +163,10 @@ impl TypeChecker<'_> {
             ChoicePlanItem::OnSelect { pattern, body } => {
                 self.with_local_mutation_scope(|this| {
                     if let Some(name) = ident_pattern_name(pattern) {
-                        this.bind_local(name.to_owned(), TypeKind::Ref(EntityKind::ChoiceOption));
+                        this.bind_local(
+                            name.to_owned(),
+                            TypeKind::entity_ref(EntityKind::ChoiceOption),
+                        );
                     }
                     for stmt in body {
                         this.check_stmt(stmt);

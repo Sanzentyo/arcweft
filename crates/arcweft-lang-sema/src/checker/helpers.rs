@@ -109,7 +109,7 @@ pub(super) fn numeric_literal_suffix_type(suffix: Option<&str>) -> Option<TypeKi
 }
 
 pub(super) fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
-    matches!(ty, Some(TypeKind::Ref(EntityKind::Character)))
+    ty.is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character))
         || matches!(ty, Some(TypeKind::Speaker(_)))
         || matches!(ty, Some(TypeKind::SpeakerPreset(_)))
         || matches!(ty, Some(TypeKind::Named(name)) if name == "SpeakerPreset")
@@ -184,9 +184,9 @@ pub(super) fn generic_named_type_arg<'a>(name: &'a str, base: &str) -> Option<&'
 
 pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
     Some(match field {
-        "choice_id" | "id" => TypeKind::Ref(EntityKind::ChoiceOption),
-        "route_override" => TypeKind::Option(Box::new(TypeKind::Ref(EntityKind::Flow))),
-        "target" => TypeKind::Ref(EntityKind::Flow),
+        "choice_id" | "id" => TypeKind::entity_ref(EntityKind::ChoiceOption),
+        "route_override" => TypeKind::Option(Box::new(TypeKind::entity_ref(EntityKind::Flow))),
+        "target" => TypeKind::entity_ref(EntityKind::Flow),
         "enabled" | "visible" | "ready" => TypeKind::Bool,
         "order" | "count" | "index" => TypeKind::I64,
         "ratio" => TypeKind::F64,
@@ -343,7 +343,7 @@ pub(super) fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKi
     match expr_type {
         Some(TypeKind::Option(inner)) => Some(inner.as_ref().clone()),
         Some(TypeKind::Named(name)) if name == "Option<Ref<Flow>>" => {
-            Some(TypeKind::Ref(EntityKind::Flow))
+            Some(TypeKind::entity_ref(EntityKind::Flow))
         }
         Some(TypeKind::Named(name)) if name == "Option<Bool>" => Some(TypeKind::Bool),
         Some(TypeKind::Named(name)) if name == "Option<i64>" => Some(TypeKind::I64),
@@ -647,7 +647,7 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
         Expr::EntityRef(entity) => entity
             .as_absolute()
             .and_then(entity_kind)
-            .map(TypeKind::Ref),
+            .map(TypeKind::entity_ref),
         Expr::Literal(literal) => literal_type(literal),
         Expr::Tuple(items) => items
             .iter()
@@ -896,7 +896,7 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         TypeKind::Duration => "Duration".to_owned(),
         TypeKind::Range => "Range".to_owned(),
         TypeKind::DisplayText => "DisplayText".to_owned(),
-        TypeKind::Ref(kind) => format!("Ref<{kind:?}>"),
+        TypeKind::Ref(entity) => entity_type_label(entity),
         TypeKind::Probe(inner) => format!("Probe<{}>", type_kind_label(inner)),
         TypeKind::Predicate => "Predicate".to_owned(),
         TypeKind::Observation => "Observation".to_owned(),
@@ -973,5 +973,13 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
             .join(" | "),
         TypeKind::Unit => "()".to_owned(),
         TypeKind::Never => "Never".to_owned(),
+    }
+}
+
+fn entity_type_label(entity: &crate::types::EntityType) -> String {
+    if let Some(value) = entity.value() {
+        format!("Ref<{:?}, {}>", entity.kind(), type_kind_label(value))
+    } else {
+        format!("Ref<{:?}>", entity.kind())
     }
 }

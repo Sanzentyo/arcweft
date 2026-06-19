@@ -188,14 +188,14 @@ flow @flow.opening opening {
     let check_hir =
         lower_to_hir(&check_tree).expect("typecheck multiline line result binding lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
         .with_symbol(
             "LineCancel::Skipped",
             TypeKind::Named("LineCancel".to_owned()),
         )
         .with_method(
-            TypeKind::Ref(EntityKind::Character),
+            TypeKind::entity_ref(EntityKind::Character),
             "say",
             TypeKind::Named("DialogueLine".to_owned()),
         );
@@ -374,7 +374,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol(".soft", TypeKind::Named("FocusPolicy".to_owned()))
             .with_symbol(".Released", TypeKind::Named("LineExit".to_owned()))
             .with_function("acquire_focus", TypeKind::Named("FocusHandle".to_owned()))
@@ -455,7 +455,7 @@ flow @flow.opening opening {
     let duplicate_hir = lower_to_hir(&duplicate).expect("duplicate mark fixture lowers");
     let duplicate_errors = typecheck_hir(
         &duplicate_hir,
-        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect_err("duplicate marks are rejected");
     assert!(
@@ -478,7 +478,7 @@ flow @flow.opening opening {
     let missing_errors = typecheck_hir(
         &missing_hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol(".Missing", TypeKind::Named("LineExit".to_owned())),
     )
     .expect_err("missing handler mark is rejected");
@@ -498,7 +498,7 @@ flow @flow.opening opening {
     let hook_hir = lower_to_hir(&hook).expect("hook fixture lowers");
     let hook_errors = typecheck_hir(
         &hook_hir,
-        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect_err("local hook tag is rejected");
     assert!(
@@ -553,7 +553,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol(".Skipped", TypeKind::Named("LineExit".to_owned())),
     )
     .expect("typecheck succeeds");
@@ -602,7 +602,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("voice", TypeKind::Named("VoiceHandle".to_owned()))
             .with_symbol("text", TypeKind::Named("DialogueText".to_owned())),
     )
@@ -643,7 +643,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("textbox_ready", TypeKind::Bool)
             .with_symbol("route_count", TypeKind::I64),
     )
@@ -693,7 +693,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_function("cue_move", TypeKind::Unit)
             .with_function("cue_face", TypeKind::Unit)
             .with_function("cue_se", TypeKind::Unit),
@@ -823,7 +823,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_function("setup_line", TypeKind::Unit)
             .with_function("release_focus", TypeKind::Unit)
             .with_function("cue_move", TypeKind::Unit)
@@ -923,8 +923,8 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
-            .with_symbol("line.id", TypeKind::Ref(EntityKind::DialogueLine))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("line.id", TypeKind::entity_ref(EntityKind::DialogueLine))
             .with_symbol("locale", TypeKind::String)
             .with_symbol("theme.text_hash", TypeKind::Named("TextHash".to_owned()))
             .with_symbol(".flow", TypeKind::Named("CacheScope".to_owned()))

@@ -390,7 +390,7 @@ flow @flow.compute compute {
         .with_function(
             "Ok",
             TypeKind::Result {
-                ok: Box::new(TypeKind::Ref(EntityKind::Flow)),
+                ok: Box::new(TypeKind::entity_ref(EntityKind::Flow)),
                 error: Box::new(TypeKind::Named("ArcError".to_owned())),
             },
         );
@@ -787,7 +787,7 @@ flow @flow.branching branching {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption))
+            .with_symbol("selected", TypeKind::entity_ref(EntityKind::ChoiceOption))
             .with_symbol("can_listen", TypeKind::Bool),
     )
     .expect("typecheck succeeds");
@@ -808,7 +808,8 @@ flow @flow.branching branching {
     let hir = lower_to_hir(&tree).expect("anonymous sum value match fixture lowers");
     let report = analyze_types(
         &hir,
-        &TypeCheckEnv::new().with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption)),
+        &TypeCheckEnv::new()
+            .with_symbol("selected", TypeKind::entity_ref(EntityKind::ChoiceOption)),
     );
     assert!(
         report.diagnostics.is_empty(),
@@ -821,7 +822,10 @@ flow @flow.branching branching {
                 pattern: "Ident(\"route\")".to_owned(),
             }
             && judgment.ty
-                == TypeKind::Choice(vec![TypeKind::Ref(EntityKind::Flow), TypeKind::String])
+                == TypeKind::Choice(vec![
+                    TypeKind::entity_ref(EntityKind::Flow),
+                    TypeKind::String,
+                ])
     }));
 }
 
@@ -1096,7 +1100,7 @@ flow @flow.title title {}
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("done", TypeKind::Bool)
             .with_symbol(".Skipped", TypeKind::Named("LineExit".to_owned())),
     )

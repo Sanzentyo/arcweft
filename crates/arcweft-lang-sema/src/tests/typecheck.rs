@@ -584,7 +584,7 @@ flow @flow.opening opening {
     );
     let hir = lower_to_hir(&tree).expect("typecheck fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("alice.stage", TypeKind::Named("StageActor".to_owned()))
         .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
         .with_symbol("blue", TypeKind::Named("Color".to_owned()))
@@ -608,7 +608,7 @@ flow @flow.opening opening {
             },
         )
         .with_method(
-            TypeKind::Ref(EntityKind::Character),
+            TypeKind::entity_ref(EntityKind::Character),
             "say",
             TypeKind::Named("SayBuilder".to_owned()),
         )
@@ -640,7 +640,7 @@ flow @flow.opening opening {
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64)
             .with_function("fmt", TypeKind::DisplayText),
     )
@@ -671,7 +671,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64)
             .with_function("fmt", TypeKind::DisplayText),
     )
@@ -694,7 +694,7 @@ flow @flow.opening opening {
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64)
             .with_function("fmt", TypeKind::DisplayText),
     )
@@ -716,7 +716,7 @@ flow @flow.opening opening {
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64)
             .with_function("fmt", TypeKind::DisplayText),
     )
@@ -746,7 +746,7 @@ flow @flow.opening opening {
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64)
             .with_function("fmt", TypeKind::DisplayText),
     )
@@ -943,7 +943,7 @@ flow @flow.opening opening {
 ",
     );
     let hir = lower_to_hir(&tree).expect("fragment include fixture lowers");
-    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
 
     assert_eq!(hir.flows()[0].kind(), FlowKind::Fragment);
     typecheck_hir(&hir, &env).expect("fragment include fixture typechecks");
@@ -1108,7 +1108,7 @@ flow @flow.thread_capture thread_capture {
     );
     let hir = lower_to_hir(&tree).expect("thread capture fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);
     let errors = typecheck_hir(&hir, &env).expect_err("thread cannot capture line lifetime");
     assert!(
@@ -1374,7 +1374,7 @@ flow @flow.handler_leak handler_leak {
 ",
     );
     let hir = lower_to_hir(&tree).expect("handler leak fixture lowers");
-    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("handler locals must not leak");
     assert!(
         errors
@@ -1397,7 +1397,7 @@ flow @flow.thread_leak thread_leak {
 ",
     );
     let hir = lower_to_hir(&tree).expect("thread leak fixture lowers");
-    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("thread locals must not leak");
     assert!(
         errors
@@ -1422,7 +1422,7 @@ flow @flow.line_scope line_scope {
     );
     let hir = lower_to_hir(&tree).expect("line scope fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);
     let errors = typecheck_hir(&hir, &env).expect_err("line guarantee must not leak");
     assert!(
@@ -1448,7 +1448,7 @@ flow @flow.line_drop line_drop {
     );
     let hir = lower_to_hir(&tree).expect("line drop fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);
     typecheck_hir(&hir, &env).expect("line drop state is isolated per line");
 }

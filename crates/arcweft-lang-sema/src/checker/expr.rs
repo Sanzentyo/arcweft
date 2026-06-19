@@ -180,7 +180,7 @@ impl TypeChecker<'_> {
                     ))
                 })
             })
-            .map(TypeKind::Ref)
+            .map(TypeKind::entity_ref)
             .or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
                     "unknown entity reference kind: {}",
@@ -679,7 +679,7 @@ impl TypeChecker<'_> {
             if name == "assume" {
                 return Some(TypeKind::Unit);
             }
-            if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
+            if self.symbol_type(name) == Some(&TypeKind::entity_ref(EntityKind::Character)) {
                 for arg in args {
                     self.check_expr(arg.value());
                 }
@@ -1969,18 +1969,18 @@ fn map_key_type_from_name(name: &str) -> Option<TypeKind> {
     let args = args.strip_suffix('>')?;
     let (key, _) = args.split_once(',')?;
     Some(match key.trim() {
-        "Character" | "Ref<Character>" => TypeKind::Ref(EntityKind::Character),
+        "Character" | "Ref<Character>" => TypeKind::entity_ref(EntityKind::Character),
         other => named_type_label(other),
     })
 }
 
 fn is_character_speaker_type(ty: &TypeKind) -> bool {
-    matches!(
-        ty,
-        TypeKind::Ref(EntityKind::Character)
-            | TypeKind::Speaker(EntityKind::Character)
-            | TypeKind::SpeakerPreset(EntityKind::Character)
-    )
+    ty.is_entity_ref_kind(&EntityKind::Character)
+        || matches!(
+            ty,
+            TypeKind::Speaker(EntityKind::Character)
+                | TypeKind::SpeakerPreset(EntityKind::Character)
+        )
 }
 
 fn is_unit_number_type(ty: &TypeKind) -> bool {
