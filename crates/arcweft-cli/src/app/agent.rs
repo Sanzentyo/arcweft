@@ -985,7 +985,37 @@ fn validate_agent_trace_record(
             record.payload_hash.as_str()
         ));
     }
+    if record.kind == AgentTraceKind::CaptureStored {
+        validate_agent_trace_capture_blob_refs(record)?;
+    }
     Ok(())
+}
+
+fn validate_agent_trace_capture_blob_refs(record: &AgentTraceRecord) -> Result<(), String> {
+    let content_hash = record
+        .payload
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            format!(
+                "trace record {} capture payload is missing content_hash",
+                record.sequence
+            )
+        })?;
+    let content_hash = StableHash::new(content_hash.to_owned()).map_err(|error| {
+        format!(
+            "trace record {} capture content_hash is invalid: {error}",
+            record.sequence
+        )
+    })?;
+    if record.blob_refs.iter().any(|hash| hash == &content_hash) {
+        return Ok(());
+    }
+    Err(format!(
+        "trace record {} capture blob_refs does not include content_hash {}",
+        record.sequence,
+        content_hash.as_str()
+    ))
 }
 
 fn agent_trace_sessions(records: &[AgentTraceRecord]) -> Vec<String> {
@@ -1135,6 +1165,7 @@ fn agent_trace_record(
     kind: AgentTraceKind,
     payload: serde_json::Value,
 ) -> AgentTraceRecord {
+    let blob_refs = agent_trace_blob_refs(kind, &payload);
     AgentTraceRecord {
         schema_version: 1,
         run_id: run_id.clone(),
@@ -1144,8 +1175,20 @@ fn agent_trace_record(
         kind,
         payload_hash: stable_payload_hash(&payload),
         payload,
-        blob_refs: Vec::new(),
+        blob_refs,
     }
+}
+
+fn agent_trace_blob_refs(kind: AgentTraceKind, payload: &serde_json::Value) -> Vec<StableHash> {
+    if kind != AgentTraceKind::CaptureStored {
+        return Vec::new();
+    }
+    payload
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|hash| StableHash::new(hash.to_owned()).ok())
+        .into_iter()
+        .collect()
 }
 
 fn agent_trace_kind(kind: DebugEventKind) -> AgentTraceKind {

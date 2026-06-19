@@ -95,7 +95,9 @@ surface exposes `AgentResourceKind::Trace`, and `arcweft-agent-mcp` maps typed
 `arcweft.trace.read`, which validates a `.arcwx` file, caches the trace resource
 in the current MCP session, and serves it through `resources/list`,
 `resources/read`, and `arcweft.resource.read` without requiring a prior native
-observation.
+observation. Capture trace records carry `blob_refs` copied from the capture
+content hash, and `.arcwx` validation rejects capture records whose blob refs do
+not include that captured content hash.
 
 ```arcw
 pub trait AgentDebugBus {

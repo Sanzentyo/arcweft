@@ -147,6 +147,121 @@ fn agent_script_run_json_executes_cli_session_smoke() {
 }
 
 #[test]
+fn agent_script_run_trace_records_capture_blob_refs() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/capture-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let invalid_trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/capture-trace-missing-blob-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_file(&invalid_trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_capture_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run writes capture trace");
+    assert!(
+        output.status.success(),
+        "agent script capture run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("capture run output is JSON");
+    assert_eq!(run_json["ok"], true);
+    assert_eq!(run_json["host_calls"], 1);
+    assert_eq!(run_json["responses"][0]["kind"], "capture");
+    assert_eq!(run_json["trace_records"], 5);
+
+    let trace: serde_json::Value = serde_json::from_slice(
+        &fs::read(&trace_path).expect("agent script run writes capture .arcwx trace"),
+    )
+    .expect("capture trace is JSON");
+    let capture = trace
+        .as_array()
+        .expect("trace is array")
+        .iter()
+        .find(|record| record["kind"] == "capture_stored")
+        .expect("trace records capture event");
+    let content_hash = capture["payload"]["content_hash"]
+        .as_str()
+        .expect("capture payload has content_hash");
+    assert_eq!(capture["blob_refs"][0], content_hash);
+
+    let trace_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("trace")
+        .arg(&trace_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script trace validates capture blob refs");
+    assert!(
+        trace_output.status.success(),
+        "agent script trace should validate capture blob refs\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&trace_output.stdout),
+        String::from_utf8_lossy(&trace_output.stderr)
+    );
+    let trace_report: serde_json::Value =
+        serde_json::from_slice(&trace_output.stdout).expect("capture trace report is JSON");
+    assert_eq!(trace_report["ok"], true);
+    assert_eq!(trace_report["blob_refs"], 1);
+    assert_eq!(trace_report["kinds"]["capture_stored"], 1);
+
+    write_capture_trace_without_blob_ref(&trace, &invalid_trace_path);
+    assert_agent_script_trace_rejects_missing_capture_blob_ref(&invalid_trace_path);
+}
+
+fn write_capture_trace_without_blob_ref(trace: &serde_json::Value, path: &Path) {
+    let mut invalid_trace = trace.clone();
+    invalid_trace
+        .as_array_mut()
+        .expect("invalid trace is array")
+        .iter_mut()
+        .find(|record| record["kind"] == "capture_stored")
+        .expect("invalid trace records capture event")["blob_refs"] = serde_json::json!([]);
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(&invalid_trace).expect("invalid trace serializes"),
+    )
+    .expect("writes invalid capture trace");
+}
+
+fn assert_agent_script_trace_rejects_missing_capture_blob_ref(path: &Path) {
+    let invalid_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("trace")
+        .arg(path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script trace rejects missing capture blob ref");
+    assert!(
+        !invalid_output.status.success(),
+        "trace validation should reject missing capture blob ref\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&invalid_output.stdout),
+        String::from_utf8_lossy(&invalid_output.stderr)
+    );
+    let invalid_report: serde_json::Value =
+        serde_json::from_slice(&invalid_output.stdout).expect("invalid trace report is JSON");
+    assert_eq!(invalid_report["ok"], false);
+    assert!(
+        invalid_report["error"]
+            .as_str()
+            .expect("invalid trace report includes error")
+            .contains("capture blob_refs does not include content_hash")
+    );
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
@@ -372,6 +487,10 @@ fn assert_agent_script_replay_matches(trace_path: &Path, expected_path: &Path) {
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-run-smoke.awfagent")
+}
+
+fn agent_script_cli_capture_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-capture-smoke.awfagent")
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {

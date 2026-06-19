@@ -1,0 +1,12 @@
+#[agent(version = 1)]
+agent @agent.cli.capture_smoke capture_smoke()
+effects { agent.capture }
+{
+    let shot = capture(
+        viewport(),
+        format = .png,
+        kind = .color,
+        name = "viewport",
+    )
+    return "done"
+}
