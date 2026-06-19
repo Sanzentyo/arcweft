@@ -56,6 +56,10 @@ use arcweft_debug_model::{
 };
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::HostCallPolicy;
+use arcweft_lang_syntax::ast::{
+    flow::Stmt,
+    pattern::{Pattern, VariantPatternPayload},
+};
 use arcweft_lang_syntax::parser::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
     SourceDialect, parse_fragment,
@@ -1868,6 +1872,7 @@ struct AgentReplHistoryEntry {
 #[derive(Clone, Debug, serde::Serialize)]
 struct AgentReplBinding {
     name: String,
+    binding_kind: String,
     source: String,
     status: String,
     final_status: Option<String>,
@@ -2362,6 +2367,7 @@ fn agent_repl_eval_compiled_cell(
     }
 
     let source = agent_repl_cell_source(index, input, &fragment);
+    let binding_names = agent_repl_fragment_binding_names(&fragment);
     let project = match agent_script_project_index(&[]) {
         Ok(project) => project,
         Err(error) => return agent_repl_error(index, input, "cell", error),
@@ -2394,7 +2400,14 @@ fn agent_repl_eval_compiled_cell(
         },
     );
     match run_result {
-        Ok(report) => agent_repl_run_success_report(index, input, state, &parse_report, &report),
+        Ok(report) => agent_repl_run_success_report(
+            index,
+            input,
+            state,
+            &parse_report,
+            &report,
+            &binding_names,
+        ),
         Err(error) => {
             let message = error.to_string();
             agent_repl_run_error_report(index, input, state, parse_report, &message)
@@ -2466,6 +2479,7 @@ fn agent_repl_run_success_report(
     state: &mut AgentReplState,
     parse_report: &serde_json::Value,
     report: &AgentControllerRunReport,
+    binding_names: &[String],
 ) -> AgentReplCellReport {
     let binding_name = format!("cell.{index}");
     let final_status = report
@@ -2481,6 +2495,7 @@ fn agent_repl_run_success_report(
         "responses": report.responses,
         "events_emitted": report.events_emitted,
         "final_status": final_status,
+        "bindings": binding_names,
         "parse": parse_report,
     });
     let persisted = agent_repl_persist_cell(
@@ -2495,6 +2510,7 @@ fn agent_repl_run_success_report(
         binding_name.clone(),
         AgentReplBinding {
             name: binding_name.clone(),
+            binding_kind: "cell".to_owned(),
             source: input.to_owned(),
             status: "ok".to_owned(),
             final_status,
@@ -2502,6 +2518,23 @@ fn agent_repl_run_success_report(
             responses,
         },
     );
+    for local_name in binding_names {
+        state.bindings.insert(
+            local_name.clone(),
+            AgentReplBinding {
+                name: local_name.clone(),
+                binding_kind: "local".to_owned(),
+                source: input.to_owned(),
+                status: "ok".to_owned(),
+                final_status: state
+                    .bindings
+                    .get(&binding_name)
+                    .and_then(|binding| binding.final_status.clone()),
+                host_calls: report.host_calls,
+                responses,
+            },
+        );
+    }
     agent_repl_ok(index, input, "cell", value).with_persistence(persisted)
 }
 
@@ -2582,6 +2615,102 @@ fn agent_repl_cell_source(index: usize, input: &str, fragment: &ParsedFragment) 
     format!(
         "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
+}
+
+fn agent_repl_fragment_binding_names(fragment: &ParsedFragment) -> Vec<String> {
+    let Some(ParsedFragmentKind::Statements(statements)) = fragment.kind() else {
+        return Vec::new();
+    };
+    let mut names = statements
+        .iter()
+        .flat_map(agent_repl_stmt_binding_names)
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn agent_repl_stmt_binding_names(statement: &Stmt) -> Vec<String> {
+    match statement {
+        Stmt::Let { pattern, .. }
+        | Stmt::LetElse { pattern, .. }
+        | Stmt::LetChoice { pattern, .. }
+        | Stmt::LetScope { pattern, .. }
+        | Stmt::LetLoop { pattern, .. }
+        | Stmt::LetAwait { pattern, .. } => agent_repl_pattern_binding_names(pattern),
+        Stmt::WhileLet { pattern, .. } | Stmt::For { pattern, .. } => {
+            agent_repl_pattern_binding_names(pattern)
+        }
+        Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::Goto(_)
+        | Stmt::Thread(_)
+        | Stmt::DeferBlock { .. }
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Expr(_)
+        | Stmt::Wait(_)
+        | Stmt::On { .. }
+        | Stmt::UnsafeLifetime { .. }
+        | Stmt::If { .. }
+        | Stmt::Match { .. }
+        | Stmt::Loop { .. }
+        | Stmt::While { .. }
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => Vec::new(),
+    }
+}
+
+fn agent_repl_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            vec![name.clone()]
+        }
+        Pattern::Whole { name, pattern } => {
+            let mut names = vec![name.clone()];
+            names.extend(agent_repl_pattern_binding_names(pattern));
+            names
+        }
+        Pattern::Tuple(items) => items
+            .iter()
+            .flat_map(agent_repl_pattern_binding_names)
+            .collect(),
+        Pattern::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| agent_repl_pattern_binding_names(field.pattern()))
+            .collect(),
+        Pattern::BracketSeq { items, rest } => {
+            let mut names = items
+                .iter()
+                .flat_map(agent_repl_pattern_binding_names)
+                .collect::<Vec<_>>();
+            names.extend(rest.clone());
+            names
+        }
+        Pattern::Variant { payload, .. } => payload
+            .as_ref()
+            .map(agent_repl_variant_payload_binding_names)
+            .unwrap_or_default(),
+        Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
+    }
+}
+
+fn agent_repl_variant_payload_binding_names(payload: &VariantPatternPayload) -> Vec<String> {
+    match payload {
+        VariantPatternPayload::Tuple(items) => items
+            .iter()
+            .flat_map(agent_repl_pattern_binding_names)
+            .collect(),
+        VariantPatternPayload::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| agent_repl_pattern_binding_names(field.pattern()))
+            .collect(),
+    }
 }
 
 fn indent_agent_repl_body(input: &str) -> String {

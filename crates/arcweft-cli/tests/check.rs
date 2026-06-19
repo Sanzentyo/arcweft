@@ -670,16 +670,16 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
     assert_eq!(cell["value"]["compiled"], true);
     assert_eq!(cell["value"]["host_calls"], 1);
     assert_eq!(cell["value"]["persisted"], true);
+    assert!(
+        cell["value"]["bindings"]
+            .as_array()
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding == "observed")),
+        "compiled cell should expose VM-local binding names: {cell}"
+    );
     let binding_list = bindings["value"]["bindings"]
         .as_array()
         .expect("bindings are listed");
-    assert!(
-        binding_list
-            .iter()
-            .any(|binding| binding["source"] == "let observed = observe()"
-                && binding["host_calls"] == 1),
-        "bindings should include the compiled observe cell: {bindings}"
-    );
+    assert_agent_repl_observe_bindings(binding_list, bindings);
     let history = cells
         .iter()
         .find(|cell| cell["input"] == ":history")
@@ -693,6 +693,30 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
     );
 
     assert_repl_debug_cell_persisted(&debug_db_path);
+}
+
+fn assert_agent_repl_observe_bindings(
+    binding_list: &[serde_json::Value],
+    bindings: &serde_json::Value,
+) {
+    assert!(
+        binding_list
+            .iter()
+            .any(|binding| binding["name"] == "cell.6"
+                && binding["binding_kind"] == "cell"
+                && binding["source"] == "let observed = observe()"
+                && binding["host_calls"] == 1),
+        "bindings should include the compiled observe cell: {bindings}"
+    );
+    assert!(
+        binding_list
+            .iter()
+            .any(|binding| binding["name"] == "observed"
+                && binding["binding_kind"] == "local"
+                && binding["source"] == "let observed = observe()"
+                && binding["host_calls"] == 1),
+        "bindings should include the extracted local observe binding: {bindings}"
+    );
 }
 
 fn assert_repl_debug_cell_persisted(debug_db_path: &Path) {

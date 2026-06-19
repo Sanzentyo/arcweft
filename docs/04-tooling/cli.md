@@ -395,11 +395,13 @@ session. Non-meta cells are classified with the shared Agent fragment parser;
 complete Agent fragments are wrapped in a one-cell Agent controller, compiled
 through `arcweft-compiler`, and executed through `arcweft-agent-runner`'s
 deterministic CLI session path. Successful cells are recorded as in-session
-`cell.N` binding artifacts shown by `:bindings`. With `--debug-db <path>`,
-non-meta cells are also persisted to the rebuildable debug SQLite
+`cell.N` binding artifacts shown by `:bindings`; successful `let` statement
+cells also expose VM-local binding names extracted from the parsed pattern as
+local binding artifacts tied to the same executed cell. With `--debug-db
+<path>`, non-meta cells are also persisted to the rebuildable debug SQLite
 `repl_cells` table with their source, stable source hash, status, display JSON,
-and partial-effect marker. VM-local variable extraction remains separate
-follow-up work, so the CLI still does not grow a second Agent evaluator.
+and partial-effect marker. The CLI still does not grow a second Agent
+evaluator.
 
 ## Agent Observation
 
