@@ -3,7 +3,9 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
-use crate::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
+use crate::env::{
+    AgentActionEnvParam, EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv,
+};
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,

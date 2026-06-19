@@ -7,9 +7,9 @@ use super::helpers::{
     well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
-    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
-    FunctionSignature, LifetimeScopeKind, MapKind, Pattern, Stmt, TypeCheckError, TypeChecker,
-    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
+    AgentActionEnvParam, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
+    FunctionParam, FunctionSignature, LifetimeScopeKind, MapKind, Pattern, Stmt, TypeCheckError,
+    TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
     normalize_choice_type,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
@@ -1221,11 +1221,9 @@ impl TypeChecker<'_> {
             return TypeKind::ActionResult;
         };
         if let Some(args) = action_args {
-            self.check_agent_invoke_args(args, signature.args());
-        } else if !signature.args().is_empty() {
-            self.errors.push(TypeCheckError::new(format!(
-                "invoke action `{action_name}` on `{target_id}` requires args"
-            )));
+            self.check_agent_invoke_args(args, signature.params());
+        } else {
+            self.check_agent_invoke_missing_args(target_id, action_name, signature.params());
         }
         signature.return_type().clone()
     }
@@ -1260,22 +1258,28 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_agent_invoke_args(&mut self, args: &Expr, expected_values: &[TypeKind]) {
+    fn check_agent_invoke_missing_args(
+        &mut self,
+        target_id: &str,
+        action_name: &str,
+        expected_params: &[AgentActionEnvParam],
+    ) {
+        let missing = expected_params
+            .iter()
+            .filter(|param| !param.has_default())
+            .map(AgentActionEnvParam::name)
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke action `{action_name}` on `{target_id}` requires arg(s): {}",
+                missing.join(", ")
+            )));
+        }
+    }
+
+    fn check_agent_invoke_args(&mut self, args: &Expr, expected_params: &[AgentActionEnvParam]) {
         if let Expr::RecordLiteral(fields) = args {
-            if !expected_values.is_empty() && fields.len() != expected_values.len() {
-                self.errors.push(TypeCheckError::new(format!(
-                    "invoke args expected {} value(s), got {}",
-                    expected_values.len(),
-                    fields.len()
-                )));
-            }
-            for ((field, value), expected) in fields.iter().zip(
-                expected_values
-                    .iter()
-                    .chain(std::iter::repeat(&TypeKind::AgentValue)),
-            ) {
-                self.expect_expr_type(value, expected, &format!("invoke arg `{field}`"));
-            }
+            self.check_agent_invoke_record_args(fields, expected_params);
             return;
         }
 
@@ -1285,6 +1289,46 @@ impl TypeChecker<'_> {
             value: Box::new(TypeKind::AgentValue),
         };
         self.expect_expr_type(args, &expected, "invoke args");
+    }
+
+    fn check_agent_invoke_record_args(
+        &mut self,
+        fields: &[(String, Expr)],
+        expected_params: &[AgentActionEnvParam],
+    ) {
+        let mut seen = std::collections::HashSet::new();
+        for (field, value) in fields {
+            if !seen.insert(field.as_str()) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "invoke arg `{field}` was provided more than once"
+                )));
+            }
+            let Some(param) = expected_params
+                .iter()
+                .find(|param| param.name() == field.as_str())
+            else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "invoke action has no arg named `{field}`"
+                )));
+                self.expect_expr_type(
+                    value,
+                    &TypeKind::AgentValue,
+                    &format!("invoke arg `{field}`"),
+                );
+                continue;
+            };
+            self.expect_expr_type(value, param.ty(), &format!("invoke arg `{field}`"));
+        }
+        for param in expected_params
+            .iter()
+            .filter(|param| !param.has_default())
+            .filter(|param| !seen.contains(param.name()))
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke action missing required arg `{}`",
+                param.name()
+            )));
+        }
     }
 
     fn check_agent_rag_query_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {

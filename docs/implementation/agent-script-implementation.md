@@ -14,7 +14,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-lang-sema` exposes `project_index`, including `ProjectSemanticIndex`, typed entity payload metadata, Agent intrinsic lowering tags, and an Agent Prelude projection into `TypeCheckEnv`.
 - `TypeKind::Ref` now carries `EntityType`, preserving an entity family and optional payload type through project-index projection into `TypeCheckEnv`.
 - The type checker now visits Agent item bodies and can check Agent Prelude calls such as `choose(@choice...)` against project-index entity types and declared Agent effects.
-- Agent intrinsic typing includes `expect(condition, message?)`, `deny(condition, message?)`, `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable_frames`/`poll_frames` values required to be at least 1, `choose(Ref<ChoiceOption>) -> ActionResult`, `invoke(target, action, args?) -> ActionResult` against project-index Agent action signatures, `capture(viewport|layer|object, ...) -> CaptureRef`, `attach(CaptureRef)`, `checkpoint(String)`, `note(DisplayText)`, and `rag.query(String, roots=..., graph_depth=..., limit=...) -> RagContextPack`.
+- Agent intrinsic typing includes `expect(condition, message?)`, `deny(condition, message?)`, `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable_frames`/`poll_frames` values required to be at least 1, `choose(Ref<ChoiceOption>) -> ActionResult`, `invoke(target, action, args?) -> ActionResult` against project-index Agent action signatures with named payload parameter validation, `capture(viewport|layer|object, ...) -> CaptureRef`, `attach(CaptureRef)`, `checkpoint(String)`, `note(DisplayText)`, and `rag.query(String, roots=..., graph_depth=..., limit=...) -> RagContextPack`.
 - `arcweft-compiler` exposes `compile_agent_source_with_project`, which resolves `.awfagent` entity references against the module plus `ProjectSemanticIndex` and returns a `TypeCheckReport`.
 - `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values. Large host request/response enum payloads are boxed so the Rust protocol API does not carry oversized enum variants while preserving the same serde JSON shape.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
@@ -32,7 +32,7 @@ It is implementation state, not the stable language specification.
 - No compatibility shim for the old line-command syntax is present.
 - `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point. Bytecode artifact lowering, controller VM execution, and host-call dispatch remain separate follow-up work.
 - Agent source defaults such as omitted signature return type are preserved as syntax/HIR shape for later semantic/compiler resolution rather than being string-rewritten in the parser.
-- `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and currently validates action payload record values by exported signature order until action signatures carry stable payload parameter names.
+- `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
 - `arcweft-agent-runner` currently executes typed host requests. It does not yet start or step the shared bytecode VM; the VM will call this host-call boundary.
@@ -77,7 +77,6 @@ It is implementation state, not the stable language specification.
 
 ## Remaining zip-derived work
 
-- Extend `AgentActionSignature` to carry named payload parameters so `invoke(..., args = { ... })` can validate action payload keys as well as value types. The current checker validates target/action existence and ordered record values against the exported action value types.
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Lower typed Agent controllers into executable Agent controller `.awfb` bytecode bundles using the `bundle_kind = agent_controller` container support.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.

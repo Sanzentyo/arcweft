@@ -36,8 +36,16 @@ pub struct RustPackageExports {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentActionEnvSignature {
     action: String,
-    args: Vec<TypeKind>,
+    params: Vec<AgentActionEnvParam>,
     return_type: TypeKind,
+}
+
+/// Named payload parameter for an Agent action visible to the checker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentActionEnvParam {
+    name: String,
+    ty: TypeKind,
+    has_default: bool,
 }
 
 /// Canonical effect capability label tracked by semantic environments.
@@ -190,12 +198,12 @@ impl AgentActionEnvSignature {
     /// Creates a semantic action signature for one project entity.
     pub fn new(
         action: impl Into<String>,
-        args: impl IntoIterator<Item = TypeKind>,
+        params: impl IntoIterator<Item = AgentActionEnvParam>,
         return_type: TypeKind,
     ) -> Self {
         Self {
             action: action.into(),
-            args: args.into_iter().collect(),
+            params: params.into_iter().collect(),
             return_type,
         }
     }
@@ -205,14 +213,40 @@ impl AgentActionEnvSignature {
         &self.action
     }
 
-    /// Positional payload value types accepted by the action contract.
-    pub fn args(&self) -> &[TypeKind] {
-        &self.args
+    /// Named payload parameters accepted by the action contract.
+    pub fn params(&self) -> &[AgentActionEnvParam] {
+        &self.params
     }
 
     /// Type returned by this action.
     pub const fn return_type(&self) -> &TypeKind {
         &self.return_type
+    }
+}
+
+impl AgentActionEnvParam {
+    /// Creates a checker-visible Agent action payload parameter.
+    pub fn new(name: impl Into<String>, ty: TypeKind, has_default: bool) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            has_default,
+        }
+    }
+
+    /// Source-visible payload key.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Expected payload value type.
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    /// Whether this payload key can be omitted.
+    pub const fn has_default(&self) -> bool {
+        self.has_default
     }
 }
 

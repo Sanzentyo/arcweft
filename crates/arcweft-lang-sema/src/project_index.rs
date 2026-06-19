@@ -49,8 +49,16 @@ pub struct EntitySymbol {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentActionSignature {
     action: QualifiedName,
-    args: Vec<TypeKind>,
+    params: Vec<AgentActionParam>,
     return_type: TypeKind,
+}
+
+/// Named payload parameter accepted by an Agent semantic action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentActionParam {
+    name: String,
+    ty: TypeKind,
+    has_default: bool,
 }
 
 /// Callable symbol available in the Agent compile environment.
@@ -218,12 +226,12 @@ impl EntitySymbol {
 impl AgentActionSignature {
     pub fn new(
         action: QualifiedName,
-        args: impl IntoIterator<Item = TypeKind>,
+        params: impl IntoIterator<Item = AgentActionParam>,
         return_type: TypeKind,
     ) -> Self {
         Self {
             action,
-            args: args.into_iter().collect(),
+            params: params.into_iter().collect(),
             return_type,
         }
     }
@@ -232,12 +240,42 @@ impl AgentActionSignature {
         &self.action
     }
 
-    pub fn args(&self) -> &[TypeKind] {
-        &self.args
+    pub fn params(&self) -> &[AgentActionParam] {
+        &self.params
     }
 
     pub const fn return_type(&self) -> &TypeKind {
         &self.return_type
+    }
+}
+
+impl AgentActionParam {
+    pub fn required(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            has_default: false,
+        }
+    }
+
+    pub fn defaulted(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            has_default: true,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    pub const fn has_default(&self) -> bool {
+        self.has_default
     }
 }
 
@@ -365,7 +403,13 @@ impl ProjectSemanticIndex {
                     entity.id.as_str(),
                     AgentActionEnvSignature::new(
                         action.action().as_str(),
-                        action.args().iter().cloned(),
+                        action.params().iter().map(|param| {
+                            crate::env::AgentActionEnvParam::new(
+                                param.name(),
+                                param.ty().clone(),
+                                param.has_default(),
+                            )
+                        }),
                         action.return_type().clone(),
                     ),
                 );
@@ -774,7 +818,7 @@ mod tests {
             )
             .with_agent_action(AgentActionSignature::new(
                 QualifiedName::new("open"),
-                [TypeKind::String],
+                [AgentActionParam::required("label", TypeKind::String)],
                 TypeKind::ActionResult,
             )),
         );
@@ -784,7 +828,8 @@ mod tests {
             .expect("agent action projected");
 
         assert_eq!(actions[0].action(), "open");
-        assert_eq!(actions[0].args(), &[TypeKind::String]);
+        assert_eq!(actions[0].params()[0].name(), "label");
+        assert_eq!(actions[0].params()[0].ty(), &TypeKind::String);
         assert_eq!(actions[0].return_type(), &TypeKind::ActionResult);
         assert_eq!(
             env.function_signature("invoke")

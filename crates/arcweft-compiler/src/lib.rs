@@ -388,8 +388,8 @@ mod tests {
     use super::*;
     use arcweft_id::PublicId;
     use arcweft_lang_sema::project_index::{
-        AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex, QualifiedName,
-        SemanticHash,
+        AgentActionParam, AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex,
+        QualifiedName, SemanticHash,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -420,7 +420,7 @@ mod tests {
         id: &str,
         kind: EntityKind,
         action: &str,
-        args: impl IntoIterator<Item = TypeKind>,
+        params: impl IntoIterator<Item = AgentActionParam>,
     ) -> ProjectSemanticIndex {
         ProjectSemanticIndex::new(ProgramHash::new("program-test")).with_entity(
             EntitySymbol::new(
@@ -431,7 +431,7 @@ mod tests {
             )
             .with_agent_action(AgentActionSignature::new(
                 QualifiedName::new(action),
-                args,
+                params,
                 TypeKind::ActionResult,
             )),
         )
@@ -660,7 +660,7 @@ effects { agent.observe, agent.wait }
             "activity.inventory",
             EntityKind::Activity,
             "open",
-            [TypeKind::String],
+            [AgentActionParam::required("label", TypeKind::String)],
         );
         let compiled = compile_agent_source_with_project(
             r#"
@@ -701,6 +701,78 @@ effects { agent.act.semantic }
             &project,
         )
         .expect_err("unknown action rejects");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_unknown_invoke_arg() {
+        let project = project_with_agent_action(
+            "activity.inventory",
+            EntityKind::Activity,
+            "open",
+            [AgentActionParam::required("label", TypeKind::String)],
+        );
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.open_inventory open_inventory()
+effects { agent.act.semantic }
+{
+    invoke(@activity.inventory, .open, { title = "main" })
+}
+"#,
+            &project,
+        )
+        .expect_err("unknown invoke arg rejects");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_missing_invoke_arg() {
+        let project = project_with_agent_action(
+            "activity.inventory",
+            EntityKind::Activity,
+            "open",
+            [AgentActionParam::required("label", TypeKind::String)],
+        );
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.open_inventory open_inventory()
+effects { agent.act.semantic }
+{
+    invoke(@activity.inventory, .open)
+}
+",
+            &project,
+        )
+        .expect_err("missing required invoke arg rejects");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_invoke_arg_type_mismatch() {
+        let project = project_with_agent_action(
+            "activity.inventory",
+            EntityKind::Activity,
+            "open",
+            [AgentActionParam::required("index", TypeKind::U32)],
+        );
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.open_inventory open_inventory()
+effects { agent.act.semantic }
+{
+    invoke(@activity.inventory, .open, { index = "main" })
+}
+"#,
+            &project,
+        )
+        .expect_err("invoke arg type mismatch rejects");
 
         assert!(matches!(error, CompileAgentError::Type(_)));
     }
