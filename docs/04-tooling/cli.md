@@ -339,6 +339,10 @@ the rebuildable debug-store chunk FTS index using a quoted literal query. The
 privacy ceiling is applied inside the SQLite query before `--limit`, so
 disallowed chunks cannot push allowed public/project hits out of the result
 window.
+The stdio MCP server exposes the same rebuildable-store lexical path as
+`arcweft.debug.search`. The tool accepts `query`, optional `path`, `limit`, and
+`max_privacy`, defaults to `.arcweft/cache/agent-debug.sqlite3`, and returns
+chunk IDs plus source metadata without requiring a native observation.
 `arcw agent rag query --trace <file.arcwx> --query <text>
 [--max-privacy public|project|sensitive|secret] [--json]` builds the same
 explainable `RagContextPack` shape used by Agent MCP. The default privacy

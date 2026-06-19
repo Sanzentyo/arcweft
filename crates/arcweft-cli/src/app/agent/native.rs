@@ -53,6 +53,7 @@ use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
 };
+use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_syntax::parser::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, SourceDialect, parse_fragment,
@@ -2462,6 +2463,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP log result: {error}"))
         }
+        "arcweft.debug.search" => {
+            let tool = agent_mcp_call_debug_search(&arguments)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP debug search result: {error}"))
+        }
         "arcweft.rag.query" => {
             let tool = agent_mcp_call_rag_query(&arguments, state, adapter_registrars)?;
             serde_json::to_value(tool)
@@ -2848,6 +2854,67 @@ fn agent_mcp_call_log_query(
         "logs": logs,
     });
     agent_mcp_json_tool_result(&value, "logs")
+}
+
+fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallToolResult, String> {
+    let query = arguments
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|query| !query.is_empty())
+        .ok_or_else(|| "arcweft.debug.search requires non-empty arguments.query".to_owned())?;
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(10);
+    if limit == 0 {
+        return Err("arcweft.debug.search argument limit must be at least 1".to_owned());
+    }
+    let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
+        .unwrap_or(PrivacyClass::Project);
+    let path = arguments
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .filter(|path| !path.trim().is_empty())
+        .unwrap_or(".arcweft/cache/agent-debug.sqlite3");
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.debug.search failed to open `{path}`: {error}"))?;
+    let hits = store
+        .lexical_search_with_max_privacy(query, limit, max_privacy)
+        .map_err(|error| format!("arcweft.debug.search failed to search `{path}`: {error}"))?
+        .into_iter()
+        .map(|result| {
+            serde_json::json!({
+                "chunk_id": result.hit.chunk_id.as_str(),
+                "title": result.title,
+                "body": result.body,
+                "source_kind": result.source_kind,
+                "source_key": result.source_key,
+                "privacy": result.privacy.as_str(),
+                "channel": agent_mcp_search_channel_label(result.hit.channel),
+                "rank": result.hit.rank,
+                "score": result.hit.score,
+            })
+        })
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "path": path,
+        "query": query,
+        "limit": limit,
+        "max_privacy": max_privacy.as_str(),
+        "hits": hits,
+    });
+    agent_mcp_json_tool_result(&value, "debug search")
+}
+
+const fn agent_mcp_search_channel_label(channel: SearchChannel) -> &'static str {
+    match channel {
+        SearchChannel::ExactEntity => "exact_entity",
+        SearchChannel::Lexical => "lexical",
+        SearchChannel::Vector => "vector",
+        SearchChannel::Graph => "graph",
+        SearchChannel::History => "history",
+        SearchChannel::Diagnostics => "diagnostics",
+        SearchChannel::Trace => "trace",
+        SearchChannel::Summary => "summary",
+    }
 }
 
 fn agent_mcp_call_rag_query(

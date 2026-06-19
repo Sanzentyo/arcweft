@@ -147,6 +147,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_get_state_tool_descriptor(),
         agent_signal_get_tool_descriptor(),
         agent_log_query_tool_descriptor(),
+        agent_debug_search_tool_descriptor(),
         agent_rag_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
@@ -418,6 +419,35 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
                     "enum": ["public", "project", "sensitive", "secret"],
                     "default": "project",
                     "description": "Highest privacy class allowed in returned context items."
+                }
+            },
+            "required": ["query"]
+        }),
+    }
+}
+
+fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.search".to_owned(),
+        title: Some("Search Arcweft Debug Store".to_owned()),
+        description: "Searches the rebuildable Arcweft debug SQLite chunk index with literal FTS5 lexical search and privacy filtering before limit.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Literal query text for the debug-store chunk FTS index."
+                },
+                "limit": { "type": "integer", "minimum": 1, "default": 10 },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed in returned hits."
                 }
             },
             "required": ["query"]
@@ -1509,6 +1539,27 @@ mod tests {
             "string"
         );
         assert_eq!(logs.input_schema["properties"]["limit"]["minimum"], 0);
+
+        let debug_search = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.search")
+            .expect("debug search tool is described");
+        assert_eq!(
+            debug_search.input_schema["required"],
+            serde_json::json!(["query"])
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["limit"]["minimum"],
+            1
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
 
         let rag = tools
             .iter()

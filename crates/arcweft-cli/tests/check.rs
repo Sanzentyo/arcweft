@@ -26751,6 +26751,64 @@ fn agent_mcp_stdio_dispatches_semantic_action() {
     assert_eq!(action["after"]["tick"], 1);
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_debug_search_filters_chunks_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/mcp-search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug search target dir"))
+        .expect("create debug search target dir");
+    seed_debug_search_db(&db_path);
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.debug.search",
+                "arguments": {
+                    "path": db_path.display().to_string(),
+                    "query": "opening",
+                    "limit": 4,
+                    "max_privacy": "public"
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp debug search should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.debug.search")
+    );
+    assert_eq!(responses[2]["result"]["isError"], false);
+    let search = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "MCP debug search result is JSON",
+    );
+    assert_eq!(search["query"], "opening");
+    assert_eq!(search["max_privacy"], "public");
+    let hits = search["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], "chunk:public-opening");
+    assert_eq!(hits[0]["privacy"], "public");
+    assert_eq!(hits[0]["channel"], "lexical");
+}
+
 fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value]) {
     assert_eq!(responses.len(), 12);
     assert_eq!(

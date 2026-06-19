@@ -32,7 +32,8 @@ advertises the stable `arcweft://` URI families for presentation-tree filters,
 viewport, layer, object, and rich-text child captures before a source has been
 observed. `tools/call`
 supports `arcweft.observe`, `arcweft.capture`, `arcweft.resource.read`,
-`arcweft.session.info`, `arcweft.action`, and `arcweft.hit_test`; the server keeps the latest
+`arcweft.session.info`, `arcweft.action`, `arcweft.hit_test`, and
+`arcweft.debug.search`; the server keeps the latest
 one-shot observation in memory so clients can observe once, inspect the current
 session/frame/resource state, list resources, then either call
 `arcweft.capture` for a viewport/layer/object PNG or raw RGBA image content,
@@ -107,6 +108,14 @@ in the current MCP session, and serves it through `resources/list`,
 observation. Capture trace records carry `blob_refs` copied from the capture
 content hash, and `.arcwx` validation rejects capture records whose blob refs do
 not include that captured content hash.
+
+`arcweft.debug.search` is the MCP surface for the rebuildable Agent debug
+SQLite store. It accepts `query`, optional `path`, `limit`, and `max_privacy`,
+opens `.arcweft/cache/agent-debug.sqlite3` when `path` is omitted, runs literal
+FTS5 lexical chunk search, and applies the privacy ceiling before limiting
+results. The tool returns chunk ids, title/body text, source kind/key, privacy,
+search channel, rank, and score. It does not require an observation or trace to
+be cached in the MCP session.
 
 ```arcw
 pub trait AgentDebugBus {
