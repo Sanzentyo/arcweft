@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-agent-runner"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-debug-model = { path = "../arcweft-debug-model" }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

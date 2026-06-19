@@ -225,6 +225,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-agent-runner"
+version = "0.1.0"
+dependencies = [
+ "arcweft-agent-protocol",
+ "arcweft-debug-model",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-browser-bench"
 version = "0.1.0"
 dependencies = [

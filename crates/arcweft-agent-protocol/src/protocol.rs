@@ -6,6 +6,15 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Stable session metadata exposed to Agent controllers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentSessionInfo {
+    pub session_id: String,
+    pub program_hash: String,
+    pub profile: Option<String>,
+    pub capabilities: Vec<String>,
+}
+
 /// Minimal observation request used by the controller host boundary.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObserveRequest {
