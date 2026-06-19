@@ -110,6 +110,7 @@ ItemDecl     :=
   | HookDecl
   | MemoDecl
   | DialogueDefaultsDecl
+  | AssetDecl
   | TypeDecl
 OuterAttr    := '#[' AttrPath AttrArgs? ']'
 InnerAttr    := '#![' AttrPath AttrArgs? ']'
@@ -128,6 +129,16 @@ themselves silence unrelated diagnostics.
 Inner and outer attributes inside flow bodies are currently diagnostics rather
 than statement syntax; future block-scope attribute surfaces must add explicit
 AST attachment instead of falling through as raw statements.
+
+Asset declarations use the ordinary entity declaration surface:
+
+```text
+AssetDecl := Visibility? 'asset' DeclIdentity AssetBody?
+```
+
+The declaration establishes the `asset` entity id for references such as
+`@asset.bg.room`. Image payload packaging is still handled by the bundle image
+asset table, which records encoded files and decoded metadata.
 
 ## Flow and fragments
 

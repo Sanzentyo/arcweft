@@ -11,6 +11,11 @@ frame timing.
 The current implemented source surface is ordinary call syntax:
 
 ```arcw
+pub asset @asset.bg.room {
+  kind = image
+  file = "bg/room.png"
+}
+
 bg(@asset.bg.room)
 bg(@asset.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
 
@@ -48,6 +53,12 @@ debug surface.
 object identity, target, layer, bounds, fit/alignment, opacity, depth,
 transform, playback policy, lifecycle flags, semantic actions, custom
 `param.*` metadata, and optional `proxy.*` hit-test metadata.
+
+`asset @asset...` is a normal entity declaration family. It declares the stable
+asset id used by `asset.image(...)`, `bg(...)`, and `image(...)`. Its body is
+preserved as source metadata; the current bundle implementation still records
+encoded payloads from `.arcweft/asset` into `image_assets[]` and validates
+statically known image references against that table.
 
 The older fluent sketch form `image(@asset).fit(...)` is not the implemented
 surface. If future language work introduces declared image objects or a richer

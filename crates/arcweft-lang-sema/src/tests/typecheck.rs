@@ -802,6 +802,17 @@ flow @flow.opening opening {
 fn typechecks_presentation_image_object_call_with_named_asset_and_bounds() {
     let tree = parse_ok(
         r#"
+asset @asset.bg.room {
+    file = "bg/room.png"
+    kind = image
+}
+
+asset @asset.bg.pulse {
+    file = "bg/pulse.gif"
+    kind = image
+    animation = true
+}
+
 flow @flow.opening opening {
     let room = bg(@asset.bg.room, fit = "intrinsic", alignment.x = 1, alignment.y = 0.5, opacity = 0.75, playback.rate = 0.5, playback.local_time = 50ms)
     let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", alignment.x = 0.25, alignment.y = 750, opacity = 0.5, playback.start = 0.1, playback.rate = 0.5, transform.tx = 24px, transform.ty = 12px, transform.m11 = 1000, transform.m22 = 1000, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse", param.role = "animated-hotspot", proxy.id = "proxy.pulse.hotspot", proxy.type = "PulseHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
@@ -810,6 +821,7 @@ flow @flow.opening opening {
     );
     let hir = lower_to_hir(&tree).expect("presentation image fixture lowers");
 
+    validate_hir_references(&hir, &registry_from_hir(&hir)).expect("declared image assets resolve");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("presentation image call typechecks");
 }
 

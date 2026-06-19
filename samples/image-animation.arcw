@@ -1,3 +1,30 @@
+pub asset @asset.bg.room {
+    kind = image
+    file = "bg/room.png"
+}
+
+pub asset @asset.bg.garden {
+    kind = image
+    file = "bg/garden.jpg"
+}
+
+pub asset @asset.bg.poster {
+    kind = image
+    file = "bg/poster.webp"
+}
+
+pub asset @asset.bg.pulse {
+    kind = image
+    file = "bg/pulse.gif"
+    animation = true
+}
+
+pub asset @asset.bg.loop {
+    kind = image
+    file = "bg/loop.webp"
+    animation = true
+}
+
 pub surface character narrator {
     display = "Narrator"
     default_voice = auto

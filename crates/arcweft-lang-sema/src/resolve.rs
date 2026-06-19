@@ -68,6 +68,7 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
 
 fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
     match kind {
+        EntityDeclKind::Asset => EntityKind::Asset,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::Component => EntityKind::Component,
         EntityDeclKind::Activity => EntityKind::Activity,

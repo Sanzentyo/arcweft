@@ -283,10 +283,15 @@ image capture.
 
 ## Required Follow-up Cuts
 
-1. Add explicit source/DSL asset declaration syntax when the language design
-   settles it; static `asset.image(...)`, `bg(...)`, and bounded `image(...)`
-   references are already checked against bundle image asset ids when they are
-   statically known.
+1. Generalize source asset declarations from the current entity-id declaration
+   surface into a payload-driving declaration if the language chooses to let
+   source declarations override or supplement `.arcweft/asset` discovery.
+   `asset @asset... { ... }` now parses, lowers, resolves, and typechecks as
+   an Asset entity declaration, and `samples/image-animation.arcw` declares its
+   static and animated image asset ids. The bundle image asset table still owns
+   encoded file records and decoded static/animated metadata, and static
+   `asset.image(...)`, `bg(...)`, and bounded `image(...)` references are
+   checked against that table when they are statically known.
 2. Generalize the source-level image surface from the current `bg(...)` and
    bounded `image(...)` calls into declared image objects with hit-test
    proxies. Depth, transforms, lifecycle flags, semantic actions, and custom

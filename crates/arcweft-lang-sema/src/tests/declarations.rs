@@ -223,7 +223,12 @@ where len(self) <= 16
 #[test]
 fn parses_surface_alias_and_resource_entity_families() {
     let tree = parse_ok(
-        r"
+        r#"
+pub asset @asset.bg.room {
+    file = "bg/room.png"
+    kind = image
+}
+
 pub surface character @character.alice Alice as alice {
 }
 
@@ -244,24 +249,30 @@ pub motion @motion.alice.nod {
 
 pub rig @rig.alice.live2d {
 }
-",
+"#,
     );
 
-    let Item::EntityDecl(character) = &tree.items()[0] else {
+    assert!(matches!(
+        &tree.items()[0],
+        Item::EntityDecl(item) if item.kind() == EntityDeclKind::Asset
+            && item.id().body() == "asset.bg.room"
+            && item.body().is_some()
+    ));
+    let Item::EntityDecl(character) = &tree.items()[1] else {
         panic!("expected character declaration");
     };
     assert_eq!(character.kind(), EntityDeclKind::Character);
     assert_eq!(character.surface_alias(), Some("alice"));
     assert!(matches!(
-        &tree.items()[1],
+        &tree.items()[2],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::Voice
     ));
     assert!(matches!(
-        &tree.items()[2],
+        &tree.items()[3],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::AudioBus
     ));
     assert!(matches!(
-        &tree.items()[3],
+        &tree.items()[4],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::MixerSnapshot
     ));
 }

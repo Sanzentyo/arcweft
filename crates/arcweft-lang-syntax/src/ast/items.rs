@@ -256,6 +256,7 @@ pub enum FunctionKind {
 /// Top-level entity declaration family with runtime-specific body preserved.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntityDeclKind {
+    Asset,
     Character,
     Component,
     Activity,
@@ -276,6 +277,7 @@ pub enum EntityDeclKind {
 impl EntityDeclKind {
     pub const fn keyword(self) -> &'static str {
         match self {
+            Self::Asset => "asset",
             Self::Character => "character",
             Self::Component => "component",
             Self::Activity => "activity",
