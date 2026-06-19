@@ -102,6 +102,17 @@ pub struct NativeImageRect {
     pub height: f32,
 }
 
+/// Affine transform applied to a native image quad in viewport pixel space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeImageTransform {
+    pub m11: f32,
+    pub m12: f32,
+    pub m21: f32,
+    pub m22: f32,
+    pub tx: f32,
+    pub ty: f32,
+}
+
 /// RGBA8 image frame submitted as a textured quad to the native renderer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NativeImageQuad<'a> {
@@ -110,6 +121,7 @@ pub struct NativeImageQuad<'a> {
     pub rgba: &'a [u8],
     pub opacity_milli: u16,
     pub dst: NativeImageRect,
+    pub transform: NativeImageTransform,
 }
 
 /// Image quad recolored for native mask or object-id capture.
@@ -117,6 +129,19 @@ pub struct NativeImageQuad<'a> {
 pub struct NativeImageDebugQuad<'a> {
     pub quad: NativeImageQuad<'a>,
     pub color: [u8; 4],
+}
+
+impl NativeImageTransform {
+    pub const fn identity() -> Self {
+        Self {
+            m11: 1.0,
+            m12: 0.0,
+            m21: 0.0,
+            m22: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }
+    }
 }
 
 /// Pixel-space bounds of non-background framebuffer content.
@@ -1557,6 +1582,7 @@ impl NativeOffscreenCaptureSession {
                 rgba,
                 opacity_milli: 1_000,
                 dst: source.quad.dst,
+                transform: source.quad.transform,
             })
             .collect::<Vec<_>>();
         self.capture_image_quads_rgba(&render_quads, width, height)
@@ -2117,6 +2143,7 @@ pub fn native_image_quad_from_resolved_frame(
 ) -> Result<NativeImageQuad<'_>, NativeWindowError> {
     let frame = resolved.frame();
     let dimensions = frame.dimensions();
+    let transform = resolved.transform();
     Ok(NativeImageQuad {
         width: dimensions.width(),
         height: dimensions.height(),
@@ -2129,6 +2156,14 @@ pub fn native_image_quad_from_resolved_frame(
             dimensions.width(),
             dimensions.height(),
         )?,
+        transform: native_image_transform_milli([
+            transform.m11_milli,
+            transform.m12_milli,
+            transform.m21_milli,
+            transform.m22_milli,
+            transform.tx_milli,
+            transform.ty_milli,
+        ]),
     })
 }
 
@@ -6732,6 +6767,19 @@ fn u32_to_f32(value: u32) -> f32 {
 }
 
 #[allow(clippy::cast_precision_loss)]
+fn native_image_transform_milli(values: [i32; 6]) -> NativeImageTransform {
+    let [m11, m12, m21, m22, translate_x, translate_y] = values;
+    NativeImageTransform {
+        m11: m11 as f32 / 1_000.0,
+        m12: m12 as f32 / 1_000.0,
+        m21: m21 as f32 / 1_000.0,
+        m22: m22 as f32 / 1_000.0,
+        tx: translate_x as f32 / 1_000.0,
+        ty: translate_y as f32 / 1_000.0,
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
 fn alignment_offset(outer: f32, fitted: f32, alignment_milli: i32) -> f32 {
     (outer - fitted) * (alignment_milli as f32 / 1_000.0)
 }
@@ -6789,18 +6837,41 @@ fn scaled_alpha_u8(color_alpha: u8, source_alpha: u8) -> u8 {
 }
 
 fn image_quad_vertices(quad: NativeImageQuad<'_>, width: u32, height: u32) -> [[f32; 4]; 6] {
-    let x0 = pixel_x_to_ndc(quad.dst.x, width);
-    let x1 = pixel_x_to_ndc(quad.dst.x + quad.dst.width, width);
-    let y0 = pixel_y_to_ndc(quad.dst.y, height);
-    let y1 = pixel_y_to_ndc(quad.dst.y + quad.dst.height, height);
+    let p0 = transform_image_point(quad.transform, quad.dst.x, quad.dst.y);
+    let p1 = transform_image_point(quad.transform, quad.dst.x + quad.dst.width, quad.dst.y);
+    let p2 = transform_image_point(
+        quad.transform,
+        quad.dst.x + quad.dst.width,
+        quad.dst.y + quad.dst.height,
+    );
+    let p3 = transform_image_point(quad.transform, quad.dst.x, quad.dst.y + quad.dst.height);
+    let x0 = pixel_x_to_ndc(p0.0, width);
+    let y0 = pixel_y_to_ndc(p0.1, height);
+    let x1 = pixel_x_to_ndc(p1.0, width);
+    let y1 = pixel_y_to_ndc(p1.1, height);
+    let x2 = pixel_x_to_ndc(p2.0, width);
+    let y2 = pixel_y_to_ndc(p2.1, height);
+    let x3 = pixel_x_to_ndc(p3.0, width);
+    let y3 = pixel_y_to_ndc(p3.1, height);
     [
         [x0, y0, 0.0, 0.0],
-        [x1, y0, 1.0, 0.0],
-        [x1, y1, 1.0, 1.0],
+        [x1, y1, 1.0, 0.0],
+        [x2, y2, 1.0, 1.0],
         [x0, y0, 0.0, 0.0],
-        [x1, y1, 1.0, 1.0],
-        [x0, y1, 0.0, 1.0],
+        [x2, y2, 1.0, 1.0],
+        [x3, y3, 0.0, 1.0],
     ]
+}
+
+fn transform_image_point(transform: NativeImageTransform, x: f32, y: f32) -> (f32, f32) {
+    (
+        transform
+            .m11
+            .mul_add(x, transform.m12.mul_add(y, transform.tx)),
+        transform
+            .m21
+            .mul_add(x, transform.m22.mul_add(y, transform.ty)),
+    )
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -8333,6 +8404,7 @@ mod tests {
                 width: 2.0,
                 height: 2.0,
             },
+            transform: NativeImageTransform::identity(),
         };
 
         let capture = capture_image_quads_rgba(&[quad], 4, 4).expect("image quad renders");
@@ -8370,6 +8442,7 @@ mod tests {
                     width: 2.0,
                     height: 1.0,
                 },
+                transform: NativeImageTransform::identity(),
             },
             color: [40, 80, 120, 255],
         };
@@ -8404,6 +8477,7 @@ mod tests {
                 width: 1.0,
                 height: 1.0,
             },
+            transform: NativeImageTransform::identity(),
         };
         let color = capture_image_quads_rgba(&[quad], 3, 3).expect("opacity quad renders");
         assert_eq!(pixel_at(&color, 1, 1), [187, 0, 0, 127]);
@@ -8418,6 +8492,34 @@ mod tests {
         )
         .expect("debug opacity quad renders");
         assert_eq!(pixel_at(&debug, 1, 1), [5, 11, 19, 127]);
+    }
+
+    #[test]
+    fn native_capture_applies_image_quad_transform_to_vertices() {
+        let rgba = vec![255, 255, 255, 255];
+        let quad = NativeImageQuad {
+            width: 1,
+            height: 1,
+            rgba: &rgba,
+            opacity_milli: 1_000,
+            dst: NativeImageRect {
+                x: 1.0,
+                y: 1.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            transform: NativeImageTransform {
+                tx: 1.0,
+                ty: 1.0,
+                ..NativeImageTransform::identity()
+            },
+        };
+
+        let capture = capture_image_quads_rgba(&[quad], 4, 4).expect("transformed quad renders");
+
+        assert_eq!(capture.content_pixels, 1);
+        assert_eq!(pixel_at(&capture, 1, 1), [0, 0, 0, 0]);
+        assert_eq!(pixel_at(&capture, 2, 2), [255, 255, 255, 255]);
     }
 
     fn pixel_at(capture: &NativeFrameCapture, x: u32, y: u32) -> [u8; 4] {

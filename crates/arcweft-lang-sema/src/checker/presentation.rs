@@ -178,8 +178,11 @@ impl TypeChecker<'_> {
                 "opacity" => {
                     self.check_presentation_image_opacity_value(value);
                 }
-                "x" | "y" | "width" | "height" => {
+                "x" | "y" | "width" | "height" | "transform.tx" | "transform.ty" => {
                     self.check_expr(value);
+                }
+                "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
+                    self.check_presentation_image_transform_component_value(value);
                 }
                 custom if custom.starts_with("param.") => {
                     self.check_presentation_image_param_value(value);
@@ -239,6 +242,20 @@ impl TypeChecker<'_> {
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
                 self.expect_expr_type(expr, &TypeKind::F64, "image opacity ratio");
+            }
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_image_transform_component_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::I32, "image transform component milli");
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::F64, "image transform component ratio");
             }
             other => {
                 self.check_expr(other);

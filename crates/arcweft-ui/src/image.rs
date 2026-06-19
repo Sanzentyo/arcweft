@@ -3,7 +3,7 @@
 use crate::{ImageId, LayoutBox, UiError};
 use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
-use arcweft_presentation::image::ImageObjectParam;
+use arcweft_presentation::image::{ImageObjectParam, ImageObjectTransform};
 use std::collections::BTreeMap;
 
 /// How an image's intrinsic pixels map into a layout box.
@@ -43,6 +43,7 @@ pub struct UiImageSource {
     fit: ImageFit,
     alignment: ImageAlignment,
     opacity_milli: u16,
+    transform: ImageObjectTransform,
     playback: ImagePlayback,
     presentation: Option<UiImagePresentationMetadata>,
 }
@@ -56,6 +57,7 @@ pub struct UiImagePresentationMetadata {
     layer: PublicId,
     opacity_milli: u16,
     depth_milli: i32,
+    transform: ImageObjectTransform,
     params: BTreeMap<PublicId, ImageObjectParam>,
     actions: Vec<PublicId>,
 }
@@ -68,6 +70,7 @@ pub struct UiResolvedImageFrame<'a> {
     fit: ImageFit,
     alignment: ImageAlignment,
     opacity_milli: u16,
+    transform: ImageObjectTransform,
     layout: LayoutBox,
 }
 
@@ -170,6 +173,7 @@ impl UiImageSource {
             fit: ImageFit::default(),
             alignment: ImageAlignment::default(),
             opacity_milli: 1_000,
+            transform: ImageObjectTransform::identity(),
             playback: ImagePlayback::new(0),
             presentation: None,
         }
@@ -190,6 +194,12 @@ impl UiImageSource {
     #[must_use]
     pub const fn with_opacity_milli(mut self, opacity_milli: u16) -> Self {
         self.opacity_milli = opacity_milli;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_transform(mut self, transform: ImageObjectTransform) -> Self {
+        self.transform = transform;
         self
     }
 
@@ -221,6 +231,10 @@ impl UiImageSource {
         self.opacity_milli
     }
 
+    pub const fn transform(&self) -> ImageObjectTransform {
+        self.transform
+    }
+
     pub const fn playback(&self) -> ImagePlayback {
         self.playback
     }
@@ -243,6 +257,7 @@ impl UiImagePresentationMetadata {
         layer: PublicId,
         opacity_milli: u16,
         depth_milli: i32,
+        transform: ImageObjectTransform,
     ) -> Self {
         Self {
             object,
@@ -251,6 +266,7 @@ impl UiImagePresentationMetadata {
             layer,
             opacity_milli,
             depth_milli,
+            transform,
             params: BTreeMap::new(),
             actions: Vec::new(),
         }
@@ -292,6 +308,10 @@ impl UiImagePresentationMetadata {
         self.depth_milli
     }
 
+    pub const fn transform(&self) -> ImageObjectTransform {
+        self.transform
+    }
+
     pub const fn params(&self) -> &BTreeMap<PublicId, ImageObjectParam> {
         &self.params
     }
@@ -320,6 +340,10 @@ impl<'a> UiResolvedImageFrame<'a> {
 
     pub const fn opacity_milli(self) -> u16 {
         self.opacity_milli
+    }
+
+    pub const fn transform(self) -> ImageObjectTransform {
+        self.transform
     }
 
     pub const fn layout(self) -> LayoutBox {
@@ -363,6 +387,7 @@ impl UiImageSourceTable {
             fit: source.fit,
             alignment: source.alignment,
             opacity_milli: source.opacity_milli,
+            transform: source.transform,
             layout,
         })
     }

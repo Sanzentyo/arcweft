@@ -518,6 +518,8 @@ pub struct AgentObservedImageContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_milli: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<AgentImageTransform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_height: Option<u32>,
@@ -525,6 +527,17 @@ pub struct AgentObservedImageContent {
     pub actions: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, AgentImageObjectParam>,
+}
+
+/// Fixed-point affine transform attached to an observed image object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentImageTransform {
+    pub m11_milli: i32,
+    pub m12_milli: i32,
+    pub m21_milli: i32,
+    pub m22_milli: i32,
+    pub tx_milli: i32,
+    pub ty_milli: i32,
 }
 
 /// Typed custom parameter attached to an observed image presentation object.
@@ -2281,6 +2294,14 @@ mod tests {
                 frame_index: Some(1),
                 local_time_millis: Some(250),
                 opacity_milli: Some(750),
+                transform: Some(AgentImageTransform {
+                    m11_milli: 1_000,
+                    m12_milli: 0,
+                    m21_milli: 0,
+                    m22_milli: 1_000,
+                    tx_milli: 12_000,
+                    ty_milli: 8_000,
+                }),
                 intrinsic_width: Some(64),
                 intrinsic_height: Some(32),
                 actions: vec!["action.inspect".to_owned()],
@@ -2302,6 +2323,10 @@ mod tests {
         assert_eq!(
             object_json["content"]["opacity_milli"],
             serde_json::json!(750)
+        );
+        assert_eq!(
+            object_json["content"]["transform"]["tx_milli"],
+            serde_json::json!(12000)
         );
 
         let tree = AgentPresentationTree::from_layers_and_objects(

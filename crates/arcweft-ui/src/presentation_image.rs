@@ -70,6 +70,7 @@ impl UiImagePresentationFrame {
                     .with_fit(ui_image_fit(object.fit()))
                     .with_alignment(ui_image_alignment(object.alignment()))
                     .with_opacity_milli(object.opacity_milli())
+                    .with_transform(object.transform())
                     .with_playback(ui_image_playback(object.playback()))
                     .with_presentation(ui_image_presentation_metadata(&object)),
             )?;
@@ -196,6 +197,7 @@ fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePr
         object.layer().public_id().clone(),
         object.opacity_milli(),
         object.depth_milli(),
+        object.transform(),
     )
     .with_params(object.params().clone())
     .with_actions(object.actions().to_vec())
@@ -209,7 +211,8 @@ mod tests {
         DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
     };
     use arcweft_presentation::image::{
-        ImageAssetRef, ImageObjectId, ImageObjectPlayback, ImagePresentationObject,
+        ImageAssetRef, ImageObjectId, ImageObjectPlayback, ImageObjectTransform,
+        ImagePresentationObject,
     };
     use arcweft_presentation::input::InteractionTarget;
 
@@ -246,6 +249,7 @@ mod tests {
         .with_fit(ImageObjectFit::Cover)
         .with_alignment(ImageObjectAlignment::top_left())
         .with_opacity_milli(625)
+        .with_transform(ImageObjectTransform::translation_milli(5_000, 7_000))
         .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150))
         .with_action(action.clone());
 
@@ -278,6 +282,8 @@ mod tests {
         assert_eq!(resolved.fit(), ImageFit::Cover);
         assert_eq!(resolved.alignment(), ImageAlignment::top_left());
         assert_eq!(resolved.opacity_milli(), 625);
+        assert_eq!(resolved.transform().tx_milli, 5_000);
+        assert_eq!(resolved.transform().ty_milli, 7_000);
         let metadata = images
             .get(crate::ImageId(0))
             .and_then(UiImageSource::presentation)
@@ -287,6 +293,8 @@ mod tests {
         assert_eq!(metadata.target().as_str(), "target.logo");
         assert_eq!(metadata.layer().as_str(), "layer.hud");
         assert_eq!(metadata.opacity_milli(), 625);
+        assert_eq!(metadata.transform().tx_milli, 5_000);
+        assert_eq!(metadata.transform().ty_milli, 7_000);
         assert_eq!(metadata.actions(), &[action.clone()]);
 
         let semantics = output.semantics().as_slice();
