@@ -287,6 +287,72 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_debug_read_tools_return_cached_observation_data() {
+        let mut report = test_agent_observation_report(None);
+        report.final_status = "running".to_owned();
+        report.signals.push(AgentAssignment {
+            name: "signal.current_flow".to_owned(),
+            value: "flow.opening".to_owned(),
+        });
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "info".to_owned(),
+            message: "opened route".to_owned(),
+            fields: Vec::new(),
+        });
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "debug".to_owned(),
+            message: "layout pass".to_owned(),
+            fields: Vec::new(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            ..AgentMcpState::default()
+        };
+
+        let state_result = agent_mcp_call_get_state(
+            &serde_json::json!({"path": "final_status"}),
+            &mut state,
+            &[],
+        )
+        .expect("state read succeeds");
+        assert_eq!(
+            mcp_text_json(&state_result)["value"],
+            serde_json::json!("running")
+        );
+
+        let signal_result = agent_mcp_call_signal_get(
+            &serde_json::json!({"name": "signal.current_flow"}),
+            &mut state,
+            &[],
+        )
+        .expect("signal read succeeds");
+        assert_eq!(
+            mcp_text_json(&signal_result)["value"],
+            serde_json::json!("flow.opening")
+        );
+
+        let log_result = agent_mcp_call_log_query(
+            &serde_json::json!({"level": "info", "contains": "route", "limit": 5}),
+            &mut state,
+            &[],
+        )
+        .expect("log query succeeds");
+        let logs = mcp_text_json(&log_result);
+        assert_eq!(logs["count"], serde_json::json!(1));
+        assert_eq!(
+            logs["logs"][0]["message"],
+            serde_json::json!("opened route")
+        );
+    }
+
+    fn mcp_text_json(result: &McpCallToolResult) -> serde_json::Value {
+        let [McpContentBlock::Text { text }] = result.content.as_slice() else {
+            panic!("expected one text block");
+        };
+        serde_json::from_str(text).expect("MCP text block is JSON")
+    }
+
+    #[test]
     fn uri_capture_request_preserves_report_capture_time() {
         let report = test_agent_observation_report(Some(2000));
         let request = agent_capture_request_from_uri(
@@ -1850,6 +1916,21 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP hit-test result: {error}"))
         }
+        "arcweft.get_state" => {
+            let tool = agent_mcp_call_get_state(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP state result: {error}"))
+        }
+        "arcweft.signal_get" => {
+            let tool = agent_mcp_call_signal_get(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP signal result: {error}"))
+        }
+        "arcweft.log_query" => {
+            let tool = agent_mcp_call_log_query(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP log result: {error}"))
+        }
         "arcweft.trace.read" => {
             let tool = agent_mcp_call_trace_read(&arguments, state)?;
             serde_json::to_value(tool)
@@ -1957,6 +2038,144 @@ fn agent_mcp_call_hit_test(
     Ok(McpCallToolResult {
         content: vec![McpContentBlock::Text { text }],
         is_error: false,
+    })
+}
+
+fn agent_mcp_call_get_state(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let report = state.report.as_ref().ok_or_else(|| {
+        "arcweft.get_state requires a prior arcweft.observe call, arguments.source, or arguments.profile"
+            .to_owned()
+    })?;
+    let summary = agent_mcp_observation_state_summary(report);
+    let value = if let Some(path) = arguments.get("path").and_then(serde_json::Value::as_str) {
+        let selected = agent_json_path(&summary, path).cloned();
+        serde_json::json!({
+            "path": path,
+            "found": selected.is_some(),
+            "value": selected,
+            "tick": report.tick,
+            "state_hash": report.state_hash,
+        })
+    } else {
+        summary
+    };
+    agent_mcp_json_tool_result(&value, "state")
+}
+
+fn agent_mcp_call_signal_get(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let name = arguments
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "arcweft.signal_get requires arguments.name".to_owned())?;
+    let report = state.report.as_ref().ok_or_else(|| {
+        "arcweft.signal_get requires a prior arcweft.observe call, arguments.source, or arguments.profile"
+            .to_owned()
+    })?;
+    let signal = report.signals.iter().find(|signal| signal.name == name);
+    let value = serde_json::json!({
+        "name": name,
+        "found": signal.is_some(),
+        "value": signal.map(|signal| signal.value.as_str()),
+        "tick": report.tick,
+        "state_hash": report.state_hash,
+    });
+    agent_mcp_json_tool_result(&value, "signal")
+}
+
+fn agent_mcp_call_log_query(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let report = state.report.as_ref().ok_or_else(|| {
+        "arcweft.log_query requires a prior arcweft.observe call, arguments.source, or arguments.profile"
+            .to_owned()
+    })?;
+    let level = arguments.get("level").and_then(serde_json::Value::as_str);
+    let contains = arguments
+        .get("contains")
+        .and_then(serde_json::Value::as_str);
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(50);
+    let logs = report
+        .logs
+        .iter()
+        .filter(|log| level.is_none_or(|level| log.level == level))
+        .filter(|log| contains.is_none_or(|needle| log.message.contains(needle)))
+        .take(limit)
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "tick": report.tick,
+        "state_hash": report.state_hash,
+        "level": level,
+        "contains": contains,
+        "limit": limit,
+        "count": logs.len(),
+        "logs": logs,
+    });
+    agent_mcp_json_tool_result(&value, "logs")
+}
+
+fn agent_mcp_observe_if_requested(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), String> {
+    if !agent_mcp_arguments_request_observe(arguments) {
+        return Ok(());
+    }
+    let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
+    state.report = Some(observed.report);
+    state.image_output = observed.image_output;
+    state.image_frames = observed.image_frames;
+    state.native_capture_session = Some(observed.native_session);
+    state.capture_resources.clear();
+    Ok(())
+}
+
+fn agent_mcp_json_tool_result(
+    value: &serde_json::Value,
+    context: &str,
+) -> Result<McpCallToolResult, String> {
+    let text = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("failed to serialize Agent {context}: {error}"))?;
+    Ok(McpCallToolResult {
+        content: vec![McpContentBlock::Text { text }],
+        is_error: false,
+    })
+}
+
+fn agent_mcp_observation_state_summary(report: &AgentObservationReport) -> serde_json::Value {
+    serde_json::json!({
+        "status": report.status,
+        "final_status": report.final_status,
+        "tick": report.tick,
+        "frame_id": report.frame_id,
+        "state_hash": report.state_hash,
+        "render_hash": report.render_hash,
+        "source": report.source,
+        "steps": report.steps,
+        "task_requests": report.task_requests,
+        "capture_time_millis": report.capture_time_millis,
+    })
+}
+
+fn agent_json_path<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    if path.is_empty() {
+        return Some(value);
+    }
+    path.split('.').try_fold(value, |current, segment| {
+        current.as_object().and_then(|object| object.get(segment))
     })
 }
 

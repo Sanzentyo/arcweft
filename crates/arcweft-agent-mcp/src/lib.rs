@@ -143,6 +143,9 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
         agent_session_info_tool_descriptor(),
+        agent_get_state_tool_descriptor(),
+        agent_signal_get_tool_descriptor(),
+        agent_log_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -277,6 +280,75 @@ fn agent_trace_read_tool_descriptor() -> McpToolDescriptor {
                 "path": { "type": "string", "description": "Filesystem path to a .arcwx Agent trace file." }
             },
             "required": ["path"]
+        }),
+    }
+}
+
+fn agent_get_state_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.get_state".to_owned(),
+        title: Some("Get Arcweft State".to_owned()),
+        description: "Reads the latest observed Agent state summary, or one dotted field from it. With source/profile, observes first.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before reading state. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-read. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before reading state. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "steps": { "type": "integer", "minimum": 1 },
+                "capture_step": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 },
+                "path": { "type": "string", "description": "Optional dotted state summary path such as status, final_status, tick, state_hash, or render_hash." }
+            }
+        }),
+    }
+}
+
+fn agent_signal_get_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.signal_get".to_owned(),
+        title: Some("Get Arcweft Signal".to_owned()),
+        description: "Reads one signal value from the latest observed Agent frame. With source/profile, observes first.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before reading the signal. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-read. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before reading the signal. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "steps": { "type": "integer", "minimum": 1 },
+                "capture_step": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 },
+                "name": { "type": "string", "description": "Signal id without @, such as signal.current_flow." }
+            },
+            "required": ["name"]
+        }),
+    }
+}
+
+fn agent_log_query_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.log_query".to_owned(),
+        title: Some("Query Arcweft Logs".to_owned()),
+        description: "Filters logs from the latest observed Agent frame by level and message substring. With source/profile, observes first.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before querying logs. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-read. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before querying logs. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "steps": { "type": "integer", "minimum": 1 },
+                "capture_step": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 },
+                "level": { "type": "string", "description": "Optional exact log level filter." },
+                "contains": { "type": "string", "description": "Optional case-sensitive message substring filter." },
+                "limit": { "type": "integer", "minimum": 0, "default": 50 }
+            }
         }),
     }
 }
@@ -1209,6 +1281,9 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "arcweft.capture"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.hit_test"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.session.info"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.get_state"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.signal_get"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.log_query"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -1314,6 +1389,39 @@ mod tests {
             false,
         );
         assert_eq!(properties["capture_step"]["minimum"], 1);
+    }
+
+    #[test]
+    fn debug_read_tool_schemas_expose_state_signal_and_log_filters() {
+        let tools = agent_tool_descriptors();
+        let state = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.get_state")
+            .expect("state tool is described");
+        assert_eq!(state.input_schema["properties"]["path"]["type"], "string");
+        assert_eq!(state.input_schema["properties"]["source"]["type"], "string");
+        assert_eq!(
+            state.input_schema["properties"]["profile"]["type"],
+            "string"
+        );
+
+        let signal = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.signal_get")
+            .expect("signal tool is described");
+        assert_eq!(signal.input_schema["required"], serde_json::json!(["name"]));
+        assert_eq!(signal.input_schema["properties"]["name"]["type"], "string");
+
+        let logs = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.log_query")
+            .expect("log query tool is described");
+        assert_eq!(logs.input_schema["properties"]["level"]["type"], "string");
+        assert_eq!(
+            logs.input_schema["properties"]["contains"]["type"],
+            "string"
+        );
+        assert_eq!(logs.input_schema["properties"]["limit"]["minimum"], 0);
     }
 
     fn assert_capture_time_description_mentions_animated_presentation_objects(
