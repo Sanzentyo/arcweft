@@ -65,3 +65,14 @@ flow image_animated_webp {
 
     return "image_animated_webp"
 }
+
+flow image_sprite_overlay {
+    bg(@asset.bg.room)
+    image(asset = @asset.bg.pulse, id = "image.sample.pulse_sprite", target = "target.sample.pulse_sprite", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch")
+
+    narrator.say(id=@say.image.sprite_overlay, voice=auto)[
+        Foreground image object uses authored bounds, layer, object capture, and animation timing.[p]
+    ]
+
+    return "image_sprite_overlay"
+}

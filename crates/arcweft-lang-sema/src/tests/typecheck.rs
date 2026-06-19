@@ -799,6 +799,20 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typechecks_presentation_image_object_call_with_named_asset_and_bounds() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("presentation image fixture lowers");
+
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("presentation image call typechecks");
+}
+
+#[test]
 fn typecheck_rejects_presentation_slot_family_mismatch() {
     let tree = parse_ok(
         r"

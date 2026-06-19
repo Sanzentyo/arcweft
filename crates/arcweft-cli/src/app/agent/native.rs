@@ -897,6 +897,59 @@ mod tests {
     }
 
     #[test]
+    fn agent_runtime_image_call_builds_bounded_layered_image_object() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[RuntimeCall {
+                callee: "image".to_owned(),
+                args: vec![
+                    "asset = @asset.bg.pulse".to_owned(),
+                    "id = @image.test.pulse".to_owned(),
+                    "target = @target.test.pulse".to_owned(),
+                    "layer = @layer.foreground".to_owned(),
+                    "x = 12px".to_owned(),
+                    "y = 34px".to_owned(),
+                    "width = 56px".to_owned(),
+                    "height = 78px".to_owned(),
+                    "fit = stretch".to_owned(),
+                ],
+            }],
+            0.15,
+        );
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(observation.objects.len(), 1);
+        let object = &observation.objects[0];
+        assert_eq!(object.id, "object.image.layer.foreground.0.0");
+        assert_eq!(object.layer, "layer.foreground");
+        assert_eq!(object.bbox.x, 12);
+        assert_eq!(object.bbox.y, 34);
+        assert_eq!(object.bbox.width, 56);
+        assert_eq!(object.bbox.height, 78);
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("image call should become Agent image content");
+        };
+        assert_eq!(content.frame_index, Some(1));
+        assert_eq!(content.local_time_millis, Some(150));
+        assert_eq!(
+            observation.image_frames.get(&object.id).unwrap().rgba,
+            vec![240, 180, 20, 255, 220, 30, 180, 255]
+        );
+    }
+
+    #[test]
     fn agent_asset_call_parser_accepts_only_public_asset_refs() {
         assert_eq!(
             agent_asset_id_from_call_arg("@asset.bg.room")
@@ -4854,17 +4907,33 @@ fn agent_runtime_presentation_image_observation(
     calls: &[RuntimeCall],
     capture_time_seconds: f32,
 ) -> (AgentUiImageObservation, Vec<AgentDiagnostic>) {
+    let mut inputs = Vec::new();
     let mut background_input = None;
     let mut diagnostics = Vec::new();
-    for call in calls {
-        let Some(asset_id) = agent_background_asset_call(call) else {
-            continue;
+    for (call_index, call) in calls.iter().enumerate() {
+        let image_call = match agent_runtime_image_call(call, call_index, viewport) {
+            Ok(Some(image_call)) => image_call,
+            Ok(None) => continue,
+            Err(message) => {
+                diagnostics.push(AgentDiagnostic {
+                    step,
+                    severity: AgentDiagnosticSeverity::Warning,
+                    source: Some("agent.presentation_image".to_owned()),
+                    code: Some("image_call_invalid".to_owned()),
+                    effect_id: Some(call.callee.clone()),
+                    message,
+                });
+                continue;
+            }
         };
-        match agent_decode_source_image_asset(source_path, asset_id.as_str()) {
+        match agent_decode_source_image_asset(source_path, image_call.asset.as_str()) {
             Ok(image) => {
-                background_input = Some(agent_background_image_presentation_input(
-                    asset_id, viewport, image,
-                ));
+                let input = agent_image_presentation_input(&image_call, image);
+                if image_call.background_slot {
+                    background_input = Some(input);
+                } else {
+                    inputs.push(input);
+                }
             }
             Err(message) => diagnostics.push(AgentDiagnostic {
                 step,
@@ -4876,10 +4945,13 @@ fn agent_runtime_presentation_image_observation(
             }),
         }
     }
-    let Some(background_input) = background_input else {
+    if let Some(background_input) = background_input {
+        inputs.insert(0, background_input);
+    }
+    if inputs.is_empty() {
         return (AgentUiImageObservation::default(), diagnostics);
-    };
-    let frame = match arcweft_ui::UiImagePresentationFrame::from_inputs([background_input]) {
+    }
+    let frame = match arcweft_ui::UiImagePresentationFrame::from_inputs(inputs) {
         Ok(frame) => frame,
         Err(error) => {
             diagnostics.push(AgentDiagnostic {
@@ -4922,20 +4994,164 @@ fn agent_runtime_presentation_image_observation(
     )
 }
 
-fn agent_background_asset_call(call: &RuntimeCall) -> Option<arcweft_id::PublicId> {
-    (call.callee == "bg")
-        .then(|| call.args.first())
-        .flatten()
-        .and_then(|arg| agent_asset_id_from_call_arg(arg))
+#[derive(Clone, Debug)]
+struct AgentRuntimeImageCall {
+    asset: arcweft_id::PublicId,
+    object: arcweft_id::PublicId,
+    target: arcweft_id::PublicId,
+    layer: arcweft_id::PublicId,
+    bounds: arcweft_presentation::hit::HitRect,
+    fit: arcweft_presentation::image::ImageObjectFit,
+    background_slot: bool,
+}
+
+fn agent_runtime_image_call(
+    call: &RuntimeCall,
+    call_index: usize,
+    viewport: &AgentViewport,
+) -> Result<Option<AgentRuntimeImageCall>, String> {
+    match call.callee.as_str() {
+        "bg" => agent_background_runtime_image_call(call, viewport).map(Some),
+        "image" | "image.show" => agent_object_runtime_image_call(call, call_index).map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn agent_background_runtime_image_call(
+    call: &RuntimeCall,
+    viewport: &AgentViewport,
+) -> Result<AgentRuntimeImageCall, String> {
+    let asset = agent_image_call_asset(call)
+        .ok_or_else(|| "`bg(...)` requires an `asset` argument".to_owned())?;
+    Ok(AgentRuntimeImageCall {
+        asset,
+        object: arcweft_id::PublicId::try_new("image.background.default")
+            .expect("static image object id is valid"),
+        target: arcweft_id::PublicId::try_new("target.background.default")
+            .expect("static target id is valid"),
+        layer: arcweft_id::PublicId::try_new("layer.background").expect("static layer id is valid"),
+        bounds: arcweft_presentation::hit::HitRect::new(
+            0.0,
+            0.0,
+            viewport.width.to_string().parse().unwrap_or(0.0),
+            viewport.height.to_string().parse().unwrap_or(0.0),
+        ),
+        fit: arcweft_presentation::image::ImageObjectFit::Cover,
+        background_slot: true,
+    })
+}
+
+fn agent_object_runtime_image_call(
+    call: &RuntimeCall,
+    call_index: usize,
+) -> Result<AgentRuntimeImageCall, String> {
+    let asset = agent_image_call_asset(call)
+        .ok_or_else(|| "`image(...)` requires an `asset` argument".to_owned())?;
+    let x = agent_required_image_call_length(call, "x", 1)?;
+    let y = agent_required_image_call_length(call, "y", 2)?;
+    let width = agent_required_image_call_length(call, "width", 3)?;
+    let height = agent_required_image_call_length(call, "height", 4)?;
+    let object = agent_call_named_value(call, "id")
+        .and_then(agent_public_id_from_call_arg)
+        .unwrap_or_else(|| {
+            let stem = asset
+                .as_str()
+                .strip_prefix("asset.")
+                .unwrap_or(asset.as_str());
+            arcweft_id::PublicId::try_new(format!("image.{stem}.{call_index}"))
+                .expect("generated image object id is valid")
+        });
+    let target = agent_call_named_value(call, "target")
+        .and_then(agent_public_id_from_call_arg)
+        .unwrap_or_else(|| {
+            arcweft_id::PublicId::try_new(format!("target.{}", object.as_str()))
+                .expect("generated image target id is valid")
+        });
+    let layer = agent_call_named_value(call, "layer")
+        .and_then(agent_public_id_from_call_arg)
+        .unwrap_or_else(|| {
+            arcweft_id::PublicId::try_new("layer.game_ui").expect("static layer id is valid")
+        });
+    let fit = agent_call_named_value(call, "fit")
+        .and_then(agent_image_fit_from_call_arg)
+        .unwrap_or_default();
+    Ok(AgentRuntimeImageCall {
+        asset,
+        object,
+        target,
+        layer,
+        bounds: arcweft_presentation::hit::HitRect::new(x, y, width, height),
+        fit,
+        background_slot: false,
+    })
+}
+
+fn agent_image_call_asset(call: &RuntimeCall) -> Option<arcweft_id::PublicId> {
+    agent_call_named_value(call, "asset")
+        .or_else(|| agent_call_positional_value(call, 0))
+        .and_then(agent_asset_id_from_call_arg)
 }
 
 fn agent_asset_id_from_call_arg(arg: &str) -> Option<arcweft_id::PublicId> {
+    let id = agent_public_id_from_call_arg(arg)?;
+    id.as_str().starts_with("asset.").then_some(id)
+}
+
+fn agent_public_id_from_call_arg(arg: &str) -> Option<arcweft_id::PublicId> {
     let value = arg.trim().trim_matches('"').trim_matches('\'');
     let value = value.strip_prefix('@').unwrap_or(value);
-    value
-        .starts_with("asset.")
-        .then(|| arcweft_id::PublicId::try_new(value).ok())
-        .flatten()
+    arcweft_id::PublicId::try_new(value).ok()
+}
+
+fn agent_call_named_value<'a>(call: &'a RuntimeCall, name: &str) -> Option<&'a str> {
+    call.args.iter().find_map(|arg| {
+        let (arg_name, value) = arg.split_once(" = ")?;
+        (arg_name.trim() == name).then_some(value.trim())
+    })
+}
+
+fn agent_call_positional_value(call: &RuntimeCall, index: usize) -> Option<&str> {
+    call.args
+        .iter()
+        .filter(|arg| !arg.contains(" = "))
+        .nth(index)
+        .map(String::as_str)
+}
+
+fn agent_required_image_call_length(
+    call: &RuntimeCall,
+    name: &str,
+    positional_index: usize,
+) -> Result<f32, String> {
+    let value = agent_call_named_value(call, name)
+        .or_else(|| agent_call_positional_value(call, positional_index))
+        .ok_or_else(|| format!("`image(...)` requires `{name}`"))?;
+    agent_image_call_length(value)
+        .ok_or_else(|| format!("`image(...)` argument `{name}` must be a finite px length"))
+}
+
+fn agent_image_call_length(value: &str) -> Option<f32> {
+    let value = value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .strip_suffix("px")
+        .unwrap_or_else(|| value.trim().trim_matches('"').trim_matches('\''))
+        .trim();
+    let parsed = value.parse::<f32>().ok()?;
+    parsed.is_finite().then_some(parsed)
+}
+
+fn agent_image_fit_from_call_arg(
+    value: &str,
+) -> Option<arcweft_presentation::image::ImageObjectFit> {
+    match value.trim().trim_matches('"').trim_matches('\'') {
+        "contain" => Some(arcweft_presentation::image::ImageObjectFit::Contain),
+        "cover" => Some(arcweft_presentation::image::ImageObjectFit::Cover),
+        "stretch" => Some(arcweft_presentation::image::ImageObjectFit::Stretch),
+        "intrinsic" => Some(arcweft_presentation::image::ImageObjectFit::Intrinsic),
+        _ => None,
+    }
 }
 
 fn agent_decode_source_image_asset(
@@ -4979,32 +5195,18 @@ fn agent_decode_source_image_asset(
     ))
 }
 
-fn agent_background_image_presentation_input(
-    asset: arcweft_id::PublicId,
-    viewport: &AgentViewport,
+fn agent_image_presentation_input(
+    call: &AgentRuntimeImageCall,
     image: arcweft_image::DecodedImage,
 ) -> arcweft_ui::UiImagePresentationInput {
     let object = arcweft_presentation::image::ImagePresentationObject::new(
-        arcweft_presentation::image::ImageObjectId::new(
-            arcweft_id::PublicId::try_new("image.background.default")
-                .expect("static image object id is valid"),
-        ),
-        arcweft_presentation::image::ImageAssetRef::new(asset),
-        arcweft_presentation::layer::LayerId::new(
-            arcweft_id::PublicId::try_new("layer.background").expect("static layer id is valid"),
-        ),
-        arcweft_presentation::input::InteractionTarget::new(
-            arcweft_id::PublicId::try_new("target.background.default")
-                .expect("static target id is valid"),
-        ),
-        arcweft_presentation::hit::HitRect::new(
-            0.0,
-            0.0,
-            viewport.width.to_string().parse().unwrap_or(0.0),
-            viewport.height.to_string().parse().unwrap_or(0.0),
-        ),
+        arcweft_presentation::image::ImageObjectId::new(call.object.clone()),
+        arcweft_presentation::image::ImageAssetRef::new(call.asset.clone()),
+        arcweft_presentation::layer::LayerId::new(call.layer.clone()),
+        arcweft_presentation::input::InteractionTarget::new(call.target.clone()),
+        call.bounds,
     )
-    .with_fit(arcweft_presentation::image::ImageObjectFit::Cover);
+    .with_fit(call.fit);
     arcweft_ui::UiImagePresentationInput::new(object, image)
 }
 

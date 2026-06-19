@@ -124,7 +124,9 @@ separate flows for static PNG, static JPEG, static WebP, animated GIF, and
 animated WebP backgrounds. The animated flows are intended to be observed with
 different `--capture-time` values so native object PNG/raw captures can prove
 that visual-time frame selection, not wall-clock time, drives the active image
-frame.
+frame. The same sample also includes `image_sprite_overlay`, which combines a
+background image with a bounded foreground `image(...)` object using authored
+id, target, layer, bounds, fit, and animated frame timing.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -156,12 +158,12 @@ same alpha-shaped geometry as color image capture.
 1. Add explicit source/DSL asset declaration syntax when the language design
    settles it; static `asset.image(...)` references are already checked against
    bundle image asset ids.
-2. Generalize the source-level image surface beyond the first `bg(...)`
-   background slot so declared image objects, foreground sprites, clipped image
-   objects, layer targeting, transforms, depth, hit-test proxies, and semantic
-   actions can all use the same presentation object path.
-3. Add clipped object capture, layer capture, and pinned-frame capture fixtures
-   that exercise non-fullscreen image geometry and resource readback.
+2. Generalize the source-level image surface from the current `bg(...)` and
+   bounded `image(...)` calls into declared image objects with transforms,
+   depth, hit-test proxies, semantic actions, and lifecycle semantics.
+3. Add clipped object capture, layer capture, and pinned-frame readback
+   fixtures that exercise non-fullscreen image geometry through direct
+   `--read-uri` and MCP resource reads.
 4. Add more regression tests for native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 

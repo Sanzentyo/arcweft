@@ -18,6 +18,17 @@ impl TypeChecker<'_> {
                     "PresentationHandle<BackgroundSurface>".to_owned(),
                 ))
             }
+            "image" | "image.show" => {
+                self.check_presentation_asset_arg(args, "image asset");
+                for arg in args {
+                    if let CallArg::Named { value, .. } = arg {
+                        self.check_expr(value);
+                    }
+                }
+                Some(TypeKind::Named(
+                    "PresentationHandle<ImageSurface>".to_owned(),
+                ))
+            }
             "show" => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "show character");
                 self.check_presentation_named_args(args, "character");
@@ -51,6 +62,45 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Named("Option<CharacterSurface>".to_owned()))
             }
             _ => None,
+        }
+    }
+
+    fn check_presentation_asset_arg(&mut self, args: &[CallArg], context: &str) {
+        let arg = args
+            .iter()
+            .find_map(|arg| match arg {
+                CallArg::Named { name, value } if name == "asset" => Some(value.as_ref()),
+                _ => None,
+            })
+            .or_else(|| {
+                args.iter().find_map(|arg| match arg {
+                    CallArg::Positional(value) => Some(value),
+                    CallArg::Named { .. } | CallArg::Spread { .. } => None,
+                })
+            });
+        let Some(arg) = arg else {
+            self.errors.push(TypeCheckError::new(format!(
+                "{context} argument is required"
+            )));
+            return;
+        };
+        match arg {
+            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+                Some(EntityKind::Asset) => {}
+                actual => self.errors.push(TypeCheckError::new(format!(
+                    "{context} must be an Asset reference, found {actual:?}"
+                ))),
+            },
+            Expr::Path(path)
+                if self.locals.get(path) == Some(&TypeKind::Ref(EntityKind::Asset)) => {}
+            Expr::Path(path)
+                if self.env.symbol_type(path) == Some(&TypeKind::Ref(EntityKind::Asset)) => {}
+            other => {
+                self.check_expr(other);
+                self.errors.push(TypeCheckError::new(format!(
+                    "{context} must be an Asset reference"
+                )));
+            }
         }
     }
 
