@@ -75,6 +75,8 @@ pub enum TypeKind {
     Probe(Box<TypeKind>),
     Predicate,
     Observation,
+    ObservedObject,
+    AgentBBox,
     ActionName,
     ActionTarget,
     ActionResult,

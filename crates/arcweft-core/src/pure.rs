@@ -3672,6 +3672,13 @@ impl PureEvaluator {
             (RuntimeValue::Seq(seq), "contains", [needle]) => Ok(RuntimeValue::Bool(
                 seq.into_values().iter().any(|item| item == needle),
             )),
+            (RuntimeValue::Seq(seq), "require_role", [RuntimeValue::String(role)]) => Ok(seq
+                .into_values()
+                .into_iter()
+                .find(|item| {
+                    Self::runtime_record_string_field(item, "role").as_deref() == Some(role)
+                })
+                .unwrap_or(RuntimeValue::Unit)),
             (RuntimeValue::Seq(seq), "__index", [index]) => {
                 Ok(runtime_sequence_index_value(&seq, index))
             }
@@ -3698,6 +3705,19 @@ impl PureEvaluator {
                 ),
             }),
         }
+    }
+
+    fn runtime_record_string_field(value: &RuntimeValue, field: &str) -> Option<String> {
+        let RuntimeValue::Record(fields) = value else {
+            return None;
+        };
+        fields
+            .iter()
+            .find(|candidate| candidate.name == field)
+            .and_then(|candidate| match &candidate.value {
+                RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
+                _ => None,
+            })
     }
 
     fn evaluate_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {

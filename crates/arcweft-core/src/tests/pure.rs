@@ -435,6 +435,57 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
 }
 
 #[test]
+fn vm_pure_backend_requires_observed_object_by_role() {
+    let request = PureFunctionRequest::new(
+        "dialogue_textbox",
+        RuntimeExpr::MethodCall {
+            receiver: Box::new(RuntimeExpr::Local("objects".to_owned())),
+            method: "require_role".to_owned(),
+            args: vec![RuntimeExpr::Value(RuntimeValue::String(
+                "dialogue_textbox".to_owned(),
+            ))],
+        },
+        [RuntimeBinding {
+            name: "objects".to_owned(),
+            value: RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::Record(vec![
+                    RuntimeFieldValue {
+                        name: "id".to_owned(),
+                        value: RuntimeValue::String("object.background".to_owned()),
+                    },
+                    RuntimeFieldValue {
+                        name: "role".to_owned(),
+                        value: RuntimeValue::String("background".to_owned()),
+                    },
+                ]),
+                RuntimeValue::Record(vec![
+                    RuntimeFieldValue {
+                        name: "id".to_owned(),
+                        value: RuntimeValue::String("object.dialogue.0.0".to_owned()),
+                    },
+                    RuntimeFieldValue {
+                        name: "role".to_owned(),
+                        value: RuntimeValue::String("dialogue_textbox".to_owned()),
+                    },
+                ]),
+            ])),
+        }],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("pure helper finds observed object role");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::Record(ref fields)
+            if fields.iter().any(|field| field.name == "id"
+                && field.value == RuntimeValue::String("object.dialogue.0.0".to_owned()))
+    ));
+    assert_eq!(result.stats.evaluated_method_calls, 1);
+}
+
+#[test]
 fn vm_runtime_value_fallback_records_pure_call_stats() {
     let helper = RuntimePureHelper {
         id: RuntimePureHelperId(0),

@@ -898,6 +898,8 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::DisplayText => Some("DisplayText"),
         TypeKind::Predicate => Some("Predicate"),
         TypeKind::Observation => Some("Observation"),
+        TypeKind::ObservedObject => Some("ObservedObject"),
+        TypeKind::AgentBBox => Some("AgentBBox"),
         TypeKind::ActionName => Some("ActionName"),
         TypeKind::ActionTarget => Some("ActionTarget"),
         TypeKind::ActionResult => Some("ActionResult"),

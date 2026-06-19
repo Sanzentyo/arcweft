@@ -568,6 +568,8 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::DisplayText
         | TypeKind::ActionName
         | TypeKind::AgentValue
+        | TypeKind::ObservedObject
+        | TypeKind::AgentBBox
         | TypeKind::Ref(_)
         | TypeKind::CaptureRef
         | TypeKind::AgentResource

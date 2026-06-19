@@ -3716,6 +3716,11 @@ fn evaluate_runtime_method_call(
         (RuntimeValue::Seq(seq), "contains", [needle]) => {
             RuntimeValue::Bool(seq.into_values().iter().any(|item| item == needle))
         }
+        (RuntimeValue::Seq(seq), "require_role", [RuntimeValue::String(role)]) => seq
+            .into_values()
+            .into_iter()
+            .find(|item| runtime_record_string_field(item, "role").as_deref() == Some(role))
+            .unwrap_or(RuntimeValue::Unit),
         (RuntimeValue::Seq(seq), "__index", [index]) => runtime_sequence_index_value(&seq, index),
         (RuntimeValue::Tuple(items), "len", []) => runtime_len_value(items.len()),
         (RuntimeValue::Tuple(items), "contains", [needle]) => {
@@ -3741,6 +3746,19 @@ fn evaluate_runtime_method_call(
                 .join(", ")
         )),
     }
+}
+
+fn runtime_record_string_field(value: &RuntimeValue, field: &str) -> Option<String> {
+    let RuntimeValue::Record(fields) = value else {
+        return None;
+    };
+    fields
+        .iter()
+        .find(|candidate| candidate.name == field)
+        .and_then(|candidate| match &candidate.value {
+            RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
+            _ => None,
+        })
 }
 
 fn runtime_len_value(len: usize) -> RuntimeValue {

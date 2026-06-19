@@ -1169,6 +1169,56 @@ effects { agent.observe }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_observed_object_fields_and_capture_target() {
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.visual_dialogue visual_dialogue()
+effects { agent.observe, agent.capture }
+{
+    let frame = try observe()
+    let textbox = try frame.objects.require_role("dialogue_textbox")
+    let color = try capture(
+        object(textbox.id),
+        format = .png,
+        kind = .color,
+        name = "dialogue-textbox-color",
+    )
+    expect(textbox.role == "dialogue_textbox")
+    expect(textbox.bbox.width > 0u32)
+    expect(textbox.bbox.height > 0u32)
+    return color.uri
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("ObservedObject fields and object capture target typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ObservedObject)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentBBox)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::CaptureRef)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_opening_smoke_try_surface() {
         let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption)
             .with_entity(EntitySymbol::new(

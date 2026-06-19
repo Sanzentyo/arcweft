@@ -2230,6 +2230,9 @@ impl TypeChecker<'_> {
         if method_name == "contains" {
             return Some(self.check_sequence_contains_method_call(&receiver_type, args));
         }
+        if method_name == "require_role" {
+            return self.check_agent_object_require_role_method_call(&receiver_type, args);
+        }
         if method_name == "get" {
             return self.check_map_get_method_call(&receiver_type, args);
         }
@@ -2576,6 +2579,46 @@ impl TypeChecker<'_> {
         Some(value.as_ref().clone())
     }
 
+    fn check_agent_object_require_role_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let TypeKind::Vec(item) = receiver_type else {
+            return None;
+        };
+        if item.as_ref() != &TypeKind::ObservedObject {
+            return None;
+        }
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "ObservedObject list require_role requires exactly one role string".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return Some(agent_result(TypeKind::ObservedObject));
+        };
+        match arg {
+            CallArg::Positional(value) => {
+                self.expect_expr_type(value, &TypeKind::String, "object role");
+            }
+            CallArg::Named { name, value } => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "require_role arguments must be positional, got named `{name}`"
+                )));
+                self.check_expr(value);
+            }
+            CallArg::Spread { value } => {
+                self.errors.push(TypeCheckError::new(
+                    "require_role arguments cannot be spread".to_owned(),
+                ));
+                self.check_expr(value);
+            }
+        }
+        Some(agent_result(TypeKind::ObservedObject))
+    }
+
     fn check_traverse_method_call(
         &mut self,
         receiver_type: &TypeKind,
@@ -2728,6 +2771,8 @@ impl TypeChecker<'_> {
         }
         match self.check_expr(target) {
             Some(TypeKind::Observation) => agent_observation_field_type(field),
+            Some(TypeKind::ObservedObject) => agent_observed_object_field_type(field),
+            Some(TypeKind::AgentBBox) => agent_bbox_field_type(field),
             Some(TypeKind::ActionTarget) => agent_action_target_field_type(field),
             Some(TypeKind::ActionResult) => agent_action_result_field_type(field),
             Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
@@ -3203,11 +3248,30 @@ fn agent_observation_field_type(field: &str) -> Option<TypeKind> {
         "tick" => TypeKind::U64,
         "frame_id" | "state_hash" | "render_hash" => TypeKind::String,
         "actions" => TypeKind::Vec(Box::new(TypeKind::ActionTarget)),
+        "objects" => TypeKind::Vec(Box::new(TypeKind::ObservedObject)),
         "signals" => TypeKind::Map {
             kind: MapKind::BTree,
             key: Box::new(TypeKind::AgentValue),
             value: Box::new(TypeKind::AgentValue),
         },
+        _ => return None,
+    })
+}
+
+fn agent_observed_object_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "id" => TypeKind::Named("ObservedObjectId".to_owned()),
+        "parent_id" | "entity" | "layer" | "role" | "text" => TypeKind::String,
+        "visible" | "enabled" => TypeKind::Bool,
+        "bbox" => TypeKind::AgentBBox,
+        _ => return None,
+    })
+}
+
+fn agent_bbox_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "space" => TypeKind::String,
+        "x" | "y" | "width" | "height" => TypeKind::U32,
         _ => return None,
     })
 }

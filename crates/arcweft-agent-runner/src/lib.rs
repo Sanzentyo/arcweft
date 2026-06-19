@@ -868,7 +868,7 @@ fn runtime_observe_request(args: &RuntimeAgentArgs<'_>) -> Result<ObserveRequest
             .map_or(Ok(false), runtime_bool)?,
         include_objects: args
             .named("include_objects")
-            .map_or(Ok(false), runtime_bool)?,
+            .map_or(Ok(true), runtime_bool)?,
         include_logs: args.named("include_logs").map_or(Ok(false), runtime_bool)?,
     })
 }
@@ -1199,6 +1199,7 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
                 RuntimeValue::String(observation.render_hash.clone()),
             ),
             runtime_field("actions", runtime_action_targets(&observation.actions)),
+            runtime_field("objects", runtime_observed_objects(&observation.payload)),
             runtime_field("signals", runtime_agent_value_fields(&observation.signals)),
         ]),
         AgentHostResponse::Action(result) => RuntimeValue::Record(vec![
@@ -1331,6 +1332,66 @@ fn runtime_action_targets(actions: &[AgentActionTarget]) -> RuntimeValue {
     ))
 }
 
+fn runtime_observed_objects(payload: &serde_json::Value) -> RuntimeValue {
+    RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
+        payload
+            .get("objects")
+            .and_then(serde_json::Value::as_array)
+            .map_or_else(Vec::new, |objects| {
+                objects.iter().map(runtime_observed_object).collect()
+            }),
+    ))
+}
+
+fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field("id", runtime_json_string_field(object, "id")),
+        runtime_field("parent_id", runtime_json_string_field(object, "parent_id")),
+        runtime_field("entity", runtime_json_string_field(object, "entity")),
+        runtime_field("layer", runtime_json_string_field(object, "layer")),
+        runtime_field("role", runtime_json_string_field(object, "role")),
+        runtime_field(
+            "visible",
+            RuntimeValue::Bool(
+                object
+                    .get("visible")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+            ),
+        ),
+        runtime_field(
+            "enabled",
+            RuntimeValue::Bool(
+                object
+                    .get("enabled")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true),
+            ),
+        ),
+        runtime_field("bbox", runtime_bbox(object.get("bbox"))),
+        runtime_field("text", runtime_json_string_field(object, "text")),
+    ])
+}
+
+fn runtime_bbox(value: Option<&serde_json::Value>) -> RuntimeValue {
+    let Some(value) = value else {
+        return RuntimeValue::Record(vec![
+            runtime_field("space", RuntimeValue::String(String::new())),
+            runtime_field("x", RuntimeValue::u32(0)),
+            runtime_field("y", RuntimeValue::u32(0)),
+            runtime_field("width", RuntimeValue::u32(0)),
+            runtime_field("height", RuntimeValue::u32(0)),
+        ]);
+    };
+    RuntimeValue::Record(vec![
+        runtime_field("space", runtime_json_string_field(value, "space")),
+        runtime_field("x", runtime_json_u32_field(value, "x")),
+        runtime_field("y", runtime_json_u32_field(value, "y")),
+        runtime_field("width", runtime_json_u32_field(value, "width")),
+        runtime_field("height", runtime_json_u32_field(value, "height")),
+    ])
+}
+
 fn runtime_agent_value_fields(values: &BTreeMap<String, AgentValue>) -> RuntimeValue {
     RuntimeValue::Record(
         values
@@ -1384,6 +1445,16 @@ fn runtime_json_string_field(value: &serde_json::Value, field: &str) -> RuntimeV
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_owned(),
+    )
+}
+
+fn runtime_json_u32_field(value: &serde_json::Value, field: &str) -> RuntimeValue {
+    RuntimeValue::u32(
+        value
+            .get(field)
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(0),
     )
 }
 
@@ -2880,6 +2951,22 @@ mod tests {
     }
 
     #[test]
+    fn effect_form_observe_defaults_to_object_payloads() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "observe".to_owned(),
+            args: Vec::new(),
+        })
+        .expect("effect-form observe lowers");
+
+        let AgentHostRequest::Observe(request) = request else {
+            panic!("expected observe host request");
+        };
+        assert!(request.include_objects);
+        assert!(!request.include_images);
+        assert!(!request.include_logs);
+    }
+
+    #[test]
     fn effect_form_advance_text_call_lowers_to_host_action() {
         let request = agent_host_request_from_call(&RuntimeCall {
             callee: "advance_text".to_owned(),
@@ -3061,6 +3148,69 @@ mod tests {
                 if runtime_record_get(fields, "target")
                     == Ok(&RuntimeValue::String("choice.opening.listen".to_owned()))
         ));
+    }
+
+    #[test]
+    fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() {
+        let response = AgentHostResponse::Observation(Box::new(ObservationEnvelope {
+            tick: 8,
+            frame_id: "frame.8".to_owned(),
+            state_hash: "state.8".to_owned(),
+            render_hash: "render.8".to_owned(),
+            actions: Vec::new(),
+            signals: BTreeMap::new(),
+            payload: serde_json::json!({
+                "objects": [
+                    {
+                        "id": "object.dialogue.0.0",
+                        "parent_id": "object.dialogue.0",
+                        "entity": "dialogue.main",
+                        "layer": "dialogue.rich_text",
+                        "role": "dialogue_textbox",
+                        "visible": true,
+                        "enabled": true,
+                        "bbox": {
+                            "space": "viewport",
+                            "x": 24,
+                            "y": 384,
+                            "width": 752,
+                            "height": 168
+                        },
+                        "text": "Hello"
+                    }
+                ]
+            }),
+        }));
+
+        let RuntimeValue::Record(fields) = runtime_payload_from_response(&response).0 else {
+            panic!("observation payload is a record");
+        };
+        let RuntimeValue::Seq(objects) =
+            &runtime_record_get(&fields, "objects").expect("objects field exists")
+        else {
+            panic!("objects field is a sequence");
+        };
+        let RuntimeValue::Record(object_fields) = objects.value_at(0) else {
+            panic!("object is a record");
+        };
+        let RuntimeValue::Record(bbox_fields) =
+            runtime_record_get(&object_fields, "bbox").expect("bbox field exists")
+        else {
+            panic!("bbox field is a record");
+        };
+
+        assert_eq!(
+            runtime_record_get(&object_fields, "role"),
+            Ok(&RuntimeValue::String("dialogue_textbox".to_owned()))
+        );
+        assert_eq!(
+            runtime_record_get(bbox_fields, "width"),
+            Ok(&RuntimeValue::u32(752))
+        );
+        assert_eq!(
+            runtime_record_get(bbox_fields, "height"),
+            Ok(&RuntimeValue::u32(168))
+        );
     }
 
     #[test]

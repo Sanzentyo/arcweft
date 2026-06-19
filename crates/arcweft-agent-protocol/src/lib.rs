@@ -1749,7 +1749,7 @@ mod tests {
             parent_id: None,
             entity: Some("alice".to_owned()),
             layer: "dialogue".to_owned(),
-            role: "textbox".to_owned(),
+            role: "dialogue_textbox".to_owned(),
             visible: true,
             enabled: true,
             polygon: bbox.polygon(),
@@ -1975,7 +1975,10 @@ mod tests {
             json["presentation_tree"]["nodes"][2]["object_id"],
             "object.dialogue.0.0"
         );
-        assert_eq!(json["presentation_tree"]["nodes"][2]["role"], "textbox");
+        assert_eq!(
+            json["presentation_tree"]["nodes"][2]["role"],
+            "dialogue_textbox"
+        );
         assert_eq!(
             json["presentation_tree"]["nodes"][2]["rich_text_kind"],
             "text_run"

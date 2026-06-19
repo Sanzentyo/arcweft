@@ -79,6 +79,12 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
     RichTextTextSource, RuntimeLineContext,
 };
+
+const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
+
+fn agent_is_dialogue_textbox(object: &AgentObservedObject) -> bool {
+    object.role == AGENT_ROLE_DIALOGUE_TEXTBOX
+}
 use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
 use arcweft_ui::UiImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -6397,6 +6403,16 @@ impl AgentSession for NativeAgentScriptSession<'_> {
     }
 
     fn observe(&mut self, _request: ObserveRequest) -> Result<ObservationEnvelope, Self::Error> {
+        if self.observed.is_some()
+            && self.runtime.as_ref().is_some_and(|runtime| {
+                matches!(
+                    runtime.executor.fiber().status,
+                    FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+                )
+            })
+        {
+            return self.observe_report().map(native_agent_observation_envelope);
+        }
         let report = self.refresh_observation(Vec::new())?;
         Ok(native_agent_observation_envelope(report))
     }
@@ -7837,27 +7853,25 @@ fn agent_native_textbox_for_capture<'a>(
 ) -> Option<&'a AgentObservedObject> {
     if let AgentCaptureScope::Object(object_id) = scope {
         if let Some(object) = report.objects.iter().find(|object| object.id == *object_id) {
-            if object.role == "textbox" {
+            if agent_is_dialogue_textbox(object) {
                 return Some(object);
             }
             if let Some(parent_id) = agent_rich_text_child_parent_object_id(&object.id) {
-                return report
-                    .objects
-                    .iter()
-                    .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id);
+                return report.objects.iter().find(|candidate| {
+                    agent_is_dialogue_textbox(candidate) && candidate.id == parent_id
+                });
             }
         }
         if let Some(parent_id) = agent_rich_text_child_parent_object_id(object_id) {
-            return report
-                .objects
-                .iter()
-                .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id);
+            return report.objects.iter().find(|candidate| {
+                agent_is_dialogue_textbox(candidate) && candidate.id == parent_id
+            });
         }
     }
     report
         .objects
         .iter()
-        .find(|object| object.role == "textbox")
+        .find(|object| agent_is_dialogue_textbox(object))
 }
 
 fn agent_rich_text_child_parent_object_id(object_id: &str) -> Option<&str> {
@@ -8369,7 +8383,7 @@ fn agent_native_elements_for_object(
     context: AgentNativeCaptureContext<'_>,
     object: &AgentObservedObject,
 ) -> Vec<arcweft_render_native::NativeFrameElement> {
-    if object.role == "textbox" {
+    if agent_is_dialogue_textbox(object) {
         let frame = agent_observed_rich_text(object);
         return frame
             .display_map
@@ -8511,7 +8525,7 @@ fn agent_native_object_rect(
     object: &AgentObservedObject,
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<(u32, u32, u32, u32), ExitCode> {
-    if object.role == "textbox" {
+    if agent_is_dialogue_textbox(object) {
         return agent_native_textbox_rect(
             capture_width,
             capture_height,
@@ -8675,7 +8689,7 @@ fn agent_native_textbox_for_rich_text_child<'a>(
     let parent_id = agent_rich_text_child_parent_object_id(&object.id)?;
     objects
         .iter()
-        .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id)
+        .find(|candidate| agent_is_dialogue_textbox(candidate) && candidate.id == parent_id)
 }
 
 fn agent_native_element_for_object(
@@ -8956,7 +8970,7 @@ fn agent_native_rich_text_target_for_object_id<'a>(
     let parent = context
         .objects
         .iter()
-        .find(|candidate| candidate.role == "textbox" && candidate.id == parent_id)?;
+        .find(|candidate| agent_is_dialogue_textbox(candidate) && candidate.id == parent_id)?;
     let (element, role) = agent_native_element_and_role_for_object_id(object_id)?;
     Some(AgentNativeCaptureTarget::RichTextElement {
         id: object_id.to_owned(),
@@ -9339,7 +9353,7 @@ fn run_agent_observation(
         for event in &output.flow_events {
             let textbox_index = objects
                 .iter()
-                .filter(|object| object.role == "textbox")
+                .filter(|object| agent_is_dialogue_textbox(object))
                 .count();
             match agent_observed_objects_for_flow_event(
                 step_index,
@@ -10385,7 +10399,7 @@ fn agent_action_targets(objects: &[AgentObservedObject]) -> Vec<AgentActionTarge
 
 fn agent_action_targets_for_object(object: &AgentObservedObject) -> Vec<AgentActionTarget> {
     match &object.content {
-        AgentObservedObjectContent::RichText { .. } if object.role == "textbox" => {
+        AgentObservedObjectContent::RichText { .. } if agent_is_dialogue_textbox(object) => {
             vec![AgentActionTarget {
                 id: format!("action.advance_text.{}", object.id),
                 target: object.id.clone(),
@@ -10833,7 +10847,7 @@ fn agent_textbox_object(
         parent_id: None,
         entity: Some(frame.callee.clone()),
         layer: "dialogue".to_owned(),
-        role: "textbox".to_owned(),
+        role: AGENT_ROLE_DIALOGUE_TEXTBOX.to_owned(),
         visible: true,
         enabled: true,
         bbox: bbox.clone(),

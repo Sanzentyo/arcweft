@@ -3396,9 +3396,8 @@ fn assert_agent_observe_object_capture_refs(object: &serde_json::Value) {
 }
 
 fn assert_agent_observe_rich_text_display_map(object: &serde_json::Value) {
-    let text_runs = object["rich_text"]["display_map"]["text_runs"]
-        .as_array()
-        .unwrap();
+    let rich_text = observed_object_rich_text_frame(object);
+    let text_runs = rich_text["display_map"]["text_runs"].as_array().unwrap();
     assert!(text_runs.iter().any(|run| run["source"] == "interpolation"
         && run["range"]["start"] == 6
         && run["range"]["end"] == 9));
@@ -3413,7 +3412,7 @@ fn assert_agent_observe_rich_text_display_map(object: &serde_json::Value) {
                 && run["range"]["end"] == 14)
     );
     assert!(
-        object["rich_text"]["display_map"]["ruby_annotations"]
+        rich_text["display_map"]["ruby_annotations"]
             .as_array()
             .unwrap()
             .iter()
@@ -3438,16 +3437,14 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
             .is_some_and(|svg| svg.contains("Hello Aoi"))
     );
     let object = &json["objects"][0];
-    assert_eq!(object["role"], "textbox");
+    let rich_text = observed_object_rich_text_frame(object);
+    assert_eq!(object["role"], "dialogue_textbox");
     assert_eq!(object["bbox"]["space"], "viewport");
     assert_eq!(object["text"], "Hello Aoi 夢\n");
     assert_agent_observe_object_capture_refs(object);
-    assert_eq!(
-        object["rich_text"]["base_styles"].as_array().unwrap().len(),
-        4
-    );
+    assert_eq!(rich_text["base_styles"].as_array().unwrap().len(), 4);
     assert!(
-        object["rich_text"]["nodes"]
+        rich_text["nodes"]
             .as_array()
             .unwrap()
             .iter()
@@ -3455,7 +3452,7 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
     );
     assert_agent_observe_rich_text_display_map(object);
     assert!(
-        object["rich_text"]["host_events"]
+        rich_text["host_events"]
             .as_array()
             .unwrap()
             .iter()
@@ -6377,7 +6374,7 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
     let text_runs = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()
@@ -7570,7 +7567,7 @@ flow @flow.main main {
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
     let run = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()
@@ -8177,7 +8174,7 @@ flow @flow.main main {
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
     let run = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()
@@ -10049,7 +10046,7 @@ flow @flow.main main {
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
     let run = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()
@@ -21688,7 +21685,9 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox" && object["rich_text"]["line"] == "say.full.005")
+        .find(|object| {
+            object["role"] == "dialogue_textbox" && object["rich_text"]["line"] == "say.full.005"
+        })
         .expect("target textbox object is observed");
     let vertical_rl_display_run = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()
@@ -23573,7 +23572,7 @@ flow @flow.main main {
         .as_array()
         .expect("objects array")
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object");
     let host_events = object["rich_text"]["host_events"]
         .as_array()
@@ -23785,7 +23784,7 @@ flow @flow.main main {
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
     assert_eq!(textbox["text"], "BeforeAfter");
     assert!(
@@ -27426,7 +27425,7 @@ fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
         .as_array()
         .expect("MCP session objects are listed")
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .unwrap_or_else(|| panic!("MCP profile observation should include textbox: {session}"));
     let contributions = textbox["rich_text"]["style_contributions"]
         .as_array()
@@ -37112,7 +37111,7 @@ fn find_textbox_object(report: &serde_json::Value) -> &serde_json::Value {
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .unwrap_or_else(|| panic!("textbox object should be observed: {report}"))
 }
 
@@ -37124,14 +37123,28 @@ fn find_textbox_object_by_rich_text_line<'a>(
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "textbox" && object["rich_text"]["line"] == line)
+        .find(|object| {
+            object["role"] == "dialogue_textbox"
+                && observed_object_rich_text_frame(object)["line"] == line
+        })
         .unwrap_or_else(|| {
             panic!("textbox object for rich-text line `{line}` should be observed: {report}")
         })
 }
 
+fn observed_object_rich_text_frame(object: &serde_json::Value) -> &serde_json::Value {
+    if object
+        .get("rich_text")
+        .is_some_and(|rich_text| !rich_text.is_null())
+    {
+        &object["rich_text"]
+    } else {
+        &object["content"]["frame"]
+    }
+}
+
 fn rich_text_text_runs(textbox: &serde_json::Value) -> &[serde_json::Value] {
-    textbox["rich_text"]["display_map"]["text_runs"]
+    observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .unwrap_or_else(|| panic!("textbox display_map should expose text_runs: {textbox}"))
 }
@@ -37897,7 +37910,7 @@ fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "textbox")
+        .find(|object| object["role"] == "dialogue_textbox")
         .unwrap_or_else(|| panic!("textbox object should be observed: {report}"));
     let run = textbox["rich_text"]["display_map"]["text_runs"]
         .as_array()

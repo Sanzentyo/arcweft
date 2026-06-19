@@ -223,10 +223,10 @@ fn lower_runtime_expr_strict_with_helpers(
         },
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
-        Expr::Pipe { .. }
-        | Expr::Try { .. }
-        | Expr::Await { .. }
-        | Expr::Thread { .. }
+        Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Pipe { lhs: expr, .. } => {
+            lower_runtime_expr_strict_with_helpers(expr, helpers)
+        }
+        Expr::Thread { .. }
         | Expr::Range { .. }
         | Expr::Closure { .. }
         | Expr::LifetimePath { .. }
@@ -1350,6 +1350,30 @@ mod tests {
             lowered,
             RuntimeExpr::Call { callee, args }
                 if callee.as_label() == "infer.matmul_bias_add_f32" && args.len() == 3
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_unwraps_try_around_runtime_method_calls() {
+        let expr = Expr::Try {
+            expr: Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field {
+                    target: Box::new(Expr::Path("frame".to_owned())),
+                    field: "objects".to_owned(),
+                }),
+                method: "require_role".to_owned(),
+                args: vec![CallArg::Positional(Expr::Literal(Literal::String(
+                    "dialogue_textbox".to_owned(),
+                )))],
+            }),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("try method call lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::MethodCall { method, args, .. }
+                if method == "require_role" && args.len() == 1
         ));
     }
 

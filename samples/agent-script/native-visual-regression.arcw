@@ -1,0 +1,22 @@
+pub surface character narrator {
+    display = "Narrator"
+    default_voice = auto
+}
+
+signal @signal.current_flow: Watch<Ref<Flow>>
+
+entry game @entry.main {
+    start @flow.opening
+}
+
+flow @flow.opening opening effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.opening)
+
+    narrator:
+        Visual regression textbox.[p]
+
+    narrator:
+        Second observed textbox.[p]
+
+    return "opening"
+}

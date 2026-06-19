@@ -20,11 +20,21 @@ pub struct AgentSessionInfo {
 }
 
 /// Minimal observation request used by the controller host boundary.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObserveRequest {
     pub include_images: bool,
     pub include_objects: bool,
     pub include_logs: bool,
+}
+
+impl Default for ObserveRequest {
+    fn default() -> Self {
+        Self {
+            include_images: false,
+            include_objects: true,
+            include_logs: false,
+        }
+    }
 }
 
 /// Physical or semantic action requested by a compiled Agent program.
