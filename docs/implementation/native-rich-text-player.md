@@ -405,12 +405,13 @@ capture path accepts `--page N` and MCP `page: N` for 0-based rendered rich-text
 pages, so LLM/debugger tools can capture text after `[p]`, line waits, or
 `[clear]` without opening the native window. Non-zero page selection is handled by the native renderer.
 It also accepts `--capture-time SECONDS` and MCP `capture_time` as the native
-rich-text animation sample time for glyph effects, shaders, registry-backed
+presentation animation sample time for glyph effects, shaders, registry-backed
 motion functions, typewriter visibility, animated proxy bounds, hit-testing,
-and image capture. Source ranges and object ids remain stable, while the native
-measurement and render paths sample visual bboxes, hit regions, GlyphArea
-alpha/color, object-id/mask attachments, and object crops at the requested
-time. Native Agent tests cover ordinary vertical clusters,
+animated image frame selection, and image capture. Source ranges and object ids
+remain stable, while the native measurement and render paths sample visual
+bboxes, hit regions, GlyphArea alpha/color, active image frames,
+object-id/mask attachments, and object crops at the requested time. Native
+Agent tests cover ordinary vertical clusters,
 text-combine-upright digit clusters, animated proxy objects, ruby objects, and
 function-backed motion/effect/shader runs, so combined cells and source-local
 registry paths are checked against the same readback rule. Ruby annotation

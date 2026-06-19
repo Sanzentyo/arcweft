@@ -55,11 +55,12 @@ resources rather than synthetic replacement renderers.
 
 `capture_time` is an observation/capture input in seconds. It is the native
 animation sample time for rich-text effects, shaders, registry-backed motion
-functions, typewriter visibility, animated proxy bounds, hit-testing, and image
-capture. It must not change source ranges or object identity. Visual bboxes,
-hit regions, glyph alpha, object-id/mask attachments, and object crops use the
-sampled native text geometry for that time, so animated text objects can be
-debugged like image or model objects at a selected frame. When a deterministic
+functions, typewriter visibility, animated proxy bounds, animated image frame
+selection, hit-testing, and image capture. It must not change source ranges or
+object identity. Visual bboxes, hit regions, glyph alpha, active image frames,
+object-id/mask attachments, and object crops use the sampled native
+presentation geometry for that time, so animated text and image objects can be
+debugged like model objects at a selected frame. When a deterministic
 `capture_step` is supplied and `capture_time` is omitted, native image capture
 derives the animation sample time from that step number in seconds. Image
 resources expose non-zero visual time as `capture_time_millis` so debuggers can

@@ -160,7 +160,7 @@ fn agent_observe_tool_descriptor() -> McpToolDescriptor {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, hit-testing, and image capture." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, animated image frame selection, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels." },
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels for layout-sensitive rich-text debugging." },
@@ -214,7 +214,7 @@ fn agent_capture_tool_descriptor() -> McpToolDescriptor {
                     "layer": { "type": "string" },
                     "object": { "type": "string" },
                     "page": { "type": "integer", "minimum": 0, "description": "0-based rendered page index for native rich-text captures." },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, hit-testing, and image capture." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, animated image frame selection, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels when source is supplied." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels when source is supplied." },
                     "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels when source is supplied." }
@@ -239,7 +239,7 @@ fn agent_hit_test_tool_descriptor() -> McpToolDescriptor {
                     "steps": { "type": "integer", "minimum": 1 },
                     "capture_step": { "type": "integer", "minimum": 1, "description": "Observe before hit-testing after this many runtime steps. Overrides steps when supplied." },
                     "max_ops": { "type": "integer", "minimum": 1 },
-                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, motion functions, typewriter visibility, and animated proxy bounds before hit-testing." },
+                    "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, and animated image frame selection before hit-testing." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
                     "textbox_height": { "type": "integer", "minimum": 1 },
@@ -1138,7 +1138,7 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
-        assert_capture_time_description_mentions_animated_text_objects(
+        assert_capture_time_description_mentions_animated_presentation_objects(
             &properties["capture_time"],
             true,
         );
@@ -1169,7 +1169,7 @@ mod tests {
         assert_eq!(properties["page"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
         assert_eq!(properties["capture_time"]["minimum"], 0);
-        assert_capture_time_description_mentions_animated_text_objects(
+        assert_capture_time_description_mentions_animated_presentation_objects(
             &properties["capture_time"],
             true,
         );
@@ -1201,14 +1201,14 @@ mod tests {
         assert_eq!(properties["y"]["type"], "integer");
         assert_eq!(properties["y"]["minimum"], 0);
         assert_eq!(properties["capture_time"]["type"], "number");
-        assert_capture_time_description_mentions_animated_text_objects(
+        assert_capture_time_description_mentions_animated_presentation_objects(
             &properties["capture_time"],
             false,
         );
         assert_eq!(properties["capture_step"]["minimum"], 1);
     }
 
-    fn assert_capture_time_description_mentions_animated_text_objects(
+    fn assert_capture_time_description_mentions_animated_presentation_objects(
         property: &serde_json::Value,
         includes_image_capture: bool,
     ) {
@@ -1219,8 +1219,11 @@ mod tests {
         assert!(description.contains("motion functions"));
         assert!(description.contains("typewriter visibility"));
         assert!(description.contains("animated proxy bounds"));
+        assert!(description.contains("animated image frame selection"));
         if includes_image_capture {
             assert!(description.contains("image capture"));
+        } else {
+            assert!(description.contains("before hit-testing"));
         }
     }
 }

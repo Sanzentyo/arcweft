@@ -56,11 +56,12 @@ MCP session by URI, so later captures do not evict earlier PNG/raw resources;
 `resources/read` and `arcweft.resource.read` return the same native renderer
 composition, metadata, and image bytes that each capture tool call produced.
 `arcweft.observe` and `arcweft.capture` both accept `capture_time` as a
-non-negative seconds value for native rich-text animation sampling, including
-effects, shaders, motion functions, typewriter visibility, animated proxy
-bounds, hit-testing, and image capture. Source ranges and object ids remain
-stable, while visual bboxes, hit regions, glyph alpha, object-id/mask
-attachments, and object crops use the sampled native text geometry. If
+non-negative seconds value for native presentation animation sampling,
+including rich-text effects, shaders, motion functions, typewriter visibility,
+animated proxy bounds, animated image frame selection, hit-testing, and image
+capture. Source ranges and object ids remain stable, while visual bboxes, hit
+regions, glyph alpha, active image frames, object-id/mask attachments, and
+object crops use the sampled native presentation geometry. If
 `capture_step` is set without `capture_time`, native capture uses the step count
 as the animation sample time in seconds and records it as
 `capture_time_millis` on image resources. They also

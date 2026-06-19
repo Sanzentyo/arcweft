@@ -490,10 +490,11 @@ layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
 Both tools accept a non-negative capture time in seconds (`--capture-time` on
 the CLI, `capture_time` in MCP) as the native animation sample time for
 rich-text effects, shaders, registry-backed motion functions, typewriter
-visibility, animated proxy bounds, hit-testing, and image capture. Source
-ranges and object ids remain stable across capture times, while visual bboxes,
-hit regions, glyph alpha, object-id/mask attachments, and object crops use the
-sampled native text geometry for the requested time. When `--capture-step` /
+visibility, animated proxy bounds, animated image frame selection, hit-testing,
+and image capture. Source ranges and object ids remain stable across capture
+times, while visual bboxes, hit regions, glyph alpha, active image frames,
+object-id/mask attachments, and object crops use the sampled native
+presentation geometry for the requested time. When `--capture-step` /
 MCP `capture_step` is supplied without an explicit capture time, native image
 capture uses that step number as the default animation sample time in seconds
 and records the non-zero value in `images[].capture_time_millis`.
