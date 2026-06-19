@@ -1,0 +1,24 @@
+signal @signal.current_flow: Watch<Ref<Flow>>
+
+entry game @entry.main {
+    start @flow.opening
+}
+
+flow opening effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.opening)
+
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+        @choice.opening.silent "黙っている" -> @flow.quiet_intro
+    }
+}
+
+flow alice_intro effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.alice_intro)
+    return "alice_intro"
+}
+
+flow quiet_intro effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.quiet_intro)
+    return "quiet_intro"
+}

@@ -45,6 +45,9 @@ use arcweft_agent_protocol::{
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
+use arcweft_core::step::InputEvent as RuntimeInputEvent;
+use arcweft_core::task::TaskEvent;
+use arcweft_host_adapter::HostCallPolicy;
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
     ImageObjectTransform,
@@ -1666,6 +1669,31 @@ struct AgentObservationRunOutput {
     image_frames: AgentImageFrameStore,
 }
 
+struct AgentObservationRunContext<'a> {
+    host_config: NativeRunHost<'a>,
+    options: &'a AgentObserveOptions,
+    source_path: &'a Path,
+    native_session: Option<&'a mut arcweft_render_native::NativeOffscreenCaptureSession>,
+    tick_offset: usize,
+    input_events: Vec<RuntimeInputEvent>,
+    task_events: &'a mut Vec<TaskEvent>,
+}
+
+struct NativeAgentObservedSnapshot {
+    report: AgentObservationReport,
+    image_frames: AgentImageFrameStore,
+}
+
+struct NativeAgentRuntimeState {
+    executor: RuntimeExecutorInstance,
+    catalog: LineDisplayCatalog,
+    source_path: PathBuf,
+    host_policy: HostCallPolicy,
+    native_session: arcweft_render_native::NativeOffscreenCaptureSession,
+    task_events: Vec<TaskEvent>,
+    next_tick: usize,
+}
+
 struct AgentMcpObservation {
     report: AgentObservationReport,
     image_output: Option<AgentImageOutput>,
@@ -1959,32 +1987,31 @@ fn agent_mcp_run_observation(
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
         .map_err(|_| "failed to select runtime entry".to_owned())?;
     let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
+    let mut task_events = Vec::new();
     let mut observed = run_agent_observation(
         &mut executor,
         &lowered.line_display_catalog,
-        NativeRunHost {
-            source_path: Some(selection.path()),
-            policy: &host_policy,
-            adapter_registrars,
+        AgentObservationRunContext {
+            host_config: NativeRunHost {
+                source_path: Some(selection.path()),
+                policy: &host_policy,
+                adapter_registrars,
+            },
+            options: &options,
+            source_path: selection.path(),
+            native_session: Some(&mut native_session),
+            tick_offset: 0,
+            input_events: Vec::new(),
+            task_events: &mut task_events,
         },
-        &options,
-        selection.path(),
-        Some(&mut native_session),
     )
     .map_err(|error| error.to_string())?;
-    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
+    extend_agent_observation_with_runtime_images(
+        &mut observed,
         selection.path(),
-        observed.report.tick,
-        &observed.report.viewport,
-        &executor.fiber().observations.calls,
-        agent_observe_capture_time_seconds(&options),
+        &executor,
+        &options,
     );
-    observed.report.diagnostics.extend(image_diagnostics);
-    if !image_observation.objects.is_empty() {
-        observed.report.objects.extend(image_observation.objects);
-        observed.image_frames.extend(image_observation.image_frames);
-        agent_refresh_observation_object_indexes(&mut observed.report);
-    }
     let image_output = agent_observe_image_output(
         &mut observed.report,
         &options,
@@ -2001,6 +2028,27 @@ fn agent_mcp_run_observation(
         resources,
         native_session,
     })
+}
+
+fn extend_agent_observation_with_runtime_images(
+    observed: &mut AgentObservationRunOutput,
+    source_path: &Path,
+    executor: &RuntimeExecutorInstance,
+    options: &AgentObserveOptions,
+) {
+    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
+        source_path,
+        observed.report.tick,
+        &observed.report.viewport,
+        &executor.fiber().observations.calls,
+        agent_observe_capture_time_seconds(options),
+    );
+    observed.report.diagnostics.extend(image_diagnostics);
+    if !image_observation.objects.is_empty() {
+        observed.report.objects.extend(image_observation.objects);
+        observed.image_frames.extend(image_observation.image_frames);
+        agent_refresh_observation_object_indexes(&mut observed.report);
+    }
 }
 
 fn agent_mcp_call_resource_read(
@@ -2594,10 +2642,9 @@ fn agent_observation_report_for_options(
     agent_observation_for_options(options, adapter_registrars).map(|observed| observed.report)
 }
 
-fn agent_observation_for_options(
+fn native_agent_runtime_state_for_options(
     options: &AgentObserveOptions,
-    adapter_registrars: &[NativeAdapterRegistrar],
-) -> Result<AgentObservationState, ExitCode> {
+) -> Result<NativeAgentRuntimeState, ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let pure_config = runtime_pure_config_for_selection(
         &selection,
@@ -2609,7 +2656,7 @@ fn agent_observation_for_options(
         options.math_wgpu_min_elements,
     )?;
     let checked = load_and_check_selection(&selection, None)?;
-    let mut native_session = agent_native_capture_session_for_hir(&checked.hir)?;
+    let native_session = agent_native_capture_session_for_hir(&checked.hir)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
     let lowered = lower_source_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
@@ -2622,40 +2669,53 @@ fn agent_observation_for_options(
     let mut plan = lowered.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
+    Ok(NativeAgentRuntimeState {
+        executor: RuntimeExecutorInstance::new(plan, options.executor, pure_config),
+        catalog: lowered.line_display_catalog,
+        source_path: selection.path().to_owned(),
+        host_policy,
+        native_session,
+        task_events: Vec::new(),
+        next_tick: 0,
+    })
+}
+
+fn agent_observation_for_options(
+    options: &AgentObserveOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentObservationState, ExitCode> {
+    let mut runtime = native_agent_runtime_state_for_options(options)?;
     let mut observed = run_agent_observation(
-        &mut executor,
-        &lowered.line_display_catalog,
-        NativeRunHost {
-            source_path: Some(selection.path()),
-            policy: &host_policy,
-            adapter_registrars,
+        &mut runtime.executor,
+        &runtime.catalog,
+        AgentObservationRunContext {
+            host_config: NativeRunHost {
+                source_path: Some(&runtime.source_path),
+                policy: &runtime.host_policy,
+                adapter_registrars,
+            },
+            options,
+            source_path: &runtime.source_path,
+            native_session: Some(&mut runtime.native_session),
+            tick_offset: 0,
+            input_events: Vec::new(),
+            task_events: &mut runtime.task_events,
         },
-        options,
-        selection.path(),
-        Some(&mut native_session),
     )
     .map_err(|error| {
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })?;
-    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
-        selection.path(),
-        observed.report.tick,
-        &observed.report.viewport,
-        &executor.fiber().observations.calls,
-        agent_observe_capture_time_seconds(options),
+    extend_agent_observation_with_runtime_images(
+        &mut observed,
+        &runtime.source_path,
+        &runtime.executor,
+        options,
     );
-    observed.report.diagnostics.extend(image_diagnostics);
-    if !image_observation.objects.is_empty() {
-        observed.report.objects.extend(image_observation.objects);
-        observed.image_frames.extend(image_observation.image_frames);
-        agent_refresh_observation_object_indexes(&mut observed.report);
-    }
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,
-        native_session,
+        native_session: runtime.native_session,
     })
 }
 
@@ -2712,14 +2772,17 @@ enum NativeAgentScriptSessionError {
     Capture,
     #[error("native Agent Script resource read failed")]
     ResourceRead,
-    #[error("native Agent Script action dispatch is not implemented yet")]
-    Action,
+    #[error("native Agent Script action is not currently selectable")]
+    ActionUnavailable,
+    #[error("native Agent Script action kind is not supported by the native semantic dispatcher")]
+    UnsupportedAction,
 }
 
 struct NativeAgentScriptSession<'a> {
     options: AgentObserveOptions,
     adapter_registrars: &'a [NativeAdapterRegistrar],
-    observed: Option<AgentObservationState>,
+    runtime: Option<NativeAgentRuntimeState>,
+    observed: Option<NativeAgentObservedSnapshot>,
     capture_blobs: Vec<AgentCaptureBlob>,
 }
 
@@ -2763,6 +2826,7 @@ impl<'a> NativeAgentScriptSession<'a> {
                 json: true,
             },
             adapter_registrars,
+            runtime: None,
             observed: None,
             capture_blobs: Vec::new(),
         }
@@ -2774,7 +2838,7 @@ impl<'a> NativeAgentScriptSession<'a> {
 
     fn observe_report(&mut self) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
         if self.observed.is_none() {
-            self.refresh_observation()?;
+            self.refresh_observation(Vec::new())?;
         }
         self.observed
             .as_ref()
@@ -2782,12 +2846,56 @@ impl<'a> NativeAgentScriptSession<'a> {
             .ok_or(NativeAgentScriptSessionError::Observe)
     }
 
+    fn runtime_state(
+        &mut self,
+    ) -> Result<&mut NativeAgentRuntimeState, NativeAgentScriptSessionError> {
+        if self.runtime.is_none() {
+            let runtime = native_agent_runtime_state_for_options(&self.options)
+                .map_err(|_| NativeAgentScriptSessionError::Observe)?;
+            self.runtime = Some(runtime);
+        }
+        self.runtime
+            .as_mut()
+            .ok_or(NativeAgentScriptSessionError::Observe)
+    }
+
     fn refresh_observation(
         &mut self,
+        input_events: Vec<RuntimeInputEvent>,
     ) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
-        let observed = agent_observation_for_options(&self.options, self.adapter_registrars)
-            .map_err(|_| NativeAgentScriptSessionError::Observe)?;
-        self.observed = Some(observed);
+        let options = self.options.clone();
+        let adapter_registrars = self.adapter_registrars;
+        let runtime = self.runtime_state()?;
+        let tick_offset = runtime.next_tick;
+        let mut observed = run_agent_observation(
+            &mut runtime.executor,
+            &runtime.catalog,
+            AgentObservationRunContext {
+                host_config: NativeRunHost {
+                    source_path: Some(&runtime.source_path),
+                    policy: &runtime.host_policy,
+                    adapter_registrars,
+                },
+                options: &options,
+                source_path: &runtime.source_path,
+                native_session: Some(&mut runtime.native_session),
+                tick_offset,
+                input_events,
+                task_events: &mut runtime.task_events,
+            },
+        )
+        .map_err(|_| NativeAgentScriptSessionError::Observe)?;
+        extend_agent_observation_with_runtime_images(
+            &mut observed,
+            &runtime.source_path,
+            &runtime.executor,
+            &options,
+        );
+        runtime.next_tick = observed.report.tick.saturating_add(1);
+        self.observed = Some(NativeAgentObservedSnapshot {
+            report: observed.report,
+            image_frames: observed.image_frames,
+        });
         self.observe_report()
     }
 
@@ -2795,19 +2903,73 @@ impl<'a> NativeAgentScriptSession<'a> {
         &mut self,
         uri: &str,
     ) -> Result<AgentResource, NativeAgentScriptSessionError> {
-        let Some(observed) = self.observed.as_mut() else {
-            self.refresh_observation()?;
-            return self.resource_for_uri(uri);
+        if self.observed.is_none() {
+            self.refresh_observation(Vec::new())?;
+        }
+        let Some(mut runtime) = self.runtime.take() else {
+            return Err(NativeAgentScriptSessionError::ResourceRead);
         };
-        agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
-            &observed.report,
-            uri,
-            None,
-            agent_report_capture_time_seconds(&observed.report),
-            Some(&mut observed.native_session),
-            &observed.image_frames,
-        )
-        .map_err(|_| NativeAgentScriptSessionError::ResourceRead)
+        let result = {
+            let Some(observed) = self.observed.as_ref() else {
+                self.runtime = Some(runtime);
+                return Err(NativeAgentScriptSessionError::ResourceRead);
+            };
+            agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+                &observed.report,
+                uri,
+                None,
+                agent_report_capture_time_seconds(&observed.report),
+                Some(&mut runtime.native_session),
+                &observed.image_frames,
+            )
+            .map_err(|_| NativeAgentScriptSessionError::ResourceRead)
+        };
+        self.runtime = Some(runtime);
+        result
+    }
+
+    fn action_input_events(
+        &mut self,
+        action: AgentAction,
+    ) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
+        let report = self.observe_report()?;
+        match action {
+            AgentAction::SelectChoice { choice } => {
+                let choice_id = choice.as_str();
+                let selectable = report.actions.iter().any(|target| {
+                    target.enabled
+                        && target.kind == AgentActionDispatch::Semantic
+                        && target.action == AgentActionKind::SelectChoice
+                        && target.target == choice_id
+                });
+                selectable
+                    .then(|| {
+                        vec![RuntimeInputEvent {
+                            kind: "choice".to_owned(),
+                            payload: Some(choice_id.to_owned()),
+                        }]
+                    })
+                    .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
+            }
+            AgentAction::AdvanceText
+            | AgentAction::Invoke { .. }
+            | AgentAction::PointerClick { .. } => {
+                Err(NativeAgentScriptSessionError::UnsupportedAction)
+            }
+        }
+    }
+
+    fn action_result(
+        before: &AgentObservationReport,
+        after: &AgentObservationReport,
+    ) -> ActionResult {
+        ActionResult {
+            accepted: before.state_hash != after.state_hash || before.tick != after.tick,
+            before_tick: u64::try_from(before.tick).unwrap_or(u64::MAX),
+            after_tick: u64::try_from(after.tick).unwrap_or(u64::MAX),
+            before_state_hash: before.state_hash.clone(),
+            after_state_hash: after.state_hash.clone(),
+        }
     }
 }
 
@@ -2823,18 +2985,22 @@ impl AgentSession for NativeAgentScriptSession<'_> {
                 "agent.observe".to_owned(),
                 "agent.wait".to_owned(),
                 "agent.capture".to_owned(),
+                "agent.act.semantic".to_owned(),
                 "agent.resource.read".to_owned(),
             ],
         })
     }
 
     fn observe(&mut self, _request: ObserveRequest) -> Result<ObservationEnvelope, Self::Error> {
-        let report = self.refresh_observation()?;
+        let report = self.refresh_observation(Vec::new())?;
         Ok(native_agent_observation_envelope(report))
     }
 
-    fn act(&mut self, _action: AgentAction) -> Result<ActionResult, Self::Error> {
-        Err(NativeAgentScriptSessionError::Action)
+    fn act(&mut self, action: AgentAction) -> Result<ActionResult, Self::Error> {
+        let before = self.observe_report()?.clone();
+        let input_events = self.action_input_events(action)?;
+        let after = self.refresh_observation(input_events)?.clone();
+        Ok(Self::action_result(&before, &after))
     }
 
     fn capture(&mut self, request: CaptureRequest) -> Result<CaptureResult, Self::Error> {
@@ -2862,7 +3028,7 @@ impl AgentSession for NativeAgentScriptSession<'_> {
     fn step_frames(&mut self, count: u32) -> Result<ObservationEnvelope, Self::Error> {
         let additional = usize::try_from(count.max(1)).unwrap_or(usize::MAX);
         self.options.steps = self.options.steps.saturating_add(additional);
-        let report = self.refresh_observation()?;
+        let report = self.refresh_observation(Vec::new())?;
         Ok(native_agent_observation_envelope(report))
     }
 }
@@ -5719,43 +5885,41 @@ fn agent_json_error(error: &serde_json::Error) -> ExitCode {
 fn run_agent_observation(
     executor: &mut RuntimeExecutorInstance,
     catalog: &LineDisplayCatalog,
-    host_config: NativeRunHost<'_>,
-    options: &AgentObserveOptions,
-    source_path: &Path,
-    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+    mut context: AgentObservationRunContext<'_>,
 ) -> Result<AgentObservationRunOutput, arcweft_host_adapter::HostAdapterError> {
     let viewport = AgentViewport {
-        width: options.viewport_width,
-        height: options.viewport_height,
+        width: context.options.viewport_width,
+        height: context.options.viewport_height,
         scale: 1.0,
     };
-    let mut host = host_config
+    let mut host = context
+        .host_config
         .source_path
         .map(|path| {
             NativeTaskBridge::try_new(
                 path,
-                host_config.policy.clone(),
-                host_config.adapter_registrars,
+                context.host_config.policy.clone(),
+                context.host_config.adapter_registrars,
             )
         })
         .transpose()?;
-    let mut task_events = Vec::new();
     let mut objects: Vec<AgentObservedObject> = Vec::new();
     let mut diagnostics = Vec::new();
     let mut task_request_count = 0usize;
     let mut tick = 0usize;
-    let effective_steps = agent_observe_effective_steps(options);
-    let force_capture_step = options.capture_step.is_some();
-    let mut native_session = native_session;
+    let effective_steps = agent_observe_effective_steps(context.options);
+    let force_capture_step = context.options.capture_step.is_some();
+    let mut native_session = context.native_session;
     for step_index in 0..effective_steps {
-        tick = step_index;
+        tick = context.tick_offset.saturating_add(step_index);
         let result = executor.step_with_root_bindings(
             RuntimeStepInput {
-                task_events: std::mem::take(&mut task_events),
+                input_events: std::mem::take(&mut context.input_events),
+                task_events: std::mem::take(&mut *context.task_events),
                 ..RuntimeStepInput::default()
             },
-            &options.values,
-            step_options(options.mode, options.max_ops),
+            &context.options.values,
+            step_options(context.options.mode, context.options.max_ops),
         );
         let RuntimeStepResult { mut output, .. } = result;
         diagnostics.extend(output.diagnostics.iter().map(|diagnostic| AgentDiagnostic {
@@ -5777,7 +5941,7 @@ fn run_agent_observation(
                 catalog,
                 event,
                 &viewport,
-                options,
+                context.options,
                 native_session.as_deref_mut(),
             ) {
                 Ok(event_objects) => objects.extend(event_objects),
@@ -5794,13 +5958,13 @@ fn run_agent_observation(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events = host.complete_tasks(task_requests);
+            *context.task_events = host.complete_tasks(task_requests);
         }
     }
     Ok(AgentObservationRunOutput {
         report: finish_agent_observation_report(
             executor,
-            source_path,
+            context.source_path,
             AgentObservationTrace {
                 viewport,
                 objects,
@@ -5808,7 +5972,7 @@ fn run_agent_observation(
                 task_request_count,
                 tick,
             },
-            options,
+            context.options,
         ),
         image_frames: AgentImageFrameStore::default(),
     })
@@ -5913,7 +6077,10 @@ fn finish_agent_observation_report(
             value: value.clone(),
         })
         .collect::<Vec<_>>();
-    let actions = agent_action_targets(&objects);
+    let mut actions = agent_action_targets(&objects);
+    actions.extend(agent_action_targets_for_runtime_status(
+        &executor.fiber().status,
+    ));
     let layers = agent_observed_layers("cli", tick, &objects);
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let status = flow_status_label(&executor.fiber().status);
@@ -5966,6 +6133,26 @@ fn finish_agent_observation_report(
         final_status: status,
         overlay_svg: None,
     }
+}
+
+fn agent_action_targets_for_runtime_status(status: &FlowFiberStatus) -> Vec<AgentActionTarget> {
+    let FlowFiberStatus::Choice(state) = status else {
+        return Vec::new();
+    };
+    state
+        .options
+        .iter()
+        .map(|option| {
+            let target = option.id.as_deref().unwrap_or(option.label.as_str());
+            AgentActionTarget {
+                id: format!("action.select_choice.{target}"),
+                target: target.to_owned(),
+                action: AgentActionKind::SelectChoice,
+                kind: AgentActionDispatch::Semantic,
+                enabled: true,
+            }
+        })
+        .collect()
 }
 
 fn agent_runtime_presentation_image_observation(
