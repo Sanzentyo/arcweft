@@ -1209,6 +1209,43 @@ fn wait_request(args: &[String]) -> Result<WaitRequest, String> {
 }
 
 fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
+    let value = value.trim();
+    if let Some(body) = value
+        .strip_prefix("exists(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Ok(Predicate::Exists {
+            probe: parse_probe_label(body)?,
+        });
+    }
+    if let Some(body) = value
+        .strip_prefix("all(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return split_top_level_args(body)
+            .into_iter()
+            .map(parse_predicate_label)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|predicates| Predicate::All { predicates });
+    }
+    if let Some(body) = value
+        .strip_prefix("any(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return split_top_level_args(body)
+            .into_iter()
+            .map(parse_predicate_label)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|predicates| Predicate::Any { predicates });
+    }
+    if let Some(body) = value
+        .strip_prefix("not(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return parse_predicate_label(body).map(|predicate| Predicate::Not {
+            predicate: Box::new(predicate),
+        });
+    }
     let (probe, method_call) = value
         .split_once(").")
         .ok_or_else(|| format!("unsupported wait predicate `{value}`"))?;
@@ -1237,6 +1274,22 @@ fn parse_probe_label(value: &str) -> Result<Probe, String> {
     {
         return parse_public_id_arg(target).map(|target| Probe::Metric { target });
     }
+    if let Some(path) = value
+        .strip_prefix("state(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Ok(Probe::StatePath {
+            path: parse_string_label(path).unwrap_or_else(|| path.to_owned()),
+        });
+    }
+    if let Some(path) = value
+        .strip_prefix("observation(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Ok(Probe::ObservationField {
+            path: parse_string_label(path).unwrap_or_else(|| path.to_owned()),
+        });
+    }
     Err(format!("unsupported probe `{value}`"))
 }
 
@@ -1257,6 +1310,21 @@ fn parse_agent_value_label(value: &str) -> Result<AgentValue, String> {
         "true" => Ok(AgentValue::Bool(true)),
         "false" => Ok(AgentValue::Bool(false)),
         value if value.starts_with('@') => parse_public_id_arg(value).map(AgentValue::Entity),
+        value if value.ends_with("f32") || value.ends_with("f64") => value
+            .trim_end_matches("f32")
+            .trim_end_matches("f64")
+            .parse::<f64>()
+            .map(AgentValue::F64)
+            .map_err(|_| format!("invalid float literal `{value}`")),
+        value if value.ends_with("u32") || value.ends_with("u64") || value.ends_with("usize") => {
+            value
+                .trim_end_matches("usize")
+                .trim_end_matches("u32")
+                .trim_end_matches("u64")
+                .parse::<u64>()
+                .map(AgentValue::U64)
+                .map_err(|_| format!("invalid unsigned integer literal `{value}`"))
+        }
         value => value.parse::<i64>().map_or_else(
             |_| {
                 Ok(AgentValue::String(
@@ -1324,6 +1392,44 @@ fn parse_u32_label(value: &str) -> Result<u32, String> {
         .unwrap_or(value)
         .parse::<u32>()
         .map_err(|_| format!("expected u32 literal, got `{value}`"))
+}
+
+fn split_top_level_args(value: &str) -> Vec<&str> {
+    let mut args = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0u32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (index, ch) in value.char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '(' | '[' | '{' => depth = depth.saturating_add(1),
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let arg = value[start..index].trim();
+                if !arg.is_empty() {
+                    args.push(arg);
+                }
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let arg = value[start..].trim();
+    if !arg.is_empty() {
+        args.push(arg);
+    }
+    args
 }
 
 fn named_arg(arg: &str) -> Option<(&str, &str)> {
@@ -1430,18 +1536,16 @@ fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> 
     match op {
         CompareOp::Eq => agent_values_equal(actual, expected),
         CompareOp::NotEq => !agent_values_equal(actual, expected),
-        CompareOp::Greater => numeric_value(actual)
-            .zip(numeric_value(expected))
-            .is_some_and(|(left, right)| left > right),
-        CompareOp::GreaterOrEqual => numeric_value(actual)
-            .zip(numeric_value(expected))
-            .is_some_and(|(left, right)| left >= right),
-        CompareOp::Less => numeric_value(actual)
-            .zip(numeric_value(expected))
-            .is_some_and(|(left, right)| left < right),
-        CompareOp::LessOrEqual => numeric_value(actual)
-            .zip(numeric_value(expected))
-            .is_some_and(|(left, right)| left <= right),
+        CompareOp::Greater => {
+            compare_numeric_values(actual, expected).is_some_and(i32::is_positive)
+        }
+        CompareOp::GreaterOrEqual => {
+            compare_numeric_values(actual, expected).is_some_and(|order| order >= 0)
+        }
+        CompareOp::Less => compare_numeric_values(actual, expected).is_some_and(i32::is_negative),
+        CompareOp::LessOrEqual => {
+            compare_numeric_values(actual, expected).is_some_and(|order| order <= 0)
+        }
     }
 }
 
@@ -1453,17 +1557,34 @@ fn agent_values_equal(left: &AgentValue, right: &AgentValue) -> bool {
     }
 }
 
-fn numeric_value(value: &AgentValue) -> Option<i64> {
-    match value {
-        AgentValue::I64(value) => Some(*value),
-        AgentValue::U64(value) => i64::try_from(*value).ok(),
-        AgentValue::Null
-        | AgentValue::Bool(_)
-        | AgentValue::F64(_)
-        | AgentValue::String(_)
-        | AgentValue::Entity(_)
-        | AgentValue::List(_)
-        | AgentValue::Map(_) => None,
+fn compare_numeric_values(left: &AgentValue, right: &AgentValue) -> Option<i32> {
+    Some(match (left, right) {
+        (AgentValue::I64(left), AgentValue::I64(right)) => compare_order(left.cmp(right)),
+        (AgentValue::U64(left), AgentValue::U64(right)) => compare_order(left.cmp(right)),
+        (AgentValue::I64(left), AgentValue::U64(right)) => {
+            if *left < 0 {
+                -1
+            } else {
+                compare_order(u64::try_from(*left).ok()?.cmp(right))
+            }
+        }
+        (AgentValue::U64(left), AgentValue::I64(right)) => {
+            if *right < 0 {
+                1
+            } else {
+                compare_order(left.cmp(&u64::try_from(*right).ok()?))
+            }
+        }
+        (AgentValue::F64(left), AgentValue::F64(right)) => compare_order(left.partial_cmp(right)?),
+        _ => return None,
+    })
+}
+
+fn compare_order(order: std::cmp::Ordering) -> i32 {
+    match order {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
     }
 }
 
@@ -1889,6 +2010,81 @@ mod tests {
                 op: CompareOp::Eq,
                 value: AgentValue::Entity(ref value),
             } if target.as_str() == "signal.current_flow" && value.as_str() == "flow.opening"
+        ));
+    }
+
+    #[test]
+    fn effect_form_wait_call_lowers_composite_predicate() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "wait".to_owned(),
+            args: vec![
+                "all(exists(signal(@signal.ready)), not(metric(@metric.fps).lt(30.0f32)))"
+                    .to_owned(),
+                "timeout = 5s".to_owned(),
+            ],
+        })
+        .expect("effect-form composite wait lowers");
+
+        let AgentHostRequest::Wait(request) = request else {
+            panic!("expected wait host request");
+        };
+        assert!(
+            matches!(request.predicate, Predicate::All { ref predicates } if predicates.len() == 2)
+        );
+    }
+
+    #[test]
+    fn wait_matches_composite_float_predicate() {
+        let session = TestSession {
+            observations: vec![ObservationEnvelope {
+                tick: 1,
+                frame_id: "frame.1".to_owned(),
+                state_hash: "state.1".to_owned(),
+                render_hash: "render.1".to_owned(),
+                signals: BTreeMap::from([
+                    ("signal.ready".to_owned(), AgentValue::Bool(true)),
+                    ("metric.fps".to_owned(), AgentValue::F64(60.0)),
+                ]),
+                payload: serde_json::json!({}),
+            }],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+                predicate: Predicate::All {
+                    predicates: vec![
+                        Predicate::Exists {
+                            probe: Probe::Signal {
+                                target: PublicId::new("signal.ready").expect("valid public id"),
+                            },
+                        },
+                        Predicate::Not {
+                            predicate: Box::new(Predicate::Compare {
+                                probe: Probe::Metric {
+                                    target: PublicId::new("metric.fps").expect("valid public id"),
+                                },
+                                op: CompareOp::Less,
+                                value: AgentValue::F64(30.0),
+                            }),
+                        },
+                    ],
+                },
+                timeout_millis: 5,
+                stable_frames: 1,
+                poll_frames: 1,
+            })))
+            .expect("composite wait succeeds");
+
+        assert!(matches!(
+            report.response,
+            AgentHostResponse::Observation(observation) if observation.tick == 1
         ));
     }
 

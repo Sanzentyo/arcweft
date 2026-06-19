@@ -919,6 +919,41 @@ effects { agent.observe }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_composite_predicates() {
+        let project =
+            project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool))
+                .with_entity(EntitySymbol::new(
+                    public_id("metric.fps"),
+                    EntityType::new(EntityKind::Metric, Some(TypeKind::F32)),
+                    SourceAnchor::generated(),
+                    SemanticHash::new("shape.metric.fps.v1"),
+                ));
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.composite_wait composite_wait()
+effects { agent.observe, agent.wait }
+{
+    wait(all(signal(@signal.ready).eq(true), not(metric(@metric.fps).lt(30.0f32))), timeout = 5s)
+}
+",
+            &project,
+        )
+        .expect("composite predicate typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .filter(|judgment| judgment.ty == TypeKind::Predicate)
+                .count()
+                >= 3
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_wait_zero_stable() {
         let project =
             project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));

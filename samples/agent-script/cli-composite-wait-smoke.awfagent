@@ -1,0 +1,12 @@
+#[agent(version = 1)]
+agent @agent.cli.composite_wait composite_wait()
+effects { agent.observe, agent.wait }
+{
+    wait(
+        all(exists(signal(@signal.ready)), not(signal(@signal.ready).eq(false))),
+        timeout = 5s,
+        stable_frames = 1u32,
+        poll_frames = 1u32,
+    )
+    return "done"
+}

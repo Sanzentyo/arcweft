@@ -190,6 +190,18 @@ fn method_name(method: &str) -> &str {
     method.split_once('<').map_or(method, |(name, _)| name)
 }
 
+fn agent_compare_op(method: &str) -> Option<&'static str> {
+    Some(match method {
+        "eq" => "eq",
+        "ne" | "not_eq" => "not_eq",
+        "gt" | "greater" => "greater",
+        "ge" | "greater_or_equal" => "greater_or_equal",
+        "lt" | "less" => "less",
+        "le" | "less_or_equal" => "less_or_equal",
+        _ => return None,
+    })
+}
+
 fn lower_arg_template(arg: &CallArg) -> HostTaskArgTemplate {
     match arg {
         CallArg::Named { name, value } => {
@@ -243,14 +255,17 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
             receiver,
             method,
             args,
-        } if method_name(method) == "eq" => {
+        } if agent_compare_op(method_name(method)).is_some() => {
             let [CallArg::Positional(value)] = args.as_slice() else {
                 return None;
             };
             Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("compare")),
                 runtime_field_expr("probe", lower_agent_probe_expr(receiver)?),
-                runtime_field_expr("op", runtime_string_expr("eq")),
+                runtime_field_expr(
+                    "op",
+                    runtime_string_expr(agent_compare_op(method_name(method))?),
+                ),
                 runtime_field_expr("value", lower_agent_host_arg_expr(value)),
             ]))
         }

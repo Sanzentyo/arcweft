@@ -770,6 +770,9 @@ impl TypeChecker<'_> {
             "metric" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Metric, "metric"))
             }
+            "exists" => Some(self.check_agent_exists_intrinsic(name, args)),
+            "all" | "any" => Some(self.check_agent_predicate_list_intrinsic(name, args)),
+            "not" => Some(self.check_agent_not_predicate_intrinsic(name, args)),
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
             "invoke" => Some(self.check_agent_invoke_intrinsic(name, args)),
             "rag.query" => Some(self.check_agent_rag_query_intrinsic(name, args)),
@@ -993,6 +996,58 @@ impl TypeChecker<'_> {
             }
             None => TypeKind::Probe(Box::new(TypeKind::Named("_".to_owned()))),
         }
+    }
+
+    fn check_agent_exists_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Predicate;
+        };
+        match self.check_expr(arg) {
+            Some(TypeKind::Probe(_)) | None => {}
+            Some(actual) => self.errors.push(TypeCheckError::new(format!(
+                "exists argument must be a Probe, found {actual:?}"
+            ))),
+        }
+        TypeKind::Predicate
+    }
+
+    fn check_agent_predicate_list_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        if args.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "{name} requires at least one predicate argument"
+            )));
+        }
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    self.expect_expr_type(value, &TypeKind::Predicate, name);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "{name} arguments must be positional, got named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "{name} arguments cannot be spread"
+                    )));
+                    self.check_expr(value);
+                }
+            }
+        }
+        TypeKind::Predicate
+    }
+
+    fn check_agent_not_predicate_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Predicate;
+        };
+        self.expect_expr_type(arg, &TypeKind::Predicate, "not predicate");
+        TypeKind::Predicate
     }
 
     fn check_agent_wait_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
@@ -1880,10 +1935,21 @@ impl TypeChecker<'_> {
         if method_name == "sum" {
             return self.check_vec_sum_method_call(&receiver_type, args);
         }
-        if method_name == "eq"
-            && let TypeKind::Probe(inner) = &receiver_type
+        if matches!(
+            method_name,
+            "eq" | "ne"
+                | "not_eq"
+                | "gt"
+                | "greater"
+                | "ge"
+                | "greater_or_equal"
+                | "lt"
+                | "less"
+                | "le"
+                | "less_or_equal"
+        ) && let TypeKind::Probe(inner) = &receiver_type
         {
-            return Some(self.check_probe_eq_method(inner.as_ref(), args));
+            return Some(self.check_probe_compare_method(method_name, inner.as_ref(), args));
         }
         if matches!(method_name, "context" | "with_context") {
             return self.check_context_method_call(receiver_type, args);
@@ -1918,11 +1984,16 @@ impl TypeChecker<'_> {
             })
     }
 
-    fn check_probe_eq_method(&mut self, expected: &TypeKind, args: &[CallArg]) -> TypeKind {
+    fn check_probe_compare_method(
+        &mut self,
+        method_name: &str,
+        expected: &TypeKind,
+        args: &[CallArg],
+    ) -> TypeKind {
         let [arg] = args else {
-            self.errors.push(TypeCheckError::new(
-                "Probe.eq requires exactly one positional argument".to_owned(),
-            ));
+            self.errors.push(TypeCheckError::new(format!(
+                "Probe.{method_name} requires exactly one positional argument"
+            )));
             for arg in args {
                 self.check_expr(arg.value());
             }
@@ -1930,18 +2001,22 @@ impl TypeChecker<'_> {
         };
         match arg {
             CallArg::Positional(value) => {
-                self.expect_expr_type(value, expected, "Probe.eq expected value");
+                self.expect_expr_type(
+                    value,
+                    expected,
+                    &format!("Probe.{method_name} expected value"),
+                );
             }
             CallArg::Named { name, value } => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "Probe.eq arguments must be positional, got named `{name}`"
+                    "Probe.{method_name} arguments must be positional, got named `{name}`"
                 )));
                 self.check_expr(value);
             }
             CallArg::Spread { value } => {
-                self.errors.push(TypeCheckError::new(
-                    "Probe.eq arguments cannot be spread".to_owned(),
-                ));
+                self.errors.push(TypeCheckError::new(format!(
+                    "Probe.{method_name} arguments cannot be spread"
+                )));
                 self.check_expr(value);
             }
         }

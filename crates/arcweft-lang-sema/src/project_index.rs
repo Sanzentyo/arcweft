@@ -93,6 +93,10 @@ pub enum AgentIntrinsic {
     SignalProbe,
     MetricProbe,
     StateProbe,
+    PredicateExists,
+    PredicateAll,
+    PredicateAny,
+    PredicateNot,
     Wait,
     Capture,
     Expect,
@@ -951,6 +955,7 @@ pub fn agent_prelude_env() -> TypeCheckEnv {
 fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
     agent_observation_callables()
         .into_iter()
+        .chain(agent_predicate_callables())
         .chain(agent_action_callables())
         .chain(agent_capture_callables())
         .chain(agent_record_callables())
@@ -1032,6 +1037,52 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
                 )))),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::MetricProbe),
+            ),
+        ),
+    ]
+}
+
+fn agent_predicate_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![
+        (
+            "exists",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Predicate,
+                    [FunctionParam::required(
+                        "probe",
+                        TypeKind::Probe(Box::new(TypeKind::Named("_".to_owned()))),
+                    )],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateExists),
+            ),
+        ),
+        (
+            "all",
+            CallableSymbol::new(
+                FunctionSignature::return_only(TypeKind::Predicate),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateAll),
+            ),
+        ),
+        (
+            "any",
+            CallableSymbol::new(
+                FunctionSignature::return_only(TypeKind::Predicate),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateAny),
+            ),
+        ),
+        (
+            "not",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Predicate,
+                    [FunctionParam::required("predicate", TypeKind::Predicate)],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateNot),
             ),
         ),
     ]

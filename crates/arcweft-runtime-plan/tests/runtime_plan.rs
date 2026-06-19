@@ -262,6 +262,44 @@ effects { agent.wait, agent.observe }
 }
 
 #[test]
+fn agent_controller_plan_lowers_composite_wait_predicates_to_host_task() {
+    let tree = parse_agent_ok(
+        r"
+#[agent(version = 1)]
+agent @agent.wait_composite wait_composite()
+effects { agent.wait, agent.observe }
+{
+    let obs = wait(any(exists(signal(@signal.ready)), metric(@metric.fps).ge(55.0f32)), timeout = 5ms)
+    return obs.tick
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected wait let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "wait");
+    let predicate = target.request.args[0].value();
+    let RuntimeExpr::Record(fields) = predicate else {
+        panic!("expected predicate record, got {predicate:?}");
+    };
+    assert!(fields.iter().any(|field| {
+        field.name == "kind"
+            && matches!(&field.value, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "any")
+    }));
+    assert!(format!("{predicate:?}").contains("greater_or_equal"));
+}
+
+#[test]
 fn lowers_dialogue_line_plan_to_core_task_group() {
     let tree = parse_ok(
         r"
