@@ -28,6 +28,7 @@ It is implementation state, not the stable language specification.
 - `arcw agent script run <file.awfagent|file.awfb>` executes one Agent controller through `arcweft-agent-runner` using a deterministic CLI session adapter. Source input is compiled to the shared Agent `.awfb` bundle shape first; bundle input is decoded through `ArcweftBundle` and must carry `bundle_kind = agent_controller`. The command is intentionally not the native game adapter yet; it validates the script/source -> bundle -> runner host-call path and emits a JSON run report. `--signal id=value` supplies typed boolean/integer/string signals to both the project semantic index for source compilation and the CLI observation state. `--trace-out <file.arcwx>` writes a JSON `AgentTraceRecord` stream derived from the runner debug events, with deterministic `blake3:` payload hashes and explicit run/session IDs.
 - `arcw agent script trace <file.arcwx>` reads a trace through the shared `AgentTraceRecord` protocol type and validates the `.arcwx` extension, JSON shape, schema version, payload hash, run-id consistency, first/last record kinds, and strictly increasing sequence numbers. It is a read-only validation surface for future replay/MCP trace resources, not a second runner.
 - `arcw agent script replay <file.arcwx> [--expect <file.arcwx>]` performs read-only logical replay of validated trace records. The replay sequence records each event's sequence number, kind, tick, payload hash, and blob refs. `--expect` compares two traces by replay-relevant logical fields rather than byte-for-byte file identity, so it can verify that source-run and bundle-run traces produce the same logical sequence.
+- `arcweft-agent-protocol` and `arcweft-agent-mcp` now expose Agent trace resources as typed MCP-compatible resources. `AgentResourceKind::Trace` plus `arcweft_agent_mcp::trace_resource` map validated `AgentTraceRecord` arrays to `arcweft://run/{run_id}/trace.arcwx` with `application/vnd.arcweft.agent-trace+json`, and `resources/templates/list` includes the trace URI pattern. This is the Sans-I/O resource contract; stdio MCP transport file loading remains follow-up work.
 - `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
 - `samples/agent-script/opening-smoke.awfagent` and `samples/agent-script/visual-regression.awfagent` mirror the package examples and currently pass `agent script check`. `samples/agent-script/cli-run-smoke.awfagent` is the minimal deterministic CLI runner smoke.
 
@@ -63,6 +64,8 @@ It is implementation state, not the stable language specification.
 - `cargo check -p arcweft-runtime-plan -p arcweft-compiler`
 - `cargo test -p arcweft-compiler -- --nocapture`
 - `cargo clippy -p arcweft-agent-protocol --all-targets --all-features -- -D warnings`
+- `cargo test -p arcweft-agent-protocol -p arcweft-agent-mcp`
+- `cargo clippy -p arcweft-agent-protocol -p arcweft-agent-mcp --all-targets --all-features -- -D warnings`
 - `cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
@@ -105,7 +108,7 @@ It is implementation state, not the stable language specification.
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Extend Agent predicate lowering beyond the currently executable `signal(...).eq(...)` path as the Agent Prelude grows comparison and boolean-combinator surface syntax.
-- Extend `.arcwx` beyond CLI run trace writing, validation, and read-only logical replay: add MCP trace resources, native game-adapter trace capture, and trace validation for captured blobs.
+- Extend `.arcwx` beyond CLI run trace writing, validation, read-only logical replay, and Sans-I/O MCP resource conversion: add stdio MCP trace file loading/resources, native game-adapter trace capture, and trace validation for captured blobs.
 - Extend CLI script run from the deterministic CLI session adapter to native game-adapter sessions, then add action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes. Add the matching MCP surfaces.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

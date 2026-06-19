@@ -6,9 +6,11 @@
 
 use arcweft_agent_protocol::{
     AgentImageComposition, AgentImageKind, AgentImageRenderer, AgentImageScope, AgentResource,
-    AgentResourceBody, AgentResourceKind,
+    AgentResourceBody, AgentResourceKind, trace::AgentTraceRecord,
 };
 use serde::{Deserialize, Serialize};
+
+pub const AGENT_TRACE_MIME_TYPE: &str = "application/vnd.arcweft.agent-trace+json";
 
 /// Resource descriptor returned by MCP `resources/list`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -344,6 +346,13 @@ pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
             "Selected object mask capture, including rich-text child objects. extension is png or rgba.",
             None,
         ),
+        resource_template(
+            "arcweft://run/{run_id}/trace.arcwx",
+            "agent-trace",
+            "Agent trace",
+            "Validated Agent execution trace records for read-only replay and regression comparison.",
+            Some(AGENT_TRACE_MIME_TYPE),
+        ),
     ]
 }
 
@@ -395,6 +404,42 @@ pub fn list_resources_result(resources: &[AgentResource]) -> McpListResourcesRes
     McpListResourcesResult {
         resources: resources.iter().map(resource_descriptor).collect(),
     }
+}
+
+/// Builds an MCP-addressable Agent trace resource from typed trace records.
+///
+/// The trace remains JSON at this boundary; portable binary/archive packaging
+/// for large blobs is handled by higher-level tooling.
+pub fn trace_resource(records: &[AgentTraceRecord]) -> Result<AgentResource, serde_json::Error> {
+    Ok(AgentResource {
+        uri: trace_resource_uri(records),
+        kind: AgentResourceKind::Trace,
+        mime_type: AGENT_TRACE_MIME_TYPE.to_owned(),
+        hash: trace_resource_hash(records),
+        image: None,
+        body: AgentResourceBody::Json(serde_json::to_value(records)?),
+    })
+}
+
+fn trace_resource_uri(records: &[AgentTraceRecord]) -> String {
+    records.first().map_or_else(
+        || "arcweft://run/unknown/trace.arcwx".to_owned(),
+        |record| format!("arcweft://run/{}/trace.arcwx", record.run_id.as_str()),
+    )
+}
+
+fn trace_resource_hash(records: &[AgentTraceRecord]) -> String {
+    records.last().map_or_else(
+        || "trace:empty".to_owned(),
+        |record| {
+            format!(
+                "trace:{}:{}:{}",
+                record.run_id.as_str(),
+                records.len(),
+                record.payload_hash.as_str()
+            )
+        },
+    )
 }
 
 /// Converts an Agent resource into an MCP `resources/read` result.
@@ -516,11 +561,18 @@ fn resource_title(resource: &AgentResource) -> String {
         AgentResourceKind::Logs => "Runtime logs",
         AgentResourceKind::Signals => "Runtime signals",
         AgentResourceKind::Audio => "Audio state",
+        AgentResourceKind::Trace => "Agent trace",
     }
     .to_owned()
 }
 
 fn resource_description(resource: &AgentResource) -> String {
+    if resource.kind == AgentResourceKind::Trace {
+        return format!(
+            "Agent execution trace resource for read-only replay ({})",
+            resource.mime_type
+        );
+    }
     if let Some(image) = &resource.image {
         let page = if image.page == 0 {
             String::new()
@@ -598,6 +650,8 @@ mod tests {
         AgentBinaryEncoding, AgentBinaryResourceBody, AgentCoordinateSpace, AgentImageComposition,
         AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind, AgentImageMetadata,
         AgentImageRenderer, AgentImageScope, AgentResourceBody,
+        ids::{AgentRunId, SessionId, StableHash},
+        trace::{AgentTraceKind, AgentTraceRecord},
     };
 
     #[test]
@@ -1062,6 +1116,43 @@ mod tests {
                         && description.contains("preserving ancestors")
                 })
         }));
+        assert!(templates.resource_templates.iter().any(|template| {
+            template.name == "agent-trace"
+                && template.uri_template == "arcweft://run/{run_id}/trace.arcwx"
+                && template.mime_type.as_deref() == Some(AGENT_TRACE_MIME_TYPE)
+        }));
+    }
+
+    #[test]
+    fn trace_resource_maps_to_mcp_text_resource_and_link() {
+        let records = trace_records_fixture();
+        let resource = trace_resource(&records).expect("trace resource serializes");
+        let list = list_resources_result(std::slice::from_ref(&resource));
+        let read = read_resource_result(&resource).expect("trace resource reads");
+        let tool = tool_result_for_resource(&resource).expect("trace tool result serializes");
+
+        assert_eq!(resource.kind, AgentResourceKind::Trace);
+        assert_eq!(resource.uri, "arcweft://run/run.cli/trace.arcwx");
+        assert_eq!(resource.mime_type, AGENT_TRACE_MIME_TYPE);
+        assert_eq!(resource.hash, "trace:run.cli:2:blake3:run-finished-payload");
+        assert_eq!(list.resources[0].name, "trace.arcwx");
+        assert_eq!(list.resources[0].title.as_deref(), Some("Agent trace"));
+        assert!(
+            list.resources[0]
+                .description
+                .as_deref()
+                .is_some_and(|description| description.contains("read-only replay"))
+        );
+        assert!(matches!(
+            read.contents.as_slice(),
+            [McpResourceContents::Text(McpTextResourceContents { mime_type: Some(mime_type), text, .. })]
+                if mime_type == AGENT_TRACE_MIME_TYPE && text.contains("\"run_finished\"")
+        ));
+        assert!(matches!(
+            tool.content.as_slice(),
+            [McpContentBlock::Resource { resource: McpResourceContents::Text(McpTextResourceContents { uri, .. }) }]
+                if uri == "arcweft://run/run.cli/trace.arcwx"
+        ));
     }
 
     #[test]
@@ -1224,6 +1315,31 @@ mod tests {
             assert!(description.contains("image capture"));
         } else {
             assert!(description.contains("before hit-testing"));
+        }
+    }
+
+    fn trace_records_fixture() -> Vec<AgentTraceRecord> {
+        vec![
+            trace_record(0, AgentTraceKind::RunStarted, "blake3:run-started-payload"),
+            trace_record(
+                1,
+                AgentTraceKind::RunFinished,
+                "blake3:run-finished-payload",
+            ),
+        ]
+    }
+
+    fn trace_record(sequence: u64, kind: AgentTraceKind, payload_hash: &str) -> AgentTraceRecord {
+        AgentTraceRecord {
+            schema_version: 1,
+            run_id: AgentRunId::new("run.cli").expect("test run id"),
+            session_id: Some(SessionId::new("session.cli").expect("test session id")),
+            sequence,
+            tick: None,
+            kind,
+            payload_hash: StableHash::new(payload_hash).expect("test trace hash"),
+            payload: serde_json::json!({ "sequence": sequence }),
+            blob_refs: Vec::new(),
         }
     }
 }

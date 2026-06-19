@@ -344,6 +344,7 @@ pub enum AgentResourceKind {
     Logs,
     Signals,
     Audio,
+    Trace,
 }
 
 /// Viewport that coordinates object bounds and image resources.

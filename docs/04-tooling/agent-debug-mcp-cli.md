@@ -88,6 +88,12 @@ textbox and rich-text child objects. Image descriptors also summarize the
 image kind, renderer, scope, composition, and dimensions in their MCP
 description field, so debuggers can choose a viewport, layer, or object capture
 from the list before fetching the full resource body and metadata.
+Agent execution traces use the same resource conversion path. The protocol
+surface exposes `AgentResourceKind::Trace`, and `arcweft-agent-mcp` maps typed
+`AgentTraceRecord` arrays to `arcweft://run/{run_id}/trace.arcwx` with
+`application/vnd.arcweft.agent-trace+json`. This is currently a Sans-I/O
+resource contract for CLI, tests, and future transports; the stdio MCP server
+does not yet load `.arcwx` files from disk by itself.
 
 ```arcw
 pub trait AgentDebugBus {
