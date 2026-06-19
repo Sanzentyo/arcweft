@@ -2197,6 +2197,42 @@ fn agent_repl_eval_meta(
                 "bindings": state.bindings.values().collect::<Vec<_>>(),
             }),
         ),
+        ":drop" => {
+            if rest.is_empty() {
+                agent_repl_error(
+                    index,
+                    input,
+                    "meta",
+                    ":drop requires a binding name".to_owned(),
+                )
+            } else {
+                agent_repl_drop(index, input, rest, state)
+            }
+        }
+        ":load" => {
+            if rest.is_empty() {
+                agent_repl_error(
+                    index,
+                    input,
+                    "meta",
+                    ":load requires a .awfagent path".to_owned(),
+                )
+            } else {
+                agent_repl_load(index, input, rest, state)
+            }
+        }
+        ":save" => {
+            if rest.is_empty() {
+                agent_repl_error(
+                    index,
+                    input,
+                    "meta",
+                    ":save requires a .awfagent path".to_owned(),
+                )
+            } else {
+                agent_repl_save(index, input, rest, state)
+            }
+        }
         ":parse" => {
             if rest.is_empty() {
                 agent_repl_error(
@@ -2247,6 +2283,9 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":query TEXT",
                 ":history",
                 ":bindings",
+                ":drop NAME",
+                ":load FILE.awfagent",
+                ":save FILE.awfagent",
                 ":parse EXPR_OR_STMT",
                 ":reset",
                 ":quit"
@@ -2348,6 +2387,166 @@ fn agent_repl_query(
         }
         Err(error) => agent_repl_error(index, input, "meta", error),
     }
+}
+
+fn agent_repl_drop(
+    index: usize,
+    input: &str,
+    name: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    match state.bindings.remove(name) {
+        Some(binding) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "dropped": binding.name,
+                "binding_kind": binding.binding_kind,
+            }),
+        ),
+        None => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("REPL binding `{name}` does not exist"),
+        ),
+    }
+}
+
+fn agent_repl_load(
+    index: usize,
+    input: &str,
+    raw_path: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let path = PathBuf::from(raw_path);
+    let source = match fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(error) => {
+            return agent_repl_error(
+                index,
+                input,
+                "meta",
+                format!("failed to read {}: {error}", path.display()),
+            );
+        }
+    };
+    if let Err(error) = arcweft_compiler::compile_agent_source(source.clone()) {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("failed to load {}: {error}", path.display()),
+        );
+    }
+
+    let name = agent_repl_loaded_binding_name(&path, index);
+    state.bindings.insert(
+        name.clone(),
+        AgentReplBinding {
+            name: name.clone(),
+            binding_kind: "loaded_agent".to_owned(),
+            source,
+            status: "ok".to_owned(),
+            final_status: None,
+            host_calls: 0,
+            responses: 0,
+        },
+    );
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "loaded": path.display().to_string(),
+            "binding": name,
+        }),
+    )
+}
+
+fn agent_repl_save(
+    index: usize,
+    input: &str,
+    raw_path: &str,
+    state: &AgentReplState,
+) -> AgentReplCellReport {
+    let path = PathBuf::from(raw_path);
+    let source = agent_repl_saved_source(state);
+    if let Err(error) = arcweft_compiler::compile_agent_source(source.clone()) {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("refusing to save invalid Agent source: {error}"),
+        );
+    }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(error) = fs::create_dir_all(parent)
+    {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("failed to create {}: {error}", parent.display()),
+        );
+    }
+    match fs::write(&path, source.as_bytes()) {
+        Ok(()) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "saved": path.display().to_string(),
+                "bytes": source.len(),
+            }),
+        ),
+        Err(error) => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("failed to write {}: {error}", path.display()),
+        ),
+    }
+}
+
+fn agent_repl_loaded_binding_name(path: &Path, fallback_index: usize) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.trim().is_empty())
+        .unwrap_or("agent");
+    let sanitized = stem
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' || character == '-' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("loaded.{fallback_index}.{sanitized}")
+}
+
+fn agent_repl_saved_source(state: &AgentReplState) -> String {
+    let mut body = state
+        .bindings
+        .values()
+        .filter(|binding| binding.status == "ok")
+        .filter(|binding| binding.binding_kind == "cell")
+        .map(|binding| indent_agent_repl_body(&binding.source))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if body.trim().is_empty() {
+        "    return \"empty\"".clone_into(&mut body);
+    } else if !body.contains("\n    return ") && !body.starts_with("    return ") {
+        body.push_str("\n    return \"saved\"");
+    }
+    format!(
+        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+    )
 }
 
 fn agent_repl_observe_options(options: &AgentReplOptions) -> AgentObserveOptions {
