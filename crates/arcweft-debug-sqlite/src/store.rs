@@ -1,7 +1,7 @@
 use crate::encoding::{VectorBlobError, decode_f32_le, encode_f32_le};
 use arcweft_agent_protocol::ids::{AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_debug_model::{
-    chunk::{ChunkId, DebugChunk},
+    chunk::{ChunkId, DebugChunk, PrivacyClass},
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
     event::DebugEvent,
     rag::{SearchChannel, SearchHit},
@@ -28,6 +28,8 @@ pub enum DebugStoreError {
     StoredDimensionMismatch,
     #[error("integer value is too large for SQLite column `{0}`")]
     IntegerOverflow(&'static str),
+    #[error("invalid privacy class stored in debug database: {0}")]
+    InvalidPrivacyClass(String),
 }
 
 /// One lexical result returned from FTS5.
@@ -36,6 +38,9 @@ pub struct LexicalResult {
     pub hit: SearchHit,
     pub title: String,
     pub body: String,
+    pub source_kind: String,
+    pub source_key: String,
+    pub privacy: PrivacyClass,
 }
 
 /// Current row counts for the rebuildable debug index.
@@ -278,38 +283,71 @@ impl DebugStore {
         query: &str,
         limit: usize,
     ) -> Result<Vec<LexicalResult>, DebugStoreError> {
+        self.lexical_search_with_max_privacy(query, limit, PrivacyClass::Secret)
+    }
+
+    pub fn lexical_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<LexicalResult>, DebugStoreError> {
         if query.trim().is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
         let fts_query = quote_fts_literal(query.trim());
         let mut statement = self.connection.prepare(
-            "SELECT c.chunk_id, c.title, c.body, bm25(chunks_fts, 2.0, 1.0)\n             FROM chunks_fts\n             JOIN chunks AS c ON c.rowid = chunks_fts.rowid\n             WHERE chunks_fts MATCH ?1\n             ORDER BY bm25(chunks_fts, 2.0, 1.0), c.chunk_id\n             LIMIT ?2",
+            "SELECT c.chunk_id, c.title, c.body, c.source_kind, c.source_key,
+                    c.privacy_class, bm25(chunks_fts, 2.0, 1.0)
+             FROM chunks_fts
+             JOIN chunks AS c ON c.rowid = chunks_fts.rowid
+             WHERE chunks_fts MATCH ?1
+               AND (
+                 c.privacy_class = 'public'
+                 OR (?3 IN ('project', 'sensitive', 'secret') AND c.privacy_class = 'project')
+                 OR (?3 IN ('sensitive', 'secret') AND c.privacy_class = 'sensitive')
+                 OR (?3 = 'secret' AND c.privacy_class = 'secret')
+               )
+             ORDER BY bm25(chunks_fts, 2.0, 1.0), c.chunk_id
+             LIMIT ?2",
         )?;
         let limit = i64::try_from(limit)
             .map_err(|_| DebugStoreError::IntegerOverflow("chunks_fts.limit"))?;
-        let rows = statement.query_map(params![fts_query, limit], |row| {
+        let rows = statement.query_map(params![fts_query, limit, max_privacy.as_str()], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, f64>(3)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, f64>(6)?,
             ))
         })?;
         let values = rows.collect::<Result<Vec<_>, _>>()?;
-        Ok(values
+        values
             .into_iter()
             .enumerate()
-            .map(|(index, (chunk_id, title, body, bm25))| LexicalResult {
-                hit: SearchHit {
-                    chunk_id: ChunkId::new(chunk_id),
-                    channel: SearchChannel::Lexical,
-                    rank: index + 1,
-                    score: Some(-bm25),
+            .map(
+                |(index, (chunk_id, title, body, source_kind, source_key, privacy, bm25))| {
+                    PrivacyClass::parse(&privacy)
+                        .ok_or_else(|| DebugStoreError::InvalidPrivacyClass(privacy.clone()))
+                        .map(|privacy| LexicalResult {
+                            hit: SearchHit {
+                                chunk_id: ChunkId::new(chunk_id),
+                                channel: SearchChannel::Lexical,
+                                rank: index + 1,
+                                score: Some(-bm25),
+                            },
+                            title,
+                            body,
+                            source_kind,
+                            source_key,
+                            privacy,
+                        })
                 },
-                title,
-                body,
-            })
-            .collect())
+            )
+            .collect::<Result<Vec<_>, _>>()
     }
 
     pub fn upsert_embedding(&self, embedding: &StoredEmbedding) -> Result<(), DebugStoreError> {
@@ -617,6 +655,54 @@ mod tests {
         assert_eq!(report.chunks_indexed, 1);
         let hits = store.lexical_search("lifecycle", 10).expect("search");
         assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn lexical_search_filters_by_max_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let chunks = [
+            DebugChunk {
+                id: ChunkId::new("chunk:secret"),
+                program_hash: None,
+                source_kind: ChunkSourceKind::Documentation,
+                source_key: "secret".to_owned(),
+                title: "opening secret".to_owned(),
+                body: "opening secret evidence".to_owned(),
+                content_hash: hash("b3:secret"),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy: PrivacyClass::Secret,
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            },
+            DebugChunk {
+                id: ChunkId::new("chunk:public"),
+                program_hash: None,
+                source_kind: ChunkSourceKind::Documentation,
+                source_key: "public".to_owned(),
+                title: "opening public".to_owned(),
+                body: "opening public evidence".to_owned(),
+                content_hash: hash("b3:public"),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy: PrivacyClass::Public,
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            },
+        ];
+        for chunk in &chunks {
+            store.upsert_chunk(chunk).expect("chunk");
+        }
+
+        let hits = store
+            .lexical_search_with_max_privacy("opening", 1, PrivacyClass::Public)
+            .expect("search");
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:public");
+        assert_eq!(hits[0].privacy, PrivacyClass::Public);
     }
 
     #[test]

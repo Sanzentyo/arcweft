@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -8,8 +9,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
 };
+use arcweft_agent_protocol::ids::StableHash;
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
+use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
+use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
     BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
@@ -921,6 +925,92 @@ fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {
         serde_json::from_slice(&rag_output.stdout).expect("RAG output is JSON");
     assert_eq!(pack["query"]["text"], "observation_received");
     assert_eq!(pack["items"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn debug_db_search_filters_chunks_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug search target dir"))
+        .expect("create debug search target dir");
+    seed_debug_search_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("opening")
+        .arg("--limit")
+        .arg("4")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db search runs");
+    assert!(
+        output.status.success(),
+        "debug db search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db search output is JSON");
+
+    assert_eq!(report["query"], "opening");
+    assert_eq!(report["max_privacy"], "public");
+    let hits = report["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], "chunk:public-opening");
+    assert_eq!(hits[0]["privacy"], "public");
+    assert_eq!(hits[0]["channel"], "lexical");
+}
+
+fn seed_debug_search_db(path: &Path) {
+    let store = DebugStore::open(path).expect("open debug search db");
+    for chunk in [
+        DebugChunk {
+            id: ChunkId::new("chunk:secret-opening"),
+            program_hash: None,
+            source_kind: ChunkSourceKind::Documentation,
+            source_key: "secret".to_owned(),
+            title: "opening secret".to_owned(),
+            body: "opening secret investigation note".to_owned(),
+            content_hash: stable_hash("b3:secret-opening"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Secret,
+            metadata: BTreeMap::default(),
+            created_unix_ms: 0,
+        },
+        DebugChunk {
+            id: ChunkId::new("chunk:public-opening"),
+            program_hash: None,
+            source_kind: ChunkSourceKind::Documentation,
+            source_key: "public".to_owned(),
+            title: "opening public".to_owned(),
+            body: "opening public investigation note".to_owned(),
+            content_hash: stable_hash("b3:public-opening"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Public,
+            metadata: BTreeMap::default(),
+            created_unix_ms: 0,
+        },
+    ] {
+        store.upsert_chunk(&chunk).expect("upsert debug chunk");
+    }
+}
+
+fn stable_hash(value: &str) -> StableHash {
+    StableHash::new(value).expect("stable hash")
 }
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {

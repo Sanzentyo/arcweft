@@ -333,6 +333,12 @@ the root, exists, and matches the indexed byte length. `arcw debug db delete
 --unreferenced-blobs --blob-dir <dir>` deletes unreferenced blob records and
 their corresponding safe relative files while preserving files still referenced
 by captures.
+`arcw debug db search --query <text>
+[--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
+the rebuildable debug-store chunk FTS index using a quoted literal query. The
+privacy ceiling is applied inside the SQLite query before `--limit`, so
+disallowed chunks cannot push allowed public/project hits out of the result
+window.
 `arcw agent rag query --trace <file.arcwx> --query <text>
 [--max-privacy public|project|sensitive|secret] [--json]` builds the same
 explainable `RagContextPack` shape used by Agent MCP. The default privacy

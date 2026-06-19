@@ -1,4 +1,6 @@
 use super::shared::print_json;
+use arcweft_debug_model::chunk::PrivacyClass;
+use arcweft_debug_model::rag::SearchChannel;
 use arcweft_debug_sqlite::store::{
     DebugStore, DebugStoreBlobRecord, DebugStoreForeignKeyViolation, DebugStoreStats,
     DebugStoreValidationReport,
@@ -24,6 +26,7 @@ pub(super) enum DebugDbCommand {
     Migrate(DebugDbOptions),
     Validate(DebugDbOptions),
     Reindex(DebugDbOptions),
+    Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
 
@@ -45,6 +48,18 @@ pub(super) struct DebugDbDeleteOptions {
     unreferenced_blobs: bool,
     #[arg(long)]
     validate: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbSearchOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long)]
+    query: String,
+    #[arg(long, default_value_t = 10)]
+    limit: usize,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(serde::Serialize)]
@@ -112,6 +127,28 @@ struct DebugDbDeleteReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbSearchReport {
+    path: String,
+    query: String,
+    limit: usize,
+    max_privacy: PrivacyClass,
+    hits: Vec<DebugDbSearchHitReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbSearchHitReport {
+    chunk_id: String,
+    title: String,
+    body: String,
+    source_kind: String,
+    source_key: String,
+    privacy: PrivacyClass,
+    channel: String,
+    rank: usize,
+    score: Option<f64>,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbBlobFileValidationReport {
     root: String,
     checked: u64,
@@ -141,6 +178,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         }
         DebugDbCommand::Validate(options) => debug_db_validate_command(&options),
         DebugDbCommand::Reindex(options) => debug_db_reindex_command(&options),
+        DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
 }
@@ -226,6 +264,70 @@ fn debug_db_reindex_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
         "{}: rebuilt chunk FTS index for {} chunks",
         report.path, report.chunks_indexed
     );
+    Ok(())
+}
+
+fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
+    if options.query.trim().is_empty() {
+        eprintln!("error: debug db search requires a non-empty --query");
+        return Err(ExitCode::from(2));
+    }
+    if options.limit == 0 {
+        eprintln!("error: debug db search --limit must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    let (store, path, _, _) = open_debug_store(&options.db)?;
+    let hits = store
+        .lexical_search_with_max_privacy(&options.query, options.limit, options.max_privacy)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to search debug database {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?
+        .into_iter()
+        .map(|result| DebugDbSearchHitReport {
+            chunk_id: result.hit.chunk_id.as_str().to_owned(),
+            title: result.title,
+            body: result.body,
+            source_kind: result.source_kind,
+            source_key: result.source_key,
+            privacy: result.privacy,
+            channel: debug_search_channel_label(result.hit.channel).to_owned(),
+            rank: result.hit.rank,
+            score: result.hit.score,
+        })
+        .collect::<Vec<_>>();
+    let report = DebugDbSearchReport {
+        path,
+        query: options.query.clone(),
+        limit: options.limit,
+        max_privacy: options.max_privacy,
+        hits,
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: {} hit(s) for {:?} (max_privacy={})",
+        report.path,
+        report.hits.len(),
+        report.query,
+        report.max_privacy.as_str()
+    );
+    for hit in &report.hits {
+        println!(
+            "{}. {} [{}:{} privacy={} score={}]",
+            hit.rank,
+            hit.title,
+            hit.source_kind,
+            hit.source_key,
+            hit.privacy.as_str(),
+            hit.score
+                .map_or_else(|| "none".to_owned(), |score| format!("{score:.6}"))
+        );
+    }
     Ok(())
 }
 
@@ -519,6 +621,25 @@ fn checked_blob_file_path(root: &Path, relative_path: &str) -> Option<PathBuf> {
         return None;
     }
     Some(root.join(checked))
+}
+
+fn parse_debug_privacy_class(value: &str) -> Result<PrivacyClass, String> {
+    PrivacyClass::parse(value).ok_or_else(|| {
+        format!("privacy class must be one of public, project, sensitive, or secret: `{value}`")
+    })
+}
+
+const fn debug_search_channel_label(channel: SearchChannel) -> &'static str {
+    match channel {
+        SearchChannel::ExactEntity => "exact_entity",
+        SearchChannel::Lexical => "lexical",
+        SearchChannel::Vector => "vector",
+        SearchChannel::Graph => "graph",
+        SearchChannel::History => "history",
+        SearchChannel::Diagnostics => "diagnostics",
+        SearchChannel::Trace => "trace",
+        SearchChannel::Summary => "summary",
+    }
 }
 
 fn foreign_key_violation_report(
