@@ -813,9 +813,20 @@ asset @asset.bg.pulse {
     animation = true
 }
 
+image @image.sample.pulse {
+    asset = @asset.bg.pulse
+    target = @target.sample.pulse
+    layer = @layer.foreground
+    x = 96px
+    y = 72px
+    width = 360px
+    height = 180px
+}
+
 flow @flow.opening opening {
     let room = bg(@asset.bg.room, fit = "intrinsic", alignment.x = 1, alignment.y = 0.5, opacity = 0.75, playback.rate = 0.5, playback.local_time = 50ms)
     let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", alignment.x = 0.25, alignment.y = 750, opacity = 0.5, playback.start = 0.1, playback.rate = 0.5, transform.tx = 24px, transform.ty = 12px, transform.m11 = 1000, transform.m22 = 1000, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse", param.role = "animated-hotspot", proxy.id = "proxy.pulse.hotspot", proxy.type = "PulseHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
+    let declared = image(@image.sample.pulse)
 }
 "#,
     );

@@ -229,6 +229,14 @@ pub asset @asset.bg.room {
     kind = image
 }
 
+pub image @image.sample.pulse {
+    asset = @asset.bg.room
+    x = 12px
+    y = 34px
+    width = 56px
+    height = 78px
+}
+
 pub surface character @character.alice Alice as alice {
 }
 
@@ -258,21 +266,27 @@ pub rig @rig.alice.live2d {
             && item.id().body() == "asset.bg.room"
             && item.body().is_some()
     ));
-    let Item::EntityDecl(character) = &tree.items()[1] else {
+    assert!(matches!(
+        &tree.items()[1],
+        Item::EntityDecl(item) if item.kind() == EntityDeclKind::Image
+            && item.id().body() == "image.sample.pulse"
+            && item.body().is_some()
+    ));
+    let Item::EntityDecl(character) = &tree.items()[2] else {
         panic!("expected character declaration");
     };
     assert_eq!(character.kind(), EntityDeclKind::Character);
     assert_eq!(character.surface_alias(), Some("alice"));
     assert!(matches!(
-        &tree.items()[2],
+        &tree.items()[3],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::Voice
     ));
     assert!(matches!(
-        &tree.items()[3],
+        &tree.items()[4],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::AudioBus
     ));
     assert!(matches!(
-        &tree.items()[4],
+        &tree.items()[5],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::MixerSnapshot
     ));
 }

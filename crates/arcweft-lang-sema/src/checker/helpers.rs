@@ -19,6 +19,7 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "text" => EntityKind::Text,
         "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
+        "image" => EntityKind::Image,
         "anim" => EntityKind::Animation,
         "capture" => EntityKind::Capture,
         "hook" => EntityKind::Hook,
@@ -56,6 +57,7 @@ pub(super) fn expr_path_label(expr: &Expr) -> Option<String> {
 pub(super) fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
     match kind {
         EntityDeclKind::Asset => EntityKind::Asset,
+        EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::Component => EntityKind::Component,
         EntityDeclKind::Activity => EntityKind::Activity,

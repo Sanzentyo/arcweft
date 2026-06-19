@@ -1315,6 +1315,7 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
         "mixer snapshot",
         "voice profile",
         "asset",
+        "image",
         "character",
         "component",
         "activity",

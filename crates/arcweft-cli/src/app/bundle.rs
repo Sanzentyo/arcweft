@@ -1,3 +1,6 @@
+use super::image_declarations::{
+    DeclaredImageObject, declared_image_asset_refs, parse_declared_image_objects,
+};
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
     typecheck_env_for_selection,
@@ -29,6 +32,7 @@ use arcweft_runtime_host::{
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
 };
 use clap::Args;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -169,7 +173,8 @@ fn compile_bundle_artifact(
     );
     let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
-    validate_referenced_bundle_image_assets(&compiled.plan, &image_assets)?;
+    let image_declarations = parse_declared_image_objects(&source);
+    validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     Ok(ArcweftBundle::new(
         bundle_manifest(
             selection,
@@ -402,13 +407,14 @@ fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) ->
 
 fn validate_referenced_bundle_image_assets(
     plan: &RuntimePlan,
+    image_declarations: &BTreeMap<String, DeclaredImageObject>,
     image_assets: &[BundleImageAsset],
 ) -> Result<(), ExitCode> {
     let available = image_assets
         .iter()
         .map(|asset| asset.id.as_str())
         .collect::<Vec<_>>();
-    let missing = static_image_asset_refs(plan)
+    let missing = static_image_asset_refs(plan, image_declarations)
         .into_iter()
         .filter(|id| !available.iter().any(|available_id| available_id == id))
         .collect::<Vec<_>>();
@@ -422,7 +428,10 @@ fn validate_referenced_bundle_image_assets(
     Err(ExitCode::from(2))
 }
 
-fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
+fn static_image_asset_refs(
+    plan: &RuntimePlan,
+    image_declarations: &BTreeMap<String, DeclaredImageObject>,
+) -> Vec<String> {
     let mut refs = plan
         .flows
         .iter()
@@ -434,6 +443,7 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
                 .flat_map(collect_line_task_group_static_image_asset_refs),
         )
         .collect::<Vec<_>>();
+    refs.extend(declared_image_asset_refs(image_declarations));
     refs.sort();
     refs.dedup();
     refs
@@ -1080,7 +1090,7 @@ mod tests {
         }]);
 
         assert_eq!(
-            static_image_asset_refs(&plan),
+            static_image_asset_refs(&plan, &BTreeMap::new()),
             vec!["asset.bg.room".to_owned(), "asset.ui.logo".to_owned()]
         );
     }
@@ -1105,7 +1115,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            static_image_asset_refs(&plan),
+            static_image_asset_refs(&plan, &BTreeMap::new()),
             vec![
                 "asset.bg.pulse".to_owned(),
                 "asset.bg.room".to_owned(),
@@ -1121,7 +1131,30 @@ mod tests {
             args: vec!["@asset.bg.room".to_owned()],
         }));
 
-        assert_eq!(static_image_asset_refs(&plan), vec!["asset.bg.room"]);
+        assert_eq!(
+            static_image_asset_refs(&plan, &BTreeMap::new()),
+            vec!["asset.bg.room"]
+        );
+    }
+
+    #[test]
+    fn static_image_asset_refs_collects_declared_image_object_assets() {
+        let declarations = parse_declared_image_objects(
+            r"
+image @image.sample.pulse {
+    asset = @asset.bg.pulse
+    x = 12px
+    y = 34px
+    width = 56px
+    height = 78px
+}
+",
+        );
+
+        assert_eq!(
+            static_image_asset_refs(&plan_with_ops(Vec::new()), &declarations),
+            vec!["asset.bg.pulse"]
+        );
     }
 
     #[test]
@@ -1131,10 +1164,11 @@ mod tests {
             image_effect_call("image", "asset = @asset.ui.logo"),
         ]);
 
-        assert!(validate_referenced_bundle_image_assets(&plan, &[]).is_err());
+        assert!(validate_referenced_bundle_image_assets(&plan, &BTreeMap::new(), &[]).is_err());
         assert!(
             validate_referenced_bundle_image_assets(
                 &plan,
+                &BTreeMap::new(),
                 &[image_asset("asset.bg.room"), image_asset("asset.ui.logo")]
             )
             .is_ok()

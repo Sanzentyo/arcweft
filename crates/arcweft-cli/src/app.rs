@@ -1,6 +1,7 @@
 mod agent;
 mod bundle;
 mod commands;
+mod image_declarations;
 pub(in crate::app) mod jit;
 pub(crate) mod project;
 pub(in crate::app) mod runtime;

@@ -12,6 +12,10 @@ use super::{
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
 };
+use crate::app::image_declarations::{
+    DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
+    public_image_ref_arg, runtime_arg_name,
+};
 use arcweft_agent_mcp::{
     McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
@@ -5593,22 +5597,25 @@ fn agent_runtime_presentation_image_observation(
     let mut background_input = None;
     let mut diagnostics = Vec::new();
     let mut image_decode_cache = AgentSourceImageDecodeCache::default();
+    let image_declarations =
+        agent_load_declared_image_objects_or_diagnostic(source_path, step, &mut diagnostics);
     for (call_index, call) in calls.iter().enumerate() {
-        let image_call = match agent_runtime_image_call(call, call_index, viewport) {
-            Ok(Some(image_call)) => image_call,
-            Ok(None) => continue,
-            Err(message) => {
-                diagnostics.push(AgentDiagnostic {
-                    step,
-                    severity: AgentDiagnosticSeverity::Warning,
-                    source: Some("agent.presentation_image".to_owned()),
-                    code: Some("image_call_invalid".to_owned()),
-                    effect_id: Some(call.callee.clone()),
-                    message,
-                });
-                continue;
-            }
-        };
+        let image_call =
+            match agent_runtime_image_call(call, call_index, viewport, &image_declarations) {
+                Ok(Some(image_call)) => image_call,
+                Ok(None) => continue,
+                Err(message) => {
+                    diagnostics.push(AgentDiagnostic {
+                        step,
+                        severity: AgentDiagnosticSeverity::Warning,
+                        source: Some("agent.presentation_image".to_owned()),
+                        code: Some("image_call_invalid".to_owned()),
+                        effect_id: Some(call.callee.clone()),
+                        message,
+                    });
+                    continue;
+                }
+            };
         match image_decode_cache.decode_source_image_asset(source_path, image_call.asset.as_str()) {
             Ok(image) => {
                 let input = agent_image_presentation_input(&image_call, image);
@@ -5677,6 +5684,27 @@ fn agent_runtime_presentation_image_observation(
     )
 }
 
+fn agent_load_declared_image_objects_or_diagnostic(
+    source_path: &Path,
+    step: usize,
+    diagnostics: &mut Vec<AgentDiagnostic>,
+) -> BTreeMap<String, DeclaredImageObject> {
+    match load_declared_image_objects(source_path) {
+        Ok(declarations) => declarations,
+        Err(message) => {
+            diagnostics.push(AgentDiagnostic {
+                step,
+                severity: AgentDiagnosticSeverity::Warning,
+                source: Some("agent.presentation_image".to_owned()),
+                code: Some("image_declaration_unavailable".to_owned()),
+                effect_id: None,
+                message,
+            });
+            BTreeMap::new()
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct AgentRuntimeImageCall {
     asset: arcweft_id::PublicId,
@@ -5736,10 +5764,13 @@ fn agent_runtime_image_call(
     call: &RuntimeCall,
     call_index: usize,
     viewport: &AgentViewport,
+    image_declarations: &BTreeMap<String, DeclaredImageObject>,
 ) -> Result<Option<AgentRuntimeImageCall>, String> {
     match call.callee.as_str() {
         "bg" => agent_background_runtime_image_call(call, viewport).map(Some),
-        "image" | "image.show" => agent_object_runtime_image_call(call, call_index).map(Some),
+        "image" | "image.show" => {
+            agent_object_runtime_image_call(call, call_index, image_declarations).map(Some)
+        }
         _ => Ok(None),
     }
 }
@@ -5785,7 +5816,23 @@ fn agent_background_runtime_image_call(
 fn agent_object_runtime_image_call(
     call: &RuntimeCall,
     call_index: usize,
+    image_declarations: &BTreeMap<String, DeclaredImageObject>,
 ) -> Result<AgentRuntimeImageCall, String> {
+    if let Some(declaration_id) = agent_declared_image_object_id(call) {
+        let declaration = image_declarations
+            .get(declaration_id.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "declared image object `{}` was not found",
+                    declaration_id.as_str()
+                )
+            })?;
+        let expanded_call = RuntimeCall {
+            callee: call.callee.clone(),
+            args: merge_declared_image_args(declaration, agent_image_call_override_args(call)),
+        };
+        return agent_object_runtime_image_call(&expanded_call, call_index, image_declarations);
+    }
     let asset = agent_image_call_asset(call)
         .ok_or_else(|| "`image(...)` requires an `asset` argument".to_owned())?;
     let x = agent_required_image_call_length(call, "x", 1)?;
@@ -5850,6 +5897,29 @@ fn agent_object_runtime_image_call(
         enabled,
         visible,
     })
+}
+
+fn agent_declared_image_object_id(call: &RuntimeCall) -> Option<arcweft_id::PublicId> {
+    let id = agent_call_positional_value(call, 0).and_then(public_image_ref_arg)?;
+    arcweft_id::PublicId::try_new(id).ok()
+}
+
+fn agent_image_call_override_args(call: &RuntimeCall) -> Vec<String> {
+    let mut skipped_decl_ref = false;
+    call.args
+        .iter()
+        .filter_map(|arg| {
+            if runtime_arg_name(arg).is_none()
+                && !skipped_decl_ref
+                && public_image_ref_arg(arg).is_some()
+            {
+                skipped_decl_ref = true;
+                None
+            } else {
+                Some(arg.clone())
+            }
+        })
+        .collect()
 }
 
 fn agent_image_call_asset(call: &RuntimeCall) -> Option<arcweft_id::PublicId> {

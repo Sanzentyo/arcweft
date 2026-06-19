@@ -111,6 +111,7 @@ ItemDecl     :=
   | MemoDecl
   | DialogueDefaultsDecl
   | AssetDecl
+  | ImageDecl
   | TypeDecl
 OuterAttr    := '#[' AttrPath AttrArgs? ']'
 InnerAttr    := '#![' AttrPath AttrArgs? ']'
@@ -134,11 +135,21 @@ Asset declarations use the ordinary entity declaration surface:
 
 ```text
 AssetDecl := Visibility? 'asset' DeclIdentity AssetBody?
+ImageDecl := Visibility? 'image' DeclIdentity ImageObjectBody?
 ```
 
 The declaration establishes the `asset` entity id for references such as
 `@asset.bg.room`. Image payload packaging is still handled by the bundle image
 asset table, which records encoded files and decoded metadata.
+
+`image` declarations establish stable presentation-object ids such as
+`@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
+`image(asset = ..., ...)` calls: `asset`, `target`, `layer`, `x`, `y`, `width`,
+`height`, `fit`, `alignment.*`, `opacity`, `playback.*`, `transform.*`,
+`depth`, `enabled`, `visible`, `action`, `param.*`, and `proxy.*`.
+`image(@image.id)` lowers through the same semantic `ImagePresentationObject`
+path as an inline bounded `image(...)` call; it is not a renderer adapter or
+compatibility surface.
 
 ## Flow and fragments
 

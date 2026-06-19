@@ -294,9 +294,12 @@ image capture.
    checked against that table when they are statically known.
 2. Generalize the source-level image surface from the current `bg(...)` and
    bounded `image(...)` calls into declared image objects with hit-test
-   proxies. Depth, transforms, lifecycle flags, semantic actions, and custom
-   `param.*` metadata are now present on the bounded source-level call path and
-   Agent observation path.
+   proxies. `image @image... { ... }` now parses, lowers, resolves, and
+   typechecks as a presentation-object entity declaration. `image(@image...)`
+   expands through the same `ImagePresentationObject` path as inline bounded
+   calls, including depth, transforms, lifecycle flags, semantic actions,
+   custom `param.*` metadata, proxy metadata, native capture, Agent observation,
+   hit-test, and bundle asset validation.
 3. Add more regression tests for native capture pixels, object metadata, and no
    wall-clock dependence. Bounded animated image pinned-frame readback is
    covered for direct object and layer `--read-uri`; image-object proxy

@@ -16,8 +16,25 @@ pub asset @asset.bg.room {
   file = "bg/room.png"
 }
 
+pub image @image.sample.pulse_sprite {
+  asset = @asset.bg.pulse
+  target = @target.sample.pulse_sprite
+  layer = @layer.foreground
+  x = 96px
+  y = 72px
+  width = 360px
+  height = 180px
+  fit = stretch
+  opacity = 0.5
+  playback.local_time = 50ms
+  proxy.id = @proxy.pulse_sprite.hotspot
+  proxy.hit_test = true
+}
+
 bg(@asset.bg.room)
 bg(@asset.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
+
+image(@image.sample.pulse_sprite)
 
 image(
   asset = @asset.bg.pulse,
@@ -54,6 +71,12 @@ object identity, target, layer, bounds, fit/alignment, opacity, depth,
 transform, playback policy, lifecycle flags, semantic actions, custom
 `param.*` metadata, and optional `proxy.*` hit-test metadata.
 
+`image @image... { ... }` declares the same bounded image object metadata at
+module scope. `image(@image.id)` expands that declaration into the same
+`ImagePresentationObject` model used by inline bounded calls, so Agent observe,
+hit-test, capture, bundle validation, and native rendering all see the same
+typed object. Call-site named arguments may override declaration fields.
+
 `asset @asset...` is a normal entity declaration family. It declares the stable
 asset id used by `asset.image(...)`, `bg(...)`, and `image(...)`. Its body is
 preserved as source metadata; the current bundle implementation still records
@@ -61,9 +84,9 @@ encoded payloads from `.arcweft/asset` into `image_assets[]` and validates
 statically known image references against that table.
 
 The older fluent sketch form `image(@asset).fit(...)` is not the implemented
-surface. If future language work introduces declared image objects or a richer
-asset declaration syntax, it should lower into this same semantic image object
-model rather than adding a compatibility adapter.
+surface. Declared image objects are the canonical reusable object form and lower
+into the same semantic image object model rather than adding a compatibility
+adapter.
 
 ## Object Model
 

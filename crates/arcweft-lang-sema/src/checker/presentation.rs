@@ -19,7 +19,7 @@ impl TypeChecker<'_> {
                 ))
             }
             "image" | "image.show" => {
-                self.check_presentation_asset_arg(args, "image asset");
+                self.check_presentation_image_source_arg(args);
                 self.check_presentation_image_named_args(args);
                 Some(TypeKind::Named(
                     "PresentationHandle<ImageSurface>".to_owned(),
@@ -59,6 +59,22 @@ impl TypeChecker<'_> {
             }
             _ => None,
         }
+    }
+
+    fn check_presentation_image_source_arg(&mut self, args: &[CallArg]) {
+        if Self::first_positional_entity_kind(args) == Some(EntityKind::Image) {
+            return;
+        }
+        self.check_presentation_asset_arg(args, "image asset");
+    }
+
+    fn first_positional_entity_kind(args: &[CallArg]) -> Option<EntityKind> {
+        args.iter().find_map(|arg| match arg {
+            CallArg::Positional(Expr::EntityRef(entity)) => {
+                entity.as_absolute().and_then(entity_kind)
+            }
+            CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        })
     }
 
     fn check_presentation_asset_arg(&mut self, args: &[CallArg], context: &str) {

@@ -257,6 +257,7 @@ pub enum FunctionKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntityDeclKind {
     Asset,
+    Image,
     Character,
     Component,
     Activity,
@@ -278,6 +279,7 @@ impl EntityDeclKind {
     pub const fn keyword(self) -> &'static str {
         match self {
             Self::Asset => "asset",
+            Self::Image => "image",
             Self::Character => "character",
             Self::Component => "component",
             Self::Activity => "activity",
