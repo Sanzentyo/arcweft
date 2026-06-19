@@ -990,6 +990,35 @@ fn agent_mcp_stdio_runs_agent_script() {
     }
 }
 
+#[test]
+fn agent_script_run_json_executes_read_resource_value_smoke() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_read_resource_value_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes read_resource value smoke");
+
+    assert!(
+        output.status.success(),
+        "agent script read_resource value run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("read_resource value run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 1);
+    assert_eq!(json["responses"][0]["kind"], "resource");
+    assert_eq!(
+        json["responses"][0]["response"]["body"]["body"]["source"],
+        "arcw agent script run"
+    );
+    assert_eq!(json["final_status"], "Done(Return(\"record/2\"))");
+}
+
 fn assert_agent_script_build(bundle_path: &Path) {
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -1644,6 +1673,10 @@ fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
 
 fn agent_script_cli_read_resource_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-read-resource-smoke.awfagent")
+}
+
+fn agent_script_cli_read_resource_value_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-read-resource-value-smoke.awfagent")
 }
 
 fn agent_script_native_advance_text_game_path() -> PathBuf {

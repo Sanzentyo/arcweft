@@ -1,0 +1,7 @@
+#[agent(version = 1)]
+agent @agent.cli.read_resource_value_smoke read_resource_value_smoke()
+effects { agent.resource.read }
+{
+    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    return resource.body.value
+}

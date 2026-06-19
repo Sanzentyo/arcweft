@@ -2910,6 +2910,7 @@ fn agent_resource_field_type(field: &str) -> Option<TypeKind> {
 fn agent_resource_body_field_type(field: &str) -> Option<TypeKind> {
     Some(match field {
         "kind" | "json" | "text" | "base64" | "encoding" => TypeKind::String,
+        "value" => TypeKind::AgentValue,
         _ => return None,
     })
 }

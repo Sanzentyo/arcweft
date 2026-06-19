@@ -967,6 +967,10 @@ fn runtime_resource_body_payload(value: Option<&serde_json::Value>) -> RuntimeVa
                 "json",
                 RuntimeValue::String(body.map_or_else(String::new, serde_json::Value::to_string)),
             ),
+            runtime_field(
+                "value",
+                body.map_or(RuntimeValue::Unit, runtime_value_from_json),
+            ),
             runtime_field("text", RuntimeValue::String(String::new())),
             runtime_field("base64", RuntimeValue::String(String::new())),
             runtime_field("encoding", RuntimeValue::String(String::new())),
@@ -974,6 +978,14 @@ fn runtime_resource_body_payload(value: Option<&serde_json::Value>) -> RuntimeVa
         "text" => RuntimeValue::Record(vec![
             runtime_field("kind", RuntimeValue::String(kind.to_owned())),
             runtime_field("json", RuntimeValue::String(String::new())),
+            runtime_field(
+                "value",
+                RuntimeValue::String(
+                    body.and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                ),
+            ),
             runtime_field(
                 "text",
                 RuntimeValue::String(
@@ -1004,6 +1016,7 @@ fn runtime_bytes_base64_body_payload(kind: &str, body: Option<&serde_json::Value
     RuntimeValue::Record(vec![
         runtime_field("kind", RuntimeValue::String(kind.to_owned())),
         runtime_field("json", RuntimeValue::String(String::new())),
+        runtime_field("value", runtime_bytes_base64_value(body)),
         runtime_field("text", RuntimeValue::String(String::new())),
         runtime_field("base64", RuntimeValue::String(data)),
         runtime_field("encoding", RuntimeValue::String(encoding)),
@@ -1014,10 +1027,60 @@ fn runtime_empty_resource_body() -> RuntimeValue {
     RuntimeValue::Record(vec![
         runtime_field("kind", RuntimeValue::String(String::new())),
         runtime_field("json", RuntimeValue::String(String::new())),
+        runtime_field("value", RuntimeValue::Unit),
         runtime_field("text", RuntimeValue::String(String::new())),
         runtime_field("base64", RuntimeValue::String(String::new())),
         runtime_field("encoding", RuntimeValue::String(String::new())),
     ])
+}
+
+fn runtime_bytes_base64_value(body: Option<&serde_json::Value>) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field(
+            "encoding",
+            RuntimeValue::String(
+                body.and_then(|body| body.get("encoding"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+        ),
+        runtime_field(
+            "data",
+            RuntimeValue::String(
+                body.and_then(|body| body.get("data"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+        ),
+    ])
+}
+
+fn runtime_value_from_json(value: &serde_json::Value) -> RuntimeValue {
+    match value {
+        serde_json::Value::Null => RuntimeValue::Unit,
+        serde_json::Value::Bool(value) => RuntimeValue::Bool(*value),
+        serde_json::Value::Number(value) => value
+            .as_i64()
+            .map(RuntimeValue::i64)
+            .or_else(|| value.as_u64().map(RuntimeValue::u64))
+            .or_else(|| value.as_f64().map(RuntimeValue::F64))
+            .unwrap_or(RuntimeValue::Unit),
+        serde_json::Value::String(value) => RuntimeValue::String(value.clone()),
+        serde_json::Value::Array(values) => RuntimeValue::Tuple(
+            values
+                .iter()
+                .map(runtime_value_from_json)
+                .collect::<Vec<_>>(),
+        ),
+        serde_json::Value::Object(values) => RuntimeValue::Record(
+            values
+                .iter()
+                .map(|(key, value)| runtime_field(key, runtime_value_from_json(value)))
+                .collect(),
+        ),
+    }
 }
 
 fn runtime_field(name: &str, value: RuntimeValue) -> RuntimeFieldValue {
@@ -2599,7 +2662,54 @@ mod tests {
     }
 
     #[test]
-    fn resource_runtime_payload_preserves_body_variants() {
+    fn resource_runtime_payload_preserves_json_body_value() {
+        let json_payload = runtime_resource_payload(&serde_json::json!({
+            "uri": "agent://resource/json",
+            "kind": "observation_latest",
+            "mime_type": "application/json",
+            "hash": "json.hash",
+            "body": {
+                "body_kind": "json",
+                "body": {
+                    "uri": "agent://resource/json",
+                    "tick": 3,
+                    "matched": true
+                }
+            }
+        }));
+        let RuntimeValue::Record(resource_fields) = json_payload else {
+            panic!("resource payload is a record");
+        };
+        let RuntimeValue::Record(body_fields) =
+            runtime_record_get(&resource_fields, "body").expect("body field exists")
+        else {
+            panic!("body payload is a record");
+        };
+        assert_eq!(
+            runtime_record_string(body_fields, "kind").expect("body kind is a string"),
+            "json"
+        );
+        assert_eq!(
+            runtime_record_string(body_fields, "json").expect("body json is a string"),
+            "{\"matched\":true,\"tick\":3,\"uri\":\"agent://resource/json\"}"
+        );
+        let RuntimeValue::Record(value_fields) =
+            runtime_record_get(body_fields, "value").expect("body value exists")
+        else {
+            panic!("json body value is a record");
+        };
+        assert_eq!(
+            runtime_record_string(value_fields, "uri").expect("json uri is a string"),
+            "agent://resource/json"
+        );
+        assert!(matches!(
+            runtime_record_get(value_fields, "matched").expect("matched field exists"),
+            RuntimeValue::Bool(true)
+        ));
+    }
+
+    #[test]
+    fn resource_runtime_payload_preserves_text_body_value() {
         let text_payload = runtime_resource_payload(&serde_json::json!({
             "uri": "agent://resource/text",
             "kind": "logs",
@@ -2626,7 +2736,14 @@ mod tests {
             runtime_record_string(body_fields, "text").expect("body text is a string"),
             "hello"
         );
+        assert_eq!(
+            runtime_record_string(body_fields, "value").expect("body value is a string"),
+            "hello"
+        );
+    }
 
+    #[test]
+    fn resource_runtime_payload_preserves_bytes_body_value() {
         let bytes_payload = runtime_resource_payload(&serde_json::json!({
             "uri": "agent://resource/image",
             "kind": "image",
@@ -2659,6 +2776,15 @@ mod tests {
         assert_eq!(
             runtime_record_string(body_fields, "encoding").expect("body encoding is a string"),
             "base64"
+        );
+        let RuntimeValue::Record(value_fields) =
+            runtime_record_get(body_fields, "value").expect("body value exists")
+        else {
+            panic!("bytes body value is a record");
+        };
+        assert_eq!(
+            runtime_record_string(value_fields, "data").expect("body value data is a string"),
+            "aGVsbG8="
         );
     }
 

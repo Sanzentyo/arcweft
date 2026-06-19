@@ -1289,6 +1289,32 @@ effects { agent.resource.read }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_read_resource_body_value() {
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.read_resource_value read_resource_value_smoke()
+effects { agent.resource.read }
+{
+    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    return resource.body.value
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("read_resource body.value typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentValue)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_read_resource_without_effect() {
         let error = compile_agent_source_with_project(
             r#"
