@@ -1495,6 +1495,9 @@ fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
         "exists" => Ok(Predicate::Exists {
             probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
         }),
+        "action_enabled" => runtime_record_string(fields, "target")
+            .and_then(|target| PublicId::new(target).map_err(|error| error.to_string()))
+            .map(|target| Predicate::ActionEnabled { target }),
         "all" => runtime_record_get(fields, "predicates")
             .and_then(runtime_predicate_list)
             .map(|predicates| Predicate::All { predicates }),
@@ -2387,6 +2390,12 @@ fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
         });
     }
     if let Some(body) = value
+        .strip_prefix("action_enabled(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return parse_public_id_arg(body).map(|target| Predicate::ActionEnabled { target });
+    }
+    if let Some(body) = value
         .strip_prefix("all(")
         .and_then(|value| value.strip_suffix(')'))
     {
@@ -2707,7 +2716,10 @@ fn predicate_matches(predicate: &Predicate, observation: &ObservationEnvelope) -
         Predicate::Compare { probe, op, value } => observation_value(probe, observation)
             .is_some_and(|actual| compare_values(&actual, *op, value)),
         Predicate::Exists { probe } => observation_value(probe, observation).is_some(),
-        Predicate::ActionEnabled { .. } => false,
+        Predicate::ActionEnabled { target } => observation
+            .actions
+            .iter()
+            .any(|action| action.enabled && action.target == target.as_str()),
         Predicate::DiagnosticsHasError => diagnostics_has_error(observation),
         Predicate::All { predicates } => predicates
             .iter()
@@ -2986,6 +2998,28 @@ mod tests {
             render_hash: format!("render.{tick}"),
             actions: Vec::new(),
             signals: BTreeMap::from([(signal.to_owned(), value)]),
+            payload: serde_json::json!({}),
+        }
+    }
+
+    fn observation_with_action_target(
+        tick: u64,
+        target: &'static str,
+        enabled: bool,
+    ) -> ObservationEnvelope {
+        ObservationEnvelope {
+            tick,
+            frame_id: format!("frame.{tick}"),
+            state_hash: format!("state.{tick}"),
+            render_hash: format!("render.{tick}"),
+            actions: vec![AgentActionTarget {
+                id: format!("action.select_choice.{target}"),
+                target: target.to_owned(),
+                action: AgentActionKind::SelectChoice,
+                kind: AgentActionDispatch::Semantic,
+                enabled,
+            }],
+            signals: BTreeMap::new(),
             payload: serde_json::json!({}),
         }
     }
@@ -3473,6 +3507,39 @@ mod tests {
     }
 
     #[test]
+    fn wait_matches_enabled_action_target_predicate() {
+        let session = TestSession {
+            observations: vec![
+                observation_with_action_target(1, "choice.opening.listen", false),
+                observation_with_action_target(2, "choice.opening.listen", true),
+            ],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+                predicate: Predicate::ActionEnabled {
+                    target: PublicId::new("choice.opening.listen").expect("valid public id"),
+                },
+                timeout_millis: 5,
+                stable_frames: 1,
+                poll_frames: 1,
+            })))
+            .expect("wait succeeds when target action becomes enabled");
+
+        assert!(matches!(
+            report.response,
+            AgentHostResponse::Observation(observation) if observation.tick == 2
+        ));
+    }
+
+    #[test]
     fn effect_form_wait_call_lowers_to_host_wait_request() {
         let request = agent_host_request_from_call(&RuntimeCall {
             callee: "wait".to_owned(),
@@ -3501,7 +3568,27 @@ mod tests {
                 && matches!(
                     value.as_ref(),
                     AgentValue::Entity(value) if value.as_str() == "flow.opening"
-                )
+            )
+        ));
+    }
+
+    #[test]
+    fn effect_form_wait_call_lowers_action_enabled_predicate() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "wait".to_owned(),
+            args: vec![
+                "action_enabled(@choice.opening.listen)".to_owned(),
+                "timeout = 5s".to_owned(),
+            ],
+        })
+        .expect("effect-form action-enabled wait lowers");
+
+        let AgentHostRequest::Wait(request) = request else {
+            panic!("expected wait host request");
+        };
+        assert!(matches!(
+            request.predicate,
+            Predicate::ActionEnabled { ref target } if target.as_str() == "choice.opening.listen"
         ));
     }
 
