@@ -1,0 +1,27 @@
+pub surface character narrator {
+    display = "Narrator"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Gothic UI"
+                color = rgb("#f4f8ff")
+                size = 30px
+            }
+        }
+    }
+}
+
+entry game {
+    start @flow.image_animation
+}
+
+flow image_animation {
+    bg(@asset.bg.room)
+
+    narrator.say(id=@say.image_animation.intro, voice=auto)[
+        Background image is a first-class presentation object and can be captured by Agent debug tools.[p]
+    ]
+
+    return "image_animation"
+}

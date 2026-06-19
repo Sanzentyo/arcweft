@@ -30,6 +30,7 @@ use arcweft_agent_protocol::{
     AgentResource, AgentResourceBody, AgentRgbaColor, AgentRichTextElementKind,
     AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
+use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
 use arcweft_render_text::{
     LineDisplayFrame, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
@@ -791,6 +792,73 @@ mod tests {
     }
 
     #[test]
+    fn agent_lowers_runtime_background_call_into_image_observation() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[
+                RuntimeCall {
+                    callee: "bg".to_owned(),
+                    args: vec!["@asset.bg.missing".to_owned()],
+                },
+                RuntimeCall {
+                    callee: "bg".to_owned(),
+                    args: vec!["@asset.bg.room".to_owned()],
+                },
+            ],
+            0.06,
+        );
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code.as_deref(),
+            Some("image_asset_unavailable")
+        );
+        assert_eq!(observation.objects.len(), 1);
+        let object = &observation.objects[0];
+        assert_eq!(object.id, "object.image.layer.background.0.0");
+        assert_eq!(object.layer, "layer.background");
+        assert_eq!(object.bbox.width, 320);
+        assert_eq!(object.bbox.height, 180);
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("background call should become Agent image content");
+        };
+        assert_eq!(content.source, "ui.image.0");
+        assert_eq!(content.frame_index, Some(0));
+        assert_eq!(content.local_time_millis, Some(60));
+        assert_eq!(content.intrinsic_width, Some(2));
+        assert_eq!(content.intrinsic_height, Some(1));
+
+        let stored_frame = observation.image_frames.get(&object.id).unwrap();
+        assert_eq!(stored_frame.width, 2);
+        assert_eq!(stored_frame.height, 1);
+        assert_eq!(stored_frame.rgba, vec![30, 80, 200, 255, 220, 60, 40, 255]);
+    }
+
+    #[test]
+    fn agent_asset_call_parser_accepts_only_public_asset_refs() {
+        assert_eq!(
+            agent_asset_id_from_call_arg("@asset.bg.room")
+                .map(|asset| asset.to_string())
+                .as_deref(),
+            Some("asset.bg.room")
+        );
+        assert!(agent_asset_id_from_call_arg("@core.bg.room").is_none());
+        assert!(agent_asset_id_from_call_arg("@asset.bg room").is_none());
+    }
+
+    #[test]
     fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
         let source = arcweft_render_native::NativeFrameCapture {
             width: 8,
@@ -1297,6 +1365,19 @@ fn agent_mcp_run_observation(
         Some(&mut native_session),
     )
     .map_err(|error| error.to_string())?;
+    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
+        selection.path(),
+        observed.report.steps,
+        &observed.report.viewport,
+        &executor.fiber().observations.calls,
+        agent_observe_capture_time_seconds(&options),
+    );
+    observed.report.diagnostics.extend(image_diagnostics);
+    if !image_observation.objects.is_empty() {
+        observed.report.objects.extend(image_observation.objects);
+        observed.image_frames.extend(image_observation.image_frames);
+        agent_refresh_observation_object_indexes(&mut observed.report);
+    }
     let image_output = agent_observe_image_output(
         &mut observed.report,
         &options,
@@ -1917,7 +1998,7 @@ fn agent_observation_for_options(
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    let observed = run_agent_observation(
+    let mut observed = run_agent_observation(
         &mut executor,
         &lowered.line_display_catalog,
         NativeRunHost {
@@ -1933,6 +2014,19 @@ fn agent_observation_for_options(
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })?;
+    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
+        selection.path(),
+        observed.report.steps,
+        &observed.report.viewport,
+        &executor.fiber().observations.calls,
+        agent_observe_capture_time_seconds(options),
+    );
+    observed.report.diagnostics.extend(image_diagnostics);
+    if !image_observation.objects.is_empty() {
+        observed.report.objects.extend(image_observation.objects);
+        observed.image_frames.extend(image_observation.image_frames);
+        agent_refresh_observation_object_indexes(&mut observed.report);
+    }
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,
@@ -2695,6 +2789,10 @@ impl AgentImageFrameStore {
 
     fn get(&self, object_id: &str) -> Option<&AgentStoredImageFrame> {
         self.frames_by_object.get(object_id)
+    }
+
+    fn extend(&mut self, other: AgentImageFrameStore) {
+        self.frames_by_object.extend(other.frames_by_object);
     }
 }
 
@@ -4697,6 +4795,233 @@ fn finish_agent_observation_report(
         final_status: status,
         overlay_svg: None,
     }
+}
+
+fn agent_runtime_presentation_image_observation(
+    source_path: &Path,
+    step: usize,
+    viewport: &AgentViewport,
+    calls: &[RuntimeCall],
+    capture_time_seconds: f32,
+) -> (AgentUiImageObservation, Vec<AgentDiagnostic>) {
+    let mut background_input = None;
+    let mut diagnostics = Vec::new();
+    for call in calls {
+        let Some(asset_id) = agent_background_asset_call(call) else {
+            continue;
+        };
+        match agent_decode_source_image_asset(source_path, asset_id.as_str()) {
+            Ok(image) => {
+                background_input = Some(agent_background_image_presentation_input(
+                    asset_id, viewport, image,
+                ));
+            }
+            Err(message) => diagnostics.push(AgentDiagnostic {
+                step,
+                severity: AgentDiagnosticSeverity::Warning,
+                source: Some("agent.presentation_image".to_owned()),
+                code: Some("image_asset_unavailable".to_owned()),
+                effect_id: Some(call.callee.clone()),
+                message,
+            }),
+        }
+    }
+    let Some(background_input) = background_input else {
+        return (AgentUiImageObservation::default(), diagnostics);
+    };
+    let frame = match arcweft_ui::UiImagePresentationFrame::from_inputs([background_input]) {
+        Ok(frame) => frame,
+        Err(error) => {
+            diagnostics.push(AgentDiagnostic {
+                step,
+                severity: AgentDiagnosticSeverity::Warning,
+                source: Some("agent.presentation_image".to_owned()),
+                code: Some("image_ui_lower_failed".to_owned()),
+                effect_id: None,
+                message: error.to_string(),
+            });
+            return (AgentUiImageObservation::default(), diagnostics);
+        }
+    };
+    let (outputs, image_sources) = frame.into_parts();
+    let layer_tree = agent_layer_tree_for_ui_outputs(&outputs);
+    let mut builder = arcweft_runtime_host::UiFrameCommitBuilder::new(&layer_tree);
+    for (layer, output) in outputs {
+        if let Err(error) = builder.push_layer(layer, output) {
+            diagnostics.push(AgentDiagnostic {
+                step,
+                severity: AgentDiagnosticSeverity::Warning,
+                source: Some("agent.presentation_image".to_owned()),
+                code: Some("image_ui_commit_failed".to_owned()),
+                effect_id: None,
+                message: error.to_string(),
+            });
+        }
+    }
+    let visual_time_millis = u64::from(agent_capture_time_millis(capture_time_seconds));
+    (
+        agent_image_observation_from_ui_frame(
+            "cli",
+            step,
+            viewport,
+            &builder.finish(),
+            &image_sources,
+            visual_time_millis,
+        ),
+        diagnostics,
+    )
+}
+
+fn agent_background_asset_call(call: &RuntimeCall) -> Option<arcweft_id::PublicId> {
+    (call.callee == "bg")
+        .then(|| call.args.first())
+        .flatten()
+        .and_then(|arg| agent_asset_id_from_call_arg(arg))
+}
+
+fn agent_asset_id_from_call_arg(arg: &str) -> Option<arcweft_id::PublicId> {
+    let value = arg.trim().trim_matches('"').trim_matches('\'');
+    let value = value.strip_prefix('@').unwrap_or(value);
+    value
+        .starts_with("asset.")
+        .then(|| arcweft_id::PublicId::try_new(value).ok())
+        .flatten()
+}
+
+fn agent_decode_source_image_asset(
+    source_path: &Path,
+    asset_id: &str,
+) -> Result<arcweft_image::DecodedImage, String> {
+    let Some(asset_stem) = asset_id.strip_prefix("asset.") else {
+        return Err(format!(
+            "image asset id `{asset_id}` must start with `asset.`"
+        ));
+    };
+    let asset_relative = asset_stem.replace('.', "/");
+    let asset_root = source_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".arcweft")
+        .join("asset");
+    for (extension, format) in [
+        ("png", arcweft_image::ImageFormat::Png),
+        ("jpg", arcweft_image::ImageFormat::Jpeg),
+        ("jpeg", arcweft_image::ImageFormat::Jpeg),
+        ("gif", arcweft_image::ImageFormat::Gif),
+        ("webp", arcweft_image::ImageFormat::WebP),
+    ] {
+        let path = asset_root.join(format!("{asset_relative}.{extension}"));
+        if !path.exists() {
+            continue;
+        }
+        let bytes = fs::read(&path)
+            .map_err(|error| format!("failed to read image asset {}: {error}", path.display()))?;
+        return arcweft_image::decode_image_bytes(
+            format,
+            &bytes,
+            arcweft_image::ImageDecodeOptions::default(),
+        )
+        .map_err(|error| format!("failed to decode image asset {}: {error}", path.display()));
+    }
+    Err(format!(
+        "image asset `{asset_id}` was not found under {}",
+        asset_root.display()
+    ))
+}
+
+fn agent_background_image_presentation_input(
+    asset: arcweft_id::PublicId,
+    viewport: &AgentViewport,
+    image: arcweft_image::DecodedImage,
+) -> arcweft_ui::UiImagePresentationInput {
+    let object = arcweft_presentation::image::ImagePresentationObject::new(
+        arcweft_presentation::image::ImageObjectId::new(
+            arcweft_id::PublicId::try_new("image.background.default")
+                .expect("static image object id is valid"),
+        ),
+        arcweft_presentation::image::ImageAssetRef::new(asset),
+        arcweft_presentation::layer::LayerId::new(
+            arcweft_id::PublicId::try_new("layer.background").expect("static layer id is valid"),
+        ),
+        arcweft_presentation::input::InteractionTarget::new(
+            arcweft_id::PublicId::try_new("target.background.default")
+                .expect("static target id is valid"),
+        ),
+        arcweft_presentation::hit::HitRect::new(
+            0.0,
+            0.0,
+            viewport.width.to_string().parse().unwrap_or(0.0),
+            viewport.height.to_string().parse().unwrap_or(0.0),
+        ),
+    )
+    .with_fit(arcweft_presentation::image::ImageObjectFit::Cover);
+    arcweft_ui::UiImagePresentationInput::new(object, image)
+}
+
+fn agent_layer_tree_for_ui_outputs(
+    outputs: &[(
+        arcweft_presentation::layer::LayerId,
+        arcweft_ui::UiLayerOutput,
+    )],
+) -> arcweft_presentation::layer::LayerTree {
+    use arcweft_presentation::layer::{LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase};
+    let root = arcweft_presentation::layer::LayerId::new(
+        arcweft_id::PublicId::try_new("layer.root").expect("static root layer id is valid"),
+    );
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        LayerOrder {
+            phase: RenderPhase::Background,
+            z: 0,
+            stable_index: 0,
+        },
+    ));
+    for (index, (layer, _)) in outputs.iter().enumerate() {
+        let kind = if layer.public_id().as_str() == "layer.background" {
+            LayerKind::Background
+        } else {
+            LayerKind::GameUi
+        };
+        let phase = match kind {
+            LayerKind::Background => RenderPhase::Background,
+            _ => RenderPhase::GameUi,
+        };
+        tree.insert(
+            LayerNode::new(
+                layer.clone(),
+                kind,
+                LayerOrder {
+                    phase,
+                    z: 0,
+                    stable_index: u32::try_from(index).unwrap_or(u32::MAX),
+                },
+            )
+            .with_parent(root.clone()),
+        )
+        .expect("generated image presentation layer tree is valid");
+    }
+    tree
+}
+
+fn agent_refresh_observation_object_indexes(report: &mut AgentObservationReport) {
+    let object_refs = report.objects.iter().collect::<Vec<_>>();
+    let overlay_svg = agent_overlay_svg(&report.viewport, &object_refs);
+    report.render_hash = hash_hex(overlay_svg.as_bytes());
+    report.layers = agent_observed_layers("cli", report.tick, &report.objects);
+    report.presentation_tree =
+        AgentPresentationTree::from_layers_and_objects(&report.layers, &report.objects);
+    report.actions = report
+        .objects
+        .iter()
+        .map(|object| AgentActionTarget {
+            id: format!("action.advance_text.{}", object.id),
+            target: object.id.clone(),
+            action: AgentActionKind::AdvanceText,
+            kind: AgentActionDispatch::Semantic,
+            enabled: true,
+        })
+        .collect();
 }
 
 #[derive(Clone, Debug)]

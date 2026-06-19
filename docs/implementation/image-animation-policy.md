@@ -108,6 +108,17 @@ observation report and native capture session. Direct `--image` capture,
 `arcweft.capture` therefore share the same frame-store-aware capture path once
 live UI commits populate the store.
 
+Source-level runtime calls can now feed that same presentation-image path for
+the first background slot. During Agent observe, `bg(@asset.bg.room)` and the
+quoted equivalent resolve to `samples/.arcweft/asset/bg/room.{png,jpg,jpeg,gif,webp}`
+beside the observed `.arcw` source, decode through `arcweft-image`, lower into
+an `ImagePresentationObject`, lower again through `UiImagePresentationFrame`,
+and populate typed Agent image objects plus object-id keyed native frame-store
+pixels. Multiple background calls use slot semantics: the last valid background
+call wins, avoiding duplicate background object ids. Missing image assets
+produce structured `image_asset_unavailable` diagnostics rather than a debug
+rectangle or a panic.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
@@ -138,16 +149,13 @@ same alpha-shaped geometry as color image capture.
 1. Add explicit source/DSL asset declaration syntax when the language design
    settles it; static `asset.image(...)` references are already checked against
    bundle image asset ids.
-2. Wire the live Agent native observe loop to feed actual runtime UI commits
-   through the UI image item bridge so the already-carried image frame store is
-   populated from real runtime frames. The pure presentation-image-to-UI-frame
-   lowering exists; runtime execution still needs to emit those image
-   presentation inputs from source-level declarations.
-3. Expose source-level image declarations in `.arcw` samples so real sample
-   runs can populate the UI image source table without test-only setup.
-4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
+2. Generalize the source-level image surface beyond the first `bg(...)`
+   background slot so declared image objects, foreground sprites, clipped image
+   objects, layer targeting, transforms, depth, hit-test proxies, and semantic
+   actions can all use the same presentation object path.
+3. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
    object capture, layer capture, and pinned-frame capture.
-5. Add regression tests for frame selection, decode, native capture pixels,
+4. Add regression tests for frame selection, decode, native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 
 ## Dependency Policy
