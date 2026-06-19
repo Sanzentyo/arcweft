@@ -1,0 +1,6 @@
+# Deterministic Agent REPL smoke session.
+:help
+:parse signal(@signal.current_flow).eq(@flow.opening)
+:observe
+:actions
+:quit

@@ -47,8 +47,8 @@ use control_flow::{
     split_pattern_guard,
 };
 pub use fragment::{
-    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, SourceDialect,
-    parse_document, parse_fragment,
+    ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
+    SourceDialect, parse_document, parse_fragment,
 };
 use helpers::{
     PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items, collect_wiki_links,

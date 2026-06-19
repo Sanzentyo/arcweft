@@ -5,15 +5,16 @@ use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCaptureBlob,
     AgentCommand, AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions,
     AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
-    AgentObserveResourceKind, AgentRunner, AgentRunnerConfig, AgentScriptRunInput,
-    AgentScriptRunOptions, AgentScriptRunReport, AgentSession, CliRuntimeExecutorTier,
-    CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
-    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
-    RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
-    agent_cli_session_id, agent_script_run_report_from_result, flow_status_label, fs,
-    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
-    native_host_policy_for_selection, print_json, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
+    AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
+    AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport, AgentSession,
+    CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus,
+    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
+    ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
+    RuntimeStepResult, agent_cli_session_id, agent_script_run_report_from_result,
+    flow_status_label, fs, load_and_check_selection,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
+    resolve_source_selection, runtime_plan_options_for_selection,
+    runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
     DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
@@ -53,6 +54,9 @@ use arcweft_debug_model::{
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
 };
 use arcweft_host_adapter::HostCallPolicy;
+use arcweft_lang_syntax::parser::{
+    ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, SourceDialect, parse_fragment,
+};
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
     ImageObjectTransform,
@@ -68,7 +72,7 @@ use arcweft_ui::UiImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::io::{BufRead as _, Write as _};
+use std::io::{BufRead as _, Read as _, Write as _};
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
@@ -1840,6 +1844,32 @@ enum AgentObserveMcpResourceOutput {
     ToolResult(arcweft_agent_mcp::McpCallToolResult),
 }
 
+#[derive(Default)]
+struct AgentReplState {
+    report: Option<AgentObservationReport>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AgentReplRunReport {
+    ok: bool,
+    cells: Vec<AgentReplCellReport>,
+    final_tick: Option<usize>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AgentReplCellReport {
+    index: usize,
+    input: String,
+    kind: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<serde_json::Value>,
+    #[serde(default)]
+    quit: bool,
+}
+
 pub(super) fn agent_command(
     command: AgentCommand,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -1848,9 +1878,341 @@ pub(super) fn agent_command(
         AgentCommand::Observe(options) => agent_observe_command(&options, adapter_registrars),
         AgentCommand::HitTest(options) => agent_hit_test_command(&options, adapter_registrars),
         AgentCommand::Mcp(options) => agent_mcp_command(&options, adapter_registrars),
+        AgentCommand::Repl(options) => agent_repl_command(&options, adapter_registrars),
         AgentCommand::Rag { command } => super::agent_rag_command(command),
         AgentCommand::Script { command } => {
             super::agent_script_command(command, adapter_registrars)
+        }
+    }
+}
+
+fn agent_repl_command(
+    options: &AgentReplOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    let source = agent_repl_input(options)?;
+    let mut state = AgentReplState::default();
+    let mut cells = Vec::new();
+    let mut ok = true;
+
+    for (index, line) in source.lines().enumerate() {
+        let input = line.trim();
+        if input.is_empty() || input.starts_with('#') {
+            continue;
+        }
+        let report = agent_repl_eval_line(index, input, options, &mut state, adapter_registrars);
+        let quit = report.quit;
+        ok &= report.status != "error";
+        if options.json {
+            cells.push(report);
+        } else {
+            agent_repl_print_cell(&report);
+        }
+        if quit {
+            break;
+        }
+    }
+
+    if options.json {
+        print_json(&AgentReplRunReport {
+            ok,
+            cells,
+            final_tick: state.report.as_ref().map(|report| report.tick),
+        })?;
+    }
+    if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+fn agent_repl_input(options: &AgentReplOptions) -> Result<String, ExitCode> {
+    if let Some(path) = &options.input {
+        return fs::read_to_string(path).map_err(|error| {
+            eprintln!("error: failed to read {}: {error}", path.display());
+            ExitCode::FAILURE
+        });
+    }
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|error| {
+            eprintln!("error: failed to read REPL stdin: {error}");
+            ExitCode::FAILURE
+        })?;
+    Ok(input)
+}
+
+fn agent_repl_eval_line(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> AgentReplCellReport {
+    if input.starts_with(':') {
+        return agent_repl_eval_meta(index, input, options, state, adapter_registrars);
+    }
+    let value = agent_repl_parse_cell(input);
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "parsed".to_owned(),
+        message: Some(
+            "cell execution is reserved for the compiler-backed REPL cell runner".to_owned(),
+        ),
+        value: Some(value),
+        quit: false,
+    }
+}
+
+fn agent_repl_eval_meta(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> AgentReplCellReport {
+    let mut parts = input.splitn(2, char::is_whitespace);
+    let command = parts.next().unwrap_or_default();
+    let rest = parts.next().unwrap_or_default().trim();
+    match command {
+        ":help" => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "commands": [
+                    ":help",
+                    ":observe",
+                    ":actions",
+                    ":parse EXPR_OR_STMT",
+                    ":reset",
+                    ":quit"
+                ]
+            }),
+        ),
+        ":observe" => match agent_observation_report_for_options(
+            &agent_repl_observe_options(options),
+            adapter_registrars,
+        ) {
+            Ok(report) => {
+                let value = serde_json::json!({
+                    "tick": report.tick,
+                    "frame_id": report.frame_id,
+                    "state_hash": report.state_hash,
+                    "render_hash": report.render_hash,
+                    "actions": report.actions.len(),
+                    "objects": report.objects.len(),
+                    "diagnostics": report.diagnostics.len(),
+                });
+                state.report = Some(report);
+                agent_repl_ok(index, input, "meta", value)
+            }
+            Err(code) => agent_repl_error(
+                index,
+                input,
+                "meta",
+                format!("observe failed with exit code {code:?}"),
+            ),
+        },
+        ":actions" => match &state.report {
+            Some(report) => agent_repl_ok(
+                index,
+                input,
+                "meta",
+                serde_json::json!({
+                    "tick": report.tick,
+                    "actions": report.actions,
+                }),
+            ),
+            None => agent_repl_error(
+                index,
+                input,
+                "meta",
+                ":actions requires :observe first".to_owned(),
+            ),
+        },
+        ":parse" => {
+            if rest.is_empty() {
+                agent_repl_error(
+                    index,
+                    input,
+                    "meta",
+                    ":parse requires a fragment".to_owned(),
+                )
+            } else {
+                agent_repl_ok(index, input, "meta", agent_repl_parse_cell(rest))
+            }
+        }
+        ":reset" => {
+            state.report = None;
+            agent_repl_ok(index, input, "meta", serde_json::json!({ "reset": true }))
+        }
+        ":quit" => AgentReplCellReport {
+            index,
+            input: input.to_owned(),
+            kind: "meta".to_owned(),
+            status: "ok".to_owned(),
+            message: None,
+            value: Some(serde_json::json!({ "quit": true })),
+            quit: true,
+        },
+        _ => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("unknown Agent REPL command `{command}`"),
+        ),
+    }
+}
+
+fn agent_repl_observe_options(options: &AgentReplOptions) -> AgentObserveOptions {
+    AgentObserveOptions {
+        path: options.path.clone(),
+        profile: options.profile.clone(),
+        entry: options.entry.clone(),
+        flow: options.flow.clone(),
+        executor: options.executor,
+        pure_backend: options.pure_backend,
+        pure_workers: options.pure_workers,
+        pure_batch_min_len: options.pure_batch_min_len,
+        pure_object_artifacts: options.pure_object_artifacts,
+        math_backend: options.math_backend,
+        math_wgpu_min_elements: options.math_wgpu_min_elements,
+        steps: options.steps,
+        capture_step: options.capture_step,
+        mode: options.mode,
+        max_ops: options.max_ops,
+        values: options.values.clone(),
+        viewport_width: options.viewport_width,
+        viewport_height: options.viewport_height,
+        textbox_height: options.textbox_height,
+        image: None,
+        capture: None,
+        layer: None,
+        object: None,
+        page: None,
+        capture_time_seconds: options.capture_time_seconds,
+        resource: None,
+        read_uri: None,
+        mcp: false,
+        mcp_format: AgentObserveMcpFormat::Read,
+        out: None,
+        json: true,
+    }
+}
+
+fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
+    let fragment = if input.starts_with("agent ") {
+        parse_fragment(
+            input,
+            FragmentKind::Items,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        )
+    } else if input.starts_with("let ")
+        || input.starts_with("try ")
+        || input.starts_with("expect(")
+        || input.starts_with("deny(")
+        || input.starts_with("wait(")
+    {
+        parse_fragment(
+            input,
+            FragmentKind::Statements,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        )
+    } else {
+        let expression = parse_fragment(
+            input,
+            FragmentKind::Expression,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        );
+        if matches!(expression.completion(), ParseCompletion::Complete) {
+            expression
+        } else {
+            parse_fragment(
+                input,
+                FragmentKind::Statements,
+                ParseOptions {
+                    source_dialect: SourceDialect::Agent,
+                },
+            )
+        }
+    };
+    let completion = match fragment.completion() {
+        ParseCompletion::Complete => serde_json::json!({ "kind": "complete" }),
+        ParseCompletion::Incomplete { expected } => serde_json::json!({
+            "kind": "incomplete",
+            "expected": expected
+                .iter()
+                .map(ExpectedToken::text)
+                .collect::<Vec<_>>(),
+        }),
+        ParseCompletion::Invalid => serde_json::json!({ "kind": "invalid" }),
+    };
+    serde_json::json!({
+        "completion": completion,
+        "errors": fragment
+            .errors()
+            .iter()
+            .map(|error| {
+                serde_json::json!({
+                    "message": error.message(),
+                    "expected": error.expected(),
+                    "found": error.found(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn agent_repl_ok(
+    index: usize,
+    input: &str,
+    kind: &str,
+    value: serde_json::Value,
+) -> AgentReplCellReport {
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: kind.to_owned(),
+        status: "ok".to_owned(),
+        message: None,
+        value: Some(value),
+        quit: false,
+    }
+}
+
+fn agent_repl_error(index: usize, input: &str, kind: &str, message: String) -> AgentReplCellReport {
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: kind.to_owned(),
+        status: "error".to_owned(),
+        message: Some(message),
+        value: None,
+        quit: false,
+    }
+}
+
+fn agent_repl_print_cell(report: &AgentReplCellReport) {
+    match report.status.as_str() {
+        "ok" | "parsed" => {
+            if let Some(value) = &report.value {
+                println!("{}: {}", report.status, value);
+            } else {
+                println!("{}", report.status);
+            }
+        }
+        _ => {
+            eprintln!(
+                "error: {}",
+                report.message.as_deref().unwrap_or("REPL cell failed")
+            );
         }
     }
 }

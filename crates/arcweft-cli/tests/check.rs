@@ -589,6 +589,48 @@ fn agent_script_run_native_source_dispatches_semantic_invoke_action() {
 }
 
 #[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_observes_and_lists_actions_from_input_session() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg(rich_text_showcase_path())
+        .arg("--input")
+        .arg(agent_repl_smoke_path())
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl runs deterministic input session");
+    assert!(
+        output.status.success(),
+        "agent repl deterministic input session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["final_tick"], 0);
+    let cells = report["cells"].as_array().expect("cells are present");
+    assert!(cells.iter().any(|cell| cell["input"] == ":observe"));
+    let actions = cells
+        .iter()
+        .find(|cell| cell["input"] == ":actions")
+        .expect("actions cell is present");
+    assert_eq!(actions["status"], "ok");
+    assert!(
+        actions["value"]["actions"]
+            .as_array()
+            .is_some_and(|actions| !actions.is_empty()),
+        "actions cell should expose observed semantic action targets: {actions}"
+    );
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
@@ -911,6 +953,10 @@ fn agent_script_native_choice_dispatch_source_path() -> PathBuf {
 
 fn agent_script_native_invoke_action_path() -> PathBuf {
     workspace_path("samples/agent-script/native-invoke-action.awfagent")
+}
+
+fn agent_repl_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/repl-smoke.txt")
 }
 
 fn agent_script_native_project_index_path() -> PathBuf {

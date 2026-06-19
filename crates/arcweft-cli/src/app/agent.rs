@@ -188,6 +188,73 @@ pub(super) struct AgentHitTestOptions {
 pub(super) struct AgentMcpOptions {}
 
 #[derive(Args, Clone, Debug)]
+pub(super) struct AgentReplOptions {
+    #[cfg(feature = "native-capture")]
+    path: Option<PathBuf>,
+    #[cfg(feature = "native-capture")]
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    pure_object_artifacts: bool,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "capture-step")]
+    capture_step: Option<usize>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[cfg(feature = "native-capture")]
+    #[arg(long, default_value_t = 64)]
+    max_ops: usize,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
+    viewport_width: u32,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
+    viewport_height: u32,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "textbox-height")]
+    textbox_height: Option<u32>,
+    #[cfg(feature = "native-capture")]
+    #[arg(long = "capture-time")]
+    capture_time_seconds: Option<f32>,
+    #[arg(long)]
+    input: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 pub(super) struct AgentRagQueryOptions {
     #[arg(long)]
     trace: PathBuf,
@@ -391,7 +458,10 @@ pub(super) fn agent_command(
     match command {
         AgentCommand::Rag { command } => agent_rag_command(command),
         AgentCommand::Script { command } => agent_script_command(command, adapter_registrars),
-        AgentCommand::Observe(_) | AgentCommand::HitTest(_) | AgentCommand::Mcp(_) => {
+        AgentCommand::Observe(_)
+        | AgentCommand::HitTest(_)
+        | AgentCommand::Mcp(_)
+        | AgentCommand::Repl(_) => {
             eprintln!("error: this arcw agent command requires the native-capture feature");
             Err(ExitCode::FAILURE)
         }

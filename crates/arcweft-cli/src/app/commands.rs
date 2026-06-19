@@ -1,4 +1,4 @@
-use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions};
+use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions, AgentReplOptions};
 use super::bundle::{BundleOptions, RunBundleOptions};
 use super::debug::DebugCommand;
 use super::jit::JitCheckOptions;
@@ -68,6 +68,7 @@ pub(super) enum AgentCommand {
     Observe(AgentObserveOptions),
     HitTest(AgentHitTestOptions),
     Mcp(AgentMcpOptions),
+    Repl(Box<AgentReplOptions>),
     Rag {
         #[command(subcommand)]
         command: AgentRagCommand,

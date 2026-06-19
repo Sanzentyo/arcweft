@@ -354,6 +354,16 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `image(... target=..., action=...)` can therefore be exercised headlessly with
 `invoke(@target..., "action...")`.
 
+`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--json]`
+is the deterministic first REPL frontend. It reads cells from a file or stdin,
+reserves meta commands under `:`, and currently supports `:help`, `:parse`,
+`:observe`, `:actions`, `:reset`, and `:quit`. `:observe` uses the same native
+Agent observation path as `arcw agent observe`; `:actions` reports the enabled
+semantic action targets from the latest REPL observation. Non-meta cells are
+classified with the shared Agent fragment parser and are not executed until the
+compiler-backed transactional cell runner is implemented, so the CLI does not
+grow a second Agent evaluator.
+
 ## Agent Observation
 
 `arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
