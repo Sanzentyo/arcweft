@@ -7,11 +7,11 @@ use super::{
     AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
     AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
     AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport, AgentSession,
-    CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus,
-    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
-    ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
-    RuntimeStepResult, agent_cli_session_id, agent_script_run_report_from_result,
-    flow_status_label, fs, load_and_check_selection,
+    CliAgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode,
+    FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService,
+    Path, PathBuf, ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
+    RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
+    agent_script_run_report_from_result, flow_status_label, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
@@ -56,7 +56,8 @@ use arcweft_debug_model::{
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_syntax::parser::{
-    ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, SourceDialect, parse_fragment,
+    ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
+    SourceDialect, parse_fragment,
 };
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
@@ -1849,6 +1850,7 @@ enum AgentObserveMcpResourceOutput {
 struct AgentReplState {
     report: Option<AgentObservationReport>,
     history: Vec<AgentReplHistoryEntry>,
+    bindings: BTreeMap<String, AgentReplBinding>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1857,6 +1859,16 @@ struct AgentReplHistoryEntry {
     input: String,
     kind: String,
     status: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct AgentReplBinding {
+    name: String,
+    source: String,
+    status: String,
+    final_status: Option<String>,
+    host_calls: usize,
+    responses: usize,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1966,18 +1978,7 @@ fn agent_repl_eval_line(
     if input.starts_with(':') {
         return agent_repl_eval_meta(index, input, options, state, adapter_registrars);
     }
-    let value = agent_repl_parse_cell(input);
-    AgentReplCellReport {
-        index,
-        input: input.to_owned(),
-        kind: "cell".to_owned(),
-        status: "parsed".to_owned(),
-        message: Some(
-            "cell execution is reserved for the compiler-backed REPL cell runner".to_owned(),
-        ),
-        value: Some(value),
-        quit: false,
-    }
+    agent_repl_eval_compiled_cell(index, input, state)
 }
 
 fn agent_repl_eval_meta(
@@ -2012,8 +2013,7 @@ fn agent_repl_eval_meta(
             input,
             "meta",
             serde_json::json!({
-                "bindings": [],
-                "status": "compiler-backed REPL cell bindings are not active yet"
+                "bindings": state.bindings.values().collect::<Vec<_>>(),
             }),
         ),
         ":parse" => {
@@ -2031,6 +2031,7 @@ fn agent_repl_eval_meta(
         ":reset" => {
             state.report = None;
             state.history.clear();
+            state.bindings.clear();
             agent_repl_ok(index, input, "meta", serde_json::json!({ "reset": true }))
         }
         ":quit" => AgentReplCellReport {
@@ -2204,7 +2205,12 @@ fn agent_repl_observe_options(options: &AgentReplOptions) -> AgentObserveOptions
 }
 
 fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
-    let fragment = if input.starts_with("agent ") {
+    let fragment = agent_repl_parse_fragment(input);
+    agent_repl_fragment_report(&fragment)
+}
+
+fn agent_repl_parse_fragment(input: &str) -> ParsedFragment {
+    if input.starts_with("agent ") {
         parse_fragment(
             input,
             FragmentKind::Items,
@@ -2244,7 +2250,10 @@ fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
                 },
             )
         }
-    };
+    }
+}
+
+fn agent_repl_fragment_report(fragment: &ParsedFragment) -> serde_json::Value {
     let completion = match fragment.completion() {
         ParseCompletion::Complete => serde_json::json!({ "kind": "complete" }),
         ParseCompletion::Incomplete { expected } => serde_json::json!({
@@ -2270,6 +2279,136 @@ fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
             })
             .collect::<Vec<_>>(),
     })
+}
+
+fn agent_repl_eval_compiled_cell(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let fragment = agent_repl_parse_fragment(input);
+    let parse_report = agent_repl_fragment_report(&fragment);
+    if !matches!(fragment.completion(), ParseCompletion::Complete) || !fragment.errors().is_empty()
+    {
+        return AgentReplCellReport {
+            index,
+            input: input.to_owned(),
+            kind: "cell".to_owned(),
+            status: "error".to_owned(),
+            message: Some("REPL cell is not a complete Agent fragment".to_owned()),
+            value: Some(parse_report),
+            quit: false,
+        };
+    }
+
+    let source = agent_repl_cell_source(index, input, &fragment);
+    let project = match agent_script_project_index(&[]) {
+        Ok(project) => project,
+        Err(error) => return agent_repl_error(index, input, "cell", error),
+    };
+    let compiled = match arcweft_compiler::compile_agent_bundle_with_project(source, &project) {
+        Ok(compiled) => compiled,
+        Err(error) => {
+            return AgentReplCellReport {
+                index,
+                input: input.to_owned(),
+                kind: "cell".to_owned(),
+                status: "error".to_owned(),
+                message: Some(error.to_string()),
+                value: Some(parse_report),
+                quit: false,
+            };
+        }
+    };
+    let mut runner = AgentRunner::new(
+        CliAgentSession::new(Vec::new(), Vec::new()),
+        CollectingDebugSink::default(),
+        NoopRagService,
+        RuntimeAgentPolicy::new([
+            RuntimeAgentCapability::Observe,
+            RuntimeAgentCapability::Act,
+            RuntimeAgentCapability::Capture,
+            RuntimeAgentCapability::ResourceRead,
+            RuntimeAgentCapability::Rag,
+        ]),
+        AgentRunnerConfig::new(agent_cli_session_id()),
+    );
+    let run_result = runner.run_controller_bundle(
+        &compiled.bundle,
+        AgentControllerRunConfig {
+            max_steps: 16,
+            max_ops_per_step: 128,
+        },
+    );
+    match run_result {
+        Ok(report) => {
+            let binding_name = format!("cell.{index}");
+            let final_status = report
+                .final_status
+                .as_ref()
+                .map(|status| format!("{status:?}"));
+            let responses = report.responses.len();
+            state.bindings.insert(
+                binding_name.clone(),
+                AgentReplBinding {
+                    name: binding_name.clone(),
+                    source: input.to_owned(),
+                    status: "ok".to_owned(),
+                    final_status: final_status.clone(),
+                    host_calls: report.host_calls,
+                    responses,
+                },
+            );
+            agent_repl_ok(
+                index,
+                input,
+                "cell",
+                serde_json::json!({
+                    "binding": binding_name,
+                    "compiled": true,
+                    "steps": report.steps,
+                    "host_calls": report.host_calls,
+                    "responses": report.responses,
+                    "events_emitted": report.events_emitted,
+                    "final_status": final_status,
+                    "parse": parse_report,
+                }),
+            )
+        }
+        Err(error) => AgentReplCellReport {
+            index,
+            input: input.to_owned(),
+            kind: "cell".to_owned(),
+            status: "error".to_owned(),
+            message: Some(error.to_string()),
+            value: Some(parse_report),
+            quit: false,
+        },
+    }
+}
+
+fn agent_repl_cell_source(index: usize, input: &str, fragment: &ParsedFragment) -> String {
+    if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+        return input.to_owned();
+    }
+    let body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
+        format!("    return {input}")
+    } else if input.starts_with("return ") || input.contains("\nreturn ") {
+        indent_agent_repl_body(input)
+    } else {
+        format!("{}\n    return \"ok\"", indent_agent_repl_body(input))
+    };
+    format!(
+        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+    )
+}
+
+fn indent_agent_repl_body(input: &str) -> String {
+    input
+        .lines()
+        .map(|line| format!("    {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn agent_repl_ok(

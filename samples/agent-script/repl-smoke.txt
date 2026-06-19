@@ -4,6 +4,7 @@
 :observe
 :actions
 :query opening
+let observed = observe()
 :bindings
 :history
 :quit

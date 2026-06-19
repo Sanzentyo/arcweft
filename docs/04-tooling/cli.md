@@ -391,11 +391,13 @@ reserves meta commands under `:`, and currently supports `:help`, `:parse`,
 from the latest REPL observation. `:query TEXT` requires a prior observation and
 reuses the same observation-derived `RagContextPack` builder used by Agent MCP
 RAG query. `:history` lists prior REPL cell outcomes in the current scripted
-session, and `:bindings` reports the current persisted binding set, which is
-empty until compiler-backed DSL cell persistence is implemented. Non-meta cells
-are classified with the shared Agent fragment parser and are not executed until
-the compiler-backed transactional cell runner is implemented, so the CLI does
-not grow a second Agent evaluator.
+session. Non-meta cells are classified with the shared Agent fragment parser;
+complete Agent fragments are wrapped in a one-cell Agent controller, compiled
+through `arcweft-compiler`, and executed through `arcweft-agent-runner`'s
+deterministic CLI session path. Successful cells are recorded as in-session
+`cell.N` binding artifacts shown by `:bindings`. VM-local variable extraction
+and SQLite-backed `repl_cells` persistence remain separate follow-up work, so
+the CLI still does not grow a second Agent evaluator.
 
 ## Agent Observation
 

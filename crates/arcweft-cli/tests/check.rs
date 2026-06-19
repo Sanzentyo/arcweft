@@ -652,9 +652,23 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
         .find(|cell| cell["input"] == ":bindings")
         .expect("bindings cell is present");
     assert_eq!(bindings["status"], "ok");
-    assert_eq!(
-        bindings["value"]["bindings"].as_array().map(Vec::len),
-        Some(0)
+    let cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "let observed = observe()")
+        .expect("compiled cell is present");
+    assert_eq!(cell["status"], "ok");
+    assert_eq!(cell["kind"], "cell");
+    assert_eq!(cell["value"]["compiled"], true);
+    assert_eq!(cell["value"]["host_calls"], 1);
+    let binding_list = bindings["value"]["bindings"]
+        .as_array()
+        .expect("bindings are listed");
+    assert!(
+        binding_list
+            .iter()
+            .any(|binding| binding["source"] == "let observed = observe()"
+                && binding["host_calls"] == 1),
+        "bindings should include the compiled observe cell: {bindings}"
     );
     let history = cells
         .iter()
