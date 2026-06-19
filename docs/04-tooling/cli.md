@@ -322,10 +322,11 @@ without creating a native project. `--state route.phase=opening` injects a
 deterministic debug-state payload value for `state("route.phase")` probes;
 `observation("tick")`, `observation("state_hash")`, and
 `observation("signals.signal.ready")` read the current observation envelope.
-For deterministic CLI captures, `--blob-dir .arcweft/cache/agent-blobs` writes
-byte-backed capture blobs under their `blake3:` content hash. `arcw agent script
-trace <file.arcwx> --blob-dir <dir>` validates each capture record's `blob_refs`,
-payload `content_hash`, payload `byte_len`, and stored blob bytes together.
+For deterministic CLI captures and native image captures,
+`--blob-dir .arcweft/cache/agent-blobs` writes byte-backed capture blobs under
+their `blake3:` content hash. `arcw agent script trace <file.arcwx> --blob-dir
+<dir>` validates each capture record's `blob_refs`, payload `content_hash`,
+payload `byte_len`, and stored blob bytes together.
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return

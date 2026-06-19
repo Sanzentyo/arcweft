@@ -299,7 +299,12 @@ fn agent_script_run_native_source_captures_native_resource() {
         "target/codex-agent-script-run-test/native-capture-trace-{}.arcwx",
         std::process::id()
     ));
+    let blob_dir = workspace_path(&format!(
+        "target/codex-agent-script-run-test/native-capture-blobs-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_dir_all(&blob_dir);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
@@ -310,6 +315,8 @@ fn agent_script_run_native_source_captures_native_resource() {
         .arg("--json")
         .arg("--trace-out")
         .arg(&trace_path)
+        .arg("--blob-dir")
+        .arg(&blob_dir)
         .output()
         .expect("arcw agent script run captures native source");
     assert!(
@@ -332,6 +339,14 @@ fn agent_script_run_native_source_captures_native_resource() {
     assert_eq!(capture["media_type"], "image/png");
     assert!(capture["byte_len"].as_u64().unwrap_or(0) > 0);
     assert_ne!(capture["content_hash"], "cli-capture-0000000000000001");
+    assert_eq!(run_json["blobs_written"], 1);
+    let content_hash = capture["content_hash"].as_str().expect("content hash");
+    let blob_path = agent_test_blob_path(&blob_dir, content_hash);
+    assert!(
+        blob_path.exists(),
+        "native capture blob should be stored at {}",
+        blob_path.display()
+    );
 
     let trace: serde_json::Value = serde_json::from_slice(
         &fs::read(&trace_path).expect("native agent script run writes .arcwx trace"),
@@ -344,6 +359,26 @@ fn agent_script_run_native_source_captures_native_resource() {
         .find(|record| record["kind"] == "capture_stored")
         .expect("trace records native capture event");
     assert_eq!(trace_capture["blob_refs"][0], capture["content_hash"]);
+
+    let trace_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("trace")
+        .arg(&trace_path)
+        .arg("--blob-dir")
+        .arg(&blob_dir)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script trace validates native capture blob bytes");
+    assert!(
+        trace_output.status.success(),
+        "native trace blob validation should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&trace_output.stdout),
+        String::from_utf8_lossy(&trace_output.stderr)
+    );
+    let trace_report: serde_json::Value =
+        serde_json::from_slice(&trace_output.stdout).expect("native trace report is JSON");
+    assert_eq!(trace_report["blobs_validated"], 1);
 }
 
 #[test]

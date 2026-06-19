@@ -2,19 +2,18 @@ use super::super::runtime::{
     NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, report_path,
 };
 use super::{
-    AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
-    AgentBlobWriteReport, AgentCommand, AgentControllerRunConfig, AgentHitTestOptions,
-    AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat,
-    AgentObserveOptions, AgentObserveResourceKind, AgentRunner, AgentRunnerConfig,
-    AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport, AgentSession,
-    CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus,
-    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
-    ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
-    RuntimeStepResult, agent_cli_session_id, agent_script_run_report_from_result,
-    flow_status_label, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
-    resolve_source_selection, runtime_plan_options_for_selection,
-    runtime_pure_config_for_selection, step_options,
+    AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCaptureBlob,
+    AgentCommand, AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions,
+    AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
+    AgentObserveResourceKind, AgentRunner, AgentRunnerConfig, AgentScriptRunInput,
+    AgentScriptRunOptions, AgentScriptRunReport, AgentSession, CliRuntimeExecutorTier,
+    CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
+    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
+    RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
+    agent_cli_session_id, agent_script_run_report_from_result, flow_status_label, fs,
+    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
+    native_host_policy_for_selection, print_json, resolve_source_selection,
+    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
     DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
@@ -57,6 +56,7 @@ use arcweft_render_text::{
 };
 use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
 use arcweft_ui::UiImageSourceTable;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{BufRead as _, Write as _};
@@ -2685,6 +2685,10 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
             max_ops_per_step: options.max_ops,
         },
     );
+    let blob_result = super::write_agent_capture_blobs(
+        options.blob_dir.as_deref(),
+        runner.session_mut().capture_blobs(),
+    );
     let debug_events = runner.debug_mut().events.clone();
     let run_id = AgentRunId::new(options.run_id.clone()).map_err(|error| {
         eprintln!("error: invalid run id: {error}");
@@ -2696,7 +2700,7 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
         run_result,
         &run_id,
         &debug_events,
-        Ok(AgentBlobWriteReport::default()),
+        blob_result,
     ))
 }
 
@@ -2716,6 +2720,7 @@ struct NativeAgentScriptSession<'a> {
     options: AgentObserveOptions,
     adapter_registrars: &'a [NativeAdapterRegistrar],
     observed: Option<AgentObservationState>,
+    capture_blobs: Vec<AgentCaptureBlob>,
 }
 
 impl<'a> NativeAgentScriptSession<'a> {
@@ -2759,7 +2764,12 @@ impl<'a> NativeAgentScriptSession<'a> {
             },
             adapter_registrars,
             observed: None,
+            capture_blobs: Vec::new(),
         }
+    }
+
+    fn capture_blobs(&self) -> &[AgentCaptureBlob] {
+        &self.capture_blobs
     }
 
     fn observe_report(&mut self) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
@@ -2831,13 +2841,18 @@ impl AgentSession for NativeAgentScriptSession<'_> {
         let report = self.observe_report()?;
         let uri = native_agent_capture_uri(report, &request)?;
         let resource = self.resource_for_uri(&uri)?;
-        Ok(CaptureResult {
+        let blob = agent_capture_blob_from_resource(&resource)
+            .map_err(|_| NativeAgentScriptSessionError::Capture)?;
+        let byte_len = u64::try_from(blob.bytes.len()).unwrap_or(u64::MAX);
+        let result = CaptureResult {
             uri: AgentResourceUri::new(resource.uri)
                 .map_err(|_| NativeAgentScriptSessionError::Capture)?,
-            content_hash: resource.hash,
+            content_hash: blob.content_hash.clone(),
             media_type: resource.mime_type,
-            byte_len: agent_resource_body_len(&resource.body),
-        })
+            byte_len,
+        };
+        self.capture_blobs.push(blob);
+        Ok(result)
     }
 
     fn read_resource(&mut self, uri: &str) -> Result<AgentResource, Self::Error> {
@@ -2936,17 +2951,26 @@ fn agent_assignment_value(signal: &AgentAssignment) -> arcweft_agent_protocol::v
     }
 }
 
-fn agent_resource_body_len(body: &AgentResourceBody) -> u64 {
-    match body {
-        AgentResourceBody::Json(value) => serde_json::to_vec(value)
-            .ok()
-            .and_then(|bytes| u64::try_from(bytes.len()).ok())
-            .unwrap_or(0),
-        AgentResourceBody::Text(text) => u64::try_from(text.len()).unwrap_or(u64::MAX),
-        AgentResourceBody::BytesBase64(body) => {
-            u64::try_from(body.data.len().saturating_mul(3) / 4).unwrap_or(u64::MAX)
+fn agent_capture_blob_from_resource(
+    resource: &AgentResource,
+) -> Result<AgentCaptureBlob, NativeAgentScriptSessionError> {
+    let bytes = match &resource.body {
+        AgentResourceBody::BytesBase64(body) => match body.encoding {
+            arcweft_agent_protocol::AgentBinaryEncoding::Base64 => STANDARD
+                .decode(&body.data)
+                .map_err(|_| NativeAgentScriptSessionError::Capture)?,
+        },
+        AgentResourceBody::Text(text) if resource.mime_type == "image/svg+xml" => {
+            text.as_bytes().to_vec()
         }
-    }
+        AgentResourceBody::Json(_) | AgentResourceBody::Text(_) => {
+            return Err(NativeAgentScriptSessionError::Capture);
+        }
+    };
+    Ok(AgentCaptureBlob {
+        content_hash: format!("blake3:{}", blake3::hash(&bytes).to_hex()),
+        bytes,
+    })
 }
 
 fn agent_hit_test_command(
