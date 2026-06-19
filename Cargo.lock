@@ -512,6 +512,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-host-adapter",
  "arcweft-id",
+ "arcweft-image",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-runtime-accelerator",

@@ -131,8 +131,10 @@ remain runtime/adapter responsibility, but static source references cannot
 silently produce a bundle with no matching encoded image asset.
 
 `arcw run-bundle` validates `image_assets[]` before materializing the temporary
-bundle workspace. An image asset whose referenced virtual file is missing is a
-bundle structure error and fails before bytecode execution starts.
+bundle workspace. An image asset whose referenced virtual file is missing,
+whose encoded bytes cannot be decoded as the declared format, or whose recorded
+static/animated state or dimensions contradict the decoded payload is a bundle
+structure error and fails before bytecode execution starts.
 
 Future product bundle slices can replace structured JSON bytecode with a
 compact deterministic binary bytecode section and add graph indexes, entity

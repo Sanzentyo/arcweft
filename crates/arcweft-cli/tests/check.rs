@@ -28847,6 +28847,47 @@ fn bundle_json_packages_save_files_and_run_bundle_executes_native_file_tasks() {
     assert_build_bundle_output(&fixture, &build_stdout);
 }
 
+#[test]
+fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
+    let fixture = bundle_native_file_fixture();
+    let _bundle_stdout = run_bundle_package_command(&fixture);
+    let mut bundle_json: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&fixture.bundle_path).expect("bundle JSON is written"),
+    )
+    .expect("bundle artifact is JSON");
+    let image_assets = bundle_json["image_assets"]
+        .as_array_mut()
+        .expect("image assets are an array");
+    let logo = image_assets
+        .iter_mut()
+        .find(|asset| asset["id"] == "asset.ui.logo")
+        .expect("static webp image asset is present");
+    logo["animation"] = serde_json::Value::String("animated".to_owned());
+    fs::write(
+        &fixture.bundle_path,
+        serde_json::to_vec_pretty(&bundle_json).expect("mutated bundle serializes"),
+    )
+    .expect("mutated bundle is written");
+
+    let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run-bundle")
+        .arg(&fixture.bundle_path)
+        .arg("--steps")
+        .arg("1")
+        .output()
+        .expect("arcw run-bundle rejects invalid image metadata");
+
+    assert!(
+        !run_output.status.success(),
+        "run-bundle should reject contradictory image metadata"
+    );
+    let stderr = String::from_utf8_lossy(&run_output.stderr);
+    assert!(
+        stderr.contains("metadata mismatch for animation") && stderr.contains("asset.ui.logo"),
+        "run-bundle error should report the image metadata mismatch: {stderr}"
+    );
+}
+
 struct BundleNativeFileFixture {
     dir: PathBuf,
     source_path: PathBuf,

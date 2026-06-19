@@ -1,6 +1,9 @@
 use crate::native_task::{NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats};
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
-use arcweft_bundle::{ArcweftBundle, BundleAdapterManifest, BundleVirtualFile};
+use arcweft_bundle::{
+    ArcweftBundle, BundleAdapterManifest, BundleImageAnimation, BundleImageAsset,
+    BundleImageDimensions, BundleImageFormat, BundleVirtualFile,
+};
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowExit, FlowFiber, FlowFiberStatus};
@@ -140,6 +143,22 @@ pub enum BundleRunnerError {
     DecodeBundle(arcweft_bundle::BundleCodecError),
     #[error("invalid bundle image asset: {0}")]
     InvalidImageAsset(#[source] arcweft_bundle::BundleCodecError),
+    #[error("failed to decode bundle image asset `{asset_id}` ({path}): {source}")]
+    DecodeImageAsset {
+        asset_id: String,
+        path: String,
+        #[source]
+        source: arcweft_image::ImageError,
+    },
+    #[error(
+        "bundle image asset `{asset_id}` metadata mismatch for {field}: expected {expected}, actual {actual}"
+    )]
+    ImageAssetMetadataMismatch {
+        asset_id: String,
+        field: &'static str,
+        expected: String,
+        actual: String,
+    },
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(arcweft_core::plan::RuntimePlanError),
     #[error("failed to create bundle workspace: {0}")]
@@ -219,11 +238,81 @@ fn execute_bundle_with_native_adapters(
 
 fn validate_bundle_image_assets(bundle: &ArcweftBundle) -> Result<(), BundleRunnerError> {
     for asset in &bundle.image_assets {
-        bundle
+        let Some(bytes) = bundle
             .image_asset_bytes(&asset.id)
-            .map_err(BundleRunnerError::InvalidImageAsset)?;
+            .map_err(BundleRunnerError::InvalidImageAsset)?
+        else {
+            continue;
+        };
+        validate_bundle_image_asset_metadata(asset, bytes)?;
     }
     Ok(())
+}
+
+fn validate_bundle_image_asset_metadata(
+    asset: &BundleImageAsset,
+    bytes: &[u8],
+) -> Result<(), BundleRunnerError> {
+    let decoded = arcweft_image::decode_image_bytes(
+        bundle_image_decode_format(asset.format),
+        bytes,
+        arcweft_image::ImageDecodeOptions::default(),
+    )
+    .map_err(|source| BundleRunnerError::DecodeImageAsset {
+        asset_id: asset.id.clone(),
+        path: asset.file.path.clone(),
+        source,
+    })?;
+    let actual_animation = bundle_image_animation_from_decoded(&decoded);
+    if asset.animation != actual_animation {
+        return Err(BundleRunnerError::ImageAssetMetadataMismatch {
+            asset_id: asset.id.clone(),
+            field: "animation",
+            expected: format!("{:?}", asset.animation),
+            actual: format!("{actual_animation:?}"),
+        });
+    }
+    if let Some(expected_dimensions) = asset.dimensions {
+        let actual_dimensions = bundle_image_dimensions_from_decoded(&decoded);
+        if expected_dimensions != actual_dimensions {
+            return Err(BundleRunnerError::ImageAssetMetadataMismatch {
+                asset_id: asset.id.clone(),
+                field: "dimensions",
+                expected: format!(
+                    "{}x{}",
+                    expected_dimensions.width, expected_dimensions.height
+                ),
+                actual: format!("{}x{}", actual_dimensions.width, actual_dimensions.height),
+            });
+        }
+    }
+    Ok(())
+}
+
+const fn bundle_image_decode_format(format: BundleImageFormat) -> arcweft_image::ImageFormat {
+    match format {
+        BundleImageFormat::Png => arcweft_image::ImageFormat::Png,
+        BundleImageFormat::Jpeg => arcweft_image::ImageFormat::Jpeg,
+        BundleImageFormat::Gif => arcweft_image::ImageFormat::Gif,
+        BundleImageFormat::WebP => arcweft_image::ImageFormat::WebP,
+    }
+}
+
+fn bundle_image_animation_from_decoded(
+    image: &arcweft_image::DecodedImage,
+) -> BundleImageAnimation {
+    if image.is_animated() {
+        BundleImageAnimation::Animated
+    } else {
+        BundleImageAnimation::Static
+    }
+}
+
+fn bundle_image_dimensions_from_decoded(
+    image: &arcweft_image::DecodedImage,
+) -> BundleImageDimensions {
+    let dimensions = image.dimensions();
+    BundleImageDimensions::new(dimensions.width(), dimensions.height())
 }
 
 fn run_bundle_runner_phase<T>(
@@ -668,8 +757,9 @@ fn effect_label(effect: &LineEffectRequest) -> String {
 mod tests {
     use super::*;
     use arcweft_bundle::{
-        ArcweftBundle, BundleImageAnimation, BundleImageAsset, BundleImageFormat, BundleManifest,
-        BundleRuntimeSummary, BundleSource, BundleVirtualFileRef, BundleVirtualFileSpace,
+        ArcweftBundle, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
+        BundleImageFormat, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
+        BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
@@ -742,6 +832,87 @@ mod tests {
                 }
             ) if asset_id == "asset.bg.room" && path == "bg/room.png"
         ));
+    }
+
+    #[test]
+    fn bundle_runner_rejects_corrupt_image_asset_bytes_before_execution() {
+        let image_file = BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "bg/room.png".to_owned(),
+            bytes: b"not a png".to_vec(),
+        };
+        let bundle = dialogue_bundle()
+            .with_virtual_files([image_file.clone()])
+            .with_image_assets([BundleImageAsset {
+                id: "asset.bg.room".to_owned(),
+                file: image_file.file_ref(),
+                format: BundleImageFormat::Png,
+                animation: BundleImageAnimation::Static,
+                dimensions: Some(BundleImageDimensions::new(2, 1)),
+            }]);
+
+        let error = run_bundle_with_native_adapters(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 1,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect_err("corrupt image bytes are rejected before execution");
+
+        assert!(matches!(
+            error,
+            BundleRunnerError::DecodeImageAsset { asset_id, path, .. }
+                if asset_id == "asset.bg.room" && path == "bg/room.png"
+        ));
+    }
+
+    #[test]
+    fn bundle_runner_rejects_image_asset_metadata_mismatch_before_execution() {
+        let image_file = BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "bg/poster.webp".to_owned(),
+            bytes: sample_image_asset_bytes("bg/poster.webp"),
+        };
+        let bundle = dialogue_bundle()
+            .with_virtual_files([image_file.clone()])
+            .with_image_assets([BundleImageAsset {
+                id: "asset.bg.poster".to_owned(),
+                file: image_file.file_ref(),
+                format: BundleImageFormat::WebP,
+                animation: BundleImageAnimation::Animated,
+                dimensions: Some(BundleImageDimensions::new(2, 1)),
+            }]);
+
+        let error = run_bundle_with_native_adapters(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 1,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect_err("static webp cannot be declared animated");
+
+        assert!(matches!(
+            error,
+            BundleRunnerError::ImageAssetMetadataMismatch { asset_id, field: "animation", .. }
+                if asset_id == "asset.bg.poster"
+        ));
+    }
+
+    fn sample_image_asset_bytes(path: &str) -> Vec<u8> {
+        std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("samples")
+                .join(".arcweft")
+                .join("asset")
+                .join(path),
+        )
+        .expect("sample image asset is readable")
     }
 
     fn dialogue_bundle() -> ArcweftBundle {

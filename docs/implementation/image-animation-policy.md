@@ -77,8 +77,10 @@ flow ops, await pending effects, and line-task effect graphs so source-level
 presentation images cannot silently refer to assets that were omitted from the
 bundle.
 `arcw run-bundle` validates the encoded image asset records before
-materializing the bundle workspace, so broken image asset records fail before
-bytecode execution.
+materializing the bundle workspace. The validation resolves the referenced
+virtual file, decodes the encoded bytes with the declared image format, and
+checks recorded static/animated state and dimensions when present, so broken or
+contradictory image asset records fail before bytecode execution.
 
 `arcweft-agent-protocol` now treats observed object payload as typed content.
 Rich text objects carry `content.kind = "rich_text"` with a `LineDisplayFrame`;
