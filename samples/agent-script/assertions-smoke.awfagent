@@ -1,0 +1,12 @@
+#[agent(version = 1)]
+agent @agent.assertions_smoke assertions_smoke()
+effects {}
+{
+    let accepted = true
+    let blocked = false
+
+    expect(accepted, message = "accepted should be true")
+    deny(blocked, message = "blocked should stay false")
+
+    Ok(())
+}

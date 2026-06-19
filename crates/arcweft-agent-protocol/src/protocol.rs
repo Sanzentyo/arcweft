@@ -120,6 +120,23 @@ pub struct RagRequest {
     pub limit: usize,
 }
 
+/// Assertion polarity requested by an Agent controller.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAssertionKind {
+    Expect,
+    Deny,
+}
+
+/// Runtime-evaluated Agent assertion emitted by controller bytecode.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentAssertionRequest {
+    pub kind: AgentAssertionKind,
+    pub condition: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
 /// Debug-record attachment emitted by an Agent controller.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentAttachment {
@@ -136,6 +153,7 @@ pub enum AgentHostRequest {
     Capture(Box<CaptureRequest>),
     ReadResource { uri: AgentResourceUri },
     RagQuery(Box<RagRequest>),
+    Assert(Box<AgentAssertionRequest>),
     Attach(Box<AgentAttachment>),
     Checkpoint { name: String },
 }

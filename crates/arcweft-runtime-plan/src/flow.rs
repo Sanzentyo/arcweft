@@ -1310,7 +1310,11 @@ fn lower_agent_controller_flow(
     );
     let mut ops = lowerer.lower_flow_stmt_list(agent.item().body_statements());
     if let Some(value) = agent.item().body_value() {
-        ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value)));
+        if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value) {
+            ops.append(&mut host_ops);
+        } else {
+            ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value)));
+        }
     }
     if lowerer.errors.is_empty() {
         Ok(RuntimeFlow { id, ops })
@@ -1753,7 +1757,9 @@ impl FlowRuntimeLowerer<'_> {
                 lower_runtime_expr_strict_with_pure(expr, self.pure_helpers)
                     .unwrap_or_else(|_| lower_runtime_expr(expr)),
             )],
-            Stmt::Expr(expr) => vec![FlowOp::Effect(runtime_call_effect(expr))],
+            Stmt::Expr(expr) => self
+                .lower_agent_host_call_expr(expr)
+                .unwrap_or_else(|| vec![FlowOp::Effect(runtime_call_effect(expr))]),
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
                     label: label.clone(),
@@ -1869,18 +1875,7 @@ impl FlowRuntimeLowerer<'_> {
             return None;
         }
         let request = lower_agent_host_task_request(expr)?;
-        let task_name = expr_label(expr)
-            .chars()
-            .map(|ch| {
-                if ch.is_ascii_alphanumeric() || ch == '_' {
-                    ch
-                } else {
-                    '.'
-                }
-            })
-            .collect::<String>()
-            .trim_matches('.')
-            .to_owned();
+        let task_name = agent_task_name(expr);
         Some(FlowOp::Await {
             binding: Some(lower_runtime_pattern(pattern)),
             target: AwaitTarget::new(
@@ -1890,6 +1885,23 @@ impl FlowRuntimeLowerer<'_> {
             ),
             pending: Vec::new(),
         })
+    }
+
+    fn lower_agent_host_call_expr(&mut self, expr: &Expr) -> Option<Vec<FlowOp>> {
+        if !self.agent_controller {
+            return None;
+        }
+        let request = lower_agent_host_task_request(expr)?;
+        let task_name = agent_task_name(expr);
+        Some(vec![FlowOp::Await {
+            binding: None,
+            target: AwaitTarget::new(
+                NeedId(format!("need.agent.{task_name}")),
+                TaskId(format!("task.agent.{task_name}")),
+                request,
+            ),
+            pending: Vec::new(),
+        }])
     }
 
     fn lower_syntax_flow_items(&mut self, items: &[FlowItem]) -> Vec<FlowOp> {
@@ -1932,6 +1944,21 @@ pub(crate) fn sanitize_task_id_part(name: &str) -> String {
             }
         })
         .collect()
+}
+
+fn agent_task_name(expr: &Expr) -> String {
+    expr_label(expr)
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '.'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .to_owned()
 }
 
 fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
@@ -2317,6 +2344,50 @@ flow @flow.main main {
                 .iter()
                 .any(|error| error.message().contains("dialogue.defaults.mobile")),
             "{errors:#?}"
+        );
+    }
+
+    #[test]
+    fn agent_controller_plan_lowers_expect_and_deny_to_evaluated_tasks() {
+        let parsed = parse_source(
+            r#"
+#[agent(version = 1)]
+agent @agent.assertions assertions()
+effects {}
+{
+    let accepted = true
+    let denied = false
+    expect(accepted, message = "accepted should be true")
+    deny(denied)
+}
+"#,
+        );
+        let hir = lower_to_hir(parsed.typed_tree()).expect("agent fixture lowers");
+        let agent = hir.agents().first().expect("agent exists");
+        let report = lower_agent_controller_plan_with_stats(&hir, agent)
+            .expect("agent assertions lower to runtime plan");
+        let assertion_tasks = report.plan.flows[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                FlowOp::Await {
+                    binding: None,
+                    target,
+                    ..
+                } if target.request.capability.0 == "agent" => {
+                    Some((target.request.operation.as_str(), target.request.args.len()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            assertion_tasks.contains(&("expect", 2)),
+            "{assertion_tasks:?}"
+        );
+        assert!(
+            assertion_tasks.contains(&("deny", 1)),
+            "{assertion_tasks:?}"
         );
     }
 }

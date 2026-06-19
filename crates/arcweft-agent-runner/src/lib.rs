@@ -11,9 +11,10 @@ use arcweft_agent_protocol::{
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
-        ActionResult, AgentAction, AgentAttachment, AgentHostRequest, AgentHostResponse,
-        AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget,
-        ObservationEnvelope, ObserveRequest, PointerButton, RagRequest, WaitRequest,
+        ActionResult, AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentAttachment,
+        AgentHostRequest, AgentHostResponse, AgentSessionInfo, CaptureFormat, CaptureRequest,
+        CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest, PointerButton,
+        RagRequest, WaitRequest,
     },
     value::AgentValue,
 };
@@ -181,6 +182,11 @@ where
     },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
+    #[error("Agent assertion failed ({kind:?}): {message}")]
+    AssertionFailed {
+        kind: AgentAssertionKind,
+        message: String,
+    },
     #[error("Agent controller failed: {0}")]
     ControllerFailed(String),
     #[error("Agent controller exceeded execution step budget of {max_steps}")]
@@ -370,6 +376,7 @@ where
                     serde_json::to_value(context).unwrap_or(serde_json::Value::Null),
                 ))
             }
+            AgentHostRequest::Assert(request) => self.handle_assertion_request(request.as_ref())?,
             AgentHostRequest::Attach(attachment) => {
                 self.ensure(RuntimeAgentCapability::DebugRecord)?;
                 self.emit(
@@ -394,6 +401,31 @@ where
             response,
             events_emitted: self.sequence,
         })
+    }
+
+    fn handle_assertion_request(
+        &mut self,
+        request: &AgentAssertionRequest,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        let passed = agent_assertion_passed(request);
+        self.emit(
+            DebugEventKind::Assertion,
+            None,
+            serde_json::json!({
+                "kind": agent_assertion_kind_label(request.kind),
+                "condition": request.condition,
+                "passed": passed,
+                "message": request.message.clone(),
+            }),
+        )?;
+        if passed {
+            Ok(AgentHostResponse::Unit)
+        } else {
+            Err(AgentRunError::AssertionFailed {
+                kind: request.kind,
+                message: agent_assertion_failure_message(request),
+            })
+        }
     }
 
     /// Runs one compiled Agent controller bytecode program and dispatches
@@ -759,6 +791,10 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
         "rag.query" => {
             runtime_rag_request(&args).map(|request| AgentHostRequest::RagQuery(Box::new(request)))
         }
+        "expect" => runtime_assertion_request(&args, AgentAssertionKind::Expect)
+            .map(|request| AgentHostRequest::Assert(Box::new(request))),
+        "deny" => runtime_assertion_request(&args, AgentAssertionKind::Deny)
+            .map(|request| AgentHostRequest::Assert(Box::new(request))),
         "checkpoint" => {
             let name = args
                 .positional(0)
@@ -889,6 +925,26 @@ fn runtime_wait_request(args: &RuntimeAgentArgs<'_>) -> Result<WaitRequest, Stri
         timeout_millis,
         stable_frames: args.named("stable_frames").map_or(Ok(1), runtime_u32)?,
         poll_frames: args.named("poll_frames").map_or(Ok(1), runtime_u32)?,
+    })
+}
+
+fn runtime_assertion_request(
+    args: &RuntimeAgentArgs<'_>,
+    kind: AgentAssertionKind,
+) -> Result<AgentAssertionRequest, String> {
+    let condition = args
+        .positional(0)
+        .or_else(|| args.named("condition"))
+        .ok_or_else(|| "Agent assertion requires a condition argument".to_owned())
+        .and_then(runtime_bool)?;
+    let message = match args.positional(1).or_else(|| args.named("message")) {
+        Some(value) => runtime_string(value)?,
+        None => String::new(),
+    };
+    Ok(AgentAssertionRequest {
+        kind,
+        condition,
+        message,
     })
 }
 
@@ -1174,6 +1230,31 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
         AgentHostResponse::RagContext(value) => runtime_rag_context_payload(value),
         AgentHostResponse::Unit => RuntimeValue::Unit,
     })
+}
+
+fn agent_assertion_passed(request: &AgentAssertionRequest) -> bool {
+    match request.kind {
+        AgentAssertionKind::Expect => request.condition,
+        AgentAssertionKind::Deny => !request.condition,
+    }
+}
+
+fn agent_assertion_failure_message(request: &AgentAssertionRequest) -> String {
+    if request.message.is_empty() {
+        match request.kind {
+            AgentAssertionKind::Expect => "expect condition evaluated to false".to_owned(),
+            AgentAssertionKind::Deny => "deny condition evaluated to true".to_owned(),
+        }
+    } else {
+        request.message.clone()
+    }
+}
+
+const fn agent_assertion_kind_label(kind: AgentAssertionKind) -> &'static str {
+    match kind {
+        AgentAssertionKind::Expect => "expect",
+        AgentAssertionKind::Deny => "deny",
+    }
 }
 
 fn runtime_rag_context_payload(value: &serde_json::Value) -> RuntimeValue {
@@ -2327,7 +2408,10 @@ mod tests {
         time::LogicalDuration,
         value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue},
     };
-    use arcweft_debug_model::{event::DebugEvent, sink::NullDebugEventSink};
+    use arcweft_debug_model::{
+        event::{DebugEvent, DebugEventKind},
+        sink::NullDebugEventSink,
+    };
     use std::collections::BTreeMap;
     use std::convert::Infallible;
 
@@ -3165,6 +3249,64 @@ mod tests {
             report.response,
             AgentHostResponse::Observation(observation) if observation.tick == 2
         ));
+    }
+
+    #[test]
+    fn assertion_host_request_records_passed_expect() {
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            RecordingDebugSink::default(),
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Assert(Box::new(AgentAssertionRequest {
+                kind: AgentAssertionKind::Expect,
+                condition: true,
+                message: "accepted should be true".to_owned(),
+            })))
+            .expect("passing assertion succeeds");
+
+        assert!(matches!(report.response, AgentHostResponse::Unit));
+        assert!(runner.debug_mut().events.iter().any(|event| {
+            event.kind == DebugEventKind::Assertion
+                && event.payload["kind"] == "expect"
+                && event.payload["passed"] == serde_json::json!(true)
+        }));
+    }
+
+    #[test]
+    fn assertion_host_request_fails_deny_with_structured_event() {
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            RecordingDebugSink::default(),
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let error = runner
+            .handle_host_request(AgentHostRequest::Assert(Box::new(AgentAssertionRequest {
+                kind: AgentAssertionKind::Deny,
+                condition: true,
+                message: "route should not be open".to_owned(),
+            })))
+            .expect_err("failing deny stops the controller");
+
+        assert!(matches!(
+            error,
+            AgentRunError::AssertionFailed {
+                kind: AgentAssertionKind::Deny,
+                ref message,
+            } if message == "route should not be open"
+        ));
+        assert!(runner.debug_mut().events.iter().any(|event| {
+            event.kind == DebugEventKind::Assertion
+                && event.payload["kind"] == "deny"
+                && event.payload["passed"] == serde_json::json!(false)
+        }));
     }
 
     #[test]

@@ -2042,6 +2042,7 @@ fn agent_trace_kind(kind: DebugEventKind) -> AgentTraceKind {
         DebugEventKind::Observation => AgentTraceKind::ObservationReceived,
         DebugEventKind::Action => AgentTraceKind::ActionCompleted,
         DebugEventKind::Capture => AgentTraceKind::CaptureStored,
+        DebugEventKind::Assertion => AgentTraceKind::AssertionEvaluated,
         DebugEventKind::Diagnostic | DebugEventKind::ReplCell => AgentTraceKind::DiagnosticEmitted,
         DebugEventKind::RagQuery => AgentTraceKind::RagQueryCompleted,
     }
