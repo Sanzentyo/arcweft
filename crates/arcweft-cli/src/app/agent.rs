@@ -274,6 +274,8 @@ pub(super) struct AgentScriptRunOptions {
     states: Vec<AgentScriptStateArg>,
     #[arg(long = "trace-out")]
     trace_out: Option<PathBuf>,
+    #[arg(long = "blob-dir")]
+    blob_dir: Option<PathBuf>,
     #[arg(long, default_value = "run.cli")]
     run_id: String,
 }
@@ -290,6 +292,8 @@ pub(super) struct AgentScriptReplayOptions {
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptTraceOptions {
     path: PathBuf,
+    #[arg(long = "blob-dir")]
+    blob_dir: Option<PathBuf>,
     #[arg(long)]
     json: bool,
 }
@@ -561,6 +565,9 @@ struct AgentScriptRunReport {
     final_status: Option<String>,
     trace_path: Option<String>,
     trace_records: usize,
+    blob_dir: Option<String>,
+    blobs_written: usize,
+    blob_bytes: u64,
     responses: Vec<AgentHostResponse>,
     error: Option<String>,
 }
@@ -583,8 +590,29 @@ struct AgentScriptTraceReport {
     started: bool,
     finished: bool,
     blob_refs: usize,
+    blobs_validated: usize,
+    blob_bytes: u64,
     kinds: BTreeMap<String, usize>,
     error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct AgentBlobWriteReport {
+    dir: Option<String>,
+    count: usize,
+    bytes: u64,
+}
+
+#[derive(Clone, Debug)]
+struct AgentCaptureBlob {
+    content_hash: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AgentTraceBlobValidation {
+    count: usize,
+    bytes: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -632,6 +660,12 @@ fn agent_script_run_command(
             final_status: None,
             trace_path: None,
             trace_records: 0,
+            blob_dir: options
+                .blob_dir
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            blobs_written: 0,
+            blob_bytes: 0,
             responses: Vec::new(),
             error: Some(error),
         },
@@ -733,6 +767,10 @@ fn agent_script_run_bundle(
             max_ops_per_step: options.max_ops,
         },
     );
+    let blob_result = write_agent_capture_blobs(
+        options.blob_dir.as_deref(),
+        runner.session_mut().capture_blobs(),
+    );
     let debug_events = runner.debug_mut().events.clone();
     let run_id = AgentRunId::new(options.run_id.clone()).map_err(|error| {
         eprintln!("error: invalid run id: {error}");
@@ -744,6 +782,7 @@ fn agent_script_run_bundle(
         run_result,
         &run_id,
         &debug_events,
+        blob_result,
     ))
 }
 
@@ -758,6 +797,7 @@ fn agent_script_run_report_from_result(
     run_result: Result<AgentControllerRunReport, impl std::fmt::Display>,
     run_id: &AgentRunId,
     debug_events: &[DebugEvent],
+    blob_result: Result<AgentBlobWriteReport, String>,
 ) -> AgentScriptRunReport {
     let trace_records = agent_trace_records(run_id, &agent_cli_session_id(), debug_events);
     let trace_result = options
@@ -765,22 +805,24 @@ fn agent_script_run_report_from_result(
         .as_ref()
         .map(|path| write_agent_trace(path, &trace_records).map(|()| path.display().to_string()))
         .transpose();
-    match (run_result, trace_result) {
-        (Ok(run), Ok(trace_path)) => agent_script_run_success_report(
+    match (run_result, trace_result, blob_result) {
+        (Ok(run), Ok(trace_path), Ok(blob_report)) => agent_script_run_success_report(
             &input.path,
             input.agents,
             run,
             trace_path,
             trace_records.len(),
+            blob_report,
         ),
-        (Err(error), Ok(trace_path)) => agent_script_run_error_report(
+        (Err(error), Ok(trace_path), Ok(blob_report)) => agent_script_run_error_report(
             &input.path,
             input.agents,
             trace_path,
             trace_records.len(),
+            blob_report,
             error.to_string(),
         ),
-        (_, Err(error)) => agent_script_run_error_report(
+        (_, Err(error), blob_result) => agent_script_run_error_report(
             &input.path,
             input.agents,
             options
@@ -788,6 +830,18 @@ fn agent_script_run_report_from_result(
                 .as_ref()
                 .map(|path| path.display().to_string()),
             trace_records.len(),
+            blob_result.unwrap_or_default(),
+            error,
+        ),
+        (_, _, Err(error)) => agent_script_run_error_report(
+            &input.path,
+            input.agents,
+            options
+                .trace_out
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            trace_records.len(),
+            AgentBlobWriteReport::default(),
             error,
         ),
     }
@@ -799,6 +853,7 @@ fn agent_script_run_success_report(
     run: AgentControllerRunReport,
     trace_path: Option<String>,
     trace_records: usize,
+    blob_report: AgentBlobWriteReport,
 ) -> AgentScriptRunReport {
     AgentScriptRunReport {
         path: path.to_owned(),
@@ -810,6 +865,9 @@ fn agent_script_run_success_report(
         final_status: run.final_status.map(|status| format!("{status:?}")),
         trace_path,
         trace_records,
+        blob_dir: blob_report.dir,
+        blobs_written: blob_report.count,
+        blob_bytes: blob_report.bytes,
         responses: run.responses,
         error: None,
     }
@@ -820,6 +878,7 @@ fn agent_script_run_error_report(
     agents: usize,
     trace_path: Option<String>,
     trace_records: usize,
+    blob_report: AgentBlobWriteReport,
     error: String,
 ) -> AgentScriptRunReport {
     AgentScriptRunReport {
@@ -832,6 +891,9 @@ fn agent_script_run_error_report(
         final_status: None,
         trace_path,
         trace_records,
+        blob_dir: blob_report.dir,
+        blobs_written: blob_report.count,
+        blob_bytes: blob_report.bytes,
         responses: Vec::new(),
         error: Some(error),
     }
@@ -839,6 +901,58 @@ fn agent_script_run_error_report(
 
 fn agent_cli_session_id() -> SessionId {
     SessionId::new("session.cli").expect("static session id")
+}
+
+fn write_agent_capture_blobs(
+    blob_dir: Option<&Path>,
+    blobs: &[AgentCaptureBlob],
+) -> Result<AgentBlobWriteReport, String> {
+    let Some(blob_dir) = blob_dir else {
+        return Ok(AgentBlobWriteReport::default());
+    };
+    let mut report = AgentBlobWriteReport {
+        dir: Some(blob_dir.display().to_string()),
+        count: 0,
+        bytes: 0,
+    };
+    for blob in blobs {
+        let path = agent_blob_path(blob_dir, &blob.content_hash)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        }
+        fs::write(&path, &blob.bytes)
+            .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
+        report.count += 1;
+        report.bytes = report
+            .bytes
+            .checked_add(u64::try_from(blob.bytes.len()).map_err(|_| {
+                format!(
+                    "capture blob {} is too large to count as u64 bytes",
+                    blob.content_hash
+                )
+            })?)
+            .ok_or_else(|| "capture blob byte count overflowed u64".to_owned())?;
+    }
+    Ok(report)
+}
+
+fn agent_blob_path(root: &Path, content_hash: &str) -> Result<PathBuf, String> {
+    let Some(hex) = content_hash.strip_prefix("blake3:") else {
+        return Err(format!(
+            "capture blob hash `{content_hash}` is not a blake3 content hash"
+        ));
+    };
+    if hex.is_empty()
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(format!(
+            "capture blob hash `{content_hash}` has an invalid blake3 digest"
+        ));
+    }
+    Ok(root.join("blake3").join(hex))
 }
 
 fn agent_script_replay_command(options: &AgentScriptReplayOptions) -> Result<(), ExitCode> {
@@ -913,7 +1027,7 @@ fn agent_script_replay_report(
 
 fn read_and_validate_agent_trace_records(path: &Path) -> Result<Vec<AgentTraceRecord>, String> {
     let records = read_agent_trace_records(path)?;
-    validate_agent_trace(path, &records)?;
+    validate_agent_trace(path, &records, None)?;
     Ok(records)
 }
 
@@ -962,7 +1076,9 @@ fn agent_trace_replay_events_match(
 
 fn agent_script_trace_command(options: &AgentScriptTraceOptions) -> Result<(), ExitCode> {
     let report = read_agent_trace_records(&options.path)
-        .and_then(|records| validate_agent_trace(&options.path, &records))
+        .and_then(|records| {
+            validate_agent_trace(&options.path, &records, options.blob_dir.as_deref())
+        })
         .unwrap_or_else(|error| AgentScriptTraceReport {
             path: options.path.display().to_string(),
             ok: false,
@@ -974,6 +1090,8 @@ fn agent_script_trace_command(options: &AgentScriptTraceOptions) -> Result<(), E
             started: false,
             finished: false,
             blob_refs: 0,
+            blobs_validated: 0,
+            blob_bytes: 0,
             kinds: BTreeMap::new(),
             error: Some(error),
         });
@@ -1012,6 +1130,7 @@ fn read_agent_trace_records(path: &Path) -> Result<Vec<AgentTraceRecord>, String
 fn validate_agent_trace(
     path: &Path,
     records: &[AgentTraceRecord],
+    blob_dir: Option<&Path>,
 ) -> Result<AgentScriptTraceReport, String> {
     let run_id = records
         .first()
@@ -1019,7 +1138,7 @@ fn validate_agent_trace(
         .ok_or_else(|| "trace must contain at least one record".to_owned())?;
     let first_sequence = records.first().map(|record| record.sequence);
     let last_sequence = records.last().map(|record| record.sequence);
-    validate_agent_trace_records(records, &run_id)?;
+    let blob_validation = validate_agent_trace_records(records, &run_id, blob_dir)?;
     Ok(AgentScriptTraceReport {
         path: path.display().to_string(),
         ok: true,
@@ -1035,6 +1154,8 @@ fn validate_agent_trace(
             .last()
             .is_some_and(|record| record.kind == AgentTraceKind::RunFinished),
         blob_refs: records.iter().map(|record| record.blob_refs.len()).sum(),
+        blobs_validated: blob_validation.count,
+        blob_bytes: blob_validation.bytes,
         kinds: agent_trace_kind_counts(records),
         error: None,
     })
@@ -1043,7 +1164,8 @@ fn validate_agent_trace(
 fn validate_agent_trace_records(
     records: &[AgentTraceRecord],
     run_id: &AgentRunId,
-) -> Result<(), String> {
+    blob_dir: Option<&Path>,
+) -> Result<AgentTraceBlobValidation, String> {
     let first = records
         .first()
         .ok_or_else(|| "trace must contain at least one record".to_owned())?;
@@ -1056,20 +1178,27 @@ fn validate_agent_trace_records(
     {
         return Err("trace last record must be run_finished".to_owned());
     }
-    records
-        .iter()
-        .try_fold(None, |previous, record| {
-            validate_agent_trace_record(record, run_id, previous)?;
-            Ok(Some(record.sequence))
-        })
-        .map(|_| ())
+    let mut previous = None;
+    let mut blob_validation = AgentTraceBlobValidation::default();
+    for record in records {
+        if let Some(bytes) = validate_agent_trace_record(record, run_id, previous, blob_dir)? {
+            blob_validation.count += 1;
+            blob_validation.bytes = blob_validation
+                .bytes
+                .checked_add(bytes)
+                .ok_or_else(|| "validated blob byte count overflowed u64".to_owned())?;
+        }
+        previous = Some(record.sequence);
+    }
+    Ok(blob_validation)
 }
 
 fn validate_agent_trace_record(
     record: &AgentTraceRecord,
     run_id: &AgentRunId,
     previous_sequence: Option<u64>,
-) -> Result<(), String> {
+    blob_dir: Option<&Path>,
+) -> Result<Option<u64>, String> {
     if record.schema_version != 1 {
         return Err(format!(
             "trace record {} has unsupported schema_version {}",
@@ -1100,12 +1229,15 @@ fn validate_agent_trace_record(
         ));
     }
     if record.kind == AgentTraceKind::CaptureStored {
-        validate_agent_trace_capture_blob_refs(record)?;
+        return validate_agent_trace_capture_blob_refs(record, blob_dir);
     }
-    Ok(())
+    Ok(None)
 }
 
-fn validate_agent_trace_capture_blob_refs(record: &AgentTraceRecord) -> Result<(), String> {
+fn validate_agent_trace_capture_blob_refs(
+    record: &AgentTraceRecord,
+    blob_dir: Option<&Path>,
+) -> Result<Option<u64>, String> {
     let content_hash = record
         .payload
         .get("content_hash")
@@ -1123,13 +1255,57 @@ fn validate_agent_trace_capture_blob_refs(record: &AgentTraceRecord) -> Result<(
         )
     })?;
     if record.blob_refs.iter().any(|hash| hash == &content_hash) {
-        return Ok(());
+        return validate_agent_trace_capture_blob_bytes(record, &content_hash, blob_dir);
     }
     Err(format!(
         "trace record {} capture blob_refs does not include content_hash {}",
         record.sequence,
         content_hash.as_str()
     ))
+}
+
+fn validate_agent_trace_capture_blob_bytes(
+    record: &AgentTraceRecord,
+    content_hash: &StableHash,
+    blob_dir: Option<&Path>,
+) -> Result<Option<u64>, String> {
+    let Some(blob_dir) = blob_dir else {
+        return Ok(None);
+    };
+    let expected_len = record
+        .payload
+        .get("byte_len")
+        .and_then(serde_json::Value::as_u64);
+    let path = agent_blob_path(blob_dir, content_hash.as_str())?;
+    let bytes =
+        fs::read(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let actual_len = u64::try_from(bytes.len()).map_err(|_| {
+        format!(
+            "trace record {} capture blob {} is too large to count as u64 bytes",
+            record.sequence,
+            path.display()
+        )
+    })?;
+    if expected_len.is_some_and(|expected_len| expected_len != actual_len) {
+        return Err(format!(
+            "trace record {} capture blob byte_len mismatch for {}: expected {}, got {}",
+            record.sequence,
+            content_hash.as_str(),
+            expected_len.unwrap_or_default(),
+            actual_len
+        ));
+    }
+    let actual_hash = StableHash::new(format!("blake3:{}", blake3::hash(&bytes).to_hex()))
+        .expect("generated blob hash is nonempty");
+    if &actual_hash != content_hash {
+        return Err(format!(
+            "trace record {} capture blob hash mismatch for {}: got {}",
+            record.sequence,
+            content_hash.as_str(),
+            actual_hash.as_str()
+        ));
+    }
+    Ok(Some(actual_len))
 }
 
 fn agent_trace_sessions(records: &[AgentTraceRecord]) -> Vec<String> {
@@ -1394,6 +1570,7 @@ struct CliAgentSession {
     signals: BTreeMap<String, AgentValue>,
     states: BTreeMap<String, AgentValue>,
     captures: u64,
+    capture_blobs: Vec<AgentCaptureBlob>,
 }
 
 impl CliAgentSession {
@@ -1409,6 +1586,7 @@ impl CliAgentSession {
                 .map(|state| (state.path, state.value))
                 .collect(),
             captures: 0,
+            capture_blobs: Vec::new(),
         }
     }
 
@@ -1425,6 +1603,10 @@ impl CliAgentSession {
                 "state": agent_values_to_json(&self.states),
             }),
         }
+    }
+
+    fn capture_blobs(&self) -> &[AgentCaptureBlob] {
+        &self.capture_blobs
     }
 }
 
@@ -1464,18 +1646,19 @@ impl AgentSession for CliAgentSession {
 
     fn capture(&mut self, request: CaptureRequest) -> Result<CaptureResult, Self::Error> {
         self.captures = self.captures.saturating_add(1);
-        let media_type = match request.format {
-            CaptureFormat::Png => "image/png",
-            CaptureFormat::RawRgba => "application/octet-stream",
-            CaptureFormat::Svg => "image/svg+xml",
-        }
-        .to_owned();
+        let (media_type, bytes) = cli_capture_blob_bytes(&request);
+        let content_hash = format!("blake3:{}", blake3::hash(&bytes).to_hex());
+        let byte_len = u64::try_from(bytes.len()).expect("capture blob length fits u64");
+        self.capture_blobs.push(AgentCaptureBlob {
+            content_hash: content_hash.clone(),
+            bytes,
+        });
         let uri = format!("agent://capture/cli/{}-{}", request.name, self.captures);
         Ok(CaptureResult {
             uri: AgentResourceUri::new(uri).expect("generated capture uri is nonempty"),
-            content_hash: format!("cli-capture-{:016x}", self.captures),
+            content_hash,
             media_type,
-            byte_len: 0,
+            byte_len,
         })
     }
 
@@ -1498,6 +1681,25 @@ impl AgentSession for CliAgentSession {
         Ok(self.observation())
     }
 }
+
+fn cli_capture_blob_bytes(request: &CaptureRequest) -> (String, Vec<u8>) {
+    match request.format {
+        CaptureFormat::Png => ("image/png".to_owned(), CLI_TRANSPARENT_PNG.to_vec()),
+        CaptureFormat::RawRgba => ("application/octet-stream".to_owned(), vec![0, 0, 0, 0]),
+        CaptureFormat::Svg => (
+            "image/svg+xml".to_owned(),
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><title>arcweft-cli-capture</title></svg>".to_vec(),
+        ),
+    }
+}
+
+const CLI_TRANSPARENT_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+    0x42, 0x60, 0x82,
+];
 
 fn agent_values_to_json(values: &BTreeMap<String, AgentValue>) -> serde_json::Value {
     serde_json::Value::Object(

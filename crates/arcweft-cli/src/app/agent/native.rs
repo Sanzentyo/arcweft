@@ -2,15 +2,16 @@ use super::super::runtime::{
     NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection, report_path,
 };
 use super::{
-    AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions, AgentObserveCaptureKind,
-    AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind,
-    AgentRunner, AgentRunnerConfig, AgentScriptRunInput, AgentScriptRunOptions,
-    AgentScriptRunReport, AgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode,
-    CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
-    NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, RuntimeAgentCapability,
-    RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult, agent_cli_session_id,
-    agent_script_run_report_from_result, flow_status_label, fs, load_and_check_selection,
+    AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
+    AgentBlobWriteReport, AgentCommand, AgentControllerRunConfig, AgentHitTestOptions,
+    AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat,
+    AgentObserveOptions, AgentObserveResourceKind, AgentRunner, AgentRunnerConfig,
+    AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport, AgentSession,
+    CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus,
+    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
+    ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput,
+    RuntimeStepResult, agent_cli_session_id, agent_script_run_report_from_result,
+    flow_status_label, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
@@ -2695,6 +2696,7 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
         run_result,
         &run_id,
         &debug_events,
+        Ok(AgentBlobWriteReport::default()),
     ))
 }
 

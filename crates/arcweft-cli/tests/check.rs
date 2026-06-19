@@ -156,8 +156,13 @@ fn agent_script_run_trace_records_capture_blob_refs() {
         "target/codex-agent-script-run-test/capture-trace-missing-blob-{}.arcwx",
         std::process::id()
     ));
+    let blob_dir = workspace_path(&format!(
+        "target/codex-agent-script-run-test/capture-blobs-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_file(&trace_path);
     let _ = fs::remove_file(&invalid_trace_path);
+    let _ = fs::remove_dir_all(&blob_dir);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
@@ -166,6 +171,8 @@ fn agent_script_run_trace_records_capture_blob_refs() {
         .arg("--json")
         .arg("--trace-out")
         .arg(&trace_path)
+        .arg("--blob-dir")
+        .arg(&blob_dir)
         .output()
         .expect("arcw agent script run writes capture trace");
     assert!(
@@ -180,6 +187,8 @@ fn agent_script_run_trace_records_capture_blob_refs() {
     assert_eq!(run_json["host_calls"], 1);
     assert_eq!(run_json["responses"][0]["kind"], "capture");
     assert_eq!(run_json["trace_records"], 5);
+    assert_eq!(run_json["blobs_written"], 1);
+    assert!(run_json["blob_bytes"].as_u64().expect("blob_bytes is u64") > 0);
 
     let trace: serde_json::Value = serde_json::from_slice(
         &fs::read(&trace_path).expect("agent script run writes capture .arcwx trace"),
@@ -195,12 +204,20 @@ fn agent_script_run_trace_records_capture_blob_refs() {
         .as_str()
         .expect("capture payload has content_hash");
     assert_eq!(capture["blob_refs"][0], content_hash);
+    let blob_path = agent_test_blob_path(&blob_dir, content_hash);
+    assert!(
+        blob_path.exists(),
+        "capture blob should be stored at {}",
+        blob_path.display()
+    );
 
     let trace_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
         .arg("trace")
         .arg(&trace_path)
+        .arg("--blob-dir")
+        .arg(&blob_dir)
         .arg("--json")
         .output()
         .expect("arcw agent script trace validates capture blob refs");
@@ -214,10 +231,24 @@ fn agent_script_run_trace_records_capture_blob_refs() {
         serde_json::from_slice(&trace_output.stdout).expect("capture trace report is JSON");
     assert_eq!(trace_report["ok"], true);
     assert_eq!(trace_report["blob_refs"], 1);
+    assert_eq!(trace_report["blobs_validated"], 1);
+    assert!(
+        trace_report["blob_bytes"]
+            .as_u64()
+            .expect("blob_bytes is u64")
+            > 0
+    );
     assert_eq!(trace_report["kinds"]["capture_stored"], 1);
 
     write_capture_trace_without_blob_ref(&trace, &invalid_trace_path);
     assert_agent_script_trace_rejects_missing_capture_blob_ref(&invalid_trace_path);
+}
+
+fn agent_test_blob_path(root: &Path, content_hash: &str) -> PathBuf {
+    let hex = content_hash
+        .strip_prefix("blake3:")
+        .expect("test capture hash is blake3");
+    root.join("blake3").join(hex)
 }
 
 fn write_capture_trace_without_blob_ref(trace: &serde_json::Value, path: &Path) {
