@@ -16,6 +16,8 @@ use arcweft_bundle::{
     BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::{
+    effect::{LineEffectRequest, RuntimeCall},
+    line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
     plan::{FlowOp, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -423,6 +425,11 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
         .iter()
         .flat_map(|flow| flow.ops.iter())
         .flat_map(collect_flow_op_static_image_asset_refs)
+        .chain(
+            plan.line_task_groups
+                .iter()
+                .flat_map(collect_line_task_group_static_image_asset_refs),
+        )
         .collect::<Vec<_>>();
     refs.sort();
     refs.dedup();
@@ -431,11 +438,17 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
 
 fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
     match op {
-        FlowOp::Await { target, .. } => static_image_asset_ref_for_template(&target.request)
+        FlowOp::Await {
+            target, pending, ..
+        } => static_image_asset_ref_for_template(&target.request)
             .into_iter()
+            .chain(collect_line_effects_static_image_asset_refs(pending))
             .collect(),
-        FlowOp::AwaitMany { target, .. } => static_image_asset_ref_for_template(&target.request)
+        FlowOp::AwaitMany {
+            target, pending, ..
+        } => static_image_asset_ref_for_template(&target.request)
             .into_iter()
+            .chain(collect_line_effects_static_image_asset_refs(pending))
             .collect(),
         FlowOp::LetElse { else_ops, .. } => collect_flow_ops_static_image_asset_refs(else_ops),
         FlowOp::If {
@@ -464,6 +477,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
             collect_flow_ops_static_image_asset_refs(ops)
         }
+        FlowOp::Effect(effect) => collect_line_effect_static_image_asset_refs(effect),
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
         | FlowOp::Dialogue { .. }
@@ -474,7 +488,6 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         | FlowOp::GotoExpr(_)
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
-        | FlowOp::Effect(_)
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
@@ -531,6 +544,124 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::IfLet { .. }
         | RuntimeExpr::Match { .. } => None,
     }
+}
+
+fn collect_line_task_group_static_image_asset_refs(group: &LineTaskGroup) -> Vec<String> {
+    collect_line_task_scope_static_image_asset_refs(&group.root)
+}
+
+fn collect_line_task_scope_static_image_asset_refs(scope: &LineTaskScope) -> Vec<String> {
+    collect_line_task_node_static_image_asset_refs(&scope.node)
+        .into_iter()
+        .chain(collect_line_effects_static_image_asset_refs(
+            scope.defer_stack.iter().flatten(),
+        ))
+        .chain(collect_line_effects_static_image_asset_refs(
+            scope.completed_defer_stack.iter().flatten(),
+        ))
+        .chain(collect_line_effects_static_image_asset_refs(
+            scope.cancelled_defer_stack.iter().flatten(),
+        ))
+        .chain(collect_line_effects_static_image_asset_refs(
+            scope.failed_defer_stack.iter().flatten(),
+        ))
+        .collect()
+}
+
+fn collect_line_task_node_static_image_asset_refs(node: &LineTaskNode) -> Vec<String> {
+    match node {
+        LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => nodes
+            .iter()
+            .flat_map(collect_line_task_node_static_image_asset_refs)
+            .collect(),
+        LineTaskNode::Parallel { children, .. } => children
+            .iter()
+            .flat_map(collect_line_task_node_static_image_asset_refs)
+            .collect(),
+        LineTaskNode::Child(child) => collect_line_child_task_static_image_asset_refs(child),
+        LineTaskNode::Effect(effect) => collect_line_effect_static_image_asset_refs(effect),
+    }
+}
+
+fn collect_line_child_task_static_image_asset_refs(child: &LineChildTask) -> Vec<String> {
+    collect_line_task_scope_static_image_asset_refs(&child.scope)
+}
+
+fn collect_line_effects_static_image_asset_refs<'a>(
+    effects: impl IntoIterator<Item = &'a LineEffectRequest>,
+) -> Vec<String> {
+    effects
+        .into_iter()
+        .flat_map(collect_line_effect_static_image_asset_refs)
+        .collect()
+}
+
+fn collect_line_effect_static_image_asset_refs(effect: &LineEffectRequest) -> Vec<String> {
+    match effect {
+        LineEffectRequest::Call(call) => static_image_asset_ref_for_runtime_call(call)
+            .into_iter()
+            .collect(),
+        LineEffectRequest::RegisterHandle { .. }
+        | LineEffectRequest::DropHandle { .. }
+        | LineEffectRequest::Wait(_)
+        | LineEffectRequest::Log(_)
+        | LineEffectRequest::SignalWrite(_)
+        | LineEffectRequest::MetricWrite(_)
+        | LineEffectRequest::EmitEvent(_)
+        | LineEffectRequest::Out(_)
+        | LineEffectRequest::Return(_)
+        | LineEffectRequest::Goto(_)
+        | LineEffectRequest::Panic(_)
+        | LineEffectRequest::Fail(_)
+        | LineEffectRequest::Bail(_)
+        | LineEffectRequest::Ensure { .. }
+        | LineEffectRequest::Assert(_)
+        | LineEffectRequest::Close(_)
+        | LineEffectRequest::Select(_)
+        | LineEffectRequest::Break { .. }
+        | LineEffectRequest::Continue { .. } => Vec::new(),
+    }
+}
+
+fn static_image_asset_ref_for_runtime_call(call: &RuntimeCall) -> Option<String> {
+    match call.callee.as_str() {
+        "bg" | "image" | "image.show" => runtime_call_asset_arg(call, 0),
+        _ => None,
+    }
+}
+
+fn runtime_call_asset_arg(call: &RuntimeCall, positional_index: usize) -> Option<String> {
+    call.args
+        .iter()
+        .find_map(|arg| runtime_named_call_arg(arg, "asset"))
+        .or_else(|| runtime_positional_call_arg(call, positional_index))
+        .and_then(static_image_asset_ref_runtime_arg)
+}
+
+fn runtime_named_call_arg<'a>(arg: &'a str, name: &str) -> Option<&'a str> {
+    let (arg_name, value) = arg.split_once(" = ")?;
+    (arg_name.trim() == name).then_some(value.trim())
+}
+
+fn runtime_positional_call_arg(call: &RuntimeCall, index: usize) -> Option<&str> {
+    call.args
+        .iter()
+        .filter(|arg| !arg.contains(" = "))
+        .nth(index)
+        .map(String::as_str)
+}
+
+fn static_image_asset_ref_runtime_arg(arg: &str) -> Option<String> {
+    let value = arg.trim().trim_matches('"').trim_matches('\'');
+    let value = value.strip_prefix('@').unwrap_or(value);
+    value
+        .starts_with("asset.")
+        .then(|| value.to_owned())
+        .filter(|value| value.chars().all(public_asset_ref_char))
+}
+
+fn public_asset_ref_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')
 }
 
 fn host_call_id_for_template(capability: &str, operation: &str) -> String {
@@ -817,11 +948,31 @@ mod tests {
         }
     }
 
+    fn image_effect_call(callee: &str, arg: &str) -> FlowOp {
+        FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+            callee: callee.to_owned(),
+            args: vec![arg.to_owned()],
+        }))
+    }
+
     fn plan_with_ops(ops: Vec<FlowOp>) -> RuntimePlan {
         RuntimePlan {
             flows: vec![RuntimeFlow {
                 id: FlowRuntimeId("flow.test".to_owned()),
                 ops,
+            }],
+            ..RuntimePlan::default()
+        }
+    }
+
+    fn plan_with_line_task(effect: LineEffectRequest) -> RuntimePlan {
+        RuntimePlan {
+            line_task_groups: vec![LineTaskGroup {
+                root: LineTaskScope {
+                    node: LineTaskNode::Effect(effect),
+                    ..LineTaskScope::default()
+                },
+                ..LineTaskGroup::default()
             }],
             ..RuntimePlan::default()
         }
@@ -845,7 +996,7 @@ mod tests {
         let plan = plan_with_ops(vec![FlowOp::If {
             condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
             then_ops: vec![image_await("asset.bg.room")],
-            else_ops: vec![image_await("asset.ui.logo")],
+            else_ops: vec![image_effect_call("image", "asset = @asset.ui.logo")],
         }]);
 
         assert_eq!(
@@ -855,12 +1006,58 @@ mod tests {
     }
 
     #[test]
+    fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
+        let plan = plan_with_ops(vec![
+            image_effect_call("bg", "@asset.bg.room"),
+            image_effect_call("image.show", "asset = \"asset.ui.logo\""),
+            FlowOp::Await {
+                binding: None,
+                target: AwaitTarget::new(
+                    NeedId("need.unrelated".to_owned()),
+                    TaskId("task.unrelated".to_owned()),
+                    HostTaskRequestTemplate::new("system", "info", []),
+                ),
+                pending: vec![LineEffectRequest::Call(RuntimeCall {
+                    callee: "image".to_owned(),
+                    args: vec!["asset = @asset.bg.pulse".to_owned()],
+                })],
+            },
+        ]);
+
+        assert_eq!(
+            static_image_asset_refs(&plan),
+            vec![
+                "asset.bg.pulse".to_owned(),
+                "asset.bg.room".to_owned(),
+                "asset.ui.logo".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn static_image_asset_refs_collects_line_task_image_calls() {
+        let plan = plan_with_line_task(LineEffectRequest::Call(RuntimeCall {
+            callee: "bg".to_owned(),
+            args: vec!["@asset.bg.room".to_owned()],
+        }));
+
+        assert_eq!(static_image_asset_refs(&plan), vec!["asset.bg.room"]);
+    }
+
+    #[test]
     fn validate_referenced_bundle_image_assets_rejects_missing_static_refs() {
-        let plan = plan_with_ops(vec![image_await("asset.bg.room")]);
+        let plan = plan_with_ops(vec![
+            image_await("asset.bg.room"),
+            image_effect_call("image", "asset = @asset.ui.logo"),
+        ]);
 
         assert!(validate_referenced_bundle_image_assets(&plan, &[]).is_err());
         assert!(
-            validate_referenced_bundle_image_assets(&plan, &[image_asset("asset.bg.room")]).is_ok()
+            validate_referenced_bundle_image_assets(
+                &plan,
+                &[image_asset("asset.bg.room"), image_asset("asset.ui.logo")]
+            )
+            .is_ok()
         );
     }
 }

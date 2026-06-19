@@ -64,8 +64,13 @@ static or animated, and can resolve its encoded bytes without filesystem I/O or
 source lowering. Decode remains adapter work through `arcweft-image`. The CLI
 bundler now populates this section from `.arcweft/asset` PNG/JPEG/GIF/WebP
 files while preserving relative virtual paths and avoiding host path leakage.
-`arcw bundle` also validates statically known `asset.image(@asset.id)` and
-`asset.image("asset.id")` runtime-plan references against `image_assets[]`.
+`arcw bundle` also validates statically known `asset.image(@asset.id)` /
+`asset.image("asset.id")` host-task references and presentation runtime calls
+such as `bg(@asset.id)`, `image(@asset.id, ...)`, and
+`image(asset = @asset.id, ...)` against `image_assets[]`. The validation walks
+flow ops, await pending effects, and line-task effect graphs so source-level
+presentation images cannot silently refer to assets that were omitted from the
+bundle.
 `arcw run-bundle` validates the encoded image asset records before
 materializing the bundle workspace, so broken image asset records fail before
 bytecode execution.
@@ -188,8 +193,9 @@ same alpha-shaped geometry as color image capture.
 ## Required Follow-up Cuts
 
 1. Add explicit source/DSL asset declaration syntax when the language design
-   settles it; static `asset.image(...)` references are already checked against
-   bundle image asset ids.
+   settles it; static `asset.image(...)`, `bg(...)`, and bounded `image(...)`
+   references are already checked against bundle image asset ids when they are
+   statically known.
 2. Generalize the source-level image surface from the current `bg(...)` and
    bounded `image(...)` calls into declared image objects with transforms,
    hit-test proxies, and lifecycle semantics. Depth, semantic actions, and
