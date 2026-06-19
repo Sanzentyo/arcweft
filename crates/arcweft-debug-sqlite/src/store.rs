@@ -1,17 +1,18 @@
 use crate::encoding::{VectorBlobError, decode_f32_le, encode_f32_le};
 use arcweft_agent_protocol::ids::{AgentRunId, IdentifierError, PublicId, SessionId, StableHash};
 use arcweft_debug_model::{
-    chunk::{ChunkId, DebugChunk, PrivacyClass},
+    chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor},
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
     event::DebugEvent,
     graph::{DebugGraphEdge, DebugGraphSymbol},
     history::DebugHistoryEntry,
-    rag::{SearchChannel, SearchHit},
+    rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
     sink::DebugEventSink,
 };
 use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use thiserror::Error;
 
@@ -34,6 +35,12 @@ pub enum DebugStoreError {
     IntegerOverflow(&'static str),
     #[error("invalid privacy class stored in debug database: {0}")]
     InvalidPrivacyClass(String),
+    #[error("invalid chunk source kind stored in debug database: {0}")]
+    InvalidChunkSourceKind(String),
+    #[error("invalid RAG search channel stored in debug database: {0}")]
+    InvalidSearchChannel(String),
+    #[error("RAG query is not indexed: {0}")]
+    RagQueryNotIndexed(String),
     #[error(transparent)]
     VectorSearch(#[from] VectorSearchError),
     #[error(transparent)]
@@ -61,6 +68,14 @@ pub struct DebugTimelineEvent {
     pub event_kind: String,
     pub payload: serde_json::Value,
     pub privacy: PrivacyClass,
+    pub created_unix_ms: i64,
+}
+
+/// One persisted RAG query audit reconstructed from `rag_queries` and selected hits.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DebugRagQueryAudit {
+    pub pack: RagContextPack,
+    pub status: String,
     pub created_unix_ms: i64,
 }
 
@@ -850,6 +865,193 @@ impl DebugStore {
         Ok(events)
     }
 
+    pub fn record_rag_context_pack(
+        &self,
+        pack: &RagContextPack,
+        session_id: Option<&SessionId>,
+        run_id: Option<&AgentRunId>,
+        model: Option<&EmbeddingModelDescriptor>,
+        status: &str,
+        created_unix_ms: i64,
+    ) -> Result<(), DebugStoreError> {
+        let program_id =
+            self.upsert_program(&pack.query.program_hash, None, None, created_unix_ms)?;
+        let query_hash = &pack.query.query_id;
+        let policy = serde_json::json!({
+            "schema_version": pack.schema_version,
+            "program_hash": pack.query.program_hash.as_str(),
+            "roots": pack
+                .query
+                .roots
+                .iter()
+                .map(PublicId::as_str)
+                .collect::<Vec<_>>(),
+            "graph_depth": pack.query.graph_depth,
+            "limit": pack.query.limit,
+            "max_context_bytes": pack.query.max_context_bytes,
+            "truncated": pack.truncated,
+        });
+        self.connection.execute(
+            "INSERT INTO rag_queries(
+               query_id, program_id, session_id, run_id, query_text, query_hash,
+               model_id, model_revision, policy_json, status, created_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(query_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               session_id = excluded.session_id,
+               run_id = excluded.run_id,
+               query_text = excluded.query_text,
+               query_hash = excluded.query_hash,
+               model_id = excluded.model_id,
+               model_revision = excluded.model_revision,
+               policy_json = excluded.policy_json,
+               status = excluded.status,
+               created_unix_ms = excluded.created_unix_ms",
+            params![
+                &pack.query.query_id,
+                program_id,
+                session_id.map(SessionId::as_str),
+                run_id.map(AgentRunId::as_str),
+                &pack.query.text,
+                query_hash,
+                model.map(|value| value.model_id.as_str()),
+                model.map(|value| value.model_revision.as_str()),
+                serde_json::to_string(&policy)?,
+                status,
+                created_unix_ms,
+            ],
+        )?;
+        self.connection.execute(
+            "DELETE FROM rag_query_hits WHERE query_id = ?1",
+            [&pack.query.query_id],
+        )?;
+        for (index, item) in pack.items.iter().enumerate() {
+            let channel_rank = sqlite_i64(
+                u64::try_from(index + 1)
+                    .map_err(|_| DebugStoreError::IntegerOverflow("rag_query_hits.rank"))?,
+                "rag_query_hits.rank",
+            )?;
+            let explanation = serde_json::json!({
+                "title": item.title,
+                "kind": item.kind.as_str(),
+                "body_bytes": item.body.len(),
+                "entity_ids": item
+                    .entity_ids
+                    .iter()
+                    .map(PublicId::as_str)
+                    .collect::<Vec<_>>(),
+                "source_anchor": item.source_anchor,
+            });
+            for channel in &item.channels {
+                self.connection.execute(
+                    "INSERT INTO rag_query_hits(
+                       query_id, chunk_id, channel, channel_rank, channel_score,
+                       fused_score, selected, explanation_json
+                     ) VALUES (?1, ?2, ?3, ?4, NULL, ?5, 1, ?6)
+                     ON CONFLICT(query_id, chunk_id, channel) DO UPDATE SET
+                       channel_rank = excluded.channel_rank,
+                       channel_score = excluded.channel_score,
+                       fused_score = excluded.fused_score,
+                       selected = excluded.selected,
+                       explanation_json = excluded.explanation_json",
+                    params![
+                        &pack.query.query_id,
+                        item.chunk_id.as_str(),
+                        search_channel_label(*channel),
+                        channel_rank,
+                        item.fused_score,
+                        serde_json::to_string(&explanation)?,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn rag_query_audit_with_max_privacy(
+        &self,
+        query_id: &str,
+        max_privacy: PrivacyClass,
+    ) -> Result<DebugRagQueryAudit, DebugStoreError> {
+        let row = self.rag_query_row(query_id)?;
+        let policy = serde_json::from_str::<serde_json::Value>(&row.policy_json)?;
+        let query = rag_query_from_audit_row(query_id, &row, &policy)?;
+        let rows = self.selected_rag_hit_rows(query_id, max_privacy)?;
+        let (items, truncated) = rag_context_items_from_hit_rows(&query, &policy, rows)?;
+        Ok(DebugRagQueryAudit {
+            pack: RagContextPack {
+                schema_version: rag_policy_u32(&policy, "schema_version", 1)?,
+                query,
+                items,
+                truncated,
+            },
+            status: row.status,
+            created_unix_ms: row.created_unix_ms,
+        })
+    }
+
+    fn rag_query_row(&self, query_id: &str) -> Result<RagQueryRow, DebugStoreError> {
+        self.connection
+            .query_row(
+                "SELECT q.query_text, p.program_hash, q.policy_json, q.status, q.created_unix_ms
+                 FROM rag_queries AS q
+                 LEFT JOIN programs AS p ON p.program_id = q.program_id
+                 WHERE q.query_id = ?1",
+                [query_id],
+                |row| {
+                    Ok(RagQueryRow {
+                        query_text: row.get(0)?,
+                        program_hash: row.get(1)?,
+                        policy_json: row.get(2)?,
+                        status: row.get(3)?,
+                        created_unix_ms: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| DebugStoreError::RagQueryNotIndexed(query_id.to_owned()))
+    }
+
+    fn selected_rag_hit_rows(
+        &self,
+        query_id: &str,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<RagHitRow>, DebugStoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT c.chunk_id, c.source_kind, c.title, c.body, h.fused_score,
+                    c.entity_ids_json, c.source_path, c.start_byte, c.end_byte,
+                    h.channel, h.channel_rank
+             FROM rag_query_hits AS h
+             JOIN chunks AS c ON c.chunk_id = h.chunk_id
+             WHERE h.query_id = ?1
+               AND h.selected = 1
+               AND (
+                 c.privacy_class = 'public'
+                 OR (?2 IN ('project', 'sensitive', 'secret') AND c.privacy_class = 'project')
+                 OR (?2 IN ('sensitive', 'secret') AND c.privacy_class = 'sensitive')
+                 OR (?2 = 'secret' AND c.privacy_class = 'secret')
+               )
+             ORDER BY h.fused_score DESC, h.channel_rank, c.chunk_id, h.channel",
+        )?;
+        let rows = statement.query_map(params![query_id, max_privacy.as_str()], |row| {
+            Ok(RagHitRow {
+                chunk_id: row.get(0)?,
+                source_kind: row.get(1)?,
+                title: row.get(2)?,
+                body: row.get(3)?,
+                fused_score: row.get(4)?,
+                entity_ids_json: row.get(5)?,
+                source_path: row.get(6)?,
+                start_byte: row.get(7)?,
+                end_byte: row.get(8)?,
+                channel: row.get(9)?,
+                channel_rank: row.get(10)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DebugStoreError::from)
+    }
+
     pub fn upsert_embedding(&self, embedding: &StoredEmbedding) -> Result<(), DebugStoreError> {
         if embedding.values.len() != embedding.model.dimensions as usize {
             return Err(DebugStoreError::StoredDimensionMismatch);
@@ -1117,6 +1319,241 @@ fn debug_event_payload_privacy(payload: &serde_json::Value) -> PrivacyClass {
         .unwrap_or(PrivacyClass::Project)
 }
 
+const fn search_channel_label(channel: SearchChannel) -> &'static str {
+    match channel {
+        SearchChannel::ExactEntity => "exact_entity",
+        SearchChannel::Lexical => "lexical",
+        SearchChannel::Vector => "vector",
+        SearchChannel::Graph => "graph",
+        SearchChannel::History => "history",
+        SearchChannel::Diagnostics => "diagnostics",
+        SearchChannel::Trace => "trace",
+        SearchChannel::Summary => "summary",
+    }
+}
+
+fn parse_search_channel(value: &str) -> Option<SearchChannel> {
+    match value {
+        "exact_entity" => Some(SearchChannel::ExactEntity),
+        "lexical" => Some(SearchChannel::Lexical),
+        "vector" => Some(SearchChannel::Vector),
+        "graph" => Some(SearchChannel::Graph),
+        "history" => Some(SearchChannel::History),
+        "diagnostics" => Some(SearchChannel::Diagnostics),
+        "trace" => Some(SearchChannel::Trace),
+        "summary" => Some(SearchChannel::Summary),
+        _ => None,
+    }
+}
+
+fn parse_chunk_source_kind(value: &str) -> Option<ChunkSourceKind> {
+    match value {
+        "source" => Some(ChunkSourceKind::Source),
+        "symbol" => Some(ChunkSourceKind::Symbol),
+        "graph_summary" => Some(ChunkSourceKind::GraphSummary),
+        "diagnostic" => Some(ChunkSourceKind::Diagnostic),
+        "test_result" => Some(ChunkSourceKind::TestResult),
+        "agent_trace" => Some(ChunkSourceKind::AgentTrace),
+        "history" => Some(ChunkSourceKind::History),
+        "documentation" => Some(ChunkSourceKind::Documentation),
+        _ => None,
+    }
+}
+
+fn rag_policy_roots(policy: &serde_json::Value) -> Result<Vec<PublicId>, DebugStoreError> {
+    policy
+        .get("roots")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|value| PublicId::new(value.to_owned()).map_err(DebugStoreError::from))
+        .collect()
+}
+
+fn rag_query_from_audit_row(
+    query_id: &str,
+    row: &RagQueryRow,
+    policy: &serde_json::Value,
+) -> Result<RagQuery, DebugStoreError> {
+    let program_hash = row
+        .program_hash
+        .clone()
+        .or_else(|| {
+            policy
+                .get("program_hash")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .ok_or_else(|| DebugStoreError::RagQueryNotIndexed(query_id.to_owned()))?;
+    Ok(RagQuery {
+        query_id: query_id.to_owned(),
+        text: row.query_text.clone(),
+        program_hash: StableHash::new(program_hash)?,
+        roots: rag_policy_roots(policy)?,
+        graph_depth: rag_policy_u32(policy, "graph_depth", 0)?,
+        limit: rag_policy_usize(policy, "limit", usize::MAX)?,
+        max_context_bytes: rag_policy_usize(policy, "max_context_bytes", usize::MAX)?,
+    })
+}
+
+fn rag_context_items_from_hit_rows(
+    query: &RagQuery,
+    policy: &serde_json::Value,
+    rows: Vec<RagHitRow>,
+) -> Result<(Vec<RagContextItem>, bool), DebugStoreError> {
+    let (mut grouped, order) = grouped_rag_hit_rows(rows)?;
+    let mut used_bytes = 0usize;
+    let mut truncated = policy
+        .get("truncated")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut items = Vec::new();
+    for chunk_id in order {
+        let Some(accumulator) = grouped.remove(&chunk_id) else {
+            continue;
+        };
+        if items.len() >= query.limit {
+            truncated = true;
+            break;
+        }
+        let remaining = query.max_context_bytes.saturating_sub(used_bytes);
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let (item, body_truncated) =
+            rag_context_item_from_accumulator(chunk_id, accumulator, remaining)?;
+        truncated |= body_truncated;
+        used_bytes = used_bytes.saturating_add(item.body.len());
+        items.push(item);
+        if body_truncated {
+            break;
+        }
+    }
+    Ok((items, truncated))
+}
+
+fn grouped_rag_hit_rows(
+    rows: Vec<RagHitRow>,
+) -> Result<(BTreeMap<String, RagHitAccumulator>, Vec<String>), DebugStoreError> {
+    let mut grouped = BTreeMap::<String, RagHitAccumulator>::new();
+    let mut order = Vec::<String>::new();
+    for row in rows {
+        let channel = parse_search_channel(&row.channel)
+            .ok_or_else(|| DebugStoreError::InvalidSearchChannel(row.channel.clone()))?;
+        let entry = grouped.entry(row.chunk_id.clone()).or_insert_with(|| {
+            order.push(row.chunk_id.clone());
+            RagHitAccumulator {
+                source_kind: row.source_kind.clone(),
+                title: row.title.clone(),
+                body: row.body.clone(),
+                fused_score: row.fused_score,
+                entity_ids_json: row.entity_ids_json.clone(),
+                source_path: row.source_path.clone(),
+                start_byte: row.start_byte,
+                end_byte: row.end_byte,
+                channel_rank: row.channel_rank,
+                channels: BTreeSet::new(),
+            }
+        });
+        entry.channel_rank = entry.channel_rank.min(row.channel_rank);
+        entry.channels.insert(channel);
+    }
+    Ok((grouped, order))
+}
+
+fn rag_context_item_from_accumulator(
+    chunk_id: String,
+    accumulator: RagHitAccumulator,
+    max_body_bytes: usize,
+) -> Result<(RagContextItem, bool), DebugStoreError> {
+    let (body, body_truncated) = truncate_utf8(&accumulator.body, max_body_bytes);
+    let kind = parse_chunk_source_kind(&accumulator.source_kind)
+        .ok_or_else(|| DebugStoreError::InvalidChunkSourceKind(accumulator.source_kind.clone()))?;
+    let entity_ids = serde_json::from_str::<Vec<String>>(&accumulator.entity_ids_json)?
+        .into_iter()
+        .map(PublicId::new)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((
+        RagContextItem {
+            chunk_id: ChunkId::new(chunk_id),
+            kind,
+            title: accumulator.title,
+            body,
+            fused_score: accumulator.fused_score,
+            channels: accumulator.channels,
+            entity_ids,
+            source_anchor: source_anchor_from_row(
+                accumulator.source_path,
+                accumulator.start_byte,
+                accumulator.end_byte,
+            )?,
+        },
+        body_truncated,
+    ))
+}
+
+fn rag_policy_u32(
+    policy: &serde_json::Value,
+    key: &'static str,
+    default: u32,
+) -> Result<u32, DebugStoreError> {
+    policy
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| u32::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(key)))
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn rag_policy_usize(
+    policy: &serde_json::Value,
+    key: &'static str,
+    default: usize,
+) -> Result<usize, DebugStoreError> {
+    policy
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| usize::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(key)))
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn source_anchor_from_row(
+    path: Option<String>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+) -> Result<Option<SourceAnchor>, DebugStoreError> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let Some(start_byte) = start_byte else {
+        return Ok(None);
+    };
+    let Some(end_byte) = end_byte else {
+        return Ok(None);
+    };
+    Ok(Some(SourceAnchor {
+        path,
+        start_byte: u64::try_from(start_byte)
+            .map_err(|_| DebugStoreError::IntegerOverflow("chunks.start_byte"))?,
+        end_byte: u64::try_from(end_byte)
+            .map_err(|_| DebugStoreError::IntegerOverflow("chunks.end_byte"))?,
+    }))
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_owned(), false);
+    }
+    let mut end = max_bytes.min(value.len());
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_owned(), true)
+}
+
 fn sqlite_i64(value: u64, column: &'static str) -> Result<i64, DebugStoreError> {
     i64::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(column))
 }
@@ -1148,6 +1585,44 @@ struct GraphSearchRow {
     to_qualified_name: Option<String>,
     to_kind: String,
     to_summary: String,
+}
+
+#[derive(Debug)]
+struct RagQueryRow {
+    query_text: String,
+    program_hash: Option<String>,
+    policy_json: String,
+    status: String,
+    created_unix_ms: i64,
+}
+
+#[derive(Debug)]
+struct RagHitRow {
+    chunk_id: String,
+    source_kind: String,
+    title: String,
+    body: String,
+    fused_score: f64,
+    entity_ids_json: String,
+    source_path: Option<String>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+    channel: String,
+    channel_rank: i64,
+}
+
+#[derive(Debug)]
+struct RagHitAccumulator {
+    source_kind: String,
+    title: String,
+    body: String,
+    fused_score: f64,
+    entity_ids_json: String,
+    source_path: Option<String>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+    channel_rank: i64,
+    channels: BTreeSet<SearchChannel>,
 }
 
 fn graph_chunk_search_result(query: &str, index: usize, row: &GraphSearchRow) -> ChunkSearchResult {
@@ -1234,6 +1709,95 @@ mod tests {
 
     fn hash(value: &str) -> StableHash {
         StableHash::new(value).expect("non-empty hash")
+    }
+
+    fn seed_rag_audit_fixture(store: &DebugStore) -> RagContextPack {
+        let program_hash = hash("blake3:rag-program");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        let secret_chunk = rag_fixture_chunk(
+            "chunk:secret-rag",
+            Some(program_hash.clone()),
+            ChunkSourceKind::AgentTrace,
+            PrivacyClass::Secret,
+            "secret trace",
+            "secret body should not be returned to public readback",
+        );
+        let public_chunk = rag_fixture_chunk(
+            "chunk:public-rag",
+            Some(program_hash.clone()),
+            ChunkSourceKind::Documentation,
+            PrivacyClass::Public,
+            "public doc",
+            "public body remains visible",
+        );
+        store.upsert_chunk(&secret_chunk).expect("secret chunk");
+        store.upsert_chunk(&public_chunk).expect("public chunk");
+        RagContextPack {
+            schema_version: 1,
+            query: RagQuery {
+                query_id: "rag:query:opening".to_owned(),
+                text: "opening".to_owned(),
+                program_hash,
+                roots: vec![PublicId::new("@flow.opening").expect("root")],
+                graph_depth: 2,
+                limit: 1,
+                max_context_bytes: 1024,
+            },
+            items: vec![
+                RagContextItem {
+                    chunk_id: secret_chunk.id.clone(),
+                    kind: secret_chunk.source_kind,
+                    title: secret_chunk.title.clone(),
+                    body: secret_chunk.body.clone(),
+                    fused_score: 9.0,
+                    channels: BTreeSet::from([SearchChannel::Trace, SearchChannel::Vector]),
+                    entity_ids: secret_chunk.entity_ids.clone(),
+                    source_anchor: secret_chunk.source_anchor.clone(),
+                },
+                RagContextItem {
+                    chunk_id: public_chunk.id.clone(),
+                    kind: public_chunk.source_kind,
+                    title: public_chunk.title.clone(),
+                    body: public_chunk.body.clone(),
+                    fused_score: 1.0,
+                    channels: BTreeSet::from([SearchChannel::Lexical]),
+                    entity_ids: public_chunk.entity_ids.clone(),
+                    source_anchor: public_chunk.source_anchor.clone(),
+                },
+            ],
+            truncated: false,
+        }
+    }
+
+    fn rag_fixture_chunk(
+        id: &str,
+        program_hash: Option<StableHash>,
+        source_kind: ChunkSourceKind,
+        privacy: PrivacyClass,
+        title: &str,
+        body: &str,
+    ) -> DebugChunk {
+        DebugChunk {
+            id: ChunkId::new(id),
+            program_hash,
+            source_kind,
+            source_key: id.replace("chunk:", ""),
+            title: title.to_owned(),
+            body: body.to_owned(),
+            content_hash: hash(format!("blake3:{id}").as_str()),
+            semantic_hash: None,
+            source_anchor: (privacy == PrivacyClass::Secret).then(|| SourceAnchor {
+                path: "trace.arcwx".to_owned(),
+                start_byte: 7,
+                end_byte: 13,
+            }),
+            entity_ids: vec![PublicId::new(format!("@flow.{title}")).expect("public id")],
+            privacy,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        }
     }
 
     #[test]
@@ -1522,6 +2086,58 @@ mod tests {
         assert_eq!(events[0].sequence, 2);
         assert_eq!(events[0].privacy, PrivacyClass::Public);
         assert_eq!(events[0].payload["message"], "visible event");
+    }
+
+    #[test]
+    fn rag_query_audit_round_trips_and_filters_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let pack = seed_rag_audit_fixture(&store);
+        store
+            .record_rag_context_pack(&pack, None, None, None, "selected", 123)
+            .expect("record audit");
+
+        let public_audit = store
+            .rag_query_audit_with_max_privacy("rag:query:opening", PrivacyClass::Public)
+            .expect("public audit");
+
+        assert_eq!(public_audit.status, "selected");
+        assert_eq!(public_audit.created_unix_ms, 123);
+        assert_eq!(public_audit.pack.query.text, "opening");
+        assert_eq!(public_audit.pack.query.graph_depth, 2);
+        assert_eq!(public_audit.pack.query.roots.len(), 1);
+        assert_eq!(public_audit.pack.items.len(), 1);
+        assert_eq!(
+            public_audit.pack.items[0].chunk_id.as_str(),
+            "chunk:public-rag"
+        );
+        assert_eq!(
+            public_audit.pack.items[0].channels,
+            BTreeSet::from([SearchChannel::Lexical])
+        );
+        assert!(!public_audit.pack.items[0].body.contains("secret"));
+
+        let secret_audit = store
+            .rag_query_audit_with_max_privacy("rag:query:opening", PrivacyClass::Secret)
+            .expect("secret audit");
+
+        assert_eq!(secret_audit.pack.items.len(), 1);
+        assert_eq!(
+            secret_audit.pack.items[0].chunk_id.as_str(),
+            "chunk:secret-rag"
+        );
+        assert_eq!(
+            secret_audit.pack.items[0].channels,
+            BTreeSet::from([SearchChannel::Trace, SearchChannel::Vector])
+        );
+        assert_eq!(
+            secret_audit.pack.items[0]
+                .source_anchor
+                .as_ref()
+                .unwrap()
+                .path,
+            "trace.arcwx"
+        );
+        assert_eq!(store.stats().expect("stats").rag_queries, 1);
     }
 
     #[test]

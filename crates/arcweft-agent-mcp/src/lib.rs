@@ -593,13 +593,23 @@ fn agent_rag_explain_tool_descriptor() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "arcweft.rag.explain".to_owned(),
         title: Some("Explain Arcweft RAG Context".to_owned()),
-        description: "Explains the latest cached RagContextPack, or a cached pack selected by query_id, without inlining large item bodies.".to_owned(),
+        description: "Explains the latest cached RagContextPack, or a cached/debug-store persisted pack selected by query_id, without inlining large item bodies.".to_owned(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "query_id": {
                     "type": "string",
-                    "description": "Optional cached RAG query id. Defaults to the latest arcweft.rag.query result."
+                    "description": "Optional cached or persisted RAG query id. Defaults to the latest arcweft.rag.query result."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database used when query_id is not cached. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed when reading persisted query hits from the debug store."
                 }
             }
         }),
@@ -610,13 +620,17 @@ fn agent_rag_context_read_tool_descriptor() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "arcweft.rag.context.read".to_owned(),
         title: Some("Read Arcweft RAG Context Item".to_owned()),
-        description: "Reads one selected context item body from a cached RagContextPack by chunk_id, with an explicit byte cap.".to_owned(),
+        description: "Reads one selected context item body from a cached or debug-store persisted RagContextPack by chunk_id, with an explicit byte cap.".to_owned(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "query_id": {
                     "type": "string",
-                    "description": "Optional cached RAG query id. Defaults to the latest arcweft.rag.query result."
+                    "description": "Optional cached or persisted RAG query id. Defaults to the latest arcweft.rag.query result."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database used when query_id is not cached. Defaults to .arcweft/cache/agent-debug.sqlite3."
                 },
                 "chunk_id": {
                     "type": "string",
@@ -627,6 +641,12 @@ fn agent_rag_context_read_tool_descriptor() -> McpToolDescriptor {
                     "minimum": 1,
                     "default": 8192,
                     "description": "Maximum UTF-8 bytes of the item body to return."
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed when reading persisted query hits from the debug store."
                 }
             },
             "required": ["chunk_id"]
