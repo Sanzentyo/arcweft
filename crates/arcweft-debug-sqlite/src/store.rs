@@ -78,6 +78,14 @@ pub struct DebugStoreReindexReport {
     pub chunks_indexed: u64,
 }
 
+/// Blob row metadata needed by CLI-side byte store lifecycle operations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugStoreBlobRecord {
+    pub blob_hash: String,
+    pub byte_len: u64,
+    pub relative_path: String,
+}
+
 /// Rebuildable `SQLite` index. The connection should be owned by one writer.
 pub struct DebugStore {
     connection: Connection,
@@ -158,6 +166,18 @@ impl DebugStore {
             [],
         )?;
         u64::try_from(deleted).map_err(|_| DebugStoreError::IntegerOverflow("blobs.deleted"))
+    }
+
+    pub fn blob_records(&self) -> Result<Vec<DebugStoreBlobRecord>, DebugStoreError> {
+        self.blob_records_where("")
+    }
+
+    pub fn unreferenced_blob_records(&self) -> Result<Vec<DebugStoreBlobRecord>, DebugStoreError> {
+        self.blob_records_where(
+            "WHERE NOT EXISTS (
+               SELECT 1 FROM captures WHERE captures.blob_hash = blobs.blob_hash
+             )",
+        )
     }
 
     pub fn upsert_program(
@@ -433,6 +453,27 @@ impl DebugStore {
         }
         Ok(invalid)
     }
+
+    fn blob_records_where(
+        &self,
+        clause: &'static str,
+    ) -> Result<Vec<DebugStoreBlobRecord>, DebugStoreError> {
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT blob_hash, byte_len, relative_path FROM blobs {clause} ORDER BY blob_hash"
+        ))?;
+        let rows = statement.query_map([], |row| {
+            let byte_len = row.get::<_, i64>(1)?;
+            let byte_len = u64::try_from(byte_len)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, byte_len))?;
+            Ok(DebugStoreBlobRecord {
+                blob_hash: row.get(0)?,
+                byte_len,
+                relative_path: row.get(2)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DebugStoreError::from)
+    }
 }
 
 impl DebugEventSink for DebugStore {
@@ -616,6 +657,18 @@ mod tests {
             .delete_unreferenced_blobs()
             .expect("delete unreferenced");
         assert_eq!(deleted, 1);
+        assert_eq!(
+            store.unreferenced_blob_records().expect("unreferenced"),
+            Vec::new()
+        );
+        assert_eq!(
+            store.blob_records().expect("blob records"),
+            vec![DebugStoreBlobRecord {
+                blob_hash: "blob:kept".to_owned(),
+                byte_len: 1,
+                relative_path: "blake3/kept".to_owned(),
+            }]
+        );
         let stats = store.stats().expect("stats");
         assert_eq!(stats.blobs, 1);
         let validation = store.validate().expect("validate");

@@ -1,10 +1,11 @@
 use super::shared::print_json;
 use arcweft_debug_sqlite::store::{
-    DebugStore, DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport,
+    DebugStore, DebugStoreBlobRecord, DebugStoreForeignKeyViolation, DebugStoreStats,
+    DebugStoreValidationReport,
 };
 use clap::{Args, Subcommand};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 const DEFAULT_DEBUG_DB_PATH: &str = ".arcweft/cache/agent-debug.sqlite3";
@@ -30,6 +31,8 @@ pub(super) enum DebugDbCommand {
 pub(super) struct DebugDbOptions {
     #[arg(long, default_value = DEFAULT_DEBUG_DB_PATH)]
     path: PathBuf,
+    #[arg(long = "blob-dir")]
+    blob_dir: Option<PathBuf>,
     #[arg(long)]
     json: bool,
 }
@@ -69,12 +72,14 @@ struct DebugDbStatsReport {
 #[derive(serde::Serialize)]
 struct DebugDbValidationCliReport {
     path: String,
+    blob_dir: Option<String>,
     user_version: u32,
     valid: bool,
     integrity_messages: Vec<String>,
     foreign_key_violations: Vec<DebugDbForeignKeyViolationReport>,
     missing_capture_blob_refs: u64,
     invalid_embedding_blobs: u64,
+    blob_files: Option<DebugDbBlobFileValidationReport>,
     stats: DebugDbStatsReport,
 }
 
@@ -96,9 +101,31 @@ struct DebugDbReindexReport {
 #[derive(serde::Serialize)]
 struct DebugDbDeleteReport {
     path: String,
+    blob_dir: Option<String>,
     user_version: u32,
     deleted_unreferenced_blobs: u64,
+    deleted_unreferenced_blob_files: u64,
+    deleted_unreferenced_blob_file_bytes: u64,
+    missing_unreferenced_blob_files: u64,
+    unsafe_unreferenced_blob_paths: u64,
     validation: Option<DebugDbValidationCliReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbBlobFileValidationReport {
+    root: String,
+    checked: u64,
+    missing: u64,
+    byte_len_mismatches: u64,
+    unsafe_relative_paths: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DebugDbBlobFileDeleteReport {
+    deleted: u64,
+    bytes: u64,
+    missing: u64,
+    unsafe_paths: u64,
 }
 
 pub(super) fn debug_command(command: DebugCommand) -> Result<(), ExitCode> {
@@ -143,7 +170,14 @@ fn debug_db_validate_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
         );
         ExitCode::FAILURE
     })?;
-    let report = validation_report(path, user_version, stats, validation);
+    let report = validation_report(&store, path, user_version, stats, validation, options)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to validate debug blob files for {}: {error}",
+                options.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
     if options.json {
         return print_json(&report);
     }
@@ -159,6 +193,15 @@ fn debug_db_validate_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
         report.missing_capture_blob_refs,
         report.invalid_embedding_blobs
     );
+    if let Some(blob_files) = &report.blob_files {
+        println!(
+            "blob_files: checked={}, missing={}, byte_len_mismatches={}, unsafe_relative_paths={}",
+            blob_files.checked,
+            blob_files.missing,
+            blob_files.byte_len_mismatches,
+            blob_files.unsafe_relative_paths
+        );
+    }
     Ok(())
 }
 
@@ -192,6 +235,17 @@ fn debug_db_delete_command(options: &DebugDbDeleteOptions) -> Result<(), ExitCod
         return Err(ExitCode::from(2));
     }
     let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let unreferenced_blob_records = if options.db.blob_dir.is_some() {
+        store.unreferenced_blob_records().map_err(|error| {
+            eprintln!(
+                "error: failed to list unreferenced blob records from debug database {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?
+    } else {
+        Vec::new()
+    };
     let deleted_unreferenced_blobs = store.delete_unreferenced_blobs().map_err(|error| {
         eprintln!(
             "error: failed to delete unreferenced blob records from debug database {}: {error}",
@@ -199,14 +253,28 @@ fn debug_db_delete_command(options: &DebugDbDeleteOptions) -> Result<(), ExitCod
         );
         ExitCode::FAILURE
     })?;
+    let deleted_files = if let Some(blob_dir) = &options.db.blob_dir {
+        delete_blob_files(blob_dir, &unreferenced_blob_records)?
+    } else {
+        DebugDbBlobFileDeleteReport::default()
+    };
     let validation = options
         .validate
         .then(|| post_delete_validation(&store, path.clone(), user_version, &options.db))
         .transpose()?;
     let report = DebugDbDeleteReport {
         path,
+        blob_dir: options
+            .db
+            .blob_dir
+            .as_ref()
+            .map(|path| path.display().to_string()),
         user_version,
         deleted_unreferenced_blobs,
+        deleted_unreferenced_blob_files: deleted_files.deleted,
+        deleted_unreferenced_blob_file_bytes: deleted_files.bytes,
+        missing_unreferenced_blob_files: deleted_files.missing,
+        unsafe_unreferenced_blob_paths: deleted_files.unsafe_paths,
         validation,
     };
     if options.db.json {
@@ -216,6 +284,15 @@ fn debug_db_delete_command(options: &DebugDbDeleteOptions) -> Result<(), ExitCod
         "{}: deleted {} unreferenced blob records",
         report.path, report.deleted_unreferenced_blobs
     );
+    if report.blob_dir.is_some() {
+        println!(
+            "blob files: deleted={}, bytes={}, missing={}, unsafe_paths={}",
+            report.deleted_unreferenced_blob_files,
+            report.deleted_unreferenced_blob_file_bytes,
+            report.missing_unreferenced_blob_files,
+            report.unsafe_unreferenced_blob_paths
+        );
+    }
     if let Some(validation) = &report.validation {
         println!(
             "validation: {}",
@@ -245,12 +322,21 @@ fn post_delete_validation(
         );
         ExitCode::FAILURE
     })?;
-    Ok(validation_report(
+    validation_report(
+        store,
         path,
         user_version,
         stats_report(stats),
         validation,
-    ))
+        options,
+    )
+    .map_err(|error| {
+        eprintln!(
+            "error: failed to validate debug blob files for {}: {error}",
+            options.path.display()
+        );
+        ExitCode::FAILURE
+    })
 }
 
 fn open_debug_db(options: &DebugDbOptions) -> Result<DebugDbReport, ExitCode> {
@@ -303,17 +389,33 @@ fn open_debug_store(
 }
 
 fn validation_report(
+    store: &DebugStore,
     path: String,
     user_version: u32,
     stats: DebugDbStatsReport,
     validation: DebugStoreValidationReport,
-) -> DebugDbValidationCliReport {
+    options: &DebugDbOptions,
+) -> Result<DebugDbValidationCliReport, String> {
+    let blob_files = options
+        .blob_dir
+        .as_ref()
+        .map(|blob_dir| validate_blob_files(store, blob_dir))
+        .transpose()?;
     let valid = validation.integrity_messages.is_empty()
         && validation.foreign_key_violations.is_empty()
         && validation.missing_capture_blob_refs == 0
-        && validation.invalid_embedding_blobs == 0;
-    DebugDbValidationCliReport {
+        && validation.invalid_embedding_blobs == 0
+        && blob_files.as_ref().is_none_or(|blob_files| {
+            blob_files.missing == 0
+                && blob_files.byte_len_mismatches == 0
+                && blob_files.unsafe_relative_paths == 0
+        });
+    Ok(DebugDbValidationCliReport {
         path,
+        blob_dir: options
+            .blob_dir
+            .as_ref()
+            .map(|path| path.display().to_string()),
         user_version,
         valid,
         integrity_messages: validation.integrity_messages,
@@ -324,8 +426,99 @@ fn validation_report(
             .collect(),
         missing_capture_blob_refs: validation.missing_capture_blob_refs,
         invalid_embedding_blobs: validation.invalid_embedding_blobs,
+        blob_files,
         stats,
+    })
+}
+
+fn validate_blob_files(
+    store: &DebugStore,
+    blob_dir: &Path,
+) -> Result<DebugDbBlobFileValidationReport, String> {
+    let records = store
+        .blob_records()
+        .map_err(|error| format!("failed to list debug blob records: {error}"))?;
+    let mut report = DebugDbBlobFileValidationReport {
+        root: blob_dir.display().to_string(),
+        checked: 0,
+        missing: 0,
+        byte_len_mismatches: 0,
+        unsafe_relative_paths: 0,
+    };
+    for record in records {
+        report.checked = report.checked.saturating_add(1);
+        let Some(path) = checked_blob_file_path(blob_dir, &record.relative_path) else {
+            report.unsafe_relative_paths = report.unsafe_relative_paths.saturating_add(1);
+            continue;
+        };
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                report.missing = report.missing.saturating_add(1);
+                continue;
+            }
+            Err(error) => {
+                return Err(format!("failed to stat {}: {error}", path.display()));
+            }
+        };
+        if metadata.len() != record.byte_len {
+            report.byte_len_mismatches = report.byte_len_mismatches.saturating_add(1);
+        }
     }
+    Ok(report)
+}
+
+fn delete_blob_files(
+    blob_dir: &Path,
+    records: &[DebugStoreBlobRecord],
+) -> Result<DebugDbBlobFileDeleteReport, ExitCode> {
+    let mut report = DebugDbBlobFileDeleteReport::default();
+    for record in records {
+        let Some(path) = checked_blob_file_path(blob_dir, &record.relative_path) else {
+            report.unsafe_paths = report.unsafe_paths.saturating_add(1);
+            continue;
+        };
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                report.missing = report.missing.saturating_add(1);
+                continue;
+            }
+            Err(error) => {
+                eprintln!(
+                    "error: failed to stat blob file {}: {error}",
+                    path.display()
+                );
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        fs::remove_file(&path).map_err(|error| {
+            eprintln!(
+                "error: failed to delete blob file {}: {error}",
+                path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+        report.deleted = report.deleted.saturating_add(1);
+        report.bytes = report.bytes.saturating_add(metadata.len());
+    }
+    Ok(report)
+}
+
+fn checked_blob_file_path(root: &Path, relative_path: &str) -> Option<PathBuf> {
+    let relative = Path::new(relative_path);
+    let mut checked = PathBuf::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => checked.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    if checked.as_os_str().is_empty() {
+        return None;
+    }
+    Some(root.join(checked))
 }
 
 fn foreign_key_violation_report(
@@ -352,5 +545,62 @@ fn stats_report(stats: DebugStoreStats) -> DebugDbStatsReport {
         chunks: stats.chunks,
         embeddings: stats.embeddings,
         rag_queries: stats.rag_queries,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_blob_file_path_rejects_paths_outside_blob_dir() {
+        let root = Path::new("blob-root");
+
+        assert_eq!(
+            checked_blob_file_path(root, "blake3/abc"),
+            Some(root.join("blake3").join("abc"))
+        );
+        assert!(checked_blob_file_path(root, "../escape").is_none());
+        assert!(checked_blob_file_path(root, "/absolute").is_none());
+        assert!(checked_blob_file_path(root, "").is_none());
+    }
+
+    #[test]
+    fn delete_blob_files_removes_only_safe_existing_files() {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-debug-blob-delete-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("blake3")).expect("create blob dir");
+        let deleted_path = root.join("blake3").join("deleted");
+        fs::write(&deleted_path, [1_u8, 2, 3]).expect("write blob");
+
+        let records = vec![
+            DebugStoreBlobRecord {
+                blob_hash: "blob:deleted".to_owned(),
+                byte_len: 3,
+                relative_path: "blake3/deleted".to_owned(),
+            },
+            DebugStoreBlobRecord {
+                blob_hash: "blob:missing".to_owned(),
+                byte_len: 1,
+                relative_path: "blake3/missing".to_owned(),
+            },
+            DebugStoreBlobRecord {
+                blob_hash: "blob:unsafe".to_owned(),
+                byte_len: 1,
+                relative_path: "../unsafe".to_owned(),
+            },
+        ];
+
+        let report = delete_blob_files(&root, &records).expect("delete blob files");
+        assert_eq!(report.deleted, 1);
+        assert_eq!(report.bytes, 3);
+        assert_eq!(report.missing, 1);
+        assert_eq!(report.unsafe_paths, 1);
+        assert!(!deleted_path.exists());
+
+        fs::remove_dir_all(&root).expect("remove blob dir");
     }
 }

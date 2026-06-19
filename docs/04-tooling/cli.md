@@ -327,6 +327,12 @@ For deterministic CLI captures and native image captures,
 their `blake3:` content hash. `arcw agent script trace <file.arcwx> --blob-dir
 <dir>` validates each capture record's `blob_refs`, payload `content_hash`,
 payload `byte_len`, and stored blob bytes together.
+`arcw debug db validate --blob-dir <dir>` validates the debug-store blob index
+against byte-backed files by checking each stored `relative_path` is safe under
+the root, exists, and matches the indexed byte length. `arcw debug db delete
+--unreferenced-blobs --blob-dir <dir>` deletes unreferenced blob records and
+their corresponding safe relative files while preserving files still referenced
+by captures.
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return
