@@ -1,0 +1,7 @@
+#[agent(version = 1)]
+agent @agent.cli.run_smoke run_smoke()
+effects { agent.observe }
+{
+    observe()
+    return "done"
+}

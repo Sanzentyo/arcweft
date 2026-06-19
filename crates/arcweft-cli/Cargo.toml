@@ -9,12 +9,14 @@ repository.workspace = true
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
+arcweft-agent-runner = { path = "../arcweft-agent-runner" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-debug-sqlite = { path = "../arcweft-debug-sqlite" }
+arcweft-debug-model = { path = "../arcweft-debug-model" }
 arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-id = { path = "../arcweft-id" }
@@ -31,6 +33,7 @@ arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+arcweft-source = { path = "../arcweft-source" }
 arcweft-test = { path = "../arcweft-test" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-ui = { path = "../arcweft-ui" }

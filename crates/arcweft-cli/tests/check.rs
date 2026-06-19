@@ -25,6 +25,12 @@ static CUSTOM_BUNDLE_ADAPTER_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUSTOM_BUNDLE_ADAPTER_OUTPUT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static AGENT_MCP_STDIO_LOCK: Mutex<()> = Mutex::new(());
 
+fn workspace_path(path: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+}
+
 #[test]
 fn jit_check_json_compares_cranelift_and_vm() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -113,6 +119,32 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         json["commands"][8]["samples"][0]["math_bench"],
         serde_json::Value::Null
     );
+}
+
+#[test]
+fn agent_script_run_json_executes_cli_session_smoke() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(workspace_path(
+            "samples/agent-script/cli-run-smoke.awfagent",
+        ))
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes");
+
+    assert!(
+        output.status.success(),
+        "agent script run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 1);
+    assert_eq!(json["responses"][0]["kind"], "observation");
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {
