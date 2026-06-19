@@ -22670,6 +22670,38 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
 }
 
 #[test]
+fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let early = hit_test_image_animation_sample_at(&source_path, "image_animated_gif", "0", 10, 10);
+    let late =
+        hit_test_image_animation_sample_at(&source_path, "image_animated_gif", "0.15", 10, 10);
+
+    assert_eq!(early["status"], "ok");
+    assert_eq!(late["status"], "ok");
+    assert_eq!(early["top_object_id"], "object.image.layer.background.0.0");
+    assert_eq!(late["top_object_id"], "object.image.layer.background.0.0");
+    let early_hit = &early["hits"][0];
+    let late_hit = &late["hits"][0];
+    assert_eq!(early_hit["region"]["kind"], "object");
+    assert_eq!(late_hit["region"]["kind"], "object");
+    assert_eq!(early_hit["object"]["entity"], "image.background.default");
+    assert_eq!(late_hit["object"]["entity"], "image.background.default");
+
+    let early_ref = &early_hit["object"]["image_ref"];
+    let late_ref = &late_hit["object"]["image_ref"];
+    assert_eq!(early_ref["asset"], "asset.bg.pulse");
+    assert_eq!(late_ref["asset"], "asset.bg.pulse");
+    assert_eq!(early_ref["frame_index"], 0);
+    assert_eq!(early_ref["local_time_millis"], 0);
+    assert_eq!(late_ref["frame_index"], 1);
+    assert_eq!(late_ref["local_time_millis"], 150);
+    assert_eq!(
+        early_ref["object"], late_ref["object"],
+        "capture_time must update animated frame metadata without changing object identity"
+    );
+}
+
+#[test]
 fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =
