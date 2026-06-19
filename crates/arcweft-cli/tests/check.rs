@@ -22556,8 +22556,8 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(image_ref["object"], "image.sample.pulse_sprite");
     assert_eq!(image_ref["target"], "target.sample.pulse_sprite");
     assert_eq!(image_ref["asset"], "asset.bg.pulse");
-    assert_eq!(image_ref["frame_index"], 1);
-    assert_eq!(image_ref["local_time_millis"], 150);
+    assert_eq!(image_ref["frame_index"], 0);
+    assert_eq!(image_ref["local_time_millis"], 50);
     assert_eq!(image_ref["opacity_milli"], 500);
     assert_eq!(image_ref["intrinsic_width"], 2);
     assert_eq!(image_ref["intrinsic_height"], 1);
@@ -22575,8 +22575,8 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(bytes.len(), 360 * 180 * 4);
     assert_eq!(
         &bytes[..4],
-        &[176, 131, 11, 127],
-        "pinned animated image frame should return the active textured-quad pixel"
+        &[5, 26, 161, 127],
+        "object-local pinned playback should return the active textured-quad pixel"
     );
     assert!(
         bytes.chunks_exact(4).any(|pixel| pixel[3] == 127),
@@ -22630,8 +22630,8 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
     assert_eq!(bytes.len(), 360 * 180 * 4);
     assert_eq!(
         &bytes[..4],
-        &[176, 131, 11, 127],
-        "layer read-uri should use the same pinned animated image frame as object capture"
+        &[5, 26, 161, 127],
+        "layer read-uri should use the same object-local pinned animated frame as object capture"
     );
 }
 
@@ -22659,8 +22659,8 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     );
     let image_ref = &top_hit["object"]["image_ref"];
     assert_eq!(image_ref["asset"], "asset.bg.pulse");
-    assert_eq!(image_ref["frame_index"], 1);
-    assert_eq!(image_ref["local_time_millis"], 150);
+    assert_eq!(image_ref["frame_index"], 0);
+    assert_eq!(image_ref["local_time_millis"], 50);
     assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
 }
 
@@ -26683,7 +26683,7 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
     assert_eq!(metadata["image"]["content_pixels"], 64_800);
     let tool_bytes = mcp_raw_capture_bytes(&responses[2]);
     assert_eq!(tool_bytes.len(), 360 * 180 * 4);
-    assert_eq!(&tool_bytes[..4], &[176, 131, 11, 127]);
+    assert_eq!(&tool_bytes[..4], &[5, 26, 161, 127]);
 
     let content = &responses[3]["result"]["contents"][0];
     assert_eq!(content["uri"], layer_uri);
