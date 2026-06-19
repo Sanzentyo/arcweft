@@ -956,6 +956,30 @@ mod tests {
             observation.image_frames.get(&object.id).unwrap().rgba,
             vec![240, 180, 20, 255, 220, 30, 180, 255]
         );
+
+        let mut report = test_agent_observation_report(None);
+        report.viewport = viewport;
+        report.objects = observation.objects.clone();
+        let mut native_session =
+            arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
+        let result = agent_native_capture_image_with_frame_store(
+            &report,
+            &AgentCaptureReadRequest {
+                uri: "arcweft://session/cli/frame/2/layer.layer.foreground.rgba".to_owned(),
+                image_kind: AgentObserveImageKind::RawRgba,
+                capture_kind: AgentObserveCaptureKind::Color,
+                scope: AgentCaptureScope::Layer("layer.foreground".to_owned()),
+                page: 0,
+                capture_step: 2,
+                capture_time_seconds: 0.15,
+            },
+            &mut native_session,
+            &observation.image_frames,
+        )
+        .unwrap();
+        assert_eq!(result.image.width, 56);
+        assert_eq!(result.image.height, 78);
+        assert_eq!(&result.bytes[0..4], &[240, 180, 20, 255]);
     }
 
     #[test]
@@ -2940,6 +2964,11 @@ fn agent_native_capture_image_with_frame_store(
     image_frames: &AgentImageFrameStore,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
     if let Some(result) =
+        agent_native_image_layer_frame_capture(report, request, native_session, image_frames)?
+    {
+        return Ok(result);
+    }
+    if let Some(result) =
         agent_native_image_object_frame_capture(report, request, native_session, image_frames)?
     {
         return Ok(result);
@@ -3021,6 +3050,93 @@ fn agent_native_capture_result_from_raster(
     Ok(AgentNativeCaptureImageResult { image, bytes })
 }
 
+#[allow(clippy::cast_precision_loss)]
+fn agent_native_image_layer_frame_capture(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
+    image_frames: &AgentImageFrameStore,
+) -> Result<Option<AgentNativeCaptureImageResult>, ExitCode> {
+    let AgentCaptureScope::Layer(layer) = &request.scope else {
+        return Ok(None);
+    };
+    let image_items = report
+        .objects
+        .iter()
+        .filter(|object| {
+            object.visible
+                && agent_object_matches_layer(object, layer)
+                && matches!(object.content, AgentObservedObjectContent::Image(_))
+        })
+        .filter_map(|object| image_frames.get(&object.id).map(|frame| (object, frame)))
+        .collect::<Vec<_>>();
+    if image_items.is_empty() {
+        return Ok(None);
+    }
+
+    let viewport_width = report.viewport.width.max(1);
+    let viewport_height = report.viewport.height.max(1);
+    let crop = image_items
+        .iter()
+        .map(|(object, _)| {
+            agent_clamped_bbox_rect(
+                viewport_width,
+                viewport_height,
+                object.bbox.x,
+                object.bbox.y,
+                object.bbox.width,
+                object.bbox.height,
+            )
+        })
+        .reduce(|left, right| agent_union_rect(left, right, viewport_width, viewport_height))
+        .expect("non-empty image layer capture has crop rect");
+    let capture = match request.capture_kind {
+        AgentObserveCaptureKind::Color => {
+            let quads = image_items
+                .iter()
+                .map(|(object, frame)| agent_native_image_quad(object, frame))
+                .collect::<Vec<_>>();
+            native_session.capture_image_quads_rgba(&quads, viewport_width, viewport_height)
+        }
+        AgentObserveCaptureKind::ObjectId | AgentObserveCaptureKind::Mask => {
+            let quads = image_items
+                .iter()
+                .map(|(object, frame)| {
+                    let color = match request.capture_kind {
+                        AgentObserveCaptureKind::ObjectId => agent_object_id_color(&object.id),
+                        AgentObserveCaptureKind::Mask => [255, 255, 255, 255],
+                        AgentObserveCaptureKind::Color => unreachable!("handled above"),
+                    };
+                    arcweft_render_native::NativeImageDebugQuad {
+                        quad: agent_native_image_quad(object, frame),
+                        color,
+                    }
+                })
+                .collect::<Vec<_>>();
+            native_session.capture_image_debug_quads_rgba(&quads, viewport_width, viewport_height)
+        }
+    }
+    .map_err(|error| {
+        eprintln!("error: native image layer capture failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    let raster = AgentRasterCapture {
+        width: capture.width,
+        height: capture.height,
+        crop_origin: None,
+        composition: match request.capture_kind {
+            AgentObserveCaptureKind::Color => AgentImageComposition::Framebuffer,
+            AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
+            AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
+        },
+        background: [0, 0, 0, 0],
+        rgba: capture.rgba,
+        diagnostics: capture.diagnostics,
+    };
+    let capture = agent_crop_raster_capture(&raster, crop.0, crop.1, crop.2, crop.3);
+    agent_native_capture_result_from_raster(report, request, &capture).map(Some)
+}
+
 fn agent_native_image_object_frame_capture(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
@@ -3067,17 +3183,7 @@ fn agent_native_image_frame_capture(
         object.bbox.width,
         object.bbox.height,
     );
-    let quad = arcweft_render_native::NativeImageQuad {
-        width: frame.width,
-        height: frame.height,
-        rgba: &frame.rgba,
-        dst: arcweft_render_native::NativeImageRect {
-            x: x as f32,
-            y: y as f32,
-            width: width as f32,
-            height: height as f32,
-        },
-    };
+    let quad = agent_native_image_quad_for_rect(frame, x, y, width, height);
     let capture = match capture_kind {
         AgentObserveCaptureKind::Color => native_session.capture_image_quads_rgba(
             &[quad],
@@ -3115,6 +3221,41 @@ fn agent_native_image_frame_capture(
         diagnostics: capture.diagnostics,
     };
     Ok(agent_crop_raster_capture(&raster, x, y, width, height))
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn agent_native_image_quad<'a>(
+    object: &AgentObservedObject,
+    frame: &'a AgentStoredImageFrame,
+) -> arcweft_render_native::NativeImageQuad<'a> {
+    agent_native_image_quad_for_rect(
+        frame,
+        object.bbox.x,
+        object.bbox.y,
+        object.bbox.width,
+        object.bbox.height,
+    )
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn agent_native_image_quad_for_rect(
+    frame: &AgentStoredImageFrame,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> arcweft_render_native::NativeImageQuad<'_> {
+    arcweft_render_native::NativeImageQuad {
+        width: frame.width,
+        height: frame.height,
+        rgba: &frame.rgba,
+        dst: arcweft_render_native::NativeImageRect {
+            x: x as f32,
+            y: y as f32,
+            width: width as f32,
+            height: height as f32,
+        },
+    }
 }
 
 fn agent_native_image_object_geometry_capture(
