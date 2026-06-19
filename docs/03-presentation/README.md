@@ -9,6 +9,7 @@
 - [Game Native UI](ui-reactive.md)
 - [HTML / Servo / DOM UI](html-servo-dom.md)
 - [Vector / SVG](vector-svg.md)
+- [Image Presentation Objects](image-presentation-objects.md)
 - [Text / RichText / Typst](text-typesetting.md)
 - [Text Presentation Objects](text-presentation-objects.md)
 - [Rich Text Effects and Transforms](rich-text-effects-transforms.md)

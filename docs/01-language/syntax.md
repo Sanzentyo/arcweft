@@ -52,7 +52,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ```arcw
 goto @flow.alice_intro
-image(@asset.bg.room)
+bg(@asset.bg.room)
 #[link(Flow, @flow.alice_intro, level = .soft)]
 ```
 

@@ -270,7 +270,17 @@ Scene では layer に content を差し込む。
 scene.show(@scene.opening)
 scope {
     layer @layer.world.background {
-        image(@asset.bg.room).fit(cover)
+        image(
+            asset = @asset.bg.room,
+            id = "image.scene.room",
+            target = "target.scene",
+            layer = "layer.world.background",
+            x = 0px,
+            y = 0px,
+            width = 1280px,
+            height = 720px,
+            fit = "cover"
+        )
     }
 
     layer @layer.world.characters {
@@ -290,7 +300,7 @@ layer が省略された場合は default layer に入る。
 
 ```arcw
 scene {
-    background(image(@asset.bg.room))             // desugar: layer @layer.world.background
+    bg(@asset.bg.room)                            // writes @slot.background.default
     show(@character.alice, .normal)               // desugar: layer @layer.world.characters
     choice { ... }                                // desugar: layer @layer.ui.game
 }

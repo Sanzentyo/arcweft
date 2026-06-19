@@ -252,12 +252,21 @@ scope {
 }
 ```
 
-短く書く場合:
+現在の実装済み source surface に寄せる場合:
 
 ```arcw
 scene.show(@scene.opening)
 scope {
-    background layer @layer.background image(@asset.bg.room)
+    image(
+        asset = @asset.bg.room,
+        id = "image.scene.room",
+        layer = "layer.background",
+        x = 0px,
+        y = 0px,
+        width = 1280px,
+        height = 720px,
+        fit = "cover"
+    )
     character layer @layer.characters sprite(@asset.char.alice.default).at(center)
     ui layer @layer.dialogue TextBox(current_text())
 }

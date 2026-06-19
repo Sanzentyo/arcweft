@@ -414,7 +414,17 @@ layer @layer.modal: Modal {
 scene.show(@scene.opening)
 scope {
     layer @layer.background {
-        image(@asset.bg.room).fit(cover)
+        image(
+            asset = @asset.bg.room,
+            id = "image.scene.room",
+            target = "target.scene",
+            layer = "layer.background",
+            x = 0px,
+            y = 0px,
+            width = 1280px,
+            height = 720px,
+            fit = "cover"
+        )
     }
 
     layer @layer.characters {
