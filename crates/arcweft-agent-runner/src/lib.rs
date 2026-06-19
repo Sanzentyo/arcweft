@@ -7,14 +7,22 @@
 
 use arcweft_agent_protocol::{
     AgentResource,
-    ids::{AgentRunId, SessionId},
+    ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
         ActionResult, AgentAction, AgentHostRequest, AgentHostResponse, AgentSessionInfo,
-        CaptureRequest, CaptureResult, ObservationEnvelope, ObserveRequest, RagRequest,
-        WaitRequest,
+        CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope,
+        ObserveRequest, RagRequest, WaitRequest,
     },
     value::AgentValue,
+};
+use arcweft_bundle::{ArcweftBundle, BundleKind};
+use arcweft_core::{
+    bytecode::BytecodeProgram,
+    effect::{LineEffectRequest, RuntimeCall},
+    executor::{BytecodeVmExecutor, RuntimeExecutor},
+    plan::RuntimePlanError,
+    step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
 };
 use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
@@ -98,10 +106,26 @@ pub struct AgentRunnerConfig {
     pub created_unix_ms: i64,
 }
 
+/// Deterministic controller-bytecode execution limits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentControllerRunConfig {
+    pub max_steps: usize,
+    pub max_ops_per_step: usize,
+}
+
 /// Host-call execution report for the current vertical slice.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentHostCallReport {
     pub response: AgentHostResponse,
+    pub events_emitted: u64,
+}
+
+/// Summary returned after running one Agent controller bytecode program.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentControllerRunReport {
+    pub steps: usize,
+    pub host_calls: usize,
+    pub responses: Vec<AgentHostResponse>,
     pub events_emitted: u64,
 }
 
@@ -131,6 +155,18 @@ where
     Debug(#[source] DebugError),
     #[error("Agent RAG service failed: {0}")]
     Rag(#[source] RagError),
+    #[error("Agent controller bytecode is invalid: {0}")]
+    Bytecode(#[source] RuntimePlanError),
+    #[error("bundle is not an Agent controller bundle")]
+    NotAgentControllerBundle,
+    #[error("Agent controller bundle is missing its Agent artifact manifest")]
+    MissingAgentManifest,
+    #[error("Agent controller emitted unsupported effect: {0}")]
+    UnsupportedControllerEffect(String),
+    #[error("Agent controller failed: {0}")]
+    ControllerFailed(String),
+    #[error("Agent controller exceeded execution step budget of {max_steps}")]
+    ControllerBudgetExceeded { max_steps: usize },
     #[error("Agent wait timed out after {timeout_millis} ms")]
     WaitTimeout { timeout_millis: u64 },
 }
@@ -194,6 +230,15 @@ impl AgentRunnerConfig {
     pub const fn with_created_unix_ms(mut self, created_unix_ms: i64) -> Self {
         self.created_unix_ms = created_unix_ms;
         self
+    }
+}
+
+impl Default for AgentControllerRunConfig {
+    fn default() -> Self {
+        Self {
+            max_steps: 256,
+            max_ops_per_step: 1024,
+        }
     }
 }
 
@@ -316,6 +361,76 @@ where
         })
     }
 
+    /// Runs one compiled Agent controller bytecode program and dispatches
+    /// effect-form Agent host calls in source/runtime order.
+    ///
+    /// This slice intentionally handles calls that do not need their host
+    /// response rebound into the VM. Agent expressions such as
+    /// `let shot = capture(...)` still require the next suspend/resume slice.
+    pub fn run_controller_bytecode(
+        &mut self,
+        program: BytecodeProgram,
+        config: AgentControllerRunConfig,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
+        let mut executor = BytecodeVmExecutor::new(program).map_err(AgentRunError::Bytecode)?;
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget {
+                max_ops: config.max_ops_per_step,
+            },
+        };
+        let mut report = AgentControllerRunReport {
+            steps: 0,
+            host_calls: 0,
+            responses: Vec::new(),
+            events_emitted: self.sequence,
+        };
+
+        while report.steps < config.max_steps {
+            report.steps += 1;
+            let step = executor.step(RuntimeStepInput::default(), options);
+            for effect in &step.output.effects.line {
+                let request = agent_host_request_from_effect(effect)
+                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                let host_report = self.handle_host_request(request)?;
+                report.host_calls += 1;
+                report.responses.push(host_report.response);
+                report.events_emitted = host_report.events_emitted;
+            }
+
+            match step.fiber_status {
+                arcweft_core::engine::FlowFiberStatus::Done(_) => return Ok(report),
+                arcweft_core::engine::FlowFiberStatus::Failed(message) => {
+                    return Err(AgentRunError::ControllerFailed(message));
+                }
+                arcweft_core::engine::FlowFiberStatus::Running
+                | arcweft_core::engine::FlowFiberStatus::Waiting(_)
+                | arcweft_core::engine::FlowFiberStatus::WaitingMany(_)
+                | arcweft_core::engine::FlowFiberStatus::Choice(_) => {}
+            }
+        }
+
+        Err(AgentRunError::ControllerBudgetExceeded {
+            max_steps: config.max_steps,
+        })
+    }
+
+    /// Runs a decoded `.awfb` Agent controller bundle through the shared
+    /// bytecode VM.
+    pub fn run_controller_bundle(
+        &mut self,
+        bundle: &ArcweftBundle,
+        config: AgentControllerRunConfig,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
+        if bundle.bundle_kind != BundleKind::AgentController {
+            return Err(AgentRunError::NotAgentControllerBundle);
+        }
+        if bundle.agent.is_none() {
+            return Err(AgentRunError::MissingAgentManifest);
+        }
+        self.run_controller_bytecode(bundle.bytecode.program.clone(), config)
+    }
+
     fn wait(&mut self, request: &WaitRequest) -> AgentRunnerResult<ObservationEnvelope, S, D, R> {
         self.ensure(RuntimeAgentCapability::Observe)?;
         let poll_frames = request.poll_frames.max(1);
@@ -385,6 +500,212 @@ where
     }
 }
 
+fn agent_host_request_from_effect(effect: &LineEffectRequest) -> Result<AgentHostRequest, String> {
+    match effect {
+        LineEffectRequest::Call(call) => agent_host_request_from_call(call),
+        other => Err(format!("{other:?}")),
+    }
+}
+
+fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, String> {
+    match call.callee.as_str() {
+        "observe" => Ok(AgentHostRequest::Observe(Box::new(observe_request(
+            &call.args,
+        )?))),
+        "checkpoint" => Ok(AgentHostRequest::Checkpoint {
+            name: call
+                .args
+                .first()
+                .and_then(|arg| parse_string_label(arg))
+                .unwrap_or_else(|| call.args.first().cloned().unwrap_or_default()),
+        }),
+        "choose" => {
+            let choice = call
+                .args
+                .first()
+                .ok_or_else(|| "choose requires a choice argument".to_owned())
+                .and_then(|arg| parse_public_id_arg(arg))?;
+            Ok(AgentHostRequest::Act(Box::new(AgentAction::SelectChoice {
+                choice,
+            })))
+        }
+        "capture" => Ok(AgentHostRequest::Capture(Box::new(capture_request(
+            &call.args,
+        )?))),
+        "rag.query" => Ok(AgentHostRequest::RagQuery(Box::new(rag_request(
+            &call.args,
+        )?))),
+        "read_resource" => {
+            let uri = call
+                .args
+                .first()
+                .and_then(|arg| parse_string_label(arg).or_else(|| Some(arg.clone())))
+                .ok_or_else(|| "read_resource requires a uri argument".to_owned())?;
+            Ok(AgentHostRequest::ReadResource {
+                uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
+            })
+        }
+        other => Err(format!("unsupported Agent call `{other}`")),
+    }
+}
+
+fn observe_request(args: &[String]) -> Result<ObserveRequest, String> {
+    let mut request = ObserveRequest::default();
+    for arg in args {
+        match named_arg(arg) {
+            Some(("include_images", value)) => request.include_images = parse_bool_label(value)?,
+            Some(("include_objects", value)) => request.include_objects = parse_bool_label(value)?,
+            Some(("include_logs", value)) => request.include_logs = parse_bool_label(value)?,
+            Some((name, _)) => return Err(format!("observe has no parameter named `{name}`")),
+            None => {
+                return Err(format!(
+                    "observe does not accept positional argument `{arg}`"
+                ));
+            }
+        }
+    }
+    Ok(request)
+}
+
+fn capture_request(args: &[String]) -> Result<CaptureRequest, String> {
+    let target = args
+        .first()
+        .ok_or_else(|| "capture requires a target argument".to_owned())
+        .and_then(|arg| parse_capture_target(arg))?;
+    let mut request = CaptureRequest {
+        target,
+        format: CaptureFormat::Png,
+        capture_kind: "color".to_owned(),
+        name: "capture".to_owned(),
+    };
+    for arg in args.iter().skip(1) {
+        match named_arg(arg) {
+            Some(("format", value)) => request.format = parse_capture_format(value)?,
+            Some(("capture_kind" | "kind", value)) => {
+                request.capture_kind =
+                    parse_string_label(value).unwrap_or_else(|| value.to_owned());
+            }
+            Some(("name", value)) => {
+                request.name = parse_string_label(value).unwrap_or_else(|| value.to_owned());
+            }
+            Some((name, _)) => return Err(format!("capture has no parameter named `{name}`")),
+            None => {
+                return Err(format!(
+                    "capture does not accept extra positional argument `{arg}`"
+                ));
+            }
+        }
+    }
+    Ok(request)
+}
+
+fn rag_request(args: &[String]) -> Result<RagRequest, String> {
+    let query = args
+        .first()
+        .and_then(|arg| parse_string_label(arg))
+        .ok_or_else(|| "rag.query requires a string query argument".to_owned())?;
+    let mut request = RagRequest {
+        query,
+        roots: Vec::new(),
+        graph_depth: 1,
+        limit: 8,
+    };
+    for arg in args.iter().skip(1) {
+        match named_arg(arg) {
+            Some(("graph_depth", value)) => {
+                request.graph_depth = value
+                    .parse::<u32>()
+                    .map_err(|_| format!("invalid rag.query graph_depth `{value}`"))?;
+            }
+            Some(("limit", value)) => {
+                request.limit = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid rag.query limit `{value}`"))?;
+            }
+            Some(("roots", value)) => request.roots = parse_public_id_list(value)?,
+            Some((name, _)) => return Err(format!("rag.query has no parameter named `{name}`")),
+            None => {
+                return Err(format!(
+                    "rag.query does not accept extra positional argument `{arg}`"
+                ));
+            }
+        }
+    }
+    Ok(request)
+}
+
+fn named_arg(arg: &str) -> Option<(&str, &str)> {
+    arg.split_once(" = ")
+        .map(|(name, value)| (name.trim(), value.trim()))
+}
+
+fn parse_bool_label(value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(format!("expected boolean literal, got `{value}`")),
+    }
+}
+
+fn parse_string_label(value: &str) -> Option<String> {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .map(str::to_owned)
+}
+
+fn parse_public_id_arg(value: &str) -> Result<PublicId, String> {
+    let id = value.strip_prefix('@').unwrap_or(value);
+    PublicId::new(id.to_owned()).map_err(|error| error.to_string())
+}
+
+fn parse_public_id_list(value: &str) -> Result<Vec<PublicId>, String> {
+    let Some(body) = value
+        .trim()
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    else {
+        return Err(format!("expected public id list, got `{value}`"));
+    };
+    body.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(parse_public_id_arg)
+        .collect()
+}
+
+fn parse_capture_target(value: &str) -> Result<CaptureTarget, String> {
+    if value == "viewport()" || value == "viewport" {
+        return Ok(CaptureTarget::Viewport);
+    }
+    if let Some(body) = call_body(value, "layer") {
+        return parse_public_id_arg(body).map(|id| CaptureTarget::Layer { id });
+    }
+    if let Some(body) = call_body(value, "object") {
+        let id =
+            parse_string_label(body).unwrap_or_else(|| body.trim_start_matches('@').to_owned());
+        return Ok(CaptureTarget::Object { id });
+    }
+    Err(format!("unsupported capture target `{value}`"))
+}
+
+fn call_body<'a>(value: &'a str, callee: &str) -> Option<&'a str> {
+    value
+        .strip_prefix(callee)?
+        .strip_prefix('(')?
+        .strip_suffix(')')
+        .map(str::trim)
+}
+
+fn parse_capture_format(value: &str) -> Result<CaptureFormat, String> {
+    match value.trim_start_matches('.') {
+        "png" => Ok(CaptureFormat::Png),
+        "raw_rgba" | "raw" => Ok(CaptureFormat::RawRgba),
+        "svg" => Ok(CaptureFormat::Svg),
+        _ => Err(format!("unsupported capture format `{value}`")),
+    }
+}
+
 fn predicate_matches(predicate: &Predicate, observation: &ObservationEnvelope) -> bool {
     match predicate {
         Predicate::Compare { probe, op, value } => observation_value(probe, observation)
@@ -450,8 +771,18 @@ fn numeric_value(value: &AgentValue) -> Option<i64> {
 mod tests {
     use super::*;
     use arcweft_agent_protocol::{
+        artifact::{
+            AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding, ProjectBindingMode,
+        },
+        ids::StableHash,
         ids::{AgentResourceUri, PublicId},
         protocol::{CaptureFormat, CaptureTarget},
+    };
+    use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+    use arcweft_core::{
+        bytecode::BytecodeProgram,
+        effect::{LineEffectRequest, RuntimeCall},
+        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
     };
     use arcweft_debug_model::sink::NullDebugEventSink;
     use std::collections::BTreeMap;
@@ -520,6 +851,76 @@ mod tests {
         }
     }
 
+    fn observe_checkpoint_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.observe_smoke".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.observe_smoke".to_owned()),
+                    ops: vec![
+                        FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                            callee: "observe".to_owned(),
+                            args: vec!["include_objects = true".to_owned()],
+                        })),
+                        FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                            callee: "checkpoint".to_owned(),
+                            args: vec!["\"after-observe\"".to_owned()],
+                        })),
+                        FlowOp::Return("done".to_owned()),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
+    fn observe_checkpoint_bundle() -> ArcweftBundle {
+        let program = observe_checkpoint_program();
+        let stats = program.stats();
+        let display = arcweft_render_text::LineDisplayCatalog::default();
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: "agent.observe_smoke.awfagent".to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: Some("entry.agent.observe_smoke".to_owned()),
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: program.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                    flows: stats.flows,
+                    bytecode_instructions: stats.instructions,
+                    line_task_groups: stats.line_task_groups,
+                    stream_plans: stats.stream_plans,
+                    source_plans: stats.source_plans,
+                },
+            },
+            BundleSource {
+                label: "agent.observe_smoke.awfagent".to_owned(),
+                text: "agent @agent.observe_smoke observe_smoke() { observe() }".to_owned(),
+            },
+            program,
+            display,
+        )
+        .with_agent_manifest(AgentArtifactManifest {
+            schema_version: 1,
+            bundle_kind: AgentBundleKind::AgentController,
+            agent_id: PublicId::new("agent.observe_smoke").expect("valid agent id"),
+            source_hash: StableHash::new("blake3:test").expect("valid source hash"),
+            compiler_version: "test".to_owned(),
+            project_binding: ProjectBinding {
+                program_hash: StableHash::new("program-test").expect("valid program hash"),
+                mode: ProjectBindingMode::Compatible,
+                required_entities: Vec::new(),
+            },
+            declared_effects: Vec::new(),
+            budget: AgentBudget::default(),
+            debug_map_hash: None,
+        })
+    }
+
     #[test]
     fn wait_requires_stable_predicate_matches() {
         let session = TestSession {
@@ -580,6 +981,61 @@ mod tests {
         assert!(matches!(
             error,
             AgentRunError::PolicyDenied("agent.capture")
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_dispatches_effect_calls_to_runner_host_boundary() {
+        let session = TestSession {
+            observations: vec![observation(1, true)],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(
+                observe_checkpoint_program(),
+                AgentControllerRunConfig::default(),
+            )
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.steps, 1);
+        assert_eq!(report.host_calls, 2);
+        assert_eq!(report.responses.len(), 2);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::Observation(observation) if observation.tick == 1
+        ));
+        assert!(matches!(report.responses[1], AgentHostResponse::Unit));
+    }
+
+    #[test]
+    fn controller_bundle_runs_through_bytecode_host_boundary() {
+        let session = TestSession {
+            observations: vec![observation(1, true)],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+        let bundle = observe_checkpoint_bundle();
+
+        let report = runner
+            .run_controller_bundle(&bundle, AgentControllerRunConfig::default())
+            .expect("controller bundle runs");
+
+        assert_eq!(report.host_calls, 2);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::Observation(observation) if observation.tick == 1
         ));
     }
 }

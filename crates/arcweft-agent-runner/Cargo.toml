@@ -8,9 +8,14 @@ repository.workspace = true
 
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-bundle = { path = "../arcweft-bundle" }
+arcweft-core = { path = "../arcweft-core" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+arcweft-render-text = { path = "../arcweft-render-text" }
 
 [lints]
 workspace = true

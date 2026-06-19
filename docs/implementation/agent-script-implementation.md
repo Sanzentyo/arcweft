@@ -20,7 +20,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values. Large host request/response enum payloads are boxed so the Rust protocol API does not carry oversized enum variants while preserving the same serde JSON shape.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
-- `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls.
+- `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls. It can now run Agent controller bytecode through the shared core bytecode VM and dispatch effect-form Agent calls such as `observe(...)`, `checkpoint(...)`, `choose(...)`, `capture(...)`, `read_resource(...)`, and `rag.query(...)` to the host boundary in runtime order.
 - `arcweft-bundle` can now encode `.awfb` bundles as `bundle_kind = agent_controller` with an embedded `AgentArtifactManifest`, while ordinary game bundles remain the default. The game `arcweft-runtime-host` bundle runner rejects Agent controller bundles instead of executing them as game bytecode.
 - `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
 - `arcw agent script check <file.awfagent>` validates Agent dialect parsing/HIR lowering without requiring the `native-capture` feature.
@@ -36,7 +36,7 @@ It is implementation state, not the stable language specification.
 - `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
-- `arcweft-agent-runner` currently executes typed host requests. It does not yet start or step the shared bytecode VM; the VM will call this host-call boundary.
+- `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for effect-form host calls. It does not yet suspend and resume VM expressions whose host-call response must be rebound into local variables.
 - `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite` and keeps database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
 
 ## Windows validation
@@ -62,6 +62,8 @@ It is implementation state, not the stable language specification.
 - `cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
+- `cargo test -p arcweft-agent-runner controller_bytecode_dispatches_effect_calls_to_runner_host_boundary -- --nocapture`
+- `cargo test -p arcweft-agent-runner controller_bundle_runs_through_bytecode_host_boundary -- --nocapture`
 - `cargo clippy -p arcweft-agent-protocol -p arcweft-agent-runner --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-bundle -p arcweft-runtime-host`
 - `cargo test -p arcweft-bundle -p arcweft-runtime-host bundle -- --nocapture`
@@ -83,7 +85,8 @@ It is implementation state, not the stable language specification.
 ## Remaining zip-derived work
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
-- Connect Agent controller `.awfb` bytecode execution to `arcweft-agent-runner` host-call dispatch and `.arcwx` trace emission.
+- Add VM suspend/resume support for Agent host-call expressions whose responses are bound back into the controller, for example `let shot = capture(...)`.
+- Persist runner debug events as `.arcwx` trace artifacts from CLI/MCP run and replay commands.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.
