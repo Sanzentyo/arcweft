@@ -878,7 +878,7 @@ impl TypeChecker<'_> {
         let Some(arg) = self.single_positional_agent_arg(name, args) else {
             return TypeKind::Unit;
         };
-        self.expect_expr_type(arg, &TypeKind::CaptureRef, "attach resource");
+        self.expect_expr_type(arg, &agent_attach_resource_type(), "attach resource");
         TypeKind::Unit
     }
 
@@ -3046,6 +3046,10 @@ fn agent_resource_body_field_type(field: &str) -> Option<TypeKind> {
         "value" => TypeKind::AgentValue,
         _ => return None,
     })
+}
+
+fn agent_attach_resource_type() -> TypeKind {
+    TypeKind::Choice(vec![TypeKind::CaptureRef, TypeKind::AgentResource])
 }
 
 fn set_agent_arg_slot<'a>(

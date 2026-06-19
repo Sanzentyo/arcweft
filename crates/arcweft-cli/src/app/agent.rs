@@ -1267,6 +1267,7 @@ fn agent_script_run_bundle(
             RuntimeAgentCapability::Act,
             RuntimeAgentCapability::Capture,
             RuntimeAgentCapability::ResourceRead,
+            RuntimeAgentCapability::DebugRecord,
             RuntimeAgentCapability::Rag,
         ]),
         AgentRunnerConfig::new(agent_cli_session_id()),
@@ -2139,6 +2140,7 @@ impl AgentSession for CliAgentSession {
                 "agent.capture".to_owned(),
                 "agent.act.semantic".to_owned(),
                 "agent.resource.read".to_owned(),
+                "debug.record".to_owned(),
             ],
         })
     }

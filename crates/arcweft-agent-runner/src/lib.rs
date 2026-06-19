@@ -10,9 +10,9 @@ use arcweft_agent_protocol::{
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
-        ActionResult, AgentAction, AgentHostRequest, AgentHostResponse, AgentSessionInfo,
-        CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope,
-        ObserveRequest, PointerButton, RagRequest, WaitRequest,
+        ActionResult, AgentAction, AgentAttachment, AgentHostRequest, AgentHostResponse,
+        AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget,
+        ObservationEnvelope, ObserveRequest, PointerButton, RagRequest, WaitRequest,
     },
     value::AgentValue,
 };
@@ -101,6 +101,7 @@ pub enum RuntimeAgentCapability {
     ActPhysical,
     Capture,
     ResourceRead,
+    DebugRecord,
     Rag,
 }
 
@@ -204,6 +205,7 @@ impl RuntimeAgentCapability {
             Self::ActPhysical => "agent.act.physical",
             Self::Capture => "agent.capture",
             Self::ResourceRead => "agent.resource.read",
+            Self::DebugRecord => "debug.record",
             Self::Rag => "agent.rag.query",
         }
     }
@@ -358,7 +360,17 @@ where
                     serde_json::to_value(context).unwrap_or(serde_json::Value::Null),
                 ))
             }
+            AgentHostRequest::Attach(attachment) => {
+                self.ensure(RuntimeAgentCapability::DebugRecord)?;
+                self.emit(
+                    DebugEventKind::Diagnostic,
+                    None,
+                    serde_json::json!({ "attachment": attachment.resource }),
+                )?;
+                AgentHostResponse::Unit
+            }
             AgentHostRequest::Checkpoint { name } => {
+                self.ensure(RuntimeAgentCapability::DebugRecord)?;
                 self.emit(
                     DebugEventKind::Diagnostic,
                     None,
@@ -553,6 +565,9 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 .and_then(|arg| parse_string_label(arg))
                 .unwrap_or_else(|| call.args.first().cloned().unwrap_or_default()),
         }),
+        "attach" => Ok(AgentHostRequest::Attach(Box::new(AgentAttachment {
+            resource: Box::new(effect_form_attachment_resource(&call.args)?),
+        }))),
         "advance_text" => {
             if !call.args.is_empty() {
                 return Err("advance_text does not accept arguments".to_owned());
@@ -654,6 +669,9 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
                 .or_else(|| args.named("name"))
                 .map_or_else(|| Ok("checkpoint".to_owned()), runtime_string)?;
             Ok(AgentHostRequest::Checkpoint { name })
+        }
+        "attach" => {
+            runtime_attach_request(&args).map(|request| AgentHostRequest::Attach(Box::new(request)))
         }
         "wait" => {
             runtime_wait_request(&args).map(|request| AgentHostRequest::Wait(Box::new(request)))
@@ -830,6 +848,90 @@ fn runtime_viewport_point(value: &RuntimeValue) -> Result<(u32, u32), String> {
 
 fn runtime_pointer_button(value: &RuntimeValue) -> Result<PointerButton, String> {
     parse_pointer_button_label(&runtime_string(value)?)
+}
+
+fn runtime_attach_request(args: &RuntimeAgentArgs<'_>) -> Result<AgentAttachment, String> {
+    let resource = args
+        .positional(0)
+        .or_else(|| args.named("resource"))
+        .ok_or_else(|| "attach requires a resource argument".to_owned())?;
+    if args.positional(1).is_some() {
+        return Err("attach received too many positional arguments".to_owned());
+    }
+    Ok(AgentAttachment {
+        resource: Box::new(runtime_value_to_json(resource)),
+    })
+}
+
+fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
+    match value {
+        RuntimeValue::Unit => serde_json::Value::Null,
+        RuntimeValue::Bool(value) => serde_json::Value::Bool(*value),
+        RuntimeValue::Int(value) => runtime_int_to_json(*value),
+        RuntimeValue::UInt(value) => runtime_uint_to_json(*value),
+        RuntimeValue::F32(value) => serde_json::json!(*value),
+        RuntimeValue::F64(value) => serde_json::json!(*value),
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => {
+            serde_json::Value::String(value.clone())
+        }
+        RuntimeValue::Char(value) => serde_json::Value::String(value.to_string()),
+        RuntimeValue::Tuple(values) => {
+            serde_json::Value::Array(values.iter().map(runtime_value_to_json).collect())
+        }
+        RuntimeValue::Seq(values) => {
+            serde_json::to_value(values).unwrap_or(serde_json::Value::Null)
+        }
+        RuntimeValue::Record(fields) => serde_json::Value::Object(
+            fields
+                .iter()
+                .map(|field| (field.name.clone(), runtime_value_to_json(&field.value)))
+                .collect(),
+        ),
+        RuntimeValue::Variant {
+            path,
+            name,
+            payload,
+        } => serde_json::json!({
+            "path": path,
+            "name": name,
+            "payload": payload.as_deref().map(runtime_value_to_json),
+        }),
+        RuntimeValue::Duration(_)
+        | RuntimeValue::MatrixF32(_)
+        | RuntimeValue::MatrixF64(_)
+        | RuntimeValue::TensorF32(_)
+        | RuntimeValue::TensorF64(_) => {
+            serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
+        }
+    }
+}
+
+fn runtime_int_to_json(value: arcweft_core::value::RuntimeInt) -> serde_json::Value {
+    match value {
+        arcweft_core::value::RuntimeInt::I8(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeInt::I16(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeInt::I32(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeInt::I64(value)
+        | arcweft_core::value::RuntimeInt::ISize(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeInt::I128(value) => i64::try_from(value).map_or_else(
+            |_| serde_json::json!(value.to_string()),
+            |value| serde_json::json!(value),
+        ),
+    }
+}
+
+fn runtime_uint_to_json(value: arcweft_core::value::RuntimeUInt) -> serde_json::Value {
+    match value {
+        arcweft_core::value::RuntimeUInt::U8(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeUInt::U16(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeUInt::U32(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeUInt::U64(value)
+        | arcweft_core::value::RuntimeUInt::USize(value) => serde_json::json!(value),
+        arcweft_core::value::RuntimeUInt::U128(value) => u64::try_from(value).map_or_else(
+            |_| serde_json::json!(value.to_string()),
+            |value| serde_json::json!(value),
+        ),
+    }
 }
 
 fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
@@ -1480,6 +1582,19 @@ fn pointer_click_action(args: &[String]) -> Result<AgentAction, String> {
     })
 }
 
+fn effect_form_attachment_resource(args: &[String]) -> Result<serde_json::Value, String> {
+    let value = args
+        .first()
+        .ok_or_else(|| "attach requires a resource argument".to_owned())?;
+    if args.len() > 1 {
+        return Err("attach received too many positional arguments".to_owned());
+    }
+    Ok(parse_string_label(value).map_or_else(
+        || serde_json::json!({ "label": value }),
+        |value| serde_json::json!({ "label": value }),
+    ))
+}
+
 fn parse_viewport_point_label(value: &str) -> Result<(u32, u32), String> {
     let value = value.trim();
     let body = value
@@ -1987,13 +2102,31 @@ mod tests {
         time::LogicalDuration,
         value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue},
     };
-    use arcweft_debug_model::sink::NullDebugEventSink;
+    use arcweft_debug_model::{event::DebugEvent, sink::NullDebugEventSink};
     use std::collections::BTreeMap;
     use std::convert::Infallible;
 
     #[derive(Default)]
     struct TestSession {
         observations: Vec<ObservationEnvelope>,
+    }
+
+    #[derive(Default)]
+    struct RecordingDebugSink {
+        events: Vec<DebugEvent>,
+    }
+
+    impl DebugEventSink for RecordingDebugSink {
+        type Error = Infallible;
+
+        fn append(&mut self, event: &DebugEvent) -> Result<(), Self::Error> {
+            self.events.push(event.clone());
+            Ok(())
+        }
+
+        fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
     }
 
     impl AgentSession for TestSession {
@@ -2340,7 +2473,7 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::default(),
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
 
@@ -2378,7 +2511,7 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::default(),
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
 
@@ -2541,6 +2674,48 @@ mod tests {
     }
 
     #[test]
+    fn custom_task_attach_records_runtime_resource_payload() {
+        let request = HostTaskRequest::Custom {
+            capability: arcweft_core::task::HostCapabilityId("agent".to_owned()),
+            operation: "attach".to_owned(),
+            args: vec![RuntimePayload::new(RuntimeValue::Record(vec![
+                runtime_field(
+                    "uri",
+                    RuntimeValue::String(
+                        "arcweft://session/cli/observation/latest.json".to_owned(),
+                    ),
+                ),
+                runtime_field(
+                    "kind",
+                    RuntimeValue::String("observation_latest".to_owned()),
+                ),
+            ]))],
+        };
+        let request = agent_host_request_from_task(&request).expect("attach task lowers");
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            RecordingDebugSink::default(),
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRecord]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(request)
+            .expect("debug record policy allows attach");
+
+        assert!(matches!(report.response, AgentHostResponse::Unit));
+        assert!(
+            runner
+                .debug_mut()
+                .events
+                .iter()
+                .any(|event| event.payload["attachment"]["uri"]
+                    == "arcweft://session/cli/observation/latest.json")
+        );
+    }
+
+    #[test]
     fn effect_form_wait_call_lowers_composite_predicate() {
         let request = agent_host_request_from_call(&RuntimeCall {
             callee: "wait".to_owned(),
@@ -2579,7 +2754,10 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::default(),
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::DebugRecord,
+            ]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
 
@@ -2705,7 +2883,10 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::default(),
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::DebugRecord,
+            ]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
 
@@ -2735,7 +2916,10 @@ mod tests {
             session,
             NullDebugEventSink,
             NoopRagService,
-            RuntimeAgentPolicy::default(),
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::DebugRecord,
+            ]),
             AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
         );
         let bundle = observe_checkpoint_bundle();

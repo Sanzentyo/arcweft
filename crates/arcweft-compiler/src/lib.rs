@@ -1360,6 +1360,25 @@ effects { agent.resource.read }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_attach_resource() {
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.attach_resource attach_resource_smoke()
+effects { agent.resource.read, debug.record }
+{
+    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    attach(resource)
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("attach accepts AgentResource values");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_read_resource_without_effect() {
         let error = compile_agent_source_with_project(
             r#"

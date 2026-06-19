@@ -116,6 +116,12 @@ pub struct RagRequest {
     pub limit: usize,
 }
 
+/// Debug-record attachment emitted by an Agent controller.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct AgentAttachment {
+    pub resource: Box<serde_json::Value>,
+}
+
 /// Generic host request emitted by Agent controller bytecode.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "request", rename_all = "snake_case")]
@@ -126,6 +132,7 @@ pub enum AgentHostRequest {
     Capture(Box<CaptureRequest>),
     ReadResource { uri: AgentResourceUri },
     RagQuery(Box<RagRequest>),
+    Attach(Box<AgentAttachment>),
     Checkpoint { name: String },
 }
 

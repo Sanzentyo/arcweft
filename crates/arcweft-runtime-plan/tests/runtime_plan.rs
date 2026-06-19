@@ -263,6 +263,39 @@ effects { agent.resource.read }
 }
 
 #[test]
+fn agent_controller_plan_lowers_attach_resource_to_host_task() {
+    let tree = parse_agent_ok(
+        r#"
+#[agent(version = 1)]
+agent @agent.attach_resource attach_resource_smoke()
+effects { agent.resource.read, debug.record }
+{
+    let resource = read_resource(uri = "arcweft://session/cli/observation/latest.json")
+    attach(resource)
+    return resource.uri
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Effect(effect) = &report.plan.flows[0].ops[1] else {
+        panic!(
+            "expected attach to lower to Effect, got {:?}",
+            report.plan.flows[0].ops[1]
+        );
+    };
+    let arcweft_core::effect::LineEffectRequest::Call(call) = effect else {
+        panic!("expected attach call effect, got {effect:?}");
+    };
+    assert_eq!(call.callee, "attach");
+    assert_eq!(call.args, ["resource"]);
+}
+
+#[test]
 fn agent_controller_plan_lowers_pointer_click_to_host_task() {
     let tree = parse_agent_ok(
         r"

@@ -1,0 +1,9 @@
+#[agent(version = 1)]
+agent @agent.cli.attach_resource_smoke attach_resource_smoke()
+effects { agent.resource.read, debug.record }
+{
+    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    attach(resource)
+    checkpoint("after-attach-resource")
+    return resource.uri
+}

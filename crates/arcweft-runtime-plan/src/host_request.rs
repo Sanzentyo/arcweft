@@ -158,6 +158,7 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 "choose" => "choose",
                 "invoke" => "invoke",
                 "read_resource" => "read_resource",
+                "attach" => "attach",
                 _ => return None,
             };
             Some(CallParts {

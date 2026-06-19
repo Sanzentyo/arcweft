@@ -1749,7 +1749,10 @@ fn agent_record_callables() -> Vec<(&'static str, CallableSymbol)> {
             CallableSymbol::new(
                 FunctionSignature::new(
                     TypeKind::Unit,
-                    [FunctionParam::required("resource", TypeKind::CaptureRef)],
+                    [FunctionParam::required(
+                        "resource",
+                        agent_attach_resource_type(),
+                    )],
                 ),
                 [EffectCapability::new("debug.record")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::Attach),
@@ -1778,6 +1781,10 @@ fn agent_record_callables() -> Vec<(&'static str, CallableSymbol)> {
             ),
         ),
     ]
+}
+
+fn agent_attach_resource_type() -> TypeKind {
+    TypeKind::Choice(vec![TypeKind::CaptureRef, TypeKind::AgentResource])
 }
 
 fn agent_rag_callables() -> Vec<(&'static str, CallableSymbol)> {
