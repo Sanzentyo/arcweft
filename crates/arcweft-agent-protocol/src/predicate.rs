@@ -30,7 +30,7 @@ pub enum Predicate {
     Compare {
         probe: Probe,
         op: CompareOp,
-        value: AgentValue,
+        value: Box<AgentValue>,
     },
     Exists {
         probe: Probe,
@@ -48,4 +48,39 @@ pub enum Predicate {
     Not {
         predicate: Box<Self>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn compare_predicate_keeps_flat_wire_value() {
+        let predicate = Predicate::Compare {
+            probe: Probe::Signal {
+                target: PublicId::new("signal.ready").expect("valid public id"),
+            },
+            op: CompareOp::Eq,
+            value: Box::new(AgentValue::Bool(true)),
+        };
+
+        let value = serde_json::to_value(predicate).expect("serializes predicate");
+
+        assert_eq!(
+            value,
+            json!({
+                "kind": "compare",
+                "probe": {
+                    "kind": "signal",
+                    "target": "signal.ready"
+                },
+                "op": "eq",
+                "value": {
+                    "kind": "bool",
+                    "value": true
+                }
+            })
+        );
+    }
 }

@@ -1337,7 +1337,7 @@ fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
         "compare" => Ok(Predicate::Compare {
             probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
             op: runtime_record_get(fields, "op").and_then(runtime_compare_op)?,
-            value: runtime_record_get(fields, "value").and_then(runtime_agent_value)?,
+            value: Box::new(runtime_record_get(fields, "value").and_then(runtime_agent_value)?),
         }),
         "exists" => Ok(Predicate::Exists {
             probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
@@ -2272,7 +2272,7 @@ fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
     Ok(Predicate::Compare {
         probe,
         op: parse_compare_op_label(method)?,
-        value: parse_agent_value_label(expected)?,
+        value: Box::new(parse_agent_value_label(expected)?),
     })
 }
 
@@ -3138,7 +3138,7 @@ mod tests {
                         target: PublicId::new("signal.ready").expect("valid public id"),
                     },
                     op: CompareOp::Eq,
-                    value: AgentValue::Bool(true),
+                    value: Box::new(AgentValue::Bool(true)),
                 },
                 timeout_millis: 5,
                 stable_frames: 2,
@@ -3176,9 +3176,9 @@ mod tests {
                         target: PublicId::new("signal.current_flow").expect("valid public id"),
                     },
                     op: CompareOp::Eq,
-                    value: AgentValue::Entity(
+                    value: Box::new(AgentValue::Entity(
                         PublicId::new("flow.opening").expect("valid public id"),
-                    ),
+                    )),
                 },
                 timeout_millis: 5,
                 stable_frames: 1,
@@ -3216,8 +3216,12 @@ mod tests {
             Predicate::Compare {
                 probe: Probe::Signal { ref target },
                 op: CompareOp::Eq,
-                value: AgentValue::Entity(ref value),
-            } if target.as_str() == "signal.current_flow" && value.as_str() == "flow.opening"
+                ref value,
+            } if target.as_str() == "signal.current_flow"
+                && matches!(
+                    value.as_ref(),
+                    AgentValue::Entity(value) if value.as_str() == "flow.opening"
+                )
         ));
     }
 
@@ -3543,7 +3547,7 @@ mod tests {
                                     target: PublicId::new("metric.fps").expect("valid public id"),
                                 },
                                 op: CompareOp::Less,
-                                value: AgentValue::F64(30.0),
+                                value: Box::new(AgentValue::F64(30.0)),
                             }),
                         },
                     ],
@@ -3594,14 +3598,14 @@ mod tests {
                                 path: "route.phase".to_owned(),
                             },
                             op: CompareOp::Eq,
-                            value: AgentValue::String("opening".to_owned()),
+                            value: Box::new(AgentValue::String("opening".to_owned())),
                         },
                         Predicate::Compare {
                             probe: Probe::ObservationField {
                                 path: "tick".to_owned(),
                             },
                             op: CompareOp::GreaterOrEqual,
-                            value: AgentValue::I64(2),
+                            value: Box::new(AgentValue::I64(2)),
                         },
                     ],
                 },
