@@ -2859,7 +2859,12 @@ fn native_agent_observation_envelope(report: &AgentObservationReport) -> Observa
         signals: report
             .signals
             .iter()
-            .map(|signal| (signal.name.clone(), agent_assignment_value(signal)))
+            .map(|signal| {
+                (
+                    signal.name.trim_start_matches('@').to_owned(),
+                    agent_assignment_value(signal),
+                )
+            })
             .collect(),
         payload: serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
     }
@@ -2916,6 +2921,12 @@ fn agent_assignment_value(signal: &AgentAssignment) -> arcweft_agent_protocol::v
     match signal.value.as_str() {
         "true" => arcweft_agent_protocol::value::AgentValue::Bool(true),
         "false" => arcweft_agent_protocol::value::AgentValue::Bool(false),
+        value if value.starts_with('@') => {
+            arcweft_agent_protocol::ids::PublicId::new(value.trim_start_matches('@')).map_or_else(
+                |_| arcweft_agent_protocol::value::AgentValue::String(value.to_owned()),
+                arcweft_agent_protocol::value::AgentValue::Entity,
+            )
+        }
         value => value.parse::<i64>().map_or_else(
             |_| arcweft_agent_protocol::value::AgentValue::String(value.to_owned()),
             arcweft_agent_protocol::value::AgentValue::I64,

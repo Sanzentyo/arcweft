@@ -56,9 +56,13 @@ use arcweft_core::engine::FlowFiberStatus;
 #[cfg(feature = "native-capture")]
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
 #[cfg(feature = "native-capture")]
+use arcweft_lang_sema::project_index::project_semantic_index_from_hir;
+#[cfg(feature = "native-capture")]
 use arcweft_render_text::LineDisplayCatalog;
 #[cfg(feature = "native-capture")]
 use arcweft_runtime_host::NativeTaskBridge;
+#[cfg(feature = "native-capture")]
+use arcweft_source::SourceName;
 
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
@@ -461,6 +465,35 @@ fn agent_script_build_report(
     })
 }
 
+fn agent_script_compile_project_index(
+    options: &AgentScriptRunOptions,
+) -> Result<ProjectSemanticIndex, String> {
+    #[cfg(feature = "native-capture")]
+    if agent_script_run_uses_native_session(options) {
+        let selection =
+            resolve_source_selection(options.native_source.as_ref(), &options.native_profile)
+                .map_err(|code| {
+                    format!("failed to resolve native source for Agent Script: {code:?}")
+                })?;
+        let checked = load_and_check_selection(&selection, None)
+            .map_err(|code| format!("failed to check native source for Agent Script: {code:?}"))?;
+        let mut project = project_semantic_index_from_hir(
+            &checked.hir,
+            ProgramHash::new(format!("native-source:{}", selection.path().display())),
+            &SourceName::path(selection.path().display().to_string()),
+        )
+        .map_err(|error| error.to_string())?;
+        for signal in &options.signals {
+            let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
+            if project.entity(&id).is_none() {
+                project = project.with_entity(agent_script_signal_symbol(signal, id));
+            }
+        }
+        return Ok(project);
+    }
+    agent_script_project_index(&options.signals)
+}
+
 fn write_agent_bundle(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -630,7 +663,7 @@ fn agent_script_run_source_input(
 ) -> Result<AgentScriptRunInput, String> {
     let source = fs::read_to_string(&options.path)
         .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
-    let project = agent_script_project_index(&options.signals)?;
+    let project = agent_script_compile_project_index(options)?;
     let compiled = arcweft_compiler::compile_agent_bundle_with_project(source, &project)
         .map_err(|error| error.to_string())?;
     Ok(AgentScriptRunInput {
@@ -1304,17 +1337,31 @@ fn write_agent_trace(path: &Path, records: &[AgentTraceRecord]) -> Result<(), St
 fn agent_script_project_index(
     signals: &[AgentScriptSignalArg],
 ) -> Result<ProjectSemanticIndex, String> {
-    signals.iter().try_fold(
-        ProjectSemanticIndex::new(ProgramHash::new("cli-agent-run")),
-        |project, signal| {
+    let mut project = ProjectSemanticIndex::new(ProgramHash::new("cli-agent-run"));
+    for signal in agent_script_signal_symbols(signals)? {
+        project = project.with_entity(signal);
+    }
+    Ok(project)
+}
+
+fn agent_script_signal_symbols(
+    signals: &[AgentScriptSignalArg],
+) -> Result<Vec<EntitySymbol>, String> {
+    signals
+        .iter()
+        .map(|signal| {
             let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
-            Ok(project.with_entity(EntitySymbol::new(
-                id,
-                EntityType::new(EntityKind::Signal, Some(signal.ty.clone())),
-                SourceAnchor::generated(),
-                SemanticHash::new(format!("cli-signal:{}", signal.id)),
-            )))
-        },
+            Ok(agent_script_signal_symbol(signal, id))
+        })
+        .collect()
+}
+
+fn agent_script_signal_symbol(signal: &AgentScriptSignalArg, id: SemaPublicId) -> EntitySymbol {
+    EntitySymbol::new(
+        id,
+        EntityType::new(EntityKind::Signal, Some(signal.ty.clone())),
+        SourceAnchor::generated(),
+        SemanticHash::new(format!("cli-signal:{}", signal.id)),
     )
 }
 

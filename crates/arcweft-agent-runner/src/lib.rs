@@ -1277,8 +1277,8 @@ fn observation_value(probe: &Probe, observation: &ObservationEnvelope) -> Option
 
 fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> bool {
     match op {
-        CompareOp::Eq => actual == expected,
-        CompareOp::NotEq => actual != expected,
+        CompareOp::Eq => agent_values_equal(actual, expected),
+        CompareOp::NotEq => !agent_values_equal(actual, expected),
         CompareOp::Greater => numeric_value(actual)
             .zip(numeric_value(expected))
             .is_some_and(|(left, right)| left > right),
@@ -1291,6 +1291,14 @@ fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> 
         CompareOp::LessOrEqual => numeric_value(actual)
             .zip(numeric_value(expected))
             .is_some_and(|(left, right)| left <= right),
+    }
+}
+
+fn agent_values_equal(left: &AgentValue, right: &AgentValue) -> bool {
+    match (left, right) {
+        (AgentValue::Entity(left), AgentValue::String(right))
+        | (AgentValue::String(right), AgentValue::Entity(left)) => left.as_str() == right,
+        _ => left == right,
     }
 }
 
@@ -1393,6 +1401,21 @@ mod tests {
             state_hash: format!("state.{tick}"),
             render_hash: format!("render.{tick}"),
             signals: BTreeMap::from([("signal.ready".to_owned(), AgentValue::Bool(ready))]),
+            payload: serde_json::json!({}),
+        }
+    }
+
+    fn observation_with_signal(
+        tick: u64,
+        signal: &'static str,
+        value: AgentValue,
+    ) -> ObservationEnvelope {
+        ObservationEnvelope {
+            tick,
+            frame_id: format!("frame.{tick}"),
+            state_hash: format!("state.{tick}"),
+            render_hash: format!("render.{tick}"),
+            signals: BTreeMap::from([(signal.to_owned(), value)]),
             payload: serde_json::json!({}),
         }
     }
@@ -1646,6 +1669,46 @@ mod tests {
         assert!(matches!(
             report.response,
             AgentHostResponse::Observation(observation) if observation.tick == 3
+        ));
+    }
+
+    #[test]
+    fn wait_matches_entity_probe_against_string_observation_id() {
+        let session = TestSession {
+            observations: vec![observation_with_signal(
+                1,
+                "signal.current_flow",
+                AgentValue::String("flow.opening".to_owned()),
+            )],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+                predicate: Predicate::Compare {
+                    probe: Probe::Signal {
+                        target: PublicId::new("signal.current_flow").expect("valid public id"),
+                    },
+                    op: CompareOp::Eq,
+                    value: AgentValue::Entity(
+                        PublicId::new("flow.opening").expect("valid public id"),
+                    ),
+                },
+                timeout_millis: 5,
+                stable_frames: 1,
+                poll_frames: 1,
+            })))
+            .expect("wait succeeds");
+
+        assert!(matches!(
+            report.response,
+            AgentHostResponse::Observation(observation) if observation.tick == 1
         ));
     }
 

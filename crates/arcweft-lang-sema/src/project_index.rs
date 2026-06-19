@@ -4,13 +4,20 @@
 //! callable host surfaces. This module keeps that view typed and source-aware
 //! without adding parser-specific command shapes.
 
+use crate::checker::helpers::type_ref_kind;
 use crate::env::{
     AgentActionEnvSignature, EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv,
 };
 use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
-use arcweft_source::SourceAnchor;
+use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_syntax::{
+    ast::{flow::FlowKind, ids::EntityRef, items::EntityDeclKind},
+    types::{TypeRef, parse_type_ref},
+};
+use arcweft_source::{SourceAnchor, SourceName};
 use std::collections::BTreeMap;
+use thiserror::Error;
 
 /// Semantic index schema supported by this crate.
 pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 1;
@@ -128,6 +135,19 @@ pub struct AgentCompileContext<'a> {
     pub prelude: &'a TypeCheckEnv,
     pub launch_exports: &'a TypeCheckEnv,
     pub policy: AgentCompilePolicy,
+}
+
+/// Failure while projecting a checked HIR module into an Agent project index.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ProjectSemanticIndexError {
+    #[error("invalid public id `{id}` while indexing {kind}: {message}")]
+    InvalidPublicId {
+        id: String,
+        kind: &'static str,
+        message: String,
+    },
+    #[error("invalid signal type for `{id}`: {message}")]
+    InvalidSignalType { id: String, message: String },
 }
 
 impl ProgramHash {
@@ -424,6 +444,450 @@ impl ProjectSemanticIndex {
             env = env.with_symbol(name.as_str(), ty.clone());
         }
         env
+    }
+}
+
+/// Builds the Agent-facing project semantic index for one checked HIR module.
+///
+/// The index is the stable entity snapshot Agent Script compiles against. It
+/// intentionally mirrors the source/HIR declarations instead of accepting
+/// ad-hoc CLI-only entity shims.
+pub fn project_semantic_index_from_hir(
+    module: &HirModule,
+    program_hash: ProgramHash,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let mut index = ProjectSemanticIndex::new(program_hash);
+    for flow in module.flows() {
+        if let Some(id) = flow.id() {
+            let kind = match flow.kind() {
+                FlowKind::Flow => EntityKind::Flow,
+                FlowKind::Fragment => EntityKind::Fragment,
+            };
+            index = index.with_entity(entity_symbol(id, kind, None, source_name.clone(), "flow")?);
+        }
+        index = index_flow_items(flow.body(), index, source_name)?;
+    }
+    for agent in module.agents() {
+        if let Some(id) = agent.item().id() {
+            index = index.with_entity(entity_symbol(
+                id,
+                EntityKind::Agent,
+                None,
+                source_name.clone(),
+                "agent",
+            )?);
+        }
+    }
+    for declaration in module.declarations() {
+        match declaration {
+            HirTopLevelDecl::Source(source) => {
+                if let Some(id) = source.id() {
+                    index = index.with_entity(entity_symbol(
+                        id,
+                        EntityKind::Source,
+                        None,
+                        source_name.clone(),
+                        "source",
+                    )?);
+                }
+            }
+            HirTopLevelDecl::EntityDecl(item) => {
+                let value = if item.kind() == EntityDeclKind::Signal {
+                    signal_value_type(item.id().body(), item.signature_tail())?
+                } else {
+                    None
+                };
+                index = index.with_entity(entity_symbol(
+                    item.id(),
+                    entity_decl_kind(item.kind()),
+                    value,
+                    source_name.clone(),
+                    entity_decl_kind_label(item.kind()),
+                )?);
+            }
+            HirTopLevelDecl::Entry(item) => {
+                index = index.with_entity(entity_symbol(
+                    item.id(),
+                    EntityKind::Entry,
+                    None,
+                    source_name.clone(),
+                    "entry",
+                )?);
+            }
+            HirTopLevelDecl::Test(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    index = index.with_entity(entity_symbol(
+                        id,
+                        EntityKind::Test,
+                        None,
+                        source_name.clone(),
+                        "test",
+                    )?);
+                }
+            }
+            HirTopLevelDecl::Bench(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    index = index.with_entity(entity_symbol(
+                        id,
+                        EntityKind::Bench,
+                        None,
+                        source_name.clone(),
+                        "bench",
+                    )?);
+                }
+            }
+            HirTopLevelDecl::Callable(_)
+            | HirTopLevelDecl::State(_)
+            | HirTopLevelDecl::Trait(_)
+            | HirTopLevelDecl::Impl(_)
+            | HirTopLevelDecl::Enum(_)
+            | HirTopLevelDecl::ExternCapability(_)
+            | HirTopLevelDecl::ExternMod(_)
+            | HirTopLevelDecl::DialogueDefaults(_)
+            | HirTopLevelDecl::Struct(_)
+            | HirTopLevelDecl::TypeAlias(_)
+            | HirTopLevelDecl::Hook(_)
+            | HirTopLevelDecl::MemoFn(_)
+            | HirTopLevelDecl::Proof(_)
+            | HirTopLevelDecl::TrustedAxiom(_)
+            | HirTopLevelDecl::Parser(_) => {}
+        }
+    }
+    Ok(index)
+}
+
+fn index_flow_items(
+    items: &[HirFlowItem],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        match item {
+            HirFlowItem::Dialogue(dialogue) => {
+                if let Some(id) = dialogue.id() {
+                    index = index.with_entity(entity_symbol(
+                        id,
+                        EntityKind::DialogueLine,
+                        None,
+                        source_name.clone(),
+                        "dialogue line",
+                    )?);
+                }
+                if let Some(text_key) = dialogue.text_key() {
+                    index = index.with_entity(entity_symbol(
+                        text_key,
+                        EntityKind::Text,
+                        None,
+                        source_name.clone(),
+                        "text",
+                    )?);
+                }
+            }
+            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+                if let Some(id) = choice.id() {
+                    index = index.with_entity(entity_symbol(
+                        id,
+                        EntityKind::Choice,
+                        None,
+                        source_name.clone(),
+                        "choice",
+                    )?);
+                }
+                for option in choice.options() {
+                    if let Some(id) = option.id() {
+                        index = index.with_entity(entity_symbol(
+                            id,
+                            EntityKind::ChoiceOption,
+                            None,
+                            source_name.clone(),
+                            "choice option",
+                        )?);
+                    }
+                }
+            }
+            HirFlowItem::If(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+                index = index_flow_items(block.else_body(), index, source_name)?;
+            }
+            HirFlowItem::IfLet(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+                index = index_flow_items(block.else_body(), index, source_name)?;
+            }
+            HirFlowItem::Match(block) => {
+                for arm in block.arms() {
+                    index = index_flow_items(arm.body(), index, source_name)?;
+                }
+            }
+            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::While(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::WhileLet(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::For(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::Select(block) => {
+                for branch in block.branches() {
+                    index = index_flow_items(branch.body(), index, source_name)?;
+                }
+            }
+            HirFlowItem::Borrow(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::SourceLocale(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::Scope(block) => {
+                index = index_flow_items(block.body(), index, source_name)?;
+            }
+            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
+                for branch in await_with.branches() {
+                    index = index_flow_items(branch.body(), index, source_name)?;
+                }
+            }
+            HirFlowItem::Thread(thread) => {
+                index = index_flow_items(thread.body(), index, source_name)?;
+            }
+            HirFlowItem::Stmt(_) | HirFlowItem::LetScope { .. } | HirFlowItem::Include(_) => {}
+        }
+    }
+    Ok(index)
+}
+
+fn entity_symbol(
+    id: &EntityRef,
+    kind: EntityKind,
+    value: Option<TypeKind>,
+    source_name: SourceName,
+    kind_label: &'static str,
+) -> Result<EntitySymbol, ProjectSemanticIndexError> {
+    let public_id = PublicId::try_new(id.body()).map_err(|error| {
+        ProjectSemanticIndexError::InvalidPublicId {
+            id: id.body().to_owned(),
+            kind: kind_label,
+            message: error.to_string(),
+        }
+    })?;
+    let source = SourceAnchor::new(source_name, id.range().as_range());
+    let semantic_hash = SemanticHash::new(format!(
+        "hir:{kind_label}:{}:{}",
+        id.body(),
+        value
+            .as_ref()
+            .map_or_else(|| "_".to_owned(), type_kind_stable_label)
+    ));
+    Ok(EntitySymbol::new(
+        public_id,
+        EntityType::new(kind, value),
+        source,
+        semantic_hash,
+    ))
+}
+
+fn signal_value_type(
+    id: &str,
+    signature_tail: &str,
+) -> Result<Option<TypeKind>, ProjectSemanticIndexError> {
+    let Some(type_source) = signature_tail.trim().strip_prefix(':') else {
+        return Ok(None);
+    };
+    let type_ref = parse_type_ref(type_source.trim()).map_err(|error| {
+        ProjectSemanticIndexError::InvalidSignalType {
+            id: id.to_owned(),
+            message: error.to_string(),
+        }
+    })?;
+    Ok(Some(signal_declared_value_type(&type_ref)))
+}
+
+fn signal_declared_value_type(ty: &TypeRef) -> TypeKind {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Watch" && args.len() == 1 => {
+            project_type_ref_kind(&args[0])
+        }
+        _ => project_type_ref_kind(ty),
+    }
+}
+
+fn project_type_ref_kind(ty: &TypeRef) -> TypeKind {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Ref" && args.len() == 1 => {
+            if let TypeRef::Path(name) = &args[0] {
+                entity_kind_from_type_name(name)
+                    .map_or_else(|| type_ref_kind(ty), TypeKind::entity_ref)
+            } else {
+                type_ref_kind(ty)
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
+            TypeKind::Option(Box::new(project_type_ref_kind(&args[0])))
+        }
+        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
+            TypeKind::Vec(Box::new(project_type_ref_kind(&args[0])))
+        }
+        _ => type_ref_kind(ty),
+    }
+}
+
+fn entity_kind_from_type_name(name: &str) -> Option<EntityKind> {
+    Some(match name {
+        "Agent" => EntityKind::Agent,
+        "Entry" => EntityKind::Entry,
+        "Flow" => EntityKind::Flow,
+        "Fragment" => EntityKind::Fragment,
+        "Choice" => EntityKind::Choice,
+        "ChoiceOption" => EntityKind::ChoiceOption,
+        "Character" => EntityKind::Character,
+        "Component" => EntityKind::Component,
+        "Activity" => EntityKind::Activity,
+        "Textbox" => EntityKind::Textbox,
+        "DialogueLine" => EntityKind::DialogueLine,
+        "Text" => EntityKind::Text,
+        "Asset" => EntityKind::Asset,
+        "Image" => EntityKind::Image,
+        "Animation" => EntityKind::Animation,
+        "Capture" => EntityKind::Capture,
+        "Hook" => EntityKind::Hook,
+        "Signal" => EntityKind::Signal,
+        "Metric" => EntityKind::Metric,
+        "Scene" => EntityKind::Scene,
+        "Source" => EntityKind::Source,
+        "Test" => EntityKind::Test,
+        "Bench" => EntityKind::Bench,
+        "Layer" => EntityKind::Layer,
+        "Voice" => EntityKind::Voice,
+        "Se" => EntityKind::Se,
+        "Bgm" => EntityKind::Bgm,
+        "AudioBus" => EntityKind::AudioBus,
+        "MixerSnapshot" => EntityKind::MixerSnapshot,
+        "Ducking" => EntityKind::Ducking,
+        "Motion" => EntityKind::Motion,
+        "Rig" => EntityKind::Rig,
+        "Slot" => EntityKind::Slot,
+        "Target" => EntityKind::Target,
+        _ => return None,
+    })
+}
+
+fn entity_decl_kind(kind: EntityDeclKind) -> EntityKind {
+    match kind {
+        EntityDeclKind::Asset => EntityKind::Asset,
+        EntityDeclKind::Image => EntityKind::Image,
+        EntityDeclKind::Character => EntityKind::Character,
+        EntityDeclKind::Component => EntityKind::Component,
+        EntityDeclKind::Activity => EntityKind::Activity,
+        EntityDeclKind::Signal => EntityKind::Signal,
+        EntityDeclKind::Metric => EntityKind::Metric,
+        EntityDeclKind::Layer => EntityKind::Layer,
+        EntityDeclKind::Textbox => EntityKind::Textbox,
+        EntityDeclKind::Voice => EntityKind::Voice,
+        EntityDeclKind::Se => EntityKind::Se,
+        EntityDeclKind::Bgm => EntityKind::Bgm,
+        EntityDeclKind::AudioBus => EntityKind::AudioBus,
+        EntityDeclKind::MixerSnapshot => EntityKind::MixerSnapshot,
+        EntityDeclKind::Ducking => EntityKind::Ducking,
+        EntityDeclKind::Motion => EntityKind::Motion,
+        EntityDeclKind::Rig => EntityKind::Rig,
+    }
+}
+
+fn entity_decl_kind_label(kind: EntityDeclKind) -> &'static str {
+    match kind {
+        EntityDeclKind::Asset => "asset",
+        EntityDeclKind::Image => "image",
+        EntityDeclKind::Character => "character",
+        EntityDeclKind::Component => "component",
+        EntityDeclKind::Activity => "activity",
+        EntityDeclKind::Signal => "signal",
+        EntityDeclKind::Metric => "metric",
+        EntityDeclKind::Layer => "layer",
+        EntityDeclKind::Textbox => "textbox",
+        EntityDeclKind::Voice => "voice",
+        EntityDeclKind::Se => "se",
+        EntityDeclKind::Bgm => "bgm",
+        EntityDeclKind::AudioBus => "audio bus",
+        EntityDeclKind::MixerSnapshot => "mixer snapshot",
+        EntityDeclKind::Ducking => "ducking",
+        EntityDeclKind::Motion => "motion",
+        EntityDeclKind::Rig => "rig",
+    }
+}
+
+fn type_kind_stable_label(ty: &TypeKind) -> String {
+    match ty {
+        TypeKind::Ref(entity) => entity.value().map_or_else(
+            || format!("Ref<{:?}>", entity.kind()),
+            |value| format!("Ref<{:?},{}>", entity.kind(), type_kind_stable_label(value)),
+        ),
+        TypeKind::Probe(inner) => format!("Probe<{}>", type_kind_stable_label(inner)),
+        TypeKind::Vec(inner) => format!("Vec<{}>", type_kind_stable_label(inner)),
+        TypeKind::Array { item, len } => {
+            format!("Array<{},{}>", type_kind_stable_label(item), len)
+        }
+        TypeKind::Slice(inner) => format!("Slice<{}>", type_kind_stable_label(inner)),
+        TypeKind::Seq(inner) => format!("Seq<{}>", type_kind_stable_label(inner)),
+        TypeKind::Map { kind, key, value } => format!(
+            "Map<{:?},{},{}>",
+            kind,
+            type_kind_stable_label(key),
+            type_kind_stable_label(value)
+        ),
+        TypeKind::BorrowRef { inner, .. } => {
+            format!("BorrowRef<{}>", type_kind_stable_label(inner))
+        }
+        TypeKind::Need { ready, error } => format!(
+            "Need<{},{}>",
+            type_kind_stable_label(ready),
+            type_kind_stable_label(error)
+        ),
+        TypeKind::Stream { item, error } => format!(
+            "Stream<{},{}>",
+            type_kind_stable_label(item),
+            type_kind_stable_label(error)
+        ),
+        TypeKind::Source { item, error } => format!(
+            "Source<{},{}>",
+            type_kind_stable_label(item),
+            type_kind_stable_label(error)
+        ),
+        TypeKind::Result { ok, error } => format!(
+            "Result<{},{}>",
+            type_kind_stable_label(ok),
+            type_kind_stable_label(error)
+        ),
+        TypeKind::Option(inner) => format!("Option<{}>", type_kind_stable_label(inner)),
+        TypeKind::Handle { name, .. } => format!("Handle<{name}>"),
+        TypeKind::ThreadHandle(inner) => format!("ThreadHandle<{}>", type_kind_stable_label(inner)),
+        TypeKind::Shared(inner) => format!("Shared<{}>", type_kind_stable_label(inner)),
+        TypeKind::Function { return_type } => {
+            format!("Function<{}>", type_kind_stable_label(return_type))
+        }
+        TypeKind::Speaker(kind) => format!("Speaker<{kind:?}>"),
+        TypeKind::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
+        TypeKind::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
+        TypeKind::Named(name) => name.clone(),
+        TypeKind::Tuple(items) => format!(
+            "Tuple<{}>",
+            items
+                .iter()
+                .map(type_kind_stable_label)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        TypeKind::Choice(items) => format!(
+            "Choice<{}>",
+            items
+                .iter()
+                .map(type_kind_stable_label)
+                .collect::<Vec<_>>()
+                .join("|")
+        ),
+        other => format!("{other:?}"),
     }
 }
 
@@ -724,6 +1188,8 @@ fn agent_rag_callables() -> Vec<(&'static str, CallableSymbol)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_syntax::parser::parse_source;
     use arcweft_source::SourceAnchor;
 
     fn public_id(value: &str) -> PublicId {
@@ -804,6 +1270,38 @@ mod tests {
                 .map(EffectCapability::as_str)
                 .collect::<Vec<_>>(),
             vec!["agent.wait", "agent.observe"]
+        );
+    }
+
+    #[test]
+    fn project_index_from_hir_preserves_flow_and_signal_ref_value_types() {
+        let tree = parse_source(
+            r#"
+signal @signal.current_flow: Watch<Ref<Flow>>
+flow @flow.opening opening {
+    return "ok"
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let index = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-a"),
+            &SourceName::path("game.arcw"),
+        )
+        .expect("HIR indexes for Agent Script");
+
+        assert_eq!(
+            index.typecheck_env().symbol_type("flow.opening"),
+            Some(&TypeKind::entity_ref(EntityKind::Flow))
+        );
+        assert_eq!(
+            index.typecheck_env().symbol_type("signal.current_flow"),
+            Some(&TypeKind::entity_ref_with_value(
+                EntityKind::Signal,
+                TypeKind::entity_ref(EntityKind::Flow)
+            ))
         );
     }
 

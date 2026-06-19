@@ -1,0 +1,10 @@
+signal @signal.current_flow: Watch<Ref<Flow>>
+
+entry game @entry.main {
+    start @flow.opening
+}
+
+flow @flow.opening opening effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.opening)
+    return "opening"
+}

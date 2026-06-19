@@ -1,0 +1,8 @@
+#[agent(version = 1)]
+agent @agent.native.flow_wait flow_wait()
+effects { agent.observe, agent.wait }
+{
+    let expected = @flow.opening
+    let observed = wait(signal(@signal.current_flow).eq(expected), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)
+    return "done"
+}

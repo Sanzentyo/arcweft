@@ -316,6 +316,52 @@ fn agent_script_run_native_source_captures_native_resource() {
 }
 
 #[test]
+#[ignore = "tier 2 native Agent Script E2E: requires native-capture feature subprocess"]
+fn agent_script_run_native_source_resolves_project_entities() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/native-flow-wait-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_native_flow_wait_smoke_path())
+        .arg("--native-source")
+        .arg(agent_script_native_project_index_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run resolves native source entities");
+    assert!(
+        output.status.success(),
+        "native agent script project entity run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native entity run output is JSON");
+
+    assert_eq!(run_json["ok"], true);
+    assert_eq!(run_json["responses"][0]["kind"], "observation");
+    assert_eq!(
+        run_json["responses"][0]["response"]["signals"]["signal.current_flow"]["kind"],
+        "entity"
+    );
+    assert_eq!(
+        run_json["responses"][0]["response"]["signals"]["signal.current_flow"]["value"],
+        "flow.opening"
+    );
+    assert!(
+        trace_path.exists(),
+        "native entity run should write trace at {}",
+        trace_path.display()
+    );
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
@@ -545,6 +591,14 @@ fn agent_script_cli_run_smoke_path() -> PathBuf {
 
 fn agent_script_cli_capture_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-capture-smoke.awfagent")
+}
+
+fn agent_script_native_flow_wait_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/native-flow-wait-smoke.awfagent")
+}
+
+fn agent_script_native_project_index_path() -> PathBuf {
+    workspace_path("samples/agent-script/native-project-index.arcw")
 }
 
 fn rich_text_showcase_path() -> PathBuf {
