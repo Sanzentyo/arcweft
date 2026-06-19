@@ -699,6 +699,13 @@ fn agent_debug_session_timeline_tool_descriptor() -> McpToolDescriptor {
 pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
     vec![
         resource_template(
+            "arcweft://session/{session_id}/context.json",
+            "session-context",
+            "Session context",
+            "Path-redacted Agent session context for observing the latest frame, cached captures, trace resources, and RAG query state.",
+            Some("application/json"),
+        ),
+        resource_template(
             "arcweft://session/{session_id}/observation/latest.json",
             "latest-observation",
             "Latest observation",
@@ -982,6 +989,7 @@ fn resource_name(resource: &AgentResource) -> String {
 
 fn resource_title(resource: &AgentResource) -> String {
     match resource.kind {
+        AgentResourceKind::SessionContext => "Session context",
         AgentResourceKind::ObservationLatest => "Latest observation",
         AgentResourceKind::Objects => "Observed objects",
         AgentResourceKind::PresentationTree => "Presentation tree",
@@ -996,6 +1004,12 @@ fn resource_title(resource: &AgentResource) -> String {
 }
 
 fn resource_description(resource: &AgentResource) -> String {
+    if resource.kind == AgentResourceKind::SessionContext {
+        return format!(
+            "Path-redacted Agent session context resource ({})",
+            resource.mime_type
+        );
+    }
     if resource.kind == AgentResourceKind::Trace {
         return format!(
             "Agent execution trace resource for read-only replay ({})",
@@ -1551,6 +1565,11 @@ mod tests {
     fn resource_templates_list_capture_uri_patterns() {
         let templates = list_resource_templates_result();
 
+        assert!(templates.resource_templates.iter().any(|template| {
+            template.name == "session-context"
+                && template.uri_template == "arcweft://session/{session_id}/context.json"
+                && template.mime_type.as_deref() == Some("application/json")
+        }));
         assert!(templates.resource_templates.iter().any(|template| {
             template.name == "viewport-capture"
                 && template.uri_template

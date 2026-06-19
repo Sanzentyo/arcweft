@@ -336,6 +336,7 @@ pub enum AgentBinaryEncoding {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentResourceKind {
+    SessionContext,
     ObservationLatest,
     Objects,
     PresentationTree,

@@ -564,6 +564,110 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_session_context_resource_redacts_source_and_enforces_privacy() {
+        let mut report = test_agent_observation_report(Some(1500));
+        report.source = "C:\\Users\\sanze\\secret\\game.arcw".to_owned();
+        report.signals.push(AgentAssignment {
+            name: "signal.current_flow".to_owned(),
+            value: "flow.opening".to_owned(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            trace_resources: vec![AgentResource {
+                uri: "arcweft://run/run.test/trace.arcwx".to_owned(),
+                kind: AgentResourceKind::Trace,
+                mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+                hash: "trace:test".to_owned(),
+                image: None,
+                body: AgentResourceBody::Json(serde_json::json!([])),
+            }],
+            ..AgentMcpState::default()
+        };
+
+        let resources = agent_mcp_current_resources(&state).expect("resources build");
+        let context = resources
+            .iter()
+            .find(|resource| resource.kind == AgentResourceKind::SessionContext)
+            .expect("session context resource is listed");
+        assert_eq!(context.uri, "arcweft://session/cli/context.json");
+        let AgentResourceBody::Json(body) = &context.body else {
+            panic!("session context is JSON");
+        };
+        assert_eq!(body["privacy_class"], serde_json::json!("project"));
+        assert_eq!(body["latest_observation"]["tick"], serde_json::json!(3));
+        assert_eq!(
+            body["latest_observation"]["source_present"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            body["resources"]["trace_resource_count"],
+            serde_json::json!(1)
+        );
+        assert!(
+            !serde_json::to_string(body)
+                .expect("context serializes")
+                .contains("secret")
+        );
+
+        let blocked = agent_mcp_call_resource_read(
+            &serde_json::json!({
+                "uri": "arcweft://session/cli/context.json",
+                "max_privacy": "public"
+            }),
+            &mut state,
+        )
+        .expect("privacy block serializes");
+        assert!(blocked.is_error);
+        assert_eq!(
+            mcp_text_json(&blocked)["privacy"],
+            serde_json::json!("project")
+        );
+
+        let allowed = agent_mcp_call_resource_read(
+            &serde_json::json!({
+                "uri": "arcweft://session/cli/context.json",
+                "max_privacy": "project"
+            }),
+            &mut state,
+        )
+        .expect("project context read succeeds");
+        assert!(!allowed.is_error);
+    }
+
+    #[test]
+    fn agent_mcp_session_context_resource_is_available_for_trace_only_session() {
+        let mut state = AgentMcpState {
+            trace_resources: vec![AgentResource {
+                uri: "arcweft://run/run.trace/trace.arcwx".to_owned(),
+                kind: AgentResourceKind::Trace,
+                mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+                hash: "trace:run.trace".to_owned(),
+                image: None,
+                body: AgentResourceBody::Json(serde_json::json!([])),
+            }],
+            ..AgentMcpState::default()
+        };
+
+        let resources = agent_mcp_current_resources(&state).expect("resources build");
+        assert!(resources.iter().any(|resource| {
+            resource.kind == AgentResourceKind::SessionContext
+                && resource.uri == "arcweft://session/mcp/context.json"
+        }));
+        let read = agent_mcp_resource_read(
+            &serde_json::json!({"uri": "arcweft://session/mcp/context.json"}),
+            &mut state,
+        )
+        .expect("trace-only context reads through resources/read");
+        let contents = read["contents"].as_array().expect("contents array");
+        assert!(
+            contents[0]["text"]
+                .as_str()
+                .expect("text resource")
+                .contains("\"observed\":false")
+        );
+    }
+
+    #[test]
     fn agent_mcp_rag_query_returns_explainable_context_pack() {
         let mut report = test_agent_observation_report(None);
         report.final_status = "running".to_owned();
@@ -4356,7 +4460,6 @@ struct AgentMcpObservation {
     report: AgentObservationReport,
     image_output: Option<AgentImageOutput>,
     image_frames: AgentImageFrameStore,
-    resources: Vec<AgentResource>,
     runtime: NativeAgentRuntimeState,
     options: AgentObserveOptions,
 }
@@ -4427,6 +4530,14 @@ fn agent_mcp_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "resources/read requires params.uri".to_owned())?;
+    if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
+        .map_err(|error| format!("failed to build Agent session context: {error}"))?
+    {
+        let read = read_resource_result(&resource)
+            .map_err(|error| format!("failed to serialize MCP session context: {error}"))?;
+        return serde_json::to_value(read)
+            .map_err(|error| format!("failed to serialize MCP read: {error}"));
+    }
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
         let read = read_resource_result(&resource)
             .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
@@ -4558,8 +4669,10 @@ fn agent_mcp_call_observe(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<serde_json::Value, String> {
     let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
-    let tool = tool_result_for_resources(&observed.resources);
     agent_mcp_store_observation(state, observed);
+    let resources = agent_mcp_current_resources(state)
+        .map_err(|_| "failed to build Agent session resource list".to_owned())?;
+    let tool = tool_result_for_resources(&resources);
     serde_json::to_value(tool)
         .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
 }
@@ -6744,14 +6857,11 @@ fn agent_mcp_run_observation(
         &observed.image_frames,
     )
     .map_err(|_| "failed to build MCP observe image output".to_owned())?;
-    let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
-        .map_err(|_| "failed to build MCP observe resources".to_owned())?;
     runtime.next_tick = observed.report.tick.saturating_add(1);
     Ok(AgentMcpObservation {
         report: observed.report,
         image_output,
         image_frames: observed.image_frames,
-        resources,
         runtime,
         options,
     })
@@ -6836,6 +6946,15 @@ fn agent_mcp_call_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
+    if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
+        .map_err(|error| format!("failed to build Agent session context: {error}"))?
+    {
+        if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+            return agent_mcp_json_tool_error(&error, "resource privacy");
+        }
+        return tool_result_for_resource(&resource)
+            .map_err(|error| format!("failed to serialize MCP session context: {error}"));
+    }
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
         if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
             return agent_mcp_json_tool_error(&error, "resource privacy");
@@ -6916,6 +7035,13 @@ fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResourc
     } else {
         Vec::new()
     };
+    if let Some(context) = agent_mcp_session_context_resource(state).map_err(|error| {
+        eprintln!("error: failed to build Agent session context: {error}");
+        ExitCode::FAILURE
+    })? {
+        resources.retain(|candidate| candidate.uri != context.uri);
+        resources.insert(0, context);
+    }
     for resource in state
         .capture_resources
         .iter()
@@ -6925,6 +7051,112 @@ fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResourc
         resources.push(resource.clone());
     }
     Ok(resources)
+}
+
+fn agent_mcp_session_context_resource_for_uri(
+    state: &AgentMcpState,
+    uri: &str,
+) -> Result<Option<AgentResource>, serde_json::Error> {
+    agent_mcp_session_context_resource(state).map(|resource| {
+        resource.filter(|resource| {
+            resource.uri == uri
+                || agent_uri_without_query(&resource.uri).is_some_and(|base| base == uri)
+        })
+    })
+}
+
+fn agent_mcp_session_context_resource(
+    state: &AgentMcpState,
+) -> Result<Option<AgentResource>, serde_json::Error> {
+    if state.report.is_none()
+        && state.capture_resources.is_empty()
+        && state.trace_resources.is_empty()
+        && state.rag_context_packs.is_empty()
+        && state.runtime.is_none()
+        && state.native_capture_session.is_none()
+    {
+        return Ok(None);
+    }
+    let session_id = state
+        .report
+        .as_ref()
+        .map_or("mcp", |report| report.session_id.as_str());
+    let latest_observation = state.report.as_ref().map(|report| {
+        serde_json::json!({
+            "tick": report.tick,
+            "frame_id": report.frame_id,
+            "state_hash": report.state_hash,
+            "render_hash": report.render_hash,
+            "final_status": report.final_status,
+            "capture_time_millis": report.capture_time_millis,
+            "viewport": report.viewport,
+            "counts": {
+                "images": report.images.len(),
+                "layers": report.layers.len(),
+                "objects": report.objects.len(),
+                "actions": report.actions.len(),
+                "logs": report.logs.len(),
+                "signals": report.signals.len(),
+                "metrics": report.metrics.len(),
+                "events": report.events.len(),
+                "diagnostics": report.diagnostics.len(),
+                "task_requests": report.task_requests,
+            },
+            "source_present": !report.source.is_empty(),
+        })
+    });
+    let trace_resources = state
+        .trace_resources
+        .iter()
+        .map(|resource| {
+            serde_json::json!({
+                "uri": resource.uri,
+                "mime_type": resource.mime_type,
+                "hash": resource.hash,
+            })
+        })
+        .collect::<Vec<_>>();
+    let rag_queries = state
+        .rag_context_packs
+        .iter()
+        .map(|pack| {
+            serde_json::json!({
+                "query_id": pack.query.query_id,
+                "text": pack.query.text,
+                "item_count": pack.items.len(),
+                "truncated": pack.truncated,
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = serde_json::json!({
+        "schema_version": 1,
+        "kind": "session_context",
+        "privacy_class": "project",
+        "session_id": session_id,
+        "observed": state.report.is_some(),
+        "latest_observation": latest_observation,
+        "resources": {
+            "capture_resource_count": state.capture_resources.len(),
+            "trace_resource_count": state.trace_resources.len(),
+            "rag_query_count": state.rag_context_packs.len(),
+            "cached_capture_uris": state.capture_resources.iter().map(|resource| &resource.uri).collect::<Vec<_>>(),
+            "trace_resources": trace_resources,
+            "rag_queries": rag_queries,
+        },
+        "runtime": {
+            "native_runtime_active": state.runtime.is_some(),
+            "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
+        },
+    });
+    let bytes = serde_json::to_vec(&body)?;
+    Ok(Some(AgentResource {
+        uri: format!("arcweft://session/{session_id}/context.json"),
+        kind: AgentResourceKind::SessionContext,
+        mime_type: "application/json".to_owned(),
+        hash: agent_mcp_content_hash(bytes),
+        image: None,
+        body: AgentResourceBody::Json(body),
+    }))
 }
 
 fn agent_mcp_cached_trace_resource(state: &AgentMcpState, uri: &str) -> Option<AgentResource> {
