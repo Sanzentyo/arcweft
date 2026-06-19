@@ -455,6 +455,57 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_debug_read_tools_enforce_max_privacy() {
+        let mut report = test_agent_observation_report(None);
+        report.final_status = "running".to_owned();
+        report.signals.push(AgentAssignment {
+            name: "signal.current_flow".to_owned(),
+            value: "flow.opening".to_owned(),
+        });
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "info".to_owned(),
+            message: "opened route".to_owned(),
+            fields: Vec::new(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            ..AgentMcpState::default()
+        };
+
+        let state_result = agent_mcp_call_get_state(
+            &serde_json::json!({"path": "final_status", "max_privacy": "public"}),
+            &mut state,
+            &[],
+        )
+        .expect("state privacy block serializes");
+        assert!(state_result.is_error);
+        assert_eq!(
+            mcp_text_json(&state_result)["max_privacy"],
+            serde_json::json!("public")
+        );
+
+        let signal_result = agent_mcp_call_signal_get(
+            &serde_json::json!({"name": "signal.current_flow", "max_privacy": "public"}),
+            &mut state,
+            &[],
+        )
+        .expect("signal privacy block serializes");
+        assert!(signal_result.is_error);
+        assert_eq!(
+            mcp_text_json(&signal_result)["privacy"],
+            serde_json::json!("project")
+        );
+
+        let log_result = agent_mcp_call_log_query(
+            &serde_json::json!({"level": "info", "max_privacy": "public"}),
+            &mut state,
+            &[],
+        )
+        .expect("log privacy block serializes");
+        assert!(log_result.is_error);
+    }
+
+    #[test]
     fn agent_mcp_rag_query_returns_explainable_context_pack() {
         let mut report = test_agent_observation_report(None);
         report.final_status = "running".to_owned();
@@ -3757,6 +3808,12 @@ fn agent_mcp_call_get_state(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<McpCallToolResult, String> {
     agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.get_state")?;
+    if let Some(error) =
+        agent_mcp_observation_debug_read_privacy_error("state", PrivacyClass::Project, max_privacy)
+    {
+        return agent_mcp_json_tool_error(&error, "state privacy");
+    }
     let report = state.report.as_ref().ok_or_else(|| {
         "arcweft.get_state requires a prior arcweft.observe call, arguments.source, or arguments.profile"
             .to_owned()
@@ -3783,6 +3840,12 @@ fn agent_mcp_call_signal_get(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<McpCallToolResult, String> {
     agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.signal_get")?;
+    if let Some(error) =
+        agent_mcp_observation_debug_read_privacy_error("signal", PrivacyClass::Project, max_privacy)
+    {
+        return agent_mcp_json_tool_error(&error, "signal privacy");
+    }
     let name = arguments
         .get("name")
         .and_then(serde_json::Value::as_str)
@@ -3808,6 +3871,12 @@ fn agent_mcp_call_log_query(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<McpCallToolResult, String> {
     agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.log_query")?;
+    if let Some(error) =
+        agent_mcp_observation_debug_read_privacy_error("logs", PrivacyClass::Project, max_privacy)
+    {
+        return agent_mcp_json_tool_error(&error, "logs privacy");
+    }
     let report = state.report.as_ref().ok_or_else(|| {
         "arcweft.log_query requires a prior arcweft.observe call, arguments.source, or arguments.profile"
             .to_owned()
@@ -4601,6 +4670,41 @@ fn agent_mcp_privacy_class_argument(
         format!(
             "arcweft.rag.query argument {name} must be one of public, project, sensitive, or secret"
         )
+    })
+}
+
+fn agent_mcp_max_privacy_argument(
+    arguments: &serde_json::Value,
+    tool: &str,
+) -> Result<PrivacyClass, String> {
+    let Some(value) = arguments.get("max_privacy") else {
+        return Ok(PrivacyClass::Project);
+    };
+    let value = value
+        .as_str()
+        .ok_or_else(|| format!("{tool} argument max_privacy must be a string"))?;
+    PrivacyClass::parse(value).ok_or_else(|| {
+        format!("{tool} argument max_privacy must be one of public, project, sensitive, or secret")
+    })
+}
+
+fn agent_mcp_observation_debug_read_privacy_error(
+    resource: &str,
+    privacy: PrivacyClass,
+    max_privacy: PrivacyClass,
+) -> Option<serde_json::Value> {
+    (!privacy.is_allowed_by(max_privacy)).then(|| {
+        serde_json::json!({
+            "status": "blocked",
+            "error": format!(
+                "arcweft.{resource} is {privacy} and exceeds max_privacy {max_privacy}",
+                privacy = privacy.as_str(),
+                max_privacy = max_privacy.as_str(),
+            ),
+            "resource": resource,
+            "privacy": privacy.as_str(),
+            "max_privacy": max_privacy.as_str(),
+        })
     })
 }
 

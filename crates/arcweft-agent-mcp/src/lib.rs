@@ -420,6 +420,12 @@ fn agent_get_state_tool_descriptor() -> McpToolDescriptor {
                 "steps": { "type": "integer", "minimum": 1 },
                 "capture_step": { "type": "integer", "minimum": 1 },
                 "max_ops": { "type": "integer", "minimum": 1 },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed for returned observation-derived state."
+                },
                 "path": { "type": "string", "description": "Optional dotted state summary path such as status, final_status, tick, state_hash, or render_hash." }
             }
         }),
@@ -442,6 +448,12 @@ fn agent_signal_get_tool_descriptor() -> McpToolDescriptor {
                 "steps": { "type": "integer", "minimum": 1 },
                 "capture_step": { "type": "integer", "minimum": 1 },
                 "max_ops": { "type": "integer", "minimum": 1 },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed for returned observation-derived signal values."
+                },
                 "name": { "type": "string", "description": "Signal id without @, such as signal.current_flow." }
             },
             "required": ["name"]
@@ -467,6 +479,12 @@ fn agent_log_query_tool_descriptor() -> McpToolDescriptor {
                 "max_ops": { "type": "integer", "minimum": 1 },
                 "level": { "type": "string", "description": "Optional exact log level filter." },
                 "contains": { "type": "string", "description": "Optional case-sensitive message substring filter." },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed for returned observation-derived log messages."
+                },
                 "limit": { "type": "integer", "minimum": 0, "default": 50 }
             }
         }),
@@ -1767,6 +1785,25 @@ mod tests {
             rag.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
         );
+    }
+
+    #[test]
+    fn debug_read_tool_schemas_expose_max_privacy() {
+        let tools = agent_tool_descriptors();
+        for name in [
+            "arcweft.get_state",
+            "arcweft.signal_get",
+            "arcweft.log_query",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .expect("debug read tool is described");
+            assert_eq!(
+                tool.input_schema["properties"]["max_privacy"]["enum"],
+                serde_json::json!(["public", "project", "sensitive", "secret"])
+            );
+        }
     }
 
     fn assert_capture_time_description_mentions_animated_presentation_objects(

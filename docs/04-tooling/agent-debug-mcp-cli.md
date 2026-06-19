@@ -364,6 +364,11 @@ arcweft.debug.search
 arcweft.trace.read
 ```
 
+Observation-derived state, signal, and log readback accepts `max_privacy`
+(`public`, `project`, `sensitive`, or `secret`). The default is `project`;
+`max_privacy=public` blocks cached observation debug data rather than returning
+project-private payloads.
+
 ## Product flags
 
 ```text
