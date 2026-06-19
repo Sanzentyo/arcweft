@@ -12,8 +12,9 @@ use crate::output::{RuntimeExecutorTier, RuntimeProfilePhase};
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleImageAnimation,
-    BundleImageAsset, BundleImageFormat, BundleLaunchKind, BundleManifest, BundleRuntimeSummary,
-    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleLaunchKind, BundleManifest,
+    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
+    BundleVirtualFileSpace,
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
@@ -167,7 +168,7 @@ fn compile_bundle_artifact(
         required_host_calls.iter().map(String::as_str),
     );
     let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
-    let image_assets = collect_bundle_image_assets(&virtual_files);
+    let image_assets = collect_bundle_image_assets(&virtual_files)?;
     validate_referenced_bundle_image_assets(&compiled.plan, &image_assets)?;
     Ok(ArcweftBundle::new(
         bundle_manifest(
@@ -768,29 +769,61 @@ fn collect_bundle_virtual_files(
         .map(|groups| groups.into_iter().flatten().collect())
 }
 
-fn collect_bundle_image_assets(files: &[BundleVirtualFile]) -> Vec<BundleImageAsset> {
+fn collect_bundle_image_assets(
+    files: &[BundleVirtualFile],
+) -> Result<Vec<BundleImageAsset>, ExitCode> {
     let mut assets = files
         .iter()
         .filter(|file| file.space == BundleVirtualFileSpace::Asset)
-        .filter_map(bundle_image_asset_from_virtual_file)
+        .map(bundle_image_asset_from_virtual_file)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
     assets.sort_by(|left, right| left.id.cmp(&right.id));
     assets.dedup_by(|left, right| left.id == right.id);
-    assets
+    Ok(assets)
 }
 
-fn bundle_image_asset_from_virtual_file(file: &BundleVirtualFile) -> Option<BundleImageAsset> {
-    let format = bundle_image_format_from_path(&file.path)?;
-    Some(BundleImageAsset {
-        id: bundle_asset_id_from_virtual_path(&file.path)?,
+fn bundle_image_asset_from_virtual_file(
+    file: &BundleVirtualFile,
+) -> Result<Option<BundleImageAsset>, ExitCode> {
+    let Some(format) = bundle_image_format_from_path(&file.path) else {
+        return Ok(None);
+    };
+    let Some(id) = bundle_asset_id_from_virtual_path(&file.path) else {
+        return Ok(None);
+    };
+    let decoded = arcweft_image::decode_image_bytes(
+        bundle_image_decode_format(format),
+        &file.bytes,
+        arcweft_image::ImageDecodeOptions::default(),
+    )
+    .map_err(|error| {
+        eprintln!(
+            "error: failed to decode bundled image asset {}: {error}",
+            file.path
+        );
+        ExitCode::FAILURE
+    })?;
+    let dimensions = decoded.dimensions();
+    Ok(Some(BundleImageAsset {
+        id,
         file: BundleVirtualFileRef {
             space: file.space,
             path: file.path.clone(),
         },
         format,
-        animation: bundle_image_animation_for_format(format),
-        dimensions: None,
-    })
+        animation: if decoded.is_animated() {
+            BundleImageAnimation::Animated
+        } else {
+            BundleImageAnimation::Static
+        },
+        dimensions: Some(BundleImageDimensions {
+            width: dimensions.width(),
+            height: dimensions.height(),
+        }),
+    }))
 }
 
 fn bundle_image_format_from_path(path: &str) -> Option<BundleImageFormat> {
@@ -803,10 +836,12 @@ fn bundle_image_format_from_path(path: &str) -> Option<BundleImageFormat> {
     }
 }
 
-const fn bundle_image_animation_for_format(format: BundleImageFormat) -> BundleImageAnimation {
+const fn bundle_image_decode_format(format: BundleImageFormat) -> arcweft_image::ImageFormat {
     match format {
-        BundleImageFormat::Gif | BundleImageFormat::WebP => BundleImageAnimation::Animated,
-        BundleImageFormat::Png | BundleImageFormat::Jpeg => BundleImageAnimation::Static,
+        BundleImageFormat::Png => arcweft_image::ImageFormat::Png,
+        BundleImageFormat::Jpeg => arcweft_image::ImageFormat::Jpeg,
+        BundleImageFormat::Gif => arcweft_image::ImageFormat::Gif,
+        BundleImageFormat::WebP => arcweft_image::ImageFormat::WebP,
     }
 }
 
@@ -989,6 +1024,49 @@ mod tests {
             animation: BundleImageAnimation::Static,
             dimensions: None,
         }
+    }
+
+    fn sample_image_virtual_file(path: &str) -> BundleVirtualFile {
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("samples")
+                .join(".arcweft")
+                .join("asset")
+                .join(path),
+        )
+        .expect("sample image asset is readable");
+        BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: path.to_owned(),
+            bytes,
+        }
+    }
+
+    #[test]
+    fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
+        let assets = collect_bundle_image_assets(&[
+            sample_image_virtual_file("bg/poster.webp"),
+            sample_image_virtual_file("bg/loop.webp"),
+        ])
+        .expect("sample image assets decode");
+
+        let poster = assets
+            .iter()
+            .find(|asset| asset.id == "asset.bg.poster")
+            .expect("static webp asset is collected");
+        assert_eq!(poster.format, BundleImageFormat::WebP);
+        assert_eq!(poster.animation, BundleImageAnimation::Static);
+        assert!(poster.dimensions.is_some());
+
+        let loop_asset = assets
+            .iter()
+            .find(|asset| asset.id == "asset.bg.loop")
+            .expect("animated webp asset is collected");
+        assert_eq!(loop_asset.format, BundleImageFormat::WebP);
+        assert_eq!(loop_asset.animation, BundleImageAnimation::Animated);
+        assert!(loop_asset.dimensions.is_some());
     }
 
     #[test]

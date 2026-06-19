@@ -111,15 +111,18 @@ are rejected or omitted before encoding.
 
 Image assets are typed bundle records that bind a stable asset id to one
 encoded asset virtual file. Static PNG/JPEG/WebP and animated GIF/WebP use the
-same `image_assets[]` section; adapters decode bytes after looking up the
-referenced virtual file, so bundle execution can use encoded payloads without
-re-reading or re-lowering source files.
+same `image_assets[]` section. The bundler decodes the encoded asset once while
+building the bundle to record actual static/animated state and intrinsic
+dimensions; adapters decode bytes again after looking up the referenced virtual
+file for frame upload and playback, so bundle execution can use encoded payloads
+without re-reading or re-lowering source files.
 
 The CLI bundler derives image asset records for image files under
 `.arcweft/asset`: `bg/room.png` becomes `asset.bg.room`, `ui/logo.webp` becomes
 `asset.ui.logo`, and the record points at the matching asset virtual file.
-PNG/JPEG are marked `static`; GIF/WebP are marked `animated` because they may
-carry multiple frames.
+PNG/JPEG are marked `static`; GIF/WebP are marked from decoded frame count, so
+static WebP remains a normal one-frame image while multi-frame GIF/WebP is
+marked `animated`.
 
 When the lowered runtime plan contains a statically known
 `asset.image(@asset.id)` or `asset.image("asset.id")` request, `arcw bundle`

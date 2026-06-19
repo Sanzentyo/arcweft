@@ -28862,8 +28862,16 @@ fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     fs::create_dir_all(asset_dir.join("bg")).expect("create virtual asset bg root");
     fs::create_dir_all(asset_dir.join("ui")).expect("create virtual asset ui root");
     fs::create_dir_all(&save_dir).expect("create virtual save root");
-    fs::write(asset_dir.join("bg").join("room.png"), b"png").expect("seed png asset");
-    fs::write(asset_dir.join("ui").join("logo.webp"), b"webp").expect("seed webp asset");
+    fs::copy(
+        sample_image_asset_path(Path::new("bg").join("room.png")),
+        asset_dir.join("bg").join("room.png"),
+    )
+    .expect("seed png asset");
+    fs::copy(
+        sample_image_asset_path(Path::new("bg").join("poster.webp")),
+        asset_dir.join("ui").join("logo.webp"),
+    )
+    .expect("seed static webp asset");
     fs::write(save_dir.join("input.txt"), "bundle-ok").expect("seed virtual input");
     fs::write(
         &source_path,
@@ -28941,13 +28949,24 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
             && bundle_json.contains("\"format\": \"png\"")
             && bundle_json.contains("\"id\": \"asset.ui.logo\"")
             && bundle_json.contains("\"format\": \"webp\"")
-            && bundle_json.contains("\"animation\": \"animated\""),
-        "bundle artifact should include executable bytecode, native-file adapter metadata, relative save file, and typed image assets: {bundle_json}"
+            && bundle_json.contains("\"animation\": \"static\"")
+            && bundle_json.contains("\"dimensions\""),
+        "bundle artifact should include executable bytecode, native-file adapter metadata, relative save file, typed image assets, and decoded image metadata: {bundle_json}"
     );
     assert!(
         !bundle_json.contains(&fixture.dir.display().to_string()),
         "bundle artifact must not record absolute temp paths: {bundle_json}"
     );
+}
+
+fn sample_image_asset_path(relative: impl AsRef<Path>) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("samples")
+        .join(".arcweft")
+        .join("asset")
+        .join(relative)
 }
 
 fn run_bundle_fixture_command(fixture: &BundleNativeFileFixture) -> String {

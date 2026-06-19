@@ -61,10 +61,14 @@ metadata.
 `arcweft-bundle` now has a typed `image_assets` section. Each
 `BundleImageAsset` maps a stable asset id to a bundle virtual file, records the
 encoded format (`png`, `jpeg`, `gif`, or `webp`), records whether the asset is
-static or animated, and can resolve its encoded bytes without filesystem I/O or
-source lowering. Decode remains adapter work through `arcweft-image`. The CLI
-bundler now populates this section from `.arcweft/asset` PNG/JPEG/GIF/WebP
-files while preserving relative virtual paths and avoiding host path leakage.
+static or animated, records intrinsic dimensions, and can resolve its encoded
+bytes without filesystem I/O or source lowering. The CLI bundler decodes
+`.arcweft/asset` PNG/JPEG/GIF/WebP files through `arcweft-image` while building
+the bundle so metadata reflects the actual payload; static WebP remains static,
+and multi-frame GIF/WebP is marked animated. Render/runtime adapters still
+decode the encoded bundle payloads for frame upload and playback rather than
+re-reading source files. The bundler preserves relative virtual paths and
+avoids host path leakage.
 `arcw bundle` also validates statically known `asset.image(@asset.id)` /
 `asset.image("asset.id")` host-task references and presentation runtime calls
 such as `bg(@asset.id)`, `image(@asset.id, ...)`, and
