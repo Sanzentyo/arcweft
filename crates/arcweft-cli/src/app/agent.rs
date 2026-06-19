@@ -19,6 +19,7 @@ use arcweft_agent_runner::{
     AgentControllerRunConfig, AgentControllerRunReport, AgentRunError, AgentRunner,
     AgentRunnerConfig, AgentSession, NoopRagService, RuntimeAgentCapability, RuntimeAgentPolicy,
 };
+use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
@@ -453,6 +454,12 @@ struct AgentScriptRunReport {
     error: Option<String>,
 }
 
+struct AgentScriptRunInput {
+    path: String,
+    agents: usize,
+    bundle: ArcweftBundle,
+}
+
 type CliAgentRunError = AgentRunError<Infallible, Infallible, Infallible>;
 
 #[derive(serde::Serialize)]
@@ -472,23 +479,8 @@ struct AgentScriptTraceReport {
 }
 
 fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitCode> {
-    if !is_awfagent_path(&options.path) {
-        eprintln!(
-            "error: {} is not an .awfagent source file",
-            options.path.display()
-        );
-        return Err(ExitCode::from(2));
-    }
-    let source = fs::read_to_string(&options.path).map_err(|error| {
-        eprintln!("error: failed to read {}: {error}", options.path.display());
-        ExitCode::FAILURE
-    })?;
-    let project = agent_script_project_index(&options.signals).map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::from(2)
-    })?;
-    let report = match arcweft_compiler::compile_agent_bundle_with_project(source, &project) {
-        Ok(compiled) => agent_script_run_compiled(options, &compiled)?,
+    let report = match agent_script_run_input(options) {
+        Ok(input) => agent_script_run_bundle(options, &input)?,
         Err(error) => AgentScriptRunReport {
             path: options.path.display().to_string(),
             ok: false,
@@ -500,7 +492,7 @@ fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitC
             trace_path: None,
             trace_records: 0,
             responses: Vec::new(),
-            error: Some(error.to_string()),
+            error: Some(error),
         },
     };
     if options.json {
@@ -520,9 +512,57 @@ fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitC
     }
 }
 
-fn agent_script_run_compiled(
+fn agent_script_run_input(options: &AgentScriptRunOptions) -> Result<AgentScriptRunInput, String> {
+    if is_awfagent_path(&options.path) {
+        return agent_script_run_source_input(options);
+    }
+    if is_awfb_path(&options.path) {
+        return agent_script_run_bundle_input(&options.path);
+    }
+    Err(format!(
+        "{} is not an .awfagent source file or .awfb Agent bundle",
+        options.path.display()
+    ))
+}
+
+fn agent_script_run_source_input(
     options: &AgentScriptRunOptions,
-    compiled: &arcweft_compiler::CompiledAgentBundle,
+) -> Result<AgentScriptRunInput, String> {
+    let source = fs::read_to_string(&options.path)
+        .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
+    let project = agent_script_project_index(&options.signals)?;
+    let compiled = arcweft_compiler::compile_agent_bundle_with_project(source, &project)
+        .map_err(|error| error.to_string())?;
+    Ok(AgentScriptRunInput {
+        path: options.path.display().to_string(),
+        agents: compiled.hir.agents().len(),
+        bundle: compiled.bundle,
+    })
+}
+
+fn agent_script_run_bundle_input(path: &Path) -> Result<AgentScriptRunInput, String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bundle = ArcweftBundle::from_json_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    if bundle.bundle_kind != BundleKind::AgentController {
+        return Err(format!(
+            "{} is a {} bundle, not an agent_controller bundle",
+            path.display(),
+            bundle.bundle_kind
+        ));
+    }
+    let agents = usize::from(bundle.agent.is_some());
+    Ok(AgentScriptRunInput {
+        path: path.display().to_string(),
+        agents,
+        bundle,
+    })
+}
+
+fn agent_script_run_bundle(
+    options: &AgentScriptRunOptions,
+    input: &AgentScriptRunInput,
 ) -> Result<AgentScriptRunReport, ExitCode> {
     let session = CliAgentSession::new(options.signals.clone());
     let mut runner = AgentRunner::new(
@@ -539,7 +579,7 @@ fn agent_script_run_compiled(
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
     let run_result = runner.run_controller_bundle(
-        &compiled.bundle,
+        &input.bundle,
         AgentControllerRunConfig {
             max_steps: options.max_steps,
             max_ops_per_step: options.max_ops,
@@ -552,7 +592,7 @@ fn agent_script_run_compiled(
     })?;
     Ok(agent_script_run_report_from_result(
         options,
-        compiled,
+        input,
         run_result,
         &run_id,
         &debug_events,
@@ -561,7 +601,7 @@ fn agent_script_run_compiled(
 
 fn agent_script_run_report_from_result(
     options: &AgentScriptRunOptions,
-    compiled: &arcweft_compiler::CompiledAgentBundle,
+    input: &AgentScriptRunInput,
     run_result: Result<AgentControllerRunReport, CliAgentRunError>,
     run_id: &AgentRunId,
     debug_events: &[DebugEvent],
@@ -574,22 +614,22 @@ fn agent_script_run_report_from_result(
         .transpose();
     match (run_result, trace_result) {
         (Ok(run), Ok(trace_path)) => agent_script_run_success_report(
-            options,
-            compiled.hir.agents().len(),
+            &input.path,
+            input.agents,
             run,
             trace_path,
             trace_records.len(),
         ),
         (Err(error), Ok(trace_path)) => agent_script_run_error_report(
-            options,
-            compiled.hir.agents().len(),
+            &input.path,
+            input.agents,
             trace_path,
             trace_records.len(),
             error.to_string(),
         ),
         (_, Err(error)) => agent_script_run_error_report(
-            options,
-            compiled.hir.agents().len(),
+            &input.path,
+            input.agents,
             options
                 .trace_out
                 .as_ref()
@@ -601,14 +641,14 @@ fn agent_script_run_report_from_result(
 }
 
 fn agent_script_run_success_report(
-    options: &AgentScriptRunOptions,
+    path: &str,
     agents: usize,
     run: AgentControllerRunReport,
     trace_path: Option<String>,
     trace_records: usize,
 ) -> AgentScriptRunReport {
     AgentScriptRunReport {
-        path: options.path.display().to_string(),
+        path: path.to_owned(),
         ok: true,
         agents,
         steps: run.steps,
@@ -623,14 +663,14 @@ fn agent_script_run_success_report(
 }
 
 fn agent_script_run_error_report(
-    options: &AgentScriptRunOptions,
+    path: &str,
     agents: usize,
     trace_path: Option<String>,
     trace_records: usize,
     error: String,
 ) -> AgentScriptRunReport {
     AgentScriptRunReport {
-        path: options.path.display().to_string(),
+        path: path.to_owned(),
         ok: false,
         agents,
         steps: 0,

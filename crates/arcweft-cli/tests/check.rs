@@ -133,15 +133,21 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     ));
     let _ = fs::remove_file(&trace_path);
     let _ = fs::remove_file(&bundle_path);
+
+    assert_agent_script_build(&bundle_path);
+    assert_agent_script_bundle_run(&bundle_path);
+    assert_agent_script_source_run_trace(&trace_path);
+    assert_agent_script_trace_report(&trace_path);
+}
+
+fn assert_agent_script_build(bundle_path: &Path) {
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
         .arg("build")
-        .arg(workspace_path(
-            "samples/agent-script/cli-run-smoke.awfagent",
-        ))
+        .arg(agent_script_cli_run_smoke_path())
         .arg("--output")
-        .arg(&bundle_path)
+        .arg(bundle_path)
         .arg("--json")
         .output()
         .expect("arcw agent script build writes an agent bundle");
@@ -157,21 +163,44 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_eq!(build_json["bundle_kind"], "agent_controller");
     assert_eq!(build_json["agent_id"], "agent.cli.run_smoke");
     let bundle_json: serde_json::Value =
-        serde_json::from_slice(&fs::read(&bundle_path).expect("build writes .awfb bundle"))
+        serde_json::from_slice(&fs::read(bundle_path).expect("build writes .awfb bundle"))
             .expect("bundle is JSON");
     assert_eq!(bundle_json["bundle_kind"], "agent_controller");
     assert_eq!(bundle_json["agent"]["agent_id"], "agent.cli.run_smoke");
+}
 
+fn assert_agent_script_bundle_run(bundle_path: &Path) {
+    let bundle_run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(bundle_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes built bundle");
+    assert!(
+        bundle_run_output.status.success(),
+        "agent script run should execute built .awfb\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bundle_run_output.stdout),
+        String::from_utf8_lossy(&bundle_run_output.stderr)
+    );
+    let bundle_run_json: serde_json::Value =
+        serde_json::from_slice(&bundle_run_output.stdout).expect("bundle run output is JSON");
+    assert_eq!(bundle_run_json["ok"], true);
+    assert_eq!(bundle_run_json["agents"], 1);
+    assert_eq!(bundle_run_json["host_calls"], 1);
+    assert_eq!(bundle_run_json["responses"][0]["kind"], "observation");
+}
+
+fn assert_agent_script_source_run_trace(trace_path: &Path) {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
         .arg("run")
-        .arg(workspace_path(
-            "samples/agent-script/cli-run-smoke.awfagent",
-        ))
+        .arg(agent_script_cli_run_smoke_path())
         .arg("--json")
         .arg("--trace-out")
-        .arg(&trace_path)
+        .arg(trace_path)
         .output()
         .expect("arcw agent script run executes");
 
@@ -188,19 +217,21 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_eq!(json["trace_records"], 5);
     assert_eq!(json["responses"][0]["kind"], "observation");
     let trace: serde_json::Value = serde_json::from_slice(
-        &fs::read(&trace_path).expect("agent script run writes .arcwx trace"),
+        &fs::read(trace_path).expect("agent script run writes .arcwx trace"),
     )
     .expect("trace is JSON");
     assert_eq!(trace.as_array().unwrap().len(), 5);
     assert_eq!(trace[0]["kind"], "run_started");
     assert_eq!(trace[2]["kind"], "observation_received");
     assert_eq!(trace[4]["kind"], "run_finished");
+}
 
+fn assert_agent_script_trace_report(trace_path: &Path) {
     let trace_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
         .arg("trace")
-        .arg(&trace_path)
+        .arg(trace_path)
         .arg("--json")
         .output()
         .expect("arcw agent script trace validates run trace");
@@ -218,6 +249,10 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_eq!(trace_report["started"], true);
     assert_eq!(trace_report["finished"], true);
     assert_eq!(trace_report["kinds"]["vm_step"], 2);
+}
+
+fn agent_script_cli_run_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-run-smoke.awfagent")
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {
