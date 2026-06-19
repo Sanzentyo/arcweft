@@ -13,7 +13,7 @@ impl TypeChecker<'_> {
         match name {
             "bg" => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Asset, "bg asset");
-                self.check_presentation_named_args(args, "background");
+                self.check_presentation_background_named_args(args);
                 Some(TypeKind::Named(
                     "PresentationHandle<BackgroundSurface>".to_owned(),
                 ))
@@ -160,6 +160,27 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn check_presentation_background_named_args(&mut self, args: &[CallArg]) {
+        for arg in args {
+            let CallArg::Named { name, value } = arg else {
+                continue;
+            };
+            match name.as_str() {
+                "target" => self.expect_entity_expr_kind(value, &EntityKind::Target, "target"),
+                "slot" => self.expect_slot_family(value, "background"),
+                "scope" => self.expect_entity_expr_kind(
+                    value,
+                    &EntityKind::Other("scope".to_owned()),
+                    "scope",
+                ),
+                _ if self.check_presentation_image_common_named_arg(name, value) => {}
+                _ => {
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
     fn check_presentation_image_named_args(&mut self, args: &[CallArg]) {
         for arg in args {
             let CallArg::Named { name, value } = arg else {
@@ -171,6 +192,9 @@ impl TypeChecker<'_> {
                 "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
                 "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role" => {
                     self.check_presentation_image_loose_value(value);
+                }
+                "alignment.x" | "alignment.y" | "align.x" | "align.y" => {
+                    self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
                 }
                 "depth" => {
                     self.expect_expr_type(value, &TypeKind::I32, "image depth");
@@ -186,6 +210,20 @@ impl TypeChecker<'_> {
                 }
                 "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
                     self.check_presentation_image_transform_component_value(value);
+                }
+                "playback.start"
+                | "playback.start_time"
+                | "playback.paused_at"
+                | "playback.pause_at"
+                | "playback.local_time"
+                | "playback.pinned_local_time" => {
+                    self.check_presentation_image_time_value(value);
+                }
+                "playback.rate" => {
+                    self.check_presentation_image_ratio_or_milli_value(
+                        value,
+                        "image playback rate",
+                    );
                 }
                 "proxy.layer" => {
                     self.check_presentation_image_id_value(value, &EntityKind::Layer);
@@ -206,6 +244,37 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
             }
+        }
+    }
+
+    fn check_presentation_image_common_named_arg(&mut self, name: &str, value: &Expr) -> bool {
+        match name {
+            "fit" => {
+                self.check_presentation_image_loose_value(value);
+                true
+            }
+            "opacity" => {
+                self.check_presentation_image_opacity_value(value);
+                true
+            }
+            "alignment.x" | "alignment.y" | "align.x" | "align.y" => {
+                self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
+                true
+            }
+            "playback.start"
+            | "playback.start_time"
+            | "playback.paused_at"
+            | "playback.pause_at"
+            | "playback.local_time"
+            | "playback.pinned_local_time" => {
+                self.check_presentation_image_time_value(value);
+                true
+            }
+            "playback.rate" => {
+                self.check_presentation_image_ratio_or_milli_value(value, "image playback rate");
+                true
+            }
+            _ => false,
         }
     }
 
@@ -251,13 +320,36 @@ impl TypeChecker<'_> {
     }
 
     fn check_presentation_image_opacity_value(&mut self, expr: &Expr) {
+        self.check_presentation_image_ratio_or_milli_value(expr, "image opacity");
+    }
+
+    fn check_presentation_image_ratio_or_milli_value(&mut self, expr: &Expr, context: &str) {
         match expr {
             Expr::Literal(Literal::Int { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::I32, "image opacity milli");
+                self.expect_expr_type(expr, &TypeKind::I32, context);
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "image opacity ratio");
+                self.expect_expr_type(expr, &TypeKind::F64, context);
             }
+            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_image_time_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Literal(Literal::Duration { .. }) => {
+                self.expect_expr_type(expr, &TypeKind::Duration, "image playback time");
+            }
+            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::I32, "image playback time seconds");
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::F64, "image playback time seconds");
+            }
+            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
             other => {
                 self.check_expr(other);
             }
@@ -272,6 +364,7 @@ impl TypeChecker<'_> {
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
                 self.expect_expr_type(expr, &TypeKind::F64, "image transform component ratio");
             }
+            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
             other => {
                 self.check_expr(other);
             }

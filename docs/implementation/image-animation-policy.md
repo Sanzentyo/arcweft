@@ -190,7 +190,7 @@ image(
   fit = "stretch",
   alignment.x = "center",
   alignment.y = "center",
-  opacity = "0.5",
+  opacity = 0.5,
   playback.local_time = 50ms,
   transform.tx = 24px,
   transform.ty = 12px,
@@ -210,9 +210,9 @@ image(
 ```
 
 `param.*` is parsed as a dotted named argument, not as an ad hoc string parse.
-Checked Arcweft source should express `opacity` as a quoted ratio such as
-`"0.5"` or a quoted milli value such as `"500"` until image call arguments gain
-typed numeric expectations in the semantic layer; it lowers to the presentation
+Checked Arcweft source can express `opacity` as a ratio such as `0.5` or a
+milli value such as `500`; presentation call checking supplies the expected
+numeric type and the runtime lowering stores the result in the presentation
 model's `opacity_milli` field.
 `alignment.x` / `alignment.y` (or the short `align.x` / `align.y`) accept
 keywords (`left`, `center`, `right`, `top`, `bottom`, `start`, `end`), ratio
