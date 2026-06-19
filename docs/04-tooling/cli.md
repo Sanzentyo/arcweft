@@ -358,10 +358,13 @@ treated as project-private until an explicit history privacy column exists, so
 `--max-privacy public` returns no history hits. `--query`, `--query-vector`,
 `--graph-query`, and `--history-query` are mutually exclusive; provider
 embedding I/O remains outside this command.
-The stdio MCP server exposes the same rebuildable-store lexical path as
-`arcweft.debug.search`. The tool accepts `query`, optional `path`, `limit`, and
-`max_privacy`, defaults to `.arcweft/cache/agent-debug.sqlite3`, and returns
-chunk IDs plus source metadata without requiring a native observation.
+The stdio MCP server exposes the same rebuildable-store channels as
+`arcweft.debug.search`. The tool accepts exactly one of `query`, `query_vector`
+with `model_id` and `model_revision`, `graph_query` with optional
+`graph_depth`, or `history_query`; optional `path`, `limit`, and `max_privacy`
+apply to every selector. It defaults to `.arcweft/cache/agent-debug.sqlite3`
+and returns chunk IDs plus source metadata without requiring a native
+observation.
 `arcw agent rag query --trace <file.arcwx> --query <text>
 [--max-privacy public|project|sensitive|secret] [--json]` builds the same
 explainable `RagContextPack` shape used by Agent MCP. The default privacy

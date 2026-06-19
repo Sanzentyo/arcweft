@@ -51,10 +51,11 @@ use arcweft_core::step::InputEvent as RuntimeInputEvent;
 use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
+    embedding::EmbeddingModelDescriptor,
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
 };
-use arcweft_debug_sqlite::store::DebugStore;
+use arcweft_debug_sqlite::store::{ChunkSearchResult, DebugStore};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_syntax::ast::{
     flow::Stmt,
@@ -3407,16 +3408,32 @@ fn agent_mcp_call_log_query(
 }
 
 fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallToolResult, String> {
-    let query = arguments
-        .get("query")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|query| !query.is_empty())
-        .ok_or_else(|| "arcweft.debug.search requires non-empty arguments.query".to_owned())?;
+    let query = agent_mcp_non_empty_string_argument(arguments, "query");
+    let query_vector = agent_mcp_query_vector_argument(arguments, "query_vector")?;
+    let graph_query = agent_mcp_non_empty_string_argument(arguments, "graph_query");
+    let history_query = agent_mcp_non_empty_string_argument(arguments, "history_query");
+    let selector_count = usize::from(query.is_some())
+        + usize::from(query_vector.is_some())
+        + usize::from(graph_query.is_some())
+        + usize::from(history_query.is_some());
+    if selector_count == 0 {
+        return Err(
+            "arcweft.debug.search requires one of query, query_vector, graph_query, or history_query"
+                .to_owned(),
+        );
+    }
+    if selector_count > 1 {
+        return Err(
+            "arcweft.debug.search accepts only one of query, query_vector, graph_query, or history_query"
+                .to_owned(),
+        );
+    }
     let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(10);
     if limit == 0 {
         return Err("arcweft.debug.search argument limit must be at least 1".to_owned());
     }
+    let graph_depth =
+        agent_mcp_u32_argument(arguments, "graph_depth", "arcweft.debug.search")?.unwrap_or(1);
     let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
         .unwrap_or(PrivacyClass::Project);
     let path = arguments
@@ -3426,32 +3443,188 @@ fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallT
         .unwrap_or(".arcweft/cache/agent-debug.sqlite3");
     let store = DebugStore::open(path)
         .map_err(|error| format!("arcweft.debug.search failed to open `{path}`: {error}"))?;
-    let hits = store
-        .lexical_search_with_max_privacy(query, limit, max_privacy)
+    let request = AgentMcpDebugSearchRequest {
+        query,
+        query_vector: query_vector.as_deref(),
+        graph_query,
+        history_query,
+        graph_depth,
+        limit,
+        max_privacy,
+    };
+    let hits = agent_mcp_debug_search_hits(&store, &request, arguments)
         .map_err(|error| format!("arcweft.debug.search failed to search `{path}`: {error}"))?
-        .into_iter()
-        .map(|result| {
-            serde_json::json!({
-                "chunk_id": result.hit.chunk_id.as_str(),
-                "title": result.title,
-                "body": result.body,
-                "source_kind": result.source_kind,
-                "source_key": result.source_key,
-                "privacy": result.privacy.as_str(),
-                "channel": agent_mcp_search_channel_label(result.hit.channel),
-                "rank": result.hit.rank,
-                "score": result.hit.score,
-            })
-        })
+        .iter()
+        .map(agent_mcp_debug_search_hit_json)
         .collect::<Vec<_>>();
     let value = serde_json::json!({
         "path": path,
         "query": query,
+        "query_vector_dimensions": query_vector.as_ref().map(Vec::len),
+        "graph_query": graph_query,
+        "graph_depth": graph_query.map(|_| graph_depth),
+        "history_query": history_query,
         "limit": limit,
         "max_privacy": max_privacy.as_str(),
         "hits": hits,
     });
     agent_mcp_json_tool_result(&value, "debug search")
+}
+
+struct AgentMcpDebugSearchRequest<'a> {
+    query: Option<&'a str>,
+    query_vector: Option<&'a [f32]>,
+    graph_query: Option<&'a str>,
+    history_query: Option<&'a str>,
+    graph_depth: u32,
+    limit: usize,
+    max_privacy: PrivacyClass,
+}
+
+fn agent_mcp_debug_search_hits(
+    store: &DebugStore,
+    request: &AgentMcpDebugSearchRequest<'_>,
+    arguments: &serde_json::Value,
+) -> Result<Vec<ChunkSearchResult>, String> {
+    if let Some(query) = request.query {
+        return store
+            .lexical_search_with_max_privacy(query, request.limit, request.max_privacy)
+            .map_err(|error| error.to_string());
+    }
+    if let Some(query) = request.graph_query {
+        return store
+            .graph_search_with_depth_and_max_privacy(
+                query,
+                request.graph_depth,
+                request.limit,
+                request.max_privacy,
+            )
+            .map_err(|error| error.to_string());
+    }
+    if let Some(query) = request.history_query {
+        return store
+            .history_search_with_max_privacy(query, request.limit, request.max_privacy)
+            .map_err(|error| error.to_string());
+    }
+    let vector = request
+        .query_vector
+        .expect("debug search selector validation requires a vector");
+    let model = agent_mcp_debug_search_model(arguments, vector.len())?;
+    store
+        .vector_search_with_max_privacy(&model, vector, request.limit, request.max_privacy)
+        .map_err(|error| error.to_string())
+}
+
+fn agent_mcp_debug_search_hit_json(result: &ChunkSearchResult) -> serde_json::Value {
+    serde_json::json!({
+        "chunk_id": result.hit.chunk_id.as_str(),
+        "title": result.title,
+        "body": result.body,
+        "source_kind": result.source_kind,
+        "source_key": result.source_key,
+        "privacy": result.privacy.as_str(),
+        "channel": agent_mcp_search_channel_label(result.hit.channel),
+        "rank": result.hit.rank,
+        "score": result.hit.score,
+    })
+}
+
+fn agent_mcp_debug_search_model(
+    arguments: &serde_json::Value,
+    dimensions: usize,
+) -> Result<EmbeddingModelDescriptor, String> {
+    let model_id = agent_mcp_non_empty_string_argument(arguments, "model_id")
+        .ok_or_else(|| "arcweft.debug.search query_vector requires model_id".to_owned())?;
+    let model_revision = agent_mcp_non_empty_string_argument(arguments, "model_revision")
+        .ok_or_else(|| "arcweft.debug.search query_vector requires model_revision".to_owned())?;
+    let dimensions = u32::try_from(dimensions)
+        .map_err(|_| "arcweft.debug.search query_vector has too many dimensions".to_owned())?;
+    Ok(EmbeddingModelDescriptor {
+        model_id: model_id.to_owned(),
+        model_revision: model_revision.to_owned(),
+        dimensions,
+    })
+}
+
+fn agent_mcp_non_empty_string_argument<'a>(
+    arguments: &'a serde_json::Value,
+    name: &str,
+) -> Option<&'a str> {
+    arguments
+        .get(name)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn agent_mcp_query_vector_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+) -> Result<Option<Vec<f32>>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    match value {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|item| parse_agent_mcp_query_vector_json_number(item, name))
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(non_empty_agent_mcp_query_vector)
+            .map(Some),
+        serde_json::Value::String(text) => parse_agent_mcp_query_vector_string(text)
+            .and_then(non_empty_agent_mcp_query_vector)
+            .map(Some),
+        _ => Err(format!(
+            "arcweft.debug.search argument {name} must be an array of numbers or a comma-separated string"
+        )),
+    }
+}
+
+fn parse_agent_mcp_query_vector_json_number(
+    value: &serde_json::Value,
+    name: &str,
+) -> Result<f32, String> {
+    if !value.is_number() {
+        return Err(format!(
+            "arcweft.debug.search argument {name} must contain finite numbers"
+        ));
+    }
+    let parsed = value
+        .to_string()
+        .parse::<f32>()
+        .map_err(|_| format!("arcweft.debug.search argument {name} must contain finite numbers"))?;
+    if parsed.is_finite() {
+        Ok(parsed)
+    } else {
+        Err(format!(
+            "arcweft.debug.search argument {name} must contain finite numbers"
+        ))
+    }
+}
+
+fn parse_agent_mcp_query_vector_string(value: &str) -> Result<Vec<f32>, String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<f32>().map_err(|error| {
+                format!("invalid arcweft.debug.search query_vector component `{part}`: {error}")
+            })
+        })
+        .collect()
+}
+
+fn non_empty_agent_mcp_query_vector(values: Vec<f32>) -> Result<Vec<f32>, String> {
+    if values.is_empty() {
+        return Err("arcweft.debug.search query_vector must not be empty".to_owned());
+    }
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(
+            "arcweft.debug.search query_vector must contain only finite numbers".to_owned(),
+        );
+    }
+    Ok(values)
 }
 
 const fn agent_mcp_search_channel_label(channel: SearchChannel) -> &'static str {

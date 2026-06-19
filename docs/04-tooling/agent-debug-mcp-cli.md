@@ -110,12 +110,15 @@ content hash, and `.arcwx` validation rejects capture records whose blob refs do
 not include that captured content hash.
 
 `arcweft.debug.search` is the MCP surface for the rebuildable Agent debug
-SQLite store. It accepts `query`, optional `path`, `limit`, and `max_privacy`,
-opens `.arcweft/cache/agent-debug.sqlite3` when `path` is omitted, runs literal
-FTS5 lexical chunk search, and applies the privacy ceiling before limiting
-results. The tool returns chunk ids, title/body text, source kind/key, privacy,
-search channel, rank, and score. It does not require an observation or trace to
-be cached in the MCP session.
+SQLite store. It accepts exactly one selector: `query` for literal FTS5 chunk
+search, `query_vector` plus `model_id` and `model_revision` for stored-vector
+search, `graph_query` with optional `graph_depth` for symbol/edge graph search,
+or `history_query` for indexed history search. Optional `path`, `limit`, and
+`max_privacy` apply to every channel; `path` defaults to
+`.arcweft/cache/agent-debug.sqlite3`. Privacy filtering happens before limiting
+and ranking for the relevant channel. The tool returns chunk ids, title/body
+text, source kind/key, privacy, search channel, rank, and score. It does not
+require an observation or trace to be cached in the MCP session.
 
 ```arcw
 pub trait AgentDebugBus {

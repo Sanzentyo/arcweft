@@ -430,7 +430,7 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "arcweft.debug.search".to_owned(),
         title: Some("Search Arcweft Debug Store".to_owned()),
-        description: "Searches the rebuildable Arcweft debug SQLite chunk index with literal FTS5 lexical search and privacy filtering before limit.".to_owned(),
+        description: "Searches the rebuildable Arcweft debug SQLite store through lexical, vector, graph, or history channels with privacy filtering before limit.".to_owned(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -442,6 +442,30 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
                     "type": "string",
                     "description": "Literal query text for the debug-store chunk FTS index."
                 },
+                "query_vector": {
+                    "description": "Vector query for stored embeddings, as an array of numbers or a comma-separated string.",
+                    "oneOf": [
+                        { "type": "array", "items": { "type": "number" }, "minItems": 1 },
+                        { "type": "string" }
+                    ]
+                },
+                "graph_query": {
+                    "type": "string",
+                    "description": "Text query for indexed symbols and graph edges."
+                },
+                "graph_depth": { "type": "integer", "minimum": 0, "default": 1 },
+                "history_query": {
+                    "type": "string",
+                    "description": "Text query for indexed history entries."
+                },
+                "model_id": {
+                    "type": "string",
+                    "description": "Embedding model id required with query_vector."
+                },
+                "model_revision": {
+                    "type": "string",
+                    "description": "Embedding model revision required with query_vector."
+                },
                 "limit": { "type": "integer", "minimum": 1, "default": 10 },
                 "max_privacy": {
                     "type": "string",
@@ -449,8 +473,7 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
                     "default": "project",
                     "description": "Highest privacy class allowed in returned hits."
                 }
-            },
-            "required": ["query"]
+            }
         }),
     }
 }
@@ -1545,11 +1568,32 @@ mod tests {
             .find(|tool| tool.name == "arcweft.debug.search")
             .expect("debug search tool is described");
         assert_eq!(
-            debug_search.input_schema["required"],
-            serde_json::json!(["query"])
+            debug_search.input_schema["properties"]["path"]["type"],
+            "string"
         );
         assert_eq!(
-            debug_search.input_schema["properties"]["path"]["type"],
+            debug_search.input_schema["properties"]["query"]["type"],
+            "string"
+        );
+        assert!(debug_search.input_schema["properties"]["query_vector"]["oneOf"].is_array());
+        assert_eq!(
+            debug_search.input_schema["properties"]["graph_query"]["type"],
+            "string"
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["graph_depth"]["minimum"],
+            0
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["history_query"]["type"],
+            "string"
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["model_id"]["type"],
+            "string"
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["model_revision"]["type"],
             "string"
         );
         assert_eq!(
