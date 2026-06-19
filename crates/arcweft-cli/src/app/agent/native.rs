@@ -19,7 +19,7 @@ use crate::app::image_declarations::{
 use arcweft_agent_mcp::{
     McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
-    tool_result_for_resources,
+    tool_result_for_resources, trace_resource,
 };
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
@@ -1639,6 +1639,7 @@ struct AgentMcpState {
     image_output: Option<AgentImageOutput>,
     image_frames: AgentImageFrameStore,
     capture_resources: Vec<AgentResource>,
+    trace_resources: Vec<AgentResource>,
     native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
 }
 
@@ -1706,9 +1707,6 @@ fn agent_mcp_handle_request(
 }
 
 fn agent_mcp_resource_list(state: &AgentMcpState) -> Result<serde_json::Value, String> {
-    if state.report.is_none() {
-        return Ok(serde_json::json!({ "resources": [] }));
-    }
     let resources = agent_mcp_current_resources(state)
         .map_err(|_| "failed to build Agent resource list".to_owned())?;
     serde_json::to_value(list_resources_result(&resources))
@@ -1723,8 +1721,17 @@ fn agent_mcp_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "resources/read requires params.uri".to_owned())?;
+    if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
+        let read = read_resource_result(&resource)
+            .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
+        return serde_json::to_value(read)
+            .map_err(|error| format!("failed to serialize MCP read: {error}"));
+    }
     let Some(report) = state.report.clone() else {
-        return Err("resources/read requires a prior arcweft.observe call".to_owned());
+        return Err(
+            "resources/read requires a prior arcweft.observe call or arcweft.trace.read call"
+                .to_owned(),
+        );
     };
     let image_output = state.image_output.clone();
     let resource = if let Some(resource) = agent_mcp_cached_capture_resource(state, uri)
@@ -1775,6 +1782,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP hit-test result: {error}"))
         }
+        "arcweft.trace.read" => {
+            let tool = agent_mcp_call_trace_read(&arguments, state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP trace result: {error}"))
+        }
         tool => Err(format!("unsupported Arcweft MCP tool `{tool}`")),
     }
 }
@@ -1820,17 +1832,20 @@ fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResul
             "latest_capture": latest_capture.and_then(|resource| resource.image.as_ref()),
             "latest_capture_uri": latest_capture.map(|resource| resource.uri.as_str()),
             "latest_capture_resource": latest_capture_descriptor,
+            "trace_resource_count": state.trace_resources.len(),
         })
     } else {
+        let descriptors = list_resources_result(&state.trace_resources).resources;
         serde_json::json!({
             "observed": false,
-            "resource_count": 0,
-            "resources": [],
+            "resource_count": descriptors.len(),
+            "resources": descriptors,
             "resource_templates": list_resource_templates_result().resource_templates,
             "images": [],
             "layers": [],
             "objects": [],
             "capture_resource_count": 0,
+            "trace_resource_count": state.trace_resources.len(),
             "native_capture_session_active": false,
             "latest_capture": null,
             "latest_capture_uri": null,
@@ -1875,6 +1890,25 @@ fn agent_mcp_call_hit_test(
         content: vec![McpContentBlock::Text { text }],
         is_error: false,
     })
+}
+
+fn agent_mcp_call_trace_read(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
+    let path = arguments
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "arcweft.trace.read requires arguments.path".to_owned())?;
+    let records = super::read_and_validate_agent_trace_records(Path::new(path))?;
+    let resource =
+        trace_resource(&records).map_err(|error| format!("failed to serialize trace: {error}"))?;
+    state
+        .trace_resources
+        .retain(|cached| cached.uri != resource.uri);
+    state.trace_resources.push(resource.clone());
+    tool_result_for_resource(&resource)
+        .map_err(|error| format!("failed to serialize MCP trace resource: {error}"))
 }
 
 fn agent_mcp_arguments_request_observe(arguments: &serde_json::Value) -> bool {
@@ -1965,8 +1999,12 @@ fn agent_mcp_call_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
+    if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
+        return tool_result_for_resource(&resource)
+            .map_err(|error| format!("failed to serialize MCP trace resource: {error}"));
+    }
     let Some(report) = state.report.clone() else {
-        return Err("arcweft.resource.read requires a prior arcweft.observe call".to_owned());
+        return Err("arcweft.resource.read requires a prior arcweft.observe call or arcweft.trace.read call".to_owned());
     };
     let image_output = state.image_output.clone();
     let resource = if let Some(resource) = agent_mcp_cached_capture_resource(state, uri)
@@ -1982,15 +2020,29 @@ fn agent_mcp_call_resource_read(
 }
 
 fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResource>, ExitCode> {
-    let Some(report) = &state.report else {
-        return Ok(Vec::new());
+    let mut resources = if let Some(report) = &state.report {
+        agent_observe_list_resources(report, state.image_output.as_ref())?
+    } else {
+        Vec::new()
     };
-    let mut resources = agent_observe_list_resources(report, state.image_output.as_ref())?;
-    for capture in &state.capture_resources {
-        resources.retain(|resource| resource.uri != capture.uri);
-        resources.push(capture.clone());
+    for resource in state
+        .capture_resources
+        .iter()
+        .chain(state.trace_resources.iter())
+    {
+        resources.retain(|candidate| candidate.uri != resource.uri);
+        resources.push(resource.clone());
     }
     Ok(resources)
+}
+
+fn agent_mcp_cached_trace_resource(state: &AgentMcpState, uri: &str) -> Option<AgentResource> {
+    state
+        .trace_resources
+        .iter()
+        .rev()
+        .find(|resource| resource.uri == uri)
+        .cloned()
 }
 
 fn agent_mcp_cached_capture_resource(state: &AgentMcpState, uri: &str) -> Option<AgentResource> {

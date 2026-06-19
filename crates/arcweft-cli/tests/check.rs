@@ -146,6 +146,88 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_agent_script_replay_matches(&trace_path, &bundle_trace_path);
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_reads_agent_trace_resource() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/mcp-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_run_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run writes trace for MCP");
+    assert!(
+        output.status.success(),
+        "agent script run should write trace for MCP\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let trace_uri = "arcweft://run/run.cli/trace.arcwx";
+    let requests = vec![
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.trace.read",
+                "arguments": { "path": trace_path.display().to_string() }
+            }
+        }),
+        serde_json::json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "resources/read",
+            "params": { "uri": trace_uri }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp trace read should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.trace.read")
+    );
+    assert_eq!(responses[2]["result"]["content"][0]["type"], "resource");
+    assert_eq!(
+        responses[2]["result"]["content"][0]["resource"]["uri"],
+        trace_uri
+    );
+    assert!(
+        responses[3]["result"]["resources"]
+            .as_array()
+            .expect("resource list is array")
+            .iter()
+            .any(|resource| resource["uri"] == trace_uri
+                && resource["mimeType"] == "application/vnd.arcweft.agent-trace+json")
+    );
+    let trace_text = responses[4]["result"]["contents"][0]["text"]
+        .as_str()
+        .expect("trace resource text");
+    let trace_json: serde_json::Value =
+        serde_json::from_str(trace_text).expect("trace resource text is JSON");
+    assert_eq!(trace_json.as_array().unwrap().len(), 5);
+    assert_eq!(trace_json[2]["kind"], "observation_received");
+}
+
 fn assert_agent_script_build(bundle_path: &Path) {
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")

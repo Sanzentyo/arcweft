@@ -143,6 +143,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
         agent_session_info_tool_descriptor(),
+        agent_trace_read_tool_descriptor(),
     ]
 }
 
@@ -263,6 +264,21 @@ fn agent_session_info_tool_descriptor() -> McpToolDescriptor {
                 "properties": {}
             }),
         }
+}
+
+fn agent_trace_read_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.trace.read".to_owned(),
+        title: Some("Read Agent Trace".to_owned()),
+        description: "Loads a validated .arcwx Agent trace and exposes it as an MCP resource link for read-only replay/debugging.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Filesystem path to a .arcwx Agent trace file." }
+            },
+            "required": ["path"]
+        }),
+    }
 }
 
 /// Returns the Agent Debug Bus resource templates understood by the current
@@ -1193,6 +1209,7 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "arcweft.capture"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.hit_test"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.session.info"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
     #[test]

@@ -91,9 +91,11 @@ from the list before fetching the full resource body and metadata.
 Agent execution traces use the same resource conversion path. The protocol
 surface exposes `AgentResourceKind::Trace`, and `arcweft-agent-mcp` maps typed
 `AgentTraceRecord` arrays to `arcweft://run/{run_id}/trace.arcwx` with
-`application/vnd.arcweft.agent-trace+json`. This is currently a Sans-I/O
-resource contract for CLI, tests, and future transports; the stdio MCP server
-does not yet load `.arcwx` files from disk by itself.
+`application/vnd.arcweft.agent-trace+json`. The stdio MCP server exposes
+`arcweft.trace.read`, which validates a `.arcwx` file, caches the trace resource
+in the current MCP session, and serves it through `resources/list`,
+`resources/read`, and `arcweft.resource.read` without requiring a prior native
+observation.
 
 ```arcw
 pub trait AgentDebugBus {
