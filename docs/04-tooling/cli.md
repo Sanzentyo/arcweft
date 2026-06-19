@@ -414,7 +414,8 @@ IDs, effect capability selectors, literals, comments, punctuation, and lexical
 errors such as unterminated strings. `:classify SOURCE` exposes the shared Agent
 fragment parser's cell completeness report and selected fragment family so the
 future terminal editor does not reimplement bracket, string, or item/statement
-boundary rules.
+boundary rules. Incomplete cells return explicit expected boundary tokens such
+as `)`, `]`, `}`, or `"` for multiline continuation.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells; remote `stdio:` endpoints are rejected until a real retained remote REPL

@@ -64,6 +64,9 @@ pub fn parse_document(source: impl Into<String>, options: ParseOptions) -> Parse
 
 /// Parses a fragment using the same syntax components as full documents.
 pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -> ParsedFragment {
+    if let Some(expected) = incomplete_boundary_expected_tokens(source) {
+        return ParsedFragment::incomplete(expected);
+    }
     match kind {
         FragmentKind::Expression => parse_expr(source).map_or_else(
             |_| ParsedFragment::invalid(),
@@ -108,6 +111,14 @@ impl ParsedFragment {
         }
     }
 
+    fn incomplete(expected: Vec<ExpectedToken>) -> Self {
+        Self {
+            kind: None,
+            completion: ParseCompletion::Incomplete { expected },
+            errors: Vec::new(),
+        }
+    }
+
     fn invalid() -> Self {
         Self {
             kind: None,
@@ -126,5 +137,115 @@ impl ParsedFragment {
 
     pub fn errors(&self) -> &[ParseError] {
         &self.errors
+    }
+}
+
+fn incomplete_boundary_expected_tokens(source: &str) -> Option<Vec<ExpectedToken>> {
+    let mut stack = Vec::new();
+    let mut chars = source.char_indices().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some((_, ch)) = chars.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+        if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+            break;
+        }
+        match ch {
+            '(' => stack.push(')'),
+            '[' => stack.push(']'),
+            '{' => stack.push('}'),
+            ')' | ']' | '}' if stack.last().copied() == Some(ch) => {
+                stack.pop();
+            }
+            ')' | ']' | '}' => return None,
+            _ => {}
+        }
+    }
+
+    if in_string {
+        return Some(vec![ExpectedToken::new("\"")]);
+    }
+    (!stack.is_empty()).then(|| {
+        stack
+            .into_iter()
+            .rev()
+            .map(|token| ExpectedToken::new(token.to_string()))
+            .collect()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fragment_reports_incomplete_unclosed_expression_boundaries() {
+        let parsed = parse_fragment(
+            "wait(signal(@signal.ready).eq(true)",
+            FragmentKind::Expression,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        );
+
+        let ParseCompletion::Incomplete { expected } = parsed.completion() else {
+            panic!("expected incomplete parse, got {:?}", parsed.completion());
+        };
+        assert_eq!(
+            expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
+            [")"]
+        );
+    }
+
+    #[test]
+    fn fragment_reports_incomplete_nested_item_boundaries() {
+        let parsed = parse_fragment(
+            "agent @agent.repl repl() {\n    let frame = try observe()",
+            FragmentKind::Items,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        );
+
+        let ParseCompletion::Incomplete { expected } = parsed.completion() else {
+            panic!("expected incomplete parse, got {:?}", parsed.completion());
+        };
+        assert_eq!(
+            expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
+            ["}"]
+        );
+    }
+
+    #[test]
+    fn fragment_reports_incomplete_string_boundary() {
+        let parsed = parse_fragment(
+            "note(\"unterminated",
+            FragmentKind::Expression,
+            ParseOptions {
+                source_dialect: SourceDialect::Agent,
+            },
+        );
+
+        let ParseCompletion::Incomplete { expected } = parsed.completion() else {
+            panic!("expected incomplete parse, got {:?}", parsed.completion());
+        };
+        assert_eq!(
+            expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
+            ["\""]
+        );
     }
 }

@@ -2,6 +2,7 @@
 :help
 :type 1u32
 :classify let frame = try observe()
+:classify note("unterminated
 :ast signal("ready").eq(true)
 :hir return "ok"
 :bytecode return "ok"

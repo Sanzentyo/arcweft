@@ -228,58 +228,71 @@ pub fn agent_repl_highlight_tokens(source: &str) -> Vec<AgentReplHighlightToken>
 
 /// Parses a REPL cell with the shared Agent fragment parser and syntax-family selection.
 pub fn agent_repl_parse_fragment(source: &str) -> ParsedFragment {
+    agent_repl_parse_fragment_with_kind(source).0
+}
+
+fn agent_repl_parse_fragment_with_kind(source: &str) -> (ParsedFragment, AgentReplFragmentKind) {
     if source.starts_with("agent ") {
-        parse_fragment(
-            source,
-            FragmentKind::Items,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        )
+        return (
+            parse_agent_fragment(source, AgentReplFragmentKind::Items),
+            AgentReplFragmentKind::Items,
+        );
     } else if source.starts_with("let ")
         || source.starts_with("try ")
         || source.starts_with("expect(")
         || source.starts_with("deny(")
         || source.starts_with("wait(")
     {
-        parse_fragment(
-            source,
-            FragmentKind::Statements,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        )
-    } else {
-        let expression = parse_fragment(
-            source,
-            FragmentKind::Expression,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
+        return (
+            parse_agent_fragment(source, AgentReplFragmentKind::Statements),
+            AgentReplFragmentKind::Statements,
         );
-        if matches!(expression.completion(), ParseCompletion::Complete) {
-            expression
-        } else {
-            parse_fragment(
-                source,
-                FragmentKind::Statements,
-                ParseOptions {
-                    source_dialect: SourceDialect::Agent,
-                },
-            )
-        }
     }
+    let expression = parse_agent_fragment(source, AgentReplFragmentKind::Expression);
+    if matches!(
+        expression.completion(),
+        ParseCompletion::Complete | ParseCompletion::Incomplete { .. }
+    ) {
+        return (expression, AgentReplFragmentKind::Expression);
+    }
+    (
+        parse_agent_fragment(source, AgentReplFragmentKind::Statements),
+        AgentReplFragmentKind::Statements,
+    )
+}
+
+fn parse_agent_fragment(source: &str, kind: AgentReplFragmentKind) -> ParsedFragment {
+    parse_fragment(
+        source,
+        match kind {
+            AgentReplFragmentKind::Expression => FragmentKind::Expression,
+            AgentReplFragmentKind::Statements | AgentReplFragmentKind::Unknown => {
+                FragmentKind::Statements
+            }
+            AgentReplFragmentKind::Items => FragmentKind::Items,
+        },
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    )
 }
 
 /// Classifies one REPL cell for editor completeness validation and scripted inspection.
 pub fn agent_repl_classify_cell(source: &str) -> AgentReplCellClassification {
-    let fragment = agent_repl_parse_fragment(source);
-    agent_repl_classification_from_fragment(&fragment)
+    let (fragment, fragment_kind) = agent_repl_parse_fragment_with_kind(source);
+    agent_repl_classification_from_fragment_with_kind(&fragment, fragment_kind)
 }
 
 /// Converts a parsed fragment into the stable REPL classification report.
 pub fn agent_repl_classification_from_fragment(
     fragment: &ParsedFragment,
+) -> AgentReplCellClassification {
+    agent_repl_classification_from_fragment_with_kind(fragment, agent_repl_fragment_kind(fragment))
+}
+
+fn agent_repl_classification_from_fragment_with_kind(
+    fragment: &ParsedFragment,
+    fragment_kind: AgentReplFragmentKind,
 ) -> AgentReplCellClassification {
     let completion = match fragment.completion() {
         ParseCompletion::Complete => AgentReplCellCompletion {
@@ -300,7 +313,7 @@ pub fn agent_repl_classification_from_fragment(
     };
     AgentReplCellClassification {
         completion,
-        fragment_kind: agent_repl_fragment_kind(fragment),
+        fragment_kind,
         errors: fragment
             .errors()
             .iter()
@@ -803,14 +816,26 @@ mod tests {
     }
 
     #[test]
-    fn repl_classify_cell_reports_invalid_agent_items_without_cli_logic() {
+    fn repl_classify_cell_reports_incomplete_agent_items_without_cli_logic() {
         let classified = agent_repl_classify_cell("agent @agent.bad broken() {");
 
         assert_eq!(
             classified.completion.kind,
-            AgentReplCellCompletionKind::Invalid
+            AgentReplCellCompletionKind::Incomplete
         );
         assert_eq!(classified.fragment_kind, AgentReplFragmentKind::Items);
-        assert!(!classified.errors.is_empty());
+        assert_eq!(classified.completion.expected, ["}"]);
+        assert!(classified.errors.is_empty());
+    }
+
+    #[test]
+    fn repl_classify_cell_reports_incomplete_string_boundary() {
+        let classified = agent_repl_classify_cell("note(\"unterminated");
+
+        assert_eq!(
+            classified.completion.kind,
+            AgentReplCellCompletionKind::Incomplete
+        );
+        assert_eq!(classified.completion.expected, ["\""]);
     }
 }
