@@ -161,6 +161,29 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_eq!(trace[0]["kind"], "run_started");
     assert_eq!(trace[2]["kind"], "observation_received");
     assert_eq!(trace[4]["kind"], "run_finished");
+
+    let trace_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("trace")
+        .arg(&trace_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script trace validates run trace");
+    assert!(
+        trace_output.status.success(),
+        "agent script trace should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&trace_output.stdout),
+        String::from_utf8_lossy(&trace_output.stderr)
+    );
+    let trace_report: serde_json::Value =
+        serde_json::from_slice(&trace_output.stdout).expect("trace output is JSON");
+    assert_eq!(trace_report["ok"], true);
+    assert_eq!(trace_report["records"], 5);
+    assert_eq!(trace_report["run_id"], "run.cli");
+    assert_eq!(trace_report["started"], true);
+    assert_eq!(trace_report["finished"], true);
+    assert_eq!(trace_report["kinds"]["vm_step"], 2);
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {

@@ -32,7 +32,7 @@ use arcweft_lang_sema::{
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_source::SourceAnchor;
 use clap::{Args, ValueEnum};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -203,6 +203,13 @@ pub(super) struct AgentScriptRunOptions {
     run_id: String,
 }
 
+#[derive(Args, Clone, Debug)]
+pub(super) struct AgentScriptTraceOptions {
+    path: PathBuf,
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Clone, Debug)]
 struct AgentScriptSignalArg {
     id: String,
@@ -276,6 +283,7 @@ pub(super) fn agent_script_command(command: AgentScriptCommand) -> Result<(), Ex
     match command {
         AgentScriptCommand::Check(options) => agent_script_check_command(&options),
         AgentScriptCommand::Run(options) => agent_script_run_command(&options),
+        AgentScriptCommand::Trace(options) => agent_script_trace_command(&options),
     }
 }
 
@@ -343,6 +351,22 @@ struct AgentScriptRunReport {
 }
 
 type CliAgentRunError = AgentRunError<Infallible, Infallible, Infallible>;
+
+#[derive(serde::Serialize)]
+struct AgentScriptTraceReport {
+    path: String,
+    ok: bool,
+    records: usize,
+    run_id: Option<String>,
+    sessions: Vec<String>,
+    first_sequence: Option<u64>,
+    last_sequence: Option<u64>,
+    started: bool,
+    finished: bool,
+    blob_refs: usize,
+    kinds: BTreeMap<String, usize>,
+    error: Option<String>,
+}
 
 fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitCode> {
     if !is_awfagent_path(&options.path) {
@@ -521,9 +545,194 @@ fn agent_cli_session_id() -> SessionId {
     SessionId::new("session.cli").expect("static session id")
 }
 
+fn agent_script_trace_command(options: &AgentScriptTraceOptions) -> Result<(), ExitCode> {
+    let report = read_agent_trace_records(&options.path)
+        .and_then(|records| validate_agent_trace(&options.path, &records))
+        .unwrap_or_else(|error| AgentScriptTraceReport {
+            path: options.path.display().to_string(),
+            ok: false,
+            records: 0,
+            run_id: None,
+            sessions: Vec::new(),
+            first_sequence: None,
+            last_sequence: None,
+            started: false,
+            finished: false,
+            blob_refs: 0,
+            kinds: BTreeMap::new(),
+            error: Some(error),
+        });
+    if options.json {
+        print_json(&report)?;
+    } else if report.ok {
+        println!(
+            "{}: ok ({} trace record(s), run {})",
+            report.path,
+            report.records,
+            report.run_id.as_deref().unwrap_or("<unknown>")
+        );
+    } else if let Some(error) = &report.error {
+        eprintln!("{}: {error}", report.path);
+    }
+    if report.ok {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
+fn read_agent_trace_records(path: &Path) -> Result<Vec<AgentTraceRecord>, String> {
+    if !is_arcwx_path(path) {
+        return Err(format!(
+            "{} is not an .arcwx trace input path",
+            path.display()
+        ));
+    }
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))
+}
+
+fn validate_agent_trace(
+    path: &Path,
+    records: &[AgentTraceRecord],
+) -> Result<AgentScriptTraceReport, String> {
+    let run_id = records
+        .first()
+        .map(|record| record.run_id.clone())
+        .ok_or_else(|| "trace must contain at least one record".to_owned())?;
+    let first_sequence = records.first().map(|record| record.sequence);
+    let last_sequence = records.last().map(|record| record.sequence);
+    validate_agent_trace_records(records, &run_id)?;
+    Ok(AgentScriptTraceReport {
+        path: path.display().to_string(),
+        ok: true,
+        records: records.len(),
+        run_id: Some(run_id.as_str().to_owned()),
+        sessions: agent_trace_sessions(records),
+        first_sequence,
+        last_sequence,
+        started: records
+            .first()
+            .is_some_and(|record| record.kind == AgentTraceKind::RunStarted),
+        finished: records
+            .last()
+            .is_some_and(|record| record.kind == AgentTraceKind::RunFinished),
+        blob_refs: records.iter().map(|record| record.blob_refs.len()).sum(),
+        kinds: agent_trace_kind_counts(records),
+        error: None,
+    })
+}
+
+fn validate_agent_trace_records(
+    records: &[AgentTraceRecord],
+    run_id: &AgentRunId,
+) -> Result<(), String> {
+    let first = records
+        .first()
+        .ok_or_else(|| "trace must contain at least one record".to_owned())?;
+    if first.kind != AgentTraceKind::RunStarted {
+        return Err("trace first record must be run_started".to_owned());
+    }
+    if !records
+        .last()
+        .is_some_and(|record| record.kind == AgentTraceKind::RunFinished)
+    {
+        return Err("trace last record must be run_finished".to_owned());
+    }
+    records
+        .iter()
+        .try_fold(None, |previous, record| {
+            validate_agent_trace_record(record, run_id, previous)?;
+            Ok(Some(record.sequence))
+        })
+        .map(|_| ())
+}
+
+fn validate_agent_trace_record(
+    record: &AgentTraceRecord,
+    run_id: &AgentRunId,
+    previous_sequence: Option<u64>,
+) -> Result<(), String> {
+    if record.schema_version != 1 {
+        return Err(format!(
+            "trace record {} has unsupported schema_version {}",
+            record.sequence, record.schema_version
+        ));
+    }
+    if &record.run_id != run_id {
+        return Err(format!(
+            "trace record {} changes run_id from {} to {}",
+            record.sequence,
+            run_id.as_str(),
+            record.run_id.as_str()
+        ));
+    }
+    if previous_sequence.is_some_and(|sequence| record.sequence <= sequence) {
+        return Err(format!(
+            "trace record sequence {} is not strictly increasing",
+            record.sequence
+        ));
+    }
+    let expected_hash = stable_payload_hash(&record.payload);
+    if record.payload_hash != expected_hash {
+        return Err(format!(
+            "trace record {} payload_hash mismatch: expected {}, got {}",
+            record.sequence,
+            expected_hash.as_str(),
+            record.payload_hash.as_str()
+        ));
+    }
+    Ok(())
+}
+
+fn agent_trace_sessions(records: &[AgentTraceRecord]) -> Vec<String> {
+    records
+        .iter()
+        .filter_map(|record| {
+            record
+                .session_id
+                .as_ref()
+                .map(|session_id| session_id.as_str().to_owned())
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn agent_trace_kind_counts(records: &[AgentTraceRecord]) -> BTreeMap<String, usize> {
+    records.iter().fold(BTreeMap::new(), |mut counts, record| {
+        *counts
+            .entry(agent_trace_kind_name(record.kind).to_owned())
+            .or_default() += 1;
+        counts
+    })
+}
+
+fn agent_trace_kind_name(kind: AgentTraceKind) -> &'static str {
+    match kind {
+        AgentTraceKind::RunStarted => "run_started",
+        AgentTraceKind::VmStep => "vm_step",
+        AgentTraceKind::HostCallRequested => "host_call_requested",
+        AgentTraceKind::ObservationReceived => "observation_received",
+        AgentTraceKind::ActionCompleted => "action_completed",
+        AgentTraceKind::CaptureStored => "capture_stored",
+        AgentTraceKind::AssertionEvaluated => "assertion_evaluated",
+        AgentTraceKind::RagQueryCompleted => "rag_query_completed",
+        AgentTraceKind::DiagnosticEmitted => "diagnostic_emitted",
+        AgentTraceKind::RunFinished => "run_finished",
+    }
+}
+
 fn is_awfagent_path(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension == "awfagent")
+}
+
+fn is_arcwx_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "arcwx")
 }
 
 fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, String> {
@@ -655,10 +864,7 @@ fn stable_payload_hash(payload: &serde_json::Value) -> StableHash {
 }
 
 fn write_agent_trace(path: &Path, records: &[AgentTraceRecord]) -> Result<(), String> {
-    if path
-        .extension()
-        .is_none_or(|extension| extension != "arcwx")
-    {
+    if !is_arcwx_path(path) {
         return Err(format!(
             "{} is not an .arcwx trace output path",
             path.display()
