@@ -320,3 +320,12 @@ and WebP features enabled and default heavy format support disabled. Animated
 WebP is accessed through the same `image` animation decoder path. Native
 libwebp bindings are not introduced unless a later validation cut proves the
 pure-Rust path cannot cover required WebP animation behavior.
+
+## Milestone Gate
+
+Run `just test-image-animation-goal` before claiming the image-animation object
+goal complete. The recipe is indexed in
+`docs/implementation/image-animation-goal-audit.md` and covers decode,
+presentation model, UI lowering, native image quads, declared asset ids,
+bundle image metadata, Agent readback, MCP tool-result readback, hit-test,
+alignment, clipped object capture, and the checked-in sample.

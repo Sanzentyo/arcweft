@@ -332,6 +332,7 @@ just test-visual-golden
 just native-visual-artifacts
 just verify-vendor-glyphon
 just test-rich-text-object-goal
+just test-image-animation-goal
 just test-cli-check-full
 just test-tier2
 just verify-full

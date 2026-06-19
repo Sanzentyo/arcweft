@@ -50,6 +50,23 @@ test-rich-text-object-goal:
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-full-grammar.arcw
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
 
+test-image-animation-goal:
+    @cargo test -p arcweft-image -- --nocapture
+    @cargo test -p arcweft-presentation image -- --nocapture
+    @cargo test -p arcweft-ui image -- --nocapture
+    @cargo test -p arcweft-render-native image -- --nocapture
+    @cargo test -p arcweft-lang-sema tests::declarations::parses_surface_alias_and_resource_entity_families -- --exact --nocapture
+    @cargo test -p arcweft-lang-sema tests::typecheck::typechecks_presentation_image_object_call_with_named_asset_and_bounds -- --exact --nocapture
+    @cargo test -p arcweft-cli --test check bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_object_frame_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_layer_frame_pixels -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_reports_animated_image_object_proxy_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_image_alignment_sample_uses_authored_alignment_geometry -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_captures_clipped_animated_image_object -- --exact --nocapture
+    @cargo run -p arcweft-cli --quiet -- check samples/image-animation.arcw
+
 test-cli-check:
     @cargo test -p arcweft-cli --test check bench_json --quiet
     @cargo test -p arcweft-cli --test check run_json --quiet
