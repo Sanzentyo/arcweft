@@ -12,7 +12,8 @@ use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
-    ast::{flow::FlowKind, ids::EntityRef, items::EntityDeclKind},
+    ast::{flow::FlowKind, flow::Stmt, ids::EntityRef, items::EntityDeclKind},
+    expr::{CallArg, Expr, Literal, MatchExprArm},
     types::{TypeRef, parse_type_ref},
 };
 use arcweft_source::{SourceAnchor, SourceName};
@@ -568,100 +569,576 @@ fn index_flow_items(
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for item in items {
-        match item {
-            HirFlowItem::Dialogue(dialogue) => {
-                if let Some(id) = dialogue.id() {
+        index = index_flow_item_entities(item, index, source_name)?;
+        index = index_flow_item_agent_actions(item, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_flow_item_entities(
+    item: &HirFlowItem,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match item {
+        HirFlowItem::Dialogue(dialogue) => {
+            if let Some(id) = dialogue.id() {
+                index = index.with_entity(entity_symbol(
+                    id,
+                    EntityKind::DialogueLine,
+                    None,
+                    source_name.clone(),
+                    "dialogue line",
+                )?);
+            }
+            if let Some(text_key) = dialogue.text_key() {
+                index = index.with_entity(entity_symbol(
+                    text_key,
+                    EntityKind::Text,
+                    None,
+                    source_name.clone(),
+                    "text",
+                )?);
+            }
+        }
+        HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+            if let Some(id) = choice.id() {
+                index = index.with_entity(entity_symbol(
+                    id,
+                    EntityKind::Choice,
+                    None,
+                    source_name.clone(),
+                    "choice",
+                )?);
+            }
+            for option in choice.options() {
+                if let Some(id) = option.id() {
                     index = index.with_entity(entity_symbol(
                         id,
-                        EntityKind::DialogueLine,
+                        EntityKind::ChoiceOption,
                         None,
                         source_name.clone(),
-                        "dialogue line",
-                    )?);
-                }
-                if let Some(text_key) = dialogue.text_key() {
-                    index = index.with_entity(entity_symbol(
-                        text_key,
-                        EntityKind::Text,
-                        None,
-                        source_name.clone(),
-                        "text",
+                        "choice option",
                     )?);
                 }
             }
-            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
-                if let Some(id) = choice.id() {
-                    index = index.with_entity(entity_symbol(
-                        id,
-                        EntityKind::Choice,
-                        None,
-                        source_name.clone(),
-                        "choice",
-                    )?);
+        }
+        HirFlowItem::If(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+            index = index_flow_items(block.else_body(), index, source_name)?;
+        }
+        HirFlowItem::IfLet(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+            index = index_flow_items(block.else_body(), index, source_name)?;
+        }
+        HirFlowItem::Match(block) => {
+            for arm in block.arms() {
+                index = index_flow_items(arm.body(), index, source_name)?;
+            }
+        }
+        HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::While(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::WhileLet(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::For(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::Borrow(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::SourceLocale(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::Scope(block) => {
+            index = index_flow_items(block.body(), index, source_name)?;
+        }
+        HirFlowItem::Select(block) => {
+            for branch in block.branches() {
+                index = index_flow_items(branch.body(), index, source_name)?;
+            }
+        }
+        HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
+            for branch in await_with.branches() {
+                index = index_flow_items(branch.body(), index, source_name)?;
+            }
+        }
+        HirFlowItem::Thread(thread) => {
+            index = index_flow_items(thread.body(), index, source_name)?;
+        }
+        HirFlowItem::Stmt(_) | HirFlowItem::LetScope { .. } | HirFlowItem::Include(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_flow_item_agent_actions(
+    item: &HirFlowItem,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match item {
+        HirFlowItem::Stmt(stmt) => index = index_stmt_agent_actions(stmt, index, source_name)?,
+        HirFlowItem::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+            if let Some(value) = scope.value() {
+                index = index_expr_agent_actions(value, index, source_name)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(index)
+}
+
+fn index_stmt_agent_actions(
+    stmt: &Stmt,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match stmt {
+        Stmt::Let { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Out { expr, .. }
+        | Stmt::Goto(expr)
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::LifetimeSet { expr, .. }
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Expr(expr) => index = index_expr_agent_actions(expr, index, source_name)?,
+        Stmt::Signal { target, value } => {
+            index = index_expr_agent_actions(target, index, source_name)?;
+            index = index_expr_agent_actions(value, index, source_name)?;
+        }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            index = index_expr_agent_actions(expr, index, source_name)?;
+            for stmt in else_body {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::DeferBlock { statements, .. } => {
+            for stmt in statements {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
+            for stmt in body {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+            index = index_expr_agent_actions(condition, index, source_name)?;
+            for stmt in body {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            index = index_expr_agent_actions(expr, index, source_name)?;
+            if let Some(guard) = guard {
+                index = index_expr_agent_actions(guard, index, source_name)?;
+            }
+            for stmt in body {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::For { source, body, .. } => {
+            index = index_expr_agent_actions(source, index, source_name)?;
+            for stmt in body {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
+            }
+        }
+        Stmt::Match { expr, arms } => {
+            index = index_expr_agent_actions(expr, index, source_name)?;
+            for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    index = index_expr_agent_actions(guard, index, source_name)?;
                 }
-                for option in choice.options() {
-                    if let Some(id) = option.id() {
-                        index = index.with_entity(entity_symbol(
-                            id,
-                            EntityKind::ChoiceOption,
-                            None,
-                            source_name.clone(),
-                            "choice option",
-                        )?);
-                    }
+                for stmt in arm.body() {
+                    index = index_stmt_agent_actions(stmt, index, source_name)?;
                 }
             }
-            HirFlowItem::If(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-                index = index_flow_items(block.else_body(), index, source_name)?;
+        }
+        Stmt::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                index = index_stmt_agent_actions(stmt, index, source_name)?;
             }
-            HirFlowItem::IfLet(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-                index = index_flow_items(block.else_body(), index, source_name)?;
+            if let Some(value) = scope.value() {
+                index = index_expr_agent_actions(value, index, source_name)?;
             }
-            HirFlowItem::Match(block) => {
-                for arm in block.arms() {
-                    index = index_flow_items(arm.body(), index, source_name)?;
-                }
+        }
+        Stmt::Wait(_)
+        | Stmt::LetChoice { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Thread(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_expr_agent_actions(
+    expr: &Expr,
+    index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::Call { callee, args } => {
+            index_call_expr_agent_actions(callee, args, index, source_name)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            index_method_call_expr_agent_actions(receiver, args, index, source_name)
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await { expr: target, .. }
+        | Expr::Unary { expr: target, .. } => index_expr_agent_actions(target, index, source_name),
+        Expr::DialogueCall { callee, .. } | Expr::Closure { body: callee, .. } => {
+            index_expr_agent_actions(callee, index, source_name)
+        }
+        Expr::Index {
+            target,
+            index: item,
+        } => index_two_expr_agent_actions(target, item, index, source_name),
+        Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {
+            index_two_expr_agent_actions(lhs, rhs, index, source_name)
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            index_expr_list_agent_actions(items, index, source_name)
+        }
+        Expr::ArrayRepeat { value, len } => {
+            index_two_expr_agent_actions(value, len, index, source_name)
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            index_record_expr_agent_actions(fields, index, source_name)
+        }
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => index_expr_block_agent_actions(statements, value.as_deref(), index, source_name),
+        Expr::MemoBlock {
+            options,
+            statements,
+            value,
+        } => {
+            index_memo_expr_agent_actions(options, statements, value.as_deref(), index, source_name)
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => index_if_expr_agent_actions(
+            condition,
+            then_branch,
+            else_branch.as_deref(),
+            index,
+            source_name,
+        ),
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => index_if_let_expr_agent_actions(
+            expr,
+            guard.as_deref(),
+            then_branch,
+            else_branch.as_deref(),
+            index,
+            source_name,
+        ),
+        Expr::Match { scrutinee, arms } => {
+            index_match_expr_agent_actions(scrutinee, arms, index, source_name)
+        }
+        Expr::Range {
+            start,
+            end,
+            inclusive: _,
+        } => index_range_expr_agent_actions(start.as_deref(), end.as_deref(), index, source_name),
+        Expr::Thread { .. }
+        | Expr::Literal(_)
+        | Expr::EntityRef(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Raw(_) => Ok(index),
+    }
+}
+
+fn index_two_expr_agent_actions(
+    first: &Expr,
+    second: &Expr,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_agent_actions(first, index, source_name)?;
+    index_expr_agent_actions(second, index, source_name)
+}
+
+fn index_expr_list_agent_actions(
+    items: &[Expr],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        index = index_expr_agent_actions(item, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_record_expr_agent_actions(
+    fields: &[(String, Expr)],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for (_, value) in fields {
+        index = index_expr_agent_actions(value, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_range_expr_agent_actions(
+    start: Option<&Expr>,
+    end: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    if let Some(start) = start {
+        index = index_expr_agent_actions(start, index, source_name)?;
+    }
+    if let Some(end) = end {
+        index = index_expr_agent_actions(end, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_call_expr_agent_actions(
+    callee: &Expr,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    if matches!(callee, Expr::Path(path) if path == "image" || path == "image.show") {
+        index = index_image_call_agent_actions(args, index, source_name)?;
+    }
+    index = index_expr_agent_actions(callee, index, source_name)?;
+    index_call_arg_agent_actions(args, index, source_name)
+}
+
+fn index_method_call_expr_agent_actions(
+    receiver: &Expr,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_agent_actions(receiver, index, source_name)?;
+    index_call_arg_agent_actions(args, index, source_name)
+}
+
+fn index_expr_block_agent_actions(
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for stmt in statements {
+        index = index_stmt_agent_actions(stmt, index, source_name)?;
+    }
+    if let Some(value) = value {
+        index = index_expr_agent_actions(value, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_memo_expr_agent_actions(
+    options: &[(String, Expr)],
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for (_, value) in options {
+        index = index_expr_agent_actions(value, index, source_name)?;
+    }
+    index_expr_block_agent_actions(statements, value, index, source_name)
+}
+
+fn index_if_expr_agent_actions(
+    condition: &Expr,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_agent_actions(condition, index, source_name)?;
+    index = index_expr_agent_actions(then_branch, index, source_name)?;
+    if let Some(else_branch) = else_branch {
+        index = index_expr_agent_actions(else_branch, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_if_let_expr_agent_actions(
+    expr: &Expr,
+    guard: Option<&Expr>,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_agent_actions(expr, index, source_name)?;
+    if let Some(guard) = guard {
+        index = index_expr_agent_actions(guard, index, source_name)?;
+    }
+    index = index_expr_agent_actions(then_branch, index, source_name)?;
+    if let Some(else_branch) = else_branch {
+        index = index_expr_agent_actions(else_branch, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_match_expr_agent_actions(
+    scrutinee: &Expr,
+    arms: &[MatchExprArm],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_agent_actions(scrutinee, index, source_name)?;
+    for arm in arms {
+        if let Some(guard) = arm.guard() {
+            index = index_expr_agent_actions(guard, index, source_name)?;
+        }
+        index = index_expr_agent_actions(arm.value(), index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_call_arg_agent_actions(
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for arg in args {
+        match arg {
+            CallArg::Positional(value) => {
+                index = index_expr_agent_actions(value, index, source_name)?;
             }
-            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
-                index = index_flow_items(block.body(), index, source_name)?;
+            CallArg::Named { value, .. } | CallArg::Spread { value } => {
+                index = index_expr_agent_actions(value.as_ref(), index, source_name)?;
             }
-            HirFlowItem::While(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::WhileLet(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::For(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::Select(block) => {
-                for branch in block.branches() {
-                    index = index_flow_items(branch.body(), index, source_name)?;
-                }
-            }
-            HirFlowItem::Borrow(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::SourceLocale(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::Scope(block) => {
-                index = index_flow_items(block.body(), index, source_name)?;
-            }
-            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
-                for branch in await_with.branches() {
-                    index = index_flow_items(branch.body(), index, source_name)?;
-                }
-            }
-            HirFlowItem::Thread(thread) => {
-                index = index_flow_items(thread.body(), index, source_name)?;
-            }
-            HirFlowItem::Stmt(_) | HirFlowItem::LetScope { .. } | HirFlowItem::Include(_) => {}
         }
     }
     Ok(index)
+}
+
+fn index_image_call_agent_actions(
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+    _source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let Some(target) = image_call_target(args) else {
+        return Ok(index);
+    };
+    let actions = image_call_actions(args)?;
+    if actions.is_empty() {
+        return Ok(index);
+    }
+
+    let target_id = PublicId::try_new(target.clone()).map_err(|error| {
+        ProjectSemanticIndexError::InvalidPublicId {
+            id: target.clone(),
+            kind: "image action target",
+            message: error.to_string(),
+        }
+    })?;
+    let symbol = index.entities.entry(target_id.clone()).or_insert_with(|| {
+        EntitySymbol::new(
+            target_id,
+            EntityType::new(EntityKind::Target, None),
+            SourceAnchor::generated(),
+            SemanticHash::new(format!("hir:image-target:{target}")),
+        )
+    });
+    for action in actions {
+        if symbol
+            .agent_actions
+            .iter()
+            .any(|candidate| candidate.action().as_str() == action)
+        {
+            continue;
+        }
+        symbol.agent_actions.push(AgentActionSignature::new(
+            QualifiedName::new(action),
+            [],
+            TypeKind::ActionResult,
+        ));
+    }
+    Ok(index)
+}
+
+fn image_call_target(args: &[CallArg]) -> Option<String> {
+    for arg in args {
+        if let CallArg::Named { name, value } = arg
+            && name == "target"
+            && let Some(value) = image_call_id_value(value)
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn image_call_actions(args: &[CallArg]) -> Result<Vec<String>, ProjectSemanticIndexError> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::Named { name, value } if name == "action" || name == "actions" => {
+                Some(image_call_action_values(value))
+            }
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+fn image_call_action_values(value: &Expr) -> Vec<Result<String, ProjectSemanticIndexError>> {
+    match value {
+        Expr::Literal(Literal::String(value)) => value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| Ok(value.to_owned()))
+            .collect(),
+        Expr::Path(path) => vec![Ok(path.trim_start_matches('.').to_owned())],
+        Expr::EntityRef(entity) => vec![Ok(entity.body().to_owned())],
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            items.iter().flat_map(image_call_action_values).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn image_call_id_value(value: &Expr) -> Option<String> {
+    match value {
+        Expr::Literal(Literal::String(value)) => Some(value.clone()),
+        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        Expr::Path(path) => Some(path.trim_start_matches('.').to_owned()),
+        _ => None,
+    }
 }
 
 fn entity_symbol(
@@ -1377,6 +1854,41 @@ flow @flow.opening opening {
                 TypeKind::entity_ref(EntityKind::Flow)
             ))
         );
+    }
+
+    #[test]
+    fn project_index_from_hir_projects_inline_image_agent_actions() {
+        let tree = parse_source(
+            r#"
+asset @asset.bg.pulse {
+    file = "bg/pulse.gif"
+    kind = image
+}
+
+flow @flow.opening opening {
+    let pulse = image(asset = @asset.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let index = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-a"),
+            &SourceName::path("game.arcw"),
+        )
+        .expect("HIR indexes inline image actions");
+        let env = index.typecheck_env();
+
+        assert_eq!(
+            env.symbol_type("target.sample.pulse"),
+            Some(&TypeKind::entity_ref(EntityKind::Target))
+        );
+        let actions = env
+            .agent_actions("target.sample.pulse")
+            .expect("target exposes image action");
+        assert_eq!(actions[0].action(), "action.inspect.pulse");
+        assert_eq!(actions[0].return_type(), &TypeKind::ActionResult);
     }
 
     #[test]

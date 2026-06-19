@@ -635,9 +635,10 @@ mod tests {
     use super::*;
     use arcweft_bundle::BundleKind;
     use arcweft_id::PublicId;
+    use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_sema::project_index::{
         AgentActionParam, AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex,
-        QualifiedName, SemanticHash,
+        QualifiedName, SemanticHash, project_semantic_index_from_hir,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -1031,6 +1032,44 @@ effects { agent.act.semantic }
                 .iter()
                 .any(|judgment| judgment.ty == TypeKind::ActionResult)
         );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_projected_image_invoke_action() {
+        let project_source = parse_source(
+            r#"
+asset @asset.bg.pulse {
+    file = "bg/pulse.gif"
+    kind = image
+}
+
+flow @flow.opening opening {
+    let pulse = image(asset = @asset.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&project_source).expect("project source lowers");
+        let project = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-test"),
+            &arcweft_source::SourceName::path("game.arcw"),
+        )
+        .expect("project source indexes image action");
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.inspect_pulse inspect_pulse()
+effects { agent.act.semantic }
+{
+    invoke(@target.sample.pulse, "action.inspect.pulse")
+}
+"#,
+            &project,
+        )
+        .expect("projected image action typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
     }
 
     #[test]
