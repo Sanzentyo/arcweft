@@ -69,7 +69,7 @@ use arcweft_lang_syntax::ast::{
     ids::EntityRefSyntax,
     pattern::{Pattern, VariantPatternPayload},
 };
-use arcweft_lang_syntax::expr::{Expr, Literal};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
@@ -2017,12 +2017,15 @@ struct AgentReplBinding {
     #[serde(skip_serializing_if = "Option::is_none")]
     serialized_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    snapshot_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     non_serializable_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentReplSerializedBinding {
     source: String,
+    snapshot_kind: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -3011,6 +3014,7 @@ fn agent_repl_load(
             responses: 0,
             serializable: false,
             serialized_source: None,
+            snapshot_kind: None,
             non_serializable_reason: Some("loaded Agent source is not a REPL value".to_owned()),
         },
     );
@@ -3105,7 +3109,7 @@ fn agent_repl_saved_source(state: &AgentReplState) -> String {
         body.push_str("\n    return \"saved\"");
     }
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
 }
 
@@ -3421,6 +3425,7 @@ fn agent_repl_run_success_report(
             responses,
             serializable: false,
             serialized_source: None,
+            snapshot_kind: None,
             non_serializable_reason: Some("cell artifact is not a REPL value".to_owned()),
         },
     );
@@ -3441,9 +3446,10 @@ fn agent_repl_run_success_report(
                 responses,
                 serializable: serialized.is_some(),
                 serialized_source: serialized.map(|binding| binding.source.clone()),
+                snapshot_kind: serialized.map(|binding| binding.snapshot_kind.clone()),
                 non_serializable_reason: serialized
                     .is_none()
-                    .then(|| "binding value is not a supported REPL snapshot literal".to_owned()),
+                    .then(|| "binding value is not a supported REPL snapshot".to_owned()),
             },
         );
     }
@@ -3577,7 +3583,7 @@ fn agent_repl_cell_source(
         )
     };
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
 }
 
@@ -3612,12 +3618,18 @@ fn agent_repl_serialized_bindings(
 fn agent_repl_serialized_stmt_binding(
     statement: &Stmt,
 ) -> Option<(String, AgentReplSerializedBinding)> {
-    let Stmt::Let { pattern, expr, .. } = statement else {
+    let Stmt::Let {
+        pattern,
+        expr,
+        expr_source,
+        ..
+    } = statement
+    else {
         return None;
     };
     let name = agent_repl_single_binding_name(pattern)?;
-    let source = agent_repl_serialized_expr_source(expr)?;
-    Some((name, AgentReplSerializedBinding { source }))
+    let binding = agent_repl_serialized_expr_binding(expr, expr_source.as_deref())?;
+    Some((name, binding))
 }
 
 fn agent_repl_single_binding_name(pattern: &Pattern) -> Option<String> {
@@ -3640,6 +3652,48 @@ fn agent_repl_serialized_expr_source(expr: &Expr) -> Option<String> {
             .map(|items| format!("[{}]", items.join(", "))),
         _ => None,
     }
+}
+
+fn agent_repl_serialized_expr_binding(
+    expr: &Expr,
+    expr_source: Option<&str>,
+) -> Option<AgentReplSerializedBinding> {
+    agent_repl_serialized_expr_source(expr)
+        .map(|source| AgentReplSerializedBinding {
+            source,
+            snapshot_kind: "literal".to_owned(),
+        })
+        .or_else(|| {
+            let snapshot_kind = agent_repl_snapshot_expr_kind(expr)?;
+            let source = expr_source?.trim();
+            (!source.is_empty()).then(|| AgentReplSerializedBinding {
+                source: source.to_owned(),
+                snapshot_kind: snapshot_kind.to_owned(),
+            })
+        })
+}
+
+fn agent_repl_snapshot_expr_kind(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::Try { expr } | Expr::Await { expr, .. } => agent_repl_snapshot_expr_kind(expr),
+        Expr::Call { callee, args } if agent_repl_snapshot_call_args_are_self_contained(args) => {
+            match callee.as_ref() {
+                Expr::Path(name) if name == "observe" => Some("observation"),
+                Expr::Path(name) if name == "read_resource" => Some("resource"),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn agent_repl_snapshot_call_args_are_self_contained(args: &[CallArg]) -> bool {
+    args.iter().all(|arg| match arg {
+        CallArg::Positional(expr) => agent_repl_serialized_expr_source(expr).is_some(),
+        CallArg::Named { value, .. } | CallArg::Spread { value } => {
+            agent_repl_serialized_expr_source(value).is_some()
+        }
+    })
 }
 
 fn agent_repl_serialized_literal_source(literal: &Literal) -> Option<String> {

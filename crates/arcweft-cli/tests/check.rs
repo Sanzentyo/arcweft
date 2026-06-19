@@ -787,6 +787,31 @@ fn agent_repl_reuses_serialized_live_bindings_between_cells() {
         .expect("reuse cell is present");
     assert_eq!(reuse_cell["status"], "ok");
     assert_eq!(reuse_cell["value"]["compiled"], true);
+    let frame_binding_cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "let frame = observe()")
+        .expect("observation binding cell is present");
+    assert_eq!(frame_binding_cell["status"], "ok");
+    let frame_reuse_cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "return frame.tick")
+        .expect("observation reuse cell is present");
+    assert_eq!(frame_reuse_cell["status"], "ok");
+    assert_eq!(frame_reuse_cell["value"]["compiled"], true);
+    let resource_binding_cell = cells
+        .iter()
+        .find(|cell| {
+            cell["input"]
+                == "let resource = read_resource(\"arcweft://session/cli/observation/latest.json\")"
+        })
+        .expect("resource binding cell is present");
+    assert_eq!(resource_binding_cell["status"], "ok");
+    let resource_reuse_cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "return resource.uri")
+        .expect("resource reuse cell is present");
+    assert_eq!(resource_reuse_cell["status"], "ok");
+    assert_eq!(resource_reuse_cell["value"]["compiled"], true);
 
     let bindings = cells
         .iter()
@@ -802,6 +827,26 @@ fn agent_repl_reuses_serialized_live_bindings_between_cells() {
     assert_eq!(answer["binding_kind"], "local");
     assert_eq!(answer["serializable"], true);
     assert_eq!(answer["serialized_source"], "42i64");
+    assert_eq!(answer["snapshot_kind"], "literal");
+    let frame = binding_list
+        .iter()
+        .find(|binding| binding["name"] == "frame")
+        .expect("frame binding is present");
+    assert_eq!(frame["binding_kind"], "local");
+    assert_eq!(frame["serializable"], true);
+    assert_eq!(frame["serialized_source"], "observe()");
+    assert_eq!(frame["snapshot_kind"], "observation");
+    let resource = binding_list
+        .iter()
+        .find(|binding| binding["name"] == "resource")
+        .expect("resource binding is present");
+    assert_eq!(resource["binding_kind"], "local");
+    assert_eq!(resource["serializable"], true);
+    assert_eq!(
+        resource["serialized_source"],
+        "read_resource(\"arcweft://session/cli/observation/latest.json\")"
+    );
+    assert_eq!(resource["snapshot_kind"], "resource");
 }
 
 #[test]

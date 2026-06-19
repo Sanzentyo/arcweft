@@ -441,8 +441,11 @@ deterministic CLI session path. Successful cells are recorded as in-session
 cells also expose VM-local binding names extracted from the parsed pattern as
 local binding artifacts tied to the same executed cell. Primitive, string,
 absolute entity-ref, and supported-literal bracket-sequence locals are stored
-with a normalized `serialized_source` and reintroduced as explicit `let`
-bindings before later REPL cells; non-snapshotable locals remain visible in
+with a normalized `serialized_source`. Self-contained `observe(...)` and
+`read_resource(...)` let-bindings are stored as `observation` or `resource`
+snapshot expressions with their original source. Serializable locals are
+reintroduced as explicit `let` bindings before later REPL cells;
+non-snapshotable locals remain visible in
 `:bindings` with `serializable = false` and an explicit reason instead of being
 silently reused. With `--debug-db
 <path>`, non-meta cells are also persisted to the rebuildable debug SQLite

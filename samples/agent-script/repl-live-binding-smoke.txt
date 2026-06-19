@@ -1,5 +1,9 @@
 # Agent REPL live binding smoke session.
 let answer = 42i64
 return answer
+let frame = observe()
+return frame.tick
+let resource = read_resource("arcweft://session/cli/observation/latest.json")
+return resource.uri
 :bindings
 :quit
