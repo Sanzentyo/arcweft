@@ -443,7 +443,8 @@ cells also expose VM-local binding names extracted from the parsed pattern as
 local binding artifacts tied to the same executed cell. Primitive, string,
 absolute entity-ref, and supported-literal bracket-sequence locals are stored
 with a normalized `serialized_source`. Self-contained `observe(...)` and
-`read_resource(...)` let-bindings are stored as `observation` or `resource`
+`read_resource(...)` let-bindings plus self-contained `rag.query(...)`
+let-bindings are stored as `observation`, `resource`, or `rag_context`
 snapshot expressions with their original source. Serializable locals are
 reintroduced as explicit `let` bindings before later REPL cells;
 non-snapshotable locals remain visible in

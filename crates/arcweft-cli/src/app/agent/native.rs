@@ -3700,12 +3700,33 @@ fn agent_repl_snapshot_expr_kind(expr: &Expr) -> Option<&'static str> {
     match expr {
         Expr::Try { expr } | Expr::Await { expr, .. } => agent_repl_snapshot_expr_kind(expr),
         Expr::Call { callee, args } if agent_repl_snapshot_call_args_are_self_contained(args) => {
-            match callee.as_ref() {
-                Expr::Path(name) if name == "observe" => Some("observation"),
-                Expr::Path(name) if name == "read_resource" => Some("resource"),
-                _ => None,
-            }
+            agent_repl_call_snapshot_kind(callee.as_ref())
         }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if agent_repl_snapshot_call_args_are_self_contained(args) => {
+            agent_repl_method_snapshot_kind(receiver.as_ref(), method)
+        }
+        _ => None,
+    }
+}
+
+fn agent_repl_call_snapshot_kind(callee: &Expr) -> Option<&'static str> {
+    match callee {
+        Expr::Path(name) if name == "observe" => Some("observation"),
+        Expr::Path(name) if name == "read_resource" => Some("resource"),
+        Expr::Field { target, field } if field == "query" => {
+            agent_repl_method_snapshot_kind(target.as_ref(), field)
+        }
+        _ => None,
+    }
+}
+
+fn agent_repl_method_snapshot_kind(receiver: &Expr, method: &str) -> Option<&'static str> {
+    match (receiver, method) {
+        (Expr::Path(namespace), "query") if namespace == "rag" => Some("rag_context"),
         _ => None,
     }
 }

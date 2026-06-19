@@ -776,42 +776,7 @@ fn agent_repl_reuses_serialized_live_bindings_between_cells() {
 
     assert_eq!(report["ok"], true);
     let cells = report["cells"].as_array().expect("cells are present");
-    let binding_cell = cells
-        .iter()
-        .find(|cell| cell["input"] == "let answer = 42i64")
-        .expect("binding cell is present");
-    assert_eq!(binding_cell["status"], "ok");
-    let reuse_cell = cells
-        .iter()
-        .find(|cell| cell["input"] == "return answer")
-        .expect("reuse cell is present");
-    assert_eq!(reuse_cell["status"], "ok");
-    assert_eq!(reuse_cell["value"]["compiled"], true);
-    let frame_binding_cell = cells
-        .iter()
-        .find(|cell| cell["input"] == "let frame = observe()")
-        .expect("observation binding cell is present");
-    assert_eq!(frame_binding_cell["status"], "ok");
-    let frame_reuse_cell = cells
-        .iter()
-        .find(|cell| cell["input"] == "return frame.tick")
-        .expect("observation reuse cell is present");
-    assert_eq!(frame_reuse_cell["status"], "ok");
-    assert_eq!(frame_reuse_cell["value"]["compiled"], true);
-    let resource_binding_cell = cells
-        .iter()
-        .find(|cell| {
-            cell["input"]
-                == "let resource = read_resource(\"arcweft://session/cli/observation/latest.json\")"
-        })
-        .expect("resource binding cell is present");
-    assert_eq!(resource_binding_cell["status"], "ok");
-    let resource_reuse_cell = cells
-        .iter()
-        .find(|cell| cell["input"] == "return resource.uri")
-        .expect("resource reuse cell is present");
-    assert_eq!(resource_reuse_cell["status"], "ok");
-    assert_eq!(resource_reuse_cell["value"]["compiled"], true);
+    assert_agent_repl_live_binding_cells(cells);
 
     let bindings = cells
         .iter()
@@ -820,33 +785,70 @@ fn agent_repl_reuses_serialized_live_bindings_between_cells() {
     let binding_list = bindings["value"]["bindings"]
         .as_array()
         .expect("bindings are listed");
-    let answer = binding_list
-        .iter()
-        .find(|binding| binding["name"] == "answer")
-        .expect("answer binding is present");
-    assert_eq!(answer["binding_kind"], "local");
-    assert_eq!(answer["serializable"], true);
-    assert_eq!(answer["serialized_source"], "42i64");
-    assert_eq!(answer["snapshot_kind"], "literal");
-    let frame = binding_list
-        .iter()
-        .find(|binding| binding["name"] == "frame")
-        .expect("frame binding is present");
-    assert_eq!(frame["binding_kind"], "local");
-    assert_eq!(frame["serializable"], true);
-    assert_eq!(frame["serialized_source"], "observe()");
-    assert_eq!(frame["snapshot_kind"], "observation");
-    let resource = binding_list
-        .iter()
-        .find(|binding| binding["name"] == "resource")
-        .expect("resource binding is present");
-    assert_eq!(resource["binding_kind"], "local");
-    assert_eq!(resource["serializable"], true);
-    assert_eq!(
-        resource["serialized_source"],
-        "read_resource(\"arcweft://session/cli/observation/latest.json\")"
+    assert_agent_repl_live_bindings(binding_list);
+}
+
+fn assert_agent_repl_live_binding_cells(cells: &[serde_json::Value]) {
+    assert_agent_repl_cell_status(cells, "let answer = 42i64", false);
+    assert_agent_repl_cell_status(cells, "return answer", true);
+    assert_agent_repl_cell_status(cells, "let frame = observe()", false);
+    assert_agent_repl_cell_status(cells, "return frame.tick", true);
+    assert_agent_repl_cell_status(
+        cells,
+        "let resource = read_resource(\"arcweft://session/cli/observation/latest.json\")",
+        false,
     );
-    assert_eq!(resource["snapshot_kind"], "resource");
+    assert_agent_repl_cell_status(cells, "return resource.uri", true);
+    assert_agent_repl_cell_status(cells, "let context = try rag.query(\"opening\")", false);
+    assert_agent_repl_cell_status(cells, "return context.summary()", true);
+}
+
+fn assert_agent_repl_cell_status(
+    cells: &[serde_json::Value],
+    input: &str,
+    expect_compiled_value: bool,
+) {
+    let cell = cells
+        .iter()
+        .find(|cell| cell["input"] == input)
+        .unwrap_or_else(|| panic!("REPL cell `{input}` is present"));
+    assert_eq!(cell["status"], "ok");
+    if expect_compiled_value {
+        assert_eq!(cell["value"]["compiled"], true);
+    }
+}
+
+fn assert_agent_repl_live_bindings(bindings: &[serde_json::Value]) {
+    assert_agent_repl_live_binding(bindings, "answer", "42i64", "literal");
+    assert_agent_repl_live_binding(bindings, "frame", "observe()", "observation");
+    assert_agent_repl_live_binding(
+        bindings,
+        "resource",
+        "read_resource(\"arcweft://session/cli/observation/latest.json\")",
+        "resource",
+    );
+    assert_agent_repl_live_binding(
+        bindings,
+        "context",
+        "try rag.query(\"opening\")",
+        "rag_context",
+    );
+}
+
+fn assert_agent_repl_live_binding(
+    bindings: &[serde_json::Value],
+    name: &str,
+    serialized_source: &str,
+    snapshot_kind: &str,
+) {
+    let binding = bindings
+        .iter()
+        .find(|binding| binding["name"] == name)
+        .unwrap_or_else(|| panic!("REPL binding `{name}` is present"));
+    assert_eq!(binding["binding_kind"], "local");
+    assert_eq!(binding["serializable"], true);
+    assert_eq!(binding["serialized_source"], serialized_source);
+    assert_eq!(binding["snapshot_kind"], snapshot_kind);
 }
 
 #[test]

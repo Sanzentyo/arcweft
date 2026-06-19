@@ -5,5 +5,7 @@ let frame = observe()
 return frame.tick
 let resource = read_resource("arcweft://session/cli/observation/latest.json")
 return resource.uri
+let context = try rag.query("opening")
+return context.summary()
 :bindings
 :quit
