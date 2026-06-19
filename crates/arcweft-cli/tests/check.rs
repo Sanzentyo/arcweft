@@ -22559,6 +22559,9 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(image_ref["frame_index"], 0);
     assert_eq!(image_ref["local_time_millis"], 50);
     assert_eq!(image_ref["opacity_milli"], 500);
+    assert_eq!(image_ref["fit"], "stretch");
+    assert_eq!(image_ref["alignment"]["x_milli"], 500);
+    assert_eq!(image_ref["alignment"]["y_milli"], 500);
     assert_eq!(image_ref["intrinsic_width"], 2);
     assert_eq!(image_ref["intrinsic_height"], 1);
     assert_eq!(image_ref["actions"][0], "action.inspect.pulse_sprite");
@@ -22661,6 +22664,8 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     assert_eq!(image_ref["asset"], "asset.bg.pulse");
     assert_eq!(image_ref["frame_index"], 0);
     assert_eq!(image_ref["local_time_millis"], 50);
+    assert_eq!(image_ref["fit"], "stretch");
+    assert_eq!(image_ref["alignment"]["x_milli"], 500);
     assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
 }
 
@@ -22683,6 +22688,9 @@ fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
     assert_eq!(image_object["bbox"]["y"], 251);
     assert_eq!(image_object["bbox"]["width"], 2);
     assert_eq!(image_object["bbox"]["height"], 1);
+    assert_eq!(image_object["content"]["fit"], "intrinsic");
+    assert_eq!(image_object["content"]["alignment"]["x_milli"], 1_000);
+    assert_eq!(image_object["content"]["alignment"]["y_milli"], 1_000);
     assert_eq!(
         image_object["content"]["asset"], "asset.bg.poster",
         "alignment sample should preserve static image asset metadata"

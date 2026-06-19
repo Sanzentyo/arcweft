@@ -532,6 +532,10 @@ pub struct AgentObservedImageContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_milli: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<AgentImageFit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<AgentImageAlignment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<AgentImageTransform>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_width: Option<u32>,
@@ -562,6 +566,10 @@ pub struct AgentImageObjectContentRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_milli: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<AgentImageFit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<AgentImageAlignment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<AgentImageTransform>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_width: Option<u32>,
@@ -573,6 +581,23 @@ pub struct AgentImageObjectContentRef {
     pub params: BTreeMap<String, AgentImageObjectParam>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proxies: Vec<AgentPresentationObjectProxyRef>,
+}
+
+/// Image fitting policy attached to an observed image object.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentImageFit {
+    Contain,
+    Cover,
+    Stretch,
+    Intrinsic,
+}
+
+/// Fixed-point image alignment attached to an observed image object.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentImageAlignment {
+    pub x_milli: i32,
+    pub y_milli: i32,
 }
 
 /// Fixed-point affine transform attached to an observed image object.
@@ -665,6 +690,8 @@ impl From<&AgentObservedImageContent> for AgentImageObjectContentRef {
             frame_index: content.frame_index,
             local_time_millis: content.local_time_millis,
             opacity_milli: content.opacity_milli,
+            fit: content.fit,
+            alignment: content.alignment,
             transform: content.transform.clone(),
             intrinsic_width: content.intrinsic_width,
             intrinsic_height: content.intrinsic_height,
@@ -2412,6 +2439,14 @@ mod tests {
         assert_eq!(image_ref.frame_index, Some(1));
         assert_eq!(image_ref.local_time_millis, Some(250));
         assert_eq!(image_ref.opacity_milli, Some(750));
+        assert_eq!(image_ref.fit, Some(AgentImageFit::Intrinsic));
+        assert_eq!(
+            image_ref.alignment,
+            Some(AgentImageAlignment {
+                x_milli: 1_000,
+                y_milli: 0,
+            })
+        );
         assert_eq!(image_ref.intrinsic_width, Some(64));
         assert_eq!(image_ref.intrinsic_height, Some(32));
         assert_eq!(image_ref.actions, vec!["action.inspect".to_owned()]);
@@ -2422,6 +2457,8 @@ mod tests {
             object_json["content"]["opacity_milli"],
             serde_json::json!(750)
         );
+        assert_eq!(object_json["content"]["fit"], "intrinsic");
+        assert_eq!(object_json["content"]["alignment"]["x_milli"], 1_000);
         assert_eq!(object_json["enabled"], serde_json::json!(true));
         assert_eq!(
             object_json["content"]["transform"]["tx_milli"],
@@ -2469,6 +2506,11 @@ mod tests {
             frame_index: Some(1),
             local_time_millis: Some(250),
             opacity_milli: Some(750),
+            fit: Some(AgentImageFit::Intrinsic),
+            alignment: Some(AgentImageAlignment {
+                x_milli: 1_000,
+                y_milli: 0,
+            }),
             transform: Some(AgentImageTransform {
                 m11_milli: 1_000,
                 m12_milli: 0,

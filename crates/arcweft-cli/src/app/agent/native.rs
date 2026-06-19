@@ -21,15 +21,15 @@ use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
     AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
-    AgentHitTestHit, AgentHitTestReport, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageKind, AgentImageMetadata, AgentImageObjectParam,
-    AgentImageObjectRef, AgentImageRenderer, AgentImageResource, AgentImageScope,
-    AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef,
-    AgentObjectCaptureRefs, AgentObservationReport, AgentObservedImageContent, AgentObservedLayer,
-    AgentObservedObject, AgentObservedObjectContent, AgentPoint,
-    AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef, AgentPresentationTree,
-    AgentPresentationTreeQuery, AgentResource, AgentResourceBody, AgentRgbaColor,
-    AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentHitTestHit, AgentHitTestReport, AgentImageAlignment, AgentImageComposition,
+    AgentImageContentBBox, AgentImageCropOrigin, AgentImageFit, AgentImageKind, AgentImageMetadata,
+    AgentImageObjectParam, AgentImageObjectRef, AgentImageRenderer, AgentImageResource,
+    AgentImageScope, AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs,
+    AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentObservationReport,
+    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
+    AgentPoint, AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef,
+    AgentPresentationTree, AgentPresentationTreeQuery, AgentResource, AgentResourceBody,
+    AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
@@ -375,6 +375,8 @@ mod tests {
             frame_index: Some(0),
             local_time_millis: Some(0),
             opacity_milli: None,
+            fit: None,
+            alignment: None,
             transform: None,
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
@@ -444,6 +446,8 @@ mod tests {
             frame_index: Some(0),
             local_time_millis: Some(0),
             opacity_milli: None,
+            fit: None,
+            alignment: None,
             transform: None,
             intrinsic_width: Some(30),
             intrinsic_height: Some(40),
@@ -482,6 +486,8 @@ mod tests {
             frame_index: Some(0),
             local_time_millis: Some(0),
             opacity_milli: None,
+            fit: None,
+            alignment: None,
             transform: None,
             intrinsic_width: Some(2),
             intrinsic_height: Some(2),
@@ -6839,6 +6845,8 @@ fn agent_image_observation_from_ui_item(
     let source_id = format!("ui.image.{}", item.image().0);
     let metadata = agent_image_observation_metadata(item, &source_id, presentation, semantic);
     let opacity_milli = source.opacity_milli();
+    let fit = source.fit();
+    let alignment = source.alignment();
     let transform = source.transform();
     let dimensions = source.image().dimensions();
     let frame_dimensions = frame.dimensions();
@@ -6866,6 +6874,8 @@ fn agent_image_observation_from_ui_item(
                 frame_index: usize::try_from(frame.index()).ok(),
                 local_time_millis: Some(local_time_millis),
                 opacity_milli: Some(opacity_milli),
+                fit: Some(agent_image_fit(fit)),
+                alignment: Some(agent_image_alignment(alignment)),
                 transform: Some(agent_image_transform(transform)),
                 intrinsic_width: Some(dimensions.width()),
                 intrinsic_height: Some(dimensions.height()),
@@ -7117,6 +7127,22 @@ fn agent_clamp_viewport_f32(value: f32, viewport_extent: u32) -> u32 {
         .parse::<f32>()
         .unwrap_or(f32::MAX);
     value.clamp(0.0, max).to_string().parse().unwrap_or(0)
+}
+
+fn agent_image_fit(fit: arcweft_ui::ImageFit) -> AgentImageFit {
+    match fit {
+        arcweft_ui::ImageFit::Contain => AgentImageFit::Contain,
+        arcweft_ui::ImageFit::Cover => AgentImageFit::Cover,
+        arcweft_ui::ImageFit::Stretch => AgentImageFit::Stretch,
+        arcweft_ui::ImageFit::Intrinsic => AgentImageFit::Intrinsic,
+    }
+}
+
+fn agent_image_alignment(alignment: arcweft_ui::ImageAlignment) -> AgentImageAlignment {
+    AgentImageAlignment {
+        x_milli: alignment.x_milli(),
+        y_milli: alignment.y_milli(),
+    }
 }
 
 fn agent_image_transform(

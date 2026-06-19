@@ -127,9 +127,10 @@ live UI commits populate the store.
 Object-scoped image resources also preserve an `image_ref` summary on
 `image.object`. The summary records the observed image source, authored object
 id, target, asset id, active frame index, pinned local time, opacity, intrinsic
-dimensions, semantic actions, typed params, and object proxy metadata. This
-keeps direct `--read-uri` and MCP resource/tool responses useful for debugging
-animated images without re-inferring frame state from pixels or object ids.
+dimensions, fit/alignment policy, semantic actions, typed params, and object
+proxy metadata. This keeps direct `--read-uri` and MCP resource/tool responses
+useful for debugging animated images without re-inferring frame state from
+pixels or object ids.
 When an image object pins playback with `playback.local_time`, object and layer
 readback report the resulting object-local `frame_index` and
 `local_time_millis`, even if the observation itself used a different
