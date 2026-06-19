@@ -146,6 +146,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_get_state_tool_descriptor(),
         agent_signal_get_tool_descriptor(),
         agent_log_query_tool_descriptor(),
+        agent_rag_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -349,6 +350,37 @@ fn agent_log_query_tool_descriptor() -> McpToolDescriptor {
                 "contains": { "type": "string", "description": "Optional case-sensitive message substring filter." },
                 "limit": { "type": "integer", "minimum": 0, "default": 50 }
             }
+        }),
+    }
+}
+
+fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.rag.query".to_owned(),
+        title: Some("Query Arcweft Debug Context".to_owned()),
+        description: "Builds an explainable RagContextPack from the current Agent Debug Bus session, or observes a supplied source/profile first.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before querying. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-query. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before querying. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "steps": { "type": "integer", "minimum": 1 },
+                "capture_step": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 },
+                "query": { "type": "string", "description": "Natural-language or identifier query text." },
+                "roots": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional public ids or observed object ids to bias retrieval."
+                },
+                "graph_depth": { "type": "integer", "minimum": 0, "default": 1 },
+                "limit": { "type": "integer", "minimum": 1, "default": 8 },
+                "max_context_bytes": { "type": "integer", "minimum": 1, "default": 32768 }
+            },
+            "required": ["query"]
         }),
     }
 }
@@ -1284,6 +1316,7 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "arcweft.get_state"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.signal_get"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.log_query"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.rag.query"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -1422,6 +1455,20 @@ mod tests {
             "string"
         );
         assert_eq!(logs.input_schema["properties"]["limit"]["minimum"], 0);
+
+        let rag = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.rag.query")
+            .expect("rag query tool is described");
+        assert_eq!(rag.input_schema["required"], serde_json::json!(["query"]));
+        assert_eq!(rag.input_schema["properties"]["query"]["type"], "string");
+        assert_eq!(rag.input_schema["properties"]["roots"]["type"], "array");
+        assert_eq!(rag.input_schema["properties"]["graph_depth"]["minimum"], 0);
+        assert_eq!(rag.input_schema["properties"]["limit"]["minimum"], 1);
+        assert_eq!(
+            rag.input_schema["properties"]["max_context_bytes"]["minimum"],
+            1
+        );
     }
 
     fn assert_capture_time_description_mentions_animated_presentation_objects(

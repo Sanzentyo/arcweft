@@ -24,7 +24,7 @@ use arcweft_agent_mcp::{
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
     tool_result_for_resources, trace_resource,
 };
-use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId};
+use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, StableHash};
 use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult,
     CaptureTarget, ObservationEnvelope, ObserveRequest,
@@ -47,11 +47,16 @@ use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::step::InputEvent as RuntimeInputEvent;
 use arcweft_core::task::TaskEvent;
+use arcweft_debug_model::{
+    chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
+    rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
+};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
     ImageObjectTransform,
 };
+use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextParam,
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
@@ -343,6 +348,67 @@ mod tests {
             logs["logs"][0]["message"],
             serde_json::json!("opened route")
         );
+    }
+
+    #[test]
+    fn agent_mcp_rag_query_returns_explainable_context_pack() {
+        let mut report = test_agent_observation_report(None);
+        report.final_status = "running".to_owned();
+        report.signals.push(AgentAssignment {
+            name: "signal.current_flow".to_owned(),
+            value: "flow.opening".to_owned(),
+        });
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "info".to_owned(),
+            message: "opened route".to_owned(),
+            fields: Vec::new(),
+        });
+        report.diagnostics.push(AgentDiagnostic {
+            step: 3,
+            severity: AgentDiagnosticSeverity::Warning,
+            source: Some("flow.opening".to_owned()),
+            code: Some("layout-warning".to_owned()),
+            effect_id: None,
+            message: "route label needs layout review".to_owned(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            ..AgentMcpState::default()
+        };
+
+        let rag_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "current_flow route",
+                "roots": ["signal.current_flow"],
+                "limit": 4,
+                "max_context_bytes": 4096
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("RAG query succeeds");
+        let pack = mcp_text_json(&rag_result);
+
+        assert_eq!(pack["schema_version"], serde_json::json!(1));
+        assert_eq!(
+            pack["query"]["text"],
+            serde_json::json!("current_flow route")
+        );
+        assert_eq!(
+            pack["query"]["roots"],
+            serde_json::json!(["signal.current_flow"])
+        );
+        assert!(
+            pack["items"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        );
+        assert!(pack["items"].as_array().unwrap().iter().any(|item| {
+            item["title"] == serde_json::json!("Signal signal.current_flow")
+                && item["channels"]
+                    .as_array()
+                    .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
+        }));
     }
 
     fn mcp_text_json(result: &McpCallToolResult) -> serde_json::Value {
@@ -1931,6 +1997,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP log result: {error}"))
         }
+        "arcweft.rag.query" => {
+            let tool = agent_mcp_call_rag_query(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP RAG result: {error}"))
+        }
         "arcweft.trace.read" => {
             let tool = agent_mcp_call_trace_read(&arguments, state)?;
             serde_json::to_value(tool)
@@ -2124,6 +2195,537 @@ fn agent_mcp_call_log_query(
         "logs": logs,
     });
     agent_mcp_json_tool_result(&value, "logs")
+}
+
+fn agent_mcp_call_rag_query(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let query_text = arguments
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|query| !query.is_empty())
+        .ok_or_else(|| "arcweft.rag.query requires non-empty arguments.query".to_owned())?;
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(8);
+    if limit == 0 {
+        return Err("arcweft.rag.query argument limit must be at least 1".to_owned());
+    }
+    let max_context_bytes =
+        agent_mcp_usize_argument(arguments, "max_context_bytes").unwrap_or(32 * 1024);
+    if max_context_bytes == 0 {
+        return Err("arcweft.rag.query argument max_context_bytes must be at least 1".to_owned());
+    }
+    let graph_depth =
+        agent_mcp_u32_argument(arguments, "graph_depth", "arcweft.rag.query")?.unwrap_or(1);
+    let roots = agent_mcp_rag_roots(arguments)?;
+    let pack = agent_mcp_rag_context_pack(
+        state,
+        query_text,
+        roots,
+        graph_depth,
+        limit,
+        max_context_bytes,
+    )?;
+    let value = serde_json::to_value(pack)
+        .map_err(|error| format!("failed to serialize Agent RAG context pack: {error}"))?;
+    agent_mcp_json_tool_result(&value, "RAG context pack")
+}
+
+#[derive(Clone)]
+struct AgentMcpRagCandidate {
+    chunk: DebugChunk,
+    preferred_channel: SearchChannel,
+}
+
+fn agent_mcp_rag_context_pack(
+    state: &AgentMcpState,
+    query_text: &str,
+    roots: Vec<PublicId>,
+    graph_depth: u32,
+    limit: usize,
+    max_context_bytes: usize,
+) -> Result<RagContextPack, String> {
+    let candidates = agent_mcp_rag_candidates(state)?;
+    if candidates.is_empty() {
+        return Err(
+            "arcweft.rag.query requires a prior arcweft.observe call, arcweft.trace.read call, arguments.source, or arguments.profile"
+                .to_owned(),
+        );
+    }
+    let program_hash = agent_mcp_rag_program_hash(state, &candidates)?;
+    let query_id_seed = format!(
+        "{}:{}:{graph_depth}:{limit}:{max_context_bytes}",
+        query_text,
+        program_hash.as_str()
+    );
+    let query = RagQuery {
+        query_id: agent_mcp_content_hash(query_id_seed),
+        text: query_text.to_owned(),
+        program_hash,
+        roots,
+        graph_depth,
+        limit,
+        max_context_bytes,
+    };
+    let fused = reciprocal_rank_fusion(
+        &agent_mcp_rag_ranked_lists(&candidates, &query),
+        &FusionConfig::default(),
+        limit,
+    );
+    let by_id = candidates
+        .iter()
+        .map(|candidate| (candidate.chunk.id.clone(), &candidate.chunk))
+        .collect::<BTreeMap<_, _>>();
+    let mut used_bytes = 0usize;
+    let mut truncated = false;
+    let mut items = Vec::new();
+    for hit in fused {
+        let Some(chunk) = by_id.get(&hit.chunk_id).copied() else {
+            continue;
+        };
+        let remaining = max_context_bytes.saturating_sub(used_bytes);
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let (body, body_truncated) = agent_mcp_truncate_utf8(&chunk.body, remaining);
+        truncated |= body_truncated;
+        used_bytes = used_bytes.saturating_add(body.len());
+        items.push(RagContextItem {
+            chunk_id: chunk.id.clone(),
+            kind: chunk.source_kind,
+            title: chunk.title.clone(),
+            body,
+            fused_score: hit.fused_score,
+            channels: hit.channels,
+            entity_ids: chunk.entity_ids.clone(),
+            source_anchor: chunk.source_anchor.clone(),
+        });
+        if body_truncated {
+            break;
+        }
+    }
+    Ok(RagContextPack {
+        schema_version: 1,
+        query,
+        items,
+        truncated,
+    })
+}
+
+fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCandidate>, String> {
+    let mut candidates = Vec::new();
+    if let Some(report) = &state.report {
+        let summary = agent_mcp_observation_state_summary(report);
+        candidates.push(agent_mcp_rag_json_candidate(
+            "observation.summary",
+            "Observation state summary",
+            ChunkSourceKind::GraphSummary,
+            SearchChannel::Summary,
+            &summary,
+            Vec::new(),
+        )?);
+        candidates.push(agent_mcp_rag_json_candidate(
+            "observation.actions",
+            "Agent action targets",
+            ChunkSourceKind::GraphSummary,
+            SearchChannel::Graph,
+            &serde_json::to_value(&report.actions)
+                .map_err(|error| format!("failed to serialize Agent actions: {error}"))?,
+            Vec::new(),
+        )?);
+        for object in &report.objects {
+            candidates.push(agent_mcp_rag_json_candidate(
+                &format!("object.{}", object.id),
+                &format!("Observed object {} role {}", object.id, object.role),
+                ChunkSourceKind::GraphSummary,
+                SearchChannel::Graph,
+                &serde_json::to_value(object)
+                    .map_err(|error| format!("failed to serialize observed object: {error}"))?,
+                agent_mcp_object_entity_ids(object),
+            )?);
+        }
+        for signal in &report.signals {
+            candidates.push(agent_mcp_rag_json_candidate(
+                &format!("signal.{}", signal.name),
+                &format!("Signal {}", signal.name),
+                ChunkSourceKind::AgentTrace,
+                SearchChannel::Trace,
+                &serde_json::to_value(signal)
+                    .map_err(|error| format!("failed to serialize Agent signal: {error}"))?,
+                agent_mcp_public_ids([signal.name.as_str()]),
+            )?);
+        }
+        for metric in &report.metrics {
+            candidates.push(agent_mcp_rag_json_candidate(
+                &format!("metric.{}", metric.name),
+                &format!("Metric {}", metric.name),
+                ChunkSourceKind::AgentTrace,
+                SearchChannel::Trace,
+                &serde_json::to_value(metric)
+                    .map_err(|error| format!("failed to serialize Agent metric: {error}"))?,
+                agent_mcp_public_ids([metric.name.as_str()]),
+            )?);
+        }
+        for (index, log) in report.logs.iter().enumerate() {
+            candidates.push(agent_mcp_rag_json_candidate(
+                &format!("log.{index}"),
+                &format!("Runtime log {} {}", log.level, index),
+                ChunkSourceKind::AgentTrace,
+                SearchChannel::Trace,
+                &serde_json::to_value(log)
+                    .map_err(|error| format!("failed to serialize runtime log: {error}"))?,
+                Vec::new(),
+            )?);
+        }
+        for diagnostic in &report.diagnostics {
+            candidates.push(agent_mcp_rag_json_candidate(
+                &format!("diagnostic.{}.{}", diagnostic.step, candidates.len()),
+                &format!(
+                    "Diagnostic {:?} step {}",
+                    diagnostic.severity, diagnostic.step
+                ),
+                ChunkSourceKind::Diagnostic,
+                SearchChannel::Diagnostics,
+                &serde_json::to_value(diagnostic)
+                    .map_err(|error| format!("failed to serialize Agent diagnostic: {error}"))?,
+                agent_mcp_public_ids(
+                    [
+                        diagnostic.source.as_deref(),
+                        diagnostic.effect_id.as_deref(),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                ),
+            )?);
+        }
+    }
+    for resource in &state.trace_resources {
+        candidates.extend(agent_mcp_trace_resource_rag_candidates(resource)?);
+    }
+    Ok(candidates)
+}
+
+fn agent_mcp_rag_json_candidate(
+    source_key: &str,
+    title: &str,
+    source_kind: ChunkSourceKind,
+    preferred_channel: SearchChannel,
+    value: &serde_json::Value,
+    entity_ids: Vec<PublicId>,
+) -> Result<AgentMcpRagCandidate, String> {
+    let body = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("failed to serialize RAG candidate body: {error}"))?;
+    Ok(agent_mcp_rag_text_candidate(
+        source_key,
+        title,
+        source_kind,
+        preferred_channel,
+        body,
+        entity_ids,
+    ))
+}
+
+fn agent_mcp_rag_text_candidate(
+    source_key: &str,
+    title: &str,
+    source_kind: ChunkSourceKind,
+    preferred_channel: SearchChannel,
+    body: String,
+    entity_ids: Vec<PublicId>,
+) -> AgentMcpRagCandidate {
+    let content_hash = agent_mcp_content_hash(&body);
+    AgentMcpRagCandidate {
+        chunk: DebugChunk {
+            id: ChunkId::new(format!("mcp:{source_key}:{content_hash}")),
+            program_hash: None,
+            source_kind,
+            source_key: source_key.to_owned(),
+            title: title.to_owned(),
+            body,
+            content_hash: StableHash::new(content_hash)
+                .expect("generated content hash is non-empty"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids,
+            privacy: PrivacyClass::Project,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        },
+        preferred_channel,
+    }
+}
+
+fn agent_mcp_trace_resource_rag_candidates(
+    resource: &AgentResource,
+) -> Result<Vec<AgentMcpRagCandidate>, String> {
+    let AgentResourceBody::Json(value) = &resource.body else {
+        return Ok(vec![agent_mcp_rag_text_candidate(
+            &resource.uri,
+            &format!("Trace resource {}", resource.uri),
+            ChunkSourceKind::AgentTrace,
+            SearchChannel::Trace,
+            agent_mcp_resource_body_text(resource)?,
+            Vec::new(),
+        )]);
+    };
+    let Some(records) = value.as_array() else {
+        return Ok(vec![agent_mcp_rag_json_candidate(
+            &resource.uri,
+            &format!("Trace resource {}", resource.uri),
+            ChunkSourceKind::AgentTrace,
+            SearchChannel::Trace,
+            value,
+            Vec::new(),
+        )?]);
+    };
+    records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| {
+            let title = record
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(
+                    || format!("Trace record {index}"),
+                    |kind| format!("Trace record {index} {kind}"),
+                );
+            agent_mcp_rag_json_candidate(
+                &format!("{}.record.{index}", resource.uri),
+                &title,
+                ChunkSourceKind::AgentTrace,
+                SearchChannel::Trace,
+                record,
+                Vec::new(),
+            )
+        })
+        .collect()
+}
+
+fn agent_mcp_resource_body_text(resource: &AgentResource) -> Result<String, String> {
+    match &resource.body {
+        AgentResourceBody::Json(value) => serde_json::to_string_pretty(value)
+            .map_err(|error| format!("failed to serialize Agent resource body: {error}")),
+        AgentResourceBody::Text(text) => Ok(text.clone()),
+        AgentResourceBody::BytesBase64(_) => Ok(format!(
+            "binary resource {} mime_type={} hash={}",
+            resource.uri, resource.mime_type, resource.hash
+        )),
+    }
+}
+
+fn agent_mcp_rag_ranked_lists(
+    candidates: &[AgentMcpRagCandidate],
+    query: &RagQuery,
+) -> Vec<Vec<SearchHit>> {
+    [
+        SearchChannel::ExactEntity,
+        SearchChannel::Lexical,
+        SearchChannel::Graph,
+        SearchChannel::Diagnostics,
+        SearchChannel::Trace,
+        SearchChannel::Summary,
+    ]
+    .into_iter()
+    .filter_map(|channel| {
+        let mut scored = candidates
+            .iter()
+            .filter_map(|candidate| {
+                agent_mcp_rag_score(candidate, query, channel).map(|score| (candidate, score))
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| {
+            right
+                .1
+                .total_cmp(&left.1)
+                .then_with(|| left.0.chunk.id.cmp(&right.0.chunk.id))
+        });
+        if scored.is_empty() {
+            return None;
+        }
+        Some(
+            scored
+                .into_iter()
+                .enumerate()
+                .map(|(index, (candidate, score))| SearchHit {
+                    chunk_id: candidate.chunk.id.clone(),
+                    channel,
+                    rank: index + 1,
+                    score: Some(score),
+                })
+                .collect(),
+        )
+    })
+    .collect()
+}
+
+fn agent_mcp_rag_score(
+    candidate: &AgentMcpRagCandidate,
+    query: &RagQuery,
+    channel: SearchChannel,
+) -> Option<f64> {
+    let haystack = agent_mcp_rag_haystack(candidate);
+    match channel {
+        SearchChannel::ExactEntity => {
+            let root_match = query.roots.iter().any(|root| {
+                candidate
+                    .chunk
+                    .entity_ids
+                    .iter()
+                    .any(|entity| entity == root)
+                    || candidate.chunk.source_key == root.as_str()
+                    || candidate.chunk.title.contains(root.as_str())
+            });
+            let query_match = candidate
+                .chunk
+                .entity_ids
+                .iter()
+                .any(|entity| entity.as_str() == query.text)
+                || candidate.chunk.source_key == query.text
+                || candidate.chunk.title == query.text;
+            (root_match || query_match).then_some(1.0)
+        }
+        SearchChannel::Lexical => {
+            let query_lower = query.text.to_lowercase();
+            let phrase = f64::from(u8::from(haystack.contains(&query_lower)));
+            let token_score = agent_mcp_rag_tokens(&query.text)
+                .into_iter()
+                .filter(|token| haystack.contains(token))
+                .count();
+            let token_score = agent_mcp_count_as_f64(token_score);
+            (phrase + token_score > 0.0).then_some(phrase.mul_add(4.0, token_score))
+        }
+        SearchChannel::Graph => {
+            let root_score = if query.graph_depth > 0 {
+                let count = query
+                    .roots
+                    .iter()
+                    .filter(|root| haystack.contains(&root.as_str().to_lowercase()))
+                    .count();
+                agent_mcp_count_as_f64(count)
+            } else {
+                0.0
+            };
+            let channel_score = f64::from(u8::from(
+                candidate.preferred_channel == SearchChannel::Graph,
+            ));
+            (root_score + channel_score > 0.0).then_some(root_score + channel_score)
+        }
+        SearchChannel::Diagnostics | SearchChannel::Trace | SearchChannel::Summary => {
+            if candidate.preferred_channel != channel {
+                return None;
+            }
+            let token_score = agent_mcp_rag_tokens(&query.text)
+                .into_iter()
+                .filter(|token| haystack.contains(token))
+                .count();
+            let token_score = agent_mcp_count_as_f64(token_score);
+            (token_score > 0.0).then_some(token_score)
+        }
+        SearchChannel::Vector | SearchChannel::History => None,
+    }
+}
+
+fn agent_mcp_count_as_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).unwrap_or(u32::MAX))
+}
+
+fn agent_mcp_rag_haystack(candidate: &AgentMcpRagCandidate) -> String {
+    let mut haystack = format!(
+        "{}\n{}\n{}",
+        candidate.chunk.source_key, candidate.chunk.title, candidate.chunk.body
+    )
+    .to_lowercase();
+    for entity in &candidate.chunk.entity_ids {
+        haystack.push('\n');
+        haystack.push_str(&entity.as_str().to_lowercase());
+    }
+    haystack
+}
+
+fn agent_mcp_rag_tokens(text: &str) -> BTreeSet<String> {
+    text.split(|character: char| {
+        !(character.is_alphanumeric() || character == '.' || character == '_' || character == '-')
+    })
+    .map(str::trim)
+    .filter(|token| !token.is_empty())
+    .map(str::to_lowercase)
+    .collect()
+}
+
+fn agent_mcp_rag_roots(arguments: &serde_json::Value) -> Result<Vec<PublicId>, String> {
+    let Some(roots) = arguments.get("roots") else {
+        return Ok(Vec::new());
+    };
+    let roots = roots
+        .as_array()
+        .ok_or_else(|| "arcweft.rag.query argument roots must be an array".to_owned())?;
+    roots
+        .iter()
+        .map(|root| {
+            let value = root
+                .as_str()
+                .ok_or_else(|| "arcweft.rag.query roots must contain only strings".to_owned())?;
+            PublicId::new(value.to_owned())
+                .map_err(|_| "arcweft.rag.query roots must not be empty".to_owned())
+        })
+        .collect()
+}
+
+fn agent_mcp_object_entity_ids(object: &AgentObservedObject) -> Vec<PublicId> {
+    agent_mcp_public_ids(
+        [Some(object.id.as_str()), object.entity.as_deref()]
+            .into_iter()
+            .flatten(),
+    )
+}
+
+fn agent_mcp_public_ids<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<PublicId> {
+    values
+        .into_iter()
+        .filter_map(|value| PublicId::new(value.to_owned()).ok())
+        .collect()
+}
+
+fn agent_mcp_rag_program_hash(
+    state: &AgentMcpState,
+    candidates: &[AgentMcpRagCandidate],
+) -> Result<StableHash, String> {
+    let seed = state.report.as_ref().map_or_else(
+        || {
+            candidates
+                .iter()
+                .map(|candidate| candidate.chunk.content_hash.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        |report| {
+            format!(
+                "{}:{}:{}:{}",
+                report.source, report.state_hash, report.render_hash, report.tick
+            )
+        },
+    );
+    StableHash::new(agent_mcp_content_hash(seed))
+        .map_err(|_| "failed to build Agent RAG program hash".to_owned())
+}
+
+fn agent_mcp_content_hash(bytes: impl AsRef<[u8]>) -> String {
+    format!("blake3:{}", blake3::hash(bytes.as_ref()).to_hex())
+}
+
+fn agent_mcp_truncate_utf8(text: &str, max_bytes: usize) -> (String, bool) {
+    if text.len() <= max_bytes {
+        return (text.to_owned(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (text[..end].to_owned(), true)
 }
 
 fn agent_mcp_observe_if_requested(

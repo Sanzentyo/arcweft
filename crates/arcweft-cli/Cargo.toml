@@ -29,6 +29,7 @@ arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-rag = { path = "../arcweft-rag" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }

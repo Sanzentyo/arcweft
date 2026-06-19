@@ -288,6 +288,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-presentation",
+ "arcweft-rag",
  "arcweft-render-native",
  "arcweft-render-text",
  "arcweft-runtime-accelerator",
