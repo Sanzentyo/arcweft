@@ -242,18 +242,18 @@ where
                 self.ensure(RuntimeAgentCapability::Observe)?;
                 let observation = self
                     .session
-                    .observe(request)
+                    .observe(*request)
                     .map_err(AgentRunError::Session)?;
                 self.emit(
                     DebugEventKind::Observation,
                     Some(observation.tick),
                     serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
                 )?;
-                AgentHostResponse::Observation(observation)
+                AgentHostResponse::Observation(Box::new(observation))
             }
             AgentHostRequest::Act(action) => {
                 self.ensure(RuntimeAgentCapability::Act)?;
-                let result = self.session.act(action).map_err(AgentRunError::Session)?;
+                let result = self.session.act(*action).map_err(AgentRunError::Session)?;
                 self.emit(
                     DebugEventKind::Action,
                     Some(result.after_tick),
@@ -263,13 +263,13 @@ where
             }
             AgentHostRequest::Wait(request) => {
                 let observation = self.wait(&request)?;
-                AgentHostResponse::Observation(observation)
+                AgentHostResponse::Observation(Box::new(observation))
             }
             AgentHostRequest::Capture(request) => {
                 self.ensure(RuntimeAgentCapability::Capture)?;
                 let result = self
                     .session
-                    .capture(request)
+                    .capture(*request)
                     .map_err(AgentRunError::Session)?;
                 self.emit(
                     DebugEventKind::Capture,
@@ -284,21 +284,21 @@ where
                     .session
                     .read_resource(uri.as_str())
                     .map_err(AgentRunError::Session)?;
-                AgentHostResponse::Resource(
+                AgentHostResponse::Resource(Box::new(
                     serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
-                )
+                ))
             }
             AgentHostRequest::RagQuery(request) => {
                 self.ensure(RuntimeAgentCapability::Rag)?;
-                let context = self.rag.query(request).map_err(AgentRunError::Rag)?;
+                let context = self.rag.query(*request).map_err(AgentRunError::Rag)?;
                 self.emit(
                     DebugEventKind::RagQuery,
                     None,
                     serde_json::to_value(&context).unwrap_or(serde_json::Value::Null),
                 )?;
-                AgentHostResponse::RagContext(
+                AgentHostResponse::RagContext(Box::new(
                     serde_json::to_value(context).unwrap_or(serde_json::Value::Null),
-                )
+                ))
             }
             AgentHostRequest::Checkpoint { name } => {
                 self.emit(
@@ -538,7 +538,7 @@ mod tests {
         );
 
         let report = runner
-            .handle_host_request(AgentHostRequest::Wait(WaitRequest {
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
                 predicate: Predicate::Compare {
                     probe: Probe::Signal {
                         target: PublicId::new("signal.ready").expect("valid public id"),
@@ -549,12 +549,12 @@ mod tests {
                 timeout_millis: 5,
                 stable_frames: 2,
                 poll_frames: 1,
-            }))
+            })))
             .expect("wait succeeds");
 
         assert!(matches!(
             report.response,
-            AgentHostResponse::Observation(ObservationEnvelope { tick: 3, .. })
+            AgentHostResponse::Observation(observation) if observation.tick == 3
         ));
     }
 
@@ -569,12 +569,12 @@ mod tests {
         );
 
         let error = runner
-            .handle_host_request(AgentHostRequest::Capture(CaptureRequest {
+            .handle_host_request(AgentHostRequest::Capture(Box::new(CaptureRequest {
                 target: CaptureTarget::Viewport,
                 format: CaptureFormat::Png,
                 capture_kind: "color".to_owned(),
                 name: "viewport".to_owned(),
-            }))
+            })))
             .expect_err("capture is denied");
 
         assert!(matches!(

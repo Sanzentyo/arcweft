@@ -743,6 +743,27 @@ impl TypeChecker<'_> {
         args: &[CallArg],
     ) -> Option<TypeKind> {
         match name {
+            "expect" => Some(self.check_agent_assert_intrinsic(name, args, "expect")),
+            "deny" => Some(self.check_agent_assert_intrinsic(name, args, "deny")),
+            "checkpoint" => Some(self.check_agent_record_text_intrinsic(
+                name,
+                args,
+                "checkpoint name",
+                &TypeKind::String,
+            )),
+            "note" => Some(self.check_agent_record_text_intrinsic(
+                name,
+                args,
+                "note text",
+                &TypeKind::DisplayText,
+            )),
+            "attach" => Some(self.check_agent_attach_intrinsic(name, args)),
+            "viewport" => {
+                Some(self.check_agent_no_arg_intrinsic(name, args, TypeKind::CaptureTarget))
+            }
+            "layer" => Some(self.check_agent_layer_intrinsic(name, args)),
+            "object" => Some(self.check_agent_object_intrinsic(name, args)),
+            "capture" => Some(self.check_agent_capture_intrinsic(name, args)),
             "signal" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Signal, "signal"))
             }
@@ -750,8 +771,188 @@ impl TypeChecker<'_> {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Metric, "metric"))
             }
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
+            "rag.query" => Some(self.check_agent_rag_query_intrinsic(name, args)),
             _ => None,
         }
+    }
+
+    fn check_agent_assert_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        context: &str,
+    ) -> TypeKind {
+        let mut condition_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    match positional_index {
+                        0 => {
+                            condition_seen = true;
+                            self.expect_expr_type(value, &TypeKind::Bool, context);
+                        }
+                        1 => {
+                            self.expect_expr_type(value, &TypeKind::String, "assertion message");
+                        }
+                        _ => {
+                            self.errors.push(TypeCheckError::new(format!(
+                                "{name} received too many positional arguments"
+                            )));
+                            self.check_expr(value);
+                        }
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "message" => {
+                    self.expect_expr_type(value, &TypeKind::String, "assertion message");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "{name} has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "{name} does not accept spread arguments"
+                    )));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !condition_seen {
+            self.errors.push(TypeCheckError::new(format!(
+                "{name} requires a condition argument"
+            )));
+        }
+        TypeKind::Unit
+    }
+
+    fn check_agent_record_text_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        context: &str,
+        expected: &TypeKind,
+    ) -> TypeKind {
+        self.check_function_effects(name);
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Unit;
+        };
+        self.expect_expr_type(arg, expected, context);
+        TypeKind::Unit
+    }
+
+    fn check_agent_attach_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Unit;
+        };
+        self.expect_expr_type(arg, &TypeKind::CaptureRef, "attach resource");
+        TypeKind::Unit
+    }
+
+    fn check_agent_no_arg_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        return_type: TypeKind,
+    ) -> TypeKind {
+        if !args.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "{name} does not accept arguments"
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+        }
+        return_type
+    }
+
+    fn check_agent_layer_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::CaptureTarget;
+        };
+        self.expect_expr_type(
+            arg,
+            &TypeKind::entity_ref(EntityKind::Layer),
+            "layer target",
+        );
+        TypeKind::CaptureTarget
+    }
+
+    fn check_agent_object_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::CaptureTarget;
+        };
+        self.expect_expr_type(
+            arg,
+            &TypeKind::Named("ObservedObjectId".to_owned()),
+            "object id",
+        );
+        TypeKind::CaptureTarget
+    }
+
+    fn check_agent_capture_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let mut target_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    if positional_index == 0 {
+                        target_seen = true;
+                        self.expect_expr_type(value, &TypeKind::CaptureTarget, "capture target");
+                    } else {
+                        self.errors.push(TypeCheckError::new(
+                            "capture received too many positional arguments".to_owned(),
+                        ));
+                        self.check_expr(value);
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "name" => {
+                    self.expect_expr_type(value, &TypeKind::String, "capture name");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "format" || arg_name == "kind" => {
+                    self.check_expr(value);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "capture has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "capture does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !target_seen {
+            self.errors.push(TypeCheckError::new(
+                "capture requires a target argument".to_owned(),
+            ));
+        }
+        TypeKind::CaptureRef
     }
 
     fn check_agent_probe_intrinsic(
@@ -861,6 +1062,67 @@ impl TypeChecker<'_> {
                 .push(TypeCheckError::new("wait requires timeout".to_owned()));
         }
         TypeKind::Observation
+    }
+
+    fn check_agent_rag_query_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let mut query_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    if positional_index == 0 {
+                        query_seen = true;
+                        self.expect_expr_type(value, &TypeKind::String, "rag query");
+                    } else {
+                        self.errors.push(TypeCheckError::new(
+                            "rag.query received too many positional arguments".to_owned(),
+                        ));
+                        self.check_expr(value);
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "roots" => {
+                    self.check_expr(value);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "graph_depth" => {
+                    self.expect_expr_type(value, &TypeKind::U32, "rag graph_depth");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "limit" => {
+                    self.expect_expr_type(value, &TypeKind::USize, "rag limit");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "rag.query has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "rag.query does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !query_seen {
+            self.errors.push(TypeCheckError::new(
+                "rag.query requires a query argument".to_owned(),
+            ));
+        }
+        TypeKind::RagContextPack
     }
 
     fn check_wait_positive_u32_literal(&mut self, name: &str, value: &Expr) {
@@ -1298,6 +1560,9 @@ impl TypeChecker<'_> {
             }
             if receiver_path == "InlineFailure" && method_name == "fallback" {
                 return Some(TypeKind::Named("InlineFailure".to_owned()));
+            }
+            if let Some(ty) = self.check_agent_intrinsic_call_name(&dotted, args) {
+                return Some(ty);
             }
             if let Some(ty) = self
                 .function_type(&dotted)

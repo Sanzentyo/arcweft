@@ -120,12 +120,12 @@ pub struct RagRequest {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "request", rename_all = "snake_case")]
 pub enum AgentHostRequest {
-    Observe(ObserveRequest),
-    Act(AgentAction),
-    Wait(WaitRequest),
-    Capture(CaptureRequest),
+    Observe(Box<ObserveRequest>),
+    Act(Box<AgentAction>),
+    Wait(Box<WaitRequest>),
+    Capture(Box<CaptureRequest>),
     ReadResource { uri: AgentResourceUri },
-    RagQuery(RagRequest),
+    RagQuery(Box<RagRequest>),
     Checkpoint { name: String },
 }
 
@@ -133,11 +133,11 @@ pub enum AgentHostRequest {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "response", rename_all = "snake_case")]
 pub enum AgentHostResponse {
-    Observation(ObservationEnvelope),
+    Observation(Box<ObservationEnvelope>),
     Action(ActionResult),
     Capture(CaptureResult),
-    Resource(serde_json::Value),
-    RagContext(serde_json::Value),
+    Resource(Box<serde_json::Value>),
+    RagContext(Box<serde_json::Value>),
     Unit,
 }
 

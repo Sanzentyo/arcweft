@@ -873,36 +873,50 @@ pub(super) fn normalize_choice_type(alternatives: Vec<TypeKind>) -> TypeKind {
     }
 }
 
-pub(super) fn type_kind_label(ty: &TypeKind) -> String {
+fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
     match ty {
-        TypeKind::Bool => "Bool".to_owned(),
-        TypeKind::I8 => "i8".to_owned(),
-        TypeKind::I16 => "i16".to_owned(),
-        TypeKind::I32 => "i32".to_owned(),
-        TypeKind::I64 => "i64".to_owned(),
-        TypeKind::I128 => "i128".to_owned(),
-        TypeKind::ISize => "isize".to_owned(),
-        TypeKind::U8 => "u8".to_owned(),
-        TypeKind::U16 => "u16".to_owned(),
-        TypeKind::U32 => "u32".to_owned(),
-        TypeKind::U64 => "u64".to_owned(),
-        TypeKind::U128 => "u128".to_owned(),
-        TypeKind::USize => "usize".to_owned(),
-        TypeKind::F32 => "f32".to_owned(),
-        TypeKind::F64 => "f64".to_owned(),
-        TypeKind::String => "String".to_owned(),
-        TypeKind::Char => "Char".to_owned(),
-        TypeKind::TextCluster => "TextCluster".to_owned(),
-        TypeKind::Duration => "Duration".to_owned(),
-        TypeKind::Range => "Range".to_owned(),
-        TypeKind::DisplayText => "DisplayText".to_owned(),
+        TypeKind::Bool => Some("Bool"),
+        TypeKind::I8 => Some("i8"),
+        TypeKind::I16 => Some("i16"),
+        TypeKind::I32 => Some("i32"),
+        TypeKind::I64 => Some("i64"),
+        TypeKind::I128 => Some("i128"),
+        TypeKind::ISize => Some("isize"),
+        TypeKind::U8 => Some("u8"),
+        TypeKind::U16 => Some("u16"),
+        TypeKind::U32 => Some("u32"),
+        TypeKind::U64 => Some("u64"),
+        TypeKind::U128 => Some("u128"),
+        TypeKind::USize => Some("usize"),
+        TypeKind::F32 => Some("f32"),
+        TypeKind::F64 => Some("f64"),
+        TypeKind::String => Some("String"),
+        TypeKind::Char => Some("Char"),
+        TypeKind::TextCluster => Some("TextCluster"),
+        TypeKind::Duration => Some("Duration"),
+        TypeKind::Range => Some("Range"),
+        TypeKind::DisplayText => Some("DisplayText"),
+        TypeKind::Predicate => Some("Predicate"),
+        TypeKind::Observation => Some("Observation"),
+        TypeKind::ActionResult => Some("ActionResult"),
+        TypeKind::CaptureTarget => Some("CaptureTarget"),
+        TypeKind::CaptureRef => Some("CaptureRef"),
+        TypeKind::RagContextPack => Some("RagContextPack"),
+        TypeKind::FocusPatch => Some("FocusPatch"),
+        TypeKind::Unit => Some("()"),
+        TypeKind::Never => Some("Never"),
+        _ => None,
+    }
+}
+
+pub(super) fn type_kind_label(ty: &TypeKind) -> String {
+    if let Some(label) = atomic_type_kind_label(ty) {
+        return label.to_owned();
+    }
+
+    match ty {
         TypeKind::Ref(entity) => entity_type_label(entity),
         TypeKind::Probe(inner) => format!("Probe<{}>", type_kind_label(inner)),
-        TypeKind::Predicate => "Predicate".to_owned(),
-        TypeKind::Observation => "Observation".to_owned(),
-        TypeKind::ActionResult => "ActionResult".to_owned(),
-        TypeKind::CaptureRef => "CaptureRef".to_owned(),
-        TypeKind::RagContextPack => "RagContextPack".to_owned(),
         TypeKind::Vec(inner) => format!("Vec<{}>", type_kind_label(inner)),
         TypeKind::Array { item, len } => format!("Array<{}, {len}>", type_kind_label(item)),
         TypeKind::Slice(inner) => format!("[{}]", type_kind_label(inner)),
@@ -956,7 +970,6 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         TypeKind::Speaker(kind) => format!("Speaker<{kind:?}>"),
         TypeKind::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
         TypeKind::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
-        TypeKind::FocusPatch => "FocusPatch".to_owned(),
         TypeKind::Named(name) => name.clone(),
         TypeKind::Tuple(items) => format!(
             "({})",
@@ -971,8 +984,7 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
             .map(type_kind_label)
             .collect::<Vec<_>>()
             .join(" | "),
-        TypeKind::Unit => "()".to_owned(),
-        TypeKind::Never => "Never".to_owned(),
+        _ => unreachable!("atomic type labels are handled before structured labels"),
     }
 }
 

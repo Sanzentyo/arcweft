@@ -633,6 +633,93 @@ effects { agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_capture_and_debug_record() {
+        let project = project_with_entity("layer.hud", EntityKind::Layer);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.capture_hud capture_hud()
+effects { agent.capture, debug.record }
+{
+    let shot = capture(layer(@layer.hud), format = .png, name = "hud")
+    attach(shot)
+    checkpoint("after-capture")
+    note(fmt("captured"))
+}
+"#,
+            &project,
+        )
+        .expect("capture and debug record intrinsics typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_capture_without_effect() {
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.capture_view capture_view()
+{
+    capture(viewport())
+}
+",
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect_err("capture requires declared effect");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_rag_query() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_context debug_context()
+effects { rag.query }
+{
+    rag.query(
+        "opening choice recent failures",
+        roots = [@choice.opening.listen],
+        graph_depth = 2u32,
+        limit = 8usize,
+    )
+}
+"#,
+            &project,
+        )
+        .expect("rag.query intrinsic typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::RagContextPack)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_rag_query_without_effect() {
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_context debug_context()
+{
+    rag.query("opening choice recent failures")
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect_err("rag.query requires declared effect");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
     fn lower_source_runtime_plan_with_options_applies_dialogue_defaults_profile() {
         let parsed = parse_source_text(
             r##"

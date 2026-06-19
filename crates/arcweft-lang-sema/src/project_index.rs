@@ -412,7 +412,7 @@ impl AgentCompilePolicy {
 
 /// Agent Prelude projected into the current lightweight type-checking env.
 pub fn agent_prelude_env() -> TypeCheckEnv {
-    let mut env = TypeCheckEnv::new();
+    let mut env = TypeCheckEnv::standard();
     for (name, callable) in agent_prelude_callables() {
         env = env
             .with_function_signature(name.as_str(), callable.signature.clone())
@@ -429,7 +429,18 @@ pub fn agent_prelude_env() -> TypeCheckEnv {
 }
 
 fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
-    [
+    agent_observation_callables()
+        .into_iter()
+        .chain(agent_action_callables())
+        .chain(agent_capture_callables())
+        .chain(agent_record_callables())
+        .chain(agent_rag_callables())
+        .map(|(name, callable)| (QualifiedName::new(name), callable))
+        .collect()
+}
+
+fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![
         (
             "observe",
             CallableSymbol::new(
@@ -439,17 +450,31 @@ fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
             ),
         ),
         (
-            "choose",
+            "expect",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::ActionResult,
-                    [FunctionParam::required(
-                        "choice",
-                        TypeKind::entity_ref(EntityKind::ChoiceOption),
-                    )],
+                    TypeKind::Unit,
+                    [
+                        FunctionParam::required("condition", TypeKind::Bool),
+                        FunctionParam::required("message", TypeKind::String),
+                    ],
                 ),
-                [EffectCapability::new("agent.act.semantic")],
-                CallableLowering::AgentIntrinsic(AgentIntrinsic::Choose),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Expect),
+            ),
+        ),
+        (
+            "deny",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [
+                        FunctionParam::required("condition", TypeKind::Bool),
+                        FunctionParam::required("message", TypeKind::String),
+                    ],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Deny),
             ),
         ),
         (
@@ -489,29 +514,128 @@ fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::MetricProbe),
             ),
         ),
+    ]
+}
+
+fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![(
+        "choose",
+        CallableSymbol::new(
+            FunctionSignature::new(
+                TypeKind::ActionResult,
+                [FunctionParam::required(
+                    "choice",
+                    TypeKind::entity_ref(EntityKind::ChoiceOption),
+                )],
+            ),
+            [EffectCapability::new("agent.act.semantic")],
+            CallableLowering::AgentIntrinsic(AgentIntrinsic::Choose),
+        ),
+    )]
+}
+
+fn agent_capture_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![
         (
             "capture",
             CallableSymbol::new(
-                FunctionSignature::new(TypeKind::CaptureRef, []),
+                FunctionSignature::new(
+                    TypeKind::CaptureRef,
+                    [FunctionParam::required("target", TypeKind::CaptureTarget)],
+                ),
                 [EffectCapability::new("agent.capture")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::Capture),
             ),
         ),
         (
-            "rag.query",
+            "viewport",
+            CallableSymbol::new(
+                FunctionSignature::new(TypeKind::CaptureTarget, []),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Capture),
+            ),
+        ),
+        (
+            "layer",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::RagContextPack,
-                    [FunctionParam::required("query", TypeKind::String)],
+                    TypeKind::CaptureTarget,
+                    [FunctionParam::required(
+                        "target",
+                        TypeKind::entity_ref(EntityKind::Layer),
+                    )],
                 ),
-                [EffectCapability::new("agent.rag.query")],
-                CallableLowering::AgentIntrinsic(AgentIntrinsic::RagQuery),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Capture),
+            ),
+        ),
+        (
+            "object",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::CaptureTarget,
+                    [FunctionParam::required(
+                        "id",
+                        TypeKind::Named("ObservedObjectId".to_owned()),
+                    )],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Capture),
             ),
         ),
     ]
-    .into_iter()
-    .map(|(name, callable)| (QualifiedName::new(name), callable))
-    .collect()
+}
+
+fn agent_record_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![
+        (
+            "attach",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required("resource", TypeKind::CaptureRef)],
+                ),
+                [EffectCapability::new("debug.record")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Attach),
+            ),
+        ),
+        (
+            "checkpoint",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required("name", TypeKind::String)],
+                ),
+                [EffectCapability::new("debug.record")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Checkpoint),
+            ),
+        ),
+        (
+            "note",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required("text", TypeKind::DisplayText)],
+                ),
+                [EffectCapability::new("debug.record")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Note),
+            ),
+        ),
+    ]
+}
+
+fn agent_rag_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![(
+        "rag.query",
+        CallableSymbol::new(
+            FunctionSignature::new(
+                TypeKind::RagContextPack,
+                [FunctionParam::required("query", TypeKind::String)],
+            ),
+            [EffectCapability::new("rag.query")],
+            CallableLowering::AgentIntrinsic(AgentIntrinsic::RagQuery),
+        ),
+    )]
 }
 
 #[cfg(test)]

@@ -137,7 +137,7 @@ impl NativeDesktopBackend {
                 .execute_external_window(request)
                 .map(DesktopResponse::ExternalWindow),
             DesktopRequest::GlobalPointer(request) => {
-                execute_global_pointer(self.platform, self.options.global_pointer, request)
+                execute_global_pointer(self.platform, self.options.global_pointer, &request)
                     .map(DesktopResponse::GlobalPointer)
             }
             DesktopRequest::UserFile(request) => {

@@ -3,6 +3,11 @@ use arcweft_desktop_contract::{
 };
 
 #[cfg(feature = "external-window-observe")]
+use arcweft_desktop_contract::{
+    PhysicalPosition, PhysicalRect, PhysicalSize, WindowId, WindowMode, WindowScope, WindowSnapshot,
+};
+
+#[cfg(feature = "external-window-observe")]
 pub(crate) fn observe_external_windows(
     platform: PlatformKind,
     request: ExternalWindowRequest,
@@ -40,8 +45,6 @@ pub(crate) fn observe_external_windows(
 
 #[cfg(feature = "external-window-observe")]
 fn list(platform: PlatformKind) -> Result<Vec<WindowSnapshot>, DesktopError> {
-    use arcweft_desktop_contract::WindowSnapshot;
-
     let mut snapshots = xcap::Window::all()
         .map_err(|error| DesktopError::BackendUnavailable {
             backend: "xcap".to_owned(),
@@ -56,11 +59,6 @@ fn list(platform: PlatformKind) -> Result<Vec<WindowSnapshot>, DesktopError> {
 
 #[cfg(feature = "external-window-observe")]
 fn snapshot(platform: PlatformKind, window: &xcap::Window) -> Result<WindowSnapshot, DesktopError> {
-    use arcweft_desktop_contract::{
-        PhysicalPosition, PhysicalRect, PhysicalSize, WindowId, WindowMode, WindowScope,
-        WindowSnapshot,
-    };
-
     let raw_id = window.id().map_err(xcap_error("external_window_id"))?;
     let minimized = window
         .is_minimized()

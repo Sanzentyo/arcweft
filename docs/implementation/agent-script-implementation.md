@@ -14,9 +14,9 @@ It is implementation state, not the stable language specification.
 - `arcweft-lang-sema` exposes `project_index`, including `ProjectSemanticIndex`, typed entity payload metadata, Agent intrinsic lowering tags, and an Agent Prelude projection into `TypeCheckEnv`.
 - `TypeKind::Ref` now carries `EntityType`, preserving an entity family and optional payload type through project-index projection into `TypeCheckEnv`.
 - The type checker now visits Agent item bodies and can check Agent Prelude calls such as `choose(@choice...)` against project-index entity types and declared Agent effects.
-- Agent intrinsic typing includes `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, and `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable`/`poll` values required to be at least 1.
+- Agent intrinsic typing includes `expect(condition, message?)`, `deny(condition, message?)`, `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable`/`poll` values required to be at least 1, `capture(viewport|layer|object, ...) -> CaptureRef`, `attach(CaptureRef)`, `checkpoint(String)`, `note(DisplayText)`, and `rag.query(String, roots=..., graph_depth=..., limit=...) -> RagContextPack`.
 - `arcweft-compiler` exposes `compile_agent_source_with_project`, which resolves `.awfagent` entity references against the module plus `ProjectSemanticIndex` and returns a `TypeCheckReport`.
-- `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values.
+- `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values. Large host request/response enum payloads are boxed so the Rust protocol API does not carry oversized enum variants while preserving the same serde JSON shape.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
 - `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls.
@@ -52,6 +52,13 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-lang-sema typecheck -- --nocapture`
 - `cargo test -p arcweft-compiler compile_agent_source_with_project -- --nocapture`
 - `cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features -- -D warnings`
+- `cargo check -p arcweft-agent-protocol -p arcweft-agent-runner`
+- `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
+- `cargo clippy -p arcweft-agent-protocol -p arcweft-agent-runner --all-targets --all-features -- -D warnings`
+- `cargo check -p arcweft-desktop-native --all-features`
+- `cargo test -p arcweft-desktop-native --all-features`
+- `cargo clippy -p arcweft-desktop-native --all-targets --all-features -- -D warnings`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/opening-smoke.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/visual-regression.awfagent --json`
 - `cargo run -p arcweft-cli -- debug db status --path target/codex-agent-script-final/agent-debug-test.sqlite3 --json`
@@ -63,8 +70,8 @@ It is implementation state, not the stable language specification.
 
 ## Remaining zip-derived work
 
-- Complete Agent semantic intrinsic rules for `observe`, `invoke`, `capture`, `expect`, `deny`, `checkpoint`, `attach`, `note`, and `rag.query`, including structured diagnostics and policy denial.
-- Type Agent references against actions and resources using the payload-bearing entity refs.
+- Complete Agent semantic intrinsic rules for `invoke`, including structured diagnostics and policy denial.
+- Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Add Agent artifact manifest / bundle support for `bundle_kind = agent_controller`.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.

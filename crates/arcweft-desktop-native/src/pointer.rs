@@ -7,7 +7,7 @@ use arcweft_desktop_contract::{
 pub(crate) fn execute_global_pointer(
     platform: PlatformKind,
     policy: GlobalPointerPolicy,
-    request: GlobalPointerRequest,
+    request: &GlobalPointerRequest,
 ) -> Result<GlobalPointerResponse, DesktopError> {
     use arcweft_desktop_contract::{
         PermissionKind, PhysicalPosition, PointerCoordinateSpace, PointerPosition,
@@ -18,11 +18,11 @@ pub(crate) fn execute_global_pointer(
         platform,
         PlatformKind::LinuxWayland | PlatformKind::Web | PlatformKind::Other
     ) {
-        return Err(unsupported(platform, &request));
+        return Err(unsupported(platform, request));
     }
     match request {
         GlobalPointerRequest::Position if !policy.allows_observe() => {
-            return Err(unsupported(platform, &GlobalPointerRequest::Position));
+            return Err(unsupported(platform, request));
         }
         GlobalPointerRequest::Move { .. } if !policy.allows_control() => {
             return Err(DesktopError::PermissionDenied {
@@ -62,13 +62,12 @@ pub(crate) fn execute_global_pointer(
 }
 
 #[cfg(not(feature = "global-pointer"))]
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn execute_global_pointer(
     platform: PlatformKind,
     _policy: GlobalPointerPolicy,
-    request: GlobalPointerRequest,
+    request: &GlobalPointerRequest,
 ) -> Result<GlobalPointerResponse, DesktopError> {
-    Err(unsupported(platform, &request))
+    Err(unsupported(platform, request))
 }
 
 fn unsupported(platform: PlatformKind, request: &GlobalPointerRequest) -> DesktopError {

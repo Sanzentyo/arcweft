@@ -76,6 +76,7 @@ pub enum TypeKind {
     Predicate,
     Observation,
     ActionResult,
+    CaptureTarget,
     CaptureRef,
     RagContextPack,
     Vec(Box<TypeKind>),
