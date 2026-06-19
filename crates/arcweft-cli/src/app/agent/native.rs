@@ -1848,6 +1848,15 @@ enum AgentObserveMcpResourceOutput {
 #[derive(Default)]
 struct AgentReplState {
     report: Option<AgentObservationReport>,
+    history: Vec<AgentReplHistoryEntry>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AgentReplHistoryEntry {
+    index: usize,
+    input: String,
+    kind: String,
+    status: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1904,6 +1913,12 @@ fn agent_repl_command(
         let report = agent_repl_eval_line(index, input, options, &mut state, adapter_registrars);
         let quit = report.quit;
         ok &= report.status != "error";
+        state.history.push(AgentReplHistoryEntry {
+            index: report.index,
+            input: report.input.clone(),
+            kind: report.kind.clone(),
+            status: report.status.clone(),
+        });
         if options.json {
             cells.push(report);
         } else {
@@ -1976,62 +1991,31 @@ fn agent_repl_eval_meta(
     let command = parts.next().unwrap_or_default();
     let rest = parts.next().unwrap_or_default().trim();
     match command {
-        ":help" => agent_repl_ok(
+        ":help" => agent_repl_help(index, input),
+        ":observe" => agent_repl_observe(index, input, options, state, adapter_registrars),
+        ":actions" => agent_repl_actions(index, input, state),
+        ":query" => {
+            if rest.is_empty() {
+                agent_repl_error(index, input, "meta", ":query requires text".to_owned())
+            } else {
+                agent_repl_query(index, input, rest, state)
+            }
+        }
+        ":history" => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({ "cells": &state.history }),
+        ),
+        ":bindings" => agent_repl_ok(
             index,
             input,
             "meta",
             serde_json::json!({
-                "commands": [
-                    ":help",
-                    ":observe",
-                    ":actions",
-                    ":parse EXPR_OR_STMT",
-                    ":reset",
-                    ":quit"
-                ]
+                "bindings": [],
+                "status": "compiler-backed REPL cell bindings are not active yet"
             }),
         ),
-        ":observe" => match agent_observation_report_for_options(
-            &agent_repl_observe_options(options),
-            adapter_registrars,
-        ) {
-            Ok(report) => {
-                let value = serde_json::json!({
-                    "tick": report.tick,
-                    "frame_id": report.frame_id,
-                    "state_hash": report.state_hash,
-                    "render_hash": report.render_hash,
-                    "actions": report.actions.len(),
-                    "objects": report.objects.len(),
-                    "diagnostics": report.diagnostics.len(),
-                });
-                state.report = Some(report);
-                agent_repl_ok(index, input, "meta", value)
-            }
-            Err(code) => agent_repl_error(
-                index,
-                input,
-                "meta",
-                format!("observe failed with exit code {code:?}"),
-            ),
-        },
-        ":actions" => match &state.report {
-            Some(report) => agent_repl_ok(
-                index,
-                input,
-                "meta",
-                serde_json::json!({
-                    "tick": report.tick,
-                    "actions": report.actions,
-                }),
-            ),
-            None => agent_repl_error(
-                index,
-                input,
-                "meta",
-                ":actions requires :observe first".to_owned(),
-            ),
-        },
         ":parse" => {
             if rest.is_empty() {
                 agent_repl_error(
@@ -2046,6 +2030,7 @@ fn agent_repl_eval_meta(
         }
         ":reset" => {
             state.report = None;
+            state.history.clear();
             agent_repl_ok(index, input, "meta", serde_json::json!({ "reset": true }))
         }
         ":quit" => AgentReplCellReport {
@@ -2063,6 +2048,122 @@ fn agent_repl_eval_meta(
             "meta",
             format!("unknown Agent REPL command `{command}`"),
         ),
+    }
+}
+
+fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "commands": [
+                ":help",
+                ":observe",
+                ":actions",
+                ":query TEXT",
+                ":history",
+                ":bindings",
+                ":parse EXPR_OR_STMT",
+                ":reset",
+                ":quit"
+            ]
+        }),
+    )
+}
+
+fn agent_repl_observe(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> AgentReplCellReport {
+    match agent_observation_report_for_options(
+        &agent_repl_observe_options(options),
+        adapter_registrars,
+    ) {
+        Ok(report) => {
+            let value = serde_json::json!({
+                "tick": report.tick,
+                "frame_id": report.frame_id,
+                "state_hash": report.state_hash,
+                "render_hash": report.render_hash,
+                "actions": report.actions.len(),
+                "objects": report.objects.len(),
+                "diagnostics": report.diagnostics.len(),
+            });
+            state.report = Some(report);
+            agent_repl_ok(index, input, "meta", value)
+        }
+        Err(code) => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("observe failed with exit code {code:?}"),
+        ),
+    }
+}
+
+fn agent_repl_actions(index: usize, input: &str, state: &AgentReplState) -> AgentReplCellReport {
+    match &state.report {
+        Some(report) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "tick": report.tick,
+                "actions": report.actions,
+            }),
+        ),
+        None => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":actions requires :observe first".to_owned(),
+        ),
+    }
+}
+
+fn agent_repl_query(
+    index: usize,
+    input: &str,
+    query: &str,
+    state: &AgentReplState,
+) -> AgentReplCellReport {
+    let Some(report) = &state.report else {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":query requires :observe first".to_owned(),
+        );
+    };
+    let mcp_state = AgentMcpState {
+        report: Some(report.clone()),
+        image_output: None,
+        image_frames: AgentImageFrameStore::default(),
+        capture_resources: Vec::new(),
+        trace_resources: Vec::new(),
+        native_capture_session: None,
+        runtime: None,
+        observe_options: None,
+    };
+    match agent_mcp_rag_context_pack(
+        &mcp_state,
+        query,
+        Vec::new(),
+        1,
+        8,
+        32 * 1024,
+        PrivacyClass::Project,
+    ) {
+        Ok(pack) => {
+            let value = serde_json::to_value(pack)
+                .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }));
+            agent_repl_ok(index, input, "meta", value)
+        }
+        Err(error) => agent_repl_error(index, input, "meta", error),
     }
 }
 

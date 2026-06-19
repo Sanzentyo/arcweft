@@ -3,4 +3,7 @@
 :parse signal(@signal.current_flow).eq(@flow.opening)
 :observe
 :actions
+:query opening
+:bindings
+:history
 :quit

@@ -367,12 +367,17 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--json]`
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:parse`,
-`:observe`, `:actions`, `:reset`, and `:quit`. `:observe` uses the same native
-Agent observation path as `arcw agent observe`; `:actions` reports the enabled
-semantic action targets from the latest REPL observation. Non-meta cells are
-classified with the shared Agent fragment parser and are not executed until the
-compiler-backed transactional cell runner is implemented, so the CLI does not
-grow a second Agent evaluator.
+`:observe`, `:actions`, `:query TEXT`, `:history`, `:bindings`, `:reset`, and
+`:quit`. `:observe` uses the same native Agent observation path as
+`arcw agent observe`; `:actions` reports the enabled semantic action targets
+from the latest REPL observation. `:query TEXT` requires a prior observation and
+reuses the same observation-derived `RagContextPack` builder used by Agent MCP
+RAG query. `:history` lists prior REPL cell outcomes in the current scripted
+session, and `:bindings` reports the current persisted binding set, which is
+empty until compiler-backed DSL cell persistence is implemented. Non-meta cells
+are classified with the shared Agent fragment parser and are not executed until
+the compiler-backed transactional cell runner is implemented, so the CLI does
+not grow a second Agent evaluator.
 
 ## Agent Observation
 

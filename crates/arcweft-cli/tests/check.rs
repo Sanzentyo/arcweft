@@ -632,6 +632,38 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
             .is_some_and(|actions| !actions.is_empty()),
         "actions cell should expose observed semantic action targets: {actions}"
     );
+    let query = cells
+        .iter()
+        .find(|cell| cell["input"] == ":query opening")
+        .expect("query cell is present");
+    assert_eq!(query["status"], "ok");
+    assert_eq!(query["value"]["query"]["text"], "opening");
+    assert!(
+        query["value"]["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "query cell should expose RAG context items: {query}"
+    );
+    let bindings = cells
+        .iter()
+        .find(|cell| cell["input"] == ":bindings")
+        .expect("bindings cell is present");
+    assert_eq!(bindings["status"], "ok");
+    assert_eq!(
+        bindings["value"]["bindings"].as_array().map(Vec::len),
+        Some(0)
+    );
+    let history = cells
+        .iter()
+        .find(|cell| cell["input"] == ":history")
+        .expect("history cell is present");
+    assert_eq!(history["status"], "ok");
+    assert!(
+        history["value"]["cells"]
+            .as_array()
+            .is_some_and(|history| history.iter().any(|cell| cell["input"] == ":query opening")),
+        "history cell should include previous query cell: {history}"
+    );
 }
 
 #[test]
