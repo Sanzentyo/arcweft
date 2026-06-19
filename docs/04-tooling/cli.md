@@ -394,11 +394,11 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `image(... target=..., action=...)` can therefore be exercised headlessly with
 `invoke(@target..., "action...")`.
 
-`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--debug-db <path>] [--json]`
+`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--debug-db <path>] [--trace <file.arcwx> [--read-only]] [--json]`
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:type`,
 `:ast`, `:hir`, `:bytecode`, `:parse`, `:classify`, `:observe`, `:actions`,
-`:capture`, `:complete`, `:highlight`, `:query TEXT`, `:history`,
+`:trace`, `:capture`, `:complete`, `:highlight`, `:query TEXT`, `:history`,
 `:bindings`, `:drop`, `:load`, `:save`, `:reset`, `:connect`, and `:quit`. `:observe` uses the same native Agent
 observation path as `arcw agent observe`; `:actions` reports the enabled
 semantic action targets from the latest REPL observation. `:capture
@@ -419,9 +419,16 @@ as `)`, `]`, `}`, or `"` for multiline continuation.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells; remote `stdio:` endpoints are rejected until a real retained remote REPL
-transport exists. `:query TEXT` requires a prior observation and
-reuses the same observation-derived `RagContextPack` builder used by Agent MCP
-RAG query. `:history` lists prior REPL cell outcomes in the current scripted
+transport exists. `--trace <file.arcwx>` validates a saved Agent execution trace
+through the same `.arcwx` reader used by `agent script trace`, caches it as an
+Agent trace resource, and exposes the loaded resource through `:trace`.
+`:query TEXT` requires either a prior observation or a loaded trace and reuses
+the same `RagContextPack` builder used by Agent MCP RAG query. `--read-only`
+requires `--trace` and rejects non-meta cells plus target/session/binding
+mutation commands such as `:observe`, `:capture`, `:connect`, `:drop`, `:load`,
+`:save`, and `:reset`, while still allowing trace inspection, parser/compiler
+inspection, highlighting, history, bindings, and trace-backed RAG query.
+`:history` lists prior REPL cell outcomes in the current scripted
 session. Non-meta cells are classified with the shared Agent fragment parser;
 complete Agent fragments are wrapped in a one-cell Agent controller, compiled
 through `arcweft-compiler`, and executed through `arcweft-agent-runner`'s

@@ -253,6 +253,10 @@ pub(super) struct AgentReplOptions {
     #[arg(long = "debug-db")]
     debug_db: Option<PathBuf>,
     #[arg(long)]
+    trace: Option<PathBuf>,
+    #[arg(long = "read-only")]
+    read_only: bool,
+    #[arg(long)]
     input: Option<PathBuf>,
     #[arg(long)]
     json: bool,

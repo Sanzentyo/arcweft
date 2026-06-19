@@ -633,6 +633,7 @@ fn agent_repl_meta_commands() -> Vec<&'static str> {
         ":bytecode",
         ":observe",
         ":actions",
+        ":trace",
         ":capture",
         ":query",
         ":history",

@@ -34,6 +34,7 @@ use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentInvokeAction, AgentSessionInfo, CaptureFormat, CaptureRequest,
     CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
 };
+use arcweft_agent_protocol::trace::AgentTraceRecord;
 use arcweft_agent_protocol::value::AgentValue;
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
@@ -1977,6 +1978,10 @@ struct AgentReplState {
     bindings: BTreeMap<String, AgentReplBinding>,
     connection: Option<AgentReplConnection>,
     debug_store: Option<DebugStore>,
+    trace_path: Option<String>,
+    trace_records: usize,
+    trace_resources: Vec<AgentResource>,
+    read_only: bool,
     persisted_cells: u64,
     debug_db_path: Option<String>,
 }
@@ -2013,6 +2018,9 @@ struct AgentReplRunReport {
     cells: Vec<AgentReplCellReport>,
     final_tick: Option<usize>,
     debug_db: Option<String>,
+    trace_path: Option<String>,
+    trace_records: usize,
+    read_only: bool,
     persisted_cells: u64,
 }
 
@@ -2075,9 +2083,14 @@ fn agent_repl_command(
 ) -> Result<(), ExitCode> {
     let source = agent_repl_input(options)?;
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
+    let trace = agent_repl_trace_resources(options)?;
     let mut state = AgentReplState {
         debug_store,
         debug_db_path,
+        trace_path: trace.path,
+        trace_records: trace.record_count,
+        trace_resources: trace.resources,
+        read_only: options.read_only,
         ..AgentReplState::default()
     };
     let mut cells = Vec::new();
@@ -2113,6 +2126,9 @@ fn agent_repl_command(
             cells,
             final_tick: state.report.as_ref().map(|report| report.tick),
             debug_db: state.debug_db_path.clone(),
+            trace_path: state.trace_path.clone(),
+            trace_records: state.trace_records,
+            read_only: state.read_only,
             persisted_cells: state.persisted_cells,
         })?;
     }
@@ -2150,6 +2166,47 @@ fn agent_repl_debug_store(
     Ok((Some(store), Some(path.display().to_string())))
 }
 
+struct AgentReplTraceResources {
+    path: Option<String>,
+    record_count: usize,
+    resources: Vec<AgentResource>,
+}
+
+fn agent_repl_trace_resources(
+    options: &AgentReplOptions,
+) -> Result<AgentReplTraceResources, ExitCode> {
+    match (&options.trace, options.read_only) {
+        (None, true) => {
+            eprintln!("error: agent repl --read-only requires --trace <file.arcwx>");
+            Err(ExitCode::FAILURE)
+        }
+        (None, false) => Ok(AgentReplTraceResources {
+            path: None,
+            record_count: 0,
+            resources: Vec::new(),
+        }),
+        (Some(path), _) => {
+            let records = super::read_and_validate_agent_trace_records(path).map_err(|error| {
+                eprintln!("{}: {error}", path.display());
+                ExitCode::FAILURE
+            })?;
+            let resource = agent_repl_trace_resource(&records).map_err(|error| {
+                eprintln!("{}: {error}", path.display());
+                ExitCode::FAILURE
+            })?;
+            Ok(AgentReplTraceResources {
+                path: Some(path.display().to_string()),
+                record_count: records.len(),
+                resources: vec![resource],
+            })
+        }
+    }
+}
+
+fn agent_repl_trace_resource(records: &[AgentTraceRecord]) -> Result<AgentResource, String> {
+    trace_resource(records).map_err(|error| format!("failed to serialize trace: {error}"))
+}
+
 fn agent_repl_input(options: &AgentReplOptions) -> Result<String, ExitCode> {
     if let Some(path) = &options.input {
         return fs::read_to_string(path).map_err(|error| {
@@ -2177,6 +2234,14 @@ fn agent_repl_eval_line(
     if input.starts_with(':') {
         return agent_repl_eval_meta(index, input, options, state, adapter_registrars);
     }
+    if state.read_only {
+        return agent_repl_error(
+            index,
+            input,
+            "cell",
+            "read-only Agent REPL does not execute Agent cells".to_owned(),
+        );
+    }
     agent_repl_eval_compiled_cell(index, input, state)
 }
 
@@ -2190,8 +2255,17 @@ fn agent_repl_eval_meta(
     let mut parts = input.splitn(2, char::is_whitespace);
     let command = parts.next().unwrap_or_default();
     let rest = parts.next().unwrap_or_default().trim();
+    if state.read_only && agent_repl_read_only_rejects(command) {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("read-only Agent REPL does not execute `{command}`"),
+        );
+    }
     match command {
         ":help" => agent_repl_help(index, input),
+        ":trace" => agent_repl_trace(index, input, state),
         ":observe" => agent_repl_observe(index, input, options, state, adapter_registrars),
         ":actions" => agent_repl_actions(index, input, state),
         ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" | ":complete" | ":highlight" => {
@@ -2248,6 +2322,13 @@ fn agent_repl_eval_meta(
             format!("unknown Agent REPL command `{command}`"),
         ),
     }
+}
+
+fn agent_repl_read_only_rejects(command: &str) -> bool {
+    matches!(
+        command,
+        ":observe" | ":capture" | ":connect" | ":drop" | ":load" | ":save" | ":reset"
+    )
 }
 
 fn agent_repl_eval_inspection_meta(
@@ -2372,6 +2453,7 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":bytecode EXPR_OR_STMT",
                 ":observe",
                 ":actions",
+                ":trace",
                 ":capture [viewport|layer ID|object ID]",
                 ":query TEXT",
                 ":history",
@@ -2387,6 +2469,23 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":highlight SOURCE",
                 ":quit"
             ]
+        }),
+    )
+}
+
+fn agent_repl_trace(index: usize, input: &str, state: &AgentReplState) -> AgentReplCellReport {
+    let descriptors = list_resources_result(&state.trace_resources).resources;
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "loaded": !state.trace_resources.is_empty(),
+            "path": state.trace_path.clone(),
+            "record_count": state.trace_records,
+            "resource_count": descriptors.len(),
+            "resources": descriptors,
+            "read_only": state.read_only,
         }),
     )
 }
@@ -2798,20 +2897,20 @@ fn agent_repl_query(
     query: &str,
     state: &AgentReplState,
 ) -> AgentReplCellReport {
-    let Some(report) = &state.report else {
+    if state.report.is_none() && state.trace_resources.is_empty() {
         return agent_repl_error(
             index,
             input,
             "meta",
-            ":query requires :observe first".to_owned(),
+            ":query requires :observe or --trace first".to_owned(),
         );
-    };
+    }
     let mcp_state = AgentMcpState {
-        report: Some(report.clone()),
+        report: state.report.clone(),
         image_output: None,
         image_frames: AgentImageFrameStore::default(),
         capture_resources: Vec::new(),
-        trace_resources: Vec::new(),
+        trace_resources: state.trace_resources.clone(),
         native_capture_session: None,
         runtime: None,
         observe_options: None,

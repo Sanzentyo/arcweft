@@ -1,0 +1,7 @@
+# Agent REPL read-only trace inspection smoke session.
+:help
+:trace
+:query observation_received
+:classify let frame = try observe()
+:highlight :query observation_received
+:quit

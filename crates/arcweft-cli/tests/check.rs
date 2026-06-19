@@ -902,6 +902,136 @@ fn agent_repl_connects_source_from_input_session() {
     );
 }
 
+#[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_reads_trace_in_read_only_input_session() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-readonly-trace-{}.arcwx",
+        std::process::id()
+    ));
+    fs::create_dir_all(trace_path.parent().expect("trace target dir"))
+        .expect("create REPL trace target dir");
+    let _ = fs::remove_file(&trace_path);
+
+    let run = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_run_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run writes trace for read-only REPL");
+    assert!(
+        run.status.success(),
+        "agent script run should write read-only REPL trace\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--trace")
+        .arg(&trace_path)
+        .arg("--read-only")
+        .arg("--input")
+        .arg(agent_repl_trace_readonly_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl reads trace in read-only input session");
+    assert!(
+        output.status.success(),
+        "agent repl read-only trace session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["read_only"], true);
+    assert_eq!(report["trace_path"], trace_path.display().to_string());
+    assert!(
+        report["trace_records"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "REPL report should expose loaded trace record count: {report}"
+    );
+    let cells = report["cells"].as_array().expect("cells are present");
+    let trace = cells
+        .iter()
+        .find(|cell| cell["input"] == ":trace")
+        .expect("trace cell is present");
+    assert_eq!(trace["status"], "ok");
+    assert_eq!(trace["value"]["loaded"], true);
+    assert_eq!(trace["value"]["path"], trace_path.display().to_string());
+    assert!(
+        trace["value"]["resources"]
+            .as_array()
+            .is_some_and(
+                |resources| resources.iter().any(|resource| resource["mimeType"]
+                    == "application/vnd.arcweft.agent-trace+json"
+                    && resource["uri"]
+                        .as_str()
+                        .is_some_and(|uri| uri.ends_with("/trace.arcwx")))
+            ),
+        "trace cell should expose loaded trace resource descriptor: {trace}"
+    );
+    let query = cells
+        .iter()
+        .find(|cell| cell["input"] == ":query observation_received")
+        .expect("trace query cell is present");
+    assert_eq!(query["status"], "ok");
+    assert_eq!(query["value"]["query"]["text"], "observation_received");
+    assert!(
+        query["value"]["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "read-only trace query should expose RAG context items: {query}"
+    );
+    assert_agent_repl_meta_ok(cells, ":classify let frame = try observe()");
+    assert_agent_repl_meta_ok(cells, ":highlight :query observation_received");
+
+    assert_agent_repl_readonly_rejects_mutating_cell(&trace_path);
+}
+
+fn assert_agent_repl_readonly_rejects_mutating_cell(trace_path: &Path) {
+    let mutating_input_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-readonly-mutating-{}.txt",
+        std::process::id()
+    ));
+    fs::write(&mutating_input_path, "let frame = observe()\n")
+        .expect("write mutating read-only REPL input");
+    let rejected = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--trace")
+        .arg(trace_path)
+        .arg("--read-only")
+        .arg("--input")
+        .arg(&mutating_input_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl rejects mutating cell in read-only mode");
+    assert!(
+        !rejected.status.success(),
+        "read-only REPL should reject non-meta cells\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rejected.stdout),
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    let rejected_report: serde_json::Value =
+        serde_json::from_slice(&rejected.stdout).expect("read-only rejection output is JSON");
+    assert_eq!(rejected_report["ok"], false);
+    assert_eq!(rejected_report["cells"][0]["kind"], "cell");
+    assert_eq!(rejected_report["cells"][0]["status"], "error");
+    assert_eq!(
+        rejected_report["cells"][0]["message"],
+        "read-only Agent REPL does not execute Agent cells"
+    );
+}
+
 fn assert_agent_repl_meta_ok(cells: &[serde_json::Value], input: &str) {
     let cell = cells
         .iter()
@@ -1975,6 +2105,10 @@ fn agent_repl_smoke_path() -> PathBuf {
 
 fn agent_repl_inspection_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/repl-inspection-smoke.txt")
+}
+
+fn agent_repl_trace_readonly_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/repl-trace-readonly-smoke.txt")
 }
 
 fn agent_script_native_project_index_path() -> PathBuf {
