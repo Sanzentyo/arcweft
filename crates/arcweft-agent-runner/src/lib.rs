@@ -136,6 +136,7 @@ impl ReplayAgentSession {
                     "observe".to_owned(),
                     "act".to_owned(),
                     "capture".to_owned(),
+                    "resource_read".to_owned(),
                     "step_frames".to_owned(),
                 ],
             },
@@ -201,9 +202,7 @@ impl AgentSession for ReplayAgentSession {
     }
 
     fn read_resource(&mut self, _uri: &str) -> Result<AgentResource, Self::Error> {
-        Err(ReplayAgentSessionError::UnsupportedOperation {
-            operation: "read_resource",
-        })
+        self.next_decoded(AgentTraceKind::ResourceReadCompleted)
     }
 
     fn step_frames(&mut self, _count: u32) -> Result<ObservationEnvelope, Self::Error> {
@@ -217,6 +216,7 @@ fn replay_agent_session_host_response_kind(kind: AgentTraceKind) -> bool {
         AgentTraceKind::ObservationReceived
             | AgentTraceKind::ActionCompleted
             | AgentTraceKind::CaptureStored
+            | AgentTraceKind::ResourceReadCompleted
     )
 }
 
@@ -235,10 +235,6 @@ pub enum ReplayAgentSessionError {
         kind: AgentTraceKind,
         message: String,
     },
-    #[error(
-        "trace replay does not support `{operation}` because no read-only trace response record exists"
-    )]
-    UnsupportedOperation { operation: &'static str },
 }
 
 /// Runtime policy resolved from compiled effects and launch profile.
@@ -652,6 +648,11 @@ where
             .session
             .read_resource(uri.as_str())
             .map_err(AgentRunError::Session)?;
+        self.emit(
+            DebugEventKind::ResourceRead,
+            None,
+            serde_json::to_value(&resource).unwrap_or(serde_json::Value::Null),
+        )?;
         Ok(AgentHostResponse::Resource(Box::new(
             serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
         )))
@@ -3005,6 +3006,14 @@ mod tests {
             media_type: "image/png".to_owned(),
             byte_len: 12,
         };
+        let resource = AgentResource {
+            uri: "agent://resource/replay".to_owned(),
+            kind: AgentResourceKind::ObservationLatest,
+            mime_type: "application/json".to_owned(),
+            hash: "state.replay".to_owned(),
+            image: None,
+            body: AgentResourceBody::Json(serde_json::json!({ "ok": true })),
+        };
         let mut session = ReplayAgentSession::from_trace_records(vec![
             replay_trace_record(AgentTraceKind::RunStarted, 0, serde_json::json!({})),
             replay_trace_record(
@@ -3022,7 +3031,12 @@ mod tests {
                 3,
                 serde_json::to_value(&capture).expect("capture result serializes"),
             ),
-            replay_trace_record(AgentTraceKind::RunFinished, 4, serde_json::json!({})),
+            replay_trace_record(
+                AgentTraceKind::ResourceReadCompleted,
+                4,
+                serde_json::to_value(&resource).expect("resource serializes"),
+            ),
+            replay_trace_record(AgentTraceKind::RunFinished, 5, serde_json::json!({})),
         ]);
 
         assert_eq!(
@@ -3053,10 +3067,10 @@ mod tests {
             capture
         );
         assert_eq!(
-            session.read_resource("agent://resource/test"),
-            Err(ReplayAgentSessionError::UnsupportedOperation {
-                operation: "read_resource"
-            })
+            session
+                .read_resource("agent://resource/replay")
+                .expect("replay resource read"),
+            resource
         );
     }
 

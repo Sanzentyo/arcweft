@@ -330,6 +330,10 @@ resource metadata fields such as `resource.uri`, `resource.kind`,
 `resource.body.kind`, string/debug projections `resource.body.json`,
 `resource.body.text`, `resource.body.base64`, `resource.body.encoding`, and
 typed payload projection `resource.body.value`.
+`--trace-out <file.arcwx>` records successful resource reads as
+`resource_read_completed` trace records, so read-only trace replay can service
+later `read_resource(...)` controller requests without consulting the live
+target.
 For deterministic CLI captures and native image captures,
 `--blob-dir .arcweft/cache/agent-blobs` writes byte-backed capture blobs under
 their `blake3:` content hash. `arcw agent script trace <file.arcwx> --blob-dir

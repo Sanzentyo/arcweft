@@ -25,6 +25,7 @@ pub enum AgentTraceKind {
     ObservationReceived,
     ActionCompleted,
     CaptureStored,
+    ResourceReadCompleted,
     AssertionEvaluated,
     RagQueryCompleted,
     DiagnosticEmitted,

@@ -316,7 +316,21 @@ fn agent_script_run_json_executes_read_resource_smoke() {
         "observation_latest"
     );
     assert_eq!(json["responses"][1]["kind"], "unit");
-    assert_eq!(json["trace_records"], 7);
+    assert_eq!(json["trace_records"], 8);
+    let trace: serde_json::Value = serde_json::from_slice(
+        &fs::read(&trace_path).expect("agent script run writes read_resource .arcwx trace"),
+    )
+    .expect("read_resource trace is JSON");
+    let resource_record = trace
+        .as_array()
+        .expect("trace is array")
+        .iter()
+        .find(|record| record["kind"] == "resource_read_completed")
+        .expect("trace records resource read event");
+    assert_eq!(
+        resource_record["payload"]["uri"],
+        "arcweft://session/cli/observation/latest.json"
+    );
     assert_eq!(
         json["final_status"],
         "Done(Return(\"{\\\"source\\\":\\\"arcw agent script run\\\",\\\"uri\\\":\\\"arcweft://session/cli/observation/latest.json\\\"}\"))"
