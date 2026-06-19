@@ -2403,17 +2403,17 @@ impl TypeChecker<'_> {
                 return Some(ty);
             }
         }
-        if let Some(field_type) = well_known_field_type(field) {
-            self.check_expr(target);
-            return Some(field_type);
-        }
         match self.check_expr(target) {
+            Some(TypeKind::Observation) => agent_observation_field_type(field),
+            Some(TypeKind::ActionResult) => agent_action_result_field_type(field),
+            Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
+            Some(TypeKind::AgentResource) => agent_resource_field_type(field),
             Some(TypeKind::Map { value, .. }) => Some(*value),
             Some(TypeKind::Named(name)) if name == "HttpRequestContext" => match field {
                 "method" | "path" | "body" => Some(TypeKind::String),
                 _ => None,
             },
-            _ => None,
+            _ => well_known_field_type(field),
         }
     }
 
@@ -2871,6 +2871,38 @@ fn collection_index_key_type(target_type: &TypeKind) -> Option<TypeKind> {
         TypeKind::Named(name) => map_key_type_from_name(name),
         _ => None,
     }
+}
+
+fn agent_observation_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "tick" => TypeKind::U64,
+        "frame_id" | "state_hash" | "render_hash" => TypeKind::String,
+        _ => return None,
+    })
+}
+
+fn agent_action_result_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "accepted" => TypeKind::Bool,
+        "before_tick" | "after_tick" => TypeKind::U64,
+        "before_state_hash" | "after_state_hash" => TypeKind::String,
+        _ => return None,
+    })
+}
+
+fn agent_capture_ref_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "uri" | "content_hash" | "media_type" => TypeKind::String,
+        "byte_len" => TypeKind::U64,
+        _ => return None,
+    })
+}
+
+fn agent_resource_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "uri" | "kind" | "mime_type" | "hash" | "body" => TypeKind::String,
+        _ => return None,
+    })
 }
 
 fn set_agent_arg_slot<'a>(

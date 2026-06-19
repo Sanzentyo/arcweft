@@ -925,11 +925,37 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
             ),
             runtime_field("byte_len", RuntimeValue::u64(result.byte_len)),
         ]),
-        AgentHostResponse::Resource(value) | AgentHostResponse::RagContext(value) => {
-            RuntimeValue::String(value.to_string())
-        }
+        AgentHostResponse::Resource(value) => runtime_resource_payload(value),
+        AgentHostResponse::RagContext(value) => RuntimeValue::String(value.to_string()),
         AgentHostResponse::Unit => RuntimeValue::Unit,
     })
+}
+
+fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field("uri", runtime_json_string_field(value, "uri")),
+        runtime_field("kind", runtime_json_string_field(value, "kind")),
+        runtime_field("mime_type", runtime_json_string_field(value, "mime_type")),
+        runtime_field("hash", runtime_json_string_field(value, "hash")),
+        runtime_field(
+            "body",
+            RuntimeValue::String(
+                value
+                    .get("body")
+                    .map_or_else(String::new, serde_json::Value::to_string),
+            ),
+        ),
+    ])
+}
+
+fn runtime_json_string_field(value: &serde_json::Value, field: &str) -> RuntimeValue {
+    RuntimeValue::String(
+        value
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    )
 }
 
 fn runtime_field(name: &str, value: RuntimeValue) -> RuntimeFieldValue {
@@ -1725,6 +1751,7 @@ fn compare_order(order: std::cmp::Ordering) -> i32 {
 mod tests {
     use super::*;
     use arcweft_agent_protocol::{
+        AgentResourceBody, AgentResourceKind,
         artifact::{
             AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding, ProjectBindingMode,
         },
@@ -1790,8 +1817,15 @@ mod tests {
             })
         }
 
-        fn read_resource(&mut self, _uri: &str) -> Result<AgentResource, Self::Error> {
-            unreachable!("not used by test")
+        fn read_resource(&mut self, uri: &str) -> Result<AgentResource, Self::Error> {
+            Ok(AgentResource {
+                uri: uri.to_owned(),
+                kind: AgentResourceKind::ObservationLatest,
+                mime_type: "application/json".to_owned(),
+                hash: "resource.hash".to_owned(),
+                image: None,
+                body: AgentResourceBody::Json(serde_json::json!({ "uri": uri })),
+            })
         }
 
         fn step_frames(&mut self, _count: u32) -> Result<ObservationEnvelope, Self::Error> {
@@ -1935,6 +1969,40 @@ mod tests {
                         },
                         FlowOp::ReturnExpr(RuntimeExpr::Field {
                             target: Box::new(RuntimeExpr::Local("shot".to_owned())),
+                            field: "uri".to_owned(),
+                        }),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
+    fn read_resource_binding_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.read_resource_binding".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.read_resource_binding".to_owned()),
+                    ops: vec![
+                        FlowOp::Await {
+                            binding: Some(RuntimePattern::Ident("resource".to_owned())),
+                            target: AwaitTarget::new(
+                                NeedId("need.agent.read_resource".to_owned()),
+                                TaskId("task.agent.read_resource".to_owned()),
+                                HostTaskRequestTemplate::new(
+                                    "agent",
+                                    "read_resource",
+                                    [HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                        RuntimeValue::String("agent://resource/test".to_owned()),
+                                    ))],
+                                ),
+                            ),
+                            pending: Vec::new(),
+                        },
+                        FlowOp::ReturnExpr(RuntimeExpr::Field {
+                            target: Box::new(RuntimeExpr::Local("resource".to_owned())),
                             field: "uri".to_owned(),
                         }),
                     ],
@@ -2433,6 +2501,35 @@ mod tests {
             report.final_status,
             Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
                 if value == "agent://capture/test"
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_resumes_bound_resource_response_fields() {
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::ResourceRead]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(
+                read_resource_binding_program(),
+                AgentControllerRunConfig::default(),
+            )
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.host_calls, 1);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::Resource(resource) if resource["uri"] == "agent://resource/test"
+        ));
+        assert!(matches!(
+            report.final_status,
+            Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
+                if value == "agent://resource/test"
         ));
     }
 

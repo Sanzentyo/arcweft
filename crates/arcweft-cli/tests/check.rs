@@ -317,6 +317,10 @@ fn agent_script_run_json_executes_read_resource_smoke() {
     );
     assert_eq!(json["responses"][1]["kind"], "unit");
     assert_eq!(json["trace_records"], 7);
+    assert_eq!(
+        json["final_status"],
+        "Done(Return(\"arcweft://session/cli/observation/latest.json\"))"
+    );
 }
 
 fn agent_test_blob_path(root: &Path, content_hash: &str) -> PathBuf {

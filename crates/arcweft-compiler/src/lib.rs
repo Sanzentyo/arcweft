@@ -1257,7 +1257,7 @@ agent @agent.read_resource read_resource_smoke()
 effects { agent.resource.read }
 {
     let resource = read_resource("arcweft://session/cli/observation/latest.json")
-    return resource
+    return resource.uri
 }
 "#,
             &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
@@ -1271,6 +1271,13 @@ effects { agent.resource.read }
                 .judgments
                 .iter()
                 .any(|judgment| judgment.ty == TypeKind::AgentResource)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::String)
         );
     }
 
