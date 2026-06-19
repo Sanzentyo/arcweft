@@ -756,6 +756,56 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
 
 #[test]
 #[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_reuses_serialized_live_bindings_between_cells() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--input")
+        .arg(agent_repl_live_binding_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl runs live binding input session");
+    assert!(
+        output.status.success(),
+        "agent repl live binding session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+
+    assert_eq!(report["ok"], true);
+    let cells = report["cells"].as_array().expect("cells are present");
+    let binding_cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "let answer = 42i64")
+        .expect("binding cell is present");
+    assert_eq!(binding_cell["status"], "ok");
+    let reuse_cell = cells
+        .iter()
+        .find(|cell| cell["input"] == "return answer")
+        .expect("reuse cell is present");
+    assert_eq!(reuse_cell["status"], "ok");
+    assert_eq!(reuse_cell["value"]["compiled"], true);
+
+    let bindings = cells
+        .iter()
+        .find(|cell| cell["input"] == ":bindings")
+        .expect("bindings cell is present");
+    let binding_list = bindings["value"]["bindings"]
+        .as_array()
+        .expect("bindings are listed");
+    let answer = binding_list
+        .iter()
+        .find(|binding| binding["name"] == "answer")
+        .expect("answer binding is present");
+    assert_eq!(answer["binding_kind"], "local");
+    assert_eq!(answer["serializable"], true);
+    assert_eq!(answer["serialized_source"], "42i64");
+}
+
+#[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
 fn agent_repl_inspects_fragments_and_captures_from_input_session() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -2200,6 +2250,10 @@ fn agent_script_native_invoke_action_path() -> PathBuf {
 
 fn agent_repl_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/repl-smoke.txt")
+}
+
+fn agent_repl_live_binding_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/repl-live-binding-smoke.txt")
 }
 
 fn agent_repl_inspection_smoke_path() -> PathBuf {

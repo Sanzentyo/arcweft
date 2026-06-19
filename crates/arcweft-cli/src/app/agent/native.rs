@@ -66,8 +66,10 @@ use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
 use arcweft_lang_syntax::ast::{
     flow::Stmt,
+    ids::EntityRefSyntax,
     pattern::{Pattern, VariantPatternPayload},
 };
+use arcweft_lang_syntax::expr::{Expr, Literal};
 use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
@@ -2011,6 +2013,16 @@ struct AgentReplBinding {
     final_status: Option<String>,
     host_calls: usize,
     responses: usize,
+    serializable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    serialized_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    non_serializable_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AgentReplSerializedBinding {
+    source: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2997,6 +3009,9 @@ fn agent_repl_load(
             final_status: None,
             host_calls: 0,
             responses: 0,
+            serializable: false,
+            serialized_source: None,
+            non_serializable_reason: Some("loaded Agent source is not a REPL value".to_owned()),
         },
     );
     agent_repl_ok(
@@ -3174,7 +3189,7 @@ fn agent_repl_inspection_source(
     fragment: &ParsedFragment,
 ) -> Option<String> {
     (matches!(fragment.completion(), ParseCompletion::Complete) && fragment.errors().is_empty())
-        .then(|| agent_repl_cell_source(index, input, fragment))
+        .then(|| agent_repl_cell_source(index, input, fragment, ""))
 }
 
 fn agent_repl_display_type(report: &TypeCheckReport) -> Option<String> {
@@ -3228,8 +3243,14 @@ fn agent_repl_eval_compiled_cell(
         return agent_repl_invalid_fragment_report(index, input, state, &fragment, parse_report);
     }
 
-    let source = agent_repl_cell_source(index, input, &fragment);
+    let source = agent_repl_cell_source(
+        index,
+        input,
+        &fragment,
+        &agent_repl_live_binding_prelude(state),
+    );
     let binding_names = agent_repl_fragment_binding_names(&fragment);
+    let serialized_bindings = agent_repl_serialized_bindings(&fragment);
     let project = match agent_script_project_index(&[]) {
         Ok(project) => project,
         Err(error) => return agent_repl_error(index, input, "cell", error),
@@ -3279,6 +3300,7 @@ fn agent_repl_eval_compiled_cell(
             &parse_report,
             &report,
             &binding_names,
+            &serialized_bindings,
         ),
         Err(error) => {
             let message = error.to_string();
@@ -3360,6 +3382,7 @@ fn agent_repl_run_success_report(
     parse_report: &serde_json::Value,
     report: &AgentControllerRunReport,
     binding_names: &[String],
+    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
 ) -> AgentReplCellReport {
     let binding_name = format!("cell.{index}");
     let final_status = report
@@ -3396,9 +3419,13 @@ fn agent_repl_run_success_report(
             final_status,
             host_calls: report.host_calls,
             responses,
+            serializable: false,
+            serialized_source: None,
+            non_serializable_reason: Some("cell artifact is not a REPL value".to_owned()),
         },
     );
     for local_name in binding_names {
+        let serialized = serialized_bindings.get(local_name);
         state.bindings.insert(
             local_name.clone(),
             AgentReplBinding {
@@ -3412,6 +3439,11 @@ fn agent_repl_run_success_report(
                     .and_then(|binding| binding.final_status.clone()),
                 host_calls: report.host_calls,
                 responses,
+                serializable: serialized.is_some(),
+                serialized_source: serialized.map(|binding| binding.source.clone()),
+                non_serializable_reason: serialized
+                    .is_none()
+                    .then(|| "binding value is not a supported REPL snapshot literal".to_owned()),
             },
         );
     }
@@ -3519,20 +3551,113 @@ fn agent_repl_persist_cell(
     Ok(true)
 }
 
-fn agent_repl_cell_source(index: usize, input: &str, fragment: &ParsedFragment) -> String {
+fn agent_repl_cell_source(
+    index: usize,
+    input: &str,
+    fragment: &ParsedFragment,
+    live_binding_prelude: &str,
+) -> String {
     if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
         return input.to_owned();
     }
-    let body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
         format!("    return {input}")
     } else if input.starts_with("return ") || input.contains("\nreturn ") {
         indent_agent_repl_body(input)
     } else {
         format!("{}\n    return \"ok\"", indent_agent_repl_body(input))
     };
+    let body = if live_binding_prelude.trim().is_empty() {
+        cell_body
+    } else {
+        format!(
+            "{}\n{}",
+            indent_agent_repl_body(live_binding_prelude),
+            cell_body
+        )
+    };
     format!(
         "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
+}
+
+fn agent_repl_live_binding_prelude(state: &AgentReplState) -> String {
+    state
+        .bindings
+        .values()
+        .filter(|binding| binding.status == "ok")
+        .filter(|binding| binding.binding_kind == "local")
+        .filter_map(|binding| {
+            binding
+                .serialized_source
+                .as_ref()
+                .map(|source| format!("let {} = {source}", binding.name))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn agent_repl_serialized_bindings(
+    fragment: &ParsedFragment,
+) -> BTreeMap<String, AgentReplSerializedBinding> {
+    let Some(ParsedFragmentKind::Statements(statements)) = fragment.kind() else {
+        return BTreeMap::new();
+    };
+    statements
+        .iter()
+        .filter_map(agent_repl_serialized_stmt_binding)
+        .collect()
+}
+
+fn agent_repl_serialized_stmt_binding(
+    statement: &Stmt,
+) -> Option<(String, AgentReplSerializedBinding)> {
+    let Stmt::Let { pattern, expr, .. } = statement else {
+        return None;
+    };
+    let name = agent_repl_single_binding_name(pattern)?;
+    let source = agent_repl_serialized_expr_source(expr)?;
+    Some((name, AgentReplSerializedBinding { source }))
+}
+
+fn agent_repl_single_binding_name(pattern: &Pattern) -> Option<String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            Some(name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn agent_repl_serialized_expr_source(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(literal) => agent_repl_serialized_literal_source(literal),
+        Expr::EntityRef(entity) => agent_repl_serialized_entity_ref_source(entity),
+        Expr::BracketSeq(items) => items
+            .iter()
+            .map(agent_repl_serialized_expr_source)
+            .collect::<Option<Vec<_>>>()
+            .map(|items| format!("[{}]", items.join(", "))),
+        _ => None,
+    }
+}
+
+fn agent_repl_serialized_literal_source(literal: &Literal) -> Option<String> {
+    match literal {
+        Literal::String(value) => serde_json::to_string(value).ok(),
+        Literal::Char { raw, .. } => Some(raw.clone()),
+        Literal::Int { raw, .. } | Literal::Float { raw, .. } | Literal::UnitNumber { raw, .. } => {
+            Some(raw.clone())
+        }
+        Literal::Bool(value) => Some(value.to_string()),
+        Literal::Duration { .. } => None,
+    }
+}
+
+fn agent_repl_serialized_entity_ref_source(entity: &EntityRefSyntax) -> Option<String> {
+    entity
+        .as_absolute()
+        .map(|entity| format!("@{}", entity.body()))
 }
 
 fn agent_repl_fragment_binding_names(fragment: &ParsedFragment) -> Vec<String> {

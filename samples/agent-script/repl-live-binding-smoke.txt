@@ -1,0 +1,5 @@
+# Agent REPL live binding smoke session.
+let answer = 42i64
+return answer
+:bindings
+:quit

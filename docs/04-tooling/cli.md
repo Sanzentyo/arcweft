@@ -439,7 +439,12 @@ through `arcweft-compiler`, and executed through `arcweft-agent-runner`'s
 deterministic CLI session path. Successful cells are recorded as in-session
 `cell.N` binding artifacts shown by `:bindings`; successful `let` statement
 cells also expose VM-local binding names extracted from the parsed pattern as
-local binding artifacts tied to the same executed cell. With `--debug-db
+local binding artifacts tied to the same executed cell. Primitive, string,
+absolute entity-ref, and supported-literal bracket-sequence locals are stored
+with a normalized `serialized_source` and reintroduced as explicit `let`
+bindings before later REPL cells; non-snapshotable locals remain visible in
+`:bindings` with `serializable = false` and an explicit reason instead of being
+silently reused. With `--debug-db
 <path>`, non-meta cells are also persisted to the rebuildable debug SQLite
 `repl_cells` table with their source, stable source hash, status, display JSON,
 and partial-effect marker. The CLI still does not grow a second Agent
