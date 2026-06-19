@@ -398,15 +398,20 @@ synthesizing a pointer click. Inline presentation image actions projected from
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:type`,
 `:ast`, `:hir`, `:bytecode`, `:parse`, `:observe`, `:actions`, `:capture`,
-`:query TEXT`, `:history`, `:bindings`, `:drop`, `:load`, `:save`, `:reset`,
-`:connect`, and `:quit`. `:observe` uses the same native Agent observation path
-as `arcw agent observe`; `:actions` reports the enabled semantic action targets
-from the latest REPL observation. `:capture [viewport|layer ID|object ID]`
-reuses the native Agent image capture path and returns Agent image/resource
-metadata. `:connect source PATH` and `:connect profile ID [--manifest PATH]`
-switch the scripted REPL's native observation target for later `:observe` and
-`:capture` cells; remote `stdio:` endpoints are rejected until a real retained
-remote REPL transport exists. `:query TEXT` requires a prior observation and
+`:complete`, `:query TEXT`, `:history`, `:bindings`, `:drop`, `:load`, `:save`,
+`:reset`, `:connect`, and `:quit`. `:observe` uses the same native Agent
+observation path as `arcw agent observe`; `:actions` reports the enabled
+semantic action targets from the latest REPL observation. `:capture
+[viewport|layer ID|object ID]` reuses the native Agent image capture path and
+returns Agent image/resource metadata. `:complete SOURCE_BEFORE_CURSOR` exposes
+the same Sans I/O completion candidates intended for the future terminal editor,
+including Agent Prelude functions, named parameters, live bindings, observed
+action targets, layer IDs, object IDs, effect capability names, and
+kind-filtered entity IDs such as `choose(@...)` returning only choice options.
+`:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
+scripted REPL's native observation target for later `:observe` and `:capture`
+cells; remote `stdio:` endpoints are rejected until a real retained remote REPL
+transport exists. `:query TEXT` requires a prior observation and
 reuses the same observation-derived `RagContextPack` builder used by Agent MCP
 RAG query. `:history` lists prior REPL cell outcomes in the current scripted
 session. Non-meta cells are classified with the shared Agent fragment parser;

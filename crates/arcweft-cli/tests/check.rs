@@ -797,7 +797,7 @@ fn agent_repl_connects_source_from_input_session() {
     fs::write(
         &input_path,
         format!(
-            ":help\n:connect source {}\n:observe\n:actions\n:capture viewport\n:quit\n",
+            ":help\n:connect source {}\n:observe\n:actions\n:complete :capture layer\n:capture viewport\n:quit\n",
             rich_text_showcase_path().display()
         ),
     )
@@ -844,6 +844,19 @@ fn agent_repl_connects_source_from_input_session() {
     );
     assert_agent_repl_meta_ok(cells, ":observe");
     assert_agent_repl_meta_ok(cells, ":actions");
+    let complete = cells
+        .iter()
+        .find(|cell| cell["input"] == ":complete :capture layer")
+        .expect("completion cell is present");
+    assert_eq!(complete["status"], "ok");
+    assert!(
+        complete["value"]["items"].as_array().is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item["kind"] == "layer_id" && item["label"] == "dialogue.rich_text")
+        }),
+        "completion cell should expose observed layer ids: {complete}"
+    );
     let capture = cells
         .iter()
         .find(|cell| cell["input"] == ":capture viewport")

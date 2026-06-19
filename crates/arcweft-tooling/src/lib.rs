@@ -3,6 +3,8 @@
 //! This crate produces deterministic text edits and lightweight tooling data.
 //! It does not read files, write files, watch paths, or run an LSP transport.
 
+pub mod agent_repl;
+
 use arcweft_lang_hir::id_context::{
     IdContextEntry, IdContextMaterialization, IdContextOption, collect_id_context,
 };

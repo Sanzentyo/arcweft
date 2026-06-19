@@ -3,5 +3,6 @@
 :connect source samples/rich-text-showcase.arcw
 :observe
 :actions
+:complete :capture layer
 :capture viewport
 :quit

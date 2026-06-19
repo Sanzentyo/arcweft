@@ -80,6 +80,9 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
     RichTextTextSource, RuntimeLineContext,
 };
+use arcweft_tooling::agent_repl::{
+    AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_completions,
+};
 
 const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
 
@@ -2192,15 +2195,17 @@ fn agent_repl_eval_meta(
         ":help" => agent_repl_help(index, input),
         ":observe" => agent_repl_observe(index, input, options, state, adapter_registrars),
         ":actions" => agent_repl_actions(index, input, state),
-        ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" => agent_repl_eval_inspection_meta(
-            index,
-            input,
-            command,
-            rest,
-            options,
-            state,
-            adapter_registrars,
-        ),
+        ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" | ":complete" => {
+            agent_repl_eval_inspection_meta(
+                index,
+                input,
+                command,
+                rest,
+                options,
+                state,
+                adapter_registrars,
+            )
+        }
         ":query" => agent_repl_eval_query_meta(index, input, rest, state),
         ":history" => agent_repl_ok(
             index,
@@ -2279,6 +2284,7 @@ fn agent_repl_eval_inspection_meta(
         ),
         ":bytecode" => agent_repl_bytecode(index, input, rest),
         ":capture" => agent_repl_capture(index, input, rest, options, state, adapter_registrars),
+        ":complete" => agent_repl_complete(index, input, rest, state),
         _ => agent_repl_error(
             index,
             input,
@@ -2370,6 +2376,7 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":parse EXPR_OR_STMT",
                 ":reset",
                 ":connect current|source PATH|profile ID [--manifest PATH]",
+                ":complete SOURCE_BEFORE_CURSOR",
                 ":quit"
             ]
         }),
@@ -2427,6 +2434,79 @@ fn agent_repl_actions(index: usize, input: &str, state: &AgentReplState) -> Agen
             ":actions requires :observe first".to_owned(),
         ),
     }
+}
+
+fn agent_repl_complete(
+    index: usize,
+    input: &str,
+    source_before_cursor: &str,
+    state: &AgentReplState,
+) -> AgentReplCellReport {
+    if source_before_cursor.is_empty() {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":complete requires source text before the cursor".to_owned(),
+        );
+    }
+    let context = agent_repl_completion_context(state);
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "source": source_before_cursor,
+            "items": agent_repl_completions(source_before_cursor, &context),
+        }),
+    )
+}
+
+fn agent_repl_completion_context(state: &AgentReplState) -> AgentReplCompletionContext {
+    let mut context = AgentReplCompletionContext {
+        live_bindings: state.bindings.keys().cloned().collect(),
+        ..AgentReplCompletionContext::default()
+    };
+    let Some(report) = &state.report else {
+        return context;
+    };
+    context.entities = agent_repl_completion_entities(report);
+    context.action_targets = report
+        .actions
+        .iter()
+        .map(|action| action.target.clone())
+        .collect();
+    context.layer_ids = report.layers.iter().map(|layer| layer.id.clone()).collect();
+    context.object_ids = report
+        .objects
+        .iter()
+        .map(|object| object.id.clone())
+        .collect();
+    context.effect_capabilities = report
+        .presentation_tree
+        .nodes
+        .iter()
+        .flat_map(|node| node.effects.iter().map(|effect| effect.id.clone()))
+        .collect();
+    context
+}
+
+fn agent_repl_completion_entities(
+    report: &AgentObservationReport,
+) -> Vec<AgentReplCompletionEntity> {
+    report
+        .actions
+        .iter()
+        .filter_map(|action| match action.action {
+            AgentActionKind::SelectChoice => Some(AgentReplCompletionEntity {
+                id: action.target.clone(),
+                kind: "choice_option".to_owned(),
+            }),
+            AgentActionKind::AdvanceText
+            | AgentActionKind::Invoke
+            | AgentActionKind::PointerClick => None,
+        })
+        .collect()
 }
 
 fn agent_repl_connect(
