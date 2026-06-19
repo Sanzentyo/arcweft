@@ -300,6 +300,38 @@ effects { agent.wait, agent.observe }
 }
 
 #[test]
+fn agent_controller_plan_lowers_state_and_observation_wait_predicates() {
+    let tree = parse_agent_ok(
+        r#"
+#[agent(version = 1)]
+agent @agent.wait_state wait_state()
+effects { agent.wait, agent.observe, debug.read }
+{
+    let obs = wait(all(state("route.phase").eq("opening"), observation("tick").ge(1i64)), timeout = 5ms)
+    return obs.tick
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected wait let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "wait");
+    let predicate = target.request.args[0].value();
+    assert!(format!("{predicate:?}").contains("route.phase"));
+    assert!(format!("{predicate:?}").contains("tick"));
+}
+
+#[test]
 fn lowers_dialogue_line_plan_to_core_task_group() {
     let tree = parse_ok(
         r"

@@ -1525,11 +1525,63 @@ fn observation_value(probe: &Probe, observation: &ObservationEnvelope) -> Option
         Probe::Signal { target } | Probe::Metric { target } => {
             observation.signals.get(target.as_str()).cloned()
         }
+        Probe::StatePath { path } => observation
+            .payload
+            .get("state")
+            .and_then(|state| json_path_value(state, path))
+            .and_then(agent_value_from_json),
         Probe::ObservationField { path } if path == "tick" => {
             Some(AgentValue::I64(i64::try_from(observation.tick).ok()?))
         }
-        Probe::StatePath { .. } | Probe::ObservationField { .. } => None,
+        Probe::ObservationField { path } if path == "frame_id" => {
+            Some(AgentValue::String(observation.frame_id.clone()))
+        }
+        Probe::ObservationField { path } if path == "state_hash" => {
+            Some(AgentValue::String(observation.state_hash.clone()))
+        }
+        Probe::ObservationField { path } if path == "render_hash" => {
+            Some(AgentValue::String(observation.render_hash.clone()))
+        }
+        Probe::ObservationField { path } => path
+            .strip_prefix("signals.")
+            .and_then(|signal| observation.signals.get(signal).cloned())
+            .or_else(|| {
+                json_path_value(&observation.payload, path).and_then(agent_value_from_json)
+            }),
     }
+}
+
+fn json_path_value<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    if let Some(value) = root.get(path) {
+        return Some(value);
+    }
+    path.split('.')
+        .try_fold(root, |value, segment| value.get(segment))
+}
+
+fn agent_value_from_json(value: &serde_json::Value) -> Option<AgentValue> {
+    Some(match value {
+        serde_json::Value::Null => AgentValue::Null,
+        serde_json::Value::Bool(value) => AgentValue::Bool(*value),
+        serde_json::Value::Number(value) => value
+            .as_i64()
+            .map(AgentValue::I64)
+            .or_else(|| value.as_u64().map(AgentValue::U64))
+            .or_else(|| value.as_f64().map(AgentValue::F64))?,
+        serde_json::Value::String(value) => AgentValue::String(value.clone()),
+        serde_json::Value::Array(values) => AgentValue::List(
+            values
+                .iter()
+                .map(agent_value_from_json)
+                .collect::<Option<Vec<_>>>()?,
+        ),
+        serde_json::Value::Object(values) => AgentValue::Map(
+            values
+                .iter()
+                .map(|(key, value)| Some((key.clone(), agent_value_from_json(value)?)))
+                .collect::<Option<BTreeMap<_, _>>>()?,
+        ),
+    })
 }
 
 fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> bool {
@@ -2085,6 +2137,62 @@ mod tests {
         assert!(matches!(
             report.response,
             AgentHostResponse::Observation(observation) if observation.tick == 1
+        ));
+    }
+
+    #[test]
+    fn wait_matches_state_and_observation_field_predicates() {
+        let session = TestSession {
+            observations: vec![ObservationEnvelope {
+                tick: 2,
+                frame_id: "frame.2".to_owned(),
+                state_hash: "state.2".to_owned(),
+                render_hash: "render.2".to_owned(),
+                signals: BTreeMap::new(),
+                payload: serde_json::json!({
+                    "state": {
+                        "route.phase": "opening"
+                    }
+                }),
+            }],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::default(),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+                predicate: Predicate::All {
+                    predicates: vec![
+                        Predicate::Compare {
+                            probe: Probe::StatePath {
+                                path: "route.phase".to_owned(),
+                            },
+                            op: CompareOp::Eq,
+                            value: AgentValue::String("opening".to_owned()),
+                        },
+                        Predicate::Compare {
+                            probe: Probe::ObservationField {
+                                path: "tick".to_owned(),
+                            },
+                            op: CompareOp::GreaterOrEqual,
+                            value: AgentValue::I64(2),
+                        },
+                    ],
+                },
+                timeout_millis: 5,
+                stable_frames: 1,
+                poll_frames: 1,
+            })))
+            .expect("state and observation wait succeeds");
+
+        assert!(matches!(
+            report.response,
+            AgentHostResponse::Observation(observation) if observation.tick == 2
         ));
     }
 

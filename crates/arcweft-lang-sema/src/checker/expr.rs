@@ -770,6 +770,18 @@ impl TypeChecker<'_> {
             "metric" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Metric, "metric"))
             }
+            "state" => Some(self.check_agent_path_probe_intrinsic(
+                name,
+                args,
+                "debug state path",
+                &TypeKind::String,
+            )),
+            "observation" => Some(self.check_agent_path_probe_intrinsic(
+                name,
+                args,
+                "observation field path",
+                &TypeKind::String,
+            )),
             "exists" => Some(self.check_agent_exists_intrinsic(name, args)),
             "all" | "any" => Some(self.check_agent_predicate_list_intrinsic(name, args)),
             "not" => Some(self.check_agent_not_predicate_intrinsic(name, args)),
@@ -996,6 +1008,21 @@ impl TypeChecker<'_> {
             }
             None => TypeKind::Probe(Box::new(TypeKind::Named("_".to_owned()))),
         }
+    }
+
+    fn check_agent_path_probe_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        context: &str,
+        expected_path: &TypeKind,
+    ) -> TypeKind {
+        self.check_function_effects(name);
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Probe(Box::new(TypeKind::AgentValue));
+        };
+        self.expect_expr_type(arg, expected_path, context);
+        TypeKind::Probe(Box::new(TypeKind::AgentValue))
     }
 
     fn check_agent_exists_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {

@@ -93,6 +93,7 @@ pub enum AgentIntrinsic {
     SignalProbe,
     MetricProbe,
     StateProbe,
+    ObservationProbe,
     PredicateExists,
     PredicateAll,
     PredicateAny,
@@ -1037,6 +1038,28 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
                 )))),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::MetricProbe),
+            ),
+        ),
+        (
+            "state",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Probe(Box::new(TypeKind::AgentValue)),
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+                [EffectCapability::new("debug.read")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::StateProbe),
+            ),
+        ),
+        (
+            "observation",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Probe(Box::new(TypeKind::AgentValue)),
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+                [EffectCapability::new("agent.observe")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::ObservationProbe),
             ),
         ),
     ]

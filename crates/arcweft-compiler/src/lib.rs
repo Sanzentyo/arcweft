@@ -954,6 +954,35 @@ effects { agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_state_and_observation_probes() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-a"));
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_state debug_state()
+effects { agent.observe, agent.wait, debug.read }
+{
+    wait(
+        all(state("route.phase").eq("opening"), observation("tick").ge(1i64)),
+        timeout = 5s,
+    )
+}
+"#,
+            &project,
+        )
+        .expect("state and observation probes typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Probe(Box::new(TypeKind::AgentValue)))
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_wait_zero_stable() {
         let project =
             project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));

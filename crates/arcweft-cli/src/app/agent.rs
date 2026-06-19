@@ -270,6 +270,8 @@ pub(super) struct AgentScriptRunOptions {
     max_ops: usize,
     #[arg(long = "signal", value_parser = parse_agent_script_signal_arg)]
     signals: Vec<AgentScriptSignalArg>,
+    #[arg(long = "state", value_parser = parse_agent_script_state_arg)]
+    states: Vec<AgentScriptStateArg>,
     #[arg(long = "trace-out")]
     trace_out: Option<PathBuf>,
     #[arg(long, default_value = "run.cli")]
@@ -297,6 +299,12 @@ struct AgentScriptSignalArg {
     id: String,
     value: AgentValue,
     ty: TypeKind,
+}
+
+#[derive(Clone, Debug)]
+struct AgentScriptStateArg {
+    path: String,
+    value: AgentValue,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -704,7 +712,7 @@ fn agent_script_run_bundle(
     if agent_script_run_uses_native_session(options) {
         return native::agent_script_run_native_bundle(options, input, adapter_registrars);
     }
-    let session = CliAgentSession::new(options.signals.clone());
+    let session = CliAgentSession::new(options.signals.clone(), options.states.clone());
     let mut runner = AgentRunner::new(
         session,
         CollectingDebugSink::default(),
@@ -1185,8 +1193,24 @@ fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, St
     if id.is_empty() {
         return Err("signal id must not be empty".to_owned());
     }
-    let raw_value = raw_value.trim();
-    let (value, ty) = match raw_value {
+    let (value, ty) = parse_agent_script_value(raw_value.trim());
+    Ok(AgentScriptSignalArg { id, value, ty })
+}
+
+fn parse_agent_script_state_arg(value: &str) -> Result<AgentScriptStateArg, String> {
+    let (path, raw_value) = value
+        .split_once('=')
+        .ok_or_else(|| "state must be formatted as path=value".to_owned())?;
+    let path = path.trim().to_owned();
+    if path.is_empty() {
+        return Err("state path must not be empty".to_owned());
+    }
+    let (value, _) = parse_agent_script_value(raw_value.trim());
+    Ok(AgentScriptStateArg { path, value })
+}
+
+fn parse_agent_script_value(raw_value: &str) -> (AgentValue, TypeKind) {
+    match raw_value {
         "true" => (AgentValue::Bool(true), TypeKind::Bool),
         "false" => (AgentValue::Bool(false), TypeKind::Bool),
         _ => raw_value.parse::<i64>().map_or_else(
@@ -1204,8 +1228,7 @@ fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, St
             },
             |value| (AgentValue::I64(value), TypeKind::I64),
         ),
-    };
-    Ok(AgentScriptSignalArg { id, value, ty })
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1369,16 +1392,21 @@ fn agent_script_signal_symbol(signal: &AgentScriptSignalArg, id: SemaPublicId) -
 struct CliAgentSession {
     tick: u64,
     signals: BTreeMap<String, AgentValue>,
+    states: BTreeMap<String, AgentValue>,
     captures: u64,
 }
 
 impl CliAgentSession {
-    fn new(signals: Vec<AgentScriptSignalArg>) -> Self {
+    fn new(signals: Vec<AgentScriptSignalArg>, states: Vec<AgentScriptStateArg>) -> Self {
         Self {
             tick: 0,
             signals: signals
                 .into_iter()
                 .map(|signal| (signal.id, signal.value))
+                .collect(),
+            states: states
+                .into_iter()
+                .map(|state| (state.path, state.value))
                 .collect(),
             captures: 0,
         }
@@ -1393,7 +1421,8 @@ impl CliAgentSession {
             signals: self.signals.clone(),
             payload: serde_json::json!({
                 "source": "arcw agent script run",
-                "deterministic_cli_session": true
+                "deterministic_cli_session": true,
+                "state": agent_values_to_json(&self.states),
             }),
         }
     }
@@ -1467,5 +1496,31 @@ impl AgentSession for CliAgentSession {
     fn step_frames(&mut self, count: u32) -> Result<ObservationEnvelope, Self::Error> {
         self.tick = self.tick.saturating_add(u64::from(count.max(1)));
         Ok(self.observation())
+    }
+}
+
+fn agent_values_to_json(values: &BTreeMap<String, AgentValue>) -> serde_json::Value {
+    serde_json::Value::Object(
+        values
+            .iter()
+            .map(|(key, value)| (key.clone(), agent_value_to_json(value)))
+            .collect(),
+    )
+}
+
+fn agent_value_to_json(value: &AgentValue) -> serde_json::Value {
+    match value {
+        AgentValue::Null => serde_json::Value::Null,
+        AgentValue::Bool(value) => serde_json::Value::Bool(*value),
+        AgentValue::I64(value) => serde_json::Value::Number((*value).into()),
+        AgentValue::U64(value) => serde_json::Number::from(*value).into(),
+        AgentValue::F64(value) => serde_json::Number::from_f64(*value)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
+        AgentValue::String(value) => serde_json::Value::String(value.clone()),
+        AgentValue::Entity(value) => serde_json::Value::String(value.as_str().to_owned()),
+        AgentValue::List(values) => {
+            serde_json::Value::Array(values.iter().map(agent_value_to_json).collect())
+        }
+        AgentValue::Map(values) => agent_values_to_json(values),
     }
 }

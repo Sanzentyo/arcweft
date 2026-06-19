@@ -1,0 +1,12 @@
+#[agent(version = 1)]
+agent @agent.cli.state_wait state_wait()
+effects { agent.observe, agent.wait, debug.read }
+{
+    wait(
+        all(state("route.phase").eq("opening"), observation("tick").ge(1i64)),
+        timeout = 5s,
+        stable_frames = 1u32,
+        poll_frames = 1u32,
+    )
+    return "done"
+}

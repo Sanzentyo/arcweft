@@ -312,18 +312,22 @@ changing backend.
 
 ## Agent Script
 
-`arcw agent script run <file.awfagent|file.awfb> [--signal id=value]... [--native-source <file.arcw>|--profile <id>] [--trace-out <file.arcwx>] [--json]`
+`arcw agent script run <file.awfagent|file.awfb> [--signal id=value]... [--state path=value]... [--native-source <file.arcw>|--profile <id>] [--trace-out <file.arcwx>] [--json]`
 executes one compiled Agent controller through `arcweft-agent-runner`. Without a
 native source or launch profile, it uses the deterministic CLI session adapter
 for parser/compiler/runner smoke coverage. `--signal signal.ready=true` injects
 a typed deterministic observation signal for non-native runs, which lets CLI
 smokes exercise `wait(all(...), timeout=...)` and other structured predicates
-without creating a native project. With `native-capture` enabled and a native
-source or launch profile, the controller observes, captures, and reads resources
-through the same native Agent Debug Bus path as `arcw agent observe`. Native
-capture results return `arcweft://session/...` resource URIs, native resource
-hashes, media types, and byte lengths; `.arcwx` trace records carry the capture
-content hash in `blob_refs`.
+without creating a native project. `--state route.phase=opening` injects a
+deterministic debug-state payload value for `state("route.phase")` probes;
+`observation("tick")`, `observation("state_hash")`, and
+`observation("signals.signal.ready")` read the current observation envelope.
+With `native-capture` enabled and a native source or launch profile, the
+controller observes, captures, and reads resources through the same native Agent
+Debug Bus path as `arcw agent observe`. Native capture results return
+`arcweft://session/...` resource URIs, native resource hashes, media types, and
+byte lengths; `.arcwx` trace records carry the capture content hash in
+`blob_refs`.
 
 ## Agent Observation
 
