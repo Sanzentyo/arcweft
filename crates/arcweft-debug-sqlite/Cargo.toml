@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
+arcweft-rag = { path = "../arcweft-rag" }
 rusqlite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

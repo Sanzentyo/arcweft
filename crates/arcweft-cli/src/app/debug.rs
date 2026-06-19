@@ -1,9 +1,10 @@
 use super::shared::print_json;
 use arcweft_debug_model::chunk::PrivacyClass;
+use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
 use arcweft_debug_model::rag::SearchChannel;
 use arcweft_debug_sqlite::store::{
-    DebugStore, DebugStoreBlobRecord, DebugStoreForeignKeyViolation, DebugStoreStats,
-    DebugStoreValidationReport,
+    ChunkSearchResult, DebugStore, DebugStoreBlobRecord, DebugStoreError,
+    DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport,
 };
 use clap::{Args, Subcommand};
 use std::fs;
@@ -55,7 +56,13 @@ pub(super) struct DebugDbSearchOptions {
     #[command(flatten)]
     db: DebugDbOptions,
     #[arg(long)]
-    query: String,
+    query: Option<String>,
+    #[arg(long = "query-vector")]
+    query_vector: Option<String>,
+    #[arg(long = "model-id")]
+    model_id: Option<String>,
+    #[arg(long = "model-revision")]
+    model_revision: Option<String>,
     #[arg(long, default_value_t = 10)]
     limit: usize,
     #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
@@ -129,10 +136,19 @@ struct DebugDbDeleteReport {
 #[derive(serde::Serialize)]
 struct DebugDbSearchReport {
     path: String,
-    query: String,
+    query: Option<String>,
+    query_vector_dimensions: Option<usize>,
+    model: Option<DebugDbSearchModelReport>,
     limit: usize,
     max_privacy: PrivacyClass,
     hits: Vec<DebugDbSearchHitReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbSearchModelReport {
+    model_id: String,
+    model_revision: String,
+    dimensions: u32,
 }
 
 #[derive(serde::Serialize)]
@@ -268,8 +284,36 @@ fn debug_db_reindex_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
 }
 
 fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
-    if options.query.trim().is_empty() {
-        eprintln!("error: debug db search requires a non-empty --query");
+    let report = debug_db_search_report(options)?;
+    if options.db.json {
+        return print_json(&report);
+    }
+    print_debug_db_search_report(&report);
+    Ok(())
+}
+
+fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearchReport, ExitCode> {
+    let query = options
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty());
+    let query_vector = options
+        .query_vector
+        .as_deref()
+        .map(parse_debug_query_vector)
+        .transpose()
+        .map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::from(2)
+        })?;
+    let has_query_vector = query_vector.is_some();
+    if query.is_none() && !has_query_vector {
+        eprintln!("error: debug db search requires either a non-empty --query or --query-vector");
+        return Err(ExitCode::from(2));
+    }
+    if query.is_some() && has_query_vector {
+        eprintln!("error: debug db search accepts only one of --query or --query-vector");
         return Err(ExitCode::from(2));
     }
     if options.limit == 0 {
@@ -277,15 +321,30 @@ fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCod
         return Err(ExitCode::from(2));
     }
     let (store, path, _, _) = open_debug_store(&options.db)?;
-    let hits = store
-        .lexical_search_with_max_privacy(&options.query, options.limit, options.max_privacy)
-        .map_err(|error| {
-            eprintln!(
-                "error: failed to search debug database {}: {error}",
-                options.db.path.display()
-            );
-            ExitCode::FAILURE
-        })?
+    let model = query_vector
+        .as_ref()
+        .map(|vector| {
+            debug_search_model(options, vector.len()).map_err(|error| {
+                eprintln!("error: {error}");
+                ExitCode::from(2)
+            })
+        })
+        .transpose()?;
+    let hits = debug_db_search_hits(
+        &store,
+        options,
+        query,
+        query_vector.as_deref(),
+        model.as_ref(),
+    )
+    .map_err(|error| {
+        eprintln!(
+            "error: failed to search debug database {}: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let hits = hits
         .into_iter()
         .map(|result| DebugDbSearchHitReport {
             chunk_id: result.hit.chunk_id.as_str().to_owned(),
@@ -299,16 +358,22 @@ fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCod
             score: result.hit.score,
         })
         .collect::<Vec<_>>();
-    let report = DebugDbSearchReport {
+    Ok(DebugDbSearchReport {
         path,
-        query: options.query.clone(),
+        query: query.map(str::to_owned),
+        query_vector_dimensions: query_vector.as_ref().map(Vec::len),
+        model: model.map(|model| DebugDbSearchModelReport {
+            model_id: model.model_id,
+            model_revision: model.model_revision,
+            dimensions: model.dimensions,
+        }),
         limit: options.limit,
         max_privacy: options.max_privacy,
         hits,
-    };
-    if options.db.json {
-        return print_json(&report);
-    }
+    })
+}
+
+fn print_debug_db_search_report(report: &DebugDbSearchReport) {
     println!(
         "{}: {} hit(s) for {:?} (max_privacy={})",
         report.path,
@@ -328,7 +393,65 @@ fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCod
                 .map_or_else(|| "none".to_owned(), |score| format!("{score:.6}"))
         );
     }
-    Ok(())
+}
+
+fn debug_db_search_hits(
+    store: &DebugStore,
+    options: &DebugDbSearchOptions,
+    query: Option<&str>,
+    query_vector: Option<&[f32]>,
+    model: Option<&EmbeddingModelDescriptor>,
+) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+    if let Some(query) = query {
+        return store.lexical_search_with_max_privacy(query, options.limit, options.max_privacy);
+    }
+    let vector = query_vector.expect("query vector is validated before search");
+    let model = model.expect("embedding model is validated before vector search");
+    store.vector_search_with_max_privacy(model, vector, options.limit, options.max_privacy)
+}
+
+fn debug_search_model(
+    options: &DebugDbSearchOptions,
+    dimensions: usize,
+) -> Result<EmbeddingModelDescriptor, String> {
+    let model_id = options
+        .model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "debug db search --query-vector requires --model-id".to_owned())?;
+    let model_revision = options
+        .model_revision
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "debug db search --query-vector requires --model-revision".to_owned())?;
+    let dimensions = u32::try_from(dimensions)
+        .map_err(|_| "debug db search --query-vector has too many dimensions".to_owned())?;
+    Ok(EmbeddingModelDescriptor {
+        model_id: model_id.to_owned(),
+        model_revision: model_revision.to_owned(),
+        dimensions,
+    })
+}
+
+fn parse_debug_query_vector(value: &str) -> Result<Vec<f32>, String> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<f32>()
+                .map_err(|error| format!("invalid --query-vector component `{part}`: {error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.is_empty() {
+        return Err("debug db search --query-vector must contain at least one value".to_owned());
+    }
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err("debug db search --query-vector must contain only finite values".to_owned());
+    }
+    Ok(values)
 }
 
 fn debug_db_delete_command(options: &DebugDbDeleteOptions) -> Result<(), ExitCode> {

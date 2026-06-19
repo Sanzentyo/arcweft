@@ -13,6 +13,7 @@ use arcweft_agent_protocol::ids::StableHash;
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
+use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
@@ -1003,8 +1004,65 @@ fn debug_db_search_filters_chunks_by_privacy() {
     assert_eq!(hits[0]["channel"], "lexical");
 }
 
+#[test]
+fn debug_db_search_vector_filters_chunks_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/vector-search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug vector search target dir"))
+        .expect("create debug vector search target dir");
+    seed_debug_search_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--query-vector")
+        .arg("1.0,0.0")
+        .arg("--model-id")
+        .arg("fixture")
+        .arg("--model-revision")
+        .arg("1")
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db vector search runs");
+    assert!(
+        output.status.success(),
+        "debug db vector search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db vector search output is JSON");
+
+    assert_eq!(report["query"], serde_json::Value::Null);
+    assert_eq!(report["query_vector_dimensions"], 2);
+    assert_eq!(report["model"]["model_id"], "fixture");
+    assert_eq!(report["model"]["model_revision"], "1");
+    assert_eq!(report["model"]["dimensions"], 2);
+    assert_eq!(report["max_privacy"], "public");
+    let hits = report["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], "chunk:public-opening");
+    assert_eq!(hits[0]["privacy"], "public");
+    assert_eq!(hits[0]["channel"], "vector");
+}
+
 fn seed_debug_search_db(path: &Path) {
     let store = DebugStore::open(path).expect("open debug search db");
+    let model = EmbeddingModelDescriptor {
+        model_id: "fixture".to_owned(),
+        model_revision: "1".to_owned(),
+        dimensions: 2,
+    };
     for chunk in [
         DebugChunk {
             id: ChunkId::new("chunk:secret-opening"),
@@ -1037,7 +1095,23 @@ fn seed_debug_search_db(path: &Path) {
             created_unix_ms: 0,
         },
     ] {
+        let vector = if chunk.privacy == PrivacyClass::Secret {
+            vec![1.0, 0.0]
+        } else {
+            vec![0.9, 0.1]
+        };
+        let embedding = StoredEmbedding::normalized(
+            chunk.id.clone(),
+            model.clone(),
+            vector,
+            chunk.content_hash.as_str(),
+            0,
+        )
+        .expect("debug search embedding");
         store.upsert_chunk(&chunk).expect("upsert debug chunk");
+        store
+            .upsert_embedding(&embedding)
+            .expect("upsert debug embedding");
     }
 }
 

@@ -339,6 +339,13 @@ the rebuildable debug-store chunk FTS index using a quoted literal query. The
 privacy ceiling is applied inside the SQLite query before `--limit`, so
 disallowed chunks cannot push allowed public/project hits out of the result
 window.
+`arcw debug db search --query-vector <f32,...> --model-id <id>
+--model-revision <rev> [--max-privacy public|project|sensitive|secret]
+[--limit N] [--json]` runs the stored-vector channel. It loads normalized
+embedding rows for the exact model descriptor, applies the privacy ceiling
+before ranking, and uses deterministic cosine ranking from `arcweft-rag`.
+`--query` and `--query-vector` are mutually exclusive; provider embedding I/O
+remains outside this command.
 The stdio MCP server exposes the same rebuildable-store lexical path as
 `arcweft.debug.search`. The tool accepts `query`, optional `path`, `limit`, and
 `max_privacy`, defaults to `.arcweft/cache/agent-debug.sqlite3`, and returns

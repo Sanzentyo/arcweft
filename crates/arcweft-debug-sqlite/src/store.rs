@@ -7,6 +7,7 @@ use arcweft_debug_model::{
     rag::{SearchChannel, SearchHit},
     sink::DebugEventSink,
 };
+use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use thiserror::Error;
@@ -30,11 +31,13 @@ pub enum DebugStoreError {
     IntegerOverflow(&'static str),
     #[error("invalid privacy class stored in debug database: {0}")]
     InvalidPrivacyClass(String),
+    #[error(transparent)]
+    VectorSearch(#[from] VectorSearchError),
 }
 
-/// One lexical result returned from FTS5.
+/// One chunk search result returned from a debug-store search channel.
 #[derive(Clone, Debug, PartialEq)]
-pub struct LexicalResult {
+pub struct ChunkSearchResult {
     pub hit: SearchHit,
     pub title: String,
     pub body: String,
@@ -282,7 +285,7 @@ impl DebugStore {
         &self,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<LexicalResult>, DebugStoreError> {
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
         self.lexical_search_with_max_privacy(query, limit, PrivacyClass::Secret)
     }
 
@@ -291,7 +294,7 @@ impl DebugStore {
         query: &str,
         limit: usize,
         max_privacy: PrivacyClass,
-    ) -> Result<Vec<LexicalResult>, DebugStoreError> {
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
         if query.trim().is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
@@ -332,7 +335,7 @@ impl DebugStore {
                 |(index, (chunk_id, title, body, source_kind, source_key, privacy, bm25))| {
                     PrivacyClass::parse(&privacy)
                         .ok_or_else(|| DebugStoreError::InvalidPrivacyClass(privacy.clone()))
-                        .map(|privacy| LexicalResult {
+                        .map(|privacy| ChunkSearchResult {
                             hit: SearchHit {
                                 chunk_id: ChunkId::new(chunk_id),
                                 channel: SearchChannel::Lexical,
@@ -348,6 +351,30 @@ impl DebugStore {
                 },
             )
             .collect::<Result<Vec<_>, _>>()
+    }
+
+    pub fn vector_search_with_max_privacy(
+        &self,
+        model: &EmbeddingModelDescriptor,
+        query: &[f32],
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let candidates = self
+            .load_embeddings_with_max_privacy(model, max_privacy)?
+            .into_iter()
+            .map(|embedding| VectorCandidate {
+                chunk_id: embedding.chunk_id,
+                values: embedding.values,
+            })
+            .collect::<Vec<_>>();
+        let hits = rank_vectors(query, &candidates, limit)?;
+        hits.into_iter()
+            .map(|hit| self.chunk_search_result_for_hit(hit))
+            .collect()
     }
 
     pub fn upsert_embedding(&self, embedding: &StoredEmbedding) -> Result<(), DebugStoreError> {
@@ -374,11 +401,33 @@ impl DebugStore {
         &self,
         model: &EmbeddingModelDescriptor,
     ) -> Result<Vec<StoredEmbedding>, DebugStoreError> {
+        self.load_embeddings_with_filter(model, None)
+    }
+
+    fn load_embeddings_with_max_privacy(
+        &self,
+        model: &EmbeddingModelDescriptor,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<StoredEmbedding>, DebugStoreError> {
+        self.load_embeddings_with_filter(model, Some(max_privacy))
+    }
+
+    fn load_embeddings_with_filter(
+        &self,
+        model: &EmbeddingModelDescriptor,
+        max_privacy: Option<PrivacyClass>,
+    ) -> Result<Vec<StoredEmbedding>, DebugStoreError> {
+        let max_privacy_filter = max_privacy.map(|privacy| privacy.as_str().to_owned());
         let mut statement = self.connection.prepare(
-            "SELECT chunk_id, original_norm, vector_le_f32, content_hash, created_unix_ms\n             FROM embeddings\n             WHERE model_id = ?1 AND model_revision = ?2 AND dimensions = ?3\n             ORDER BY chunk_id",
+            "SELECT e.chunk_id, e.original_norm, e.vector_le_f32, e.content_hash, e.created_unix_ms\n             FROM embeddings AS e\n             JOIN chunks AS c ON c.chunk_id = e.chunk_id\n             WHERE e.model_id = ?1 AND e.model_revision = ?2 AND e.dimensions = ?3\n               AND (\n                 ?4 IS NULL\n                 OR c.privacy_class = 'public'\n                 OR (?4 IN ('project', 'sensitive', 'secret') AND c.privacy_class = 'project')\n                 OR (?4 IN ('sensitive', 'secret') AND c.privacy_class = 'sensitive')\n                 OR (?4 = 'secret' AND c.privacy_class = 'secret')\n               )\n             ORDER BY e.chunk_id",
         )?;
         let rows = statement.query_map(
-            params![&model.model_id, &model.model_revision, model.dimensions],
+            params![
+                &model.model_id,
+                &model.model_revision,
+                model.dimensions,
+                max_privacy_filter.as_deref()
+            ],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -405,6 +454,35 @@ impl DebugStore {
             })
         })
         .collect()
+    }
+
+    fn chunk_search_result_for_hit(
+        &self,
+        hit: SearchHit,
+    ) -> Result<ChunkSearchResult, DebugStoreError> {
+        let (title, body, source_kind, source_key, privacy) = self.connection.query_row(
+            "SELECT title, body, source_kind, source_key, privacy_class\n             FROM chunks\n             WHERE chunk_id = ?1",
+            [hit.chunk_id.as_str()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )?;
+        let privacy = PrivacyClass::parse(&privacy)
+            .ok_or_else(|| DebugStoreError::InvalidPrivacyClass(privacy.clone()))?;
+        Ok(ChunkSearchResult {
+            hit,
+            title,
+            body,
+            source_kind,
+            source_key,
+            privacy,
+        })
     }
 
     fn program_id(&self, hash: &StableHash) -> Result<Option<i64>, DebugStoreError> {
@@ -702,6 +780,75 @@ mod tests {
 
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:public");
+        assert_eq!(hits[0].privacy, PrivacyClass::Public);
+    }
+
+    #[test]
+    fn vector_search_filters_by_max_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let model = EmbeddingModelDescriptor {
+            model_id: "fixture".to_owned(),
+            model_revision: "1".to_owned(),
+            dimensions: 2,
+        };
+        let chunks = [
+            (
+                DebugChunk {
+                    id: ChunkId::new("chunk:secret-vector"),
+                    program_hash: None,
+                    source_kind: ChunkSourceKind::Documentation,
+                    source_key: "secret".to_owned(),
+                    title: "secret vector".to_owned(),
+                    body: "secret vector evidence".to_owned(),
+                    content_hash: hash("b3:secret-vector"),
+                    semantic_hash: None,
+                    source_anchor: None,
+                    entity_ids: Vec::new(),
+                    privacy: PrivacyClass::Secret,
+                    metadata: BTreeMap::new(),
+                    created_unix_ms: 0,
+                },
+                vec![1.0, 0.0],
+            ),
+            (
+                DebugChunk {
+                    id: ChunkId::new("chunk:public-vector"),
+                    program_hash: None,
+                    source_kind: ChunkSourceKind::Documentation,
+                    source_key: "public".to_owned(),
+                    title: "public vector".to_owned(),
+                    body: "public vector evidence".to_owned(),
+                    content_hash: hash("b3:public-vector"),
+                    semantic_hash: None,
+                    source_anchor: None,
+                    entity_ids: Vec::new(),
+                    privacy: PrivacyClass::Public,
+                    metadata: BTreeMap::new(),
+                    created_unix_ms: 0,
+                },
+                vec![0.9, 0.1],
+            ),
+        ];
+        for (chunk, vector) in chunks {
+            store.upsert_chunk(&chunk).expect("chunk");
+            let embedding = StoredEmbedding::normalized(
+                chunk.id,
+                model.clone(),
+                vector,
+                chunk.content_hash.as_str(),
+                0,
+            )
+            .expect("embedding");
+            store.upsert_embedding(&embedding).expect("store embedding");
+        }
+
+        let hits = store
+            .vector_search_with_max_privacy(&model, &[1.0, 0.0], 1, PrivacyClass::Public)
+            .expect("vector search");
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:public-vector");
+        assert_eq!(hits[0].hit.channel, SearchChannel::Vector);
         assert_eq!(hits[0].privacy, PrivacyClass::Public);
     }
 
