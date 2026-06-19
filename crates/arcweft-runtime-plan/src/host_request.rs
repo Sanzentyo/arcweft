@@ -170,6 +170,17 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
             receiver,
             method,
             args,
+        } if expr_label(receiver) == "pointer" && method_name(method) == "click" => {
+            Some(CallParts {
+                capability: "agent".to_owned(),
+                operation: "pointer.click".to_owned(),
+                args,
+            })
+        }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
         } if expr_label(receiver) == "rag" && method_name(method) == "query" => Some(CallParts {
             capability: "agent".to_owned(),
             operation: "rag.query".to_owned(),
@@ -235,11 +246,44 @@ fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
 
 fn lower_agent_host_arg_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
+        Expr::Call { callee, args } if expr_label(callee) == "viewport_point" => {
+            lower_agent_viewport_point_expr(args)
+        }
         Expr::Path(path) if path.starts_with('.') => {
             RuntimeExpr::Value(RuntimeValue::String(path.to_owned()))
         }
         _ => lower_host_arg_expr(expr),
     }
+}
+
+fn lower_agent_viewport_point_expr(args: &[CallArg]) -> RuntimeExpr {
+    let mut fields = Vec::new();
+    for (index, arg) in args.iter().enumerate() {
+        match arg {
+            CallArg::Positional(value) if index == 0 => {
+                fields.push(runtime_field_expr("x", lower_agent_host_arg_expr(value)));
+            }
+            CallArg::Positional(value) if index == 1 => {
+                fields.push(runtime_field_expr("y", lower_agent_host_arg_expr(value)));
+            }
+            CallArg::Named { name, value } if name == "x" || name == "y" => {
+                fields.push(runtime_field_expr(name, lower_agent_host_arg_expr(value)));
+            }
+            CallArg::Positional(value) => {
+                fields.push(runtime_field_expr(
+                    &format!("extra_{index}"),
+                    lower_agent_host_arg_expr(value),
+                ));
+            }
+            CallArg::Named { value, .. } | CallArg::Spread { value } => {
+                fields.push(runtime_field_expr(
+                    &format!("extra_{index}"),
+                    lower_agent_host_arg_expr(value.as_ref()),
+                ));
+            }
+        }
+    }
+    runtime_record_expr(fields)
 }
 
 fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {

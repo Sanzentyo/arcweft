@@ -123,6 +123,16 @@ impl FunctionParam {
         }
     }
 
+    /// Creates a fixed positional/named parameter with a source-level default.
+    pub fn defaulted(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self {
+            name: Some(name.into()),
+            ty,
+            kind: FnParamKind::Fixed,
+            has_default: true,
+        }
+    }
+
     /// Creates a rest parameter.
     pub fn rest(name: impl Into<String>, ty: TypeKind) -> Self {
         Self {

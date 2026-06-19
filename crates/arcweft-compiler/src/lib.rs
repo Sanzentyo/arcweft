@@ -823,6 +823,51 @@ effects { agent.observe }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_pointer_click_intrinsic() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.pointer_click pointer_click()
+effects { agent.act.physical }
+{
+    pointer.click(viewport_point(12u32, 34u32), button = .primary)
+}
+",
+            &project,
+        )
+        .expect("pointer.click intrinsic typechecks with physical action effect");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionResult)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_pointer_click_without_effect() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.pointer_click pointer_click()
+effects { agent.act.semantic }
+{
+    pointer.click(viewport_point(12u32, 34u32))
+}
+",
+            &project,
+        )
+        .expect_err("pointer.click requires physical action effect");
+
+        assert!(error.to_string().contains("agent.act.physical"));
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_unresolved_project_entity() {
         let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
         let error = compile_agent_source_with_project(

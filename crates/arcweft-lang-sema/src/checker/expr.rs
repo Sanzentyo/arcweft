@@ -791,6 +791,8 @@ impl TypeChecker<'_> {
                 self.check_function_effects(name);
                 Some(self.check_agent_no_arg_intrinsic(name, args, TypeKind::ActionResult))
             }
+            "viewport_point" => Some(self.check_agent_viewport_point_intrinsic(name, args)),
+            "pointer.click" => Some(self.check_agent_pointer_click_intrinsic(name, args)),
             "invoke" => Some(self.check_agent_invoke_intrinsic(name, args)),
             "rag.query" => Some(self.check_agent_rag_query_intrinsic(name, args)),
             _ => None,
@@ -974,6 +976,137 @@ impl TypeChecker<'_> {
             ));
         }
         TypeKind::CaptureRef
+    }
+
+    fn check_agent_viewport_point_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let mut x_seen = false;
+        let mut y_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    match positional_index {
+                        0 => {
+                            x_seen = true;
+                            self.expect_expr_type(value, &TypeKind::U32, "viewport_point x");
+                        }
+                        1 => {
+                            y_seen = true;
+                            self.expect_expr_type(value, &TypeKind::U32, "viewport_point y");
+                        }
+                        _ => {
+                            self.errors.push(TypeCheckError::new(
+                                "viewport_point received too many positional arguments".to_owned(),
+                            ));
+                            self.check_expr(value);
+                        }
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "x" => {
+                    x_seen = true;
+                    self.expect_expr_type(value, &TypeKind::U32, "viewport_point x");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "y" => {
+                    y_seen = true;
+                    self.expect_expr_type(value, &TypeKind::U32, "viewport_point y");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "{name} has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "viewport_point does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !x_seen {
+            self.errors
+                .push(TypeCheckError::new("viewport_point requires x".to_owned()));
+        }
+        if !y_seen {
+            self.errors
+                .push(TypeCheckError::new("viewport_point requires y".to_owned()));
+        }
+        TypeKind::Named("ViewportPoint".to_owned())
+    }
+
+    fn check_agent_pointer_click_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let mut point_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    if positional_index == 0 {
+                        point_seen = true;
+                        self.expect_expr_type(
+                            value,
+                            &TypeKind::Named("ViewportPoint".to_owned()),
+                            "pointer.click point",
+                        );
+                    } else {
+                        self.errors.push(TypeCheckError::new(
+                            "pointer.click received too many positional arguments".to_owned(),
+                        ));
+                        self.check_expr(value);
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "point" => {
+                    point_seen = true;
+                    self.expect_expr_type(
+                        value,
+                        &TypeKind::Named("ViewportPoint".to_owned()),
+                        "pointer.click point",
+                    );
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "button" => {
+                    self.expect_expr_type(value, &TypeKind::ActionName, "pointer.click button");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "pointer.click has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "pointer.click does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !point_seen {
+            self.errors.push(TypeCheckError::new(
+                "pointer.click requires a point argument".to_owned(),
+            ));
+        }
+        TypeKind::ActionResult
     }
 
     fn check_agent_read_resource_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {

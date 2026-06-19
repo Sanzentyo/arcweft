@@ -12,7 +12,7 @@ use arcweft_agent_protocol::{
     protocol::{
         ActionResult, AgentAction, AgentHostRequest, AgentHostResponse, AgentSessionInfo,
         CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope,
-        ObserveRequest, RagRequest, WaitRequest,
+        ObserveRequest, PointerButton, RagRequest, WaitRequest,
     },
     value::AgentValue,
 };
@@ -98,6 +98,7 @@ pub struct RuntimeAgentPolicy {
 pub enum RuntimeAgentCapability {
     Observe,
     Act,
+    ActPhysical,
     Capture,
     ResourceRead,
     Rag,
@@ -199,7 +200,8 @@ impl RuntimeAgentCapability {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Observe => "agent.observe",
-            Self::Act => "agent.act",
+            Self::Act => "agent.act.semantic",
+            Self::ActPhysical => "agent.act.physical",
             Self::Capture => "agent.capture",
             Self::ResourceRead => "agent.resource.read",
             Self::Rag => "agent.rag.query",
@@ -303,7 +305,12 @@ where
                 AgentHostResponse::Observation(Box::new(observation))
             }
             AgentHostRequest::Act(action) => {
-                self.ensure(RuntimeAgentCapability::Act)?;
+                self.ensure(match action.as_ref() {
+                    AgentAction::PointerClick { .. } => RuntimeAgentCapability::ActPhysical,
+                    AgentAction::AdvanceText
+                    | AgentAction::SelectChoice { .. }
+                    | AgentAction::Invoke { .. } => RuntimeAgentCapability::Act,
+                })?;
                 let result = self.session.act(*action).map_err(AgentRunError::Session)?;
                 self.emit(
                     DebugEventKind::Action,
@@ -562,6 +569,9 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 choice,
             })))
         }
+        "pointer.click" => {
+            pointer_click_action(&call.args).map(|action| AgentHostRequest::Act(Box::new(action)))
+        }
         "invoke" => invoke_action(&call.args).map(|action| AgentHostRequest::Act(Box::new(action))),
         "capture" => Ok(AgentHostRequest::Capture(Box::new(capture_request(
             &call.args,
@@ -620,6 +630,8 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
             }
             Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
         }
+        "pointer.click" => runtime_pointer_click_action(&args)
+            .map(|action| AgentHostRequest::Act(Box::new(action))),
         "invoke" => {
             runtime_invoke_action(&args).map(|action| AgentHostRequest::Act(Box::new(action)))
         }
@@ -786,6 +798,38 @@ fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, Str
         action,
         args: Box::new(call_args),
     })
+}
+
+fn runtime_pointer_click_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, String> {
+    let (x, y) = args
+        .positional(0)
+        .or_else(|| args.named("point"))
+        .ok_or_else(|| "pointer.click requires a point argument".to_owned())
+        .and_then(runtime_viewport_point)?;
+    let button = args
+        .named("button")
+        .map_or(Ok(PointerButton::Primary), runtime_pointer_button)?;
+    Ok(AgentAction::PointerClick { x, y, button })
+}
+
+fn runtime_viewport_point(value: &RuntimeValue) -> Result<(u32, u32), String> {
+    match value {
+        RuntimeValue::Record(fields) => Ok((
+            runtime_record_get(fields, "x").and_then(runtime_u32)?,
+            runtime_record_get(fields, "y").and_then(runtime_u32)?,
+        )),
+        RuntimeValue::Tuple(values) if values.len() == 2 => {
+            Ok((runtime_u32(&values[0])?, runtime_u32(&values[1])?))
+        }
+        other => Err(format!(
+            "expected viewport point record, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_pointer_button(value: &RuntimeValue) -> Result<PointerButton, String> {
+    parse_pointer_button_label(&runtime_string(value)?)
 }
 
 fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
@@ -1408,6 +1452,54 @@ fn invoke_action(args: &[String]) -> Result<AgentAction, String> {
         action,
         args: Box::new(call_args),
     })
+}
+
+fn pointer_click_action(args: &[String]) -> Result<AgentAction, String> {
+    let point = args
+        .first()
+        .ok_or_else(|| "pointer.click requires a point argument".to_owned())
+        .and_then(|arg| parse_viewport_point_label(arg))?;
+    let mut button = PointerButton::Primary;
+    for arg in args.iter().skip(1) {
+        match named_arg(arg) {
+            Some(("button", value)) => button = parse_pointer_button_label(value)?,
+            Some((name, _)) => {
+                return Err(format!("pointer.click has no parameter named `{name}`"));
+            }
+            None => {
+                return Err(format!(
+                    "pointer.click does not accept extra positional argument `{arg}`"
+                ));
+            }
+        }
+    }
+    Ok(AgentAction::PointerClick {
+        x: point.0,
+        y: point.1,
+        button,
+    })
+}
+
+fn parse_viewport_point_label(value: &str) -> Result<(u32, u32), String> {
+    let value = value.trim();
+    let body = value
+        .strip_prefix("viewport_point(")
+        .and_then(|value| value.strip_suffix(')'))
+        .unwrap_or(value);
+    let parts = split_top_level_args(body);
+    let [x, y] = parts.as_slice() else {
+        return Err("viewport point requires x and y".to_owned());
+    };
+    Ok((parse_u32_label(x)?, parse_u32_label(y)?))
+}
+
+fn parse_pointer_button_label(value: &str) -> Result<PointerButton, String> {
+    match value.trim().trim_start_matches('.') {
+        "primary" => Ok(PointerButton::Primary),
+        "secondary" => Ok(PointerButton::Secondary),
+        "middle" => Ok(PointerButton::Middle),
+        other => Err(format!("unsupported pointer button `{other}`")),
+    }
 }
 
 fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
@@ -2387,6 +2479,65 @@ mod tests {
         );
         assert_eq!(args.get("index"), Some(&AgentValue::U64(7)));
         assert_eq!(args.get("focused"), Some(&AgentValue::Bool(true)));
+    }
+
+    #[test]
+    fn effect_form_pointer_click_lowers_to_physical_action() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "pointer.click".to_owned(),
+            args: vec![
+                "viewport_point(12u32, 34u32)".to_owned(),
+                "button = .secondary".to_owned(),
+            ],
+        })
+        .expect("effect-form pointer.click lowers");
+
+        let AgentHostRequest::Act(action) = request else {
+            panic!("expected action host request");
+        };
+        assert!(matches!(
+            *action,
+            AgentAction::PointerClick {
+                x: 12,
+                y: 34,
+                button: PointerButton::Secondary
+            }
+        ));
+    }
+
+    #[test]
+    fn physical_pointer_click_requires_runtime_policy_grant() {
+        let request = AgentHostRequest::Act(Box::new(AgentAction::PointerClick {
+            x: 12,
+            y: 34,
+            button: PointerButton::Primary,
+        }));
+        let mut denied = AgentRunner::new(
+            TestSession::default(),
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::Act]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+        let error = denied
+            .handle_host_request(request.clone())
+            .expect_err("physical action is denied without physical policy");
+        assert!(matches!(
+            error,
+            AgentRunError::PolicyDenied("agent.act.physical")
+        ));
+
+        let mut granted = AgentRunner::new(
+            TestSession::default(),
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::ActPhysical]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+        let report = granted
+            .handle_host_request(request)
+            .expect("physical policy allows pointer.click host action");
+        assert!(matches!(report.response, AgentHostResponse::Action(_)));
     }
 
     #[test]

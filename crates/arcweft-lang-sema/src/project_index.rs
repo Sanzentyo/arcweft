@@ -92,6 +92,8 @@ pub enum AgentIntrinsic {
     AdvanceText,
     Choose,
     Invoke,
+    ViewportPoint,
+    PointerClick,
     SignalProbe,
     MetricProbe,
     StateProbe,
@@ -1593,6 +1595,37 @@ fn agent_predicate_callables() -> Vec<(&'static str, CallableSymbol)> {
 
 fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
     vec![
+        (
+            "viewport_point",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Named("ViewportPoint".to_owned()),
+                    [
+                        FunctionParam::required("x", TypeKind::U32),
+                        FunctionParam::required("y", TypeKind::U32),
+                    ],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::ViewportPoint),
+            ),
+        ),
+        (
+            "pointer.click",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::ActionResult,
+                    [
+                        FunctionParam::required(
+                            "point",
+                            TypeKind::Named("ViewportPoint".to_owned()),
+                        ),
+                        FunctionParam::defaulted("button", TypeKind::ActionName),
+                    ],
+                ),
+                [EffectCapability::new("agent.act.physical")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PointerClick),
+            ),
+        ),
         (
             "advance_text",
             CallableSymbol::new(

@@ -263,6 +263,38 @@ effects { agent.resource.read }
 }
 
 #[test]
+fn agent_controller_plan_lowers_pointer_click_to_host_task() {
+    let tree = parse_agent_ok(
+        r"
+#[agent(version = 1)]
+agent @agent.pointer_click pointer_click()
+effects { agent.act.physical }
+{
+    let result = pointer.click(viewport_point(12u32, 34u32), button = .primary)
+    return result.accepted
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected pointer.click let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "pointer.click");
+    assert_eq!(target.request.args.len(), 2);
+    assert!(format!("{:?}", target.request.args[0]).contains('x'));
+    assert!(format!("{:?}", target.request.args[0]).contains("34"));
+}
+
+#[test]
 fn agent_controller_plan_lowers_wait_predicate_to_host_task() {
     let tree = parse_agent_ok(
         r"

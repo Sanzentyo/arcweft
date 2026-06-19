@@ -2137,7 +2137,7 @@ impl AgentSession for CliAgentSession {
                 "agent.observe".to_owned(),
                 "agent.wait".to_owned(),
                 "agent.capture".to_owned(),
-                "agent.act".to_owned(),
+                "agent.act.semantic".to_owned(),
                 "agent.resource.read".to_owned(),
             ],
         })
