@@ -81,6 +81,7 @@ pub enum TypeKind {
     CaptureTarget,
     CaptureRef,
     AgentResource,
+    AgentResourceBody,
     RagContextPack,
     Vec(Box<TypeKind>),
     Array {

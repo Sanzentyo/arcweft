@@ -326,7 +326,9 @@ deterministic debug-state payload value for `state("route.phase")` probes;
 `agent.resource.read`, and dispatches through the same resource-read host
 boundary used by native and deterministic CLI sessions. Agent scripts can read
 resource metadata fields such as `resource.uri`, `resource.kind`,
-`resource.mime_type`, `resource.hash`, and serialized `resource.body`.
+`resource.mime_type`, and `resource.hash`, plus typed body fields such as
+`resource.body.kind`, `resource.body.json`, `resource.body.text`,
+`resource.body.base64`, and `resource.body.encoding`.
 For deterministic CLI captures and native image captures,
 `--blob-dir .arcweft/cache/agent-blobs` writes byte-backed capture blobs under
 their `blake3:` content hash. `arcw agent script trace <file.arcwx> --blob-dir
