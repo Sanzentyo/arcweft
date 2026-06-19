@@ -921,6 +921,55 @@ mod tests {
     }
 
     #[test]
+    fn agent_background_call_accepts_fit_alignment_and_opacity() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[RuntimeCall {
+                callee: "bg".to_owned(),
+                args: vec![
+                    "@asset.bg.poster".to_owned(),
+                    "fit = intrinsic".to_owned(),
+                    "alignment.x = right".to_owned(),
+                    "alignment.y = bottom".to_owned(),
+                    "opacity = 0.5".to_owned(),
+                ],
+            }],
+            0.0,
+        );
+
+        assert!(diagnostics.is_empty());
+        let object = &observation.objects[0];
+        assert_eq!(object.bbox.x, 318);
+        assert_eq!(object.bbox.y, 179);
+        assert_eq!(object.bbox.width, 2);
+        assert_eq!(object.bbox.height, 1);
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("background call should become Agent image content");
+        };
+        assert_eq!(content.fit, Some(AgentImageFit::Intrinsic));
+        assert_eq!(
+            content.alignment,
+            Some(AgentImageAlignment {
+                x_milli: 1_000,
+                y_milli: 1_000,
+            })
+        );
+        assert_eq!(content.opacity_milli, Some(500));
+    }
+
+    #[test]
     fn agent_runtime_background_call_uses_capture_time_for_animated_images() {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -5714,9 +5763,13 @@ fn agent_background_runtime_image_call(
             viewport.width.to_string().parse().unwrap_or(0.0),
             viewport.height.to_string().parse().unwrap_or(0.0),
         ),
-        fit: arcweft_presentation::image::ImageObjectFit::Cover,
+        fit: agent_call_named_value(call, "fit")
+            .and_then(agent_image_fit_from_call_arg)
+            .unwrap_or(arcweft_presentation::image::ImageObjectFit::Cover),
         alignment: agent_image_call_alignment(call),
-        opacity_milli: 1_000,
+        opacity_milli: agent_call_named_value(call, "opacity")
+            .and_then(agent_image_call_opacity_milli)
+            .unwrap_or(1_000),
         playback: agent_image_call_playback(call),
         transform: ImageObjectTransform::identity(),
         depth_milli: 0,

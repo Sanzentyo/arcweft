@@ -146,6 +146,10 @@ pixels. Multiple background calls use slot semantics: the last valid background
 call wins, avoiding duplicate background object ids. Missing image assets
 produce structured `image_asset_unavailable` diagnostics rather than a debug
 rectangle or a panic.
+`bg(...)` defaults to cover-fit, centered alignment, full opacity, and normal
+capture-time playback, but it accepts the same `fit`, `alignment.*`, `opacity`,
+and `playback.*` named arguments as bounded `image(...)` so static and animated
+backgrounds can be debugged through the same image-object policy.
 
 Agent observe uses an observation-local source image decode cache keyed by
 public asset id. The cache stores successful decoded `DecodedImage` values for
@@ -186,7 +190,7 @@ image(
   fit = "stretch",
   alignment.x = "center",
   alignment.y = "center",
-  opacity = 0.5,
+  opacity = "0.5",
   playback.local_time = 50ms,
   transform.tx = 24px,
   transform.ty = 12px,
@@ -206,9 +210,10 @@ image(
 ```
 
 `param.*` is parsed as a dotted named argument, not as an ad hoc string parse.
-`opacity` accepts either a ratio form (`0`, `0.5`, `1`) or a milli form from
-`2` through `1000`; both lower to the presentation model's `opacity_milli`
-field.
+Checked Arcweft source should express `opacity` as a quoted ratio such as
+`"0.5"` or a quoted milli value such as `"500"` until image call arguments gain
+typed numeric expectations in the semantic layer; it lowers to the presentation
+model's `opacity_milli` field.
 `alignment.x` / `alignment.y` (or the short `align.x` / `align.y`) accept
 keywords (`left`, `center`, `right`, `top`, `bottom`, `start`, `end`), ratio
 values from `0` through `1`, or milli values from `0` through `1000`; they lower

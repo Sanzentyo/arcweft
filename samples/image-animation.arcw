@@ -37,7 +37,7 @@ flow image_static_jpeg {
 }
 
 flow image_static_webp {
-    bg(@asset.bg.poster)
+    bg(@asset.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = "0.75")
 
     narrator.say(id=@say.image.static_webp, voice=auto)[
         Static WebP background image is decoded into the same image frame model.[p]
@@ -68,7 +68,7 @@ flow image_animated_webp {
 
 flow image_sprite_overlay {
     bg(@asset.bg.room)
-    image(asset = @asset.bg.pulse, id = "image.sample.pulse_sprite", target = "target.sample.pulse_sprite", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", opacity = 0.5, playback.local_time = 50ms, transform.tx = 24px, transform.ty = 12px, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse_sprite", param.role = "animated-hotspot", param.hit_channel = "channel.preview", proxy.id = "proxy.pulse_sprite.hotspot", proxy.type = "PulseSpriteHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
+    image(asset = @asset.bg.pulse, id = "image.sample.pulse_sprite", target = "target.sample.pulse_sprite", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", opacity = "0.5", playback.local_time = 50ms, transform.tx = 24px, transform.ty = 12px, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse_sprite", param.role = "animated-hotspot", param.hit_channel = "channel.preview", proxy.id = "proxy.pulse_sprite.hotspot", proxy.type = "PulseSpriteHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
 
     narrator.say(id=@say.image.sprite_overlay, voice=auto)[
         Foreground image object uses authored bounds, layer, object capture, and animation timing.[p]
@@ -79,7 +79,7 @@ flow image_sprite_overlay {
 
 flow image_clipped_object {
     bg(@asset.bg.room)
-    image(asset = @asset.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
+    image(asset = @asset.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = "0.5", depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
 
     narrator.say(id=@say.image.clipped_object, voice=auto)[
         Clipped animated image object proves object capture uses viewport-visible geometry.[p]
