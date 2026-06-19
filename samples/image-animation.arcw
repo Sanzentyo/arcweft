@@ -76,3 +76,14 @@ flow image_sprite_overlay {
 
     return "image_sprite_overlay"
 }
+
+flow image_clipped_object {
+    bg(@asset.bg.room)
+    image(asset = @asset.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
+
+    narrator.say(id=@say.image.clipped_object, voice=auto)[
+        Clipped animated image object proves object capture uses viewport-visible geometry.[p]
+    ]
+
+    return "image_clipped_object"
+}

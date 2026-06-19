@@ -153,7 +153,10 @@ frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
 id, target, layer, bounds, fit, opacity, depth, semantic action, custom
 `transform.*` matrix/translation metadata, enabled/visible lifecycle flags,
-`param.*` metadata, and animated frame timing.
+`param.*` metadata, and animated frame timing. The `image_clipped_object` flow
+places a bounded animated image partially outside the viewport so object color
+and object-id capture fixtures prove that native capture uses the same
+viewport-visible geometry as Agent observation.
 
 The source-level `image(...)` surface now accepts image object metadata in the
 same call that defines the visual object:
@@ -258,15 +261,14 @@ image capture.
    proxies. Depth, transforms, lifecycle flags, semantic actions, and custom
    `param.*` metadata are now present on the bounded source-level call path and
    Agent observation path.
-3. Add clipped object capture fixtures that exercise non-fullscreen image
-   geometry. Bounded animated image pinned-frame readback is covered for direct
-   object and layer `--read-uri`; image-object proxy hit-test metadata is
-   covered against the same sample; MCP tool-content preservation is covered
-   with serialized metadata fixtures; and live MCP `arcweft.resource.read` plus
-   protocol `resources/read` are covered for the bounded animated image layer
-   raw resource.
-4. Add more regression tests for native capture pixels, object metadata, and no
-   wall-clock dependence.
+3. Add more regression tests for native capture pixels, object metadata, and no
+   wall-clock dependence. Bounded animated image pinned-frame readback is
+   covered for direct object and layer `--read-uri`; image-object proxy
+   hit-test metadata is covered against the same sample; clipped animated image
+   object color and object-id captures are covered; MCP tool-content
+   preservation is covered with serialized metadata fixtures; and live MCP
+   `arcweft.resource.read` plus protocol `resources/read` are covered for the
+   bounded animated image layer raw resource.
 
 ## Dependency Policy
 

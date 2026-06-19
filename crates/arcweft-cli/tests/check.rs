@@ -22664,6 +22664,83 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
 }
 
+#[test]
+fn agent_observe_native_captures_clipped_animated_image_object() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let observe =
+        observe_image_animation_sample_flow_at(&source_path, "image_clipped_object", "0.15");
+    let image_object = observe["objects"]
+        .as_array()
+        .expect("image clipped sample reports objects")
+        .iter()
+        .find(|object| {
+            object["content"]["kind"] == "image"
+                && object["content"]["object"] == "image.sample.clipped_pulse"
+        })
+        .expect("clipped animated image object is observed");
+    let object_id = image_object["id"]
+        .as_str()
+        .expect("clipped animated image object id");
+    assert_eq!(object_id, "object.image.layer.clipped.0.1");
+    assert_eq!(image_object["bbox"]["x"], 1184);
+    assert_eq!(image_object["bbox"]["y"], 48);
+    assert_eq!(image_object["bbox"]["width"], 96);
+    assert_eq!(image_object["bbox"]["height"], 96);
+    assert_eq!(image_object["content"]["frame_index"], 1);
+    assert_eq!(image_object["content"]["local_time_millis"], 150);
+    assert_eq!(image_object["content"]["opacity_milli"], 500);
+
+    let dir = temp_dir("agent-observe-clipped-animated-image-object");
+    let color_path = dir.join("clipped-image-color.rgba");
+    let (color, color_bytes) = capture_image_animation_sample_object_raw_at(
+        &source_path,
+        "image_clipped_object",
+        "0.15",
+        object_id,
+        "color",
+        &color_path,
+    );
+    assert_clipped_animated_image_capture_metadata(&color, object_id, "color", "framebuffer_crop");
+    assert_eq!(color_bytes.len(), 96 * 96 * 4);
+    assert_eq!(
+        &color_bytes[..4],
+        &[176, 131, 11, 127],
+        "clipped object color capture should start with the pinned animated frame pixel"
+    );
+    assert!(
+        color_bytes.chunks_exact(4).all(|pixel| pixel[3] == 127),
+        "clipped half-opacity image color capture should preserve object alpha"
+    );
+
+    let object_id_path = dir.join("clipped-image-object-id.rgba");
+    let (object_id_capture, object_id_bytes) = capture_image_animation_sample_object_raw_at(
+        &source_path,
+        "image_clipped_object",
+        "0.15",
+        object_id,
+        "object-id",
+        &object_id_path,
+    );
+    assert_clipped_animated_image_capture_metadata(
+        &object_id_capture,
+        object_id,
+        "object_id",
+        "object_id_attachment",
+    );
+    assert_eq!(object_id_bytes.len(), 96 * 96 * 4);
+    assert_eq!(
+        &object_id_bytes[..4],
+        &[113, 59, 100, 127],
+        "clipped object-id capture should use the deterministic image debug tint"
+    );
+    assert!(
+        object_id_bytes.chunks_exact(4).all(|pixel| pixel[3] == 127),
+        "clipped object-id capture should preserve the half-opacity image alpha"
+    );
+
+    fs::remove_dir_all(&dir).expect("remove clipped animated image capture dir");
+}
+
 fn observe_image_animation_sample_flow_at(
     path: &Path,
     flow: &str,
@@ -22749,6 +22826,79 @@ fn hit_test_image_animation_sample_at(
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("image animation sample hit-test is JSON")
+}
+
+fn capture_image_animation_sample_object_raw_at(
+    path: &Path,
+    flow: &str,
+    capture_time: &str,
+    object_id: &str,
+    capture_kind: &str,
+    raw_path: &Path,
+) -> (serde_json::Value, Vec<u8>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--flow")
+        .arg(flow)
+        .arg("--steps")
+        .arg("2")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--json")
+        .arg("--image")
+        .arg("raw-rgba")
+        .arg("--capture")
+        .arg(capture_kind)
+        .arg("--object")
+        .arg(object_id)
+        .arg("--out")
+        .arg(raw_path)
+        .output()
+        .expect("arcw agent observe captures image animation object");
+    assert!(
+        output.status.success(),
+        "image animation object {capture_kind} capture should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("image animation object capture is JSON");
+    let bytes = fs::read(raw_path).expect("read image animation object raw capture");
+    (json, bytes)
+}
+
+fn assert_clipped_animated_image_capture_metadata(
+    capture: &serde_json::Value,
+    object_id: &str,
+    kind: &str,
+    composition: &str,
+) {
+    assert_eq!(capture["images"][0]["kind"], kind);
+    assert_eq!(capture["images"][0]["renderer"], "native");
+    assert_eq!(capture["images"][0]["scope"]["kind"], "object");
+    assert_eq!(capture["images"][0]["scope"]["id"], object_id);
+    assert_eq!(capture["images"][0]["composition"], composition);
+    assert_eq!(capture["images"][0]["capture_time_millis"], 150);
+    assert_eq!(capture["images"][0]["width"], 96);
+    assert_eq!(capture["images"][0]["height"], 96);
+    assert_eq!(capture["images"][0]["crop_origin"]["x"], 1184);
+    assert_eq!(capture["images"][0]["crop_origin"]["y"], 48);
+    assert_eq!(capture["images"][0]["content_bbox"]["x"], 0);
+    assert_eq!(capture["images"][0]["content_bbox"]["y"], 0);
+    assert_eq!(capture["images"][0]["content_bbox"]["width"], 96);
+    assert_eq!(capture["images"][0]["content_bbox"]["height"], 96);
+    assert_eq!(capture["images"][0]["content_viewport_bbox"]["x"], 1184);
+    assert_eq!(capture["images"][0]["content_viewport_bbox"]["y"], 48);
+    assert_eq!(capture["images"][0]["content_pixels"], 96 * 96);
+    assert_eq!(
+        capture["images"][0]["object"]["image_ref"]["object"],
+        "image.sample.clipped_pulse"
+    );
+    assert_eq!(
+        capture["images"][0]["object"]["image_ref"]["frame_index"],
+        1
+    );
 }
 
 #[test]
