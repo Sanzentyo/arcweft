@@ -30,7 +30,8 @@ It is implementation state, not the stable language specification.
 - `arcw agent script replay <file.arcwx> [--expect <file.arcwx>]` performs read-only logical replay of validated trace records. The replay sequence records each event's sequence number, kind, tick, payload hash, and blob refs. `--expect` compares two traces by replay-relevant logical fields rather than byte-for-byte file identity, so it can verify that source-run and bundle-run traces produce the same logical sequence.
 - `arcweft-agent-protocol` and `arcweft-agent-mcp` now expose Agent trace resources as typed MCP-compatible resources. `AgentResourceKind::Trace` plus `arcweft_agent_mcp::trace_resource` map validated `AgentTraceRecord` arrays to `arcweft://run/{run_id}/trace.arcwx` with `application/vnd.arcweft.agent-trace+json`, and `resources/templates/list` includes the trace URI pattern.
 - `arcw agent mcp` exposes `arcweft.trace.read` in the stdio MCP transport. It validates a `.arcwx` file through the same trace reader used by CLI replay, caches the resulting trace resource in the current MCP session, and serves it through `resources/list`, `resources/read`, and `arcweft.resource.read` without requiring a prior native observation.
-- `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
+- `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default and reports row counts for core Agent debug tables.
+- `arcw debug db validate` runs SQLite integrity checks, foreign-key checks, capture-to-blob reference validation, and embedding vector blob length validation. `arcw debug db reindex` rebuilds and optimizes the derived chunk FTS index. `arcw debug db delete --unreferenced-blobs [--validate]` deletes unreferenced blob records from the debug-store index and can immediately rerun validation. These commands operate on debug-store records; byte-backed capture blob file lifecycle still remains the responsibility of the blob directory/store integration.
 - `samples/agent-script/opening-smoke.awfagent` and `samples/agent-script/visual-regression.awfagent` mirror the package examples and currently pass `agent script check`. `samples/agent-script/cli-run-smoke.awfagent` is the minimal deterministic CLI runner smoke, `samples/agent-script/cli-capture-smoke.awfagent` covers deterministic capture trace blob refs and byte-backed blob validation without depending on native game state, `samples/agent-script/cli-composite-wait-smoke.awfagent` covers CLI signal-backed composite wait predicates, `samples/agent-script/cli-state-wait-smoke.awfagent` covers CLI state-payload and observation-field wait predicates, `samples/agent-script/native-flow-wait-smoke.awfagent` plus `samples/agent-script/native-project-index.arcw` cover native HIR project-index entity resolution and entity-valued signal wait polling, and `samples/agent-script/native-choice-dispatch.awfagent` plus `samples/agent-script/native-choice-dispatch.arcw` cover native semantic `SelectChoice` dispatch followed by signal wait validation.
 
 ## Deliberate boundaries
@@ -44,12 +45,13 @@ It is implementation state, not the stable language specification.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
 - `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for both effect-form calls and suspended Agent host-call expressions. It bridges `agent` custom host tasks to the same `AgentHostRequest` boundary and resumes the VM with a typed record payload. `wait(...)` expression tasks and Agent statement-form `wait(predicate, timeout=...)` lower typed probe comparisons and boolean predicate combinators to structured predicate records and execute through the same host wait boundary as `capture(...)`.
 - Parser dialect dispatch keeps Agent `wait(...)` as an intrinsic call expression even when it appears as a bare statement. Game dialect line-task `wait(...)` remains the legacy dialogue/runtime wait statement path.
-- `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite` and keeps database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
+- `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite`, lifecycle validation, derived index rebuild, and debug-store record deletion while keeping database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
 
 ## Windows validation
 
 - `cargo check -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite`
 - `cargo test -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite`
+- `cargo test -p arcweft-debug-sqlite`
 - `cargo clippy -p arcweft-debug-model -p arcweft-rag -p arcweft-debug-sqlite --all-targets --all-features -- -D warnings`
 - The `arcweft-debug-sqlite` tests were run on Windows and validate migration, FTS5 Japanese search, and embedding blob round trips.
 - `cargo fmt --check`
@@ -126,6 +128,10 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-cli --test check agent_script_run_json_executes_cli_session_smoke -- --exact --nocapture`
 - `cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings`
 - `cargo run -p arcweft-cli -- debug db status --path target/codex-agent-script-final/agent-debug-test.sqlite3 --json`
+- `cargo run -p arcweft-cli -- debug db status --path target\codex-agent-script-final\agent-debug-lifecycle.sqlite3 --json`
+- `cargo run -p arcweft-cli -- debug db validate --path target\codex-agent-script-final\agent-debug-lifecycle.sqlite3 --json`
+- `cargo run -p arcweft-cli -- debug db reindex --path target\codex-agent-script-final\agent-debug-lifecycle.sqlite3 --json`
+- `cargo run -p arcweft-cli -- debug db delete --path target\codex-agent-script-final\agent-debug-lifecycle.sqlite3 --unreferenced-blobs --validate --json`
 
 ## Other platforms
 
@@ -136,7 +142,7 @@ It is implementation state, not the stable language specification.
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Extend Agent predicate lowering beyond the currently executable signal/metric/state-payload/observation-field compare, exists, all, any, and not path as the Agent Prelude grows typed debug path registries and additional predicate surfaces.
-- Extend `.arcwx` beyond CLI/native run trace writing, validation, capture blob refs, byte-backed blob storage/validation, read-only logical replay, Sans-I/O MCP resource conversion, and stdio MCP trace file loading/resources: connect stored capture blobs to debug-store lifecycle/reindex/delete validation instead of leaving them as CLI-only files.
+- Extend `.arcwx` beyond CLI/native run trace writing, validation, capture blob refs, byte-backed blob storage/validation, read-only logical replay, Sans-I/O MCP resource conversion, and stdio MCP trace file loading/resources: connect byte-backed capture blob files to the debug-store blob directory lifecycle so file reindex/delete can be validated alongside the now-implemented debug-store record validation/reindex/delete commands.
 - Extend CLI script run from native observe/wait/capture/resource/semantic `SelectChoice` sessions to native `AdvanceText`/`Invoke` action dispatch, REPL, debug search, and RAG commands using the shared JSON/resource shapes. Add the matching MCP surfaces.
-- Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
+- Add privacy classification enforcement, byte-backed blob directory lifecycle integration, CLI/MCP debug commands beyond DB maintenance, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

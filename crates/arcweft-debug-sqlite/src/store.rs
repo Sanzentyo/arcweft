@@ -38,6 +38,46 @@ pub struct LexicalResult {
     pub body: String,
 }
 
+/// Current row counts for the rebuildable debug index.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DebugStoreStats {
+    pub programs: u64,
+    pub sessions: u64,
+    pub script_runs: u64,
+    pub debug_events: u64,
+    pub frames: u64,
+    pub actions: u64,
+    pub captures: u64,
+    pub blobs: u64,
+    pub chunks: u64,
+    pub embeddings: u64,
+    pub rag_queries: u64,
+}
+
+/// Result of a debug-store integrity validation pass.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugStoreValidationReport {
+    pub integrity_messages: Vec<String>,
+    pub foreign_key_violations: Vec<DebugStoreForeignKeyViolation>,
+    pub missing_capture_blob_refs: u64,
+    pub invalid_embedding_blobs: u64,
+}
+
+/// One row returned by `SQLite` `PRAGMA foreign_key_check`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugStoreForeignKeyViolation {
+    pub table: String,
+    pub rowid: i64,
+    pub parent: String,
+    pub fkid: i64,
+}
+
+/// Result of rebuilding derived debug indexes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DebugStoreReindexReport {
+    pub chunks_indexed: u64,
+}
+
 /// Rebuildable `SQLite` index. The connection should be owned by one writer.
 pub struct DebugStore {
     connection: Connection,
@@ -68,6 +108,56 @@ impl DebugStore {
             .connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))?;
         Ok(version)
+    }
+
+    pub fn stats(&self) -> Result<DebugStoreStats, DebugStoreError> {
+        Ok(DebugStoreStats {
+            programs: self.table_count("programs")?,
+            sessions: self.table_count("sessions")?,
+            script_runs: self.table_count("script_runs")?,
+            debug_events: self.table_count("debug_events")?,
+            frames: self.table_count("frames")?,
+            actions: self.table_count("actions")?,
+            captures: self.table_count("captures")?,
+            blobs: self.table_count("blobs")?,
+            chunks: self.table_count("chunks")?,
+            embeddings: self.table_count("embeddings")?,
+            rag_queries: self.table_count("rag_queries")?,
+        })
+    }
+
+    pub fn validate(&self) -> Result<DebugStoreValidationReport, DebugStoreError> {
+        let integrity_messages = self.integrity_messages()?;
+        let foreign_key_violations = self.foreign_key_violations()?;
+        let missing_capture_blob_refs = self.missing_capture_blob_refs()?;
+        let invalid_embedding_blobs = self.invalid_embedding_blobs()?;
+        Ok(DebugStoreValidationReport {
+            integrity_messages,
+            foreign_key_violations,
+            missing_capture_blob_refs,
+            invalid_embedding_blobs,
+        })
+    }
+
+    pub fn reindex(&self) -> Result<DebugStoreReindexReport, DebugStoreError> {
+        self.connection
+            .execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')", [])?;
+        self.connection
+            .execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('optimize')", [])?;
+        Ok(DebugStoreReindexReport {
+            chunks_indexed: self.table_count("chunks")?,
+        })
+    }
+
+    pub fn delete_unreferenced_blobs(&self) -> Result<u64, DebugStoreError> {
+        let deleted = self.connection.execute(
+            "DELETE FROM blobs
+             WHERE NOT EXISTS (
+               SELECT 1 FROM captures WHERE captures.blob_hash = blobs.blob_hash
+             )",
+            [],
+        )?;
+        u64::try_from(deleted).map_err(|_| DebugStoreError::IntegerOverflow("blobs.deleted"))
     }
 
     pub fn upsert_program(
@@ -274,6 +364,75 @@ impl DebugStore {
         self.program_id(hash)?
             .ok_or_else(|| DebugStoreError::ProgramNotIndexed(hash.as_str().to_owned()))
     }
+
+    fn table_count(&self, table: &'static str) -> Result<u64, DebugStoreError> {
+        let count =
+            self.connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })?;
+        u64::try_from(count).map_err(|_| DebugStoreError::IntegerOverflow(table))
+    }
+
+    fn integrity_messages(&self) -> Result<Vec<String>, DebugStoreError> {
+        let mut statement = self.connection.prepare("PRAGMA integrity_check")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let messages = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(messages
+            .into_iter()
+            .filter(|message| message != "ok")
+            .collect())
+    }
+
+    fn foreign_key_violations(
+        &self,
+    ) -> Result<Vec<DebugStoreForeignKeyViolation>, DebugStoreError> {
+        let mut statement = self.connection.prepare("PRAGMA foreign_key_check")?;
+        let rows = statement.query_map([], |row| {
+            Ok(DebugStoreForeignKeyViolation {
+                table: row.get(0)?,
+                rowid: row.get(1)?,
+                parent: row.get(2)?,
+                fkid: row.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DebugStoreError::from)
+    }
+
+    fn missing_capture_blob_refs(&self) -> Result<u64, DebugStoreError> {
+        let count = self.connection.query_row(
+            "SELECT COUNT(*)
+             FROM captures
+             LEFT JOIN blobs ON blobs.blob_hash = captures.blob_hash
+             WHERE captures.blob_hash IS NOT NULL
+               AND blobs.blob_hash IS NULL",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        u64::try_from(count)
+            .map_err(|_| DebugStoreError::IntegerOverflow("captures.missing_blob_refs"))
+    }
+
+    fn invalid_embedding_blobs(&self) -> Result<u64, DebugStoreError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT dimensions, vector_le_f32 FROM embeddings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut invalid = 0_u64;
+        for row in rows {
+            let (dimensions, blob) = row?;
+            let expected_len = usize::try_from(dimensions)
+                .ok()
+                .and_then(|dimensions| dimensions.checked_mul(4));
+            if expected_len != Some(blob.len()) || decode_f32_le(&blob).is_err() {
+                invalid = invalid.saturating_add(1);
+            }
+        }
+        Ok(invalid)
+    }
 }
 
 impl DebugEventSink for DebugStore {
@@ -392,5 +551,77 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert!((loaded[0].values[0] - 0.6).abs() < 0.000_1);
         assert!((loaded[0].values[1] - 0.8).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn reindex_rebuilds_fts_and_reports_chunk_count() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let chunk = DebugChunk {
+            id: ChunkId::new("chunk:reindex"),
+            program_hash: None,
+            source_kind: ChunkSourceKind::Documentation,
+            source_key: "doc".to_owned(),
+            title: "manual".to_owned(),
+            body: "debug store lifecycle".to_owned(),
+            content_hash: hash("b3:content"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        };
+        store.upsert_chunk(&chunk).expect("chunk");
+        let report = store.reindex().expect("reindex");
+        assert_eq!(report.chunks_indexed, 1);
+        let hits = store.lexical_search("lifecycle", 10).expect("search");
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn delete_unreferenced_blobs_keeps_referenced_capture_blobs() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let session = SessionId::new("session.test").expect("session");
+        store
+            .start_session(&session, None, "default", "test", 0)
+            .expect("session row");
+        store
+            .connection
+            .execute(
+                "INSERT INTO blobs(
+                   blob_hash, media_type, byte_len, relative_path, privacy_class,
+                   created_unix_ms, last_access_unix_ms
+                 ) VALUES
+                   ('blob:kept', 'image/png', 1, 'blake3/kept', 'project', 0, 0),
+                   ('blob:deleted', 'image/png', 1, 'blake3/deleted', 'project', 0, 0)",
+                [],
+            )
+            .expect("blob rows");
+        store
+            .connection
+            .execute(
+                "INSERT INTO captures(
+                   capture_id, session_id, sequence, tick, scope_kind, capture_kind,
+                   renderer, composition, blob_hash, resource_uri, width, height,
+                   created_unix_ms
+                 ) VALUES (
+                   'capture:kept', 'session.test', 1, 1, 'viewport', 'color',
+                   'native', 'color', 'blob:kept', 'arcweft://capture', 1, 1, 0
+                 )",
+                [],
+            )
+            .expect("capture row");
+
+        let deleted = store
+            .delete_unreferenced_blobs()
+            .expect("delete unreferenced");
+        assert_eq!(deleted, 1);
+        let stats = store.stats().expect("stats");
+        assert_eq!(stats.blobs, 1);
+        let validation = store.validate().expect("validate");
+        assert_eq!(validation.integrity_messages, Vec::<String>::new());
+        assert_eq!(validation.foreign_key_violations, Vec::new());
+        assert_eq!(validation.missing_capture_blob_refs, 0);
+        assert_eq!(validation.invalid_embedding_blobs, 0);
     }
 }
