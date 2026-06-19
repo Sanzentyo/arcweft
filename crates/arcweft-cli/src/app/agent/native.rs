@@ -82,6 +82,7 @@ use arcweft_render_text::{
 };
 use arcweft_tooling::agent_repl::{
     AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_completions,
+    agent_repl_highlight_tokens,
 };
 
 const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
@@ -2195,7 +2196,7 @@ fn agent_repl_eval_meta(
         ":help" => agent_repl_help(index, input),
         ":observe" => agent_repl_observe(index, input, options, state, adapter_registrars),
         ":actions" => agent_repl_actions(index, input, state),
-        ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" | ":complete" => {
+        ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" | ":complete" | ":highlight" => {
             agent_repl_eval_inspection_meta(
                 index,
                 input,
@@ -2285,6 +2286,7 @@ fn agent_repl_eval_inspection_meta(
         ":bytecode" => agent_repl_bytecode(index, input, rest),
         ":capture" => agent_repl_capture(index, input, rest, options, state, adapter_registrars),
         ":complete" => agent_repl_complete(index, input, rest, state),
+        ":highlight" => agent_repl_highlight(index, input, rest),
         _ => agent_repl_error(
             index,
             input,
@@ -2377,6 +2379,7 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":reset",
                 ":connect current|source PATH|profile ID [--manifest PATH]",
                 ":complete SOURCE_BEFORE_CURSOR",
+                ":highlight SOURCE",
                 ":quit"
             ]
         }),
@@ -2458,6 +2461,26 @@ fn agent_repl_complete(
         serde_json::json!({
             "source": source_before_cursor,
             "items": agent_repl_completions(source_before_cursor, &context),
+        }),
+    )
+}
+
+fn agent_repl_highlight(index: usize, input: &str, source: &str) -> AgentReplCellReport {
+    if source.is_empty() {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":highlight requires source text".to_owned(),
+        );
+    }
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "source": source,
+            "tokens": agent_repl_highlight_tokens(source),
         }),
     )
 }

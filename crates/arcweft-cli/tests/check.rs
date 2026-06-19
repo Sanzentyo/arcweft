@@ -797,7 +797,7 @@ fn agent_repl_connects_source_from_input_session() {
     fs::write(
         &input_path,
         format!(
-            ":help\n:connect source {}\n:observe\n:actions\n:complete :capture layer\n:capture viewport\n:quit\n",
+            ":help\n:connect source {}\n:observe\n:actions\n:complete :capture layer\n:highlight let frame = try observe(@flow.opening)\n:capture viewport\n:quit\n",
             rich_text_showcase_path().display()
         ),
     )
@@ -856,6 +856,21 @@ fn agent_repl_connects_source_from_input_session() {
                 .any(|item| item["kind"] == "layer_id" && item["label"] == "dialogue.rich_text")
         }),
         "completion cell should expose observed layer ids: {complete}"
+    );
+    let highlight = cells
+        .iter()
+        .find(|cell| cell["input"] == ":highlight let frame = try observe(@flow.opening)")
+        .expect("highlight cell is present");
+    assert_eq!(highlight["status"], "ok");
+    assert!(
+        highlight["value"]["tokens"]
+            .as_array()
+            .is_some_and(|tokens| {
+                tokens
+                    .iter()
+                    .any(|token| token["kind"] == "entity_id" && token["text"] == "@flow.opening")
+            }),
+        "highlight cell should expose structured entity-id tokens: {highlight}"
     );
     let capture = cells
         .iter()

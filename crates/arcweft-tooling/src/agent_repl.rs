@@ -47,6 +47,35 @@ pub struct AgentReplCompletionItem {
     pub insert_text: Option<String>,
 }
 
+/// Syntax token class for Agent REPL editor highlighting.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentReplHighlightKind {
+    MetaCommand,
+    Keyword,
+    PreludeFunction,
+    Identifier,
+    EntityId,
+    EffectCapability,
+    String,
+    Number,
+    Boolean,
+    Comment,
+    Punctuation,
+    Operator,
+    Whitespace,
+    Error,
+}
+
+/// One byte-range syntax token independent from a terminal or LSP protocol.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AgentReplHighlightToken {
+    pub start: usize,
+    pub end: usize,
+    pub kind: AgentReplHighlightKind,
+    pub text: String,
+}
+
 /// Returns deterministic Agent REPL completion items for the source before the cursor.
 pub fn agent_repl_completions(
     source_before_cursor: &str,
@@ -59,6 +88,94 @@ pub fn agent_repl_completions(
         agent_source_completion_candidates(source, context)
     };
     dedupe_and_sort(candidates, completion_filter_prefix(source))
+}
+
+/// Returns lightweight byte-range syntax tokens for Agent REPL editor highlighting.
+pub fn agent_repl_highlight_tokens(source: &str) -> Vec<AgentReplHighlightToken> {
+    let mut tokens = Vec::new();
+    let mut offset = 0;
+    while offset < source.len() {
+        let Some(ch) = source[offset..].chars().next() else {
+            break;
+        };
+        if ch.is_whitespace() {
+            offset = push_while(
+                source,
+                offset,
+                AgentReplHighlightKind::Whitespace,
+                char::is_whitespace,
+                &mut tokens,
+            );
+        } else if ch == '#' {
+            push_token(
+                source,
+                offset,
+                source.len(),
+                AgentReplHighlightKind::Comment,
+                &mut tokens,
+            );
+            break;
+        } else if ch == '"' {
+            offset = push_string_token(source, offset, &mut tokens);
+        } else if ch == '@' {
+            offset = push_prefixed_token(
+                source,
+                offset,
+                AgentReplHighlightKind::EntityId,
+                &mut tokens,
+            );
+        } else if ch == '.'
+            && source[offset + ch.len_utf8()..]
+                .chars()
+                .next()
+                .is_some_and(is_identifier_start)
+        {
+            offset = push_prefixed_token(
+                source,
+                offset,
+                AgentReplHighlightKind::EffectCapability,
+                &mut tokens,
+            );
+        } else if ch == ':' && offset == first_non_ws_offset(source) {
+            offset = push_prefixed_token(
+                source,
+                offset,
+                AgentReplHighlightKind::MetaCommand,
+                &mut tokens,
+            );
+        } else if ch.is_ascii_digit() {
+            offset = push_while(
+                source,
+                offset,
+                AgentReplHighlightKind::Number,
+                |ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.'),
+                &mut tokens,
+            );
+        } else if is_identifier_start(ch) {
+            offset = push_identifier_token(source, offset, &mut tokens);
+        } else if is_operator(ch) {
+            let end = offset + ch.len_utf8();
+            push_token(
+                source,
+                offset,
+                end,
+                AgentReplHighlightKind::Operator,
+                &mut tokens,
+            );
+            offset = end;
+        } else {
+            let end = offset + ch.len_utf8();
+            push_token(
+                source,
+                offset,
+                end,
+                AgentReplHighlightKind::Punctuation,
+                &mut tokens,
+            );
+            offset = end;
+        }
+    }
+    tokens
 }
 
 fn meta_completion_candidates(
@@ -218,6 +335,138 @@ fn agent_prelude_completion_candidates() -> Vec<AgentReplCompletionItem> {
         .collect()
 }
 
+fn push_identifier_token(
+    source: &str,
+    start: usize,
+    tokens: &mut Vec<AgentReplHighlightToken>,
+) -> usize {
+    let end = scan_while(source, start, is_identifier_continue);
+    let text = &source[start..end];
+    let kind = if matches!(text, "true" | "false") {
+        AgentReplHighlightKind::Boolean
+    } else if agent_keywords().contains(&text) {
+        AgentReplHighlightKind::Keyword
+    } else if agent_prelude_functions().contains(&text) {
+        AgentReplHighlightKind::PreludeFunction
+    } else {
+        AgentReplHighlightKind::Identifier
+    };
+    push_token(source, start, end, kind, tokens);
+    end
+}
+
+fn push_string_token(
+    source: &str,
+    start: usize,
+    tokens: &mut Vec<AgentReplHighlightToken>,
+) -> usize {
+    let mut escaped = false;
+    for (relative, ch) in source[start + 1..].char_indices() {
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            let end = start + 1 + relative + ch.len_utf8();
+            push_token(source, start, end, AgentReplHighlightKind::String, tokens);
+            return end;
+        }
+    }
+    push_token(
+        source,
+        start,
+        source.len(),
+        AgentReplHighlightKind::Error,
+        tokens,
+    );
+    source.len()
+}
+
+fn push_prefixed_token(
+    source: &str,
+    start: usize,
+    kind: AgentReplHighlightKind,
+    tokens: &mut Vec<AgentReplHighlightToken>,
+) -> usize {
+    let prefix_len = source[start..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or_default();
+    let end = scan_while(source, start + prefix_len, |ch| {
+        is_identifier_continue(ch) || matches!(ch, '.' | '-' | '/')
+    });
+    push_token(source, start, end.max(start + prefix_len), kind, tokens);
+    end.max(start + prefix_len)
+}
+
+fn push_while(
+    source: &str,
+    start: usize,
+    kind: AgentReplHighlightKind,
+    mut predicate: impl FnMut(char) -> bool,
+    tokens: &mut Vec<AgentReplHighlightToken>,
+) -> usize {
+    let end = scan_while(source, start, &mut predicate);
+    push_token(source, start, end, kind, tokens);
+    end
+}
+
+fn push_token(
+    source: &str,
+    start: usize,
+    end: usize,
+    kind: AgentReplHighlightKind,
+    tokens: &mut Vec<AgentReplHighlightToken>,
+) {
+    tokens.push(AgentReplHighlightToken {
+        start,
+        end,
+        kind,
+        text: source[start..end].to_owned(),
+    });
+}
+
+fn scan_while(source: &str, start: usize, mut predicate: impl FnMut(char) -> bool) -> usize {
+    let mut end = start;
+    for ch in source[start..].chars() {
+        if !predicate(ch) {
+            break;
+        }
+        end += ch.len_utf8();
+    }
+    end
+}
+
+fn first_non_ws_offset(source: &str) -> usize {
+    source
+        .char_indices()
+        .find_map(|(offset, ch)| (!ch.is_whitespace()).then_some(offset))
+        .unwrap_or(source.len())
+}
+
+fn is_identifier_start(ch: char) -> bool {
+    ch == '_' || ch.is_alphabetic()
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
+}
+
+fn is_operator(ch: char) -> bool {
+    matches!(
+        ch,
+        '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '&' | '|'
+    )
+}
+
+fn agent_keywords() -> Vec<&'static str> {
+    vec![
+        "agent", "effects", "let", "mut", "return", "try", "if", "else", "match", "for", "in",
+        "while", "await", "break", "continue",
+    ]
+}
+
 fn agent_repl_meta_commands() -> Vec<&'static str> {
     vec![
         ":help",
@@ -238,6 +487,7 @@ fn agent_repl_meta_commands() -> Vec<&'static str> {
         ":reset",
         ":connect",
         ":complete",
+        ":highlight",
         ":quit",
     ]
 }
@@ -357,5 +607,36 @@ mod tests {
         assert_eq!(layers[0].kind, AgentReplCompletionKind::LayerId);
         assert_eq!(objects[0].label, "object.dialogue.0.0");
         assert_eq!(objects[0].kind, AgentReplCompletionKind::ObjectId);
+    }
+
+    #[test]
+    fn repl_highlight_tokens_classify_agent_fragment_surface() {
+        let tokens = agent_repl_highlight_tokens("let frame = try observe(@flow.opening)");
+
+        assert!(
+            tokens.iter().any(|token| {
+                token.kind == AgentReplHighlightKind::Keyword && token.text == "let"
+            })
+        );
+        assert!(tokens.iter().any(|token| {
+            token.kind == AgentReplHighlightKind::PreludeFunction && token.text == "observe"
+        }));
+        assert!(tokens.iter().any(|token| {
+            token.kind == AgentReplHighlightKind::EntityId && token.text == "@flow.opening"
+        }));
+    }
+
+    #[test]
+    fn repl_highlight_tokens_classify_meta_command_and_unclosed_string() {
+        let meta = agent_repl_highlight_tokens(":capture layer");
+        let broken = agent_repl_highlight_tokens("note(\"unterminated");
+
+        assert_eq!(meta[0].kind, AgentReplHighlightKind::MetaCommand);
+        assert_eq!(meta[0].text, ":capture");
+        assert!(
+            broken
+                .iter()
+                .any(|token| token.kind == AgentReplHighlightKind::Error)
+        );
     }
 }

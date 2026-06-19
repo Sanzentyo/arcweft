@@ -4,5 +4,6 @@
 :observe
 :actions
 :complete :capture layer
+:highlight let frame = try observe(@flow.opening)
 :capture viewport
 :quit
