@@ -22584,6 +22584,86 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     );
 }
 
+#[test]
+fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let observe =
+        observe_image_animation_sample_flow_at(&source_path, "image_sprite_overlay", "0.15");
+    let foreground_layer = observe["layers"]
+        .as_array()
+        .expect("image animation sample reports layers")
+        .iter()
+        .find(|layer| layer["id"] == "layer.foreground")
+        .expect("foreground image layer is observed");
+    let raw_uri = foreground_layer["capture_refs"]["captures"]
+        .as_array()
+        .expect("foreground layer reports capture refs")
+        .iter()
+        .find(|capture| {
+            capture["kind"] == "color" && capture["mime_type"] == "application/octet-stream"
+        })
+        .and_then(|capture| capture["uri"].as_str())
+        .expect("foreground layer has raw color capture ref");
+
+    let resource = read_image_animation_sample_resource_at(
+        &source_path,
+        "image_sprite_overlay",
+        "0.15",
+        raw_uri,
+    );
+
+    assert_eq!(resource["kind"], "image");
+    assert_eq!(resource["uri"], raw_uri);
+    assert_eq!(resource["image"]["renderer"], "native");
+    assert_eq!(resource["image"]["scope"]["kind"], "layer");
+    assert_eq!(resource["image"]["scope"]["id"], "layer.foreground");
+    assert_eq!(resource["image"]["composition"], "framebuffer_crop");
+    assert_eq!(resource["image"]["width"], 360);
+    assert_eq!(resource["image"]["height"], 180);
+    assert_eq!(resource["image"]["crop_origin"]["x"], 120);
+    assert_eq!(resource["image"]["crop_origin"]["y"], 84);
+    assert_eq!(resource["image"]["content_pixels"], 64_800);
+    assert!(resource["image"].get("object").is_none());
+
+    let bytes =
+        raw_bytes_from_agent_image_resource(&resource, "animated image layer read-uri resource");
+    assert_eq!(bytes.len(), 360 * 180 * 4);
+    assert_eq!(
+        &bytes[..4],
+        &[176, 131, 11, 127],
+        "layer read-uri should use the same pinned animated image frame as object capture"
+    );
+}
+
+#[test]
+fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let hit =
+        hit_test_image_animation_sample_at(&source_path, "image_sprite_overlay", "0.15", 300, 174);
+
+    assert_eq!(hit["status"], "ok");
+    assert_eq!(hit["top_object_id"], "object.image.layer.foreground.0.1");
+    let top_hit = &hit["hits"][0];
+    assert_eq!(top_hit["object_id"], "object.image.layer.foreground.0.1");
+    assert_eq!(top_hit["layer"], "layer.hit");
+    assert_eq!(top_hit["object"]["layer"], "layer.foreground");
+    assert_eq!(top_hit["region"]["kind"], "object_proxy");
+    assert_eq!(top_hit["region"]["proxy_id"], "proxy.pulse_sprite.hotspot");
+    assert_eq!(top_hit["region"]["proxy_type"], "PulseSpriteHotspot");
+    assert_eq!(top_hit["region"]["proxy_role"], "inspect");
+    assert_eq!(top_hit["region"]["proxy_layer"], "layer.hit");
+    assert_eq!(top_hit["region"]["depth"], 2600);
+    assert_eq!(
+        top_hit["region"]["proxy_params"]["param.channel"]["value"],
+        "preview"
+    );
+    let image_ref = &top_hit["object"]["image_ref"];
+    assert_eq!(image_ref["asset"], "asset.bg.pulse");
+    assert_eq!(image_ref["frame_index"], 1);
+    assert_eq!(image_ref["local_time_millis"], 150);
+    assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
+}
+
 fn observe_image_animation_sample_flow_at(
     path: &Path,
     flow: &str,
@@ -22637,6 +22717,38 @@ fn read_image_animation_sample_resource_at(
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("image animation sample resource is JSON")
+}
+
+fn hit_test_image_animation_sample_at(
+    path: &Path,
+    flow: &str,
+    capture_time: &str,
+    x: u32,
+    y: u32,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("hit-test")
+        .arg(path)
+        .arg("--flow")
+        .arg(flow)
+        .arg("--steps")
+        .arg("2")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--x")
+        .arg(x.to_string())
+        .arg("--y")
+        .arg(y.to_string())
+        .arg("--json")
+        .output()
+        .expect("arcw agent hit-test runs image animation sample");
+    assert!(
+        output.status.success(),
+        "image animation sample hit-test should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("image animation sample hit-test is JSON")
 }
 
 #[test]
