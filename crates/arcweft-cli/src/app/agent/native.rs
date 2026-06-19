@@ -62,7 +62,7 @@ use arcweft_debug_model::{
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
 };
-use arcweft_debug_sqlite::store::{ChunkSearchResult, DebugStore};
+use arcweft_debug_sqlite::store::{ChunkSearchResult, DebugStore, DebugTimelineEvent};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
 use arcweft_lang_syntax::ast::{
@@ -620,6 +620,62 @@ mod tests {
                     .as_array()
                     .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
         }));
+        assert_eq!(state.rag_context_packs.len(), 1);
+    }
+
+    #[test]
+    fn agent_mcp_rag_explain_and_context_read_use_cached_pack() {
+        let mut report = test_agent_observation_report(None);
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "info".to_owned(),
+            message: "opening route debug context body".to_owned(),
+            fields: Vec::new(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            ..AgentMcpState::default()
+        };
+        let rag_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "opening route debug",
+                "limit": 4,
+                "max_context_bytes": 4096
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("RAG query succeeds");
+        let pack = mcp_text_json(&rag_result);
+        let chunk_id = pack["items"][0]["chunk_id"]
+            .as_str()
+            .expect("first item chunk id")
+            .to_owned();
+
+        let explain_result =
+            agent_mcp_call_rag_explain(&serde_json::json!({}), &state).expect("explain succeeds");
+        let explain = mcp_text_json(&explain_result);
+        assert_eq!(
+            explain["query"]["text"],
+            serde_json::json!("opening route debug")
+        );
+        assert!(explain["items"][0].get("body").is_none());
+        assert!(
+            explain["items"][0]["body_bytes"]
+                .as_u64()
+                .is_some_and(|bytes| bytes > 0)
+        );
+
+        let read_result = agent_mcp_call_rag_context_read(
+            &serde_json::json!({
+                "chunk_id": chunk_id,
+                "max_bytes": 12
+            }),
+            &state,
+        )
+        .expect("context read succeeds");
+        let read = mcp_text_json(&read_result);
+        assert_eq!(read["returned_bytes"], serde_json::json!(12));
+        assert_eq!(read["truncated"], serde_json::json!(true));
     }
 
     #[test]
@@ -2992,6 +3048,7 @@ fn agent_repl_query(
         image_frames: AgentImageFrameStore::default(),
         capture_resources: Vec::new(),
         trace_resources: state.trace_resources.clone(),
+        rag_context_packs: Vec::new(),
         native_capture_session: None,
         runtime: None,
         observe_options: None,
@@ -4062,6 +4119,7 @@ struct AgentMcpState {
     image_frames: AgentImageFrameStore,
     capture_resources: Vec<AgentResource>,
     trace_resources: Vec<AgentResource>,
+    rag_context_packs: Vec<RagContextPack>,
     native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
     runtime: Option<NativeAgentRuntimeState>,
     observe_options: Option<AgentObserveOptions>,
@@ -4278,6 +4336,21 @@ fn agent_mcp_tool_call(
             let tool = agent_mcp_call_rag_query(&arguments, state, adapter_registrars)?;
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP RAG result: {error}"))
+        }
+        "arcweft.rag.explain" => {
+            let tool = agent_mcp_call_rag_explain(&arguments, state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP RAG explanation: {error}"))
+        }
+        "arcweft.rag.context.read" => {
+            let tool = agent_mcp_call_rag_context_read(&arguments, state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP RAG context item: {error}"))
+        }
+        "arcweft.debug.session.timeline" => {
+            let tool = agent_mcp_call_debug_session_timeline(&arguments)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP debug timeline: {error}"))
         }
         "arcweft.trace.read" => {
             let tool = agent_mcp_call_trace_read(&arguments, state)?;
@@ -5164,6 +5237,53 @@ fn agent_mcp_debug_search_hit_json(result: &ChunkSearchResult) -> serde_json::Va
     })
 }
 
+fn agent_mcp_call_debug_session_timeline(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(50);
+    if limit == 0 {
+        return Err("arcweft.debug.session.timeline argument limit must be at least 1".to_owned());
+    }
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.debug.session.timeline")?;
+    let session_id = agent_mcp_non_empty_string_argument(arguments, "session_id");
+    let run_id = agent_mcp_non_empty_string_argument(arguments, "run_id");
+    let path = arguments
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .filter(|path| !path.trim().is_empty())
+        .unwrap_or(".arcweft/cache/agent-debug.sqlite3");
+    let store = DebugStore::open(path).map_err(|error| {
+        format!("arcweft.debug.session.timeline failed to open `{path}`: {error}")
+    })?;
+    let events = store
+        .session_timeline_with_max_privacy(session_id, run_id, limit, max_privacy)
+        .map_err(|error| {
+            format!("arcweft.debug.session.timeline failed to read `{path}`: {error}")
+        })?;
+    let value = serde_json::json!({
+        "path": path,
+        "session_id": session_id,
+        "run_id": run_id,
+        "limit": limit,
+        "max_privacy": max_privacy.as_str(),
+        "events": events.iter().map(agent_mcp_debug_timeline_event_json).collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug session timeline")
+}
+
+fn agent_mcp_debug_timeline_event_json(event: &DebugTimelineEvent) -> serde_json::Value {
+    serde_json::json!({
+        "session_id": &event.session_id,
+        "run_id": &event.run_id,
+        "sequence": event.sequence,
+        "tick": event.tick,
+        "kind": &event.event_kind,
+        "privacy": event.privacy.as_str(),
+        "payload": &event.payload,
+        "created_unix_ms": event.created_unix_ms,
+    })
+}
+
 fn agent_mcp_debug_search_model(
     arguments: &serde_json::Value,
     dimensions: usize,
@@ -5310,9 +5430,102 @@ fn agent_mcp_call_rag_query(
         max_context_bytes,
         max_privacy,
     )?;
-    let value = serde_json::to_value(pack)
+    let value = serde_json::to_value(&pack)
         .map_err(|error| format!("failed to serialize Agent RAG context pack: {error}"))?;
+    state.rag_context_packs.push(pack);
     agent_mcp_json_tool_result(&value, "RAG context pack")
+}
+
+fn agent_mcp_call_rag_explain(
+    arguments: &serde_json::Value,
+    state: &AgentMcpState,
+) -> Result<McpCallToolResult, String> {
+    let pack = agent_mcp_cached_rag_context_pack(arguments, state, "arcweft.rag.explain")?;
+    let items = pack
+        .items
+        .iter()
+        .map(agent_mcp_rag_context_item_explanation)
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "schema_version": pack.schema_version,
+        "query": &pack.query,
+        "item_count": pack.items.len(),
+        "truncated": pack.truncated,
+        "items": items,
+    });
+    agent_mcp_json_tool_result(&value, "RAG explanation")
+}
+
+fn agent_mcp_call_rag_context_read(
+    arguments: &serde_json::Value,
+    state: &AgentMcpState,
+) -> Result<McpCallToolResult, String> {
+    let pack = agent_mcp_cached_rag_context_pack(arguments, state, "arcweft.rag.context.read")?;
+    let chunk_id = agent_mcp_non_empty_string_argument(arguments, "chunk_id")
+        .ok_or_else(|| "arcweft.rag.context.read requires arguments.chunk_id".to_owned())?;
+    let max_bytes = agent_mcp_usize_argument(arguments, "max_bytes").unwrap_or(8192);
+    if max_bytes == 0 {
+        return Err("arcweft.rag.context.read argument max_bytes must be at least 1".to_owned());
+    }
+    let item = pack
+        .items
+        .iter()
+        .find(|item| item.chunk_id.as_str() == chunk_id)
+        .ok_or_else(|| {
+            format!(
+                "arcweft.rag.context.read could not find chunk_id `{chunk_id}` in cached query {}",
+                pack.query.query_id
+            )
+        })?;
+    let (body, body_truncated) = agent_mcp_truncate_utf8(&item.body, max_bytes);
+    let value = serde_json::json!({
+        "query_id": &pack.query.query_id,
+        "chunk_id": item.chunk_id.as_str(),
+        "kind": &item.kind,
+        "title": &item.title,
+        "body": body,
+        "truncated": body_truncated,
+        "body_bytes": item.body.len(),
+        "returned_bytes": body.len(),
+        "fused_score": item.fused_score,
+        "channels": &item.channels,
+        "entity_ids": &item.entity_ids,
+        "source_anchor": &item.source_anchor,
+    });
+    agent_mcp_json_tool_result(&value, "RAG context item")
+}
+
+fn agent_mcp_cached_rag_context_pack<'a>(
+    arguments: &serde_json::Value,
+    state: &'a AgentMcpState,
+    tool: &str,
+) -> Result<&'a RagContextPack, String> {
+    let query_id = agent_mcp_non_empty_string_argument(arguments, "query_id");
+    if let Some(query_id) = query_id {
+        return state
+            .rag_context_packs
+            .iter()
+            .rev()
+            .find(|pack| pack.query.query_id == query_id)
+            .ok_or_else(|| format!("{tool} could not find cached query_id `{query_id}`"));
+    }
+    state
+        .rag_context_packs
+        .last()
+        .ok_or_else(|| format!("{tool} requires a prior arcweft.rag.query call"))
+}
+
+fn agent_mcp_rag_context_item_explanation(item: &RagContextItem) -> serde_json::Value {
+    serde_json::json!({
+        "chunk_id": item.chunk_id.as_str(),
+        "kind": &item.kind,
+        "title": &item.title,
+        "body_bytes": item.body.len(),
+        "fused_score": item.fused_score,
+        "channels": &item.channels,
+        "entity_ids": &item.entity_ids,
+        "source_anchor": &item.source_anchor,
+    })
 }
 
 #[derive(Clone)]

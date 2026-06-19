@@ -51,6 +51,19 @@ pub struct ChunkSearchResult {
     pub privacy: PrivacyClass,
 }
 
+/// One event row returned from the debug-store session timeline.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DebugTimelineEvent {
+    pub session_id: String,
+    pub run_id: Option<String>,
+    pub sequence: u64,
+    pub tick: Option<u64>,
+    pub event_kind: String,
+    pub payload: serde_json::Value,
+    pub privacy: PrivacyClass,
+    pub created_unix_ms: i64,
+}
+
 /// Current row counts for the rebuildable debug index.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DebugStoreStats {
@@ -776,6 +789,67 @@ impl DebugStore {
             .collect()
     }
 
+    pub fn session_timeline_with_max_privacy(
+        &self,
+        session_id: Option<&str>,
+        run_id: Option<&str>,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<DebugTimelineEvent>, DebugStoreError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT session_id, run_id, sequence, tick, event_kind, payload_json, created_unix_ms
+             FROM debug_events
+             WHERE (?1 IS NULL OR session_id = ?1)
+               AND (?2 IS NULL OR run_id = ?2)
+             ORDER BY created_unix_ms, sequence",
+        )?;
+        let rows = statement.query_map(params![session_id, run_id], |row| {
+            let payload_text: String = row.get(5)?;
+            let payload =
+                serde_json::from_str::<serde_json::Value>(&payload_text).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        5,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            let sequence = row.get::<_, i64>(2)?;
+            let tick = row.get::<_, Option<i64>>(3)?;
+            let created_unix_ms = row.get::<_, i64>(6)?;
+            Ok(DebugTimelineEvent {
+                session_id: row.get(0)?,
+                run_id: row.get(1)?,
+                sequence: u64::try_from(sequence)
+                    .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, sequence))?,
+                tick: tick
+                    .map(|value| {
+                        u64::try_from(value)
+                            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(3, value))
+                    })
+                    .transpose()?,
+                event_kind: row.get(4)?,
+                privacy: debug_event_payload_privacy(&payload),
+                payload,
+                created_unix_ms,
+            })
+        })?;
+        let mut events = Vec::new();
+        for row in rows {
+            let event = row?;
+            if !event.privacy.is_allowed_by(max_privacy) {
+                continue;
+            }
+            events.push(event);
+            if events.len() >= limit {
+                break;
+            }
+        }
+        Ok(events)
+    }
+
     pub fn upsert_embedding(&self, embedding: &StoredEmbedding) -> Result<(), DebugStoreError> {
         if embedding.values.len() != embedding.model.dimensions as usize {
             return Err(DebugStoreError::StoredDimensionMismatch);
@@ -1024,6 +1098,25 @@ fn quote_fts_literal(query: &str) -> String {
     format!("\"{}\"", query.replace('"', "\"\""))
 }
 
+fn debug_event_payload_privacy(payload: &serde_json::Value) -> PrivacyClass {
+    payload
+        .get("privacy_class")
+        .or_else(|| payload.get("privacy"))
+        .or_else(|| {
+            payload
+                .get("payload")
+                .and_then(|value| value.get("privacy_class"))
+        })
+        .or_else(|| {
+            payload
+                .get("payload")
+                .and_then(|value| value.get("privacy"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .and_then(PrivacyClass::parse)
+        .unwrap_or(PrivacyClass::Project)
+}
+
 fn sqlite_i64(value: u64, column: &'static str) -> Result<i64, DebugStoreError> {
     i64::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(column))
 }
@@ -1131,9 +1224,11 @@ mod tests {
     use arcweft_debug_model::{
         chunk::{ChunkSourceKind, PrivacyClass},
         embedding::StoredEmbedding,
+        event::DebugEventKind,
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
         repl::DebugReplCell,
+        sink::DebugEventSink,
     };
     use std::collections::BTreeMap;
 
@@ -1384,6 +1479,49 @@ mod tests {
         );
         assert_eq!(project_hits[0].hit.channel, SearchChannel::History);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
+    }
+
+    #[test]
+    fn session_timeline_filters_privacy_before_limit() {
+        let mut store = DebugStore::open_in_memory().expect("open store");
+        let session_id = SessionId::new("session.timeline").expect("session id");
+        store
+            .start_session(&session_id, None, "test", "in-memory", 0)
+            .expect("session");
+        for (sequence, privacy, message) in [
+            (1, "secret", "hidden event"),
+            (2, "public", "visible event"),
+        ] {
+            store
+                .append(&DebugEvent {
+                    schema_version: 1,
+                    session_id: session_id.clone(),
+                    run_id: None,
+                    sequence,
+                    tick: Some(sequence + 10),
+                    kind: DebugEventKind::Diagnostic,
+                    payload: serde_json::json!({
+                        "privacy_class": privacy,
+                        "message": message,
+                    }),
+                    created_unix_ms: i64::try_from(sequence).expect("test sequence fits i64"),
+                })
+                .expect("append event");
+        }
+
+        let events = store
+            .session_timeline_with_max_privacy(
+                Some(session_id.as_str()),
+                None,
+                1,
+                PrivacyClass::Public,
+            )
+            .expect("timeline");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sequence, 2);
+        assert_eq!(events[0].privacy, PrivacyClass::Public);
+        assert_eq!(events[0].payload["message"], "visible event");
     }
 
     #[test]

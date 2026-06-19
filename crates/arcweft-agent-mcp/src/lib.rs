@@ -151,6 +151,9 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_log_query_tool_descriptor(),
         agent_debug_search_tool_descriptor(),
         agent_rag_query_tool_descriptor(),
+        agent_rag_explain_tool_descriptor(),
+        agent_rag_context_read_tool_descriptor(),
+        agent_debug_session_timeline_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -580,6 +583,87 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
                     "enum": ["public", "project", "sensitive", "secret"],
                     "default": "project",
                     "description": "Highest privacy class allowed in returned hits."
+                }
+            }
+        }),
+    }
+}
+
+fn agent_rag_explain_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.rag.explain".to_owned(),
+        title: Some("Explain Arcweft RAG Context".to_owned()),
+        description: "Explains the latest cached RagContextPack, or a cached pack selected by query_id, without inlining large item bodies.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query_id": {
+                    "type": "string",
+                    "description": "Optional cached RAG query id. Defaults to the latest arcweft.rag.query result."
+                }
+            }
+        }),
+    }
+}
+
+fn agent_rag_context_read_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.rag.context.read".to_owned(),
+        title: Some("Read Arcweft RAG Context Item".to_owned()),
+        description: "Reads one selected context item body from a cached RagContextPack by chunk_id, with an explicit byte cap.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query_id": {
+                    "type": "string",
+                    "description": "Optional cached RAG query id. Defaults to the latest arcweft.rag.query result."
+                },
+                "chunk_id": {
+                    "type": "string",
+                    "description": "RAG context chunk id returned by arcweft.rag.query or arcweft.rag.explain."
+                },
+                "max_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 8192,
+                    "description": "Maximum UTF-8 bytes of the item body to return."
+                }
+            },
+            "required": ["chunk_id"]
+        }),
+    }
+}
+
+fn agent_debug_session_timeline_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.session.timeline".to_owned(),
+        title: Some("Read Arcweft Debug Timeline".to_owned()),
+        description: "Reads debug-store event timeline rows from the rebuildable SQLite cache with optional session/run filters and privacy filtering before limit.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional Agent Debug Bus session id filter."
+                },
+                "run_id": {
+                    "type": "string",
+                    "description": "Optional Agent Script run id filter."
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 50
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed in returned event payloads."
                 }
             }
         }),
@@ -1582,6 +1666,17 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "arcweft.signal_get"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.log_query"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.rag.query"));
+        assert!(tools.iter().any(|tool| tool.name == "arcweft.rag.explain"));
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name == "arcweft.rag.context.read")
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name == "arcweft.debug.session.timeline")
+        );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -1792,6 +1887,54 @@ mod tests {
         );
         assert_eq!(
             rag.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+    }
+
+    #[test]
+    fn rag_context_and_timeline_tool_schemas_are_described() {
+        let tools = agent_tool_descriptors();
+        let rag_explain = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.rag.explain")
+            .expect("rag explain tool is described");
+        assert_eq!(
+            rag_explain.input_schema["properties"]["query_id"]["type"],
+            "string"
+        );
+
+        let context_read = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.rag.context.read")
+            .expect("rag context read tool is described");
+        assert_eq!(
+            context_read.input_schema["required"],
+            serde_json::json!(["chunk_id"])
+        );
+        assert_eq!(
+            context_read.input_schema["properties"]["max_bytes"]["minimum"],
+            1
+        );
+
+        let timeline = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.session.timeline")
+            .expect("debug timeline tool is described");
+        assert_eq!(
+            timeline.input_schema["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            timeline.input_schema["properties"]["session_id"]["type"],
+            "string"
+        );
+        assert_eq!(
+            timeline.input_schema["properties"]["run_id"]["type"],
+            "string"
+        );
+        assert_eq!(timeline.input_schema["properties"]["limit"]["minimum"], 1);
+        assert_eq!(
+            timeline.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
         );
     }
