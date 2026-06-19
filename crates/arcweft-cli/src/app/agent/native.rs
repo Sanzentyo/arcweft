@@ -681,6 +681,97 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_rag_query_persists_observation_context_to_debug_store() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-query-persist-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let mut report = test_agent_observation_report(None);
+        report.logs.push(arcweft_core::effect::RuntimeLog {
+            level: "info".to_owned(),
+            message: "persisted observation route context body".to_owned(),
+            fields: Vec::new(),
+        });
+        let mut state = AgentMcpState {
+            report: Some(report),
+            ..AgentMcpState::default()
+        };
+        let query_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "persisted observation route",
+                "path": db_path.display().to_string(),
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("persisted MCP RAG query succeeds");
+        let pack = mcp_text_json(&query_result);
+        let query_id = pack["query"]["query_id"]
+            .as_str()
+            .expect("query id")
+            .to_owned();
+        let chunk_id = pack["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|item| {
+                item["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains("persisted observation route context body"))
+            })
+            .and_then(|item| item["chunk_id"].as_str())
+            .expect("persisted observation chunk id")
+            .to_owned();
+        assert_eq!(state.rag_context_packs.len(), 1);
+        let store = DebugStore::open(&db_path).expect("debug store opens");
+        let db_counts = store.stats().expect("debug stats");
+        assert_eq!(db_counts.rag_queries, 1);
+        assert!(db_counts.chunks > 0);
+        drop(store);
+
+        let empty_state = AgentMcpState::default();
+        let explain_result = agent_mcp_call_rag_explain(
+            &serde_json::json!({
+                "query_id": query_id,
+                "path": db_path.display().to_string(),
+                "max_privacy": "project"
+            }),
+            &empty_state,
+        )
+        .expect("persisted MCP RAG explain succeeds");
+        let explain = mcp_text_json(&explain_result);
+        assert_eq!(explain["source"], serde_json::json!("debug_store"));
+        assert_eq!(
+            explain["query"]["text"],
+            serde_json::json!("persisted observation route")
+        );
+
+        let read_result = agent_mcp_call_rag_context_read(
+            &serde_json::json!({
+                "query_id": explain["query"]["query_id"].as_str().unwrap(),
+                "chunk_id": chunk_id,
+                "path": db_path.display().to_string(),
+                "max_privacy": "project",
+                "max_bytes": 4096
+            }),
+            &empty_state,
+        )
+        .expect("persisted MCP RAG context read succeeds");
+        let read = mcp_text_json(&read_result);
+        assert!(
+            read["body"]
+                .as_str()
+                .is_some_and(|body| body.contains("persisted observation route context body"))
+        );
+        assert_eq!(read["truncated"], serde_json::json!(false));
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
     fn agent_mcp_rag_explain_and_context_read_use_persisted_audit() {
         let db_path = std::env::temp_dir().join(format!(
             "arcweft-agent-mcp-rag-audit-{}.sqlite3",
@@ -5522,7 +5613,7 @@ fn agent_mcp_call_rag_query(
     let roots = agent_mcp_rag_roots(arguments)?;
     let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
         .unwrap_or(PrivacyClass::Project);
-    let pack = agent_mcp_rag_context_pack(
+    let result = agent_mcp_rag_query_result(
         state,
         query_text,
         roots,
@@ -5531,6 +5622,10 @@ fn agent_mcp_call_rag_query(
         max_context_bytes,
         max_privacy,
     )?;
+    if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
+        persist_agent_mcp_rag_query_result(path, &result)?;
+    }
+    let pack = result.pack;
     let value = serde_json::to_value(&pack)
         .map_err(|error| format!("failed to serialize Agent RAG context pack: {error}"))?;
     state.rag_context_packs.push(pack);
@@ -5695,6 +5790,11 @@ struct AgentMcpRagCandidate {
     preferred_channel: SearchChannel,
 }
 
+struct AgentMcpRagQueryResult {
+    pack: RagContextPack,
+    candidates: Vec<AgentMcpRagCandidate>,
+}
+
 fn agent_mcp_rag_context_pack(
     state: &AgentMcpState,
     query_text: &str,
@@ -5704,17 +5804,40 @@ fn agent_mcp_rag_context_pack(
     max_context_bytes: usize,
     max_privacy: PrivacyClass,
 ) -> Result<RagContextPack, String> {
-    let candidates = agent_mcp_rag_candidates(state)?
-        .into_iter()
+    agent_mcp_rag_query_result(
+        state,
+        query_text,
+        roots,
+        graph_depth,
+        limit,
+        max_context_bytes,
+        max_privacy,
+    )
+    .map(|result| result.pack)
+}
+
+fn agent_mcp_rag_query_result(
+    state: &AgentMcpState,
+    query_text: &str,
+    roots: Vec<PublicId>,
+    graph_depth: u32,
+    limit: usize,
+    max_context_bytes: usize,
+    max_privacy: PrivacyClass,
+) -> Result<AgentMcpRagQueryResult, String> {
+    let candidates = agent_mcp_rag_candidates(state)?;
+    let query_candidates = candidates
+        .iter()
         .filter(|candidate| candidate.chunk.privacy.is_allowed_by(max_privacy))
+        .cloned()
         .collect::<Vec<_>>();
-    if candidates.is_empty() {
+    if query_candidates.is_empty() {
         return Err(
             "arcweft.rag.query found no context allowed by max_privacy; observe a source/profile, read a trace, or raise arguments.max_privacy"
                 .to_owned(),
         );
     }
-    let program_hash = agent_mcp_rag_program_hash(state, &candidates)?;
+    let program_hash = agent_mcp_rag_program_hash(state, &query_candidates)?;
     let query_id_seed = format!(
         "{}:{}:{graph_depth}:{limit}:{max_context_bytes}:{}",
         query_text,
@@ -5730,8 +5853,23 @@ fn agent_mcp_rag_context_pack(
         limit,
         max_context_bytes,
     };
+    let pack = agent_mcp_rag_context_pack_from_candidates(
+        query,
+        &query_candidates,
+        limit,
+        max_context_bytes,
+    );
+    Ok(AgentMcpRagQueryResult { pack, candidates })
+}
+
+fn agent_mcp_rag_context_pack_from_candidates(
+    query: RagQuery,
+    candidates: &[AgentMcpRagCandidate],
+    limit: usize,
+    max_context_bytes: usize,
+) -> RagContextPack {
     let fused = reciprocal_rank_fusion(
-        &agent_mcp_rag_ranked_lists(&candidates, &query),
+        &agent_mcp_rag_ranked_lists(candidates, &query),
         &FusionConfig::default(),
         limit,
     );
@@ -5768,12 +5906,45 @@ fn agent_mcp_rag_context_pack(
             break;
         }
     }
-    Ok(RagContextPack {
+    RagContextPack {
         schema_version: 1,
         query,
         items,
         truncated,
-    })
+    }
+}
+
+fn persist_agent_mcp_rag_query_result(
+    path: &str,
+    result: &AgentMcpRagQueryResult,
+) -> Result<(), String> {
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.rag.query failed to open `{path}`: {error}"))?;
+    store
+        .upsert_program(&result.pack.query.program_hash, None, None, 0)
+        .map_err(|error| {
+            format!("arcweft.rag.query failed to index program in `{path}`: {error}")
+        })?;
+    for candidate in &result.candidates {
+        let mut chunk = candidate.chunk.clone();
+        chunk.program_hash = Some(result.pack.query.program_hash.clone());
+        store.upsert_chunk(&chunk).map_err(|error| {
+            format!("arcweft.rag.query failed to index context chunk in `{path}`: {error}")
+        })?;
+    }
+    store
+        .record_rag_context_pack(&result.pack, None, None, None, "selected", 0)
+        .map_err(|error| {
+            format!("arcweft.rag.query failed to record RAG audit in `{path}`: {error}")
+        })
+}
+
+fn agent_mcp_optional_debug_store_path(arguments: &serde_json::Value) -> Option<&str> {
+    arguments
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
 }
 
 fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCandidate>, String> {

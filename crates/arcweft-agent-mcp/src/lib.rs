@@ -530,6 +530,10 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
                     "enum": ["public", "project", "sensitive", "secret"],
                     "default": "project",
                     "description": "Highest privacy class allowed in returned context items."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional filesystem path to an Arcweft debug SQLite database. When supplied, the query upserts MCP-derived chunks and records the selected RAG audit for later explain/context.read."
                 }
             },
             "required": ["query"]
