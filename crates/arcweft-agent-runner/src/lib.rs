@@ -559,6 +559,7 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
         "capture" => Ok(AgentHostRequest::Capture(Box::new(capture_request(
             &call.args,
         )?))),
+        "wait" => Ok(AgentHostRequest::Wait(Box::new(wait_request(&call.args)?))),
         "rag.query" => Ok(AgentHostRequest::RagQuery(Box::new(rag_request(
             &call.args,
         )?))),
@@ -1175,6 +1176,156 @@ fn rag_request(args: &[String]) -> Result<RagRequest, String> {
     Ok(request)
 }
 
+fn wait_request(args: &[String]) -> Result<WaitRequest, String> {
+    let predicate = args
+        .first()
+        .ok_or_else(|| "wait requires a predicate argument".to_owned())
+        .and_then(|arg| parse_predicate_label(arg))?;
+    let mut request = WaitRequest {
+        predicate,
+        timeout_millis: 0,
+        stable_frames: 1,
+        poll_frames: 1,
+    };
+    for arg in args.iter().skip(1) {
+        match named_arg(arg) {
+            Some(("timeout", value)) => {
+                request.timeout_millis = parse_duration_millis_label(value)?;
+            }
+            Some(("stable_frames", value)) => request.stable_frames = parse_u32_label(value)?,
+            Some(("poll_frames", value)) => request.poll_frames = parse_u32_label(value)?,
+            Some((name, _)) => return Err(format!("wait has no parameter named `{name}`")),
+            None => {
+                return Err(format!(
+                    "wait does not accept extra positional argument `{arg}`"
+                ));
+            }
+        }
+    }
+    if request.timeout_millis == 0 {
+        return Err("wait requires timeout".to_owned());
+    }
+    Ok(request)
+}
+
+fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
+    let (probe, method_call) = value
+        .split_once(").")
+        .ok_or_else(|| format!("unsupported wait predicate `{value}`"))?;
+    let probe = parse_probe_label(&format!("{probe})"))?;
+    let (method, expected) = method_call
+        .split_once('(')
+        .and_then(|(method, rest)| rest.strip_suffix(')').map(|rest| (method, rest)))
+        .ok_or_else(|| format!("unsupported wait predicate `{value}`"))?;
+    Ok(Predicate::Compare {
+        probe,
+        op: parse_compare_op_label(method)?,
+        value: parse_agent_value_label(expected)?,
+    })
+}
+
+fn parse_probe_label(value: &str) -> Result<Probe, String> {
+    if let Some(target) = value
+        .strip_prefix("signal(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return parse_public_id_arg(target).map(|target| Probe::Signal { target });
+    }
+    if let Some(target) = value
+        .strip_prefix("metric(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return parse_public_id_arg(target).map(|target| Probe::Metric { target });
+    }
+    Err(format!("unsupported probe `{value}`"))
+}
+
+fn parse_compare_op_label(value: &str) -> Result<CompareOp, String> {
+    match value {
+        "eq" => Ok(CompareOp::Eq),
+        "not_eq" | "ne" => Ok(CompareOp::NotEq),
+        "gt" | "greater" => Ok(CompareOp::Greater),
+        "ge" | "greater_or_equal" => Ok(CompareOp::GreaterOrEqual),
+        "lt" | "less" => Ok(CompareOp::Less),
+        "le" | "less_or_equal" => Ok(CompareOp::LessOrEqual),
+        other => Err(format!("unsupported compare op `{other}`")),
+    }
+}
+
+fn parse_agent_value_label(value: &str) -> Result<AgentValue, String> {
+    match value {
+        "true" => Ok(AgentValue::Bool(true)),
+        "false" => Ok(AgentValue::Bool(false)),
+        value if value.starts_with('@') => parse_public_id_arg(value).map(AgentValue::Entity),
+        value => value.parse::<i64>().map_or_else(
+            |_| {
+                Ok(AgentValue::String(
+                    parse_string_label(value).unwrap_or_else(|| value.to_owned()),
+                ))
+            },
+            |value| Ok(AgentValue::I64(value)),
+        ),
+    }
+}
+
+fn parse_duration_millis_label(value: &str) -> Result<u64, String> {
+    if let Some(amount) = value.strip_suffix("ms") {
+        return parse_integer_millis(amount, value);
+    }
+    if let Some(amount) = value.strip_suffix('s') {
+        return parse_seconds_millis(amount, value);
+    }
+    Err(format!("expected duration literal, got `{value}`"))
+}
+
+fn parse_integer_millis(amount: &str, original: &str) -> Result<u64, String> {
+    if amount.contains('.') {
+        return Err(format!("invalid duration literal `{original}`"));
+    }
+    amount
+        .parse::<u64>()
+        .map_err(|_| format!("invalid duration literal `{original}`"))
+}
+
+fn parse_seconds_millis(amount: &str, original: &str) -> Result<u64, String> {
+    let (seconds, fraction) = amount
+        .split_once('.')
+        .map_or((amount, None), |(seconds, fraction)| {
+            (seconds, Some(fraction))
+        });
+    let whole = seconds
+        .parse::<u64>()
+        .map_err(|_| format!("invalid duration literal `{original}`"))?;
+    let millis = whole
+        .checked_mul(1_000)
+        .ok_or_else(|| format!("duration literal `{original}` is too large"))?;
+    match fraction {
+        Some(fraction)
+            if !fraction.is_empty()
+                && fraction.len() <= 3
+                && fraction.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            let padded_fraction = format!("{fraction:0<3}");
+            let fractional_millis = padded_fraction
+                .parse::<u64>()
+                .map_err(|_| format!("invalid duration literal `{original}`"))?;
+            millis
+                .checked_add(fractional_millis)
+                .ok_or_else(|| format!("duration literal `{original}` is too large"))
+        }
+        Some(_) => Err(format!("invalid duration literal `{original}`")),
+        None => Ok(millis),
+    }
+}
+
+fn parse_u32_label(value: &str) -> Result<u32, String> {
+    value
+        .strip_suffix("u32")
+        .unwrap_or(value)
+        .parse::<u32>()
+        .map_err(|_| format!("expected u32 literal, got `{value}`"))
+}
+
 fn named_arg(arg: &str) -> Option<(&str, &str)> {
     arg.split_once(" = ")
         .map(|(name, value)| (name.trim(), value.trim()))
@@ -1709,6 +1860,35 @@ mod tests {
         assert!(matches!(
             report.response,
             AgentHostResponse::Observation(observation) if observation.tick == 1
+        ));
+    }
+
+    #[test]
+    fn effect_form_wait_call_lowers_to_host_wait_request() {
+        let request = agent_host_request_from_call(&RuntimeCall {
+            callee: "wait".to_owned(),
+            args: vec![
+                "signal(@signal.current_flow).eq(@flow.opening)".to_owned(),
+                "timeout = 5s".to_owned(),
+                "stable_frames = 2u32".to_owned(),
+                "poll_frames = 1u32".to_owned(),
+            ],
+        })
+        .expect("effect-form wait lowers");
+
+        let AgentHostRequest::Wait(request) = request else {
+            panic!("expected wait host request");
+        };
+        assert_eq!(request.timeout_millis, 5_000);
+        assert_eq!(request.stable_frames, 2);
+        assert_eq!(request.poll_frames, 1);
+        assert!(matches!(
+            request.predicate,
+            Predicate::Compare {
+                probe: Probe::Signal { ref target },
+                op: CompareOp::Eq,
+                value: AgentValue::Entity(ref value),
+            } if target.as_str() == "signal.current_flow" && value.as_str() == "flow.opening"
         ));
     }
 

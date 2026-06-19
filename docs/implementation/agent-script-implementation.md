@@ -42,8 +42,8 @@ It is implementation state, not the stable language specification.
 - `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
 - `arcweft-debug-model` and `arcweft-rag` are Sans-I/O crates. They do not open databases, read files, call embedding services, or inspect runtime state directly.
-- `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for both effect-form calls and suspended Agent host-call expressions. It bridges `agent` custom host tasks to the same `AgentHostRequest` boundary and resumes the VM with a typed record payload. `wait(...)` expression tasks lower `signal(...).eq(...)` predicates to structured predicate records and execute through the same suspend/resume bridge as `capture(...)`.
-- Current parser readiness still treats bare statement-form `wait(predicate, timeout=...)` as a legacy wait statement body and can raw-mark named-argument predicates. Agent Script samples should use call form such as `let observed = wait(predicate, timeout = 5s)` until the statement parser is removed or made equivalent to the Agent intrinsic call path.
+- `arcweft-agent-runner` executes typed host requests and can step Agent controller bytecode for both effect-form calls and suspended Agent host-call expressions. It bridges `agent` custom host tasks to the same `AgentHostRequest` boundary and resumes the VM with a typed record payload. `wait(...)` expression tasks and Agent statement-form `wait(predicate, timeout=...)` lower `signal(...).eq(...)` predicates to structured predicate records and execute through the same host wait boundary as `capture(...)`.
+- Parser dialect dispatch keeps Agent `wait(...)` as an intrinsic call expression even when it appears as a bare statement. Game dialect line-task `wait(...)` remains the legacy dialogue/runtime wait statement path.
 - `arcweft-debug-sqlite` is the only new I/O crate in this slice. It owns `rusqlite` and keeps database access out of syntax, HIR, compiler, runner, protocol, debug-model, and RAG crates.
 
 ## Windows validation
@@ -79,6 +79,8 @@ It is implementation state, not the stable language specification.
 - `cargo test -p arcweft-agent-runner controller_bytecode_resumes_bound_capture_response -- --nocapture`
 - `cargo test -p arcweft-agent-runner controller_bytecode_resumes_bound_wait_response -- --nocapture`
 - `cargo test -p arcweft-agent-runner wait_matches_entity_probe_against_string_observation_id -- --nocapture`
+- `cargo test -p arcweft-agent-runner effect_form_wait_call_lowers_to_host_wait_request -- --nocapture`
+- `cargo test -p arcweft-compiler compile_agent_source_with_project_checks_statement_wait_entity_probe -- --nocapture`
 - `cargo test -p arcweft-agent-runner controller_bundle_runs_through_bytecode_host_boundary -- --nocapture`
 - `cargo clippy -p arcweft-agent-protocol -p arcweft-runtime-plan -p arcweft-agent-runner --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-bundle -p arcweft-runtime-host`

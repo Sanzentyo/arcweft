@@ -23,8 +23,9 @@ use super::headers::{
     split_supertraits,
 };
 use super::{
-    Parser, PendingDocLines, collect_logical_block_items, parse_expr_lossy, parse_scope_expr_body,
-    split_brace_item, split_top_level_binding,
+    Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
+    parse_scope_expr_body, parse_scope_expr_body_for_dialect, split_brace_item,
+    split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -245,7 +246,8 @@ impl Parser<'_> {
             .iter()
             .filter_map(|line| parse_contract_clause(line))
             .collect();
-        let (body_statements, body_value) = parse_scope_expr_body(&body);
+        let (body_statements, body_value) =
+            parse_scope_expr_body_for_dialect(&body, SourceDialect::Agent);
 
         Some(AgentItem::new(AgentItemInit {
             attrs,

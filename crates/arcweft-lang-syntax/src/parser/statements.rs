@@ -141,6 +141,14 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
     parse_stmt_inner(trimmed, None, None)
 }
 
+pub(super) fn parse_stmt_for_dialect(trimmed: &str, dialect: super::SourceDialect) -> Stmt {
+    if dialect == super::SourceDialect::Agent && matches!(classify_stmt(trimmed), CstStmtKind::Wait)
+    {
+        return Stmt::Expr(parse_expr_lossy(trimmed));
+    }
+    parse_stmt(trimmed)
+}
+
 pub(super) fn parse_stmt_with_stats_and_base(
     trimmed: &str,
     stats: &mut SyntaxParseStats,

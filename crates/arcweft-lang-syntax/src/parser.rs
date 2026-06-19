@@ -43,7 +43,8 @@ pub mod top_level;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr, parse_scope_expr_body,
-    parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
+    parse_scope_expr_body_for_dialect, parse_stmt_lines, parse_stmt_match_arms,
+    split_pattern_guard,
 };
 pub use fragment::{
     FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, SourceDialect,
@@ -66,8 +67,8 @@ use line_plan::{
 };
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
-    parse_scope_head, parse_stmt, parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block,
-    raw_stmt,
+    parse_scope_head, parse_stmt, parse_stmt_for_dialect, parse_stmt_with_stats_and_base,
+    parse_unsafe_lifetime_block, raw_stmt,
 };
 
 /// Parses an Arcweft source string.
@@ -341,11 +342,11 @@ impl<'a> Parser<'a> {
             return self
                 .events
                 .get(range.start)
-                .map(|line| parse_stmt(line.trimmed()));
+                .map(|line| parse_stmt_for_dialect(line.trimmed(), self.source_dialect));
         }
         let source = self.collect_stmt_line_group_source(range);
         let trimmed = source.trim();
-        (!trimmed.is_empty()).then(|| parse_stmt(trimmed))
+        (!trimmed.is_empty()).then(|| parse_stmt_for_dialect(trimmed, self.source_dialect))
     }
 
     fn collect_stmt_line_group_source(&self, range: Range<usize>) -> String {

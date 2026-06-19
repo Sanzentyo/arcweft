@@ -823,6 +823,42 @@ effects { agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_statement_wait_entity_probe() {
+        let project = project_with_typed_entity(
+            "signal.current_flow",
+            EntityKind::Signal,
+            Some(TypeKind::entity_ref(EntityKind::Flow)),
+        )
+        .with_entity(EntitySymbol::new(
+            public_id("flow.opening"),
+            EntityType::new(EntityKind::Flow, None),
+            SourceAnchor::generated(),
+            SemanticHash::new("shape.flow.opening.v1"),
+        ));
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe, agent.wait }
+{
+    wait(signal(@signal.current_flow).eq(@flow.opening), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)
+}
+",
+            &project,
+        )
+        .expect("statement-form wait lowers to typed Agent intrinsic");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Predicate)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_signal_payload_mismatch() {
         let project =
             project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));

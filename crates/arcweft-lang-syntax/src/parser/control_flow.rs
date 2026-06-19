@@ -1,10 +1,11 @@
+use super::SourceDialect;
 use super::{
     BorrowBlock, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
     MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
     StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, collect_logical_block_items, indentation,
-    is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt, raw_stmt,
-    split_brace_item, split_optional_block_label, split_top_level_binding,
-    split_top_level_keyword_once, split_top_level_punctuation_once,
+    is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
+    parse_stmt_for_dialect, raw_stmt, split_brace_item, split_optional_block_label,
+    split_top_level_binding, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
 use std::ops::Range;
@@ -693,6 +694,13 @@ fn split_if_let_guard(source: &str) -> (&str, Option<&str>) {
 }
 
 pub(super) fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
+    parse_scope_expr_body_for_dialect(body, SourceDialect::Game)
+}
+
+pub(super) fn parse_scope_expr_body_for_dialect(
+    body: &str,
+    dialect: SourceDialect,
+) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
     let lines = collect_logical_block_items(body)
         .into_iter()
         .map(|line| line.trim().to_owned())
@@ -703,14 +711,14 @@ pub(super) fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::exp
     };
     let parsed_statements = statements
         .iter()
-        .map(|line| parse_stmt(line.as_str()))
+        .map(|line| parse_stmt_for_dialect(line.as_str(), dialect))
         .collect::<Vec<_>>();
     if let Some(value) = parse_final_block_expr(last.as_str()) {
         return (parsed_statements, Some(value));
     }
     if is_typed_stmt(last) {
         let mut parsed_statements = parsed_statements;
-        parsed_statements.push(parse_stmt(last.as_str()));
+        parsed_statements.push(parse_stmt_for_dialect(last.as_str(), dialect));
         (parsed_statements, None)
     } else {
         (parsed_statements, Some(parse_expr_lossy(last.as_str())))
