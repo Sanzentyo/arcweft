@@ -4,7 +4,8 @@ use crate::borrow::{
 };
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
 use crate::env::{
-    AgentActionEnvParam, EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv,
+    AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
+    TypeCheckEnv,
 };
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{

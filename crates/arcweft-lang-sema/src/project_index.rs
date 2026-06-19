@@ -6,7 +6,8 @@
 
 use crate::checker::helpers::type_ref_kind;
 use crate::env::{
-    AgentActionEnvSignature, EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv,
+    AgentActionEnvSignature, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
+    TypeCheckEnv,
 };
 use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
@@ -455,8 +456,23 @@ impl ProjectSemanticIndex {
         for (name, ty) in &self.types {
             env = env.with_symbol(name.as_str(), ty.clone());
         }
+        for (name, query) in &self.debug_queries {
+            if let Some((kind, path)) = debug_path_from_query_name(name.as_str()) {
+                env = env.with_debug_path(kind, path, query.signature().return_type().clone());
+            }
+        }
         env
     }
+}
+
+fn debug_path_from_query_name(name: &str) -> Option<(DebugPathKind, &str)> {
+    name.strip_prefix("state.")
+        .map(|path| (DebugPathKind::State, path))
+        .or_else(|| {
+            name.strip_prefix("observation.")
+                .map(|path| (DebugPathKind::Observation, path))
+        })
+        .filter(|(_, path)| !path.is_empty())
 }
 
 /// Builds the Agent-facing project semantic index for one checked HIR module.

@@ -742,9 +742,10 @@ mod tests {
     use arcweft_bundle::BundleKind;
     use arcweft_id::PublicId;
     use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_sema::env::FunctionSignature;
     use arcweft_lang_sema::project_index::{
-        AgentActionParam, AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex,
-        QualifiedName, SemanticHash, project_semantic_index_from_hir,
+        AgentActionParam, AgentActionSignature, DebugQuerySymbol, EntitySymbol, ProgramHash,
+        ProjectSemanticIndex, QualifiedName, SemanticHash, project_semantic_index_from_hir,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -790,6 +791,18 @@ mod tests {
                 TypeKind::ActionResult,
             )),
         )
+    }
+
+    fn project_with_typed_debug_paths() -> ProjectSemanticIndex {
+        ProjectSemanticIndex::new(ProgramHash::new("program-test"))
+            .with_debug_query(
+                QualifiedName::new("state.route.phase"),
+                DebugQuerySymbol::new(FunctionSignature::return_only(TypeKind::String)),
+            )
+            .with_debug_query(
+                QualifiedName::new("observation.tick"),
+                DebugQuerySymbol::new(FunctionSignature::return_only(TypeKind::U64)),
+            )
     }
 
     #[test]
@@ -971,6 +984,66 @@ effects { agent.act.semantic }
         .expect_err("pointer.click requires physical action effect");
 
         assert!(error.to_string().contains("agent.act.physical"));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_typed_debug_paths() {
+        let project = project_with_typed_debug_paths();
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_path debug_path()
+effects { debug.read, agent.observe, agent.wait }
+{
+    try wait(
+        all(
+            state("route.phase").eq("opening"),
+            observation("tick").ge(1u64),
+        ),
+        timeout = 5ms,
+    )
+}
+"#,
+            &project,
+        )
+        .expect("typed debug paths typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Probe(Box::new(TypeKind::String)))
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Probe(Box::new(TypeKind::U64)))
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_debug_path_value_mismatch() {
+        let project = project_with_typed_debug_paths();
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_path debug_path()
+effects { debug.read }
+{
+    state("route.phase").eq(1u64)
+}
+"#,
+            &project,
+        )
+        .expect_err("typed debug path rejects mismatched comparison value");
+
+        assert!(error.to_string().contains("Probe.eq expected value"));
+        assert!(error.to_string().contains("String"));
+        assert!(error.to_string().contains("U64"));
     }
 
     #[test]

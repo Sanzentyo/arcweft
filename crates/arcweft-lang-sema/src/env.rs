@@ -2,6 +2,14 @@ use crate::types::TypeKind;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
 
+/// Agent debug path family used to type `state(...)` and `observation(...)`
+/// probes from a project semantic index.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DebugPathKind {
+    State,
+    Observation,
+}
+
 /// Function or method signature tracked by the semantic environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature {
@@ -72,6 +80,7 @@ pub struct TypeCheckEnv {
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
     pub(crate) agent_actions: HashMap<String, Vec<AgentActionEnvSignature>>,
+    pub(crate) debug_paths: HashMap<(DebugPathKind, String), TypeKind>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
 }
@@ -380,6 +389,18 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Registers one typed Agent Debug Bus path.
+    #[must_use]
+    pub fn with_debug_path(
+        mut self,
+        kind: DebugPathKind,
+        path: impl Into<String>,
+        value_type: TypeKind,
+    ) -> Self {
+        self.debug_paths.insert((kind, path.into()), value_type);
+        self
+    }
+
     /// Registers a checker capability such as `state.write(flow)`.
     #[must_use]
     pub fn with_capability(mut self, capability: impl Into<EffectCapability>) -> Self {
@@ -457,6 +478,10 @@ impl TypeCheckEnv {
 
     pub(crate) fn agent_actions(&self, target: &str) -> Option<&[AgentActionEnvSignature]> {
         self.agent_actions.get(target).map(Vec::as_slice)
+    }
+
+    pub(crate) fn debug_path_type(&self, kind: DebugPathKind, path: &str) -> Option<&TypeKind> {
+        self.debug_paths.get(&(kind, path.to_owned()))
     }
 
     /// Returns whether the environment grants a named effect or state capability.

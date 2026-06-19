@@ -7,10 +7,10 @@ use super::helpers::{
     well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
-    AgentActionEnvParam, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
-    FunctionParam, FunctionSignature, LifetimeScopeKind, MapKind, Pattern, Stmt, TypeCheckError,
-    TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
-    normalize_choice_type,
+    AgentActionEnvParam, BorrowLocalState, BorrowStateDelta, DebugPathKind, EntityKind,
+    EntityRefSyntax, Expr, FunctionParam, FunctionSignature, LifetimeScopeKind, MapKind, Pattern,
+    Stmt, TypeCheckError, TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind,
+    YieldContext, entity_kind, normalize_choice_type,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
@@ -777,12 +777,14 @@ impl TypeChecker<'_> {
                 args,
                 "debug state path",
                 &TypeKind::String,
+                DebugPathKind::State,
             )),
             "observation" => Some(self.check_agent_path_probe_intrinsic(
                 name,
                 args,
                 "observation field path",
                 &TypeKind::String,
+                DebugPathKind::Observation,
             )),
             "diagnostics" => Some(self.check_agent_no_arg_intrinsic(
                 name,
@@ -1231,13 +1233,25 @@ impl TypeChecker<'_> {
         args: &[CallArg],
         context: &str,
         expected_path: &TypeKind,
+        path_kind: DebugPathKind,
     ) -> TypeKind {
         self.check_function_effects(name);
         let Some(arg) = self.single_positional_agent_arg(name, args) else {
             return TypeKind::Probe(Box::new(TypeKind::AgentValue));
         };
         self.expect_expr_type(arg, expected_path, context);
-        TypeKind::Probe(Box::new(TypeKind::AgentValue))
+        let value_type = Self::agent_string_literal(arg)
+            .and_then(|path| self.env.debug_path_type(path_kind, path))
+            .cloned()
+            .unwrap_or(TypeKind::AgentValue);
+        TypeKind::Probe(Box::new(value_type))
+    }
+
+    fn agent_string_literal(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Literal(Literal::String(value)) => Some(value),
+            _ => None,
+        }
     }
 
     fn check_agent_exists_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
