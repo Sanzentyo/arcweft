@@ -1,0 +1,26 @@
+[package]
+name = "arcweft-desktop-native"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["file-dialog", "known-directories"]
+file-dialog = ["dep:rfd"]
+known-directories = ["dep:directories"]
+global-pointer = ["dep:enigo"]
+external-window-observe = ["dep:xcap"]
+
+[dependencies]
+arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
+arcweft-desktop-host = { path = "../arcweft-desktop-host" }
+directories = { workspace = true, optional = true }
+enigo = { workspace = true, optional = true }
+getrandom.workspace = true
+rfd = { workspace = true, optional = true }
+xcap = { workspace = true, optional = true }
+
+[lints]
+workspace = true

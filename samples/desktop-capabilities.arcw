@@ -1,0 +1,15 @@
+extern capability desktop.platform {
+    type DesktopError
+    fn capabilities() -> Need<String, DesktopError> effects { desktop.platform.read }
+}
+
+entry cli @entry.main {
+    run @flow.main
+}
+
+flow main effects { desktop.platform.read } {
+    let caps = try await desktop.platform.capabilities() with {
+        error _ => return "desktop_failed"
+    }
+    return caps
+}

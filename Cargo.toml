@@ -6,6 +6,10 @@ members = [
     "crates/arcweft-agent-mcp",
     "crates/arcweft-adt",
     "crates/arcweft-adapter-context",
+    "crates/arcweft-adapter-desktop",
+    "crates/arcweft-desktop-contract",
+    "crates/arcweft-desktop-host",
+    "crates/arcweft-desktop-native",
     "crates/arcweft-glyphon",
     "crates/arcweft-host-adapter",
     "crates/arcweft-dialogue",
@@ -62,8 +66,11 @@ clap = "4.6.1"
 cranelift = { version = "0.121.2", features = ["jit", "module", "native"] }
 cranelift-object = "0.121.2"
 crossbeam-channel = "0.5.15"
+directories = "6.0.0"
+enigo = "0.6.1"
 futures-channel = "0.3.32"
 glam = "0.33.0"
+getrandom = "0.4.3"
 js-sys = "0.3.99"
 lsp-server = "0.7.9"
 lsp-types = "0.97.0"
@@ -73,6 +80,7 @@ oxiz-solver = "0.2.1"
 png = "0.18.1"
 pollster = "0.4.0"
 rayon = "1.12.0"
+rfd = "0.17.2"
 rowan = "0.16.1"
 serde = "1.0.228"
 serde_json = "1.0.149"
@@ -92,6 +100,7 @@ wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl"
 glyphon = "0.11.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 winit = "0.31.0-beta.2"
+xcap = "0.9.6"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

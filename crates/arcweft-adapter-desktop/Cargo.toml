@@ -1,0 +1,21 @@
+[package]
+name = "arcweft-adapter-desktop"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-core = { path = "../arcweft-core" }
+arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
+arcweft-desktop-host = { path = "../arcweft-desktop-host" }
+arcweft-host-adapter = { path = "../arcweft-host-adapter" }
+serde_json.workspace = true
+
+[dev-dependencies]
+arcweft-desktop-native = { path = "../arcweft-desktop-native" }
+
+[lints]
+workspace = true

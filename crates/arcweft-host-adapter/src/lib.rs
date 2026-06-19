@@ -4,7 +4,7 @@
 //! network, or OS integration belongs in adapter crates or application hosts.
 
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{HostTaskRequest, TaskSpec};
+use arcweft_core::task::{HostTaskRequest, TaskId, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -15,11 +15,50 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
     /// Manifest exported by this adapter implementation.
     fn manifest(&self) -> &AdapterManifest;
 
-    /// Attempts to complete one task.
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome>;
+    /// Attempts to complete one synchronous task.
+    ///
+    /// Adapters that need asynchronous or host-main-thread work should
+    /// override [`Self::submit`] instead.
+    fn complete(&self, _task: &TaskSpec) -> Option<HostTaskOutcome> {
+        None
+    }
+
+    /// Starts one task and reports whether it completed or remains pending.
+    fn submit(&self, task: &TaskSpec) -> Option<HostTaskSubmission> {
+        self.complete(task).map(HostTaskSubmission::Completed)
+    }
+
+    /// Drains adapter-owned completions produced since the last call.
+    fn drain_completions(&self) -> Vec<HostAdapterCompletion> {
+        Vec::new()
+    }
+
+    /// Requests cancellation of pending adapter-owned work.
+    fn cancel(&self, _task_id: &TaskId) -> bool {
+        false
+    }
+
+    /// Pumps work that is required to run on the embedding host's main thread.
+    fn pump_main_thread(&self) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Returns whether this task can be completed on a worker thread.
     fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool;
+}
+
+/// Result of starting one host adapter task.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostTaskSubmission {
+    Completed(HostTaskOutcome),
+    Pending,
+}
+
+/// Completion emitted later by a pending host adapter task.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostAdapterCompletion {
+    pub task_id: TaskId,
+    pub outcome: HostTaskOutcome,
 }
 
 /// Manifest-derived allow-list for runtime host calls.
@@ -68,6 +107,8 @@ pub enum HostAdapterError {
         first_adapter: String,
         second_adapter: String,
     },
+    #[error("host-main-thread pump for adapter `{adapter}` failed: {message}")]
+    Pump { adapter: String, message: String },
 }
 
 impl HostCallPolicy {
@@ -133,11 +174,59 @@ impl HostAdapterRegistry {
         self.adapters.contains_key(id)
     }
 
-    /// Dispatches a task to the concrete adapter registered for its host-call id.
-    pub fn dispatch(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+    /// Starts a task through the concrete adapter registered for its host-call id.
+    pub fn submit(&self, task: &TaskSpec) -> Option<HostTaskSubmission> {
         self.adapters
             .get(&task.request.host_call_id())
-            .and_then(|adapter| adapter.complete(task))
+            .and_then(|adapter| adapter.submit(task))
+    }
+
+    /// Synchronous helper. Pending work returns `None`.
+    pub fn dispatch(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+        match self.submit(task)? {
+            HostTaskSubmission::Completed(outcome) => Some(outcome),
+            HostTaskSubmission::Pending => None,
+        }
+    }
+
+    /// Drains every registered adapter once, even when it owns multiple calls.
+    pub fn drain_completions(&self) -> Vec<HostAdapterCompletion> {
+        self.unique_adapters()
+            .into_iter()
+            .flat_map(|adapter| adapter.drain_completions())
+            .collect()
+    }
+
+    /// Requests cancellation from every unique adapter until one owns the task.
+    pub fn cancel(&self, task_id: &TaskId) -> bool {
+        self.unique_adapters()
+            .into_iter()
+            .any(|adapter| adapter.cancel(task_id))
+    }
+
+    /// Pumps every unique adapter on the embedding host's main thread.
+    pub fn pump_main_thread(&self) -> Result<(), HostAdapterError> {
+        for adapter in self.unique_adapters() {
+            adapter
+                .pump_main_thread()
+                .map_err(|message| HostAdapterError::Pump {
+                    adapter: adapter.manifest().id().as_str().to_owned(),
+                    message,
+                })?;
+        }
+        Ok(())
+    }
+
+    fn unique_adapters(&self) -> Vec<Arc<dyn HostAdapter>> {
+        let mut seen = BTreeSet::new();
+        self.adapters
+            .values()
+            .filter(|adapter| {
+                let identity = Arc::as_ptr(*adapter).cast::<()>();
+                seen.insert(identity)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Returns whether the registered adapter can complete this request in parallel.

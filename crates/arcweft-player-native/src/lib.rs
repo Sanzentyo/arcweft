@@ -18,6 +18,7 @@ use arcweft_runtime_host::{
     run_bundle_with_native_adapters,
 };
 use serde::Serialize;
+use std::path::Path;
 use thiserror::Error;
 
 /// Compiled native-player program.
@@ -149,7 +150,7 @@ pub fn run_bundle_headless(
             executor: BundleRunnerExecutor::BytecodeVm,
             ..BundleRunnerOptions::default()
         },
-        &[],
+        &[desktop_native_adapter_registrar],
     )?;
     let mut frames = Vec::new();
     let mut diagnostics = Vec::new();
@@ -170,6 +171,17 @@ pub fn run_bundle_headless(
         #[cfg(feature = "dev-capture")]
         native_capture: None,
     })
+}
+
+fn desktop_native_adapter_registrar(
+    _source_path: &Path,
+    builder: arcweft_host_adapter::HostAdapterRegistryBuilder,
+) -> Result<arcweft_host_adapter::HostAdapterRegistryBuilder, arcweft_host_adapter::HostAdapterError>
+{
+    let adapter_set = arcweft_adapter_desktop::DesktopAdapterSet::bind_current_thread(
+        arcweft_desktop_native::NativeDesktopBackend::builder().build(),
+    );
+    adapter_set.register(builder).map(|(builder, _)| builder)
 }
 
 /// Compiles and runs source until the first display frame is available.

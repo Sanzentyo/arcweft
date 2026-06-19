@@ -11,8 +11,10 @@ arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-compiler = { path = "../arcweft-compiler" }
+arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }

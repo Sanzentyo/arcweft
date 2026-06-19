@@ -277,9 +277,9 @@ pub(in crate::app) fn native_host_policy_for_selection_with_adapter(
     adapter_override: Option<&str>,
 ) -> Result<HostCallPolicy, ExitCode> {
     let selected = adapter_manifest_for_selection(selection, adapter_override)?;
-    Ok(NativeTaskBridge::standard_cli_policy_for_manifest(
-        &selected,
-    ))
+    let desktop_policy =
+        HostCallPolicy::from_manifests(arcweft_adapter_desktop::standard_desktop_manifests());
+    Ok(NativeTaskBridge::standard_cli_policy_for_manifest(&selected).union(desktop_policy))
 }
 
 fn adapter_registry_for_selection(

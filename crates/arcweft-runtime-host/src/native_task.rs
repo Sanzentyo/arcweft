@@ -9,8 +9,9 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::{RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes};
 use arcweft_host_adapter::{
-    HostAdapter, HostAdapterError, HostAdapterRegistry, HostAdapterRegistryBuilder, HostCallPolicy,
-    HostTaskMetrics, HostTaskOutcome,
+    HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistry,
+    HostAdapterRegistryBuilder, HostCallPolicy, HostTaskMetrics, HostTaskOutcome,
+    HostTaskSubmission,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
@@ -151,6 +152,33 @@ impl NativeTaskBridge {
     pub fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
         virtual_path(&Self::source_io_root(source_path), value)
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
+    }
+
+    /// Runs adapter work that is bound to the embedding event-loop thread.
+    pub fn pump_main_thread(&self) -> Result<(), HostAdapterError> {
+        self.registry.pump_main_thread()
+    }
+
+    /// Converts pending adapter completions into deterministic scheduler events.
+    pub fn poll_completions(&mut self) -> Vec<TaskEvent> {
+        let mut completions = self.registry.drain_completions();
+        completions.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        let events = completions
+            .into_iter()
+            .map(|HostAdapterCompletion { task_id, outcome }| {
+                self.task_event(TaskCompletion {
+                    task_id,
+                    result: outcome.result,
+                    stats: outcome.metrics,
+                })
+            })
+            .collect::<Vec<_>>();
+        self.scheduler.complete(events)
+    }
+
+    /// Forwards task cancellation to the adapter owning pending host work.
+    pub fn cancel_task(&self, task_id: &arcweft_core::task::TaskId) -> bool {
+        self.registry.cancel(task_id)
     }
 
     pub fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
@@ -468,11 +496,14 @@ fn should_complete_in_parallel(registry: &HostAdapterRegistry, tasks: &[TaskSpec
 }
 
 fn complete_task(registry: &HostAdapterRegistry, task: &TaskSpec) -> Option<TaskCompletion> {
-    registry.dispatch(task).map(|outcome| TaskCompletion {
-        task_id: task.id.clone(),
-        result: outcome.result,
-        stats: outcome.metrics,
-    })
+    match registry.submit(task)? {
+        HostTaskSubmission::Completed(outcome) => Some(TaskCompletion {
+            task_id: task.id.clone(),
+            result: outcome.result,
+            stats: outcome.metrics,
+        }),
+        HostTaskSubmission::Pending => None,
+    }
 }
 
 fn complete_read_text(

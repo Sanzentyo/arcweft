@@ -13,6 +13,21 @@ use super::runtime::{CliRuntimeExecutorTier, CliRuntimeStepMode, parse_runtime_b
 use super::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeProfilePhase};
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_adapter_desktop::{
+    DESKTOP_CAPABILITIES_CALL, DESKTOP_EXTERNAL_CONTROL_ADAPTER_ID, DESKTOP_EXTERNAL_CONTROL_CALL,
+    DESKTOP_EXTERNAL_OBSERVE_ADAPTER_ID, DESKTOP_EXTERNAL_OBSERVE_CALL,
+    DESKTOP_FILES_READ_ADAPTER_ID, DESKTOP_FILES_READ_CALL, DESKTOP_FILES_WRITE_ADAPTER_ID,
+    DESKTOP_FILES_WRITE_CALL, DESKTOP_GLOBAL_POINTER_CONTROL_ADAPTER_ID,
+    DESKTOP_GLOBAL_POINTER_CONTROL_CALL, DESKTOP_GLOBAL_POINTER_OBSERVE_ADAPTER_ID,
+    DESKTOP_GLOBAL_POINTER_OBSERVE_CALL, DESKTOP_KNOWN_READ_ADAPTER_ID, DESKTOP_KNOWN_READ_CALL,
+    DESKTOP_KNOWN_WRITE_ADAPTER_ID, DESKTOP_KNOWN_WRITE_CALL, DESKTOP_OWNED_CURSOR_CALL,
+    DESKTOP_OWNED_WINDOW_ADAPTER_ID, DESKTOP_OWNED_WINDOW_CALL, DESKTOP_PLATFORM_ADAPTER_ID,
+    desktop_external_control_manifest, desktop_external_observe_manifest,
+    desktop_files_read_manifest, desktop_files_write_manifest,
+    desktop_known_directory_read_manifest, desktop_known_directory_write_manifest,
+    desktop_owned_window_manifest, desktop_platform_manifest,
+    desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
+};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleImageAnimation,
     BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleLaunchKind, BundleManifest,
@@ -699,6 +714,7 @@ fn bundle_adapter_manifest_ids<'a>(
                     matches!(host_call, "line_task.run_child" | "flow_thread.run_child")
                         .then_some(INTERNAL_SCHEDULER_ADAPTER_ID)
                 })
+                .or_else(|| desktop_manifest_id_for_host_call(host_call))
         }))
         .map(str::to_owned)
         .collect::<Vec<_>>();
@@ -737,9 +753,51 @@ fn bundle_adapter_manifests<'a>(
             &internal_scheduler_manifest(),
         ));
     }
+    manifests.extend(
+        required
+            .iter()
+            .filter_map(|host_call| desktop_manifest_for_host_call(host_call))
+            .map(|manifest| bundle_adapter_manifest_from_context(&manifest)),
+    );
     manifests.sort_by(|left, right| left.id.cmp(&right.id));
     manifests.dedup_by(|left, right| left.id == right.id);
     manifests
+}
+
+fn desktop_manifest_id_for_host_call(host_call: &str) -> Option<&'static str> {
+    match host_call {
+        DESKTOP_CAPABILITIES_CALL => Some(DESKTOP_PLATFORM_ADAPTER_ID),
+        DESKTOP_OWNED_WINDOW_CALL | DESKTOP_OWNED_CURSOR_CALL => {
+            Some(DESKTOP_OWNED_WINDOW_ADAPTER_ID)
+        }
+        DESKTOP_FILES_READ_CALL => Some(DESKTOP_FILES_READ_ADAPTER_ID),
+        DESKTOP_FILES_WRITE_CALL => Some(DESKTOP_FILES_WRITE_ADAPTER_ID),
+        DESKTOP_KNOWN_READ_CALL => Some(DESKTOP_KNOWN_READ_ADAPTER_ID),
+        DESKTOP_KNOWN_WRITE_CALL => Some(DESKTOP_KNOWN_WRITE_ADAPTER_ID),
+        DESKTOP_GLOBAL_POINTER_OBSERVE_CALL => Some(DESKTOP_GLOBAL_POINTER_OBSERVE_ADAPTER_ID),
+        DESKTOP_GLOBAL_POINTER_CONTROL_CALL => Some(DESKTOP_GLOBAL_POINTER_CONTROL_ADAPTER_ID),
+        DESKTOP_EXTERNAL_OBSERVE_CALL => Some(DESKTOP_EXTERNAL_OBSERVE_ADAPTER_ID),
+        DESKTOP_EXTERNAL_CONTROL_CALL => Some(DESKTOP_EXTERNAL_CONTROL_ADAPTER_ID),
+        _ => None,
+    }
+}
+
+fn desktop_manifest_for_host_call(host_call: &str) -> Option<AdapterManifest> {
+    match host_call {
+        DESKTOP_CAPABILITIES_CALL => Some(desktop_platform_manifest()),
+        DESKTOP_OWNED_WINDOW_CALL | DESKTOP_OWNED_CURSOR_CALL => {
+            Some(desktop_owned_window_manifest())
+        }
+        DESKTOP_FILES_READ_CALL => Some(desktop_files_read_manifest()),
+        DESKTOP_FILES_WRITE_CALL => Some(desktop_files_write_manifest()),
+        DESKTOP_KNOWN_READ_CALL => Some(desktop_known_directory_read_manifest()),
+        DESKTOP_KNOWN_WRITE_CALL => Some(desktop_known_directory_write_manifest()),
+        DESKTOP_GLOBAL_POINTER_OBSERVE_CALL => Some(desktop_pointer_global_observe_manifest()),
+        DESKTOP_GLOBAL_POINTER_CONTROL_CALL => Some(desktop_pointer_global_control_manifest()),
+        DESKTOP_EXTERNAL_OBSERVE_CALL => Some(desktop_external_observe_manifest()),
+        DESKTOP_EXTERNAL_CONTROL_CALL => Some(desktop_external_control_manifest()),
+        _ => None,
+    }
 }
 
 fn bundle_adapter_manifest_from_context(manifest: &AdapterManifest) -> BundleAdapterManifest {

@@ -20,9 +20,11 @@ use self::runtime::{
 use self::tooling::{format_command, ids_command};
 use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};
 use crate::toolchain_profile;
+use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use clap::Parser;
 use std::ffi::OsString;
+use std::path::Path;
 use std::process::ExitCode;
 
 /// Runs the Arcweft CLI with the standard native adapters.
@@ -43,10 +45,23 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    match run_cli(Cli::parse_from(args), adapter_registrars) {
+    let mut registrars = Vec::with_capacity(adapter_registrars.len() + 1);
+    registrars.push(desktop_native_adapter_registrar as NativeAdapterRegistrar);
+    registrars.extend_from_slice(adapter_registrars);
+    match run_cli(Cli::parse_from(args), &registrars) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
     }
+}
+
+fn desktop_native_adapter_registrar(
+    _source_path: &Path,
+    builder: HostAdapterRegistryBuilder,
+) -> Result<HostAdapterRegistryBuilder, HostAdapterError> {
+    let adapter_set = arcweft_adapter_desktop::DesktopAdapterSet::bind_current_thread(
+        arcweft_desktop_native::NativeDesktopBackend::builder().build(),
+    );
+    adapter_set.register(builder).map(|(builder, _)| builder)
 }
 
 fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<(), ExitCode> {

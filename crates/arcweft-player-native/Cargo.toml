@@ -13,8 +13,11 @@ dev-source = ["dep:arcweft-compiler"]
 
 [dependencies]
 arcweft-compiler = { path = "../arcweft-compiler", optional = true }
+arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
+arcweft-desktop-native = { path = "../arcweft-desktop-native" }
+arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }

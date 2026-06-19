@@ -440,6 +440,10 @@ fn run_runtime_steps_with_executor(
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
+        if let Some(host) = host.as_mut() {
+            host.pump_main_thread()?;
+            task_events.extend(host.poll_completions());
+        }
         let result = executor.step_with_root_bindings(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut task_events),
@@ -458,7 +462,7 @@ fn run_runtime_steps_with_executor(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events = host.complete_tasks(task_requests);
+            task_events.extend(host.complete_tasks(task_requests));
         }
     }
     Ok(RuntimeRunTrace {
