@@ -12,9 +12,9 @@ use arcweft_agent_protocol::{
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
         ActionResult, AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentAttachment,
-        AgentHostRequest, AgentHostResponse, AgentSessionInfo, CaptureFormat, CaptureRequest,
-        CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest, PointerButton,
-        RagRequest, WaitRequest,
+        AgentHostRequest, AgentHostResponse, AgentInvokeAction, AgentSessionInfo, CaptureFormat,
+        CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
+        PointerButton, RagRequest, WaitRequest,
     },
     value::AgentValue,
 };
@@ -430,7 +430,7 @@ where
             AgentAction::PointerClick { .. } => RuntimeAgentCapability::ActPhysical,
             AgentAction::AdvanceText
             | AgentAction::SelectChoice { .. }
-            | AgentAction::Invoke { .. } => RuntimeAgentCapability::Act,
+            | AgentAction::Invoke(_) => RuntimeAgentCapability::Act,
         })?;
         let result = self.session.act(action).map_err(AgentRunError::Session)?;
         self.emit(
@@ -1208,11 +1208,11 @@ fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, Str
         Some(value) => runtime_agent_value_map(value)?,
         None => BTreeMap::new(),
     };
-    Ok(AgentAction::Invoke {
+    Ok(AgentAction::Invoke(Box::new(AgentInvokeAction {
         target,
         action,
         args: Box::new(call_args),
-    })
+    })))
 }
 
 fn runtime_pointer_click_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, String> {
@@ -2155,11 +2155,11 @@ fn invoke_action(args: &[String]) -> Result<AgentAction, String> {
         .map(parse_agent_value_map_label)
         .transpose()?
         .unwrap_or_default();
-    Ok(AgentAction::Invoke {
+    Ok(AgentAction::Invoke(Box::new(AgentInvokeAction {
         target,
         action,
         args: Box::new(call_args),
-    })
+    })))
 }
 
 fn pointer_click_action(args: &[String]) -> Result<AgentAction, String> {
@@ -3270,22 +3270,17 @@ mod tests {
         let AgentHostRequest::Act(action) = request else {
             panic!("expected action host request");
         };
-        let AgentAction::Invoke {
-            target,
-            action,
-            args,
-        } = *action
-        else {
+        let AgentAction::Invoke(invoke) = *action else {
             panic!("expected invoke action");
         };
-        assert_eq!(target.as_str(), "activity.inventory");
-        assert_eq!(action, "open");
+        assert_eq!(invoke.target.as_str(), "activity.inventory");
+        assert_eq!(invoke.action, "open");
         assert_eq!(
-            args.get("label"),
+            invoke.args.get("label"),
             Some(&AgentValue::String("main".to_owned()))
         );
-        assert_eq!(args.get("index"), Some(&AgentValue::U64(7)));
-        assert_eq!(args.get("focused"), Some(&AgentValue::Bool(true)));
+        assert_eq!(invoke.args.get("index"), Some(&AgentValue::U64(7)));
+        assert_eq!(invoke.args.get("focused"), Some(&AgentValue::Bool(true)));
     }
 
     #[test]

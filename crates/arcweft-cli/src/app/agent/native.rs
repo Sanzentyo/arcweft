@@ -31,8 +31,8 @@ use arcweft_agent_protocol::artifact::RequiredEntity;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, StableHash};
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
 use arcweft_agent_protocol::protocol::{
-    ActionResult, AgentAction, AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult,
-    CaptureTarget, ObservationEnvelope, ObserveRequest,
+    ActionResult, AgentAction, AgentInvokeAction, AgentSessionInfo, CaptureFormat, CaptureRequest,
+    CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
 };
 use arcweft_agent_protocol::value::AgentValue;
 use arcweft_agent_protocol::{
@@ -4363,11 +4363,11 @@ fn agent_mcp_action_argument(
                 .ok_or_else(|| "arcweft.action kind invoke requires arguments.action".to_owned())?
                 .to_owned();
             let args = agent_mcp_action_args(arguments)?;
-            Ok(AgentAction::Invoke {
+            Ok(AgentAction::Invoke(Box::new(AgentInvokeAction {
                 target,
                 action,
                 args: Box::new(args),
-            })
+            })))
         }
         _ => Err(format!(
             "arcweft.action kind must be one of advance_text, select_choice, or invoke: `{kind}`"
@@ -4429,11 +4429,11 @@ fn agent_mcp_action_from_target(
                 choice: agent_mcp_public_id_from_str(&target.target)?,
             })
         }
-        AgentActionKind::Invoke => Ok(AgentAction::Invoke {
+        AgentActionKind::Invoke => Ok(AgentAction::Invoke(Box::new(AgentInvokeAction {
             target: agent_mcp_public_id_from_str(&target.target)?,
             action: target.id.clone(),
             args: Box::new(agent_mcp_action_args(arguments)?),
-        }),
+        }))),
         AgentActionKind::PointerClick => {
             Err("arcweft.action does not synthesize physical pointer_click actions".to_owned())
         }
@@ -6762,8 +6762,8 @@ fn native_agent_action_input_events(
             native_agent_select_choice_input_events(report, &choice)
         }
         AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
-        AgentAction::Invoke { target, action, .. } => {
-            native_agent_invoke_input_events(report, &target, &action)
+        AgentAction::Invoke(invoke) => {
+            native_agent_invoke_input_events(report, &invoke.target, &invoke.action)
         }
         AgentAction::PointerClick { .. } => Err(NativeAgentScriptSessionError::UnsupportedAction),
     }

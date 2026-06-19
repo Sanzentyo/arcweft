@@ -45,16 +45,20 @@ pub enum AgentAction {
     SelectChoice {
         choice: PublicId,
     },
-    Invoke {
-        target: PublicId,
-        action: String,
-        args: Box<BTreeMap<String, AgentValue>>,
-    },
+    Invoke(Box<AgentInvokeAction>),
     PointerClick {
         x: u32,
         y: u32,
         button: PointerButton,
     },
+}
+
+/// Semantic invocation action payload.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct AgentInvokeAction {
+    pub target: PublicId,
+    pub action: String,
+    pub args: Box<BTreeMap<String, AgentValue>>,
 }
 
 /// Pointer button for explicit physical input.
@@ -200,14 +204,14 @@ mod tests {
 
     #[test]
     fn invoke_action_keeps_flat_wire_args() {
-        let action = AgentAction::Invoke {
+        let action = AgentAction::Invoke(Box::new(AgentInvokeAction {
             target: PublicId::new("@object.dialogue").expect("valid public id"),
             action: "highlight".to_owned(),
             args: Box::new(BTreeMap::from([(
                 "intensity".to_owned(),
                 AgentValue::I64(7),
             )])),
-        };
+        }));
 
         let value = serde_json::to_value(&action).expect("serializes invoke action");
 
