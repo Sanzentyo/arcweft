@@ -21,7 +21,7 @@ use arcweft_lang_sema::resolve::{
 };
 use arcweft_lang_sema::types::EntityKind;
 use arcweft_lang_syntax::ast::flow::ContractClause;
-use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
+use arcweft_lang_syntax::ast::items::{Attribute, TypedSyntaxTree};
 use arcweft_lang_syntax::expr::{CallArg, Expr};
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
 use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
@@ -114,6 +114,8 @@ pub enum CompileAgentError {
     RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
     #[error("agent artifact identifier error: {0}")]
     ArtifactIdentifier(#[from] arcweft_agent_protocol::ids::IdentifierError),
+    #[error("agent budget attribute error: {0}")]
+    Budget(String),
 }
 
 /// HIR semantic validation diagnostics for the shared compiler driver.
@@ -358,8 +360,105 @@ fn agent_artifact_manifest(
             required_entities: agent_required_entities_from_project(project)?,
         },
         declared_effects: declared_agent_effects(agent),
-        budget: AgentBudget::default(),
+        budget: agent_budget(agent)?,
         debug_map_hash: None,
+    })
+}
+
+fn agent_budget(agent: &HirAgent) -> Result<AgentBudget, CompileAgentError> {
+    agent
+        .attributes()
+        .iter()
+        .filter(|attribute| attribute.name() == "budget")
+        .try_fold(AgentBudget::default(), apply_agent_budget_attribute)
+}
+
+fn apply_agent_budget_attribute(
+    mut budget: AgentBudget,
+    attribute: &Attribute,
+) -> Result<AgentBudget, CompileAgentError> {
+    let args = attribute.args().ok_or_else(|| {
+        CompileAgentError::Budget("budget attribute requires key/value arguments".to_owned())
+    })?;
+    for item in split_agent_budget_args(args) {
+        let (key, value) = item.split_once('=').ok_or_else(|| {
+            CompileAgentError::Budget(format!("budget item `{item}` must use key = value"))
+        })?;
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            "timeout" => budget.logical_timeout_millis = parse_agent_budget_duration(value)?,
+            "steps" => budget.max_vm_steps = parse_agent_budget_u64(value)?,
+            "host_calls" => {
+                budget.max_host_calls = parse_agent_budget_u32(value)?;
+            }
+            "observations" => {
+                budget.max_observations = parse_agent_budget_u32(value)?;
+            }
+            "captures" => {
+                budget.max_captures = parse_agent_budget_u32(value)?;
+            }
+            "stored_bytes" => {
+                budget.max_capture_bytes = parse_agent_budget_u64(value)?;
+            }
+            "rag_queries" => {
+                budget.max_rag_queries = parse_agent_budget_u32(value)?;
+            }
+            "context_bytes" => {
+                budget.max_context_bytes = parse_agent_budget_u64(value)?;
+            }
+            other => {
+                return Err(CompileAgentError::Budget(format!(
+                    "unsupported budget key `{other}`"
+                )));
+            }
+        }
+    }
+    Ok(budget)
+}
+
+fn split_agent_budget_args(args: &str) -> impl Iterator<Item = &str> {
+    args.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+}
+
+fn parse_agent_budget_duration(value: &str) -> Result<u64, CompileAgentError> {
+    let (number, multiplier) = value
+        .trim()
+        .strip_suffix("ms")
+        .map(|number| (number, 1))
+        .or_else(|| value.trim().strip_suffix('s').map(|number| (number, 1_000)))
+        .ok_or_else(|| {
+            CompileAgentError::Budget(format!(
+                "budget timeout `{value}` must use an `ms` or `s` suffix"
+            ))
+        })?;
+    parse_agent_budget_u64(number)?
+        .checked_mul(multiplier)
+        .ok_or_else(|| CompileAgentError::Budget(format!("budget timeout `{value}` overflows")))
+}
+
+fn parse_agent_budget_u32(value: &str) -> Result<u32, CompileAgentError> {
+    u32::try_from(parse_agent_budget_u64(value)?).map_err(|_| {
+        CompileAgentError::Budget(format!("budget value `{value}` does not fit in u32"))
+    })
+}
+
+fn parse_agent_budget_u64(value: &str) -> Result<u64, CompileAgentError> {
+    let trimmed = value.trim();
+    let number = ["usize", "u64", "u32"]
+        .into_iter()
+        .find_map(|suffix| trimmed.strip_suffix(suffix))
+        .unwrap_or(trimmed);
+    let digits = number.replace('_', "");
+    if digits.is_empty() || !digits.chars().all(|char| char.is_ascii_digit()) {
+        return Err(CompileAgentError::Budget(format!(
+            "budget value `{value}` must be a non-negative integer"
+        )));
+    }
+    digits.parse().map_err(|error| {
+        CompileAgentError::Budget(format!("invalid budget value `{value}`: {error}"))
     })
 }
 
@@ -1780,6 +1879,41 @@ effects { agent.observe }
             decoded.agent.as_ref().map(|agent| agent.agent_id.as_str()),
             Some("agent.observe_smoke")
         );
+    }
+
+    #[test]
+    fn compile_agent_bundle_with_project_preserves_budget_attribute() {
+        let compiled = compile_agent_bundle_with_project(
+            r"
+#[agent(version = 1)]
+#[budget(
+    timeout = 20s,
+    steps = 96usize,
+    host_calls = 9usize,
+    observations = 8usize,
+    captures = 3usize,
+    rag_queries = 4usize,
+    stored_bytes = 12_345u64,
+    context_bytes = 4_096u64,
+)]
+agent @agent.budget_smoke budget_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("agent bundle compiles");
+
+        assert_eq!(compiled.manifest.budget.logical_timeout_millis, 20_000);
+        assert_eq!(compiled.manifest.budget.max_vm_steps, 96);
+        assert_eq!(compiled.manifest.budget.max_host_calls, 9);
+        assert_eq!(compiled.manifest.budget.max_observations, 8);
+        assert_eq!(compiled.manifest.budget.max_captures, 3);
+        assert_eq!(compiled.manifest.budget.max_rag_queries, 4);
+        assert_eq!(compiled.manifest.budget.max_capture_bytes, 12_345);
+        assert_eq!(compiled.manifest.budget.max_context_bytes, 4_096);
     }
 
     #[test]

@@ -1,0 +1,17 @@
+#[agent(version = 1)]
+#[budget(
+    timeout = 5s,
+    steps = 8usize,
+    host_calls = 2usize,
+    observations = 2usize,
+    captures = 0usize,
+    rag_queries = 0usize,
+    stored_bytes = 0u64,
+    context_bytes = 0u64,
+)]
+agent @agent.cli.budget_smoke budget_smoke()
+effects { agent.observe }
+{
+    observe()
+    return "budget-ok"
+}

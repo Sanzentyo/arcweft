@@ -7,7 +7,7 @@
 
 use arcweft_agent_protocol::{
     AgentActionTarget, AgentResource,
-    artifact::{ProjectBinding, ProjectBindingMode, RequiredEntity},
+    artifact::{AgentBudget, ProjectBinding, ProjectBindingMode, RequiredEntity},
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
@@ -191,6 +191,12 @@ where
     ControllerFailed(String),
     #[error("Agent controller exceeded execution step budget of {max_steps}")]
     ControllerBudgetExceeded { max_steps: usize },
+    #[error("Agent controller exceeded {kind} budget: attempted {attempted}, limit {limit}")]
+    ControllerResourceBudgetExceeded {
+        kind: &'static str,
+        limit: u64,
+        attempted: u64,
+    },
     #[error("Agent wait timed out after {timeout_millis} ms")]
     WaitTimeout { timeout_millis: u64 },
 }
@@ -268,6 +274,21 @@ impl Default for AgentControllerRunConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct AgentBudgetTracker {
+    host_calls: u32,
+    observations: u32,
+    captures: u32,
+    capture_bytes: u64,
+    rag_queries: u32,
+    context_bytes: u64,
+}
+
+struct AgentBudgetContext<'a> {
+    limits: AgentBudget,
+    tracker: &'a mut AgentBudgetTracker,
+}
+
 impl<S, D, R> AgentRunner<S, D, R>
 where
     S: AgentSession,
@@ -307,74 +328,46 @@ where
         &mut self,
         request: AgentHostRequest,
     ) -> AgentRunnerResult<AgentHostCallReport, S, D, R> {
+        self.handle_host_request_inner(request, None)
+    }
+
+    fn handle_controller_host_request(
+        &mut self,
+        request: AgentHostRequest,
+        limits: AgentBudget,
+        tracker: &mut AgentBudgetTracker,
+    ) -> AgentRunnerResult<AgentHostCallReport, S, D, R> {
+        self.handle_host_request_inner(request, Some(AgentBudgetContext { limits, tracker }))
+    }
+
+    fn handle_host_request_inner(
+        &mut self,
+        request: AgentHostRequest,
+        mut budget: Option<AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<AgentHostCallReport, S, D, R> {
+        if let Some(budget) = budget.as_mut() {
+            record_budget_u32(
+                "host call",
+                &mut budget.tracker.host_calls,
+                1,
+                budget.limits.max_host_calls,
+            )?;
+        }
         self.emit(DebugEventKind::StepStarted, None, serde_json::json!({}))?;
         let response = match request {
             AgentHostRequest::Observe(request) => {
-                self.ensure(RuntimeAgentCapability::Observe)?;
-                let observation = self
-                    .session
-                    .observe(*request)
-                    .map_err(AgentRunError::Session)?;
-                self.emit(
-                    DebugEventKind::Observation,
-                    Some(observation.tick),
-                    serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
-                )?;
-                AgentHostResponse::Observation(Box::new(observation))
+                self.handle_observe_request(*request, budget.as_mut())?
             }
-            AgentHostRequest::Act(action) => {
-                self.ensure(match action.as_ref() {
-                    AgentAction::PointerClick { .. } => RuntimeAgentCapability::ActPhysical,
-                    AgentAction::AdvanceText
-                    | AgentAction::SelectChoice { .. }
-                    | AgentAction::Invoke { .. } => RuntimeAgentCapability::Act,
-                })?;
-                let result = self.session.act(*action).map_err(AgentRunError::Session)?;
-                self.emit(
-                    DebugEventKind::Action,
-                    Some(result.after_tick),
-                    serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
-                )?;
-                AgentHostResponse::Action(Box::new(result))
-            }
+            AgentHostRequest::Act(action) => self.handle_action_request(*action)?,
             AgentHostRequest::Wait(request) => {
-                let observation = self.wait(&request)?;
-                AgentHostResponse::Observation(Box::new(observation))
+                self.handle_wait_request(*request, budget.as_mut())?
             }
             AgentHostRequest::Capture(request) => {
-                self.ensure(RuntimeAgentCapability::Capture)?;
-                let result = self
-                    .session
-                    .capture(*request)
-                    .map_err(AgentRunError::Session)?;
-                self.emit(
-                    DebugEventKind::Capture,
-                    None,
-                    serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
-                )?;
-                AgentHostResponse::Capture(Box::new(result))
+                self.handle_capture_request(*request, budget.as_mut())?
             }
-            AgentHostRequest::ReadResource { uri } => {
-                self.ensure(RuntimeAgentCapability::ResourceRead)?;
-                let resource = self
-                    .session
-                    .read_resource(uri.as_str())
-                    .map_err(AgentRunError::Session)?;
-                AgentHostResponse::Resource(Box::new(
-                    serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
-                ))
-            }
+            AgentHostRequest::ReadResource { uri } => self.handle_read_resource_request(&uri)?,
             AgentHostRequest::RagQuery(request) => {
-                self.ensure(RuntimeAgentCapability::Rag)?;
-                let context = self.rag.query(*request).map_err(AgentRunError::Rag)?;
-                self.emit(
-                    DebugEventKind::RagQuery,
-                    None,
-                    serde_json::to_value(&context).unwrap_or(serde_json::Value::Null),
-                )?;
-                AgentHostResponse::RagContext(Box::new(
-                    serde_json::to_value(context).unwrap_or(serde_json::Value::Null),
-                ))
+                self.handle_rag_query_request(*request, budget.as_mut())?
             }
             AgentHostRequest::Assert(request) => self.handle_assertion_request(request.as_ref())?,
             AgentHostRequest::Attach(attachment) => {
@@ -401,6 +394,147 @@ where
             response,
             events_emitted: self.sequence,
         })
+    }
+
+    fn handle_observe_request(
+        &mut self,
+        request: ObserveRequest,
+        budget: Option<&mut AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::Observe)?;
+        if let Some(budget) = budget {
+            record_budget_u32(
+                "observation",
+                &mut budget.tracker.observations,
+                1,
+                budget.limits.max_observations,
+            )?;
+        }
+        let observation = self
+            .session
+            .observe(request)
+            .map_err(AgentRunError::Session)?;
+        self.emit(
+            DebugEventKind::Observation,
+            Some(observation.tick),
+            serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
+        )?;
+        Ok(AgentHostResponse::Observation(Box::new(observation)))
+    }
+
+    fn handle_action_request(
+        &mut self,
+        action: AgentAction,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(match &action {
+            AgentAction::PointerClick { .. } => RuntimeAgentCapability::ActPhysical,
+            AgentAction::AdvanceText
+            | AgentAction::SelectChoice { .. }
+            | AgentAction::Invoke { .. } => RuntimeAgentCapability::Act,
+        })?;
+        let result = self.session.act(action).map_err(AgentRunError::Session)?;
+        self.emit(
+            DebugEventKind::Action,
+            Some(result.after_tick),
+            serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+        )?;
+        Ok(AgentHostResponse::Action(Box::new(result)))
+    }
+
+    fn handle_wait_request(
+        &mut self,
+        request: WaitRequest,
+        budget: Option<&mut AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        let request = effective_wait_request(
+            request,
+            budget
+                .as_ref()
+                .map(|budget| budget.limits.logical_timeout_millis),
+        );
+        let observation = self.wait(&request, budget)?;
+        Ok(AgentHostResponse::Observation(Box::new(observation)))
+    }
+
+    fn handle_capture_request(
+        &mut self,
+        request: CaptureRequest,
+        budget: Option<&mut AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::Capture)?;
+        let mut budget = budget;
+        if let Some(budget) = budget.as_mut() {
+            record_budget_u32(
+                "capture",
+                &mut budget.tracker.captures,
+                1,
+                budget.limits.max_captures,
+            )?;
+        }
+        let result = self
+            .session
+            .capture(request)
+            .map_err(AgentRunError::Session)?;
+        if let Some(budget) = budget.as_mut() {
+            record_budget_u64(
+                "capture byte",
+                &mut budget.tracker.capture_bytes,
+                result.byte_len,
+                budget.limits.max_capture_bytes,
+            )?;
+        }
+        self.emit(
+            DebugEventKind::Capture,
+            None,
+            serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+        )?;
+        Ok(AgentHostResponse::Capture(Box::new(result)))
+    }
+
+    fn handle_read_resource_request(
+        &mut self,
+        uri: &AgentResourceUri,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::ResourceRead)?;
+        let resource = self
+            .session
+            .read_resource(uri.as_str())
+            .map_err(AgentRunError::Session)?;
+        Ok(AgentHostResponse::Resource(Box::new(
+            serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
+        )))
+    }
+
+    fn handle_rag_query_request(
+        &mut self,
+        request: RagRequest,
+        budget: Option<&mut AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::Rag)?;
+        let mut budget = budget;
+        if let Some(budget) = budget.as_mut() {
+            record_budget_u32(
+                "RAG query",
+                &mut budget.tracker.rag_queries,
+                1,
+                budget.limits.max_rag_queries,
+            )?;
+        }
+        let context = self.rag.query(request).map_err(AgentRunError::Rag)?;
+        let context_value = serde_json::to_value(&context).unwrap_or(serde_json::Value::Null);
+        if let Some(budget) = budget.as_mut() {
+            let context_bytes = serde_json::to_vec(&context_value).map_or(u64::MAX, |bytes| {
+                u64::try_from(bytes.len()).unwrap_or(u64::MAX)
+            });
+            record_budget_u64(
+                "RAG context byte",
+                &mut budget.tracker.context_bytes,
+                context_bytes,
+                budget.limits.max_context_bytes,
+            )?;
+        }
+        self.emit(DebugEventKind::RagQuery, None, context_value.clone())?;
+        Ok(AgentHostResponse::RagContext(Box::new(context_value)))
     }
 
     fn handle_assertion_request(
@@ -435,6 +569,19 @@ where
         program: BytecodeProgram,
         config: AgentControllerRunConfig,
     ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
+        self.run_controller_bytecode_with_budget(
+            program,
+            config,
+            effective_controller_budget(AgentBudget::default(), config),
+        )
+    }
+
+    fn run_controller_bytecode_with_budget(
+        &mut self,
+        program: BytecodeProgram,
+        config: AgentControllerRunConfig,
+        budget: AgentBudget,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
         let mut executor = BytecodeVmExecutor::new(program).map_err(AgentRunError::Bytecode)?;
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
@@ -450,8 +597,12 @@ where
             final_status: None,
         };
         let mut task_events = Vec::new();
+        let mut budget_tracker = AgentBudgetTracker::default();
 
-        while report.steps < config.max_steps {
+        let max_steps = usize::try_from(budget.max_vm_steps)
+            .unwrap_or(usize::MAX)
+            .min(config.max_steps);
+        while report.steps < max_steps {
             report.steps += 1;
             let step = executor.step(
                 RuntimeStepInput {
@@ -463,7 +614,8 @@ where
             for effect in &step.output.effects.line {
                 let request = agent_host_request_from_effect(effect)
                     .map_err(AgentRunError::UnsupportedControllerEffect)?;
-                let host_report = self.handle_host_request(request)?;
+                let host_report =
+                    self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 report.host_calls += 1;
                 report.responses.push(host_report.response);
                 report.events_emitted = host_report.events_emitted;
@@ -471,7 +623,8 @@ where
             for task in &step.output.requests.tasks {
                 let request = agent_host_request_from_task(&task.request)
                     .map_err(AgentRunError::UnsupportedControllerEffect)?;
-                let host_report = self.handle_host_request(request)?;
+                let host_report =
+                    self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 task_events.push(TaskEvent {
                     logical_epoch: LogicalEpoch(0),
                     task_id: task.id.clone(),
@@ -498,9 +651,7 @@ where
             }
         }
 
-        Err(AgentRunError::ControllerBudgetExceeded {
-            max_steps: config.max_steps,
-        })
+        Err(AgentRunError::ControllerBudgetExceeded { max_steps })
     }
 
     /// Runs a decoded `.awfb` Agent controller bundle through the shared
@@ -518,7 +669,11 @@ where
             .as_ref()
             .ok_or(AgentRunError::MissingAgentManifest)?;
         self.validate_project_binding(&manifest.project_binding)?;
-        self.run_controller_bytecode(bundle.bytecode.program.clone(), config)
+        self.run_controller_bytecode_with_budget(
+            bundle.bytecode.program.clone(),
+            config,
+            effective_controller_budget(manifest.budget, config),
+        )
     }
 
     fn validate_project_binding(
@@ -558,7 +713,11 @@ where
         }
     }
 
-    fn wait(&mut self, request: &WaitRequest) -> AgentRunnerResult<ObservationEnvelope, S, D, R> {
+    fn wait(
+        &mut self,
+        request: &WaitRequest,
+        mut budget: Option<&mut AgentBudgetContext<'_>>,
+    ) -> AgentRunnerResult<ObservationEnvelope, S, D, R> {
         self.ensure(RuntimeAgentCapability::Observe)?;
         let poll_frames = request.poll_frames.max(1);
         let stable_frames = request.stable_frames.max(1);
@@ -567,6 +726,14 @@ where
         let mut last_observation = None;
 
         for _ in 0..max_polls {
+            if let Some(budget) = budget.as_mut() {
+                record_budget_u32(
+                    "observation",
+                    &mut budget.tracker.observations,
+                    1,
+                    budget.limits.max_observations,
+                )?;
+            }
             let observation = self
                 .session
                 .step_frames(poll_frames)
@@ -643,6 +810,84 @@ where
         mode: binding.mode,
         detail,
     }
+}
+
+fn effective_controller_budget(
+    manifest: AgentBudget,
+    config: AgentControllerRunConfig,
+) -> AgentBudget {
+    let runtime = AgentBudget::default();
+    AgentBudget {
+        logical_timeout_millis: manifest
+            .logical_timeout_millis
+            .min(runtime.logical_timeout_millis),
+        max_vm_steps: manifest
+            .max_vm_steps
+            .min(runtime.max_vm_steps)
+            .min(u64::try_from(config.max_steps).unwrap_or(u64::MAX)),
+        max_host_calls: manifest.max_host_calls.min(runtime.max_host_calls),
+        max_observations: manifest.max_observations.min(runtime.max_observations),
+        max_captures: manifest.max_captures.min(runtime.max_captures),
+        max_capture_bytes: manifest.max_capture_bytes.min(runtime.max_capture_bytes),
+        max_rag_queries: manifest.max_rag_queries.min(runtime.max_rag_queries),
+        max_context_bytes: manifest.max_context_bytes.min(runtime.max_context_bytes),
+    }
+}
+
+fn effective_wait_request(
+    mut request: WaitRequest,
+    logical_timeout_millis: Option<u64>,
+) -> WaitRequest {
+    if let Some(limit) = logical_timeout_millis {
+        request.timeout_millis = request.timeout_millis.min(limit);
+    }
+    request
+}
+
+fn record_budget_u32<SessionError, DebugError, RagError>(
+    kind: &'static str,
+    used: &mut u32,
+    amount: u32,
+    limit: u32,
+) -> Result<(), AgentRunError<SessionError, DebugError, RagError>>
+where
+    SessionError: std::error::Error + Send + Sync + 'static,
+    DebugError: std::error::Error + Send + Sync + 'static,
+    RagError: std::error::Error + Send + Sync + 'static,
+{
+    let attempted = used.saturating_add(amount);
+    if attempted > limit {
+        return Err(AgentRunError::ControllerResourceBudgetExceeded {
+            kind,
+            limit: u64::from(limit),
+            attempted: u64::from(attempted),
+        });
+    }
+    *used = attempted;
+    Ok(())
+}
+
+fn record_budget_u64<SessionError, DebugError, RagError>(
+    kind: &'static str,
+    used: &mut u64,
+    amount: u64,
+    limit: u64,
+) -> Result<(), AgentRunError<SessionError, DebugError, RagError>>
+where
+    SessionError: std::error::Error + Send + Sync + 'static,
+    DebugError: std::error::Error + Send + Sync + 'static,
+    RagError: std::error::Error + Send + Sync + 'static,
+{
+    let attempted = used.saturating_add(amount);
+    if attempted > limit {
+        return Err(AgentRunError::ControllerResourceBudgetExceeded {
+            kind,
+            limit,
+            attempted,
+        });
+    }
+    *used = attempted;
+    Ok(())
 }
 
 fn compatible_entity_mismatch(
@@ -2618,14 +2863,40 @@ mod tests {
 
     fn observe_checkpoint_bundle() -> ArcweftBundle {
         let program = observe_checkpoint_program();
+        agent_controller_test_bundle(
+            program,
+            "agent.observe_smoke",
+            "agent.observe_smoke.awfagent",
+            "agent @agent.observe_smoke observe_smoke() { observe() }",
+            AgentBudget::default(),
+        )
+    }
+
+    fn capture_binding_bundle_with_budget(budget: AgentBudget) -> ArcweftBundle {
+        agent_controller_test_bundle(
+            capture_binding_program(),
+            "agent.capture_binding",
+            "agent.capture_binding.awfagent",
+            "agent @agent.capture_binding capture_binding() { let shot = try capture(viewport()) }",
+            budget,
+        )
+    }
+
+    fn agent_controller_test_bundle(
+        program: BytecodeProgram,
+        agent_id: &str,
+        source_label: &str,
+        source_text: &str,
+        budget: AgentBudget,
+    ) -> ArcweftBundle {
         let stats = program.stats();
         let display = arcweft_render_text::LineDisplayCatalog::default();
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "agent.observe_smoke.awfagent".to_owned(),
+                source_label: source_label.to_owned(),
                 profile_id: None,
                 profile_kind: None,
-                entry: Some("entry.agent.observe_smoke".to_owned()),
+                entry: Some(format!("entry.{agent_id}")),
                 adapter: None,
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
@@ -2639,8 +2910,8 @@ mod tests {
                 },
             },
             BundleSource {
-                label: "agent.observe_smoke.awfagent".to_owned(),
-                text: "agent @agent.observe_smoke observe_smoke() { observe() }".to_owned(),
+                label: source_label.to_owned(),
+                text: source_text.to_owned(),
             },
             program,
             display,
@@ -2648,7 +2919,7 @@ mod tests {
         .with_agent_manifest(AgentArtifactManifest {
             schema_version: 1,
             bundle_kind: AgentBundleKind::AgentController,
-            agent_id: PublicId::new("agent.observe_smoke").expect("valid agent id"),
+            agent_id: PublicId::new(agent_id).expect("valid agent id"),
             source_hash: StableHash::new("blake3:test").expect("valid source hash"),
             compiler_version: "test".to_owned(),
             project_binding: ProjectBinding {
@@ -2657,7 +2928,7 @@ mod tests {
                 required_entities: Vec::new(),
             },
             declared_effects: Vec::new(),
-            budget: AgentBudget::default(),
+            budget,
             debug_map_hash: None,
         })
     }
@@ -3657,6 +3928,38 @@ mod tests {
             report.final_status,
             Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
                 if value == "agent://capture/test"
+        ));
+    }
+
+    #[test]
+    fn controller_bundle_enforces_agent_manifest_capture_budget() {
+        let budget = AgentBudget {
+            max_captures: 0,
+            ..AgentBudget::default()
+        };
+        let bundle = capture_binding_bundle_with_budget(budget);
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::Capture,
+            ]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let error = runner
+            .run_controller_bundle(&bundle, AgentControllerRunConfig::default())
+            .expect_err("capture budget stops controller bundle");
+
+        assert!(matches!(
+            error,
+            AgentRunError::ControllerResourceBudgetExceeded {
+                kind: "capture",
+                limit: 0,
+                attempted: 1,
+            }
         ));
     }
 
