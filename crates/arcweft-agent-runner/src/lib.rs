@@ -7,6 +7,7 @@
 
 use arcweft_agent_protocol::{
     AgentActionTarget, AgentResource,
+    artifact::{ProjectBinding, ProjectBindingMode},
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
     predicate::{CompareOp, Predicate, Probe},
     protocol::{
@@ -169,6 +170,14 @@ where
     NotAgentControllerBundle,
     #[error("Agent controller bundle is missing its Agent artifact manifest")]
     MissingAgentManifest,
+    #[error(
+        "Agent controller project binding mismatch: expected program hash {expected_program_hash}, actual {actual_program_hash}, mode {mode:?}"
+    )]
+    ProjectBindingMismatch {
+        expected_program_hash: String,
+        actual_program_hash: String,
+        mode: ProjectBindingMode,
+    },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
     #[error("Agent controller failed: {0}")]
@@ -471,10 +480,33 @@ where
         if bundle.bundle_kind != BundleKind::AgentController {
             return Err(AgentRunError::NotAgentControllerBundle);
         }
-        if bundle.agent.is_none() {
-            return Err(AgentRunError::MissingAgentManifest);
-        }
+        let manifest = bundle
+            .agent
+            .as_ref()
+            .ok_or(AgentRunError::MissingAgentManifest)?;
+        self.validate_project_binding(&manifest.project_binding)?;
         self.run_controller_bytecode(bundle.bytecode.program.clone(), config)
+    }
+
+    fn validate_project_binding(
+        &mut self,
+        binding: &ProjectBinding,
+    ) -> AgentRunnerResult<(), S, D, R> {
+        let session_info = self.session.info().map_err(AgentRunError::Session)?;
+        match binding.mode {
+            ProjectBindingMode::Strict => {
+                if binding.program_hash.as_str() == session_info.program_hash {
+                    Ok(())
+                } else {
+                    Err(AgentRunError::ProjectBindingMismatch {
+                        expected_program_hash: binding.program_hash.as_str().to_owned(),
+                        actual_program_hash: session_info.program_hash,
+                        mode: binding.mode,
+                    })
+                }
+            }
+            ProjectBindingMode::Compatible => Ok(()),
+        }
     }
 
     fn wait(&mut self, request: &WaitRequest) -> AgentRunnerResult<ObservationEnvelope, S, D, R> {
@@ -3154,6 +3186,43 @@ mod tests {
             &report.responses[0],
             AgentHostResponse::Observation(observation) if observation.tick == 1
         ));
+    }
+
+    #[test]
+    fn controller_bundle_rejects_strict_project_binding_mismatch_before_execution() {
+        let session = TestSession {
+            observations: vec![observation(1, true)],
+        };
+        let mut runner = AgentRunner::new(
+            session,
+            RecordingDebugSink::default(),
+            NoopRagService,
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::DebugRecord,
+            ]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+        let mut bundle = observe_checkpoint_bundle();
+        let manifest = bundle.agent.as_mut().expect("agent manifest exists");
+        manifest.project_binding.mode = ProjectBindingMode::Strict;
+        manifest.project_binding.program_hash =
+            StableHash::new("different-program").expect("valid program hash");
+
+        let error = runner
+            .run_controller_bundle(&bundle, AgentControllerRunConfig::default())
+            .expect_err("strict binding mismatch is rejected");
+
+        assert!(matches!(
+            error,
+            AgentRunError::ProjectBindingMismatch {
+                expected_program_hash,
+                actual_program_hash,
+                mode: ProjectBindingMode::Strict,
+            } if expected_program_hash == "different-program" && actual_program_hash == "hash"
+        ));
+        assert_eq!(runner.session_mut().observations.len(), 1);
+        assert!(runner.debug_mut().events.is_empty());
     }
 
     #[test]
