@@ -938,6 +938,15 @@ mod tests {
         assert_eq!(object.bbox.y, 34);
         assert_eq!(object.bbox.width, 56);
         assert_eq!(object.bbox.height, 78);
+        assert!(
+            object
+                .capture_refs
+                .captures
+                .iter()
+                .all(|capture| capture.uri.contains("/frame/2/")),
+            "image capture refs should use the observation tick: {:?}",
+            object.capture_refs
+        );
         let AgentObservedObjectContent::Image(content) = &object.content else {
             panic!("image call should become Agent image content");
         };
@@ -1470,7 +1479,7 @@ fn agent_mcp_run_observation(
     .map_err(|error| error.to_string())?;
     let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
         selection.path(),
-        observed.report.steps,
+        observed.report.tick,
         &observed.report.viewport,
         &executor.fiber().observations.calls,
         agent_observe_capture_time_seconds(&options),
@@ -2119,7 +2128,7 @@ fn agent_observation_for_options(
     })?;
     let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
         selection.path(),
-        observed.report.steps,
+        observed.report.tick,
         &observed.report.viewport,
         &executor.fiber().observations.calls,
         agent_observe_capture_time_seconds(options),
