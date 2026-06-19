@@ -169,7 +169,7 @@ impl TypeChecker<'_> {
                 "asset" => {}
                 "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
                 "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
-                "id" | "action" | "actions" | "fit" => {
+                "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role" => {
                     self.check_presentation_image_loose_value(value);
                 }
                 "depth" => {
@@ -187,7 +187,19 @@ impl TypeChecker<'_> {
                 "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
                     self.check_presentation_image_transform_component_value(value);
                 }
+                "proxy.layer" => {
+                    self.check_presentation_image_id_value(value, &EntityKind::Layer);
+                }
+                "proxy.depth" => {
+                    self.expect_expr_type(value, &TypeKind::I32, "image proxy depth");
+                }
+                "proxy.hit_test" => {
+                    self.expect_expr_type(value, &TypeKind::Bool, "image proxy hit-test flag");
+                }
                 custom if custom.starts_with("param.") => {
+                    self.check_presentation_image_param_value(value);
+                }
+                custom if custom.starts_with("proxy.param.") => {
                     self.check_presentation_image_param_value(value);
                 }
                 _ => {

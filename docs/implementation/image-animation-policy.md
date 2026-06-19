@@ -175,7 +175,7 @@ image(
   proxy.type = "PulseSpriteHotspot",
   proxy.role = "inspect",
   proxy.layer = "layer.hit",
-  proxy.depth = "2600",
+  proxy.depth = 2600,
   proxy.hit_test = true,
   proxy.param.channel = "preview"
 )
