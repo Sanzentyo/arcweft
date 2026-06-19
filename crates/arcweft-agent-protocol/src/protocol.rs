@@ -134,8 +134,8 @@ pub enum AgentHostRequest {
 #[serde(tag = "kind", content = "response", rename_all = "snake_case")]
 pub enum AgentHostResponse {
     Observation(Box<ObservationEnvelope>),
-    Action(ActionResult),
-    Capture(CaptureResult),
+    Action(Box<ActionResult>),
+    Capture(Box<CaptureResult>),
     Resource(Box<serde_json::Value>),
     RagContext(Box<serde_json::Value>),
     Unit,

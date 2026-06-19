@@ -2,7 +2,7 @@
 
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
-use crate::host_request::lower_host_task_request;
+use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
@@ -1258,6 +1258,7 @@ pub(crate) fn lower_runtime_flows(
     )
     .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
+        agent_controller: false,
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
@@ -1295,6 +1296,7 @@ fn lower_agent_controller_flow(
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
+        agent_controller: true,
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
@@ -1318,6 +1320,7 @@ fn lower_agent_controller_flow(
 }
 
 struct FlowRuntimeLowerer<'a> {
+    agent_controller: bool,
     line_task_groups: Vec<LineTaskGroup>,
     line_display_catalog: LineDisplayCatalog,
     display_defaults: DialogueDisplayDefaults,
@@ -1712,10 +1715,16 @@ impl FlowRuntimeLowerer<'_> {
 
     fn lower_flow_stmt(&mut self, stmt: &Stmt) -> Vec<FlowOp> {
         match stmt {
-            Stmt::Let { pattern, expr, .. } => vec![FlowOp::Let {
-                pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr(expr),
-            }],
+            Stmt::Let { pattern, expr, .. } => {
+                if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
+                    vec![op]
+                } else {
+                    vec![FlowOp::Let {
+                        pattern: lower_runtime_pattern(pattern),
+                        expr: self.lower_runtime_expr(expr),
+                    }]
+                }
+            }
             Stmt::LetScope { pattern, scope } => vec![FlowOp::LetScope {
                 pattern: lower_runtime_pattern(pattern),
                 ops: self.lower_flow_stmt_list(scope.statements()),
@@ -1853,6 +1862,34 @@ impl FlowRuntimeLowerer<'_> {
             .iter()
             .flat_map(|statement| self.lower_flow_stmt(statement))
             .collect()
+    }
+
+    fn lower_agent_host_call_let(&mut self, pattern: &Pattern, expr: &Expr) -> Option<FlowOp> {
+        if !self.agent_controller {
+            return None;
+        }
+        let request = lower_agent_host_task_request(expr)?;
+        let task_name = expr_label(expr)
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    ch
+                } else {
+                    '.'
+                }
+            })
+            .collect::<String>()
+            .trim_matches('.')
+            .to_owned();
+        Some(FlowOp::Await {
+            binding: Some(lower_runtime_pattern(pattern)),
+            target: AwaitTarget::new(
+                NeedId(format!("need.agent.{task_name}")),
+                TaskId(format!("task.agent.{task_name}")),
+                request,
+            ),
+            pending: Vec::new(),
+        })
     }
 
     fn lower_syntax_flow_items(&mut self, items: &[FlowItem]) -> Vec<FlowOp> {

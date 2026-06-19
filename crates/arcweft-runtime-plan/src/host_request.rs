@@ -7,7 +7,7 @@
 use crate::expr::lower_runtime_expr_strict;
 use crate::labels::expr_label;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
-use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
 
 struct CallParts<'a> {
@@ -34,6 +34,44 @@ pub(crate) fn lower_host_task_request(expr: &Expr) -> HostTaskRequestTemplate {
     )
 }
 
+/// Lowers an Agent Prelude call expression to a Custom host task template.
+///
+/// Named arguments are preserved as a trailing runtime record payload because
+/// the generic `HostTaskRequest::Custom` shape carries positional payloads.
+pub(crate) fn lower_agent_host_task_request(expr: &Expr) -> Option<HostTaskRequestTemplate> {
+    let call = agent_call_parts(expr)?;
+    let mut positional = Vec::new();
+    let mut named = Vec::new();
+    for arg in call.args {
+        match arg {
+            CallArg::Positional(value) => {
+                positional.push(HostTaskArgTemplate::positional(lower_agent_host_arg_expr(
+                    value,
+                )));
+            }
+            CallArg::Named { name, value } => {
+                named.push(RuntimeFieldExpr {
+                    name: name.clone(),
+                    value: lower_agent_host_arg_expr(value),
+                });
+            }
+            CallArg::Spread { value } => {
+                positional.push(HostTaskArgTemplate::spread(lower_agent_host_arg_expr(
+                    value,
+                )));
+            }
+        }
+    }
+    if !named.is_empty() {
+        positional.push(HostTaskArgTemplate::positional(RuntimeExpr::Record(named)));
+    }
+    Some(HostTaskRequestTemplate::new(
+        "agent",
+        call.operation,
+        positional,
+    ))
+}
+
 fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
     match expr {
         Expr::Call { callee, args } => {
@@ -55,6 +93,38 @@ fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
             args,
         }),
         Expr::Await { expr, .. } | Expr::Try { expr } => call_parts(expr),
+        _ => None,
+    }
+}
+
+fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
+    match expr {
+        Expr::Call { callee, args } => {
+            let operation = match expr_label(callee).as_str() {
+                "observe" => "observe",
+                "capture" => "capture",
+                "wait" => "wait",
+                "choose" => "choose",
+                "invoke" => "invoke",
+                "read_resource" => "read_resource",
+                _ => return None,
+            };
+            Some(CallParts {
+                capability: "agent".to_owned(),
+                operation: operation.to_owned(),
+                args,
+            })
+        }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if expr_label(receiver) == "rag" && method_name(method) == "query" => Some(CallParts {
+            capability: "agent".to_owned(),
+            operation: "rag.query".to_owned(),
+            args,
+        }),
+        Expr::Await { expr, .. } | Expr::Try { expr } => agent_call_parts(expr),
         _ => None,
     }
 }
@@ -97,5 +167,14 @@ fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
         }
         other => lower_runtime_expr_strict(other)
             .unwrap_or_else(|_| RuntimeExpr::Value(RuntimeValue::String(expr_label(other)))),
+    }
+}
+
+fn lower_agent_host_arg_expr(expr: &Expr) -> RuntimeExpr {
+    match expr {
+        Expr::Path(path) if path.starts_with('.') => {
+            RuntimeExpr::Value(RuntimeValue::String(path.to_owned()))
+        }
+        _ => lower_host_arg_expr(expr),
     }
 }

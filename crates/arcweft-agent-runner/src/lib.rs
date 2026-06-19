@@ -20,16 +20,19 @@ use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::{
     bytecode::BytecodeProgram,
     effect::{LineEffectRequest, RuntimeCall},
+    engine::FlowFiberStatus,
     executor::{BytecodeVmExecutor, RuntimeExecutor},
     plan::RuntimePlanError,
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    task::{HostTaskRequest, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence},
+    value::{RuntimeFieldValue, RuntimePayload, RuntimeValue},
 };
 use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     rag::RagContextPack,
     sink::DebugEventSink,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// Target application boundary used by the controller runner.
@@ -127,6 +130,7 @@ pub struct AgentControllerRunReport {
     pub host_calls: usize,
     pub responses: Vec<AgentHostResponse>,
     pub events_emitted: u64,
+    pub final_status: Option<FlowFiberStatus>,
 }
 
 /// Runner for Agent controller host calls.
@@ -304,7 +308,7 @@ where
                     Some(result.after_tick),
                     serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
                 )?;
-                AgentHostResponse::Action(result)
+                AgentHostResponse::Action(Box::new(result))
             }
             AgentHostRequest::Wait(request) => {
                 let observation = self.wait(&request)?;
@@ -321,7 +325,7 @@ where
                     None,
                     serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
                 )?;
-                AgentHostResponse::Capture(result)
+                AgentHostResponse::Capture(Box::new(result))
             }
             AgentHostRequest::ReadResource { uri } => {
                 self.ensure(RuntimeAgentCapability::ResourceRead)?;
@@ -362,11 +366,7 @@ where
     }
 
     /// Runs one compiled Agent controller bytecode program and dispatches
-    /// effect-form Agent host calls in source/runtime order.
-    ///
-    /// This slice intentionally handles calls that do not need their host
-    /// response rebound into the VM. Agent expressions such as
-    /// `let shot = capture(...)` still require the next suspend/resume slice.
+    /// Agent host calls in source/runtime order.
     pub fn run_controller_bytecode(
         &mut self,
         program: BytecodeProgram,
@@ -384,11 +384,19 @@ where
             host_calls: 0,
             responses: Vec::new(),
             events_emitted: self.sequence,
+            final_status: None,
         };
+        let mut task_events = Vec::new();
 
         while report.steps < config.max_steps {
             report.steps += 1;
-            let step = executor.step(RuntimeStepInput::default(), options);
+            let step = executor.step(
+                RuntimeStepInput {
+                    task_events: std::mem::take(&mut task_events),
+                    ..RuntimeStepInput::default()
+                },
+                options,
+            );
             for effect in &step.output.effects.line {
                 let request = agent_host_request_from_effect(effect)
                     .map_err(AgentRunError::UnsupportedControllerEffect)?;
@@ -397,16 +405,33 @@ where
                 report.responses.push(host_report.response);
                 report.events_emitted = host_report.events_emitted;
             }
+            for task in &step.output.requests.tasks {
+                let request = agent_host_request_from_task(&task.request)
+                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                let host_report = self.handle_host_request(request)?;
+                task_events.push(TaskEvent {
+                    logical_epoch: LogicalEpoch(0),
+                    task_id: task.id.clone(),
+                    sequence: TaskSequence(report.host_calls as u64),
+                    kind: TaskEventKind::Ready(runtime_payload_from_response(
+                        &host_report.response,
+                    )),
+                });
+                report.host_calls += 1;
+                report.responses.push(host_report.response);
+                report.events_emitted = host_report.events_emitted;
+            }
+            report.final_status = Some(step.fiber_status.clone());
 
             match step.fiber_status {
-                arcweft_core::engine::FlowFiberStatus::Done(_) => return Ok(report),
-                arcweft_core::engine::FlowFiberStatus::Failed(message) => {
+                FlowFiberStatus::Done(_) => return Ok(report),
+                FlowFiberStatus::Failed(message) => {
                     return Err(AgentRunError::ControllerFailed(message));
                 }
-                arcweft_core::engine::FlowFiberStatus::Running
-                | arcweft_core::engine::FlowFiberStatus::Waiting(_)
-                | arcweft_core::engine::FlowFiberStatus::WaitingMany(_)
-                | arcweft_core::engine::FlowFiberStatus::Choice(_) => {}
+                FlowFiberStatus::Running
+                | FlowFiberStatus::Waiting(_)
+                | FlowFiberStatus::WaitingMany(_)
+                | FlowFiberStatus::Choice(_) => {}
             }
         }
 
@@ -547,6 +572,364 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
         }
         other => Err(format!("unsupported Agent call `{other}`")),
     }
+}
+
+fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRequest, String> {
+    let HostTaskRequest::Custom {
+        capability,
+        operation,
+        args,
+    } = request
+    else {
+        return Err(format!("unsupported Agent task request `{request:?}`"));
+    };
+    if capability.0 != "agent" {
+        return Err(format!(
+            "unsupported Agent task capability `{}`",
+            capability.0
+        ));
+    }
+    let args = RuntimeAgentArgs::new(args);
+    match operation.as_str() {
+        "observe" => runtime_observe_request(&args)
+            .map(|request| AgentHostRequest::Observe(Box::new(request))),
+        "capture" => runtime_capture_request(&args)
+            .map(|request| AgentHostRequest::Capture(Box::new(request))),
+        "choose" => {
+            let choice = args
+                .positional(0)
+                .ok_or_else(|| "choose requires a choice argument".to_owned())
+                .and_then(runtime_public_id)?;
+            Ok(AgentHostRequest::Act(Box::new(AgentAction::SelectChoice {
+                choice,
+            })))
+        }
+        "invoke" => {
+            runtime_invoke_action(&args).map(|action| AgentHostRequest::Act(Box::new(action)))
+        }
+        "read_resource" => {
+            let uri = args
+                .positional(0)
+                .or_else(|| args.named("uri"))
+                .ok_or_else(|| "read_resource requires a uri argument".to_owned())
+                .and_then(runtime_string)?;
+            Ok(AgentHostRequest::ReadResource {
+                uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
+            })
+        }
+        "rag.query" => {
+            runtime_rag_request(&args).map(|request| AgentHostRequest::RagQuery(Box::new(request)))
+        }
+        "checkpoint" => {
+            let name = args
+                .positional(0)
+                .or_else(|| args.named("name"))
+                .map_or_else(|| Ok("checkpoint".to_owned()), runtime_string)?;
+            Ok(AgentHostRequest::Checkpoint { name })
+        }
+        "wait" => Err("wait task calls require a structured Predicate payload".to_owned()),
+        other => Err(format!("unsupported Agent task operation `{other}`")),
+    }
+}
+
+#[derive(Debug)]
+struct RuntimeAgentArgs<'a> {
+    positionals: Vec<&'a RuntimeValue>,
+    named: BTreeMap<String, &'a RuntimeValue>,
+}
+
+impl<'a> RuntimeAgentArgs<'a> {
+    fn new(args: &'a [RuntimePayload]) -> Self {
+        let mut positionals = Vec::new();
+        let mut named = BTreeMap::new();
+        for arg in args {
+            match arg.value() {
+                RuntimeValue::Record(fields) => {
+                    named.extend(
+                        fields
+                            .iter()
+                            .map(|field| (field.name.clone(), &field.value)),
+                    );
+                }
+                value => positionals.push(value),
+            }
+        }
+        Self { positionals, named }
+    }
+
+    fn positional(&self, index: usize) -> Option<&'a RuntimeValue> {
+        self.positionals.get(index).copied()
+    }
+
+    fn named(&self, name: &str) -> Option<&'a RuntimeValue> {
+        self.named.get(name).copied()
+    }
+
+    fn named_any(&self, names: &[&str]) -> Option<&'a RuntimeValue> {
+        names.iter().find_map(|name| self.named(name))
+    }
+}
+
+fn runtime_observe_request(args: &RuntimeAgentArgs<'_>) -> Result<ObserveRequest, String> {
+    if !args.positionals.is_empty() {
+        return Err("observe does not accept positional arguments".to_owned());
+    }
+    Ok(ObserveRequest {
+        include_images: args
+            .named("include_images")
+            .map_or(Ok(false), runtime_bool)?,
+        include_objects: args
+            .named("include_objects")
+            .map_or(Ok(false), runtime_bool)?,
+        include_logs: args.named("include_logs").map_or(Ok(false), runtime_bool)?,
+    })
+}
+
+fn runtime_capture_request(args: &RuntimeAgentArgs<'_>) -> Result<CaptureRequest, String> {
+    let target = args
+        .positional(0)
+        .ok_or_else(|| "capture requires a target argument".to_owned())
+        .and_then(runtime_capture_target)?;
+    Ok(CaptureRequest {
+        target,
+        format: args
+            .named("format")
+            .map_or(Ok(CaptureFormat::Png), runtime_capture_format)?,
+        capture_kind: args
+            .named_any(&["capture_kind", "kind"])
+            .map_or_else(|| Ok("color".to_owned()), runtime_string)?,
+        name: args
+            .named("name")
+            .map_or_else(|| Ok("capture".to_owned()), runtime_string)?,
+    })
+}
+
+fn runtime_rag_request(args: &RuntimeAgentArgs<'_>) -> Result<RagRequest, String> {
+    let query = args
+        .positional(0)
+        .or_else(|| args.named("query"))
+        .ok_or_else(|| "rag.query requires a query argument".to_owned())
+        .and_then(runtime_string)?;
+    Ok(RagRequest {
+        query,
+        roots: match args.named("roots") {
+            Some(value) => runtime_public_ids(value)?,
+            None => Vec::new(),
+        },
+        graph_depth: args.named("graph_depth").map_or(Ok(1), runtime_u32)?,
+        limit: args.named("limit").map_or(Ok(8), runtime_usize)?,
+    })
+}
+
+fn runtime_invoke_action(args: &RuntimeAgentArgs<'_>) -> Result<AgentAction, String> {
+    let target = args
+        .positional(0)
+        .or_else(|| args.named("target"))
+        .ok_or_else(|| "invoke requires a target argument".to_owned())
+        .and_then(runtime_public_id)?;
+    let action = args
+        .positional(1)
+        .or_else(|| args.named("action"))
+        .ok_or_else(|| "invoke requires an action argument".to_owned())
+        .and_then(runtime_string)?;
+    let call_args = match args.named("args") {
+        Some(value) => runtime_agent_value_map(value)?,
+        None => BTreeMap::new(),
+    };
+    Ok(AgentAction::Invoke {
+        target,
+        action,
+        args: call_args,
+    })
+}
+
+fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload {
+    RuntimePayload::new(match response {
+        AgentHostResponse::Observation(observation) => RuntimeValue::Record(vec![
+            runtime_field("tick", RuntimeValue::u64(observation.tick)),
+            runtime_field(
+                "frame_id",
+                RuntimeValue::String(observation.frame_id.clone()),
+            ),
+            runtime_field(
+                "state_hash",
+                RuntimeValue::String(observation.state_hash.clone()),
+            ),
+            runtime_field(
+                "render_hash",
+                RuntimeValue::String(observation.render_hash.clone()),
+            ),
+        ]),
+        AgentHostResponse::Action(result) => RuntimeValue::Record(vec![
+            runtime_field("accepted", RuntimeValue::Bool(result.accepted)),
+            runtime_field("before_tick", RuntimeValue::u64(result.before_tick)),
+            runtime_field("after_tick", RuntimeValue::u64(result.after_tick)),
+            runtime_field(
+                "before_state_hash",
+                RuntimeValue::String(result.before_state_hash.clone()),
+            ),
+            runtime_field(
+                "after_state_hash",
+                RuntimeValue::String(result.after_state_hash.clone()),
+            ),
+        ]),
+        AgentHostResponse::Capture(result) => RuntimeValue::Record(vec![
+            runtime_field("uri", RuntimeValue::String(result.uri.as_str().to_owned())),
+            runtime_field(
+                "content_hash",
+                RuntimeValue::String(result.content_hash.clone()),
+            ),
+            runtime_field(
+                "media_type",
+                RuntimeValue::String(result.media_type.clone()),
+            ),
+            runtime_field("byte_len", RuntimeValue::u64(result.byte_len)),
+        ]),
+        AgentHostResponse::Resource(value) | AgentHostResponse::RagContext(value) => {
+            RuntimeValue::String(value.to_string())
+        }
+        AgentHostResponse::Unit => RuntimeValue::Unit,
+    })
+}
+
+fn runtime_field(name: &str, value: RuntimeValue) -> RuntimeFieldValue {
+    RuntimeFieldValue {
+        name: name.to_owned(),
+        value,
+    }
+}
+
+fn runtime_string(value: &RuntimeValue) -> Result<String, String> {
+    match value {
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Ok(value.clone()),
+        RuntimeValue::Variant { name, .. } => Ok(name.clone()),
+        other => Err(format!(
+            "expected string-like value, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_bool(value: &RuntimeValue) -> Result<bool, String> {
+    match value {
+        RuntimeValue::Bool(value) => Ok(*value),
+        RuntimeValue::String(value) => parse_bool_label(value),
+        other => Err(format!(
+            "expected boolean value, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_u32(value: &RuntimeValue) -> Result<u32, String> {
+    match value {
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| format!("expected u32-compatible integer, got `{}`", value.label())),
+        RuntimeValue::UInt(value) => value
+            .try_into_u32()
+            .ok_or_else(|| format!("expected u32-compatible integer, got `{}`", value.label())),
+        RuntimeValue::String(value) => value
+            .parse::<u32>()
+            .map_err(|_| format!("expected u32-compatible integer, got `{value}`")),
+        other => Err(format!(
+            "expected integer value, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_usize(value: &RuntimeValue) -> Result<usize, String> {
+    match value {
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| format!("expected usize-compatible integer, got `{}`", value.label())),
+        RuntimeValue::UInt(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| format!("expected usize-compatible integer, got `{}`", value.label())),
+        RuntimeValue::String(value) => value
+            .parse::<usize>()
+            .map_err(|_| format!("expected usize-compatible integer, got `{value}`")),
+        other => Err(format!(
+            "expected integer value, got `{}`",
+            value_label(other)
+        )),
+    }
+}
+
+fn runtime_public_id(value: &RuntimeValue) -> Result<PublicId, String> {
+    runtime_string(value).and_then(|value| parse_public_id_arg(&value))
+}
+
+fn runtime_public_ids(value: &RuntimeValue) -> Result<Vec<PublicId>, String> {
+    match value {
+        RuntimeValue::Tuple(values) => values.iter().map(runtime_public_id).collect(),
+        RuntimeValue::String(value) => parse_public_id_list(value),
+        _ => runtime_public_id(value).map(|id| vec![id]),
+    }
+}
+
+fn runtime_capture_target(value: &RuntimeValue) -> Result<CaptureTarget, String> {
+    runtime_string(value).and_then(|value| parse_capture_target(&value))
+}
+
+fn runtime_capture_format(value: &RuntimeValue) -> Result<CaptureFormat, String> {
+    runtime_string(value).and_then(|value| parse_capture_format(&value))
+}
+
+fn runtime_agent_value_map(value: &RuntimeValue) -> Result<BTreeMap<String, AgentValue>, String> {
+    let RuntimeValue::Record(fields) = value else {
+        return Err(format!(
+            "expected record for invoke args, got `{}`",
+            value_label(value)
+        ));
+    };
+    fields
+        .iter()
+        .map(|field| runtime_agent_value(&field.value).map(|value| (field.name.clone(), value)))
+        .collect()
+}
+
+fn runtime_agent_value(value: &RuntimeValue) -> Result<AgentValue, String> {
+    match value {
+        RuntimeValue::Unit => Ok(AgentValue::Null),
+        RuntimeValue::Bool(value) => Ok(AgentValue::Bool(*value)),
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .map(AgentValue::I64)
+            .ok_or_else(|| format!("integer is out of i64 range: `{}`", value.label())),
+        RuntimeValue::UInt(value) => value
+            .exact_u64()
+            .or_else(|| {
+                value
+                    .try_into_i64()
+                    .and_then(|value| u64::try_from(value).ok())
+            })
+            .map(AgentValue::U64)
+            .ok_or_else(|| format!("integer is out of u64 range: `{}`", value.label())),
+        RuntimeValue::F32(value) => Ok(AgentValue::F64(f64::from(*value))),
+        RuntimeValue::F64(value) => Ok(AgentValue::F64(*value)),
+        RuntimeValue::String(value) => Ok(AgentValue::String(value.clone())),
+        RuntimeValue::EntityRef(value) => parse_public_id_arg(value).map(AgentValue::Entity),
+        RuntimeValue::Tuple(values) => values
+            .iter()
+            .map(runtime_agent_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(AgentValue::List),
+        RuntimeValue::Record(fields) => fields
+            .iter()
+            .map(|field| runtime_agent_value(&field.value).map(|value| (field.name.clone(), value)))
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(AgentValue::Map),
+        other => Err(format!("unsupported Agent value `{}`", value_label(other))),
+    }
+}
+
+fn value_label(value: &RuntimeValue) -> String {
+    RuntimePayload::new(value.clone()).label()
 }
 
 fn observe_request(args: &[String]) -> Result<ObserveRequest, String> {
@@ -782,7 +1165,11 @@ mod tests {
     use arcweft_core::{
         bytecode::BytecodeProgram,
         effect::{LineEffectRequest, RuntimeCall},
+        engine::{FlowExit, FlowFiberStatus},
+        pattern::RuntimePattern,
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
+        task::{AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId},
+        value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue},
     };
     use arcweft_debug_model::sink::NullDebugEventSink;
     use std::collections::BTreeMap;
@@ -921,6 +1308,56 @@ mod tests {
         })
     }
 
+    fn capture_binding_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.capture_binding".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.capture_binding".to_owned()),
+                    ops: vec![
+                        FlowOp::Await {
+                            binding: Some(RuntimePattern::Ident("shot".to_owned())),
+                            target: AwaitTarget::new(
+                                NeedId("need.agent.capture".to_owned()),
+                                TaskId("task.agent.capture".to_owned()),
+                                HostTaskRequestTemplate::new(
+                                    "agent",
+                                    "capture",
+                                    [
+                                        HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                            RuntimeValue::String("viewport()".to_owned()),
+                                        )),
+                                        HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
+                                            RuntimeFieldExpr {
+                                                name: "format".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    ".png".to_owned(),
+                                                )),
+                                            },
+                                            RuntimeFieldExpr {
+                                                name: "name".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    "viewport".to_owned(),
+                                                )),
+                                            },
+                                        ])),
+                                    ],
+                                ),
+                            ),
+                            pending: Vec::new(),
+                        },
+                        FlowOp::ReturnExpr(RuntimeExpr::Field {
+                            target: Box::new(RuntimeExpr::Local("shot".to_owned())),
+                            field: "uri".to_owned(),
+                        }),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
     #[test]
     fn wait_requires_stable_predicate_matches() {
         let session = TestSession {
@@ -1036,6 +1473,38 @@ mod tests {
         assert!(matches!(
             &report.responses[0],
             AgentHostResponse::Observation(observation) if observation.tick == 1
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_resumes_bound_capture_response() {
+        let mut runner = AgentRunner::new(
+            TestSession::default(),
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([
+                RuntimeAgentCapability::Observe,
+                RuntimeAgentCapability::Capture,
+            ]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(
+                capture_binding_program(),
+                AgentControllerRunConfig::default(),
+            )
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.host_calls, 1);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::Capture(result) if result.uri.as_str() == "agent://capture/test"
+        ));
+        assert!(matches!(
+            report.final_status,
+            Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
+                if value == "agent://capture/test"
         ));
     }
 }

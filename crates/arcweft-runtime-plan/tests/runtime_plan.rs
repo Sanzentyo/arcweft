@@ -198,6 +198,40 @@ effects { agent.observe }
 }
 
 #[test]
+fn agent_controller_plan_lowers_host_call_let_to_await() {
+    let tree = parse_agent_ok(
+        r#"
+#[agent(version = 1)]
+agent @agent.capture_smoke capture_smoke()
+effects { agent.capture }
+{
+    let shot = capture(viewport(), format = .png, name = "hud")
+    return shot.uri
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await {
+        binding, target, ..
+    } = &report.plan.flows[0].ops[0]
+    else {
+        panic!(
+            "expected capture let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert!(binding.is_some());
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "capture");
+    assert_eq!(target.request.args.len(), 2);
+}
+
+#[test]
 fn lowers_dialogue_line_plan_to_core_task_group() {
     let tree = parse_ok(
         r"
