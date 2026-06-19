@@ -173,6 +173,14 @@ fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
                 "native_max_ops": { "type": "integer", "minimum": 1, "default": 64 },
                 "max_steps": { "type": "integer", "minimum": 1, "default": 256 },
                 "max_ops": { "type": "integer", "minimum": 1, "default": 1024 },
+                "signals": {
+                    "type": "object",
+                    "description": "Deterministic CLI-session signal values keyed by signal id, using JSON bool/string/integer values."
+                },
+                "state": {
+                    "type": "object",
+                    "description": "Deterministic CLI-session debug state values keyed by dotted state path, using JSON bool/string/integer values."
+                },
                 "trace_out": { "type": "string", "description": "Optional .arcwx trace output path." },
                 "blob_dir": { "type": "string", "description": "Optional directory for byte-backed capture blobs." },
                 "run_id": { "type": "string", "default": "run.cli" },
@@ -964,6 +972,14 @@ mod tests {
         assert_eq!(
             script_run.input_schema["properties"]["path"]["type"],
             "string"
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["signals"]["type"],
+            "object"
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["state"]["type"],
+            "object"
         );
     }
 

@@ -925,7 +925,8 @@ fn agent_mcp_stdio_waits_for_observation_predicate() {
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: shared Agent Script runner subprocess with native-capture feature"]
 fn agent_mcp_stdio_runs_agent_script() {
-    let script = agent_script_cli_run_smoke_path();
+    let signal_script = agent_script_cli_composite_wait_smoke_path();
+    let state_script = agent_script_cli_state_wait_smoke_path();
     let requests = vec![
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
@@ -936,7 +937,26 @@ fn agent_mcp_stdio_runs_agent_script() {
             "params": {
                 "name": "arcweft.script.run",
                 "arguments": {
-                    "path": script.display().to_string(),
+                    "path": signal_script.display().to_string(),
+                    "signals": {
+                        "@signal.ready": true
+                    },
+                    "max_steps": 16,
+                    "max_ops": 64
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.script.run",
+                "arguments": {
+                    "path": state_script.display().to_string(),
+                    "state": {
+                        "route.phase": "opening"
+                    },
                     "max_steps": 16,
                     "max_ops": 64
                 }
@@ -957,15 +977,17 @@ fn agent_mcp_stdio_runs_agent_script() {
             .iter()
             .any(|tool| tool["name"] == "arcweft.script.run")
     );
-    assert_eq!(responses[2]["result"]["isError"], false);
-    let text = responses[2]["result"]["content"][0]["text"]
-        .as_str()
-        .expect("script.run result text");
-    let run: serde_json::Value = serde_json::from_str(text).expect("script.run result is JSON");
-    assert_eq!(run["ok"], true);
-    assert_eq!(run["agents"], 1);
-    assert_eq!(run["host_calls"], 1);
-    assert_eq!(run["final_status"], "Done(Return(\"done\"))");
+    for index in [2, 3] {
+        assert_eq!(responses[index]["result"]["isError"], false);
+        let text = responses[index]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("script.run result text");
+        let run: serde_json::Value = serde_json::from_str(text).expect("script.run result is JSON");
+        assert_eq!(run["ok"], true);
+        assert_eq!(run["agents"], 1);
+        assert_eq!(run["host_calls"], 1);
+        assert_eq!(run["final_status"], "Done(Return(\"done\"))");
+    }
 }
 
 fn assert_agent_script_build(bundle_path: &Path) {
@@ -1602,6 +1624,14 @@ fn stable_hash(value: &str) -> StableHash {
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-run-smoke.awfagent")
+}
+
+fn agent_script_cli_composite_wait_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-composite-wait-smoke.awfagent")
+}
+
+fn agent_script_cli_state_wait_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-state-wait-smoke.awfagent")
 }
 
 fn agent_script_cli_capture_smoke_path() -> PathBuf {

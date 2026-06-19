@@ -392,14 +392,14 @@ pub(super) struct AgentScriptTraceOptions {
 }
 
 #[derive(Clone, Debug)]
-struct AgentScriptSignalArg {
+pub(in crate::app::agent) struct AgentScriptSignalArg {
     id: String,
     value: AgentValue,
     ty: TypeKind,
 }
 
 #[derive(Clone, Debug)]
-struct AgentScriptStateArg {
+pub(in crate::app::agent) struct AgentScriptStateArg {
     path: String,
     value: AgentValue,
 }
@@ -1872,7 +1872,9 @@ fn is_arcwx_path(path: &Path) -> bool {
         .is_some_and(|extension| extension == "arcwx")
 }
 
-fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, String> {
+pub(in crate::app::agent) fn parse_agent_script_signal_arg(
+    value: &str,
+) -> Result<AgentScriptSignalArg, String> {
     let (id, raw_value) = value
         .split_once('=')
         .ok_or_else(|| "signal must be formatted as id=value".to_owned())?;
@@ -1884,7 +1886,9 @@ fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, St
     Ok(AgentScriptSignalArg { id, value, ty })
 }
 
-fn parse_agent_script_state_arg(value: &str) -> Result<AgentScriptStateArg, String> {
+pub(in crate::app::agent) fn parse_agent_script_state_arg(
+    value: &str,
+) -> Result<AgentScriptStateArg, String> {
     let (path, raw_value) = value
         .split_once('=')
         .ok_or_else(|| "state must be formatted as path=value".to_owned())?;

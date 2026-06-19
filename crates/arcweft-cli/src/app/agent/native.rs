@@ -13,7 +13,8 @@ use super::{
     RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
     agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
     flow_status_label, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection, print_json,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
+    parse_agent_script_signal_arg, parse_agent_script_state_arg, print_json,
     resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection, step_options,
 };
@@ -3376,8 +3377,8 @@ fn agent_mcp_script_run_options(
         capture_time_seconds: agent_mcp_capture_time_argument(arguments, "arcweft.script.run")?,
         max_steps: agent_mcp_usize_argument(arguments, "max_steps").unwrap_or(256),
         max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(1024),
-        signals: Vec::new(),
-        states: Vec::new(),
+        signals: agent_mcp_script_signal_args(arguments)?,
+        states: agent_mcp_script_state_args(arguments)?,
         trace_out: arguments
             .get("trace_out")
             .and_then(serde_json::Value::as_str)
@@ -3392,6 +3393,66 @@ fn agent_mcp_script_run_options(
             .unwrap_or("run.cli")
             .to_owned(),
     })
+}
+
+fn agent_mcp_script_signal_args(
+    arguments: &serde_json::Value,
+) -> Result<Vec<super::AgentScriptSignalArg>, String> {
+    agent_mcp_script_key_value_args(arguments, "signals", "arcweft.script.run signals").and_then(
+        |values| {
+            values
+                .iter()
+                .map(|value| parse_agent_script_signal_arg(value))
+                .collect()
+        },
+    )
+}
+
+fn agent_mcp_script_state_args(
+    arguments: &serde_json::Value,
+) -> Result<Vec<super::AgentScriptStateArg>, String> {
+    agent_mcp_script_key_value_args(arguments, "state", "arcweft.script.run state").and_then(
+        |values| {
+            values
+                .iter()
+                .map(|value| parse_agent_script_state_arg(value))
+                .collect()
+        },
+    )
+}
+
+fn agent_mcp_script_key_value_args(
+    arguments: &serde_json::Value,
+    name: &str,
+    context: &str,
+) -> Result<Vec<String>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(Vec::new());
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{context} must be a JSON object"))?;
+    object
+        .iter()
+        .map(|(key, value)| {
+            Ok(format!(
+                "{key}={}",
+                agent_mcp_script_scalar_arg(value, context)?
+            ))
+        })
+        .collect()
+}
+
+fn agent_mcp_script_scalar_arg(value: &serde_json::Value, context: &str) -> Result<String, String> {
+    match value {
+        serde_json::Value::Bool(value) => Ok(value.to_string()),
+        serde_json::Value::Number(value) => Ok(value.to_string()),
+        serde_json::Value::String(value) => serde_json::to_string(value)
+            .map_err(|error| format!("failed to serialize {context} string: {error}")),
+        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            Err(format!("{context} values must be bool, string, or number"))
+        }
+    }
 }
 
 fn agent_mcp_store_frame(state: &mut AgentMcpState, frame: AgentMcpFrame) {

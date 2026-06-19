@@ -725,7 +725,7 @@ effects { agent.observe }
     }
 
     #[test]
-    fn compile_agent_source_rejects_legacy_line_commands() {
+    fn compile_agent_source_rejects_removed_line_commands() {
         let error = compile_agent_source("observe\n").expect_err("legacy command fails");
 
         assert!(matches!(error, CompileAgentError::Parse(_)));

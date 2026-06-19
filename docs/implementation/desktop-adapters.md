@@ -21,7 +21,7 @@ The implementation is split into:
 - `HostAdapter::cancel`
 - `HostAdapter::pump_main_thread`
 
-Synchronous adapters continue to implement `complete`; `submit` wraps that result. This is the current task boundary, not a compatibility shim.
+Synchronous adapters continue to implement `complete`; `submit` wraps that result. This is the current task boundary, not a transition layer.
 
 ## Authority Model
 

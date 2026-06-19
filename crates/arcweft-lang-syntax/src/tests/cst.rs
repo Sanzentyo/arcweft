@@ -88,7 +88,7 @@ effects {
 }
 
 #[test]
-fn agent_dialect_rejects_legacy_line_command_fallback() {
+fn agent_dialect_rejects_removed_line_command_fallback() {
     let parsed = parse_document(
         "observe\n",
         ParseOptions {

@@ -14,7 +14,7 @@ Image display must use one typed presentation-object model for static images
 and animated containers. Animated frame selection must be deterministic and
 debuggable through native capture, Agent observe, hit-test, direct resource
 readback, MCP readback, samples, bundle metadata, and tests. The implementation
-must not rely on debug-raster compatibility shims.
+must not rely on debug-raster transition layers.
 
 ## Evidence Matrix
 
