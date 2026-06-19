@@ -300,7 +300,8 @@ image capture.
    `capture_time` values so `image_ref.frame_index` changes while object
    identity remains stable; clipped animated image object color and object-id
    captures are covered; MCP tool-content preservation is covered with serialized
-   metadata fixtures; live MCP
+   metadata fixtures and the CLI `--mcp --mcp-format tool-result` path is
+   covered for animated image object raw readback metadata plus blob bytes; live MCP
    `arcweft.resource.read` plus protocol `resources/read` are covered for the
    bounded animated image layer raw resource; and the checked-in
    `image-animation.arcw` sample is bundled as a CLI regression to prove

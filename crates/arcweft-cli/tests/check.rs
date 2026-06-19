@@ -22639,6 +22639,88 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
 }
 
 #[test]
+fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&source_path)
+        .arg("--flow")
+        .arg("image_sprite_overlay")
+        .arg("--steps")
+        .arg("2")
+        .arg("--capture-time")
+        .arg("0.15")
+        .arg("--read-uri")
+        .arg("arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba")
+        .arg("--mcp")
+        .arg("--mcp-format")
+        .arg("tool-result")
+        .arg("--json")
+        .output()
+        .expect("arcw agent observe reads animated image object raw URI as MCP tool result");
+
+    assert!(
+        output.status.success(),
+        "animated image object MCP tool-result should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let tool_result: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("MCP tool-result output is JSON");
+    assert_eq!(tool_result["isError"], false);
+    assert_eq!(tool_result["content"][0]["type"], "text");
+    let metadata: serde_json::Value = serde_json::from_str(
+        tool_result["content"][0]["text"]
+            .as_str()
+            .expect("MCP tool-result metadata is text"),
+    )
+    .expect("MCP tool-result metadata is JSON");
+    assert_eq!(metadata["mime_type"], "application/octet-stream");
+    assert_eq!(metadata["image"]["scope"]["kind"], "object");
+    assert_eq!(
+        metadata["image"]["scope"]["id"],
+        "object.image.layer.foreground.0.1"
+    );
+    assert_eq!(metadata["image"]["width"], 360);
+    assert_eq!(metadata["image"]["height"], 180);
+    assert_eq!(
+        metadata["image"]["object"]["image_ref"]["asset"],
+        "asset.bg.pulse"
+    );
+    assert_eq!(metadata["image"]["object"]["image_ref"]["frame_index"], 0);
+    assert_eq!(
+        metadata["image"]["object"]["image_ref"]["local_time_millis"],
+        50
+    );
+    assert_eq!(
+        metadata["image"]["object"]["image_ref"]["params"]["param.role"]["value"],
+        "animated-hotspot"
+    );
+    assert_eq!(
+        metadata["image"]["object"]["image_ref"]["proxies"][0]["id"],
+        "proxy.pulse_sprite.hotspot"
+    );
+
+    assert_eq!(tool_result["content"][1]["type"], "resource");
+    assert_eq!(
+        tool_result["content"][1]["resource"]["mimeType"],
+        "application/octet-stream"
+    );
+    let blob = tool_result["content"][1]["resource"]["blob"]
+        .as_str()
+        .expect("MCP raw image resource carries base64 blob");
+    let bytes = general_purpose::STANDARD
+        .decode(blob)
+        .expect("MCP raw image blob decodes");
+    assert_eq!(bytes.len(), 360 * 180 * 4);
+    assert_eq!(
+        &bytes[..4],
+        &[5, 26, 161, 127],
+        "MCP raw blob should preserve the pinned animated image pixel and opacity"
+    );
+}
+
+#[test]
 fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let hit =
