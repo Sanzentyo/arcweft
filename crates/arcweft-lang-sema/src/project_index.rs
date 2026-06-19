@@ -470,6 +470,26 @@ fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
             ),
         ),
         (
+            "signal",
+            CallableSymbol::new(
+                FunctionSignature::return_only(TypeKind::Probe(Box::new(TypeKind::Named(
+                    "_".to_owned(),
+                )))),
+                [EffectCapability::new("agent.observe")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::SignalProbe),
+            ),
+        ),
+        (
+            "metric",
+            CallableSymbol::new(
+                FunctionSignature::return_only(TypeKind::Probe(Box::new(TypeKind::Named(
+                    "_".to_owned(),
+                )))),
+                [EffectCapability::new("agent.observe")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::MetricProbe),
+            ),
+        ),
+        (
             "capture",
             CallableSymbol::new(
                 FunctionSignature::new(TypeKind::CaptureRef, []),

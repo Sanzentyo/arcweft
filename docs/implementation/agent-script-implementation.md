@@ -14,6 +14,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-lang-sema` exposes `project_index`, including `ProjectSemanticIndex`, typed entity payload metadata, Agent intrinsic lowering tags, and an Agent Prelude projection into `TypeCheckEnv`.
 - `TypeKind::Ref` now carries `EntityType`, preserving an entity family and optional payload type through project-index projection into `TypeCheckEnv`.
 - The type checker now visits Agent item bodies and can check Agent Prelude calls such as `choose(@choice...)` against project-index entity types and declared Agent effects.
+- Agent intrinsic typing includes `signal(ref) -> Probe<T>`, `metric(ref) -> Probe<T>`, `Probe<T>.eq(T) -> Predicate`, and `wait(predicate, timeout=...) -> Observation` with timeout required and literal `stable`/`poll` values required to be at least 1.
 - `arcweft-compiler` exposes `compile_agent_source_with_project`, which resolves `.awfagent` entity references against the module plus `ProjectSemanticIndex` and returns a `TypeCheckReport`.
 - `arcweft-agent-protocol` owns Agent controller contract modules for artifact manifests, stable IDs, predicates, host requests/responses, traces, and typed values.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
@@ -62,8 +63,8 @@ It is implementation state, not the stable language specification.
 
 ## Remaining zip-derived work
 
-- Complete Agent semantic intrinsic rules for `observe`, `invoke`, `wait`, `capture`, `expect`, `deny`, `checkpoint`, `attach`, `note`, and `rag.query`, including structured diagnostics and policy denial.
-- Type Agent references against actions, probes, metrics, signals, and resources using the payload-bearing entity refs.
+- Complete Agent semantic intrinsic rules for `observe`, `invoke`, `capture`, `expect`, `deny`, `checkpoint`, `attach`, `note`, and `rag.query`, including structured diagnostics and policy denial.
+- Type Agent references against actions and resources using the payload-bearing entity refs.
 - Add Agent artifact manifest / bundle support for `bundle_kind = agent_controller`.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.

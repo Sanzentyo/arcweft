@@ -399,9 +399,17 @@ mod tests {
     }
 
     fn project_with_entity(id: &str, kind: EntityKind) -> ProjectSemanticIndex {
+        project_with_typed_entity(id, kind, None)
+    }
+
+    fn project_with_typed_entity(
+        id: &str,
+        kind: EntityKind,
+        value: Option<TypeKind>,
+    ) -> ProjectSemanticIndex {
         ProjectSemanticIndex::new(ProgramHash::new("program-test")).with_entity(EntitySymbol::new(
             public_id(id),
-            EntityType::new(kind, None),
+            EntityType::new(kind, value),
             SourceAnchor::generated(),
             SemanticHash::new(format!("shape.{id}.v1")),
         ))
@@ -515,6 +523,113 @@ effects { agent.act.semantic }
         .expect_err("missing project entity");
 
         assert!(matches!(error, CompileAgentError::Resolve(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_signal_probe_wait() {
+        let project =
+            project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe, agent.wait }
+{
+    wait(signal(@signal.ready).eq(true), timeout = 5s)
+}
+",
+            &project,
+        )
+        .expect("signal probe and wait typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Predicate)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_signal_payload_mismatch() {
+        let project =
+            project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe }
+{
+    signal(@signal.ready).eq("yes")
+}
+"#,
+            &project,
+        )
+        .expect_err("signal bool payload rejects string comparison");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_wait_without_timeout() {
+        let project =
+            project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe, agent.wait }
+{
+    wait(signal(@signal.ready).eq(true))
+}
+",
+            &project,
+        )
+        .expect_err("wait requires timeout");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_metric_probe() {
+        let project =
+            project_with_typed_entity("metric.fps", EntityKind::Metric, Some(TypeKind::F32));
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.perf_watch perf_watch()
+effects { agent.observe }
+{
+    metric(@metric.fps).eq(60.0f32)
+}
+",
+            &project,
+        )
+        .expect("metric probe typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_wait_zero_stable() {
+        let project =
+            project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.opening_smoke opening_smoke()
+effects { agent.observe, agent.wait }
+{
+    wait(signal(@signal.ready).eq(true), timeout = 5s, stable = 0usize)
+}
+",
+            &project,
+        )
+        .expect_err("wait stable must be positive");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
     }
 
     #[test]
