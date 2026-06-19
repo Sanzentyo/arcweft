@@ -1902,6 +1902,95 @@ fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {
 }
 
 #[test]
+fn agent_rag_query_indexes_source_project_chunks() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-rag-source/source-rag-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("source RAG DB parent"))
+        .expect("create source RAG DB parent");
+    let source_path = workspace_path("samples/agent-script/native-choice-dispatch.arcw");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--source")
+        .arg(&source_path)
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("choice.opening")
+        .arg("--root")
+        .arg("choice.opening.listen")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query indexes source");
+    assert!(
+        output.status.success(),
+        "agent rag query should index source/project chunks\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("source RAG output is JSON");
+    assert_eq!(pack["query"]["text"], "choice.opening");
+    let items = pack["items"].as_array().expect("items array");
+    assert!(
+        items.iter().any(|item| {
+            item["kind"] == "symbol"
+                && item["entity_ids"]
+                    .as_array()
+                    .is_some_and(|ids| ids.contains(&serde_json::json!("choice.opening.listen")))
+                && item["channels"]
+                    .as_array()
+                    .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
+        }),
+        "source RAG should return rooted project symbol chunk: {pack}"
+    );
+    assert!(
+        items.iter().any(|item| item["kind"] == "source"),
+        "source RAG should include source text chunks: {pack}"
+    );
+
+    let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("choice.opening.listen")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db search reads source RAG chunks");
+    assert!(
+        search_output.status.success(),
+        "debug db search should find source RAG chunks\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&search_output.stdout),
+        String::from_utf8_lossy(&search_output.stderr)
+    );
+    let search: serde_json::Value =
+        serde_json::from_slice(&search_output.stdout).expect("debug db search JSON");
+    assert!(
+        search["hits"].as_array().is_some_and(|hits| {
+            hits.iter().any(|hit| {
+                hit["source_kind"] == "symbol"
+                    && hit["chunk_id"]
+                        .as_str()
+                        .is_some_and(|id| id.contains("choice.opening.listen"))
+            })
+        }),
+        "debug db search should expose persisted project symbol chunks: {search}"
+    );
+
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+#[test]
 fn debug_db_search_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/search-{}.sqlite3",

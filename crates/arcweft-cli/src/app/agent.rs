@@ -23,7 +23,9 @@ use arcweft_agent_runner::{
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_debug_model::{
-    chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
+    chunk::{
+        ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor as DebugSourceAnchor,
+    },
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     sink::DebugEventSink,
@@ -31,12 +33,15 @@ use arcweft_debug_model::{
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_id::PublicId as SemaPublicId;
 use arcweft_lang_sema::{
-    project_index::{EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash},
+    project_index::{
+        EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash,
+        project_semantic_index_from_hir,
+    },
     types::{EntityKind, EntityType, TypeKind},
 };
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_runtime_host::NativeAdapterRegistrar;
-use arcweft_source::SourceAnchor;
+use arcweft_source::{SourceAnchor, SourceName};
 use clap::{Args, ValueEnum};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -61,13 +66,9 @@ use arcweft_core::engine::FlowFiberStatus;
 #[cfg(feature = "native-capture")]
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
 #[cfg(feature = "native-capture")]
-use arcweft_lang_sema::project_index::project_semantic_index_from_hir;
-#[cfg(feature = "native-capture")]
 use arcweft_render_text::LineDisplayCatalog;
 #[cfg(feature = "native-capture")]
 use arcweft_runtime_host::NativeTaskBridge;
-#[cfg(feature = "native-capture")]
-use arcweft_source::SourceName;
 
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
@@ -268,7 +269,9 @@ pub(super) struct AgentReplOptions {
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentRagQueryOptions {
     #[arg(long)]
-    trace: PathBuf,
+    trace: Option<PathBuf>,
+    #[arg(long)]
+    source: Option<PathBuf>,
     #[arg(long)]
     query: String,
     #[arg(long = "root")]
@@ -502,7 +505,7 @@ fn agent_rag_query_command(options: &AgentRagQueryOptions) -> Result<(), ExitCod
             } else {
                 println!(
                     "{}: {} item(s), truncated={}",
-                    options.trace.display(),
+                    agent_rag_query_input_label(options),
                     pack.items.len(),
                     pack.truncated
                 );
@@ -518,25 +521,39 @@ fn agent_rag_query_command(options: &AgentRagQueryOptions) -> Result<(), ExitCod
             Ok(())
         }
         Err(error) => {
-            eprintln!("{}: {error}", options.trace.display());
+            eprintln!("{}: {error}", agent_rag_query_input_label(options));
             Err(ExitCode::FAILURE)
         }
     }
 }
 
+fn agent_rag_query_input_label(options: &AgentRagQueryOptions) -> String {
+    match (&options.trace, &options.source) {
+        (Some(trace), Some(source)) => {
+            format!("trace {} + source {}", trace.display(), source.display())
+        }
+        (Some(trace), None) => trace.display().to_string(),
+        (None, Some(source)) => source.display().to_string(),
+        (None, None) => "agent rag query".to_owned(),
+    }
+}
+
 #[derive(Clone)]
-struct AgentTraceRagCandidate {
+struct AgentRagCandidate {
     chunk: DebugChunk,
     preferred_channel: SearchChannel,
 }
 
 struct AgentRagQueryResult {
     pack: RagContextPack,
-    candidates: Vec<AgentTraceRagCandidate>,
+    candidates: Vec<AgentRagCandidate>,
 }
 
 fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQueryResult, String> {
     let query_text = options.query.trim();
+    if options.trace.is_none() && options.source.is_none() {
+        return Err("agent rag query requires --trace, --source, or both".to_owned());
+    }
     if query_text.is_empty() {
         return Err("agent rag query requires a non-empty --query".to_owned());
     }
@@ -547,11 +564,21 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
         return Err("agent rag query --max-context-bytes must be at least 1".to_owned());
     }
     let roots = agent_rag_roots(&options.roots)?;
-    let records = read_and_validate_agent_trace_records(&options.trace)?;
-    let trace_report = validate_agent_trace(&options.trace, &records, None)?;
-    let candidates = agent_trace_rag_candidates(&trace_report, &records)?;
+    let mut candidates = Vec::new();
+    let mut seed_parts = Vec::new();
+    if let Some(trace) = &options.trace {
+        let records = read_and_validate_agent_trace_records(trace)?;
+        let trace_report = validate_agent_trace(trace, &records, None)?;
+        seed_parts.push(agent_trace_rag_seed(trace, &records));
+        candidates.extend(agent_trace_rag_candidates(&trace_report, &records)?);
+    }
+    if let Some(source) = &options.source {
+        let source_index = agent_source_rag_index(source)?;
+        seed_parts.push(source_index.seed);
+        candidates.extend(source_index.candidates);
+    }
     let query_candidates = agent_rag_query_allowed_candidates(options, &candidates);
-    let program_hash = agent_trace_rag_program_hash(&options.trace, &records)?;
+    let program_hash = agent_rag_program_hash(&seed_parts)?;
     let query = RagQuery {
         query_id: agent_content_hash(format!(
             "{}:{}:{}:{}:{}:{}",
@@ -576,7 +603,7 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
 fn agent_trace_rag_pack_from_candidates(
     options: &AgentRagQueryOptions,
     query: RagQuery,
-    candidates: &[AgentTraceRagCandidate],
+    candidates: &[AgentRagCandidate],
 ) -> RagContextPack {
     let fused = reciprocal_rank_fusion(
         &agent_trace_rag_ranked_lists(candidates, &query),
@@ -626,8 +653,8 @@ fn agent_trace_rag_pack_from_candidates(
 
 fn agent_rag_query_allowed_candidates(
     options: &AgentRagQueryOptions,
-    candidates: &[AgentTraceRagCandidate],
-) -> Vec<AgentTraceRagCandidate> {
+    candidates: &[AgentRagCandidate],
+) -> Vec<AgentRagCandidate> {
     candidates
         .iter()
         .filter(|candidate| candidate.chunk.privacy.is_allowed_by(options.max_privacy))
@@ -656,7 +683,7 @@ fn persist_agent_rag_query_result(path: &Path, result: &AgentRagQueryResult) -> 
 fn agent_trace_rag_candidates(
     trace_report: &AgentScriptTraceReport,
     records: &[AgentTraceRecord],
-) -> Result<Vec<AgentTraceRagCandidate>, String> {
+) -> Result<Vec<AgentRagCandidate>, String> {
     let mut candidates = Vec::with_capacity(records.len() + 1);
     candidates.push(agent_trace_rag_json_candidate(
         "trace.summary",
@@ -700,11 +727,297 @@ fn agent_trace_rag_json_candidate(
     value: &serde_json::Value,
     entity_ids: Vec<AgentPublicId>,
     privacy: PrivacyClass,
-) -> Result<AgentTraceRagCandidate, String> {
+) -> Result<AgentRagCandidate, String> {
     let body = serde_json::to_string_pretty(value)
         .map_err(|error| format!("failed to serialize RAG candidate body: {error}"))?;
+    Ok(agent_rag_candidate(
+        source_key,
+        title,
+        source_kind,
+        preferred_channel,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids,
+            privacy,
+            source_anchor: None,
+            semantic_hash: None,
+            metadata: BTreeMap::new(),
+        },
+    ))
+}
+
+struct AgentSourceRagIndex {
+    seed: String,
+    candidates: Vec<AgentRagCandidate>,
+}
+
+fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
+    let source = fs::read_to_string(path)
+        .map_err(|error| format!("agent rag query failed to read source: {error}"))?;
+    let parsed = arcweft_compiler::parse_source_text(source.clone());
+    if !parsed.errors().is_empty() {
+        return Err(format!(
+            "agent rag query source parse errors: {:?}",
+            parsed.errors()
+        ));
+    }
+    let hir = arcweft_compiler::lower_source_tree(parsed.typed_tree())
+        .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
+    let source_hash = agent_content_hash(&source);
+    let source_name = SourceName::path(path.display().to_string());
+    let project =
+        project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &source_name)
+            .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
+    let mut candidates = agent_source_text_rag_candidates(path, &source)?;
+    candidates.extend(agent_project_semantic_rag_candidates(&project)?);
+    Ok(AgentSourceRagIndex {
+        seed: format!("source:{}:{source_hash}", path.display()),
+        candidates,
+    })
+}
+
+fn agent_source_text_rag_candidates(
+    path: &Path,
+    source: &str,
+) -> Result<Vec<AgentRagCandidate>, String> {
+    agent_source_text_ranges(source)
+        .into_iter()
+        .enumerate()
+        .map(|(index, range)| {
+            let body = source[range.clone()].trim().to_owned();
+            let source_key = format!("source.text.{index}");
+            let mut metadata = BTreeMap::new();
+            metadata.insert(
+                "path".to_owned(),
+                serde_json::Value::String(path.display().to_string()),
+            );
+            Ok(agent_rag_candidate(
+                &source_key,
+                &format!("Source text {}", path.display()),
+                ChunkSourceKind::Source,
+                SearchChannel::Lexical,
+                body,
+                AgentRagCandidateMeta {
+                    entity_ids: Vec::new(),
+                    privacy: PrivacyClass::Project,
+                    source_anchor: Some(debug_source_anchor(path, range)?),
+                    semantic_hash: None,
+                    metadata,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn agent_source_text_ranges(source: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = None;
+    let mut offset = 0usize;
+    for line in source.split_inclusive('\n') {
+        let line_start = offset;
+        let line_end = offset.saturating_add(line.len());
+        if line.trim().is_empty() {
+            if let Some(start) = start.take()
+                && start < line_start
+            {
+                ranges.push(agent_trim_source_range(source, start..line_start));
+            }
+        } else if start.is_none() {
+            start = Some(line_start);
+        }
+        offset = line_end;
+    }
+    if let Some(start) = start
+        && start < source.len()
+    {
+        ranges.push(agent_trim_source_range(source, start..source.len()));
+    }
+    if ranges.is_empty() && !source.is_empty() {
+        ranges.push(agent_trim_source_range(source, 0..source.len()));
+    }
+    ranges
+        .into_iter()
+        .filter(|range| range.start < range.end)
+        .collect()
+}
+
+fn agent_trim_source_range(source: &str, range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    let mut start = range.start;
+    let mut end = range.end;
+    while start < end {
+        let Some(character) = source[start..end].chars().next() else {
+            break;
+        };
+        if !character.is_whitespace() {
+            break;
+        }
+        start = start.saturating_add(character.len_utf8());
+    }
+    while start < end {
+        let Some(character) = source[start..end].chars().next_back() else {
+            break;
+        };
+        if !character.is_whitespace() {
+            break;
+        }
+        end = end.saturating_sub(character.len_utf8());
+    }
+    start..end
+}
+
+fn agent_project_semantic_rag_candidates(
+    project: &ProjectSemanticIndex,
+) -> Result<Vec<AgentRagCandidate>, String> {
+    let mut candidates = Vec::new();
+    candidates.push(agent_project_summary_rag_candidate(project)?);
+    for entity in project.entities().values() {
+        candidates.push(agent_project_entity_rag_candidate(entity)?);
+    }
+    for (name, query) in project.debug_queries() {
+        candidates.push(agent_project_debug_query_rag_candidate(name, query)?);
+    }
+    Ok(candidates)
+}
+
+fn agent_project_summary_rag_candidate(
+    project: &ProjectSemanticIndex,
+) -> Result<AgentRagCandidate, String> {
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": project.schema_version(),
+        "kind": "project_semantic_index",
+        "program_hash": project.program_hash().as_str(),
+        "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
+        "counts": {
+            "entities": project.entities().len(),
+            "callables": project.callables().len(),
+            "types": project.types().len(),
+            "debug_queries": project.debug_queries().len(),
+        },
+    }))
+    .map_err(|error| format!("failed to serialize project RAG summary: {error}"))?;
+    Ok(agent_rag_candidate(
+        "project.summary",
+        "Project semantic index summary",
+        ChunkSourceKind::GraphSummary,
+        SearchChannel::Summary,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(
+                StableHash::new(project.program_hash().as_str())
+                    .map_err(|error| format!("invalid project semantic hash: {error}"))?,
+            ),
+            metadata: BTreeMap::new(),
+        },
+    ))
+}
+
+fn agent_project_entity_rag_candidate(entity: &EntitySymbol) -> Result<AgentRagCandidate, String> {
+    let entity_id = agent_public_id_from_sema(entity.id())?;
+    let actions = entity
+        .agent_actions()
+        .iter()
+        .map(|action| {
+            serde_json::json!({
+                "action": action.action().as_str(),
+                "params": action.params().iter().map(|param| {
+                    serde_json::json!({
+                        "name": param.name(),
+                        "type": format!("{:?}", param.ty()),
+                        "has_default": param.has_default(),
+                    })
+                }).collect::<Vec<_>>(),
+                "return_type": format!("{:?}", action.return_type()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "kind": "project_entity",
+        "id": entity.id().as_str(),
+        "entity_kind": format!("{:?}", entity.ty().kind()),
+        "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
+        "source": source_anchor_json(entity.source()),
+        "semantic_hash": entity.semantic_hash().as_str(),
+        "agent_actions": actions,
+    }))
+    .map_err(|error| format!("failed to serialize project entity RAG chunk: {error}"))?;
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "entity_kind".to_owned(),
+        serde_json::Value::String(format!("{:?}", entity.ty().kind())),
+    );
+    Ok(agent_rag_candidate(
+        &format!("project.entity.{}", entity.id().as_str()),
+        &format!(
+            "Project entity {} {:?}",
+            entity.id().as_str(),
+            entity.ty().kind()
+        ),
+        ChunkSourceKind::Symbol,
+        SearchChannel::Graph,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: vec![entity_id],
+            privacy: PrivacyClass::Project,
+            source_anchor: debug_anchor_from_source_anchor(entity.source())?,
+            semantic_hash: Some(
+                StableHash::new(entity.semantic_hash().as_str())
+                    .map_err(|error| format!("invalid entity semantic hash: {error}"))?,
+            ),
+            metadata,
+        },
+    ))
+}
+
+fn agent_project_debug_query_rag_candidate(
+    name: &arcweft_lang_sema::project_index::QualifiedName,
+    query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
+) -> Result<AgentRagCandidate, String> {
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "kind": "project_debug_query",
+        "name": name.as_str(),
+        "signature": format!("{:?}", query.signature()),
+    }))
+    .map_err(|error| format!("failed to serialize project debug query RAG chunk: {error}"))?;
+    Ok(agent_rag_candidate(
+        &format!("project.debug_query.{}", name.as_str()),
+        &format!("Project debug query {}", name.as_str()),
+        ChunkSourceKind::Symbol,
+        SearchChannel::Graph,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(
+                StableHash::new(agent_content_hash(name.as_str()))
+                    .map_err(|error| format!("invalid debug query semantic hash: {error}"))?,
+            ),
+            metadata: BTreeMap::new(),
+        },
+    ))
+}
+
+struct AgentRagCandidateMeta {
+    entity_ids: Vec<AgentPublicId>,
+    privacy: PrivacyClass,
+    source_anchor: Option<DebugSourceAnchor>,
+    semantic_hash: Option<StableHash>,
+    metadata: BTreeMap<String, serde_json::Value>,
+}
+
+fn agent_rag_candidate(
+    source_key: &str,
+    title: &str,
+    source_kind: ChunkSourceKind,
+    preferred_channel: SearchChannel,
+    body: String,
+    meta: AgentRagCandidateMeta,
+) -> AgentRagCandidate {
     let content_hash = agent_content_hash(&body);
-    Ok(AgentTraceRagCandidate {
+    AgentRagCandidate {
         chunk: DebugChunk {
             id: ChunkId::new(format!("cli:{source_key}:{content_hash}")),
             program_hash: None,
@@ -714,15 +1027,61 @@ fn agent_trace_rag_json_candidate(
             body,
             content_hash: StableHash::new(content_hash)
                 .expect("generated content hash is non-empty"),
-            semantic_hash: None,
-            source_anchor: None,
-            entity_ids,
-            privacy,
-            metadata: BTreeMap::new(),
+            semantic_hash: meta.semantic_hash,
+            source_anchor: meta.source_anchor,
+            entity_ids: meta.entity_ids,
+            privacy: meta.privacy,
+            metadata: meta.metadata,
             created_unix_ms: 0,
         },
         preferred_channel,
+    }
+}
+
+fn agent_public_id_from_sema(id: &SemaPublicId) -> Result<AgentPublicId, String> {
+    AgentPublicId::new(id.as_str().to_owned())
+        .map_err(|error| format!("failed to convert project id `{}`: {error}", id.as_str()))
+}
+
+fn debug_anchor_from_source_anchor(
+    anchor: &SourceAnchor,
+) -> Result<Option<DebugSourceAnchor>, String> {
+    match anchor.source() {
+        SourceName::Path(path) => Ok(Some(DebugSourceAnchor {
+            path: path.clone(),
+            start_byte: u64::try_from(anchor.byte_range().start)
+                .map_err(|_| "source anchor start byte overflowed u64".to_owned())?,
+            end_byte: u64::try_from(anchor.byte_range().end)
+                .map_err(|_| "source anchor end byte overflowed u64".to_owned())?,
+        })),
+        SourceName::Generated => Ok(None),
+    }
+}
+
+fn debug_source_anchor(
+    path: &Path,
+    range: std::ops::Range<usize>,
+) -> Result<DebugSourceAnchor, String> {
+    Ok(DebugSourceAnchor {
+        path: path.display().to_string(),
+        start_byte: u64::try_from(range.start)
+            .map_err(|_| "source chunk start byte overflowed u64".to_owned())?,
+        end_byte: u64::try_from(range.end)
+            .map_err(|_| "source chunk end byte overflowed u64".to_owned())?,
     })
+}
+
+fn source_anchor_json(anchor: &SourceAnchor) -> serde_json::Value {
+    match anchor.source() {
+        SourceName::Path(path) => serde_json::json!({
+            "path": path,
+            "start_byte": anchor.byte_range().start,
+            "end_byte": anchor.byte_range().end,
+        }),
+        SourceName::Generated => serde_json::json!({
+            "generated": true,
+        }),
+    }
 }
 
 fn agent_trace_record_privacy(record: &AgentTraceRecord) -> PrivacyClass {
@@ -760,7 +1119,7 @@ fn agent_trace_record_entity_ids(record: &AgentTraceRecord) -> Vec<AgentPublicId
 }
 
 fn agent_trace_rag_ranked_lists(
-    candidates: &[AgentTraceRagCandidate],
+    candidates: &[AgentRagCandidate],
     query: &RagQuery,
 ) -> Vec<Vec<SearchHit>> {
     [
@@ -801,7 +1160,7 @@ fn agent_trace_rag_ranked_lists(
 }
 
 fn agent_trace_rag_score(
-    candidate: &AgentTraceRagCandidate,
+    candidate: &AgentRagCandidate,
     query: &RagQuery,
     channel: SearchChannel,
 ) -> Option<f64> {
@@ -870,7 +1229,7 @@ fn agent_trace_rag_score(
     }
 }
 
-fn agent_trace_rag_haystack(candidate: &AgentTraceRagCandidate) -> String {
+fn agent_trace_rag_haystack(candidate: &AgentRagCandidate) -> String {
     let mut haystack = format!(
         "{}\n{}\n{}",
         candidate.chunk.source_key, candidate.chunk.title, candidate.chunk.body
@@ -910,16 +1269,17 @@ fn agent_rag_tokens(text: &str) -> BTreeSet<String> {
     .collect()
 }
 
-fn agent_trace_rag_program_hash(
-    path: &Path,
-    records: &[AgentTraceRecord],
-) -> Result<StableHash, String> {
+fn agent_trace_rag_seed(path: &Path, records: &[AgentTraceRecord]) -> String {
     let seed = records
         .iter()
         .map(|record| record.payload_hash.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    StableHash::new(agent_content_hash(format!("{}:{seed}", path.display())))
+    format!("trace:{}:{seed}", path.display())
+}
+
+fn agent_rag_program_hash(seed_parts: &[String]) -> Result<StableHash, String> {
+    StableHash::new(agent_content_hash(seed_parts.join("\n")))
         .map_err(|_| "failed to build Agent RAG program hash".to_owned())
 }
 

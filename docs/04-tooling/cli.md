@@ -377,13 +377,21 @@ with `model_id` and `model_revision`, `graph_query` with optional
 apply to every selector. It defaults to `.arcweft/cache/agent-debug.sqlite3`
 and returns chunk IDs plus source metadata without requiring a native
 observation.
-`arcw agent rag query --trace <file.arcwx> --query <text>
-[--max-privacy public|project|sensitive|secret] [--json]` builds the same
-explainable `RagContextPack` shape used by Agent MCP. The default privacy
-ceiling is `project`; chunks whose `privacy_class` / `privacy` is above the
-ceiling are excluded before ranking and byte trimming. Trace records without an
-explicit privacy field default to `project`, so `--max-privacy public` returns
-only records deliberately marked public.
+`arcw agent rag query [--trace <file.arcwx>] [--source <file.arcw>] --query <text>
+[--max-privacy public|project|sensitive|secret] [--debug-db <path>] [--json]`
+builds the same explainable `RagContextPack` shape used by Agent MCP. At least
+one of `--trace` or `--source` is required, and both can be supplied to fuse
+trace-derived and source/project-derived context in one pack. The default
+privacy ceiling is `project`; chunks whose `privacy_class` / `privacy` is above
+the ceiling are excluded before ranking and byte trimming. Trace records without
+an explicit privacy field default to `project`, so `--max-privacy public`
+returns only records deliberately marked public. Source indexing parses and
+lowers the `.arcw` file, builds the Agent project semantic index, and emits
+`source` chunks with byte-range anchors plus `symbol` / `graph_summary` chunks
+for project entities, debug queries, and the project semantic summary. When
+`--debug-db` is supplied, all selected-source candidates are upserted into the
+rebuildable debug store and the selected RAG query is recorded for later
+`arcweft.rag.explain` / `arcweft.rag.context.read` readback.
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return
