@@ -371,7 +371,7 @@ mod tests {
         object.layer = "hud".to_owned();
         object.role = "image".to_owned();
         object.object_layer = Some("hud".to_owned());
-        object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
+        object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
             object: None,
             target: None,
@@ -387,7 +387,7 @@ mod tests {
             actions: Vec::new(),
             params: BTreeMap::new(),
             proxies: Vec::new(),
-        });
+        }));
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
 
@@ -442,7 +442,7 @@ mod tests {
     fn agent_image_object_color_capture_requires_image_pixels() {
         let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
         object.role = "image".to_owned();
-        object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
+        object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
             object: None,
             target: None,
@@ -458,7 +458,7 @@ mod tests {
             actions: Vec::new(),
             params: BTreeMap::new(),
             proxies: Vec::new(),
-        });
+        }));
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
 
@@ -482,7 +482,7 @@ mod tests {
     fn agent_image_object_color_capture_uses_stored_native_image_frame() {
         let mut object = test_observed_object("object.image.logo", 10, 20, 2, 2);
         object.role = "image".to_owned();
-        object.content = AgentObservedObjectContent::Image(AgentObservedImageContent {
+        object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
             source: "ui.image.7".to_owned(),
             object: None,
             target: None,
@@ -498,7 +498,7 @@ mod tests {
             actions: Vec::new(),
             params: BTreeMap::new(),
             proxies: Vec::new(),
-        });
+        }));
         let mut report = test_agent_observation_report(None);
         report.objects = vec![object];
         let mut frames = AgentImageFrameStore::default();
@@ -6989,7 +6989,7 @@ fn agent_image_observation_from_ui_item(
             object_depth: metadata.object_depth,
             text: None,
             rich_text_ref: None,
-            content: AgentObservedObjectContent::Image(AgentObservedImageContent {
+            content: AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
                 source: source_id,
                 object: presentation.map(|presentation| presentation.object().as_str().to_owned()),
                 target: metadata.target,
@@ -7005,7 +7005,7 @@ fn agent_image_observation_from_ui_item(
                 actions: metadata.actions,
                 params: metadata.params,
                 proxies: metadata.proxies,
-            }),
+            })),
         },
         AgentStoredImageFrame {
             width: frame_dimensions.width(),

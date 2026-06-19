@@ -511,7 +511,7 @@ pub struct AgentObservedObject {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentObservedObjectContent {
     RichText { frame: Box<LineDisplayFrame> },
-    Image(AgentObservedImageContent),
+    Image(Box<AgentObservedImageContent>),
     Custom { object_type: String },
 }
 
@@ -656,7 +656,7 @@ impl AgentObservedObject {
     pub fn image_content_ref(&self) -> Option<AgentImageObjectContentRef> {
         match &self.content {
             AgentObservedObjectContent::Image(content) => {
-                Some(AgentImageObjectContentRef::from(content))
+                Some(AgentImageObjectContentRef::from(content.as_ref()))
             }
             AgentObservedObjectContent::RichText { .. }
             | AgentObservedObjectContent::Custom { .. } => None,
@@ -2423,7 +2423,7 @@ mod tests {
             object_depth: Some(2500),
             text: None,
             rich_text_ref: None,
-            content: AgentObservedObjectContent::Image(test_observed_image_content()),
+            content: AgentObservedObjectContent::Image(Box::new(test_observed_image_content())),
         };
 
         let image_object = AgentImageObjectRef::from_observed(&object);
