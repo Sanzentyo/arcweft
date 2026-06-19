@@ -48,7 +48,8 @@ use arcweft_agent_protocol::{
     AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
     AgentPoint, AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef,
     AgentPresentationTree, AgentPresentationTreeQuery, AgentResource, AgentResourceBody,
-    AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef, AgentUiTree, AgentViewport,
+    AgentResourceKind, AgentRgbaColor, AgentRichTextElementKind, AgentRichTextElementRef,
+    AgentUiTree, AgentViewport,
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
@@ -517,6 +518,47 @@ mod tests {
         )
         .expect("log privacy block serializes");
         assert!(log_result.is_error);
+    }
+
+    #[test]
+    fn agent_mcp_resource_read_enforces_capture_privacy() {
+        let mut state = AgentMcpState {
+            report: Some(test_agent_observation_report(None)),
+            capture_resources: vec![AgentResource {
+                uri: "arcweft://session/cli/frame/0/color.png".to_owned(),
+                kind: AgentResourceKind::Image,
+                mime_type: "image/png".to_owned(),
+                hash: "blake3:test".to_owned(),
+                image: None,
+                body: AgentResourceBody::BytesBase64(
+                    arcweft_agent_protocol::AgentBinaryResourceBody {
+                        encoding: arcweft_agent_protocol::AgentBinaryEncoding::Base64,
+                        data: "iVBORw0KGgo=".to_owned(),
+                    },
+                ),
+            }],
+            ..AgentMcpState::default()
+        };
+
+        let default_result = agent_mcp_call_resource_read(
+            &serde_json::json!({"uri": "arcweft://session/cli/frame/0/color.png"}),
+            &mut state,
+        )
+        .expect("resource privacy block serializes");
+        assert!(default_result.is_error);
+        let default_error = mcp_text_json(&default_result);
+        assert_eq!(default_error["privacy"], serde_json::json!("sensitive"));
+        assert_eq!(default_error["max_privacy"], serde_json::json!("project"));
+
+        let allowed_result = agent_mcp_call_resource_read(
+            &serde_json::json!({
+                "uri": "arcweft://session/cli/frame/0/color.png",
+                "max_privacy": "sensitive"
+            }),
+            &mut state,
+        )
+        .expect("sensitive resource read succeeds");
+        assert!(!allowed_result.is_error);
     }
 
     #[test]
@@ -6244,11 +6286,15 @@ fn agent_mcp_call_resource_read(
     arguments: &serde_json::Value,
     state: &mut AgentMcpState,
 ) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.resource.read")?;
     let uri = arguments
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
+        if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+            return agent_mcp_json_tool_error(&error, "resource privacy");
+        }
         return tool_result_for_resource(&resource)
             .map_err(|error| format!("failed to serialize MCP trace resource: {error}"));
     }
@@ -6264,8 +6310,59 @@ fn agent_mcp_call_resource_read(
         agent_mcp_uncached_resource_by_uri(&report, uri, state)
             .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
     };
+    if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+        return agent_mcp_json_tool_error(&error, "resource privacy");
+    }
     tool_result_for_resource(&resource)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
+}
+
+fn agent_mcp_resource_read_privacy_error(
+    resource: &AgentResource,
+    max_privacy: PrivacyClass,
+) -> Option<serde_json::Value> {
+    let privacy = agent_mcp_resource_privacy(resource);
+    (!privacy.is_allowed_by(max_privacy)).then(|| {
+        serde_json::json!({
+            "status": "blocked",
+            "error": format!(
+                "arcweft.resource.read resource {} is {} and exceeds max_privacy {}",
+                resource.uri,
+                privacy.as_str(),
+                max_privacy.as_str(),
+            ),
+            "resource": resource.uri,
+            "privacy": privacy.as_str(),
+            "max_privacy": max_privacy.as_str(),
+        })
+    })
+}
+
+fn agent_mcp_resource_privacy(resource: &AgentResource) -> PrivacyClass {
+    if resource.kind == AgentResourceKind::Image
+        || resource.image.is_some()
+        || matches!(resource.body, AgentResourceBody::BytesBase64(_))
+    {
+        return PrivacyClass::Sensitive;
+    }
+    match &resource.body {
+        AgentResourceBody::Json(value) => agent_mcp_resource_json_privacy(value),
+        AgentResourceBody::Text(_) => PrivacyClass::Project,
+        AgentResourceBody::BytesBase64(_) => PrivacyClass::Sensitive,
+    }
+}
+
+fn agent_mcp_resource_json_privacy(value: &serde_json::Value) -> PrivacyClass {
+    value.as_array().map_or_else(
+        || agent_mcp_json_privacy(value),
+        |items| {
+            items
+                .iter()
+                .map(agent_mcp_json_privacy)
+                .max()
+                .unwrap_or(PrivacyClass::Project)
+        },
+    )
 }
 
 fn agent_mcp_current_resources(state: &AgentMcpState) -> Result<Vec<AgentResource>, ExitCode> {

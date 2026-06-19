@@ -28812,7 +28812,8 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/color.png"
+                    "uri": "arcweft://session/cli/frame/0/color.png",
+                    "max_privacy": "sensitive"
                 }
             }
         }),
@@ -28940,7 +28941,8 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": uri
+                    "uri": uri,
+                    "max_privacy": "sensitive"
                 }
             }
         }),
@@ -29069,7 +29071,8 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png"
+                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png",
+                    "max_privacy": "sensitive"
                 }
             }
         }),
@@ -29176,7 +29179,8 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png"
+                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png",
+                    "max_privacy": "sensitive"
                 }
             }
         }),
@@ -29233,7 +29237,8 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": layer_uri
+                    "uri": layer_uri,
+                    "max_privacy": "sensitive"
                 }
             }
         }),

@@ -465,7 +465,11 @@ MCP server for local Agent debugging. The stdio server supports
 `resources/templates/list` before observation, so a client can discover the
 stable `arcweft://` URI families for observation JSON, object JSON,
 viewport/layer/object PNG captures, and raw RGBA captures without knowing the
-current frame yet. `--viewport-width` and `--viewport-height` set the observed
+current frame yet. MCP `resources/read` is the direct MCP resource protocol
+readback, while the `arcweft.resource.read` tool applies an Agent privacy gate:
+the optional `max_privacy` argument defaults to `project`, image/capture blobs
+are treated as `sensitive`, and trace JSON uses explicit record privacy when
+present. `--viewport-width` and `--viewport-height` set the observed
 screen size used by Agent geometry and native PNG/raw framebuffer capture.
 `--textbox-height` optionally overrides the observed dialogue textbox height,
 which is useful for layout-sensitive rich-text debugging such as long vertical

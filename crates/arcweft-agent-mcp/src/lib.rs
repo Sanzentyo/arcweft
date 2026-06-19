@@ -311,7 +311,13 @@ fn agent_resource_read_tool_descriptor() -> McpToolDescriptor {
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
-                "uri": { "type": "string" }
+                "uri": { "type": "string" },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Highest privacy class allowed for returned resource contents. Image/capture resources are sensitive by default."
+                }
             },
             "required": ["uri"]
         }),
@@ -1561,10 +1567,13 @@ mod tests {
         let tools = agent_tool_descriptors();
 
         assert!(tools.iter().any(|tool| tool.name == "arcweft.observe"));
-        assert!(
-            tools
-                .iter()
-                .any(|tool| tool.name == "arcweft.resource.read")
+        let resource_read = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.resource.read")
+            .expect("resource read tool is listed");
+        assert_eq!(
+            resource_read.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
         );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.capture"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.hit_test"));
