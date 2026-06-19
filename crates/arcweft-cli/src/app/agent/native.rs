@@ -7,16 +7,16 @@ use super::{
     AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat,
     AgentObserveOptions, AgentObserveResourceKind, AgentReplOptions, AgentRunner,
     AgentRunnerConfig, AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport,
-    AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimeStepMode, CollectingDebugSink,
-    ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge,
-    NoopRagService, Path, PathBuf, ProfileOptions, RuntimeAgentCapability, RuntimeAgentPolicy,
-    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_script_project_index,
-    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
-    flow_status_label, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
-    parse_agent_script_signal_arg, parse_agent_script_state_arg, print_json,
-    resolve_source_selection, runtime_plan_options_for_selection,
-    runtime_pure_config_for_selection, step_options,
+    AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
+    CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
+    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
+    RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
+    agent_cli_session_id, agent_script_project_index, agent_script_run_bundle,
+    agent_script_run_input, agent_script_run_report_from_result, flow_status_label, fs,
+    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
+    native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
+    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
+    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
     DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
@@ -81,6 +81,7 @@ use arcweft_render_text::{
 use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
 use arcweft_ui::UiImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use clap::ValueEnum;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{BufRead as _, Read as _, Write as _};
@@ -98,6 +99,59 @@ struct AgentObservationTrace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
+        let options = agent_mcp_script_run_options(&serde_json::json!({
+            "path": "samples/agent-script/cli-run-smoke.awfagent",
+            "native_source": "samples/rich-text-showcase.arcw",
+            "executor": "aot",
+            "pure_backend": "jit",
+            "pure_workers": 2,
+            "pure_batch_min_len": 4,
+            "pure_object_artifacts": true,
+            "math_backend": "ndarray",
+            "math_wgpu_min_elements": 16,
+            "native_mode": "game",
+            "values": {
+                "ready": true,
+                "route": "@flow.opening",
+                "count": 3
+            }
+        }))
+        .expect("script.run options parse native runtime arguments");
+
+        assert_eq!(options.executor, CliRuntimeExecutorTier::Aot);
+        assert_eq!(
+            options.pure_backend,
+            Some(crate::app::runtime::CliRuntimePureBackend::Jit)
+        );
+        assert!(matches!(
+            options.pure_workers,
+            Some(CliRuntimePureWorkers::Fixed(2))
+        ));
+        assert_eq!(options.pure_batch_min_len, Some(4));
+        assert!(options.pure_object_artifacts);
+        assert_eq!(
+            options.math_backend,
+            Some(crate::app::runtime::CliRuntimeMathBackend::Ndarray)
+        );
+        assert_eq!(options.math_wgpu_min_elements, Some(16));
+        assert!(matches!(options.native_mode, CliRuntimeStepMode::Game));
+        assert_eq!(options.values.len(), 3);
+        assert!(options.values.iter().any(|binding| binding.name == "ready"
+            && matches!(binding.value, arcweft_core::value::RuntimeValue::Bool(true))));
+        assert!(options.values.iter().any(|binding| binding.name == "route"
+            && matches!(
+                &binding.value,
+                arcweft_core::value::RuntimeValue::EntityRef(value) if value == "flow.opening"
+            )));
+        assert!(options.values.iter().any(|binding| binding.name == "count"
+            && matches!(
+                binding.value,
+                arcweft_core::value::RuntimeValue::Int(arcweft_core::value::RuntimeInt::I64(3))
+            )));
+    }
 
     fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObservationReport {
         AgentObservationReport {
@@ -3354,17 +3408,32 @@ fn agent_mcp_script_run_options(
             .get("flow")
             .and_then(serde_json::Value::as_str)
             .map(ToOwned::to_owned),
-        executor: CliRuntimeExecutorTier::BytecodeVm,
-        pure_backend: None,
-        pure_workers: None,
-        pure_batch_min_len: None,
-        pure_object_artifacts: false,
-        math_backend: None,
-        math_wgpu_min_elements: None,
+        executor: agent_mcp_value_enum_argument(arguments, "executor", "arcweft.script.run")?
+            .unwrap_or(CliRuntimeExecutorTier::BytecodeVm),
+        pure_backend: agent_mcp_value_enum_argument(
+            arguments,
+            "pure_backend",
+            "arcweft.script.run",
+        )?,
+        pure_workers: agent_mcp_pure_workers_argument(arguments, "arcweft.script.run")?,
+        pure_batch_min_len: agent_mcp_usize_argument(arguments, "pure_batch_min_len"),
+        pure_object_artifacts: agent_mcp_bool_argument(
+            arguments,
+            "pure_object_artifacts",
+            "arcweft.script.run",
+        )?
+        .unwrap_or(false),
+        math_backend: agent_mcp_value_enum_argument(
+            arguments,
+            "math_backend",
+            "arcweft.script.run",
+        )?,
+        math_wgpu_min_elements: agent_mcp_usize_argument(arguments, "math_wgpu_min_elements"),
         native_steps: agent_mcp_usize_argument(arguments, "native_steps").unwrap_or(8),
-        native_mode: CliRuntimeStepMode::Drain,
+        native_mode: agent_mcp_value_enum_argument(arguments, "native_mode", "arcweft.script.run")?
+            .unwrap_or(CliRuntimeStepMode::Drain),
         native_max_ops: agent_mcp_usize_argument(arguments, "native_max_ops").unwrap_or(64),
-        values: Vec::new(),
+        values: agent_mcp_runtime_bindings(arguments)?,
         viewport_width: agent_mcp_u32_argument(arguments, "viewport_width", "arcweft.script.run")?
             .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
         viewport_height: agent_mcp_u32_argument(
@@ -3453,6 +3522,89 @@ fn agent_mcp_script_scalar_arg(value: &serde_json::Value, context: &str) -> Resu
             Err(format!("{context} values must be bool, string, or number"))
         }
     }
+}
+
+fn agent_mcp_runtime_bindings(
+    arguments: &serde_json::Value,
+) -> Result<Vec<arcweft_core::value::RuntimeBinding>, String> {
+    let Some(value) = arguments.get("values") else {
+        return Ok(Vec::new());
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| "arcweft.script.run values must be a JSON object".to_owned())?;
+    object
+        .iter()
+        .map(|(key, value)| {
+            parse_runtime_binding_arg(&format!(
+                "{key}={}",
+                agent_mcp_runtime_value_arg(value, "arcweft.script.run values")?
+            ))
+        })
+        .collect()
+}
+
+fn agent_mcp_runtime_value_arg(value: &serde_json::Value, context: &str) -> Result<String, String> {
+    match value {
+        serde_json::Value::Bool(value) => Ok(value.to_string()),
+        serde_json::Value::Number(value) => Ok(value.to_string()),
+        serde_json::Value::String(value) => Ok(value.clone()),
+        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            Err(format!("{context} values must be bool, string, or number"))
+        }
+    }
+}
+
+fn agent_mcp_value_enum_argument<T>(
+    arguments: &serde_json::Value,
+    name: &str,
+    tool: &str,
+) -> Result<Option<T>, String>
+where
+    T: ValueEnum,
+{
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    let value = value
+        .as_str()
+        .ok_or_else(|| format!("{tool} argument {name} must be a string"))?;
+    T::from_str(value, true)
+        .map(Some)
+        .map_err(|error| format!("{tool} argument {name} is invalid: {error}"))
+}
+
+fn agent_mcp_pure_workers_argument(
+    arguments: &serde_json::Value,
+    tool: &str,
+) -> Result<Option<CliRuntimePureWorkers>, String> {
+    let Some(value) = arguments.get("pure_workers") else {
+        return Ok(None);
+    };
+    let raw = match value {
+        serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Number(value) if value.is_u64() => value.to_string(),
+        _ => {
+            return Err(format!(
+                "{tool} argument pure_workers must be `auto` or a positive integer"
+            ));
+        }
+    };
+    parse_runtime_pure_workers(&raw).map(Some)
+}
+
+fn agent_mcp_bool_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+    tool: &str,
+) -> Result<Option<bool>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_bool()
+        .ok_or_else(|| format!("{tool} argument {name} must be a boolean"))
+        .map(Some)
 }
 
 fn agent_mcp_store_frame(state: &mut AgentMcpState, frame: AgentMcpFrame) {

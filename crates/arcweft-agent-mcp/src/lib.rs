@@ -169,10 +169,27 @@ fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
                 "profile": { "type": "string", "description": "Optional launch profile for the native Agent session. Mutually exclusive with native_source." },
                 "entry": { "type": "string" },
                 "flow": { "type": "string" },
+                "executor": { "type": "string", "enum": ["bytecode-vm", "aot"], "default": "bytecode-vm" },
+                "pure_backend": { "type": "string", "enum": ["auto", "vm", "aot", "jit"] },
+                "pure_workers": {
+                    "oneOf": [
+                        { "type": "string", "enum": ["auto"] },
+                        { "type": "integer", "minimum": 1 }
+                    ]
+                },
+                "pure_batch_min_len": { "type": "integer", "minimum": 1 },
+                "pure_object_artifacts": { "type": "boolean", "default": false },
+                "math_backend": { "type": "string", "enum": ["auto", "scalar", "glam", "ndarray", "wgpu"] },
+                "math_wgpu_min_elements": { "type": "integer", "minimum": 1 },
                 "native_steps": { "type": "integer", "minimum": 1, "default": 8 },
+                "native_mode": { "type": "string", "enum": ["one-op", "drain", "game", "server"], "default": "drain" },
                 "native_max_ops": { "type": "integer", "minimum": 1, "default": 64 },
                 "max_steps": { "type": "integer", "minimum": 1, "default": 256 },
                 "max_ops": { "type": "integer", "minimum": 1, "default": 1024 },
+                "values": {
+                    "type": "object",
+                    "description": "Native runtime root bindings keyed by binding name, using the same bool/string/integer value syntax as arcw --value."
+                },
                 "signals": {
                     "type": "object",
                     "description": "Deterministic CLI-session signal values keyed by signal id, using JSON bool/string/integer values."
@@ -972,6 +989,18 @@ mod tests {
         assert_eq!(
             script_run.input_schema["properties"]["path"]["type"],
             "string"
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["executor"]["enum"],
+            serde_json::json!(["bytecode-vm", "aot"])
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["native_mode"]["enum"],
+            serde_json::json!(["one-op", "drain", "game", "server"])
+        );
+        assert_eq!(
+            script_run.input_schema["properties"]["values"]["type"],
+            "object"
         );
         assert_eq!(
             script_run.input_schema["properties"]["signals"]["type"],
