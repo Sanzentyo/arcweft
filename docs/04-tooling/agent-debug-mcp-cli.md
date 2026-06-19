@@ -349,21 +349,18 @@ Tools:
 
 ```text
 arcweft.observe
+arcweft.action
+arcweft.wait
 arcweft.capture
 arcweft.resource.read
+arcweft.hit_test
 arcweft.session.info
-arcweft.click
-arcweft.invoke
-arcweft.choose
-arcweft.advance_text
-arcweft.wait_until
-arcweft.step_frames
 arcweft.get_state
-arcweft.log_query
 arcweft.signal_get
-arcweft.audio_state
-arcweft.tts_preview
-arcweft.shader_preview
+arcweft.log_query
+arcweft.rag.query
+arcweft.debug.search
+arcweft.trace.read
 ```
 
 ## Product flags

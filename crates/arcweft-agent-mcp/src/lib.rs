@@ -140,6 +140,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
         agent_observe_tool_descriptor(),
         agent_action_tool_descriptor(),
+        agent_wait_tool_descriptor(),
         agent_resource_read_tool_descriptor(),
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
@@ -151,6 +152,32 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
+}
+
+fn agent_wait_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.wait".to_owned(),
+        title: Some("Wait For Arcweft Predicate".to_owned()),
+        description: "Steps the active native Agent session until a typed Agent predicate is stable or a logical timeout is reached. With source/profile, observes first.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before waiting. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-wait. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before waiting. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
+                "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
+                "textbox_height": { "type": "integer", "minimum": 1 },
+                "predicate": { "type": "object", "description": "Agent protocol Predicate JSON, using kind/probe/op/value fields." },
+                "timeout_millis": { "type": "integer", "minimum": 1 },
+                "stable_frames": { "type": "integer", "minimum": 1, "default": 1 },
+                "poll_frames": { "type": "integer", "minimum": 1, "default": 1 }
+            },
+            "required": ["predicate", "timeout_millis"]
+        }),
+    }
 }
 
 fn agent_action_tool_descriptor() -> McpToolDescriptor {
@@ -866,6 +893,25 @@ mod tests {
         ids::{AgentRunId, SessionId, StableHash},
         trace::{AgentTraceKind, AgentTraceRecord},
     };
+
+    #[test]
+    fn tool_descriptors_include_wait_control_surface() {
+        let tools = agent_tool_descriptors();
+        let wait = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.wait")
+            .expect("wait tool is listed");
+
+        assert_eq!(wait.title.as_deref(), Some("Wait For Arcweft Predicate"));
+        assert_eq!(
+            wait.input_schema["required"],
+            serde_json::json!(["predicate", "timeout_millis"])
+        );
+        assert_eq!(
+            wait.input_schema["properties"]["predicate"]["type"],
+            "object"
+        );
+    }
 
     #[test]
     fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {

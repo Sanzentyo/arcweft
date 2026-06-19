@@ -867,6 +867,61 @@ fn agent_mcp_stdio_reads_agent_trace_resource() {
     assert_eq!(trace_json[2]["kind"], "observation_received");
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_waits_for_observation_predicate() {
+    let source = workspace_path("samples/agent-script/native-project-index.arcw");
+    let requests = vec![
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.wait",
+                "arguments": {
+                    "source": source.display().to_string(),
+                    "predicate": {
+                        "kind": "compare",
+                        "probe": { "kind": "observation_field", "path": "tick" },
+                        "op": "greater_or_equal",
+                        "value": { "kind": "u64", "value": 1 }
+                    },
+                    "timeout_millis": 4,
+                    "stable_frames": 1,
+                    "poll_frames": 1
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp wait should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.wait")
+    );
+    assert_eq!(responses[2]["result"]["isError"], false);
+    let text = responses[2]["result"]["content"][0]["text"]
+        .as_str()
+        .expect("wait result text");
+    let wait: serde_json::Value = serde_json::from_str(text).expect("wait result is JSON");
+    assert_eq!(wait["matched"], true);
+    assert_eq!(wait["stable_seen"], 1);
+    assert!(
+        wait["observation"]["tick"].as_u64().unwrap_or_default() >= 1,
+        "wait should return the matching observation: {wait}"
+    );
+}
+
 fn assert_agent_script_build(bundle_path: &Path) {
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")

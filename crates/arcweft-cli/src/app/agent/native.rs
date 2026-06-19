@@ -26,6 +26,7 @@ use arcweft_agent_mcp::{
     tool_result_for_resources, trace_resource,
 };
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, StableHash};
+use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
 use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult,
     CaptureTarget, ObservationEnvelope, ObserveRequest,
@@ -2979,6 +2980,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP action result: {error}"))
         }
+        "arcweft.wait" => {
+            let tool = agent_mcp_call_wait(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP wait result: {error}"))
+        }
         "arcweft.session.info" => {
             let tool = agent_mcp_call_session_info(state)?;
             serde_json::to_value(tool)
@@ -3178,11 +3184,96 @@ fn agent_mcp_call_action(
         },
         "resource_count": frame.resources.len(),
     });
+    agent_mcp_store_frame(state, frame);
+    agent_mcp_json_tool_result(&value, "action")
+}
+
+fn agent_mcp_call_wait(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let predicate = arguments
+        .get("predicate")
+        .ok_or_else(|| "arcweft.wait requires arguments.predicate".to_owned())
+        .and_then(|value| {
+            serde_json::from_value::<Predicate>(value.clone())
+                .map_err(|error| format!("invalid arcweft.wait predicate: {error}"))
+        })?;
+    let timeout_millis = agent_mcp_u64_argument(arguments, "timeout_millis", "arcweft.wait")?
+        .ok_or_else(|| "arcweft.wait requires arguments.timeout_millis".to_owned())?;
+    let stable_frames =
+        agent_mcp_u32_argument(arguments, "stable_frames", "arcweft.wait")?.unwrap_or(1);
+    let poll_frames =
+        agent_mcp_u32_argument(arguments, "poll_frames", "arcweft.wait")?.unwrap_or(1);
+    let max_polls = (timeout_millis / u64::from(poll_frames.max(1))).max(1);
+    let mut stable_seen = 0u32;
+    let mut last_value = None;
+
+    for poll_index in 0..max_polls {
+        let options = state
+            .observe_options
+            .clone()
+            .ok_or_else(|| "arcweft.wait requires an active native observation session".to_owned())
+            .map(|mut options| {
+                options.steps = usize::try_from(poll_frames.max(1)).unwrap_or(usize::MAX);
+                options.capture_step = None;
+                options
+            })?;
+        let frame = {
+            let runtime = state.runtime.as_mut().ok_or_else(|| {
+                "arcweft.wait requires an active native runtime session".to_owned()
+            })?;
+            agent_mcp_observe_runtime(runtime, &options, Vec::new(), adapter_registrars)?
+        };
+        let matched = agent_mcp_predicate_matches(&predicate, &frame.report);
+        let summary =
+            agent_mcp_wait_report_value(&frame.report, matched, stable_seen, poll_index + 1);
+        stable_seen = if matched {
+            stable_seen.saturating_add(1)
+        } else {
+            0
+        };
+        let done = stable_seen >= stable_frames.max(1);
+        let resources_len = frame.resources.len();
+        agent_mcp_store_frame(state, frame);
+        last_value = Some(serde_json::json!({
+            "matched": matched,
+            "stable_seen": stable_seen,
+            "stable_required": stable_frames.max(1),
+            "polls": poll_index + 1,
+            "timeout_millis": timeout_millis,
+            "poll_frames": poll_frames.max(1),
+            "resource_count": resources_len,
+            "observation": summary,
+        }));
+        if done {
+            return agent_mcp_json_tool_result(
+                last_value.as_ref().expect("wait result exists"),
+                "wait result",
+            );
+        }
+    }
+
+    let value = last_value.unwrap_or_else(|| {
+        serde_json::json!({
+            "matched": false,
+            "stable_seen": 0,
+            "stable_required": stable_frames.max(1),
+            "polls": 0,
+            "timeout_millis": timeout_millis,
+            "poll_frames": poll_frames.max(1),
+        })
+    });
+    agent_mcp_json_tool_error(&value, "wait timeout")
+}
+
+fn agent_mcp_store_frame(state: &mut AgentMcpState, frame: AgentMcpFrame) {
     state.report = Some(frame.report);
     state.image_output = frame.image_output;
     state.image_frames = frame.image_frames;
     state.capture_resources.clear();
-    agent_mcp_json_tool_result(&value, "action")
 }
 
 fn agent_mcp_action_argument(
@@ -4253,6 +4344,18 @@ fn agent_mcp_json_tool_result(
     })
 }
 
+fn agent_mcp_json_tool_error(
+    value: &serde_json::Value,
+    context: &str,
+) -> Result<McpCallToolResult, String> {
+    let text = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("failed to serialize Agent {context}: {error}"))?;
+    Ok(McpCallToolResult {
+        content: vec![McpContentBlock::Text { text }],
+        is_error: true,
+    })
+}
+
 fn agent_mcp_observation_state_summary(report: &AgentObservationReport) -> serde_json::Value {
     serde_json::json!({
         "status": report.status,
@@ -4266,6 +4369,148 @@ fn agent_mcp_observation_state_summary(report: &AgentObservationReport) -> serde
         "task_requests": report.task_requests,
         "capture_time_millis": report.capture_time_millis,
     })
+}
+
+fn agent_mcp_wait_report_value(
+    report: &AgentObservationReport,
+    matched: bool,
+    stable_seen_before: u32,
+    polls: u64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "matched": matched,
+        "stable_seen_before": stable_seen_before,
+        "polls": polls,
+        "tick": report.tick,
+        "frame_id": report.frame_id,
+        "state_hash": report.state_hash,
+        "render_hash": report.render_hash,
+        "final_status": report.final_status,
+        "signals": report.signals,
+        "metrics": report.metrics,
+    })
+}
+
+fn agent_mcp_predicate_matches(predicate: &Predicate, report: &AgentObservationReport) -> bool {
+    match predicate {
+        Predicate::Compare { probe, op, value } => agent_mcp_probe_value(probe, report)
+            .is_some_and(|actual| agent_mcp_compare_values(&actual, *op, value)),
+        Predicate::Exists { probe } => agent_mcp_probe_value(probe, report).is_some(),
+        Predicate::ActionEnabled { target } => report
+            .actions
+            .iter()
+            .any(|action| action.enabled && action.target == target.as_str()),
+        Predicate::All { predicates } => predicates
+            .iter()
+            .all(|predicate| agent_mcp_predicate_matches(predicate, report)),
+        Predicate::Any { predicates } => predicates
+            .iter()
+            .any(|predicate| agent_mcp_predicate_matches(predicate, report)),
+        Predicate::Not { predicate } => !agent_mcp_predicate_matches(predicate, report),
+    }
+}
+
+fn agent_mcp_probe_value(probe: &Probe, report: &AgentObservationReport) -> Option<AgentValue> {
+    match probe {
+        Probe::Signal { target } => agent_mcp_assignment_value(&report.signals, target.as_str()),
+        Probe::Metric { target } => agent_mcp_assignment_value(&report.metrics, target.as_str()),
+        Probe::StatePath { path } => serde_json::to_value(report)
+            .ok()
+            .and_then(|value| agent_json_path(&value, path).cloned())
+            .and_then(|value| agent_mcp_agent_value(&value).ok()),
+        Probe::ObservationField { path } if path == "tick" => {
+            u64::try_from(report.tick).ok().map(AgentValue::U64)
+        }
+        Probe::ObservationField { path } if path == "frame_id" => {
+            Some(AgentValue::String(report.frame_id.clone()))
+        }
+        Probe::ObservationField { path } if path == "state_hash" => {
+            Some(AgentValue::String(report.state_hash.clone()))
+        }
+        Probe::ObservationField { path } if path == "render_hash" => {
+            Some(AgentValue::String(report.render_hash.clone()))
+        }
+        Probe::ObservationField { path } => path
+            .strip_prefix("signals.")
+            .and_then(|signal| agent_mcp_assignment_value(&report.signals, signal))
+            .or_else(|| {
+                path.strip_prefix("metrics.")
+                    .and_then(|metric| agent_mcp_assignment_value(&report.metrics, metric))
+            })
+            .or_else(|| {
+                serde_json::to_value(report)
+                    .ok()
+                    .and_then(|value| agent_json_path(&value, path).cloned())
+                    .and_then(|value| agent_mcp_agent_value(&value).ok())
+            }),
+    }
+}
+
+fn agent_mcp_assignment_value(assignments: &[AgentAssignment], name: &str) -> Option<AgentValue> {
+    assignments
+        .iter()
+        .find(|assignment| assignment.name.trim_start_matches('@') == name.trim_start_matches('@'))
+        .map(agent_assignment_value)
+}
+
+fn agent_mcp_compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> bool {
+    match op {
+        CompareOp::Eq => agent_mcp_values_equal(actual, expected),
+        CompareOp::NotEq => !agent_mcp_values_equal(actual, expected),
+        CompareOp::Greater => {
+            agent_mcp_compare_numeric_values(actual, expected).is_some_and(i32::is_positive)
+        }
+        CompareOp::GreaterOrEqual => {
+            agent_mcp_compare_numeric_values(actual, expected).is_some_and(|order| order >= 0)
+        }
+        CompareOp::Less => {
+            agent_mcp_compare_numeric_values(actual, expected).is_some_and(i32::is_negative)
+        }
+        CompareOp::LessOrEqual => {
+            agent_mcp_compare_numeric_values(actual, expected).is_some_and(|order| order <= 0)
+        }
+    }
+}
+
+fn agent_mcp_values_equal(left: &AgentValue, right: &AgentValue) -> bool {
+    match (left, right) {
+        (AgentValue::Entity(left), AgentValue::String(right))
+        | (AgentValue::String(right), AgentValue::Entity(left)) => left.as_str() == right,
+        _ => left == right,
+    }
+}
+
+fn agent_mcp_compare_numeric_values(left: &AgentValue, right: &AgentValue) -> Option<i32> {
+    Some(match (left, right) {
+        (AgentValue::I64(left), AgentValue::I64(right)) => agent_mcp_compare_order(left.cmp(right)),
+        (AgentValue::U64(left), AgentValue::U64(right)) => agent_mcp_compare_order(left.cmp(right)),
+        (AgentValue::I64(left), AgentValue::U64(right)) => {
+            if *left < 0 {
+                -1
+            } else {
+                agent_mcp_compare_order(u64::try_from(*left).ok()?.cmp(right))
+            }
+        }
+        (AgentValue::U64(left), AgentValue::I64(right)) => {
+            if *right < 0 {
+                1
+            } else {
+                agent_mcp_compare_order(left.cmp(&u64::try_from(*right).ok()?))
+            }
+        }
+        (AgentValue::F64(left), AgentValue::F64(right)) => {
+            agent_mcp_compare_order(left.partial_cmp(right)?)
+        }
+        _ => return None,
+    })
+}
+
+fn agent_mcp_compare_order(order: std::cmp::Ordering) -> i32 {
+    match order {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
 }
 
 fn agent_json_path<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
@@ -4911,6 +5156,20 @@ fn agent_mcp_usize_argument(arguments: &serde_json::Value, name: &str) -> Option
         .get(name)
         .and_then(serde_json::Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+}
+
+fn agent_mcp_u64_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+    tool: &str,
+) -> Result<Option<u64>, String> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_u64()
+        .ok_or_else(|| format!("{tool} argument {name} must be a positive integer"))
+        .map(Some)
 }
 
 fn agent_mcp_u32_argument(
