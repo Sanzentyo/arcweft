@@ -1,5 +1,6 @@
 //! Sans I/O bundle data model and deterministic JSON codec.
 
+use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,11 @@ pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
     pub schema_version: u32,
+    #[serde(default)]
+    pub bundle_kind: BundleKind,
     pub manifest: BundleManifest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentArtifactManifest>,
     pub source: BundleSource,
     pub bytecode: BundleBytecodeProgram,
     pub display: LineDisplayCatalog,
@@ -56,6 +61,14 @@ pub struct BundleBytecodeProgram {
 #[serde(rename_all = "snake_case")]
 pub enum BundleBytecodeEncoding {
     StructuredJson,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleKind {
+    #[default]
+    Game,
+    AgentController,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -154,6 +167,10 @@ pub enum BundleLaunchKind {
 pub enum BundleCodecError {
     #[error("unsupported Arcweft bundle schema version {actual}; expected {expected}")]
     UnsupportedSchema { actual: u32, expected: u32 },
+    #[error("agent controller bundle is missing its Agent artifact manifest")]
+    MissingAgentManifest,
+    #[error("non-agent bundle must not carry an Agent artifact manifest")]
+    UnexpectedAgentManifest,
     #[error("failed to encode Arcweft bundle JSON: {0}")]
     Encode(#[source] serde_json::Error),
     #[error("failed to decode Arcweft bundle JSON: {0}")]
@@ -175,7 +192,9 @@ impl ArcweftBundle {
     ) -> Self {
         Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
+            bundle_kind: BundleKind::Game,
             manifest,
+            agent: None,
             source,
             bytecode: BundleBytecodeProgram {
                 encoding: BundleBytecodeEncoding::StructuredJson,
@@ -226,7 +245,15 @@ impl ArcweftBundle {
         self
     }
 
+    #[must_use]
+    pub fn with_agent_manifest(mut self, manifest: AgentArtifactManifest) -> Self {
+        self.bundle_kind = BundleKind::AgentController;
+        self.agent = Some(manifest);
+        self
+    }
+
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
+        self.validate_kind()?;
         serde_json::to_vec_pretty(self).map_err(BundleCodecError::Encode)
     }
 
@@ -238,6 +265,7 @@ impl ArcweftBundle {
                 expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             });
         }
+        bundle.validate_kind()?;
         Ok(bundle)
     }
 
@@ -263,6 +291,14 @@ impl ArcweftBundle {
             });
         };
         Ok(Some(file.bytes.as_slice()))
+    }
+
+    fn validate_kind(&self) -> Result<(), BundleCodecError> {
+        match (self.bundle_kind, self.agent.is_some()) {
+            (BundleKind::AgentController, false) => Err(BundleCodecError::MissingAgentManifest),
+            (BundleKind::AgentController, true) | (BundleKind::Game, false) => Ok(()),
+            (BundleKind::Game, true) => Err(BundleCodecError::UnexpectedAgentManifest),
+        }
     }
 }
 
@@ -292,6 +328,15 @@ impl BundleVirtualFileSpace {
     }
 }
 
+impl BundleKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Game => "game",
+            Self::AgentController => "agent_controller",
+        }
+    }
+}
+
 impl BundleAdapterManifest {
     pub fn host_call_ids(&self) -> impl Iterator<Item = &str> {
         self.host_calls
@@ -306,9 +351,22 @@ impl std::fmt::Display for BundleVirtualFileSpace {
     }
 }
 
+impl std::fmt::Display for BundleKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_agent_protocol::{
+        artifact::{
+            AgentArtifactManifest, AgentBudget, AgentBundleKind, EffectCapability, ProjectBinding,
+            ProjectBindingMode, RequiredEntity,
+        },
+        ids::{PublicId, StableHash},
+    };
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
@@ -430,6 +488,52 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn bundle_agent_manifest_marks_agent_controller_and_round_trips() {
+        let bundle = empty_test_bundle().with_agent_manifest(test_agent_manifest());
+
+        let bytes = bundle.to_json_bytes().expect("agent bundle encodes");
+        let json = String::from_utf8(bytes.clone()).expect("json is utf8");
+        assert!(json.contains("\"bundle_kind\": \"agent_controller\""));
+        assert!(json.contains("\"agent\""));
+        assert!(json.contains("\"declared_effects\""));
+
+        let decoded = ArcweftBundle::from_json_slice(&bytes).expect("agent bundle decodes");
+        assert_eq!(decoded.bundle_kind, BundleKind::AgentController);
+        assert_eq!(
+            decoded
+                .agent
+                .as_ref()
+                .map(|manifest| manifest.agent_id.as_str()),
+            Some("agent.opening_smoke")
+        );
+        assert_eq!(decoded, bundle);
+    }
+
+    #[test]
+    fn bundle_agent_kind_requires_agent_manifest() {
+        let mut bundle = empty_test_bundle();
+        bundle.bundle_kind = BundleKind::AgentController;
+
+        let error = bundle
+            .to_json_bytes()
+            .expect_err("agent controller bundle requires manifest");
+
+        assert!(matches!(error, BundleCodecError::MissingAgentManifest));
+    }
+
+    #[test]
+    fn bundle_game_kind_rejects_agent_manifest() {
+        let mut bundle = empty_test_bundle().with_agent_manifest(test_agent_manifest());
+        bundle.bundle_kind = BundleKind::Game;
+
+        let error = bundle
+            .to_json_bytes()
+            .expect_err("game bundle cannot carry agent manifest");
+
+        assert!(matches!(error, BundleCodecError::UnexpectedAgentManifest));
+    }
+
     fn empty_test_bundle() -> ArcweftBundle {
         ArcweftBundle::new(
             BundleManifest {
@@ -456,5 +560,38 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+    }
+
+    fn test_agent_manifest() -> AgentArtifactManifest {
+        AgentArtifactManifest {
+            schema_version: 1,
+            bundle_kind: AgentBundleKind::AgentController,
+            agent_id: public_id("agent.opening_smoke"),
+            source_hash: stable_hash("sha256:agent-source"),
+            compiler_version: "arcweft-test".to_owned(),
+            project_binding: ProjectBinding {
+                program_hash: stable_hash("sha256:program"),
+                mode: ProjectBindingMode::Strict,
+                required_entities: vec![RequiredEntity {
+                    public_id: public_id("choice.opening.listen"),
+                    kind: "choice_option".to_owned(),
+                    type_fingerprint: stable_hash("type:none"),
+                }],
+            },
+            declared_effects: vec![
+                EffectCapability::new("agent.observe"),
+                EffectCapability::new("agent.act.semantic"),
+            ],
+            budget: AgentBudget::default(),
+            debug_map_hash: Some(stable_hash("sha256:debug-map")),
+        }
+    }
+
+    fn public_id(value: &str) -> PublicId {
+        PublicId::new(value).expect("test public id is nonempty")
+    }
+
+    fn stable_hash(value: &str) -> StableHash {
+        StableHash::new(value).expect("test hash is nonempty")
     }
 }

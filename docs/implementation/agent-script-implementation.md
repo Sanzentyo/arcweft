@@ -20,6 +20,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-debug-model` provides Sans-I/O debug events, chunks, embedding records, RAG query models, and debug sink boundaries.
 - `arcweft-rag` provides deterministic exact vector ranking and reciprocal-rank fusion primitives.
 - `arcweft-agent-runner` provides the `AgentSession` host boundary, deterministic runtime policy checks, bounded wait polling with stable-frame confirmation, debug event emission, and a RAG service boundary for controller host calls.
+- `arcweft-bundle` can now encode `.awfb` bundles as `bundle_kind = agent_controller` with an embedded `AgentArtifactManifest`, while ordinary game bundles remain the default. The game `arcweft-runtime-host` bundle runner rejects Agent controller bundles instead of executing them as game bytecode.
 - `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
 - `arcw agent script check <file.awfagent>` validates Agent dialect parsing/HIR lowering without requiring the `native-capture` feature.
 - `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
@@ -55,6 +56,10 @@ It is implementation state, not the stable language specification.
 - `cargo check -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo test -p arcweft-agent-protocol -p arcweft-agent-runner`
 - `cargo clippy -p arcweft-agent-protocol -p arcweft-agent-runner --all-targets --all-features -- -D warnings`
+- `cargo check -p arcweft-bundle -p arcweft-runtime-host`
+- `cargo test -p arcweft-bundle -p arcweft-runtime-host bundle -- --nocapture`
+- `cargo clippy -p arcweft-bundle -p arcweft-runtime-host --all-targets --all-features -- -D warnings`
+- `cargo check -p arcweft-cli -p arcweft-player-native -p arcweft-runtime-host`
 - `cargo check -p arcweft-desktop-native --all-features`
 - `cargo test -p arcweft-desktop-native --all-features`
 - `cargo clippy -p arcweft-desktop-native --all-targets --all-features -- -D warnings`
@@ -72,7 +77,7 @@ It is implementation state, not the stable language specification.
 
 - Complete Agent semantic intrinsic rules for `invoke`, including structured diagnostics and policy denial.
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
-- Add Agent artifact manifest / bundle support for `bundle_kind = agent_controller`.
+- Lower typed Agent controllers into executable Agent controller `.awfb` bytecode bundles using the `bundle_kind = agent_controller` container support.
 - Connect `arcweft-agent-runner` to shared bytecode VM execution and `.arcwx` trace emission.
 - Extend MCP/CLI with script run/replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.

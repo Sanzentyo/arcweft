@@ -2,7 +2,7 @@ use crate::native_task::{NativeAdapterRegistrar, NativeTaskBridge, NativeTaskSta
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleImageAnimation, BundleImageAsset,
-    BundleImageDimensions, BundleImageFormat, BundleVirtualFile,
+    BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::LineEffectRequest;
@@ -143,6 +143,8 @@ pub enum BundleRunnerError {
     DecodeBundle(arcweft_bundle::BundleCodecError),
     #[error("invalid bundle image asset: {0}")]
     InvalidImageAsset(#[source] arcweft_bundle::BundleCodecError),
+    #[error("unsupported bundle kind `{kind}` for the game bundle runner")]
+    UnsupportedBundleKind { kind: BundleKind },
     #[error("failed to decode bundle image asset `{asset_id}` ({path}): {source}")]
     DecodeImageAsset {
         asset_id: String,
@@ -191,6 +193,9 @@ fn execute_bundle_with_native_adapters(
     adapter_registrars: &[NativeAdapterRegistrar],
     phases: &mut Vec<BundleRunnerPhase>,
 ) -> Result<BundleRunnerReport, BundleRunnerError> {
+    run_bundle_runner_phase(phases, "validate_bundle_kind", || {
+        validate_bundle_kind(bundle)
+    })?;
     run_bundle_runner_phase(phases, "validate_image_assets", || {
         validate_bundle_image_assets(bundle)
     })?;
@@ -234,6 +239,15 @@ fn execute_bundle_with_native_adapters(
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     })
+}
+
+fn validate_bundle_kind(bundle: &ArcweftBundle) -> Result<(), BundleRunnerError> {
+    match bundle.bundle_kind {
+        BundleKind::Game => Ok(()),
+        BundleKind::AgentController => Err(BundleRunnerError::UnsupportedBundleKind {
+            kind: bundle.bundle_kind,
+        }),
+    }
 }
 
 fn validate_bundle_image_assets(bundle: &ArcweftBundle) -> Result<(), BundleRunnerError> {
@@ -835,6 +849,29 @@ mod tests {
                     path,
                 }
             ) if asset_id == "asset.bg.room" && path == "bg/room.png"
+        ));
+    }
+
+    #[test]
+    fn bundle_runner_rejects_agent_controller_bundle_kind() {
+        let mut bundle = dialogue_bundle();
+        bundle.bundle_kind = BundleKind::AgentController;
+
+        let error = run_bundle_with_native_adapters(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 1,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect_err("game runner must not execute agent controller bundles");
+
+        assert!(matches!(
+            error,
+            BundleRunnerError::UnsupportedBundleKind {
+                kind: BundleKind::AgentController
+            }
         ));
     }
 

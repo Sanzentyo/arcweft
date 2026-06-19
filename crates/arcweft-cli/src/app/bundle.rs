@@ -339,6 +339,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
         | BundleRunnerError::InvalidImageAsset(_)
+        | BundleRunnerError::UnsupportedBundleKind { .. }
         | BundleRunnerError::DecodeImageAsset { .. }
         | BundleRunnerError::ImageAssetMetadataMismatch { .. }
         | BundleRunnerError::DecodeBytecode(_)

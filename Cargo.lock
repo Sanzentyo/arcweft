@@ -253,6 +253,7 @@ dependencies = [
 name = "arcweft-bundle"
 version = "0.1.0"
 dependencies = [
+ "arcweft-agent-protocol",
  "arcweft-core",
  "arcweft-render-text",
  "serde",
