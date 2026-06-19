@@ -251,6 +251,8 @@ pub struct AgentImageObjectRef {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_ref: Option<AgentImageObjectContentRef>,
 }
 
 /// Bounds of non-transparent pixels in image-local coordinates.
@@ -537,6 +539,36 @@ pub struct AgentObservedImageContent {
     pub proxies: Vec<AgentPresentationObjectProxyRef>,
 }
 
+/// Image payload summary preserved on object-scoped capture resources.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentImageObjectContentRef {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_time_millis: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity_milli: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<AgentImageTransform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsic_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsic_height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, AgentImageObjectParam>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxies: Vec<AgentPresentationObjectProxyRef>,
+}
+
 /// Fixed-point affine transform attached to an observed image object.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentImageTransform {
@@ -560,7 +592,7 @@ pub enum AgentImageObjectParam {
 }
 
 impl AgentImageObjectRef {
-    /// Copies the stable object identity and rich-text link into image metadata.
+    /// Copies stable object identity and typed object payload links into image metadata.
     pub fn from_observed(object: &AgentObservedObject) -> Self {
         Self {
             id: object.id.clone(),
@@ -575,6 +607,7 @@ impl AgentImageObjectRef {
             object_depth: object.resolved_object_depth(),
             text: object.text.clone(),
             rich_text_ref: object.rich_text_ref.clone(),
+            image_ref: object.image_content_ref(),
         }
     }
 }
@@ -586,6 +619,16 @@ impl AgentObservedObject {
             AgentObservedObjectContent::Image(_) | AgentObservedObjectContent::Custom { .. } => {
                 None
             }
+        }
+    }
+
+    pub fn image_content_ref(&self) -> Option<AgentImageObjectContentRef> {
+        match &self.content {
+            AgentObservedObjectContent::Image(content) => {
+                Some(AgentImageObjectContentRef::from(content))
+            }
+            AgentObservedObjectContent::RichText { .. }
+            | AgentObservedObjectContent::Custom { .. } => None,
         }
     }
 
@@ -603,6 +646,26 @@ impl AgentObservedObject {
                 .as_ref()
                 .and_then(|rich_text_ref| rich_text_ref.object_depth)
         })
+    }
+}
+
+impl From<&AgentObservedImageContent> for AgentImageObjectContentRef {
+    fn from(content: &AgentObservedImageContent) -> Self {
+        Self {
+            source: content.source.clone(),
+            object: content.object.clone(),
+            target: content.target.clone(),
+            asset: content.asset.clone(),
+            frame_index: content.frame_index,
+            local_time_millis: content.local_time_millis,
+            opacity_milli: content.opacity_milli,
+            transform: content.transform.clone(),
+            intrinsic_width: content.intrinsic_width,
+            intrinsic_height: content.intrinsic_height,
+            actions: content.actions.clone(),
+            params: content.params.clone(),
+            proxies: content.proxies.clone(),
+        }
     }
 }
 
@@ -2200,6 +2263,7 @@ mod tests {
                 object_depth: Some(4000),
                 text: Some("Hit".to_owned()),
                 rich_text_ref: None,
+                image_ref: None,
             },
             layer: "ui".to_owned(),
             role: "rich_text_proxy".to_owned(),
@@ -2263,6 +2327,7 @@ mod tests {
             object_depth: Some(7000),
             text: Some("Hello".to_owned()),
             rich_text_ref: Some(rich_text_ref.clone()),
+            image_ref: None,
         });
 
         let resource = report.image_resource(&image, &[255; 48]);
@@ -2325,53 +2390,26 @@ mod tests {
             object_depth: Some(2500),
             text: None,
             rich_text_ref: None,
-            content: AgentObservedObjectContent::Image(AgentObservedImageContent {
-                source: "ui.image.7".to_owned(),
-                object: Some("image.logo".to_owned()),
-                target: Some("target.logo".to_owned()),
-                asset: Some("asset.logo.webp".to_owned()),
-                frame_index: Some(1),
-                local_time_millis: Some(250),
-                opacity_milli: Some(750),
-                transform: Some(AgentImageTransform {
-                    m11_milli: 1_000,
-                    m12_milli: 0,
-                    m21_milli: 0,
-                    m22_milli: 1_000,
-                    tx_milli: 12_000,
-                    ty_milli: 8_000,
-                }),
-                intrinsic_width: Some(64),
-                intrinsic_height: Some(32),
-                actions: vec!["action.inspect".to_owned()],
-                params: BTreeMap::from([(
-                    "param.role".to_owned(),
-                    AgentImageObjectParam::Text {
-                        value: "title-logo".to_owned(),
-                    },
-                )]),
-                proxies: vec![AgentPresentationObjectProxyRef {
-                    id: "proxy.logo.hotspot".to_owned(),
-                    type_name: Some("LogoHotspot".to_owned()),
-                    role: Some("inspect".to_owned()),
-                    layer: Some("hud.hit".to_owned()),
-                    depth: Some(2600),
-                    declaration: None,
-                    hit_test: true,
-                    params: BTreeMap::from([(
-                        "param.channel".to_owned(),
-                        RichTextParam::Text {
-                            value: "preview".to_owned(),
-                        },
-                    )]),
-                }],
-            }),
+            content: AgentObservedObjectContent::Image(test_observed_image_content()),
         };
 
         let image_object = AgentImageObjectRef::from_observed(&object);
         assert_eq!(image_object.object_layer.as_deref(), Some("hud.foreground"));
         assert_eq!(image_object.object_depth, Some(2500));
         assert!(image_object.rich_text_ref.is_none());
+        let image_ref = image_object
+            .image_ref
+            .as_ref()
+            .expect("image object metadata preserves active image payload");
+        assert_eq!(image_ref.source, "ui.image.7");
+        assert_eq!(image_ref.asset.as_deref(), Some("asset.logo.webp"));
+        assert_eq!(image_ref.frame_index, Some(1));
+        assert_eq!(image_ref.local_time_millis, Some(250));
+        assert_eq!(image_ref.opacity_milli, Some(750));
+        assert_eq!(image_ref.intrinsic_width, Some(64));
+        assert_eq!(image_ref.intrinsic_height, Some(32));
+        assert_eq!(image_ref.actions, vec!["action.inspect".to_owned()]);
+        assert_eq!(image_ref.proxies[0].id, "proxy.logo.hotspot");
 
         let object_json = serde_json::to_value(&object).expect("image object serializes");
         assert_eq!(
@@ -2414,6 +2452,50 @@ mod tests {
         let json = serde_json::to_value(&tree).expect("presentation tree serializes");
         assert_eq!(json["nodes"][2]["object_layer"], "hud.foreground");
         assert_eq!(json["nodes"][2]["object_proxies"][0]["hit_test"], true);
+    }
+
+    fn test_observed_image_content() -> AgentObservedImageContent {
+        AgentObservedImageContent {
+            source: "ui.image.7".to_owned(),
+            object: Some("image.logo".to_owned()),
+            target: Some("target.logo".to_owned()),
+            asset: Some("asset.logo.webp".to_owned()),
+            frame_index: Some(1),
+            local_time_millis: Some(250),
+            opacity_milli: Some(750),
+            transform: Some(AgentImageTransform {
+                m11_milli: 1_000,
+                m12_milli: 0,
+                m21_milli: 0,
+                m22_milli: 1_000,
+                tx_milli: 12_000,
+                ty_milli: 8_000,
+            }),
+            intrinsic_width: Some(64),
+            intrinsic_height: Some(32),
+            actions: vec!["action.inspect".to_owned()],
+            params: BTreeMap::from([(
+                "param.role".to_owned(),
+                AgentImageObjectParam::Text {
+                    value: "title-logo".to_owned(),
+                },
+            )]),
+            proxies: vec![AgentPresentationObjectProxyRef {
+                id: "proxy.logo.hotspot".to_owned(),
+                type_name: Some("LogoHotspot".to_owned()),
+                role: Some("inspect".to_owned()),
+                layer: Some("hud.hit".to_owned()),
+                depth: Some(2600),
+                declaration: None,
+                hit_test: true,
+                params: BTreeMap::from([(
+                    "param.channel".to_owned(),
+                    RichTextParam::Text {
+                        value: "preview".to_owned(),
+                    },
+                )]),
+            }],
+        }
     }
 
     #[test]

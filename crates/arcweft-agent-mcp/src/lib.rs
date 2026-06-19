@@ -746,6 +746,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn image_tool_content_preserves_image_object_frame_metadata() {
+        let metadata: AgentImageMetadata =
+            serde_json::from_value(image_object_frame_metadata_fixture())
+                .expect("image object frame metadata deserializes");
+        let resource = AgentResource {
+            uri: "arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba"
+                .to_owned(),
+            kind: AgentResourceKind::Image,
+            mime_type: "application/octet-stream".to_owned(),
+            hash: "hash".to_owned(),
+            image: Some(metadata),
+            body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
+                encoding: AgentBinaryEncoding::Base64,
+                data: "AAAA".to_owned(),
+            }),
+        };
+
+        let tool = tool_result_for_resource(&resource).expect("tool result serializes");
+
+        let [
+            McpContentBlock::Text { text },
+            McpContentBlock::Resource { .. },
+        ] = tool.content.as_slice()
+        else {
+            panic!(
+                "raw image tool result should expose metadata text plus resource blob: {:?}",
+                tool.content
+            );
+        };
+        let json: serde_json::Value =
+            serde_json::from_str(text).expect("metadata text is JSON object");
+        assert_eq!(
+            json["image"]["object"]["image_ref"]["asset"],
+            "asset.bg.pulse"
+        );
+        assert_eq!(json["image"]["object"]["image_ref"]["frame_index"], 1);
+        assert_eq!(
+            json["image"]["object"]["image_ref"]["local_time_millis"],
+            150
+        );
+        assert_eq!(
+            json["image"]["object"]["image_ref"]["proxies"][0]["id"],
+            "proxy.pulse_sprite.hotspot"
+        );
+        assert_eq!(
+            json["image"]["object"]["image_ref"]["params"]["param.role"]["value"],
+            "animated-hotspot"
+        );
+    }
+
     fn proxy_object_image_metadata_fixture() -> serde_json::Value {
         serde_json::json!({
             "kind": "mask",
@@ -807,6 +858,79 @@ mod tests {
                 }
             }
         })
+    }
+
+    fn image_object_frame_metadata_fixture() -> serde_json::Value {
+        serde_json::from_str(
+            r#"{
+                "kind": "color",
+                "renderer": "native",
+                "scope": { "kind": "object", "id": "object.image.layer.foreground.0.1" },
+                "composition": "framebuffer_crop",
+                "width": 360,
+                "height": 180,
+                "pixel_format": "rgba8_unorm",
+                "row_stride_bytes": 1440,
+                "content_pixels": 64800,
+                "object": {
+                    "id": "object.image.layer.foreground.0.1",
+                    "entity": "image.sample.pulse_sprite",
+                    "layer": "layer.foreground",
+                    "role": "image",
+                    "bbox": { "space": "viewport", "x": 120, "y": 84, "width": 360, "height": 180 },
+                    "polygon": [
+                        { "x": 120, "y": 84 },
+                        { "x": 480, "y": 84 },
+                        { "x": 480, "y": 264 },
+                        { "x": 120, "y": 264 }
+                    ],
+                    "capture_refs": {
+                        "object_id_color": {
+                            "red": 10,
+                            "green": 20,
+                            "blue": 30,
+                            "alpha": 255
+                        },
+                        "captures": [{
+                            "kind": "color",
+                            "uri": "arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba",
+                            "mime_type": "application/octet-stream",
+                            "width": 360,
+                            "height": 180
+                        }]
+                    },
+                    "object_layer": "layer.foreground",
+                    "object_depth": 2500,
+                    "image_ref": {
+                        "source": "ui.image.1",
+                        "object": "image.sample.pulse_sprite",
+                        "target": "target.sample.pulse_sprite",
+                        "asset": "asset.bg.pulse",
+                        "frame_index": 1,
+                        "local_time_millis": 150,
+                        "opacity_milli": 500,
+                        "intrinsic_width": 2,
+                        "intrinsic_height": 1,
+                        "actions": ["action.inspect.pulse_sprite"],
+                        "params": {
+                            "param.role": { "kind": "text", "value": "animated-hotspot" }
+                        },
+                        "proxies": [{
+                            "id": "proxy.pulse_sprite.hotspot",
+                            "type_name": "PulseSpriteHotspot",
+                            "role": "inspect",
+                            "layer": "layer.hit",
+                            "depth": 2600,
+                            "hit_test": true,
+                            "params": {
+                                "param.channel": { "kind": "text", "value": "preview" }
+                            }
+                        }]
+                    }
+                }
+            }"#,
+        )
+        .expect("image object frame metadata fixture is valid JSON")
     }
 
     #[test]

@@ -118,6 +118,12 @@ observation report and native capture session. Direct `--image` capture,
 `--read-uri`, MCP `resources/read`, MCP `arcweft.resource.read`, and MCP
 `arcweft.capture` therefore share the same frame-store-aware capture path once
 live UI commits populate the store.
+Object-scoped image resources also preserve an `image_ref` summary on
+`image.object`. The summary records the observed image source, authored object
+id, target, asset id, active frame index, pinned local time, opacity, intrinsic
+dimensions, semantic actions, typed params, and object proxy metadata. This
+keeps direct `--read-uri` and MCP resource/tool responses useful for debugging
+animated images without re-inferring frame state from pixels or object ids.
 
 Source-level runtime calls can now feed that same presentation-image path for
 the first background slot. During Agent observe, `bg(@asset.bg.room)` and the
@@ -252,9 +258,11 @@ image capture.
    proxies. Depth, transforms, lifecycle flags, semantic actions, and custom
    `param.*` metadata are now present on the bounded source-level call path and
    Agent observation path.
-3. Add clipped object capture, layer capture, and pinned-frame readback
-   fixtures that exercise non-fullscreen image geometry through direct
-   `--read-uri` and MCP resource reads.
+3. Add clipped object capture and layer capture fixtures that exercise
+   non-fullscreen image geometry through direct `--read-uri` and MCP resource
+   reads. Bounded animated image pinned-frame readback is covered for direct
+   `--read-uri`, and MCP tool-content preservation is covered with serialized
+   metadata fixtures.
 4. Add more regression tests for native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 

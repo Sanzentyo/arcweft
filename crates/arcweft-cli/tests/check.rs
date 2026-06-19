@@ -22513,6 +22513,133 @@ fn raw_bytes_from_agent_image_resource(resource: &serde_json::Value, context: &s
 }
 
 #[test]
+fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let observe =
+        observe_image_animation_sample_flow_at(&source_path, "image_sprite_overlay", "0.15");
+    let image_object = observe["objects"]
+        .as_array()
+        .expect("image animation sample reports objects")
+        .iter()
+        .find(|object| {
+            object["content"]["kind"] == "image"
+                && object["content"]["object"] == "image.sample.pulse_sprite"
+        })
+        .expect("bounded animated image object is observed");
+    let object_id = image_object["id"]
+        .as_str()
+        .expect("bounded image object id");
+    let raw_uri = image_object["capture_refs"]["captures"]
+        .as_array()
+        .expect("bounded image object reports capture refs")
+        .iter()
+        .find(|capture| {
+            capture["kind"] == "color" && capture["mime_type"] == "application/octet-stream"
+        })
+        .and_then(|capture| capture["uri"].as_str())
+        .expect("bounded image object has raw color capture ref");
+
+    let resource = read_image_animation_sample_resource_at(
+        &source_path,
+        "image_sprite_overlay",
+        "0.15",
+        raw_uri,
+    );
+
+    assert_agent_read_uri_object_image_metadata(&resource, raw_uri, object_id, 360, 180);
+    assert_eq!(resource["image"]["composition"], "framebuffer_crop");
+    assert_eq!(resource["image"]["crop_origin"]["x"], 120);
+    assert_eq!(resource["image"]["crop_origin"]["y"], 84);
+    assert_eq!(resource["image"]["content_pixels"], 64_800);
+    let image_ref = &resource["image"]["object"]["image_ref"];
+    assert_eq!(image_ref["source"], "ui.image.1");
+    assert_eq!(image_ref["object"], "image.sample.pulse_sprite");
+    assert_eq!(image_ref["target"], "target.sample.pulse_sprite");
+    assert_eq!(image_ref["asset"], "asset.bg.pulse");
+    assert_eq!(image_ref["frame_index"], 1);
+    assert_eq!(image_ref["local_time_millis"], 150);
+    assert_eq!(image_ref["opacity_milli"], 500);
+    assert_eq!(image_ref["intrinsic_width"], 2);
+    assert_eq!(image_ref["intrinsic_height"], 1);
+    assert_eq!(image_ref["actions"][0], "action.inspect.pulse_sprite");
+    assert_eq!(
+        image_ref["params"]["param.role"]["value"],
+        "animated-hotspot"
+    );
+    assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
+    assert_eq!(image_ref["proxies"][0]["depth"], 2600);
+    assert_eq!(image_ref["proxies"][0]["hit_test"], true);
+
+    let bytes =
+        raw_bytes_from_agent_image_resource(&resource, "animated image object read-uri resource");
+    assert_eq!(bytes.len(), 360 * 180 * 4);
+    assert_eq!(
+        &bytes[..4],
+        &[176, 131, 11, 127],
+        "pinned animated image frame should return the active textured-quad pixel"
+    );
+    assert!(
+        bytes.chunks_exact(4).any(|pixel| pixel[3] == 127),
+        "half-opacity animated image resource should preserve frame alpha"
+    );
+}
+
+fn observe_image_animation_sample_flow_at(
+    path: &Path,
+    flow: &str,
+    capture_time: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--flow")
+        .arg(flow)
+        .arg("--steps")
+        .arg("2")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--json")
+        .output()
+        .expect("arcw agent observe runs image animation sample flow");
+    assert!(
+        output.status.success(),
+        "image animation sample observe should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("image animation sample observe output is JSON")
+}
+
+fn read_image_animation_sample_resource_at(
+    path: &Path,
+    flow: &str,
+    capture_time: &str,
+    uri: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--flow")
+        .arg(flow)
+        .arg("--steps")
+        .arg("2")
+        .arg("--capture-time")
+        .arg(capture_time)
+        .arg("--json")
+        .arg("--read-uri")
+        .arg(uri)
+        .output()
+        .expect("arcw agent observe reads image animation sample resource");
+    assert!(
+        output.status.success(),
+        "image animation sample read-uri should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("image animation sample resource is JSON")
+}
+
+#[test]
 fn agent_observe_read_uri_returns_latest_native_layer_image() {
     let path = temp_arcw(
         "agent-observe-native-layer-read-uri",
