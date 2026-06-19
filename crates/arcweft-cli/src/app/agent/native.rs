@@ -29,6 +29,7 @@ use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult,
     CaptureTarget, ObservationEnvelope, ObserveRequest,
 };
+use arcweft_agent_protocol::value::AgentValue;
 use arcweft_agent_protocol::{
     AgentActionDispatch, AgentActionKind, AgentActionTarget, AgentAssignment, AgentAudioState,
     AgentBBox, AgentCoordinateSpace, AgentDiagnostic, AgentDiagnosticSeverity,
@@ -1903,6 +1904,8 @@ struct AgentMcpState {
     capture_resources: Vec<AgentResource>,
     trace_resources: Vec<AgentResource>,
     native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
+    runtime: Option<NativeAgentRuntimeState>,
+    observe_options: Option<AgentObserveOptions>,
 }
 
 struct AgentObservationState {
@@ -1946,7 +1949,15 @@ struct AgentMcpObservation {
     image_output: Option<AgentImageOutput>,
     image_frames: AgentImageFrameStore,
     resources: Vec<AgentResource>,
-    native_session: arcweft_render_native::NativeOffscreenCaptureSession,
+    runtime: NativeAgentRuntimeState,
+    options: AgentObserveOptions,
+}
+
+struct AgentMcpFrame {
+    report: AgentObservationReport,
+    image_output: Option<AgentImageOutput>,
+    image_frames: AgentImageFrameStore,
+    resources: Vec<AgentResource>,
 }
 
 #[derive(serde::Deserialize)]
@@ -2049,6 +2060,11 @@ fn agent_mcp_tool_call(
         .unwrap_or_else(|| serde_json::json!({}));
     match name {
         "arcweft.observe" => agent_mcp_call_observe(&arguments, state, adapter_registrars),
+        "arcweft.action" => {
+            let tool = agent_mcp_call_action(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP action result: {error}"))
+        }
         "arcweft.session.info" => {
             let tool = agent_mcp_call_session_info(state)?;
             serde_json::to_value(tool)
@@ -2104,14 +2120,20 @@ fn agent_mcp_call_observe(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<serde_json::Value, String> {
     let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
+    let tool = tool_result_for_resources(&observed.resources);
+    agent_mcp_store_observation(state, observed);
+    serde_json::to_value(tool)
+        .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
+}
+
+fn agent_mcp_store_observation(state: &mut AgentMcpState, observed: AgentMcpObservation) {
     state.report = Some(observed.report);
     state.image_output = observed.image_output;
     state.image_frames = observed.image_frames;
-    state.native_capture_session = Some(observed.native_session);
+    state.runtime = Some(observed.runtime);
+    state.observe_options = Some(observed.options);
+    state.native_capture_session = None;
     state.capture_resources.clear();
-    let tool = tool_result_for_resources(&observed.resources);
-    serde_json::to_value(tool)
-        .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
 }
 
 fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResult, String> {
@@ -2135,7 +2157,7 @@ fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResul
             "layers": report.layers,
             "objects": report.objects,
             "capture_resource_count": state.capture_resources.len(),
-            "native_capture_session_active": state.native_capture_session.is_some(),
+            "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
             "latest_capture": latest_capture.and_then(|resource| resource.image.as_ref()),
             "latest_capture_uri": latest_capture.map(|resource| resource.uri.as_str()),
             "latest_capture_resource": latest_capture_descriptor,
@@ -2178,11 +2200,7 @@ fn agent_mcp_call_hit_test(
         .ok_or_else(|| "arcweft.hit_test requires arguments.y".to_owned())?;
     if agent_mcp_arguments_request_observe(arguments) {
         let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
-        state.report = Some(observed.report);
-        state.image_output = observed.image_output;
-        state.image_frames = observed.image_frames;
-        state.native_capture_session = Some(observed.native_session);
-        state.capture_resources.clear();
+        agent_mcp_store_observation(state, observed);
     }
     let Some(report) = &state.report else {
         return Err(
@@ -2197,6 +2215,192 @@ fn agent_mcp_call_hit_test(
         content: vec![McpContentBlock::Text { text }],
         is_error: false,
     })
+}
+
+fn agent_mcp_call_action(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let before = state.report.clone().ok_or_else(|| {
+        "arcweft.action requires a prior arcweft.observe call, arguments.source, or arguments.profile"
+            .to_owned()
+    })?;
+    let action = agent_mcp_action_argument(arguments, &before)?;
+    let input_events = native_agent_action_input_events(&before, action.clone())
+        .map_err(|error| error.to_string())?;
+    let options = state
+        .observe_options
+        .clone()
+        .ok_or_else(|| "arcweft.action requires an active native observation session".to_owned())?;
+    let frame = {
+        let runtime = state
+            .runtime
+            .as_mut()
+            .ok_or_else(|| "arcweft.action requires an active native runtime session".to_owned())?;
+        agent_mcp_observe_runtime(runtime, &options, input_events, adapter_registrars)?
+    };
+    let result = NativeAgentScriptSession::action_result(&before, &frame.report);
+    let value = serde_json::json!({
+        "accepted": result.accepted,
+        "before_tick": result.before_tick,
+        "after_tick": result.after_tick,
+        "before_state_hash": result.before_state_hash,
+        "after_state_hash": result.after_state_hash,
+        "action": action,
+        "after": {
+            "tick": frame.report.tick,
+            "frame_id": frame.report.frame_id,
+            "state_hash": frame.report.state_hash,
+            "render_hash": frame.report.render_hash,
+            "final_status": frame.report.final_status,
+            "actions": frame.report.actions,
+        },
+        "resource_count": frame.resources.len(),
+    });
+    state.report = Some(frame.report);
+    state.image_output = frame.image_output;
+    state.image_frames = frame.image_frames;
+    state.capture_resources.clear();
+    agent_mcp_json_tool_result(&value, "action")
+}
+
+fn agent_mcp_action_argument(
+    arguments: &serde_json::Value,
+    report: &AgentObservationReport,
+) -> Result<AgentAction, String> {
+    if let Some(action_id) = arguments
+        .get("action_id")
+        .and_then(serde_json::Value::as_str)
+    {
+        let target = report
+            .actions
+            .iter()
+            .find(|candidate| candidate.id == action_id)
+            .ok_or_else(|| format!("arcweft.action action_id `{action_id}` is not observed"))?;
+        return agent_mcp_action_from_target(arguments, target);
+    }
+    let kind = arguments
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            "arcweft.action requires arguments.action_id or arguments.kind".to_owned()
+        })?;
+    match kind {
+        "advance_text" => Ok(AgentAction::AdvanceText),
+        "select_choice" => {
+            let target = agent_mcp_public_id_argument(arguments, "target", "arcweft.action")?;
+            Ok(AgentAction::SelectChoice { choice: target })
+        }
+        "invoke" => {
+            let target = agent_mcp_public_id_argument(arguments, "target", "arcweft.action")?;
+            let action = arguments
+                .get("action")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "arcweft.action kind invoke requires arguments.action".to_owned())?
+                .to_owned();
+            let args = agent_mcp_action_args(arguments)?;
+            Ok(AgentAction::Invoke {
+                target,
+                action,
+                args: Box::new(args),
+            })
+        }
+        _ => Err(format!(
+            "arcweft.action kind must be one of advance_text, select_choice, or invoke: `{kind}`"
+        )),
+    }
+}
+
+fn agent_mcp_action_args(
+    arguments: &serde_json::Value,
+) -> Result<BTreeMap<String, AgentValue>, String> {
+    let Some(args) = arguments.get("args") else {
+        return Ok(BTreeMap::new());
+    };
+    let values = args
+        .as_object()
+        .ok_or_else(|| "arcweft.action arguments.args must be an object".to_owned())?;
+    values
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), agent_mcp_agent_value(value)?)))
+        .collect()
+}
+
+fn agent_mcp_agent_value(value: &serde_json::Value) -> Result<AgentValue, String> {
+    match value {
+        serde_json::Value::Null => Ok(AgentValue::Null),
+        serde_json::Value::Bool(value) => Ok(AgentValue::Bool(*value)),
+        serde_json::Value::Number(value) => value
+            .as_i64()
+            .map(AgentValue::I64)
+            .or_else(|| value.as_u64().map(AgentValue::U64))
+            .or_else(|| value.as_f64().map(AgentValue::F64))
+            .ok_or_else(|| format!("arcweft.action arguments.args number is not finite: {value}")),
+        serde_json::Value::String(value) => Ok(AgentValue::String(value.clone())),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(agent_mcp_agent_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(AgentValue::List),
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), agent_mcp_agent_value(value)?)))
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(AgentValue::Map),
+    }
+}
+
+fn agent_mcp_action_from_target(
+    arguments: &serde_json::Value,
+    target: &AgentActionTarget,
+) -> Result<AgentAction, String> {
+    match target.action {
+        AgentActionKind::AdvanceText => {
+            agent_mcp_reject_action_args_for_non_invoke(arguments)?;
+            Ok(AgentAction::AdvanceText)
+        }
+        AgentActionKind::SelectChoice => {
+            agent_mcp_reject_action_args_for_non_invoke(arguments)?;
+            Ok(AgentAction::SelectChoice {
+                choice: agent_mcp_public_id_from_str(&target.target)?,
+            })
+        }
+        AgentActionKind::Invoke => Ok(AgentAction::Invoke {
+            target: agent_mcp_public_id_from_str(&target.target)?,
+            action: target.id.clone(),
+            args: Box::new(agent_mcp_action_args(arguments)?),
+        }),
+        AgentActionKind::PointerClick => {
+            Err("arcweft.action does not synthesize physical pointer_click actions".to_owned())
+        }
+    }
+}
+
+fn agent_mcp_reject_action_args_for_non_invoke(
+    arguments: &serde_json::Value,
+) -> Result<(), String> {
+    if arguments.get("args").is_some() {
+        return Err("arcweft.action arguments.args is only valid for invoke actions".to_owned());
+    }
+    Ok(())
+}
+
+fn agent_mcp_public_id_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+    tool: &str,
+) -> Result<PublicId, String> {
+    let value = arguments
+        .get(name)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{tool} requires arguments.{name}"))?;
+    agent_mcp_public_id_from_str(value)
+}
+
+fn agent_mcp_public_id_from_str(value: &str) -> Result<PublicId, String> {
+    PublicId::new(value.trim_start_matches('@').to_owned()).map_err(|error| error.to_string())
 }
 
 fn agent_mcp_call_get_state(
@@ -2881,11 +3085,7 @@ fn agent_mcp_observe_if_requested(
         return Ok(());
     }
     let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
-    state.report = Some(observed.report);
-    state.image_output = observed.image_output;
-    state.image_frames = observed.image_frames;
-    state.native_capture_session = Some(observed.native_session);
-    state.capture_resources.clear();
+    agent_mcp_store_observation(state, observed);
     Ok(())
 }
 
@@ -2973,53 +3173,111 @@ fn agent_mcp_run_observation(
     let runtime_options = runtime_plan_options_for_selection(&selection);
     let lowered = lower_source_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
         .map_err(|_| "failed to lower runtime plan".to_owned())?;
-    let mut native_session = agent_native_capture_session_for_hir(&checked.hir)
+    let native_session = agent_native_capture_session_for_hir(&checked.hir)
         .map_err(|_| "failed to create native capture session".to_owned())?;
     let mut plan = lowered.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
         .map_err(|_| "failed to select runtime entry".to_owned())?;
-    let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    let mut task_events = Vec::new();
+    let mut runtime = NativeAgentRuntimeState {
+        executor: RuntimeExecutorInstance::new(plan, options.executor, pure_config),
+        catalog: lowered.line_display_catalog,
+        source_path: selection.path().to_owned(),
+        host_policy,
+        native_session,
+        task_events: Vec::new(),
+        next_tick: 0,
+    };
     let mut observed = run_agent_observation(
-        &mut executor,
-        &lowered.line_display_catalog,
+        &mut runtime.executor,
+        &runtime.catalog,
         AgentObservationRunContext {
             host_config: NativeRunHost {
-                source_path: Some(selection.path()),
-                policy: &host_policy,
+                source_path: Some(&runtime.source_path),
+                policy: &runtime.host_policy,
                 adapter_registrars,
             },
             options: &options,
-            source_path: selection.path(),
-            native_session: Some(&mut native_session),
+            source_path: &runtime.source_path,
+            native_session: Some(&mut runtime.native_session),
             tick_offset: 0,
             input_events: Vec::new(),
-            task_events: &mut task_events,
+            task_events: &mut runtime.task_events,
         },
     )
     .map_err(|error| error.to_string())?;
     extend_agent_observation_with_runtime_images(
         &mut observed,
-        selection.path(),
-        &executor,
+        &runtime.source_path,
+        &runtime.executor,
         &options,
     );
     let image_output = agent_observe_image_output(
         &mut observed.report,
         &options,
-        Some(&mut native_session),
+        Some(&mut runtime.native_session),
         &observed.image_frames,
     )
     .map_err(|_| "failed to build MCP observe image output".to_owned())?;
     let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
         .map_err(|_| "failed to build MCP observe resources".to_owned())?;
+    runtime.next_tick = observed.report.tick.saturating_add(1);
     Ok(AgentMcpObservation {
         report: observed.report,
         image_output,
         image_frames: observed.image_frames,
         resources,
-        native_session,
+        runtime,
+        options,
+    })
+}
+
+fn agent_mcp_observe_runtime(
+    runtime: &mut NativeAgentRuntimeState,
+    options: &AgentObserveOptions,
+    input_events: Vec<RuntimeInputEvent>,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentMcpFrame, String> {
+    let tick_offset = runtime.next_tick;
+    let mut observed = run_agent_observation(
+        &mut runtime.executor,
+        &runtime.catalog,
+        AgentObservationRunContext {
+            host_config: NativeRunHost {
+                source_path: Some(&runtime.source_path),
+                policy: &runtime.host_policy,
+                adapter_registrars,
+            },
+            options,
+            source_path: &runtime.source_path,
+            native_session: Some(&mut runtime.native_session),
+            tick_offset,
+            input_events,
+            task_events: &mut runtime.task_events,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    extend_agent_observation_with_runtime_images(
+        &mut observed,
+        &runtime.source_path,
+        &runtime.executor,
+        options,
+    );
+    let image_output = agent_observe_image_output(
+        &mut observed.report,
+        options,
+        Some(&mut runtime.native_session),
+        &observed.image_frames,
+    )
+    .map_err(|_| "failed to build MCP action image output".to_owned())?;
+    let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
+        .map_err(|_| "failed to build MCP action resources".to_owned())?;
+    runtime.next_tick = observed.report.tick.saturating_add(1);
+    Ok(AgentMcpFrame {
+        report: observed.report,
+        image_output,
+        image_frames: observed.image_frames,
+        resources,
     })
 }
 
@@ -3125,18 +3383,15 @@ fn agent_mcp_uncached_resource_by_uri(
     uri: &str,
     state: &mut AgentMcpState,
 ) -> Result<AgentResource, ExitCode> {
-    agent_mcp_ensure_native_capture_session(state)?;
-    let native_session = state
-        .native_capture_session
-        .as_mut()
-        .expect("native capture session initialized above");
+    let image_frames = state.image_frames.clone();
+    let native_session = agent_mcp_native_capture_session_mut(state)?;
     agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
         report,
         uri,
         None,
         agent_report_capture_time_seconds(report),
         Some(native_session),
-        &state.image_frames,
+        &image_frames,
     )
 }
 
@@ -3154,11 +3409,7 @@ fn agent_mcp_call_capture(
             &agent_mcp_capture_observe_arguments(arguments),
             adapter_registrars,
         )?;
-        state.report = Some(observed.report);
-        state.image_output = observed.image_output;
-        state.image_frames = observed.image_frames;
-        state.native_capture_session = Some(observed.native_session);
-        state.capture_resources.clear();
+        agent_mcp_store_observation(state, observed);
     }
     let Some(report) = state.report.clone() else {
         return Err(
@@ -3181,17 +3432,31 @@ fn agent_mcp_capture_resource(
     request: &AgentCaptureReadRequest,
     state: &mut AgentMcpState,
 ) -> Result<AgentResource, ExitCode> {
-    agent_mcp_ensure_native_capture_session(state)?;
-    let native_session = state
-        .native_capture_session
-        .as_mut()
-        .expect("native capture session initialized above");
+    let image_frames = state.image_frames.clone();
+    let native_session = agent_mcp_native_capture_session_mut(state)?;
     agent_native_capture_resource_with_session_and_frame_store(
         report,
         request,
         native_session,
-        &state.image_frames,
+        &image_frames,
     )
+}
+
+fn agent_mcp_native_capture_session_mut(
+    state: &mut AgentMcpState,
+) -> Result<&mut arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
+    if state.runtime.is_none() {
+        agent_mcp_ensure_native_capture_session(state)?;
+        return state
+            .native_capture_session
+            .as_mut()
+            .ok_or(ExitCode::FAILURE);
+    }
+    state
+        .runtime
+        .as_mut()
+        .map(|runtime| &mut runtime.native_session)
+        .ok_or(ExitCode::FAILURE)
 }
 
 fn agent_mcp_ensure_native_capture_session(state: &mut AgentMcpState) -> Result<(), ExitCode> {
@@ -3926,31 +4191,7 @@ impl<'a> NativeAgentScriptSession<'a> {
         action: AgentAction,
     ) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
         let report = self.observe_report()?;
-        match action {
-            AgentAction::SelectChoice { choice } => {
-                let choice_id = choice.as_str();
-                let selectable = native_agent_report_has_action(
-                    report,
-                    AgentActionKind::SelectChoice,
-                    choice_id,
-                );
-                selectable
-                    .then(|| {
-                        vec![RuntimeInputEvent {
-                            kind: "choice".to_owned(),
-                            payload: Some(choice_id.to_owned()),
-                        }]
-                    })
-                    .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
-            }
-            AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
-            AgentAction::Invoke { target, action, .. } => {
-                native_agent_invoke_input_events(report, &target, &action)
-            }
-            AgentAction::PointerClick { .. } => {
-                Err(NativeAgentScriptSessionError::UnsupportedAction)
-            }
-        }
+        native_agent_action_input_events(report, action)
     }
 
     fn action_result(
@@ -3978,6 +4219,37 @@ fn native_agent_report_has_action(
             && candidate.action == kind
             && candidate.target == target
     })
+}
+
+fn native_agent_action_input_events(
+    report: &AgentObservationReport,
+    action: AgentAction,
+) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
+    match action {
+        AgentAction::SelectChoice { choice } => {
+            native_agent_select_choice_input_events(report, &choice)
+        }
+        AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
+        AgentAction::Invoke { target, action, .. } => {
+            native_agent_invoke_input_events(report, &target, &action)
+        }
+        AgentAction::PointerClick { .. } => Err(NativeAgentScriptSessionError::UnsupportedAction),
+    }
+}
+
+fn native_agent_select_choice_input_events(
+    report: &AgentObservationReport,
+    choice: &PublicId,
+) -> Result<Vec<RuntimeInputEvent>, NativeAgentScriptSessionError> {
+    let choice_id = choice.as_str();
+    native_agent_report_has_action(report, AgentActionKind::SelectChoice, choice_id)
+        .then(|| {
+            vec![RuntimeInputEvent {
+                kind: "choice".to_owned(),
+                payload: Some(choice_id.to_owned()),
+            }]
+        })
+        .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
 }
 
 fn native_agent_advance_text_input_events(

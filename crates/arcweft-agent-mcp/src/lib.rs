@@ -139,6 +139,7 @@ pub enum McpContentBlock {
 pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
         agent_observe_tool_descriptor(),
+        agent_action_tool_descriptor(),
         agent_resource_read_tool_descriptor(),
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
@@ -149,6 +150,39 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_query_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
+}
+
+fn agent_action_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.action".to_owned(),
+        title: Some("Dispatch Arcweft Action".to_owned()),
+        description: "Dispatches one enabled semantic Agent action from the latest observed frame, or observes a supplied source/profile first, then returns before/after frame state.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before dispatching. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-action. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before dispatching. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "steps": { "type": "integer", "minimum": 1 },
+                "capture_step": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 },
+                "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
+                "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
+                "textbox_height": { "type": "integer", "minimum": 1 },
+                "action_id": { "type": "string", "description": "Observed Agent action target id, such as action.advance_text.object.dialogue.0.0 or action.inspect.pulse." },
+                "kind": { "type": "string", "enum": ["advance_text", "select_choice", "invoke"], "description": "Semantic action kind when action_id is not supplied." },
+                "target": { "type": "string", "description": "Target public id/object id. Required for select_choice and invoke when action_id is not supplied." },
+                "action": { "type": "string", "description": "Invoke action id. Required for invoke when action_id is not supplied." },
+                "args": { "type": "object", "description": "Optional JSON object payload for invoke actions, lowered to AgentValue records." }
+            },
+            "anyOf": [
+                { "required": ["action_id"] },
+                { "required": ["kind"] }
+            ]
+        }),
+    }
 }
 
 fn agent_observe_tool_descriptor() -> McpToolDescriptor {
@@ -1433,6 +1467,20 @@ mod tests {
     #[test]
     fn debug_read_tool_schemas_expose_state_signal_and_log_filters() {
         let tools = agent_tool_descriptors();
+        let action = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.action")
+            .expect("action tool is described");
+        assert_eq!(
+            action.input_schema["properties"]["kind"]["enum"],
+            serde_json::json!(["advance_text", "select_choice", "invoke"])
+        );
+        assert_eq!(
+            action.input_schema["properties"]["action_id"]["type"],
+            "string"
+        );
+        assert_eq!(action.input_schema["properties"]["args"]["type"], "object");
+
         let state = tools
             .iter()
             .find(|tool| tool.name == "arcweft.get_state")

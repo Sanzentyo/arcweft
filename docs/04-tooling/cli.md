@@ -531,6 +531,13 @@ direct-source or launch-profile selection model, keeping profile-selected
 dialogue defaults available to MCP debuggers. `arcweft.observe` and
 `arcweft.capture` use the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
+`arcweft.action` dispatches one enabled semantic action from the latest native
+observation, or observes a supplied `source`/`profile` first. Clients can pass
+an observed `action_id`, or a direct semantic `kind` with the required target
+fields; direct invoke calls can include a JSON object `args` payload lowered to
+Agent protocol values. The tool returns accepted before/after ticks and state
+hashes plus the post-action frame summary. It intentionally does not synthesize
+physical pointer actions.
 Both tools accept a non-negative capture time in seconds (`--capture-time` on
 the CLI, `capture_time` in MCP) as the native animation sample time for
 rich-text effects, shaders, registry-backed motion functions, typewriter

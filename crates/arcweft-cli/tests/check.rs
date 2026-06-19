@@ -26556,6 +26556,65 @@ fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
     }));
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_dispatches_semantic_action() {
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.observe",
+                "arguments": {
+                    "source": rich_text_showcase_path().display().to_string(),
+                    "steps": 1,
+                    "max_ops": 64
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.action",
+                "arguments": {
+                    "action_id": "action.advance_text.object.dialogue.0.0"
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp action should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 4);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.action")
+    );
+    assert_eq!(responses[2]["result"]["isError"], false);
+    assert_eq!(responses[3]["result"]["isError"], false);
+    let action = mcp_content_metadata(
+        &responses[3]["result"]["content"][0],
+        "MCP action result is JSON",
+    );
+    assert_eq!(action["accepted"], true);
+    assert_eq!(action["before_tick"], 0);
+    assert_eq!(action["after_tick"], 1);
+    assert_eq!(action["action"]["kind"], "advance_text");
+    assert_eq!(action["after"]["tick"], 1);
+}
+
 fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value]) {
     assert_eq!(responses.len(), 12);
     assert_eq!(

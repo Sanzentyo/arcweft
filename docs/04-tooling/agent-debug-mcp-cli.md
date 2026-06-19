@@ -32,10 +32,11 @@ advertises the stable `arcweft://` URI families for presentation-tree filters,
 viewport, layer, object, and rich-text child captures before a source has been
 observed. `tools/call`
 supports `arcweft.observe`, `arcweft.capture`, `arcweft.resource.read`,
-`arcweft.session.info`, and `arcweft.hit_test`; the server keeps the latest
+`arcweft.session.info`, `arcweft.action`, and `arcweft.hit_test`; the server keeps the latest
 one-shot observation in memory so clients can observe once, inspect the current
 session/frame/resource state, list resources, then either call
 `arcweft.capture` for a viewport/layer/object PNG or raw RGBA image content,
+dispatch one enabled semantic `arcweft.action`,
 call `arcweft.hit_test` for a depth-sorted object hit list at a viewport
 coordinate, or read a specific object/layer/rich-text child image URI.
 Hit-test hits include each selected object's `capture_refs`, so clients can
@@ -76,6 +77,14 @@ includes `latest_capture_uri` and a `latest_capture_resource` descriptor, so a
 client can immediately read or recapture the most recent PNG/raw image without
 matching it against `resources/list`. `capture_resource_count` records how many
 tool-produced capture resources are currently cached in the session.
+`arcweft.action` runs against the same persistent native runtime state as
+`arcweft.observe`. It accepts either an observed `action_id` or direct semantic
+`kind` (`advance_text`, `select_choice`, or `invoke`) with required target
+fields, accepts optional JSON object `args` for direct invoke calls, validates
+that the requested semantic action is currently enabled, dispatches the matching
+runtime input, then returns accepted before/after ticks, state hashes, and the
+post-action frame summary. Pointer-click synthesis remains outside the current
+MCP action surface.
 When the latest observation generated a selected image, reading that image URI
 through `resources/read` or `arcweft.resource.read` returns the cached image
 bytes and metadata from the same observation. This preserves native framebuffer,
@@ -178,6 +187,7 @@ Current implemented source/profile observation slice:
 
 ```bash
 arcw agent mcp
+arcw agent mcp # then tools/call arcweft.action with action_id or kind
 arcw agent observe game/routes/opening.arcw --json
 arcw agent observe game/routes/opening.arcw --json --image overlay
 arcw agent observe game/routes/opening.arcw --image overlay --out overlay.svg
