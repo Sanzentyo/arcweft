@@ -4,6 +4,13 @@
 //! adapters should exchange these typed observation records instead of defining
 //! transport-local JSON shapes.
 
+pub mod artifact;
+pub mod ids;
+pub mod predicate;
+pub mod protocol;
+pub mod trace;
+pub mod value;
+
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use arcweft_render_text::{
     LineDisplayFrame, RichTextEffectPhase, RichTextObjectProxy, RichTextObjectProxyDeclaration,
@@ -1720,6 +1727,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn test_serialization_observation_report() -> AgentObservationReport {
         let bbox = AgentBBox {
             space: AgentCoordinateSpace::Viewport,
@@ -1870,6 +1878,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn observation_report_serializes_stable_snake_case_enums() {
         let report = test_serialization_observation_report();
 
@@ -2011,6 +2020,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn presentation_tree_filter_keeps_matching_objects_and_ancestors() {
         let tree = AgentPresentationTree {
             root: "presentation.root".to_owned(),

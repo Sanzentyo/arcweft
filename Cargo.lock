@@ -221,6 +221,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -312,6 +313,16 @@ dependencies = [
  "arcweft-need",
  "arcweft-source",
  "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-debug-model"
+version = "0.1.0"
+dependencies = [
+ "arcweft-agent-protocol",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -500,6 +511,14 @@ name = "arcweft-presentation"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+]
+
+[[package]]
+name = "arcweft-rag"
+version = "0.1.0"
+dependencies = [
+ "arcweft-debug-model",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

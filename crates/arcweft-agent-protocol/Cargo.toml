@@ -12,6 +12,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 base64.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
