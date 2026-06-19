@@ -14,6 +14,7 @@ use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
+use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
@@ -1121,8 +1122,77 @@ fn debug_db_search_history_filters_chunks_by_privacy() {
     assert_eq!(hits[0]["channel"], "history");
 }
 
+#[test]
+fn debug_db_search_graph_filters_chunks_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/graph-search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug graph search target dir"))
+        .expect("create debug graph search target dir");
+    seed_debug_search_db(&db_path);
+
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--graph-query")
+        .arg("opening")
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph search public runs");
+    assert!(public_output.status.success());
+    let public_report: serde_json::Value =
+        serde_json::from_slice(&public_output.stdout).expect("graph public output is JSON");
+    assert_eq!(public_report["hits"].as_array().map(Vec::len), Some(0));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--graph-query")
+        .arg("opening")
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("project")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph search runs");
+    assert!(
+        output.status.success(),
+        "debug db graph search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db graph search output is JSON");
+
+    assert_eq!(report["graph_query"], "opening");
+    assert_eq!(report["max_privacy"], "project");
+    let hits = report["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], "graph:1");
+    assert_eq!(hits[0]["privacy"], "project");
+    assert_eq!(hits[0]["channel"], "graph");
+    assert_eq!(hits[0]["source_kind"], "graph_edge");
+}
+
 fn seed_debug_search_db(path: &Path) {
     let store = DebugStore::open(path).expect("open debug search db");
+    let program_hash = stable_hash("b3:debug-search-program");
+    store
+        .upsert_program(&program_hash, None, Some("."), 0)
+        .expect("upsert debug search program");
     let model = EmbeddingModelDescriptor {
         model_id: "fixture".to_owned(),
         model_revision: "1".to_owned(),
@@ -1193,6 +1263,56 @@ fn seed_debug_search_db(path: &Path) {
             created_unix_ms: 0,
         })
         .expect("upsert debug history");
+    seed_debug_search_graph(&store, program_hash);
+}
+
+fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
+    store
+        .upsert_graph_symbol(&DebugGraphSymbol {
+            symbol_id: "symbol:flow.opening".to_owned(),
+            program_hash: program_hash.clone(),
+            public_id: Some(
+                arcweft_agent_protocol::ids::PublicId::new("@flow.opening")
+                    .expect("valid public id"),
+            ),
+            qualified_name: Some("flow.opening".to_owned()),
+            kind: "flow".to_owned(),
+            type_json: None,
+            start_byte: None,
+            end_byte: None,
+            semantic_hash: None,
+            summary: "Opening flow exposes the first choice".to_owned(),
+            metadata: BTreeMap::new(),
+        })
+        .expect("upsert graph source symbol");
+    store
+        .upsert_graph_symbol(&DebugGraphSymbol {
+            symbol_id: "symbol:choice.alice".to_owned(),
+            program_hash: program_hash.clone(),
+            public_id: Some(
+                arcweft_agent_protocol::ids::PublicId::new("@choice.alice")
+                    .expect("valid public id"),
+            ),
+            qualified_name: Some("choice.alice".to_owned()),
+            kind: "choice".to_owned(),
+            type_json: None,
+            start_byte: None,
+            end_byte: None,
+            semantic_hash: None,
+            summary: "Alice route choice".to_owned(),
+            metadata: BTreeMap::new(),
+        })
+        .expect("upsert graph target symbol");
+    store
+        .upsert_graph_edge(&DebugGraphEdge {
+            program_hash,
+            from_symbol_id: "symbol:flow.opening".to_owned(),
+            to_symbol_id: "symbol:choice.alice".to_owned(),
+            edge_kind: "offers_choice".to_owned(),
+            weight: 1.25,
+            metadata: BTreeMap::new(),
+        })
+        .expect("upsert graph edge");
 }
 
 fn stable_hash(value: &str) -> StableHash {

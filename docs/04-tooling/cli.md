@@ -344,13 +344,19 @@ window.
 [--limit N] [--json]` runs the stored-vector channel. It loads normalized
 embedding rows for the exact model descriptor, applies the privacy ceiling
 before ranking, and uses deterministic cosine ranking from `arcweft-rag`.
+`arcw debug db search --graph-query <text>
+[--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
+indexed `symbols` and `graph_edges` by public id, qualified name, symbol kind,
+summary, and edge kind. Graph rows are treated as project-private until the
+graph index has explicit privacy labels, so `--max-privacy public` returns no
+graph hits.
 `arcw debug db search --history-query <text>
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 `history_entries` by change ID, operation ID, and summary. History rows are
 treated as project-private until an explicit history privacy column exists, so
-`--max-privacy public` returns no history hits. `--query`, `--query-vector`, and
-`--history-query` are mutually exclusive; provider embedding I/O remains outside
-this command.
+`--max-privacy public` returns no history hits. `--query`, `--query-vector`,
+`--graph-query`, and `--history-query` are mutually exclusive; provider
+embedding I/O remains outside this command.
 The stdio MCP server exposes the same rebuildable-store lexical path as
 `arcweft.debug.search`. The tool accepts `query`, optional `path`, `limit`, and
 `max_privacy`, defaults to `.arcweft/cache/agent-debug.sqlite3`, and returns

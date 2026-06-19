@@ -59,6 +59,8 @@ pub(super) struct DebugDbSearchOptions {
     query: Option<String>,
     #[arg(long = "query-vector")]
     query_vector: Option<String>,
+    #[arg(long = "graph-query")]
+    graph_query: Option<String>,
     #[arg(long = "history-query")]
     history_query: Option<String>,
     #[arg(long = "model-id")]
@@ -140,6 +142,7 @@ struct DebugDbSearchReport {
     path: String,
     query: Option<String>,
     query_vector_dimensions: Option<usize>,
+    graph_query: Option<String>,
     history_query: Option<String>,
     model: Option<DebugDbSearchModelReport>,
     limit: usize,
@@ -311,6 +314,11 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
             ExitCode::from(2)
         })?;
     let has_query_vector = query_vector.is_some();
+    let graph_query = options
+        .graph_query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty());
     let history_query = options
         .history_query
         .as_deref()
@@ -318,16 +326,17 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         .filter(|query| !query.is_empty());
     let selector_count = usize::from(query.is_some())
         + usize::from(has_query_vector)
+        + usize::from(graph_query.is_some())
         + usize::from(history_query.is_some());
     if selector_count == 0 {
         eprintln!(
-            "error: debug db search requires one of --query, --query-vector, or --history-query"
+            "error: debug db search requires one of --query, --query-vector, --graph-query, or --history-query"
         );
         return Err(ExitCode::from(2));
     }
     if selector_count > 1 {
         eprintln!(
-            "error: debug db search accepts only one of --query, --query-vector, or --history-query"
+            "error: debug db search accepts only one of --query, --query-vector, --graph-query, or --history-query"
         );
         return Err(ExitCode::from(2));
     }
@@ -350,6 +359,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         options,
         query,
         query_vector.as_deref(),
+        graph_query,
         history_query,
         model.as_ref(),
     )
@@ -378,6 +388,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         path,
         query: query.map(str::to_owned),
         query_vector_dimensions: query_vector.as_ref().map(Vec::len),
+        graph_query: graph_query.map(str::to_owned),
         history_query: history_query.map(str::to_owned),
         model: model.map(|model| DebugDbSearchModelReport {
             model_id: model.model_id,
@@ -417,11 +428,15 @@ fn debug_db_search_hits(
     options: &DebugDbSearchOptions,
     query: Option<&str>,
     query_vector: Option<&[f32]>,
+    graph_query: Option<&str>,
     history_query: Option<&str>,
     model: Option<&EmbeddingModelDescriptor>,
 ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
     if let Some(query) = query {
         return store.lexical_search_with_max_privacy(query, options.limit, options.max_privacy);
+    }
+    if let Some(query) = graph_query {
+        return store.graph_search_with_max_privacy(query, options.limit, options.max_privacy);
     }
     if let Some(query) = history_query {
         return store.history_search_with_max_privacy(query, options.limit, options.max_privacy);

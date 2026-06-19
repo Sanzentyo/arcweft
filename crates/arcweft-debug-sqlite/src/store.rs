@@ -4,6 +4,7 @@ use arcweft_debug_model::{
     chunk::{ChunkId, DebugChunk, PrivacyClass},
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
     event::DebugEvent,
+    graph::{DebugGraphEdge, DebugGraphSymbol},
     history::DebugHistoryEntry,
     rag::{SearchChannel, SearchHit},
     sink::DebugEventSink,
@@ -378,6 +379,168 @@ impl DebugStore {
             .collect()
     }
 
+    pub fn upsert_graph_symbol(&self, symbol: &DebugGraphSymbol) -> Result<(), DebugStoreError> {
+        let program_id = self.require_program_id(&symbol.program_hash)?;
+        let start_byte = symbol
+            .start_byte
+            .map(|value| sqlite_i64(value, "symbols.start_byte"))
+            .transpose()?;
+        let end_byte = symbol
+            .end_byte
+            .map(|value| sqlite_i64(value, "symbols.end_byte"))
+            .transpose()?;
+        self.connection.execute(
+            "INSERT INTO symbols(
+               symbol_id, program_id, public_id, qualified_name, kind, type_json,
+               source_file_id, start_byte, end_byte, semantic_hash, summary, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(symbol_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               public_id = excluded.public_id,
+               qualified_name = excluded.qualified_name,
+               kind = excluded.kind,
+               type_json = excluded.type_json,
+               start_byte = excluded.start_byte,
+               end_byte = excluded.end_byte,
+               semantic_hash = excluded.semantic_hash,
+               summary = excluded.summary,
+               metadata_json = excluded.metadata_json",
+            params![
+                &symbol.symbol_id,
+                program_id,
+                symbol.public_id.as_ref().map(PublicId::as_str),
+                symbol.qualified_name.as_deref(),
+                &symbol.kind,
+                symbol
+                    .type_json
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+                start_byte,
+                end_byte,
+                symbol.semantic_hash.as_ref().map(StableHash::as_str),
+                &symbol.summary,
+                serde_json::to_string(&symbol.metadata)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_graph_edge(&self, edge: &DebugGraphEdge) -> Result<(), DebugStoreError> {
+        let program_id = self.require_program_id(&edge.program_hash)?;
+        self.connection.execute(
+            "INSERT INTO graph_edges(
+               program_id, from_symbol_id, to_symbol_id, edge_kind, weight, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(program_id, from_symbol_id, to_symbol_id, edge_kind) DO UPDATE SET
+               weight = excluded.weight,
+               metadata_json = excluded.metadata_json",
+            params![
+                program_id,
+                &edge.from_symbol_id,
+                &edge.to_symbol_id,
+                &edge.edge_kind,
+                edge.weight,
+                serde_json::to_string(&edge.metadata)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn graph_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        if query.trim().is_empty()
+            || limit == 0
+            || !PrivacyClass::Project.is_allowed_by(max_privacy)
+        {
+            return Ok(Vec::new());
+        }
+        let like_query = query.trim().to_lowercase();
+        let mut statement = self.connection.prepare(
+            "SELECT ge.edge_id, ge.edge_kind, ge.weight,
+                    from_symbol.symbol_id, from_symbol.public_id,
+                    from_symbol.qualified_name, from_symbol.kind, from_symbol.summary,
+                    to_symbol.symbol_id, to_symbol.public_id,
+                    to_symbol.qualified_name, to_symbol.kind, to_symbol.summary
+             FROM graph_edges AS ge
+             JOIN symbols AS from_symbol ON from_symbol.symbol_id = ge.from_symbol_id
+             JOIN symbols AS to_symbol ON to_symbol.symbol_id = ge.to_symbol_id
+             WHERE instr(lower(ge.edge_kind), ?1) > 0
+                OR instr(lower(coalesce(from_symbol.public_id, '')), ?1) > 0
+                OR instr(lower(coalesce(from_symbol.qualified_name, '')), ?1) > 0
+                OR instr(lower(from_symbol.kind), ?1) > 0
+                OR instr(lower(from_symbol.summary), ?1) > 0
+                OR instr(lower(coalesce(to_symbol.public_id, '')), ?1) > 0
+                OR instr(lower(coalesce(to_symbol.qualified_name, '')), ?1) > 0
+                OR instr(lower(to_symbol.kind), ?1) > 0
+                OR instr(lower(to_symbol.summary), ?1) > 0
+             ORDER BY ge.weight DESC, ge.edge_id
+             LIMIT ?2",
+        )?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DebugStoreError::IntegerOverflow("graph_edges.limit"))?;
+        let rows = statement.query_map(params![like_query, limit], |row| {
+            Ok(GraphSearchRow {
+                edge_id: row.get(0)?,
+                edge_kind: row.get(1)?,
+                weight: row.get(2)?,
+                from_symbol_id: row.get(3)?,
+                from_public_id: row.get(4)?,
+                from_qualified_name: row.get(5)?,
+                from_kind: row.get(6)?,
+                from_summary: row.get(7)?,
+                to_symbol_id: row.get(8)?,
+                to_public_id: row.get(9)?,
+                to_qualified_name: row.get(10)?,
+                to_kind: row.get(11)?,
+                to_summary: row.get(12)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let from_label = graph_symbol_label(
+                    &row.from_symbol_id,
+                    row.from_public_id.as_deref(),
+                    row.from_qualified_name.as_deref(),
+                );
+                let to_label = graph_symbol_label(
+                    &row.to_symbol_id,
+                    row.to_public_id.as_deref(),
+                    row.to_qualified_name.as_deref(),
+                );
+                let title = format!("{from_label} --{}--> {to_label}", row.edge_kind);
+                let body = format!(
+                    "edge_kind={}\nweight={:.6}\nfrom_kind={}\nfrom_summary={}\nto_kind={}\nto_summary={}",
+                    row.edge_kind,
+                    row.weight,
+                    row.from_kind,
+                    row.from_summary,
+                    row.to_kind,
+                    row.to_summary
+                );
+                Ok(ChunkSearchResult {
+                    hit: SearchHit {
+                        chunk_id: ChunkId::new(format!("graph:{}", row.edge_id)),
+                        channel: SearchChannel::Graph,
+                        rank: index + 1,
+                        score: Some(graph_score(query, &row)),
+                    },
+                    title,
+                    body,
+                    source_kind: "graph_edge".to_owned(),
+                    source_key: row.edge_id.to_string(),
+                    privacy: PrivacyClass::Project,
+                })
+            })
+            .collect()
+    }
+
     pub fn upsert_history_entry(&self, entry: &DebugHistoryEntry) -> Result<(), DebugStoreError> {
         let program_id = entry
             .program_hash
@@ -743,12 +906,60 @@ fn history_score(query: &str, change_id: &str, body: &str) -> f64 {
     }
 }
 
+#[derive(Debug)]
+struct GraphSearchRow {
+    edge_id: i64,
+    edge_kind: String,
+    weight: f64,
+    from_symbol_id: String,
+    from_public_id: Option<String>,
+    from_qualified_name: Option<String>,
+    from_kind: String,
+    from_summary: String,
+    to_symbol_id: String,
+    to_public_id: Option<String>,
+    to_qualified_name: Option<String>,
+    to_kind: String,
+    to_summary: String,
+}
+
+fn graph_symbol_label(
+    symbol_id: &str,
+    public_id: Option<&str>,
+    qualified_name: Option<&str>,
+) -> String {
+    public_id.or(qualified_name).unwrap_or(symbol_id).to_owned()
+}
+
+fn graph_score(query: &str, row: &GraphSearchRow) -> f64 {
+    let query = query.trim().to_lowercase();
+    if row
+        .from_public_id
+        .as_deref()
+        .is_some_and(|id| id.eq_ignore_ascii_case(&query))
+        || row
+            .to_public_id
+            .as_deref()
+            .is_some_and(|id| id.eq_ignore_ascii_case(&query))
+        || row.edge_kind.eq_ignore_ascii_case(&query)
+    {
+        row.weight + 2.0
+    } else if row.from_summary.to_lowercase().contains(&query)
+        || row.to_summary.to_lowercase().contains(&query)
+    {
+        row.weight + 1.0
+    } else {
+        row.weight
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use arcweft_debug_model::{
         chunk::{ChunkSourceKind, PrivacyClass},
         embedding::StoredEmbedding,
+        graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
     };
     use std::collections::BTreeMap;
@@ -1000,6 +1211,69 @@ mod tests {
         );
         assert_eq!(project_hits[0].hit.channel, SearchChannel::History);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
+    }
+
+    #[test]
+    fn graph_search_filters_project_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let program_hash = hash("b3:graph-program");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:flow.opening".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("@flow.opening").expect("public id")),
+                qualified_name: Some("flow.opening".to_owned()),
+                kind: "flow".to_owned(),
+                type_json: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Opening flow dispatches the first choice".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("from symbol");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:choice.alice".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("@choice.alice").expect("public id")),
+                qualified_name: Some("choice.alice".to_owned()),
+                kind: "choice".to_owned(),
+                type_json: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Alice route choice".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("to symbol");
+        store
+            .upsert_graph_edge(&DebugGraphEdge {
+                program_hash,
+                from_symbol_id: "symbol:flow.opening".to_owned(),
+                to_symbol_id: "symbol:choice.alice".to_owned(),
+                edge_kind: "offers_choice".to_owned(),
+                weight: 1.25,
+                metadata: BTreeMap::new(),
+            })
+            .expect("edge");
+
+        let public_hits = store
+            .graph_search_with_max_privacy("opening", 1, PrivacyClass::Public)
+            .expect("public graph search");
+        assert_eq!(public_hits, Vec::new());
+
+        let project_hits = store
+            .graph_search_with_max_privacy("opening", 1, PrivacyClass::Project)
+            .expect("project graph search");
+        assert_eq!(project_hits.len(), 1);
+        assert_eq!(project_hits[0].hit.chunk_id.as_str(), "graph:1");
+        assert_eq!(project_hits[0].hit.channel, SearchChannel::Graph);
+        assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
+        assert!(project_hits[0].title.contains("@flow.opening"));
     }
 
     #[test]
