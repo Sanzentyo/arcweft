@@ -903,6 +903,7 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::AgentValue => Some("AgentValue"),
         TypeKind::CaptureTarget => Some("CaptureTarget"),
         TypeKind::CaptureRef => Some("CaptureRef"),
+        TypeKind::AgentResource => Some("AgentResource"),
         TypeKind::RagContextPack => Some("RagContextPack"),
         TypeKind::FocusPatch => Some("FocusPatch"),
         TypeKind::Unit => Some("()"),

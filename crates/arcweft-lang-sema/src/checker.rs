@@ -569,7 +569,8 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::ActionName
         | TypeKind::AgentValue
         | TypeKind::Ref(_)
-        | TypeKind::CaptureRef => true,
+        | TypeKind::CaptureRef
+        | TypeKind::AgentResource => true,
         TypeKind::Vec(inner) | TypeKind::Array { item: inner, .. } | TypeKind::Slice(inner) => {
             is_agent_value_type(inner)
         }

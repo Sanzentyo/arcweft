@@ -764,6 +764,7 @@ impl TypeChecker<'_> {
             "layer" => Some(self.check_agent_layer_intrinsic(name, args)),
             "object" => Some(self.check_agent_object_intrinsic(name, args)),
             "capture" => Some(self.check_agent_capture_intrinsic(name, args)),
+            "read_resource" => Some(self.check_agent_read_resource_intrinsic(name, args)),
             "signal" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Signal, "signal"))
             }
@@ -973,6 +974,61 @@ impl TypeChecker<'_> {
             ));
         }
         TypeKind::CaptureRef
+    }
+
+    fn check_agent_read_resource_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let mut uri_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    if positional_index == 0 {
+                        uri_seen = true;
+                        self.expect_expr_type(value, &TypeKind::String, "resource uri");
+                    } else {
+                        self.errors.push(TypeCheckError::new(
+                            "read_resource received too many positional arguments".to_owned(),
+                        ));
+                        self.check_expr(value);
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "uri" => {
+                    if uri_seen {
+                        self.errors.push(TypeCheckError::new(
+                            "read_resource received uri more than once".to_owned(),
+                        ));
+                    }
+                    uri_seen = true;
+                    self.expect_expr_type(value, &TypeKind::String, "resource uri");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "read_resource has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "read_resource does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !uri_seen {
+            self.errors.push(TypeCheckError::new(
+                "read_resource requires a uri argument".to_owned(),
+            ));
+        }
+        TypeKind::AgentResource
     }
 
     fn check_agent_probe_intrinsic(

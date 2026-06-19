@@ -322,6 +322,9 @@ without creating a native project. `--state route.phase=opening` injects a
 deterministic debug-state payload value for `state("route.phase")` probes;
 `observation("tick")`, `observation("state_hash")`, and
 `observation("signals.signal.ready")` read the current observation envelope.
+`read_resource("arcweft://...")` is typed as `AgentResource`, requires
+`agent.resource.read`, and dispatches through the same resource-read host
+boundary used by native and deterministic CLI sessions.
 For deterministic CLI captures and native image captures,
 `--blob-dir .arcweft/cache/agent-blobs` writes byte-backed capture blobs under
 their `blake3:` content hash. `arcw agent script trace <file.arcwx> --blob-dir

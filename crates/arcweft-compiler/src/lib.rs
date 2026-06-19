@@ -1249,6 +1249,49 @@ agent @agent.capture_view capture_view()
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_read_resource() {
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.read_resource read_resource_smoke()
+effects { agent.resource.read }
+{
+    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    return resource
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect("read_resource intrinsic typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentResource)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_read_resource_without_effect() {
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.read_resource read_resource_smoke()
+{
+    read_resource(uri = "arcweft://session/cli/observation/latest.json")
+}
+"#,
+            &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        )
+        .expect_err("read_resource requires declared effect");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_rag_query() {
         let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
         let compiled = compile_agent_source_with_project(

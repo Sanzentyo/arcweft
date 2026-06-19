@@ -278,6 +278,47 @@ fn agent_script_run_json_executes_advance_text_smoke() {
     assert_eq!(json["responses"][0]["response"]["accepted"], true);
 }
 
+#[test]
+fn agent_script_run_json_executes_read_resource_smoke() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/read-resource-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_read_resource_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .output()
+        .expect("arcw agent script run executes read_resource smoke");
+
+    assert!(
+        output.status.success(),
+        "agent script read_resource run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("read_resource run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 2);
+    assert_eq!(json["responses"][0]["kind"], "resource");
+    assert_eq!(
+        json["responses"][0]["response"]["uri"],
+        "arcweft://session/cli/observation/latest.json"
+    );
+    assert_eq!(
+        json["responses"][0]["response"]["kind"],
+        "observation_latest"
+    );
+    assert_eq!(json["responses"][1]["kind"], "unit");
+    assert_eq!(json["trace_records"], 7);
+}
+
 fn agent_test_blob_path(root: &Path, content_hash: &str) -> PathBuf {
     let hex = content_hash
         .strip_prefix("blake3:")
@@ -1464,6 +1505,10 @@ fn agent_script_cli_capture_smoke_path() -> PathBuf {
 
 fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-advance-text-smoke.awfagent")
+}
+
+fn agent_script_cli_read_resource_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-read-resource-smoke.awfagent")
 }
 
 fn agent_script_native_advance_text_game_path() -> PathBuf {

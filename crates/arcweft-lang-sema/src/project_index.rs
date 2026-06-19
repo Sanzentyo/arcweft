@@ -107,6 +107,7 @@ pub enum AgentIntrinsic {
     Checkpoint,
     Attach,
     Note,
+    ReadResource,
     RagQuery,
 }
 
@@ -1437,6 +1438,7 @@ fn agent_prelude_callables() -> BTreeMap<QualifiedName, CallableSymbol> {
         .chain(agent_predicate_callables())
         .chain(agent_action_callables())
         .chain(agent_capture_callables())
+        .chain(agent_resource_callables())
         .chain(agent_record_callables())
         .chain(agent_rag_callables())
         .map(|(name, callable)| (QualifiedName::new(name), callable))
@@ -1691,6 +1693,20 @@ fn agent_capture_callables() -> Vec<(&'static str, CallableSymbol)> {
             ),
         ),
     ]
+}
+
+fn agent_resource_callables() -> Vec<(&'static str, CallableSymbol)> {
+    vec![(
+        "read_resource",
+        CallableSymbol::new(
+            FunctionSignature::new(
+                TypeKind::AgentResource,
+                [FunctionParam::required("uri", TypeKind::String)],
+            ),
+            [EffectCapability::new("agent.resource.read")],
+            CallableLowering::AgentIntrinsic(AgentIntrinsic::ReadResource),
+        ),
+    )]
 }
 
 fn agent_record_callables() -> Vec<(&'static str, CallableSymbol)> {

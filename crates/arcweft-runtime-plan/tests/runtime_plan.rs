@@ -232,6 +232,37 @@ effects { agent.capture }
 }
 
 #[test]
+fn agent_controller_plan_lowers_read_resource_to_host_task() {
+    let tree = parse_agent_ok(
+        r#"
+#[agent(version = 1)]
+agent @agent.read_resource read_resource_smoke()
+effects { agent.resource.read }
+{
+    let resource = read_resource(uri = "arcweft://session/cli/observation/latest.json")
+    return resource
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected read_resource let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "read_resource");
+    assert_eq!(target.request.args.len(), 1);
+    assert!(format!("{:?}", target.request.args[0]).contains("observation/latest.json"));
+}
+
+#[test]
 fn agent_controller_plan_lowers_wait_predicate_to_host_task() {
     let tree = parse_agent_ok(
         r"
