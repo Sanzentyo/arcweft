@@ -508,6 +508,8 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
         return true;
     }
     match (expected, actual) {
+        (TypeKind::ActionName, TypeKind::String | TypeKind::Named(_)) => true,
+        (TypeKind::AgentValue, actual) => is_agent_value_type(actual),
         (TypeKind::Choice(alternatives), TypeKind::Choice(actual_alternatives)) => {
             actual_alternatives
                 .iter()
@@ -537,6 +539,43 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             types_compatible(expected, actual)
                 || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
         }
+        _ => false,
+    }
+}
+
+fn is_agent_value_type(ty: &TypeKind) -> bool {
+    match ty {
+        TypeKind::Bool
+        | TypeKind::I8
+        | TypeKind::I16
+        | TypeKind::I32
+        | TypeKind::I64
+        | TypeKind::I128
+        | TypeKind::ISize
+        | TypeKind::U8
+        | TypeKind::U16
+        | TypeKind::U32
+        | TypeKind::U64
+        | TypeKind::U128
+        | TypeKind::USize
+        | TypeKind::F32
+        | TypeKind::F64
+        | TypeKind::String
+        | TypeKind::Char
+        | TypeKind::Duration
+        | TypeKind::DisplayText
+        | TypeKind::ActionName
+        | TypeKind::AgentValue
+        | TypeKind::Ref(_)
+        | TypeKind::CaptureRef => true,
+        TypeKind::Vec(inner) | TypeKind::Array { item: inner, .. } | TypeKind::Slice(inner) => {
+            is_agent_value_type(inner)
+        }
+        TypeKind::Map { key, value, .. } => {
+            types_compatible(&TypeKind::String, key) && is_agent_value_type(value)
+        }
+        TypeKind::Option(inner) => is_agent_value_type(inner),
+        TypeKind::Choice(alternatives) => alternatives.iter().all(is_agent_value_type),
         _ => false,
     }
 }

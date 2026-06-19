@@ -4,8 +4,10 @@
 //! callable host surfaces. This module keeps that view typed and source-aware
 //! without adding parser-specific command shapes.
 
-use crate::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
-use crate::types::{EntityKind, EntityType, TypeKind};
+use crate::env::{
+    AgentActionEnvSignature, EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv,
+};
+use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
 use arcweft_source::SourceAnchor;
 use std::collections::BTreeMap;
@@ -358,6 +360,16 @@ impl ProjectSemanticIndex {
         let mut env = agent_prelude_env();
         for entity in self.entities.values() {
             env = env.with_symbol(entity.id.as_str(), TypeKind::Ref(entity.ty.clone()));
+            for action in entity.agent_actions() {
+                env = env.with_agent_action(
+                    entity.id.as_str(),
+                    AgentActionEnvSignature::new(
+                        action.action().as_str(),
+                        action.args().iter().cloned(),
+                        action.return_type().clone(),
+                    ),
+                );
+            }
         }
         for (name, callable) in &self.callables {
             env = env
@@ -518,20 +530,47 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
 }
 
 fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
-    vec![(
-        "choose",
-        CallableSymbol::new(
-            FunctionSignature::new(
-                TypeKind::ActionResult,
-                [FunctionParam::required(
-                    "choice",
-                    TypeKind::entity_ref(EntityKind::ChoiceOption),
-                )],
+    vec![
+        (
+            "choose",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::ActionResult,
+                    [FunctionParam::required(
+                        "choice",
+                        TypeKind::entity_ref(EntityKind::ChoiceOption),
+                    )],
+                ),
+                [EffectCapability::new("agent.act.semantic")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Choose),
             ),
-            [EffectCapability::new("agent.act.semantic")],
-            CallableLowering::AgentIntrinsic(AgentIntrinsic::Choose),
         ),
-    )]
+        (
+            "invoke",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::ActionResult,
+                    [
+                        FunctionParam::required(
+                            "target",
+                            TypeKind::entity_ref(EntityKind::Other("_".to_owned())),
+                        ),
+                        FunctionParam::required("action", TypeKind::ActionName),
+                        FunctionParam::required(
+                            "args",
+                            TypeKind::Map {
+                                kind: MapKind::Sorted,
+                                key: Box::new(TypeKind::String),
+                                value: Box::new(TypeKind::AgentValue),
+                            },
+                        ),
+                    ],
+                ),
+                [EffectCapability::new("agent.act.semantic")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::Invoke),
+            ),
+        ),
+    ]
 }
 
 fn agent_capture_callables() -> Vec<(&'static str, CallableSymbol)> {
@@ -721,6 +760,36 @@ mod tests {
                 .map(EffectCapability::as_str)
                 .collect::<Vec<_>>(),
             vec!["agent.wait", "agent.observe"]
+        );
+    }
+
+    #[test]
+    fn project_index_projects_agent_action_signatures() {
+        let index = ProjectSemanticIndex::new(ProgramHash::new("program-a")).with_entity(
+            EntitySymbol::new(
+                public_id("activity.inventory"),
+                EntityType::new(EntityKind::Activity, None),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.activity.inventory.v1"),
+            )
+            .with_agent_action(AgentActionSignature::new(
+                QualifiedName::new("open"),
+                [TypeKind::String],
+                TypeKind::ActionResult,
+            )),
+        );
+        let env = index.typecheck_env();
+        let actions = env
+            .agent_actions("activity.inventory")
+            .expect("agent action projected");
+
+        assert_eq!(actions[0].action(), "open");
+        assert_eq!(actions[0].args(), &[TypeKind::String]);
+        assert_eq!(actions[0].return_type(), &TypeKind::ActionResult);
+        assert_eq!(
+            env.function_signature("invoke")
+                .map(FunctionSignature::return_type),
+            Some(&TypeKind::ActionResult)
         );
     }
 }

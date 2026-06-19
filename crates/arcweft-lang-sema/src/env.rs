@@ -32,6 +32,14 @@ pub struct RustPackageExports {
     pub(crate) types: HashSet<String>,
 }
 
+/// Agent-visible semantic action attached to one project entity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentActionEnvSignature {
+    action: String,
+    args: Vec<TypeKind>,
+    return_type: TypeKind,
+}
+
 /// Canonical effect capability label tracked by semantic environments.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectCapability {
@@ -55,6 +63,7 @@ pub struct TypeCheckEnv {
     pub(crate) function_effects: HashMap<String, Vec<EffectCapability>>,
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
+    pub(crate) agent_actions: HashMap<String, Vec<AgentActionEnvSignature>>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
 }
@@ -177,6 +186,36 @@ impl EffectCapabilityParts {
     }
 }
 
+impl AgentActionEnvSignature {
+    /// Creates a semantic action signature for one project entity.
+    pub fn new(
+        action: impl Into<String>,
+        args: impl IntoIterator<Item = TypeKind>,
+        return_type: TypeKind,
+    ) -> Self {
+        Self {
+            action: action.into(),
+            args: args.into_iter().collect(),
+            return_type,
+        }
+    }
+
+    /// Canonical action name such as `advance` or `dialogue.skip`.
+    pub fn action(&self) -> &str {
+        &self.action
+    }
+
+    /// Positional payload value types accepted by the action contract.
+    pub fn args(&self) -> &[TypeKind] {
+        &self.args
+    }
+
+    /// Type returned by this action.
+    pub const fn return_type(&self) -> &TypeKind {
+        &self.return_type
+    }
+}
+
 impl From<&str> for EffectCapability {
     fn from(value: &str) -> Self {
         Self::new(value)
@@ -283,6 +322,20 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Registers one semantic Agent action exported by a project entity.
+    #[must_use]
+    pub fn with_agent_action(
+        mut self,
+        target: impl Into<String>,
+        action: AgentActionEnvSignature,
+    ) -> Self {
+        self.agent_actions
+            .entry(target.into())
+            .or_default()
+            .push(action);
+        self
+    }
+
     /// Registers a checker capability such as `state.write(flow)`.
     #[must_use]
     pub fn with_capability(mut self, capability: impl Into<EffectCapability>) -> Self {
@@ -356,6 +409,10 @@ impl TypeCheckEnv {
 
     pub(crate) fn index_type(&self, target: &TypeKind) -> Option<&TypeKind> {
         self.indexes.get(target)
+    }
+
+    pub(crate) fn agent_actions(&self, target: &str) -> Option<&[AgentActionEnvSignature]> {
+        self.agent_actions.get(target).map(Vec::as_slice)
     }
 
     /// Returns whether the environment grants a named effect or state capability.

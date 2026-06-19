@@ -8,7 +8,7 @@ use super::helpers::{
 };
 use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
-    FunctionSignature, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
+    FunctionSignature, LifetimeScopeKind, MapKind, Pattern, Stmt, TypeCheckError, TypeChecker,
     TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
     normalize_choice_type,
 };
@@ -771,6 +771,7 @@ impl TypeChecker<'_> {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Metric, "metric"))
             }
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
+            "invoke" => Some(self.check_agent_invoke_intrinsic(name, args)),
             "rag.query" => Some(self.check_agent_rag_query_intrinsic(name, args)),
             _ => None,
         }
@@ -1012,7 +1013,7 @@ impl TypeChecker<'_> {
                 CallArg::Named {
                     name: arg_name,
                     value,
-                } if arg_name == "stable" || arg_name == "poll" => {
+                } if arg_name == "stable_frames" || arg_name == "poll_frames" => {
                     self.expect_expr_type(value, &TypeKind::U32, &format!("wait {arg_name}"));
                     self.check_wait_positive_u32_literal(arg_name, value);
                 }
@@ -1062,6 +1063,228 @@ impl TypeChecker<'_> {
                 .push(TypeCheckError::new("wait requires timeout".to_owned()));
         }
         TypeKind::Observation
+    }
+
+    fn check_agent_invoke_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let parsed = self.collect_agent_invoke_args(name, args);
+        let target_id = parsed
+            .target
+            .and_then(|target| self.check_agent_invoke_target(target));
+        let action_name = parsed
+            .action
+            .and_then(|action| self.check_agent_action_name(action));
+        self.finish_agent_invoke(parsed, target_id, action_name)
+    }
+
+    fn collect_agent_invoke_args<'a>(
+        &mut self,
+        name: &str,
+        args: &'a [CallArg],
+    ) -> AgentInvokeArgs<'a> {
+        let mut target = None;
+        let mut action = None;
+        let mut action_args = None;
+        let mut positional_index = 0usize;
+
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    match positional_index {
+                        0 => {
+                            set_agent_arg_slot(
+                                &mut target,
+                                value,
+                                name,
+                                "target",
+                                &mut self.errors,
+                            );
+                        }
+                        1 => {
+                            set_agent_arg_slot(
+                                &mut action,
+                                value,
+                                name,
+                                "action",
+                                &mut self.errors,
+                            );
+                        }
+                        2 => set_agent_arg_slot(
+                            &mut action_args,
+                            value,
+                            name,
+                            "args",
+                            &mut self.errors,
+                        ),
+                        _ => {
+                            self.errors.push(TypeCheckError::new(
+                                "invoke received too many positional arguments".to_owned(),
+                            ));
+                            self.check_expr(value);
+                        }
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "target" => {
+                    set_agent_arg_slot(&mut target, value, name, arg_name, &mut self.errors);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "action" => {
+                    set_agent_arg_slot(&mut action, value, name, arg_name, &mut self.errors);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "args" => {
+                    set_agent_arg_slot(&mut action_args, value, name, arg_name, &mut self.errors);
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "invoke has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "invoke does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        AgentInvokeArgs {
+            target,
+            action,
+            action_args,
+        }
+    }
+
+    fn finish_agent_invoke(
+        &mut self,
+        parsed: AgentInvokeArgs<'_>,
+        target_id: Option<String>,
+        action_name: Option<String>,
+    ) -> TypeKind {
+        if let (Some(target_id), Some(action_name)) = (target_id, action_name) {
+            return self.check_resolved_agent_invoke(parsed.action_args, &target_id, &action_name);
+        }
+        if parsed.target.is_none() {
+            self.errors.push(TypeCheckError::new(
+                "invoke requires a target argument".to_owned(),
+            ));
+        }
+        if parsed.action.is_none() {
+            self.errors.push(TypeCheckError::new(
+                "invoke requires an action argument".to_owned(),
+            ));
+        }
+        if let Some(args) = parsed.action_args {
+            self.check_agent_invoke_args(args, &[]);
+        }
+        TypeKind::ActionResult
+    }
+
+    fn check_resolved_agent_invoke(
+        &mut self,
+        action_args: Option<&Expr>,
+        target_id: &str,
+        action_name: &str,
+    ) -> TypeKind {
+        let Some(actions) = self.env.agent_actions(target_id) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke target `{target_id}` exposes no Agent actions"
+            )));
+            if let Some(args) = action_args {
+                self.check_agent_invoke_args(args, &[]);
+            }
+            return TypeKind::ActionResult;
+        };
+        let Some(signature) = actions
+            .iter()
+            .find(|signature| signature.action() == action_name)
+            .cloned()
+        else {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke target `{target_id}` has no Agent action `{action_name}`"
+            )));
+            if let Some(args) = action_args {
+                self.check_agent_invoke_args(args, &[]);
+            }
+            return TypeKind::ActionResult;
+        };
+        if let Some(args) = action_args {
+            self.check_agent_invoke_args(args, signature.args());
+        } else if !signature.args().is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke action `{action_name}` on `{target_id}` requires args"
+            )));
+        }
+        signature.return_type().clone()
+    }
+
+    fn check_agent_invoke_target(&mut self, target: &Expr) -> Option<String> {
+        let actual = self.check_expr(target);
+        if !actual
+            .as_ref()
+            .is_some_and(|ty| matches!(ty, TypeKind::Ref(_)))
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "invoke target must be an entity reference, found {actual:?}"
+            )));
+        }
+        match target {
+            Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+            _ => None,
+        }
+    }
+
+    fn check_agent_action_name(&mut self, action: &Expr) -> Option<String> {
+        match action {
+            Expr::Path(path) => Some(path.strip_prefix('.').unwrap_or(path).to_owned()),
+            Expr::Literal(Literal::String(value)) => Some(value.clone()),
+            _ => {
+                self.errors.push(TypeCheckError::new(
+                    "invoke action must be an ActionName literal such as `.open`".to_owned(),
+                ));
+                self.check_expr(action);
+                None
+            }
+        }
+    }
+
+    fn check_agent_invoke_args(&mut self, args: &Expr, expected_values: &[TypeKind]) {
+        if let Expr::RecordLiteral(fields) = args {
+            if !expected_values.is_empty() && fields.len() != expected_values.len() {
+                self.errors.push(TypeCheckError::new(format!(
+                    "invoke args expected {} value(s), got {}",
+                    expected_values.len(),
+                    fields.len()
+                )));
+            }
+            for ((field, value), expected) in fields.iter().zip(
+                expected_values
+                    .iter()
+                    .chain(std::iter::repeat(&TypeKind::AgentValue)),
+            ) {
+                self.expect_expr_type(value, expected, &format!("invoke arg `{field}`"));
+            }
+            return;
+        }
+
+        let expected = TypeKind::Map {
+            kind: MapKind::Sorted,
+            key: Box::new(TypeKind::String),
+            value: Box::new(TypeKind::AgentValue),
+        };
+        self.expect_expr_type(args, &expected, "invoke args");
     }
 
     fn check_agent_rag_query_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
@@ -2316,6 +2539,13 @@ enum ChoicePatternCoverage {
     Type(TypeKind),
 }
 
+#[derive(Clone, Copy)]
+struct AgentInvokeArgs<'a> {
+    target: Option<&'a Expr>,
+    action: Option<&'a Expr>,
+    action_args: Option<&'a Expr>,
+}
+
 fn choice_pattern_coverage(pattern: &Pattern) -> ChoicePatternCoverage {
     match pattern {
         Pattern::Typed { ty, .. } => ChoicePatternCoverage::Type(type_ref_kind(ty)),
@@ -2434,6 +2664,20 @@ fn collection_index_key_type(target_type: &TypeKind) -> Option<TypeKind> {
         TypeKind::Map { key, .. } => Some(key.as_ref().clone()),
         TypeKind::Named(name) => map_key_type_from_name(name),
         _ => None,
+    }
+}
+
+fn set_agent_arg_slot<'a>(
+    slot: &mut Option<&'a Expr>,
+    value: &'a Expr,
+    function_name: &str,
+    arg_name: &str,
+    errors: &mut Vec<TypeCheckError>,
+) {
+    if slot.replace(value).is_some() {
+        errors.push(TypeCheckError::new(format!(
+            "{function_name} argument `{arg_name}` was provided more than once"
+        )));
     }
 }
 

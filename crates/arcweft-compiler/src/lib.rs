@@ -388,7 +388,8 @@ mod tests {
     use super::*;
     use arcweft_id::PublicId;
     use arcweft_lang_sema::project_index::{
-        EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash,
+        AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex, QualifiedName,
+        SemanticHash,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -413,6 +414,27 @@ mod tests {
             SourceAnchor::generated(),
             SemanticHash::new(format!("shape.{id}.v1")),
         ))
+    }
+
+    fn project_with_agent_action(
+        id: &str,
+        kind: EntityKind,
+        action: &str,
+        args: impl IntoIterator<Item = TypeKind>,
+    ) -> ProjectSemanticIndex {
+        ProjectSemanticIndex::new(ProgramHash::new("program-test")).with_entity(
+            EntitySymbol::new(
+                public_id(id),
+                EntityType::new(kind, None),
+                SourceAnchor::generated(),
+                SemanticHash::new(format!("shape.{id}.v1")),
+            )
+            .with_agent_action(AgentActionSignature::new(
+                QualifiedName::new(action),
+                args,
+                TypeKind::ActionResult,
+            )),
+        )
     }
 
     #[test]
@@ -622,12 +644,63 @@ effects { agent.observe }
 agent @agent.opening_smoke opening_smoke()
 effects { agent.observe, agent.wait }
 {
-    wait(signal(@signal.ready).eq(true), timeout = 5s, stable = 0usize)
+    wait(signal(@signal.ready).eq(true), timeout = 5s, stable_frames = 0u32)
 }
 ",
             &project,
         )
         .expect_err("wait stable must be positive");
+
+        assert!(matches!(error, CompileAgentError::Type(_)));
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_invoke_intrinsic() {
+        let project = project_with_agent_action(
+            "activity.inventory",
+            EntityKind::Activity,
+            "open",
+            [TypeKind::String],
+        );
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.open_inventory open_inventory()
+effects { agent.act.semantic }
+{
+    invoke(@activity.inventory, .open, { label = "main" })
+}
+"#,
+            &project,
+        )
+        .expect("invoke intrinsic typechecks against project action signature");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionResult)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_unknown_invoke_action() {
+        let project =
+            project_with_agent_action("activity.inventory", EntityKind::Activity, "open", []);
+        let error = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.open_inventory open_inventory()
+effects { agent.act.semantic }
+{
+    invoke(@activity.inventory, .close)
+}
+",
+            &project,
+        )
+        .expect_err("unknown action rejects");
 
         assert!(matches!(error, CompileAgentError::Type(_)));
     }
