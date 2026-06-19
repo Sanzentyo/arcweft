@@ -847,6 +847,56 @@ mod tests {
     }
 
     #[test]
+    fn agent_runtime_background_call_uses_capture_time_for_animated_images() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let call = RuntimeCall {
+            callee: "bg".to_owned(),
+            args: vec!["@asset.bg.pulse".to_owned()],
+        };
+        let (first, first_diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            std::slice::from_ref(&call),
+            0.05,
+        );
+        let (second, second_diagnostics) =
+            agent_runtime_presentation_image_observation(&source, 2, &viewport, &[call], 0.15);
+
+        assert!(first_diagnostics.is_empty());
+        assert!(second_diagnostics.is_empty());
+        let first_object = &first.objects[0];
+        let second_object = &second.objects[0];
+        let AgentObservedObjectContent::Image(first_content) = &first_object.content else {
+            panic!("animated background should become Agent image content");
+        };
+        let AgentObservedObjectContent::Image(second_content) = &second_object.content else {
+            panic!("animated background should become Agent image content");
+        };
+        assert_eq!(first_content.frame_index, Some(0));
+        assert_eq!(first_content.local_time_millis, Some(50));
+        assert_eq!(second_content.frame_index, Some(1));
+        assert_eq!(second_content.local_time_millis, Some(150));
+        assert_eq!(
+            first.image_frames.get(&first_object.id).unwrap().rgba,
+            vec![10, 40, 220, 255, 40, 220, 120, 255]
+        );
+        assert_eq!(
+            second.image_frames.get(&second_object.id).unwrap().rgba,
+            vec![240, 180, 20, 255, 220, 30, 180, 255]
+        );
+    }
+
+    #[test]
     fn agent_asset_call_parser_accepts_only_public_asset_refs() {
         assert_eq!(
             agent_asset_id_from_call_arg("@asset.bg.room")

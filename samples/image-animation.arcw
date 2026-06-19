@@ -13,15 +13,55 @@ pub surface character narrator {
 }
 
 entry game {
-    start @flow.image_animation
+    start @flow.image_static_png
 }
 
-flow image_animation {
+flow image_static_png {
     bg(@asset.bg.room)
 
-    narrator.say(id=@say.image_animation.intro, voice=auto)[
-        Background image is a first-class presentation object and can be captured by Agent debug tools.[p]
+    narrator.say(id=@say.image.static_png, voice=auto)[
+        Static PNG background image as a first-class presentation object.[p]
     ]
 
-    return "image_animation"
+    return "image_static_png"
+}
+
+flow image_static_jpeg {
+    bg(@asset.bg.garden)
+
+    narrator.say(id=@say.image.static_jpeg, voice=auto)[
+        Static JPEG background image follows the same Agent capture path.[p]
+    ]
+
+    return "image_static_jpeg"
+}
+
+flow image_static_webp {
+    bg(@asset.bg.poster)
+
+    narrator.say(id=@say.image.static_webp, voice=auto)[
+        Static WebP background image is decoded into the same image frame model.[p]
+    ]
+
+    return "image_static_webp"
+}
+
+flow image_animated_gif {
+    bg(@asset.bg.pulse)
+
+    narrator.say(id=@say.image.animated_gif, voice=auto)[
+        Animated GIF background image is selected from deterministic capture time.[p]
+    ]
+
+    return "image_animated_gif"
+}
+
+flow image_animated_webp {
+    bg(@asset.bg.loop)
+
+    narrator.say(id=@say.image.animated_webp, voice=auto)[
+        Animated WebP background image uses the same deterministic frame selection contract.[p]
+    ]
+
+    return "image_animated_webp"
 }

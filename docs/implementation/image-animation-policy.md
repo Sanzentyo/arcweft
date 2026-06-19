@@ -119,6 +119,13 @@ call wins, avoiding duplicate background object ids. Missing image assets
 produce structured `image_asset_unavailable` diagnostics rather than a debug
 rectangle or a panic.
 
+`samples/image-animation.arcw` is the first source-level image sample. It has
+separate flows for static PNG, static JPEG, static WebP, animated GIF, and
+animated WebP backgrounds. The animated flows are intended to be observed with
+different `--capture-time` values so native object PNG/raw captures can prove
+that visual-time frame selection, not wall-clock time, drives the active image
+frame.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
@@ -153,9 +160,9 @@ same alpha-shaped geometry as color image capture.
    background slot so declared image objects, foreground sprites, clipped image
    objects, layer targeting, transforms, depth, hit-test proxies, and semantic
    actions can all use the same presentation object path.
-3. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
-   object capture, layer capture, and pinned-frame capture.
-4. Add regression tests for frame selection, decode, native capture pixels,
+3. Add clipped object capture, layer capture, and pinned-frame capture fixtures
+   that exercise non-fullscreen image geometry and resource readback.
+4. Add more regression tests for native capture pixels,
    object metadata, hit-test routing, and no wall-clock dependence.
 
 ## Dependency Policy
