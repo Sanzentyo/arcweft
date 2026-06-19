@@ -884,12 +884,27 @@ fn agent_mcp_command(
 struct AgentMcpState {
     report: Option<AgentObservationReport>,
     image_output: Option<AgentImageOutput>,
+    image_frames: AgentImageFrameStore,
     capture_resources: Vec<AgentResource>,
     native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
 }
 
 struct AgentObservationState {
     report: AgentObservationReport,
+    image_frames: AgentImageFrameStore,
+    native_session: arcweft_render_native::NativeOffscreenCaptureSession,
+}
+
+struct AgentObservationRunOutput {
+    report: AgentObservationReport,
+    image_frames: AgentImageFrameStore,
+}
+
+struct AgentMcpObservation {
+    report: AgentObservationReport,
+    image_output: Option<AgentImageOutput>,
+    image_frames: AgentImageFrameStore,
+    resources: Vec<AgentResource>,
     native_session: arcweft_render_native::NativeOffscreenCaptureSession,
 }
 
@@ -964,16 +979,8 @@ fn agent_mcp_resource_read(
     {
         resource
     } else {
-        let native_session = agent_mcp_native_capture_session(state)
-            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
-        agent_observe_resource_by_uri_with_page_and_time_and_session(
-            &report,
-            uri,
-            None,
-            agent_report_capture_time_seconds(&report),
-            Some(native_session),
-        )
-        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
+        agent_mcp_uncached_resource_by_uri(&report, uri, state)
+            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
     };
     let read = read_resource_result(&resource)
         .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
@@ -1024,13 +1031,13 @@ fn agent_mcp_call_observe(
     state: &mut AgentMcpState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<serde_json::Value, String> {
-    let (report, image_output, resources, native_session) =
-        agent_mcp_run_observation(arguments, adapter_registrars)?;
-    state.report = Some(report);
-    state.image_output = image_output;
-    state.native_capture_session = Some(native_session);
+    let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
+    state.report = Some(observed.report);
+    state.image_output = observed.image_output;
+    state.image_frames = observed.image_frames;
+    state.native_capture_session = Some(observed.native_session);
     state.capture_resources.clear();
-    let tool = tool_result_for_resources(&resources);
+    let tool = tool_result_for_resources(&observed.resources);
     serde_json::to_value(tool)
         .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
 }
@@ -1095,11 +1102,11 @@ fn agent_mcp_call_hit_test(
     let y = agent_mcp_u32_argument(arguments, "y", "arcweft.hit_test")?
         .ok_or_else(|| "arcweft.hit_test requires arguments.y".to_owned())?;
     if agent_mcp_arguments_request_observe(arguments) {
-        let (report, image_output, _, native_session) =
-            agent_mcp_run_observation(arguments, adapter_registrars)?;
-        state.report = Some(report);
-        state.image_output = image_output;
-        state.native_capture_session = Some(native_session);
+        let observed = agent_mcp_run_observation(arguments, adapter_registrars)?;
+        state.report = Some(observed.report);
+        state.image_output = observed.image_output;
+        state.image_frames = observed.image_frames;
+        state.native_capture_session = Some(observed.native_session);
         state.capture_resources.clear();
     }
     let Some(report) = &state.report else {
@@ -1124,15 +1131,7 @@ fn agent_mcp_arguments_request_observe(arguments: &serde_json::Value) -> bool {
 fn agent_mcp_run_observation(
     arguments: &serde_json::Value,
     adapter_registrars: &[NativeAdapterRegistrar],
-) -> Result<
-    (
-        AgentObservationReport,
-        Option<AgentImageOutput>,
-        Vec<AgentResource>,
-        arcweft_render_native::NativeOffscreenCaptureSession,
-    ),
-    String,
-> {
+) -> Result<AgentMcpObservation, String> {
     let options = agent_mcp_observe_options(arguments)?;
     validate_agent_observe_options(&options).map_err(|_| "invalid observe options".to_owned())?;
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)
@@ -1161,7 +1160,7 @@ fn agent_mcp_run_observation(
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
         .map_err(|_| "failed to select runtime entry".to_owned())?;
     let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    let mut report = run_agent_observation(
+    let mut observed = run_agent_observation(
         &mut executor,
         &lowered.line_display_catalog,
         NativeRunHost {
@@ -1174,11 +1173,22 @@ fn agent_mcp_run_observation(
         Some(&mut native_session),
     )
     .map_err(|error| error.to_string())?;
-    let image_output = agent_observe_image_output(&mut report, &options, Some(&mut native_session))
-        .map_err(|_| "failed to build MCP observe image output".to_owned())?;
-    let resources = agent_observe_list_resources(&report, image_output.as_ref())
+    let image_output = agent_observe_image_output(
+        &mut observed.report,
+        &options,
+        Some(&mut native_session),
+        &observed.image_frames,
+    )
+    .map_err(|_| "failed to build MCP observe image output".to_owned())?;
+    let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
         .map_err(|_| "failed to build MCP observe resources".to_owned())?;
-    Ok((report, image_output, resources, native_session))
+    Ok(AgentMcpObservation {
+        report: observed.report,
+        image_output,
+        image_frames: observed.image_frames,
+        resources,
+        native_session,
+    })
 }
 
 fn agent_mcp_call_resource_read(
@@ -1198,16 +1208,8 @@ fn agent_mcp_call_resource_read(
     {
         resource
     } else {
-        let native_session = agent_mcp_native_capture_session(state)
-            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?;
-        agent_observe_resource_by_uri_with_page_and_time_and_session(
-            &report,
-            uri,
-            None,
-            agent_report_capture_time_seconds(&report),
-            Some(native_session),
-        )
-        .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
+        agent_mcp_uncached_resource_by_uri(&report, uri, state)
+            .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
     };
     tool_result_for_resource(&resource)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
@@ -1247,6 +1249,26 @@ fn agent_mcp_latest_capture_resource(state: &AgentMcpState) -> Option<&AgentReso
     state.capture_resources.last()
 }
 
+fn agent_mcp_uncached_resource_by_uri(
+    report: &AgentObservationReport,
+    uri: &str,
+    state: &mut AgentMcpState,
+) -> Result<AgentResource, ExitCode> {
+    agent_mcp_ensure_native_capture_session(state)?;
+    let native_session = state
+        .native_capture_session
+        .as_mut()
+        .expect("native capture session initialized above");
+    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+        report,
+        uri,
+        None,
+        agent_report_capture_time_seconds(report),
+        Some(native_session),
+        &state.image_frames,
+    )
+}
+
 fn agent_uri_without_query(uri: &str) -> Option<&str> {
     uri.split_once('?').map(|(base, _)| base)
 }
@@ -1257,13 +1279,14 @@ fn agent_mcp_call_capture(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<arcweft_agent_mcp::McpCallToolResult, String> {
     if arguments.get("source").is_some() || arguments.get("profile").is_some() {
-        let (report, image_output, _, native_session) = agent_mcp_run_observation(
+        let observed = agent_mcp_run_observation(
             &agent_mcp_capture_observe_arguments(arguments),
             adapter_registrars,
         )?;
-        state.report = Some(report);
-        state.image_output = image_output;
-        state.native_capture_session = Some(native_session);
+        state.report = Some(observed.report);
+        state.image_output = observed.image_output;
+        state.image_frames = observed.image_frames;
+        state.native_capture_session = Some(observed.native_session);
         state.capture_resources.clear();
     }
     let Some(report) = state.report.clone() else {
@@ -1287,13 +1310,20 @@ fn agent_mcp_capture_resource(
     request: &AgentCaptureReadRequest,
     state: &mut AgentMcpState,
 ) -> Result<AgentResource, ExitCode> {
-    let native_session = agent_mcp_native_capture_session(state)?;
-    agent_native_capture_resource_with_session(report, request, native_session)
+    agent_mcp_ensure_native_capture_session(state)?;
+    let native_session = state
+        .native_capture_session
+        .as_mut()
+        .expect("native capture session initialized above");
+    agent_native_capture_resource_with_session_and_frame_store(
+        report,
+        request,
+        native_session,
+        &state.image_frames,
+    )
 }
 
-fn agent_mcp_native_capture_session(
-    state: &mut AgentMcpState,
-) -> Result<&mut arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
+fn agent_mcp_ensure_native_capture_session(state: &mut AgentMcpState) -> Result<(), ExitCode> {
     if state.native_capture_session.is_none() {
         state.native_capture_session = Some(
             arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
@@ -1302,10 +1332,7 @@ fn agent_mcp_native_capture_session(
             })?,
         );
     }
-    Ok(state
-        .native_capture_session
-        .as_mut()
-        .expect("native capture session initialized above"))
+    Ok(())
 }
 
 fn agent_native_capture_session_for_hir(
@@ -1668,22 +1695,27 @@ fn agent_observe_command(
         &mut observed.report,
         options,
         Some(&mut observed.native_session),
+        &observed.image_frames,
     )?;
     if let Some(uri) = &options.read_uri {
-        let resource =
-            agent_observe_cached_image_resource(&observed.report, image_output.as_ref(), uri)
-                .map_or_else(
-                    || {
-                        agent_observe_resource_by_uri_with_page_and_time_and_session(
-                            &observed.report,
-                            uri,
-                            options.page,
-                            agent_observe_capture_time_seconds(options),
-                            Some(&mut observed.native_session),
-                        )
-                    },
-                    Ok,
-                )?;
+        let resource = agent_observe_cached_image_resource(
+            &observed.report,
+            image_output.as_ref(),
+            uri,
+        )
+        .map_or_else(
+            || {
+                agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+                    &observed.report,
+                    uri,
+                    options.page,
+                    agent_observe_capture_time_seconds(options),
+                    Some(&mut observed.native_session),
+                    &observed.image_frames,
+                )
+            },
+            Ok,
+        )?;
         if options.mcp {
             let resource = agent_observe_mcp_resource_output(
                 AgentObserveResourceOutput::One(Box::new(resource)),
@@ -1761,7 +1793,7 @@ fn agent_observation_for_options(
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let mut executor = RuntimeExecutorInstance::new(plan, options.executor, pure_config);
-    let report = run_agent_observation(
+    let observed = run_agent_observation(
         &mut executor,
         &lowered.line_display_catalog,
         NativeRunHost {
@@ -1778,7 +1810,8 @@ fn agent_observation_for_options(
         ExitCode::FAILURE
     })?;
     Ok(AgentObservationState {
-        report,
+        report: observed.report,
+        image_frames: observed.image_frames,
         native_session,
     })
 }
@@ -2152,6 +2185,24 @@ fn agent_observe_resource_by_uri_with_page_and_time_and_session(
     capture_time_seconds: f32,
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
 ) -> Result<AgentResource, ExitCode> {
+    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+        report,
+        uri,
+        page_override,
+        capture_time_seconds,
+        native_session,
+        &AgentImageFrameStore::default(),
+    )
+}
+
+fn agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+    report: &AgentObservationReport,
+    uri: &str,
+    page_override: Option<usize>,
+    capture_time_seconds: f32,
+    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+    image_frames: &AgentImageFrameStore,
+) -> Result<AgentResource, ExitCode> {
     if uri
         == format!(
             "arcweft://session/{}/observation/latest.json",
@@ -2217,9 +2268,12 @@ fn agent_observe_resource_by_uri_with_page_and_time_and_session(
         ..request
     };
     match native_session {
-        Some(native_session) => {
-            agent_native_capture_resource_with_session(report, &request, native_session)
-        }
+        Some(native_session) => agent_native_capture_resource_with_session_and_frame_store(
+            report,
+            &request,
+            native_session,
+            image_frames,
+        ),
         None => agent_observe_capture_resource(report, &request),
     }
 }
@@ -2469,12 +2523,14 @@ fn agent_native_capture_resource(
     Ok(report.image_resource(&result.image, &result.bytes))
 }
 
-fn agent_native_capture_resource_with_session(
+fn agent_native_capture_resource_with_session_and_frame_store(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
+    image_frames: &AgentImageFrameStore,
 ) -> Result<AgentResource, ExitCode> {
-    let result = agent_native_capture_image_with_session(report, request, native_session)?;
+    let result =
+        agent_native_capture_image_with_frame_store(report, request, native_session, image_frames)?;
     Ok(report.image_resource(&result.image, &result.bytes))
 }
 
@@ -4265,7 +4321,7 @@ fn run_agent_observation(
     options: &AgentObserveOptions,
     source_path: &Path,
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
-) -> Result<AgentObservationReport, arcweft_host_adapter::HostAdapterError> {
+) -> Result<AgentObservationRunOutput, arcweft_host_adapter::HostAdapterError> {
     let viewport = AgentViewport {
         width: options.viewport_width,
         height: options.viewport_height,
@@ -4339,18 +4395,21 @@ fn run_agent_observation(
             task_events = host.complete_tasks(task_requests);
         }
     }
-    Ok(finish_agent_observation_report(
-        executor,
-        source_path,
-        AgentObservationTrace {
-            viewport,
-            objects,
-            diagnostics,
-            task_request_count,
-            tick,
-        },
-        options,
-    ))
+    Ok(AgentObservationRunOutput {
+        report: finish_agent_observation_report(
+            executor,
+            source_path,
+            AgentObservationTrace {
+                viewport,
+                objects,
+                diagnostics,
+                task_request_count,
+                tick,
+            },
+            options,
+        ),
+        image_frames: AgentImageFrameStore::default(),
+    })
 }
 
 fn agent_observed_objects_for_flow_event(
@@ -4605,6 +4664,7 @@ fn agent_observe_image_output(
     report: &mut AgentObservationReport,
     options: &AgentObserveOptions,
     native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
+    image_frames: &AgentImageFrameStore,
 ) -> Result<Option<AgentImageOutput>, ExitCode> {
     let Some(image) = options.image else {
         return Ok(None);
@@ -4651,9 +4711,12 @@ fn agent_observe_image_output(
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
             let capture_result = match native_session {
-                Some(native_session) => {
-                    agent_native_capture_image_with_session(report, &request, native_session)?
-                }
+                Some(native_session) => agent_native_capture_image_with_frame_store(
+                    report,
+                    &request,
+                    native_session,
+                    image_frames,
+                )?,
                 None => agent_native_capture_image(report, &request)?,
             };
             report

@@ -98,6 +98,12 @@ produced from observed image object geometry, while color capture intentionally
 fails; returning a filled rectangle as color output would mix a debug geometry
 fallback into the product image renderer path.
 
+CLI and MCP observation state now carry the image frame store alongside the
+observation report and native capture session. Direct `--image` capture,
+`--read-uri`, MCP `resources/read`, MCP `arcweft.resource.read`, and MCP
+`arcweft.capture` therefore share the same frame-store-aware capture path once
+live UI commits populate the store.
+
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
 renders them as textured quads into the same offscreen RGBA readback surface
@@ -129,8 +135,8 @@ same alpha-shaped geometry as color image capture.
    settles it; static `asset.image(...)` references are already checked against
    bundle image asset ids.
 2. Wire the live Agent native observe loop to feed actual runtime UI commits
-   through the UI image item bridge and carry the resulting image frame store
-   into CLI read-uri/MCP image color capture.
+   through the UI image item bridge so the already-carried image frame store is
+   populated from real runtime frames.
 3. Expose source-level image declarations in `.arcw` samples so real sample
    runs can populate the UI image source table without test-only setup.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped
