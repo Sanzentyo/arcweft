@@ -63,6 +63,8 @@ pub(super) struct DebugDbSearchOptions {
     graph_query: Option<String>,
     #[arg(long = "history-query")]
     history_query: Option<String>,
+    #[arg(long = "graph-depth", default_value_t = 1)]
+    graph_depth: u32,
     #[arg(long = "model-id")]
     model_id: Option<String>,
     #[arg(long = "model-revision")]
@@ -144,6 +146,8 @@ struct DebugDbSearchReport {
     query: Option<String>,
     query_vector_dimensions: Option<usize>,
     graph_query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    graph_depth: Option<u32>,
     history_query: Option<String>,
     model: Option<DebugDbSearchModelReport>,
     limit: usize,
@@ -329,22 +333,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         + usize::from(has_query_vector)
         + usize::from(graph_query.is_some())
         + usize::from(history_query.is_some());
-    if selector_count == 0 {
-        eprintln!(
-            "error: debug db search requires one of --query, --query-vector, --graph-query, or --history-query"
-        );
-        return Err(ExitCode::from(2));
-    }
-    if selector_count > 1 {
-        eprintln!(
-            "error: debug db search accepts only one of --query, --query-vector, --graph-query, or --history-query"
-        );
-        return Err(ExitCode::from(2));
-    }
-    if options.limit == 0 {
-        eprintln!("error: debug db search --limit must be at least 1");
-        return Err(ExitCode::from(2));
-    }
+    validate_debug_db_search_selection(selector_count, options.limit)?;
     let (store, path, _, _) = open_debug_store(&options.db)?;
     let model = query_vector
         .as_ref()
@@ -390,6 +379,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         query: query.map(str::to_owned),
         query_vector_dimensions: query_vector.as_ref().map(Vec::len),
         graph_query: graph_query.map(str::to_owned),
+        graph_depth: graph_query.map(|_| options.graph_depth),
         history_query: history_query.map(str::to_owned),
         model: model.map(|model| DebugDbSearchModelReport {
             model_id: model.model_id,
@@ -400,6 +390,26 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         max_privacy: options.max_privacy,
         hits,
     })
+}
+
+fn validate_debug_db_search_selection(selector_count: usize, limit: usize) -> Result<(), ExitCode> {
+    if selector_count == 0 {
+        eprintln!(
+            "error: debug db search requires one of --query, --query-vector, --graph-query, or --history-query"
+        );
+        return Err(ExitCode::from(2));
+    }
+    if selector_count > 1 {
+        eprintln!(
+            "error: debug db search accepts only one of --query, --query-vector, --graph-query, or --history-query"
+        );
+        return Err(ExitCode::from(2));
+    }
+    if limit == 0 {
+        eprintln!("error: debug db search --limit must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    Ok(())
 }
 
 fn print_debug_db_search_report(report: &DebugDbSearchReport) {
@@ -437,7 +447,12 @@ fn debug_db_search_hits(
         return store.lexical_search_with_max_privacy(query, options.limit, options.max_privacy);
     }
     if let Some(query) = graph_query {
-        return store.graph_search_with_max_privacy(query, options.limit, options.max_privacy);
+        return store.graph_search_with_depth_and_max_privacy(
+            query,
+            options.graph_depth,
+            options.limit,
+            options.max_privacy,
+        );
     }
     if let Some(query) = history_query {
         return store.history_search_with_max_privacy(query, options.limit, options.max_privacy);

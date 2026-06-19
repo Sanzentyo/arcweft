@@ -1256,6 +1256,42 @@ fn debug_db_search_graph_filters_chunks_by_privacy() {
     assert_eq!(hits[0]["privacy"], "project");
     assert_eq!(hits[0]["channel"], "graph");
     assert_eq!(hits[0]["source_kind"], "graph_edge");
+
+    let expanded_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--graph-query")
+        .arg("opening")
+        .arg("--graph-depth")
+        .arg("2")
+        .arg("--limit")
+        .arg("10")
+        .arg("--max-privacy")
+        .arg("project")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph depth search runs");
+    assert!(
+        expanded_output.status.success(),
+        "debug db graph depth search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&expanded_output.stdout),
+        String::from_utf8_lossy(&expanded_output.stderr)
+    );
+    let expanded_report: serde_json::Value =
+        serde_json::from_slice(&expanded_output.stdout).expect("graph depth output is JSON");
+    assert_eq!(expanded_report["graph_depth"], 2);
+    let expanded_hits = expanded_report["hits"].as_array().expect("hits array");
+    assert_eq!(expanded_hits.len(), 2);
+    assert!(
+        expanded_hits.iter().any(|hit| hit["chunk_id"] == "graph:2"
+            && hit["body"]
+                .as_str()
+                .is_some_and(|body| body.contains("distance=2"))),
+        "expanded graph search should include a 2-hop graph edge: {expanded_report}"
+    );
 }
 
 fn seed_debug_search_db(path: &Path) {
@@ -1376,7 +1412,7 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
         .expect("upsert graph target symbol");
     store
         .upsert_graph_edge(&DebugGraphEdge {
-            program_hash,
+            program_hash: program_hash.clone(),
             from_symbol_id: "symbol:flow.opening".to_owned(),
             to_symbol_id: "symbol:choice.alice".to_owned(),
             edge_kind: "offers_choice".to_owned(),
@@ -1384,6 +1420,34 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             metadata: BTreeMap::new(),
         })
         .expect("upsert graph edge");
+    store
+        .upsert_graph_symbol(&DebugGraphSymbol {
+            symbol_id: "symbol:textbox.main".to_owned(),
+            program_hash: program_hash.clone(),
+            public_id: Some(
+                arcweft_agent_protocol::ids::PublicId::new("@textbox.main")
+                    .expect("valid public id"),
+            ),
+            qualified_name: Some("textbox.main".to_owned()),
+            kind: "textbox".to_owned(),
+            type_json: None,
+            start_byte: None,
+            end_byte: None,
+            semantic_hash: None,
+            summary: "Main textbox reached through Alice choice".to_owned(),
+            metadata: BTreeMap::new(),
+        })
+        .expect("upsert graph expanded symbol");
+    store
+        .upsert_graph_edge(&DebugGraphEdge {
+            program_hash,
+            from_symbol_id: "symbol:choice.alice".to_owned(),
+            to_symbol_id: "symbol:textbox.main".to_owned(),
+            edge_kind: "uses_textbox".to_owned(),
+            weight: 1.0,
+            metadata: BTreeMap::new(),
+        })
+        .expect("upsert graph expanded edge");
 }
 
 fn stable_hash(value: &str) -> StableHash {

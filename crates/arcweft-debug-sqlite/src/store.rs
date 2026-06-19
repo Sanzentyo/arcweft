@@ -458,92 +458,112 @@ impl DebugStore {
         limit: usize,
         max_privacy: PrivacyClass,
     ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        self.graph_search_with_depth_and_max_privacy(query, 1, limit, max_privacy)
+    }
+
+    pub fn graph_search_with_depth_and_max_privacy(
+        &self,
+        query: &str,
+        graph_depth: u32,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
         if query.trim().is_empty()
             || limit == 0
             || !PrivacyClass::Project.is_allowed_by(max_privacy)
         {
             return Ok(Vec::new());
         }
-        let like_query = query.trim().to_lowercase();
+        Ok(self
+            .graph_search_rows(query, graph_depth, limit)?
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| graph_chunk_search_result(query, index, &row))
+            .collect())
+    }
+
+    fn graph_search_rows(
+        &self,
+        query: &str,
+        graph_depth: u32,
+        limit: usize,
+    ) -> Result<Vec<GraphSearchRow>, DebugStoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT ge.edge_id, ge.edge_kind, ge.weight,
+            "WITH RECURSIVE frontier(symbol_id, depth) AS (
+                SELECT symbol_id, 0
+                FROM symbols
+                WHERE instr(lower(coalesce(public_id, '')), ?1) > 0
+                   OR instr(lower(coalesce(qualified_name, '')), ?1) > 0
+                   OR instr(lower(kind), ?1) > 0
+                   OR instr(lower(summary), ?1) > 0
+                UNION
+                SELECT CASE
+                         WHEN ge.from_symbol_id = frontier.symbol_id THEN ge.to_symbol_id
+                         ELSE ge.from_symbol_id
+                       END,
+                       frontier.depth + 1
+                FROM frontier
+                JOIN graph_edges AS ge
+                  ON ge.from_symbol_id = frontier.symbol_id
+                  OR ge.to_symbol_id = frontier.symbol_id
+                WHERE frontier.depth < ?2
+             ),
+             edge_matches(edge_id, distance) AS (
+                SELECT ge.edge_id, MIN(frontier.depth + 1)
+                FROM graph_edges AS ge
+                JOIN frontier
+                  ON ge.from_symbol_id = frontier.symbol_id
+                  OR ge.to_symbol_id = frontier.symbol_id
+                WHERE frontier.depth < ?2
+                GROUP BY ge.edge_id
+                UNION ALL
+                SELECT ge.edge_id, 0
+                FROM graph_edges AS ge
+                WHERE instr(lower(ge.edge_kind), ?1) > 0
+             ),
+             ranked_edges(edge_id, distance) AS (
+                SELECT edge_id, MIN(distance)
+                FROM edge_matches
+                GROUP BY edge_id
+             )
+             SELECT ge.edge_id, ge.edge_kind, ge.weight, ranked_edges.distance,
                     from_symbol.symbol_id, from_symbol.public_id,
                     from_symbol.qualified_name, from_symbol.kind, from_symbol.summary,
                     to_symbol.symbol_id, to_symbol.public_id,
                     to_symbol.qualified_name, to_symbol.kind, to_symbol.summary
-             FROM graph_edges AS ge
+             FROM ranked_edges
+             JOIN graph_edges AS ge ON ge.edge_id = ranked_edges.edge_id
              JOIN symbols AS from_symbol ON from_symbol.symbol_id = ge.from_symbol_id
              JOIN symbols AS to_symbol ON to_symbol.symbol_id = ge.to_symbol_id
-             WHERE instr(lower(ge.edge_kind), ?1) > 0
-                OR instr(lower(coalesce(from_symbol.public_id, '')), ?1) > 0
-                OR instr(lower(coalesce(from_symbol.qualified_name, '')), ?1) > 0
-                OR instr(lower(from_symbol.kind), ?1) > 0
-                OR instr(lower(from_symbol.summary), ?1) > 0
-                OR instr(lower(coalesce(to_symbol.public_id, '')), ?1) > 0
-                OR instr(lower(coalesce(to_symbol.qualified_name, '')), ?1) > 0
-                OR instr(lower(to_symbol.kind), ?1) > 0
-                OR instr(lower(to_symbol.summary), ?1) > 0
-             ORDER BY ge.weight DESC, ge.edge_id
-             LIMIT ?2",
+             ORDER BY (ge.weight / (ranked_edges.distance + 1.0)) DESC,
+                      ranked_edges.distance,
+                      ge.edge_id
+             LIMIT ?3",
         )?;
+        let like_query = query.trim().to_lowercase();
+        let graph_depth = i64::from(graph_depth);
         let limit = i64::try_from(limit)
             .map_err(|_| DebugStoreError::IntegerOverflow("graph_edges.limit"))?;
-        let rows = statement.query_map(params![like_query, limit], |row| {
+        let rows = statement.query_map(params![like_query, graph_depth, limit], |row| {
             Ok(GraphSearchRow {
                 edge_id: row.get(0)?,
                 edge_kind: row.get(1)?,
                 weight: row.get(2)?,
-                from_symbol_id: row.get(3)?,
-                from_public_id: row.get(4)?,
-                from_qualified_name: row.get(5)?,
-                from_kind: row.get(6)?,
-                from_summary: row.get(7)?,
-                to_symbol_id: row.get(8)?,
-                to_public_id: row.get(9)?,
-                to_qualified_name: row.get(10)?,
-                to_kind: row.get(11)?,
-                to_summary: row.get(12)?,
+                distance: row.get(3)?,
+                from_symbol_id: row.get(4)?,
+                from_public_id: row.get(5)?,
+                from_qualified_name: row.get(6)?,
+                from_kind: row.get(7)?,
+                from_summary: row.get(8)?,
+                to_symbol_id: row.get(9)?,
+                to_public_id: row.get(10)?,
+                to_qualified_name: row.get(11)?,
+                to_kind: row.get(12)?,
+                to_summary: row.get(13)?,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .enumerate()
-            .map(|(index, row)| {
-                let from_label = graph_symbol_label(
-                    &row.from_symbol_id,
-                    row.from_public_id.as_deref(),
-                    row.from_qualified_name.as_deref(),
-                );
-                let to_label = graph_symbol_label(
-                    &row.to_symbol_id,
-                    row.to_public_id.as_deref(),
-                    row.to_qualified_name.as_deref(),
-                );
-                let title = format!("{from_label} --{}--> {to_label}", row.edge_kind);
-                let body = format!(
-                    "edge_kind={}\nweight={:.6}\nfrom_kind={}\nfrom_summary={}\nto_kind={}\nto_summary={}",
-                    row.edge_kind,
-                    row.weight,
-                    row.from_kind,
-                    row.from_summary,
-                    row.to_kind,
-                    row.to_summary
-                );
-                Ok(ChunkSearchResult {
-                    hit: SearchHit {
-                        chunk_id: ChunkId::new(format!("graph:{}", row.edge_id)),
-                        channel: SearchChannel::Graph,
-                        rank: index + 1,
-                        score: Some(graph_score(query, &row)),
-                    },
-                    title,
-                    body,
-                    source_kind: "graph_edge".to_owned(),
-                    source_key: row.edge_id.to_string(),
-                    privacy: PrivacyClass::Project,
-                })
-            })
-            .collect()
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DebugStoreError::from)
     }
 
     pub fn upsert_history_entry(&self, entry: &DebugHistoryEntry) -> Result<(), DebugStoreError> {
@@ -1024,6 +1044,7 @@ struct GraphSearchRow {
     edge_id: i64,
     edge_kind: String,
     weight: f64,
+    distance: i32,
     from_symbol_id: String,
     from_public_id: Option<String>,
     from_qualified_name: Option<String>,
@@ -1036,6 +1057,43 @@ struct GraphSearchRow {
     to_summary: String,
 }
 
+fn graph_chunk_search_result(query: &str, index: usize, row: &GraphSearchRow) -> ChunkSearchResult {
+    let from_label = graph_symbol_label(
+        &row.from_symbol_id,
+        row.from_public_id.as_deref(),
+        row.from_qualified_name.as_deref(),
+    );
+    let to_label = graph_symbol_label(
+        &row.to_symbol_id,
+        row.to_public_id.as_deref(),
+        row.to_qualified_name.as_deref(),
+    );
+    let title = format!("{from_label} --{}--> {to_label}", row.edge_kind);
+    let body = format!(
+        "edge_kind={}\nweight={:.6}\ndistance={}\nfrom_kind={}\nfrom_summary={}\nto_kind={}\nto_summary={}",
+        row.edge_kind,
+        row.weight,
+        row.distance,
+        row.from_kind,
+        row.from_summary,
+        row.to_kind,
+        row.to_summary
+    );
+    ChunkSearchResult {
+        hit: SearchHit {
+            chunk_id: ChunkId::new(format!("graph:{}", row.edge_id)),
+            channel: SearchChannel::Graph,
+            rank: index + 1,
+            score: Some(graph_score(query, row)),
+        },
+        title,
+        body,
+        source_kind: "graph_edge".to_owned(),
+        source_key: row.edge_id.to_string(),
+        privacy: PrivacyClass::Project,
+    }
+}
+
 fn graph_symbol_label(
     symbol_id: &str,
     public_id: Option<&str>,
@@ -1046,7 +1104,7 @@ fn graph_symbol_label(
 
 fn graph_score(query: &str, row: &GraphSearchRow) -> f64 {
     let query = query.trim().to_lowercase();
-    if row
+    let base = if row
         .from_public_id
         .as_deref()
         .is_some_and(|id| id.eq_ignore_ascii_case(&query))
@@ -1063,7 +1121,8 @@ fn graph_score(query: &str, row: &GraphSearchRow) -> f64 {
         row.weight + 1.0
     } else {
         row.weight
-    }
+    };
+    base / f64::from(row.distance.max(0) + 1)
 }
 
 #[cfg(test)]
@@ -1366,7 +1425,7 @@ mod tests {
             .expect("to symbol");
         store
             .upsert_graph_edge(&DebugGraphEdge {
-                program_hash,
+                program_hash: program_hash.clone(),
                 from_symbol_id: "symbol:flow.opening".to_owned(),
                 to_symbol_id: "symbol:choice.alice".to_owned(),
                 edge_kind: "offers_choice".to_owned(),
@@ -1374,6 +1433,31 @@ mod tests {
                 metadata: BTreeMap::new(),
             })
             .expect("edge");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:textbox.main".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("@textbox.main").expect("public id")),
+                qualified_name: Some("textbox.main".to_owned()),
+                kind: "textbox".to_owned(),
+                type_json: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Main textbox reached through Alice choice".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("expanded symbol");
+        store
+            .upsert_graph_edge(&DebugGraphEdge {
+                program_hash,
+                from_symbol_id: "symbol:choice.alice".to_owned(),
+                to_symbol_id: "symbol:textbox.main".to_owned(),
+                edge_kind: "uses_textbox".to_owned(),
+                weight: 1.0,
+                metadata: BTreeMap::new(),
+            })
+            .expect("expanded edge");
 
         let public_hits = store
             .graph_search_with_max_privacy("opening", 1, PrivacyClass::Public)
@@ -1388,6 +1472,16 @@ mod tests {
         assert_eq!(project_hits[0].hit.channel, SearchChannel::Graph);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
         assert!(project_hits[0].title.contains("@flow.opening"));
+
+        let expanded_hits = store
+            .graph_search_with_depth_and_max_privacy("opening", 2, 10, PrivacyClass::Project)
+            .expect("expanded graph search");
+        assert_eq!(expanded_hits.len(), 2);
+        assert!(
+            expanded_hits.iter().any(
+                |hit| hit.hit.chunk_id.as_str() == "graph:2" && hit.body.contains("distance=2")
+            )
+        );
     }
 
     #[test]

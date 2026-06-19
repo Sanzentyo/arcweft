@@ -344,12 +344,13 @@ window.
 [--limit N] [--json]` runs the stored-vector channel. It loads normalized
 embedding rows for the exact model descriptor, applies the privacy ceiling
 before ranking, and uses deterministic cosine ranking from `arcweft-rag`.
-`arcw debug db search --graph-query <text>
+`arcw debug db search --graph-query <text> [--graph-depth N]
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 indexed `symbols` and `graph_edges` by public id, qualified name, symbol kind,
-summary, and edge kind. Graph rows are treated as project-private until the
-graph index has explicit privacy labels, so `--max-privacy public` returns no
-graph hits.
+summary, and edge kind. Depth `1` returns directly adjacent graph edges; higher
+depths expand through connected symbols and rank farther edges lower. Graph
+rows are treated as project-private until the graph index has explicit privacy
+labels, so `--max-privacy public` returns no graph hits.
 `arcw debug db search --history-query <text>
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 `history_entries` by change ID, operation ID, and summary. History rows are
