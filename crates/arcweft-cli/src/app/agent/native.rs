@@ -33,7 +33,9 @@ use arcweft_agent_protocol::{
 };
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
-use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy, ImageObjectTransform};
+use arcweft_presentation::image::{
+    ImageObjectParam, ImageObjectPlayback, ImageObjectProxy, ImageObjectTransform,
+};
 use arcweft_render_text::{
     LineDisplayFrame, Milli, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextParam,
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
@@ -1141,6 +1143,68 @@ mod tests {
         assert_eq!(result.image.width, 56);
         assert_eq!(result.image.height, 78);
         assert_eq!(&result.bytes[0..4], &[176, 131, 11, 127]);
+    }
+
+    #[test]
+    fn agent_runtime_image_call_playback_pins_local_time_for_bounded_object() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[RuntimeCall {
+                callee: "image".to_owned(),
+                args: vec![
+                    "asset = @asset.bg.pulse".to_owned(),
+                    "id = @image.test.pinned_pulse".to_owned(),
+                    "x = 12px".to_owned(),
+                    "y = 34px".to_owned(),
+                    "width = 56px".to_owned(),
+                    "height = 78px".to_owned(),
+                    "playback.local_time = 50ms".to_owned(),
+                ],
+            }],
+            0.15,
+        );
+
+        assert!(diagnostics.is_empty());
+        let object = &observation.objects[0];
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("image call should become Agent image content");
+        };
+        assert_eq!(content.frame_index, Some(0));
+        assert_eq!(content.local_time_millis, Some(50));
+        assert_eq!(
+            observation.image_frames.get(&object.id).unwrap().rgba,
+            vec![10, 40, 220, 255, 40, 220, 120, 255]
+        );
+    }
+
+    #[test]
+    fn agent_image_call_playback_parses_time_and_rate_arguments() {
+        let call = RuntimeCall {
+            callee: "image".to_owned(),
+            args: vec![
+                "playback.start = 50ms".to_owned(),
+                "playback.rate = 0.5".to_owned(),
+                "playback.paused_at = 0.25s".to_owned(),
+            ],
+        };
+        let playback = agent_image_call_playback(&call);
+
+        assert_eq!(playback.start_time_millis(), 50);
+        assert_eq!(playback.rate_milli(), 500);
+        assert_eq!(playback.paused_at_millis(), Some(250));
+        assert_eq!(playback.local_time_millis(1_000), 100);
     }
 
     #[test]
@@ -5499,6 +5563,7 @@ struct AgentRuntimeImageCall {
     bounds: arcweft_presentation::hit::HitRect,
     fit: arcweft_presentation::image::ImageObjectFit,
     opacity_milli: u16,
+    playback: ImageObjectPlayback,
     transform: ImageObjectTransform,
     depth_milli: i32,
     actions: Vec<arcweft_id::PublicId>,
@@ -5576,6 +5641,7 @@ fn agent_background_runtime_image_call(
         ),
         fit: arcweft_presentation::image::ImageObjectFit::Cover,
         opacity_milli: 1_000,
+        playback: agent_image_call_playback(call),
         transform: ImageObjectTransform::identity(),
         depth_milli: 0,
         actions: Vec::new(),
@@ -5627,6 +5693,7 @@ fn agent_object_runtime_image_call(
     let opacity_milli = agent_call_named_value(call, "opacity")
         .and_then(agent_image_call_opacity_milli)
         .unwrap_or(1_000);
+    let playback = agent_image_call_playback(call);
     let transform = agent_image_call_transform(call);
     let enabled = agent_call_named_value(call, "enabled")
         .and_then(agent_image_call_bool)
@@ -5642,6 +5709,7 @@ fn agent_object_runtime_image_call(
         bounds: arcweft_presentation::hit::HitRect::new(x, y, width, height),
         fit,
         opacity_milli,
+        playback,
         transform,
         depth_milli,
         actions: agent_image_call_actions(call),
@@ -5845,6 +5913,66 @@ fn agent_image_call_opacity_milli(value: &str) -> Option<u16> {
         .ok()
 }
 
+fn agent_image_call_playback(call: &RuntimeCall) -> ImageObjectPlayback {
+    let start_time_millis = agent_call_named_value(call, "playback.start")
+        .or_else(|| agent_call_named_value(call, "playback.start_time"))
+        .and_then(agent_image_call_time_millis)
+        .unwrap_or_default();
+    let mut playback = ImageObjectPlayback::new(start_time_millis);
+    if let Some(rate_milli) =
+        agent_call_named_value(call, "playback.rate").and_then(agent_image_call_rate_milli)
+    {
+        playback = playback.with_rate_milli(rate_milli);
+    }
+    if let Some(paused_at_millis) = agent_call_named_value(call, "playback.paused_at")
+        .or_else(|| agent_call_named_value(call, "playback.pause_at"))
+        .and_then(agent_image_call_time_millis)
+    {
+        playback = playback.paused_at(paused_at_millis);
+    }
+    if let Some(local_time_millis) = agent_call_named_value(call, "playback.local_time")
+        .or_else(|| agent_call_named_value(call, "playback.pinned_local_time"))
+        .and_then(agent_image_call_time_millis)
+    {
+        playback = playback.pinned_local_time(local_time_millis);
+    }
+    playback
+}
+
+fn agent_image_call_time_millis(value: &str) -> Option<u64> {
+    let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+    let (number, multiplier) = if let Some(number) = value.strip_suffix("ms") {
+        (number.trim(), 1.0)
+    } else if let Some(number) = value.strip_suffix('s') {
+        (number.trim(), 1_000.0)
+    } else {
+        (value, 1_000.0)
+    };
+    let millis = number.parse::<f64>().ok()? * multiplier;
+    if !millis.is_finite() || millis < 0.0 {
+        return None;
+    }
+    format!("{:.0}", millis.round()).parse().ok()
+}
+
+fn agent_image_call_rate_milli(value: &str) -> Option<u32> {
+    let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+    let parsed = value
+        .strip_suffix('x')
+        .unwrap_or(value)
+        .parse::<f64>()
+        .ok()?;
+    let milli = if (0.0..=1.0).contains(&parsed) {
+        parsed * 1_000.0
+    } else {
+        parsed
+    };
+    if !milli.is_finite() || milli < 0.0 {
+        return None;
+    }
+    format!("{:.0}", milli.round()).parse().ok()
+}
+
 fn agent_image_call_bool(value: &str) -> Option<bool> {
     match value.trim().trim_matches('"').trim_matches('\'') {
         "true" => Some(true),
@@ -5957,6 +6085,7 @@ fn agent_image_presentation_input(
     )
     .with_fit(call.fit)
     .with_opacity_milli(call.opacity_milli)
+    .with_playback(call.playback)
     .with_transform(call.transform)
     .with_depth_milli(call.depth_milli)
     .with_enabled(call.enabled)

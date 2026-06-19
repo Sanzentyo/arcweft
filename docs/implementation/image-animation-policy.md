@@ -158,8 +158,9 @@ that visual-time frame selection, not wall-clock time, drives the active image
 frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
 id, target, layer, bounds, fit, opacity, depth, semantic action, custom
-`transform.*` matrix/translation metadata, enabled/visible lifecycle flags,
-`param.*` metadata, and animated frame timing. The `image_clipped_object` flow
+`playback.*` timing, `transform.*` matrix/translation metadata,
+enabled/visible lifecycle flags, `param.*` metadata, and animated frame
+timing. The `image_clipped_object` flow
 places a bounded animated image partially outside the viewport so object color
 and object-id capture fixtures prove that native capture uses the same
 viewport-visible geometry as Agent observation.
@@ -179,6 +180,7 @@ image(
   height = 180px,
   fit = "stretch",
   opacity = 0.5,
+  playback.local_time = 50ms,
   transform.tx = 24px,
   transform.ty = 12px,
   depth = 2500,
@@ -200,6 +202,13 @@ image(
 `opacity` accepts either a ratio form (`0`, `0.5`, `1`) or a milli form from
 `2` through `1000`; both lower to the presentation model's `opacity_milli`
 field.
+`playback.start`, `playback.paused_at`, and `playback.local_time` accept
+non-negative durations (`150ms`, `0.15s`, or a bare seconds number).
+`playback.rate` accepts either a ratio (`0.5`) or milli value (`500`), and all
+four fields lower to `ImageObjectPlayback` before UI frame resolution. A pinned
+`playback.local_time` therefore overrides the observation `--capture-time` for
+that object while still using the same deterministic frame selection path as
+un-pinned animated images.
 `transform.tx` and `transform.ty` accept pixel lengths. `transform.m11`,
 `transform.m12`, `transform.m21`, and `transform.m22` accept fixed-point matrix
 components and default to the identity matrix.
