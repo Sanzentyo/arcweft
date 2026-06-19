@@ -297,9 +297,12 @@ image capture.
    covered for direct object and layer `--read-uri`; image-object proxy
    hit-test metadata is covered against the same sample; clipped animated image
    object color and object-id captures are covered; MCP tool-content
-   preservation is covered with serialized metadata fixtures; and live MCP
+   preservation is covered with serialized metadata fixtures; live MCP
    `arcweft.resource.read` plus protocol `resources/read` are covered for the
-   bounded animated image layer raw resource.
+   bounded animated image layer raw resource; and the checked-in
+   `image-animation.arcw` sample is bundled as a CLI regression to prove
+   PNG/JPEG/static WebP/GIF/animated WebP metadata is recorded in
+   `image_assets[]` and validated again by `run-bundle`.
 
 ## Dependency Policy
 

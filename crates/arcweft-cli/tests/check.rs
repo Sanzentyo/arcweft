@@ -28921,6 +28921,162 @@ fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
     );
 }
 
+#[test]
+fn bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them() {
+    let dir = temp_dir("bundle-image-animation-sample");
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let bundle_path = dir.join("image-animation.awfb");
+
+    let bundle_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bundle")
+        .arg(&source_path)
+        .arg("--output")
+        .arg(&bundle_path)
+        .arg("--json")
+        .output()
+        .expect("arcw bundle packages image animation sample");
+
+    assert!(
+        bundle_output.status.success(),
+        "image animation sample bundle should succeed, stderr: {}",
+        String::from_utf8_lossy(&bundle_output.stderr)
+    );
+    let bundle_stdout = String::from_utf8_lossy(&bundle_output.stdout);
+    assert!(
+        bundle_stdout.contains("\"image_assets\": 5"),
+        "bundle JSON summary should count all static and animated sample images: {bundle_stdout}"
+    );
+    assert!(
+        !bundle_stdout.contains(&workspace_root().display().to_string()),
+        "bundle JSON summary must not leak workspace paths: {bundle_stdout}"
+    );
+
+    let bundle_json: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&bundle_path).expect("image animation bundle JSON is written"),
+    )
+    .expect("image animation bundle artifact is JSON");
+    assert_image_animation_bundle_assets(&bundle_json);
+    let bundle_text =
+        serde_json::to_string(&bundle_json).expect("image animation bundle JSON reserializes");
+    assert!(
+        !bundle_text.contains(&workspace_root().display().to_string()),
+        "bundle artifact must not leak workspace paths: {bundle_text}"
+    );
+
+    let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run-bundle")
+        .arg(&bundle_path)
+        .arg("--flow")
+        .arg("image_animated_webp")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("2")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw run-bundle validates image animation sample assets");
+
+    assert!(
+        run_output.status.success(),
+        "run-bundle should validate and execute image animation sample, stderr: {}",
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_stdout = String::from_utf8_lossy(&run_output.stdout);
+    assert_image_animation_run_bundle_output(&run_stdout);
+}
+
+fn assert_image_animation_bundle_assets(bundle_json: &serde_json::Value) {
+    let image_assets = bundle_json["image_assets"]
+        .as_array()
+        .expect("image animation bundle records image_assets");
+    assert_eq!(image_assets.len(), 5);
+    assert_bundle_image_asset(
+        image_assets,
+        "asset.bg.room",
+        "bg/room.png",
+        "png",
+        "static",
+    );
+    assert_bundle_image_asset(
+        image_assets,
+        "asset.bg.garden",
+        "bg/garden.jpg",
+        "jpeg",
+        "static",
+    );
+    assert_bundle_image_asset(
+        image_assets,
+        "asset.bg.poster",
+        "bg/poster.webp",
+        "webp",
+        "static",
+    );
+    assert_bundle_image_asset(
+        image_assets,
+        "asset.bg.pulse",
+        "bg/pulse.gif",
+        "gif",
+        "animated",
+    );
+    assert_bundle_image_asset(
+        image_assets,
+        "asset.bg.loop",
+        "bg/loop.webp",
+        "webp",
+        "animated",
+    );
+}
+
+fn assert_image_animation_run_bundle_output(run_stdout: &str) {
+    let run_json: serde_json::Value =
+        serde_json::from_str(run_stdout).expect("run-bundle output is structured JSON");
+    assert!(
+        run_json["phases"]
+            .as_array()
+            .expect("run-bundle reports phases")
+            .iter()
+            .any(|phase| phase["name"] == "validate_image_assets"),
+        "run-bundle should explicitly validate bundled image assets: {run_stdout}"
+    );
+    assert_eq!(run_json["final_status"], "done return image_animated_webp");
+    assert!(
+        !run_stdout.contains(&workspace_root().display().to_string()),
+        "run-bundle JSON must not leak workspace paths: {run_stdout}"
+    );
+    assert!(
+        !run_json["phases"]
+            .as_array()
+            .expect("phases are present")
+            .iter()
+            .any(|phase| matches!(
+                phase["name"].as_str(),
+                Some("parse" | "typecheck" | "runtime_plan_lower")
+            )),
+        "run-bundle should execute decoded bytecode without source recompilation: {run_stdout}"
+    );
+}
+
+fn assert_bundle_image_asset(
+    image_assets: &[serde_json::Value],
+    id: &str,
+    path: &str,
+    format: &str,
+    animation: &str,
+) {
+    let asset = image_assets
+        .iter()
+        .find(|asset| asset["id"] == id)
+        .unwrap_or_else(|| panic!("bundle image asset {id} should be present"));
+    assert_eq!(asset["file"]["space"], "asset");
+    assert_eq!(asset["file"]["path"], path);
+    assert_eq!(asset["format"], format);
+    assert_eq!(asset["animation"], animation);
+    assert_eq!(asset["dimensions"]["width"], 2);
+    assert_eq!(asset["dimensions"]["height"], 1);
+}
+
 struct BundleNativeFileFixture {
     dir: PathBuf,
     source_path: PathBuf,
