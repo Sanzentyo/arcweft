@@ -123,6 +123,11 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
 
 #[test]
 fn agent_script_run_json_executes_cli_session_smoke() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/trace-{}.arcwx",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&trace_path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("script")
@@ -131,6 +136,8 @@ fn agent_script_run_json_executes_cli_session_smoke() {
             "samples/agent-script/cli-run-smoke.awfagent",
         ))
         .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
         .output()
         .expect("arcw agent script run executes");
 
@@ -144,7 +151,16 @@ fn agent_script_run_json_executes_cli_session_smoke() {
         serde_json::from_slice(&output.stdout).expect("run output is JSON");
     assert_eq!(json["ok"], true);
     assert_eq!(json["host_calls"], 1);
+    assert_eq!(json["trace_records"], 5);
     assert_eq!(json["responses"][0]["kind"], "observation");
+    let trace: serde_json::Value = serde_json::from_slice(
+        &fs::read(&trace_path).expect("agent script run writes .arcwx trace"),
+    )
+    .expect("trace is JSON");
+    assert_eq!(trace.as_array().unwrap().len(), 5);
+    assert_eq!(trace[0]["kind"], "run_started");
+    assert_eq!(trace[2]["kind"], "observation_received");
+    assert_eq!(trace[4]["kind"], "run_finished");
 }
 
 fn toolchain_profile_dry_run_output() -> std::process::Output {

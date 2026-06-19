@@ -24,7 +24,7 @@ It is implementation state, not the stable language specification.
 - `arcweft-bundle` can now encode `.awfb` bundles as `bundle_kind = agent_controller` with an embedded `AgentArtifactManifest`, while ordinary game bundles remain the default. The game `arcweft-runtime-host` bundle runner rejects Agent controller bundles instead of executing them as game bytecode.
 - `arcweft-debug-sqlite` provides the rebuildable `SQLite`/FTS5 debug index, event sink adapter, Japanese lexical smoke coverage, and little-endian f32 vector blob storage without unsafe casts.
 - `arcw agent script check <file.awfagent>` validates Agent dialect parsing/HIR lowering without requiring the `native-capture` feature.
-- `arcw agent script run <file.awfagent>` compiles a single Agent controller bundle and executes it through `arcweft-agent-runner` using a deterministic CLI session adapter. The command is intentionally not the native game adapter yet; it validates the script -> bundle -> runner host-call path and emits a JSON run report. `--signal id=value` supplies typed boolean/integer/string signals to both the project semantic index and the CLI observation state.
+- `arcw agent script run <file.awfagent>` compiles a single Agent controller bundle and executes it through `arcweft-agent-runner` using a deterministic CLI session adapter. The command is intentionally not the native game adapter yet; it validates the script -> bundle -> runner host-call path and emits a JSON run report. `--signal id=value` supplies typed boolean/integer/string signals to both the project semantic index and the CLI observation state. `--trace-out <file.arcwx>` writes a JSON `AgentTraceRecord` stream derived from the runner debug events, with deterministic `blake3:` payload hashes and explicit run/session IDs.
 - `arcw debug db status|migrate` opens and migrates the rebuildable Agent debug `SQLite` database at `.arcweft/cache/agent-debug.sqlite3` by default.
 - `samples/agent-script/opening-smoke.awfagent` and `samples/agent-script/visual-regression.awfagent` mirror the package examples and currently pass `agent script check`. `samples/agent-script/cli-run-smoke.awfagent` is the minimal deterministic CLI runner smoke.
 
@@ -32,7 +32,7 @@ It is implementation state, not the stable language specification.
 
 - Agent Script reuses the existing expression, statement, block, attribute, contract/effect, and HIR lowering path.
 - No compatibility shim for the old line-command syntax is present.
-- `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point; `compile_agent_bundle_with_project` is the typed artifact entry point. Controller VM execution and host-call dispatch are owned by `arcweft-agent-runner`; CLI native game adapter execution and trace/replay persistence remain follow-up work.
+- `compile_agent_source` remains the parser/HIR-only entry point for lightweight syntax checks; `compile_agent_source_with_project` is the typed project-index entry point; `compile_agent_bundle_with_project` is the typed artifact entry point. Controller VM execution and host-call dispatch are owned by `arcweft-agent-runner`; CLI native game adapter execution, trace replay, and MCP trace surfaces remain follow-up work.
 - Agent source defaults such as omitted signature return type are preserved as syntax/HIR shape for later semantic/compiler resolution rather than being string-rewritten in the parser.
 - `invoke` is checked as a semantic action contract on a typed project entity. It does not accept string target IDs, does not fall back to physical actions, and validates payload record keys and values against named project-index Agent action parameters.
 - `arcweft-agent-contract-reference` was not added as a production crate. Its concepts were merged into `arcweft-agent-protocol` modules to avoid duplicate protocol surfaces.
@@ -83,6 +83,7 @@ It is implementation state, not the stable language specification.
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/visual-regression.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script check samples/agent-script/cli-run-smoke.awfagent --json`
 - `cargo run -p arcweft-cli -- agent script run samples/agent-script/cli-run-smoke.awfagent --json`
+- `cargo run -p arcweft-cli -- agent script run samples/agent-script/cli-run-smoke.awfagent --json --trace-out target/codex-agent-script-final/cli-run-smoke.arcwx`
 - `cargo test -p arcweft-cli --test check agent_script_run_json_executes_cli_session_smoke -- --exact --nocapture`
 - `cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings`
 - `cargo run -p arcweft-cli -- debug db status --path target/codex-agent-script-final/agent-debug-test.sqlite3 --json`
@@ -96,7 +97,7 @@ It is implementation state, not the stable language specification.
 
 - Type Agent references against actions and resources beyond the current choice/layer/signal/metric project-index coverage.
 - Extend Agent predicate lowering beyond the currently executable `signal(...).eq(...)` path as the Agent Prelude grows comparison and boolean-combinator surface syntax.
-- Persist runner debug events as `.arcwx` trace artifacts from CLI/MCP run and replay commands.
+- Extend `.arcwx` beyond CLI run trace writing: add replay commands, MCP trace resources, native game-adapter trace capture, and trace validation for captured blobs.
 - Extend CLI script run from the deterministic CLI session adapter to native game-adapter sessions, then add replay, action dispatch, wait, REPL, debug search, and RAG commands using the shared JSON/resource shapes. Add the matching MCP surfaces.
 - Add privacy classification enforcement, debug-store reindex/delete validation, CLI/MCP debug commands, and RAG explain surfaces.
 - Add end-to-end Windows validation once script run/replay and CLI/MCP commands exist.

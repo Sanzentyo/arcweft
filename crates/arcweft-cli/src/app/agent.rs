@@ -7,19 +7,23 @@ use super::runtime::{
 use super::shared::print_json;
 use arcweft_agent_protocol::{
     AgentResource, AgentResourceBody, AgentResourceKind,
-    ids::{AgentResourceUri, SessionId},
+    ids::{AgentResourceUri, AgentRunId, SessionId, StableHash},
     protocol::{
         ActionResult, AgentAction, AgentHostResponse, AgentSessionInfo, CaptureFormat,
         CaptureRequest, CaptureResult, ObservationEnvelope, ObserveRequest,
     },
+    trace::{AgentTraceKind, AgentTraceRecord},
     value::AgentValue,
 };
 use arcweft_agent_runner::{
-    AgentControllerRunConfig, AgentRunner, AgentRunnerConfig, AgentSession, NoopRagService,
-    RuntimeAgentCapability, RuntimeAgentPolicy,
+    AgentControllerRunConfig, AgentControllerRunReport, AgentRunError, AgentRunner,
+    AgentRunnerConfig, AgentSession, NoopRagService, RuntimeAgentCapability, RuntimeAgentPolicy,
 };
 use arcweft_core::value::RuntimeBinding;
-use arcweft_debug_model::sink::NullDebugEventSink;
+use arcweft_debug_model::{
+    event::{DebugEvent, DebugEventKind},
+    sink::DebugEventSink,
+};
 use arcweft_id::PublicId as SemaPublicId;
 use arcweft_lang_sema::{
     project_index::{EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash},
@@ -193,6 +197,10 @@ pub(super) struct AgentScriptRunOptions {
     max_ops: usize,
     #[arg(long = "signal", value_parser = parse_agent_script_signal_arg)]
     signals: Vec<AgentScriptSignalArg>,
+    #[arg(long = "trace-out")]
+    trace_out: Option<PathBuf>,
+    #[arg(long, default_value = "run.cli")]
+    run_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -328,9 +336,13 @@ struct AgentScriptRunReport {
     host_calls: usize,
     events_emitted: u64,
     final_status: Option<String>,
+    trace_path: Option<String>,
+    trace_records: usize,
     responses: Vec<AgentHostResponse>,
     error: Option<String>,
 }
+
+type CliAgentRunError = AgentRunError<Infallible, Infallible, Infallible>;
 
 fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitCode> {
     if !is_awfagent_path(&options.path) {
@@ -349,52 +361,7 @@ fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitC
         ExitCode::from(2)
     })?;
     let report = match arcweft_compiler::compile_agent_bundle_with_project(source, &project) {
-        Ok(compiled) => {
-            let session = CliAgentSession::new(options.signals.clone());
-            let mut runner = AgentRunner::new(
-                session,
-                NullDebugEventSink,
-                NoopRagService,
-                RuntimeAgentPolicy::new([
-                    RuntimeAgentCapability::Observe,
-                    RuntimeAgentCapability::Act,
-                    RuntimeAgentCapability::Capture,
-                    RuntimeAgentCapability::ResourceRead,
-                    RuntimeAgentCapability::Rag,
-                ]),
-                AgentRunnerConfig::new(SessionId::new("session.cli").expect("static session id")),
-            );
-            match runner.run_controller_bundle(
-                &compiled.bundle,
-                AgentControllerRunConfig {
-                    max_steps: options.max_steps,
-                    max_ops_per_step: options.max_ops,
-                },
-            ) {
-                Ok(run) => AgentScriptRunReport {
-                    path: options.path.display().to_string(),
-                    ok: true,
-                    agents: compiled.hir.agents().len(),
-                    steps: run.steps,
-                    host_calls: run.host_calls,
-                    events_emitted: run.events_emitted,
-                    final_status: run.final_status.map(|status| format!("{status:?}")),
-                    responses: run.responses,
-                    error: None,
-                },
-                Err(error) => AgentScriptRunReport {
-                    path: options.path.display().to_string(),
-                    ok: false,
-                    agents: compiled.hir.agents().len(),
-                    steps: 0,
-                    host_calls: 0,
-                    events_emitted: 0,
-                    final_status: None,
-                    responses: Vec::new(),
-                    error: Some(error.to_string()),
-                },
-            }
-        }
+        Ok(compiled) => agent_script_run_compiled(options, &compiled)?,
         Err(error) => AgentScriptRunReport {
             path: options.path.display().to_string(),
             ok: false,
@@ -403,6 +370,8 @@ fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitC
             host_calls: 0,
             events_emitted: 0,
             final_status: None,
+            trace_path: None,
+            trace_records: 0,
             responses: Vec::new(),
             error: Some(error.to_string()),
         },
@@ -422,6 +391,134 @@ fn agent_script_run_command(options: &AgentScriptRunOptions) -> Result<(), ExitC
     } else {
         Err(ExitCode::FAILURE)
     }
+}
+
+fn agent_script_run_compiled(
+    options: &AgentScriptRunOptions,
+    compiled: &arcweft_compiler::CompiledAgentBundle,
+) -> Result<AgentScriptRunReport, ExitCode> {
+    let session = CliAgentSession::new(options.signals.clone());
+    let mut runner = AgentRunner::new(
+        session,
+        CollectingDebugSink::default(),
+        NoopRagService,
+        RuntimeAgentPolicy::new([
+            RuntimeAgentCapability::Observe,
+            RuntimeAgentCapability::Act,
+            RuntimeAgentCapability::Capture,
+            RuntimeAgentCapability::ResourceRead,
+            RuntimeAgentCapability::Rag,
+        ]),
+        AgentRunnerConfig::new(agent_cli_session_id()),
+    );
+    let run_result = runner.run_controller_bundle(
+        &compiled.bundle,
+        AgentControllerRunConfig {
+            max_steps: options.max_steps,
+            max_ops_per_step: options.max_ops,
+        },
+    );
+    let debug_events = runner.debug_mut().events.clone();
+    let run_id = AgentRunId::new(options.run_id.clone()).map_err(|error| {
+        eprintln!("error: invalid run id: {error}");
+        ExitCode::from(2)
+    })?;
+    Ok(agent_script_run_report_from_result(
+        options,
+        compiled,
+        run_result,
+        &run_id,
+        &debug_events,
+    ))
+}
+
+fn agent_script_run_report_from_result(
+    options: &AgentScriptRunOptions,
+    compiled: &arcweft_compiler::CompiledAgentBundle,
+    run_result: Result<AgentControllerRunReport, CliAgentRunError>,
+    run_id: &AgentRunId,
+    debug_events: &[DebugEvent],
+) -> AgentScriptRunReport {
+    let trace_records = agent_trace_records(run_id, &agent_cli_session_id(), debug_events);
+    let trace_result = options
+        .trace_out
+        .as_ref()
+        .map(|path| write_agent_trace(path, &trace_records).map(|()| path.display().to_string()))
+        .transpose();
+    match (run_result, trace_result) {
+        (Ok(run), Ok(trace_path)) => agent_script_run_success_report(
+            options,
+            compiled.hir.agents().len(),
+            run,
+            trace_path,
+            trace_records.len(),
+        ),
+        (Err(error), Ok(trace_path)) => agent_script_run_error_report(
+            options,
+            compiled.hir.agents().len(),
+            trace_path,
+            trace_records.len(),
+            error.to_string(),
+        ),
+        (_, Err(error)) => agent_script_run_error_report(
+            options,
+            compiled.hir.agents().len(),
+            options
+                .trace_out
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            trace_records.len(),
+            error,
+        ),
+    }
+}
+
+fn agent_script_run_success_report(
+    options: &AgentScriptRunOptions,
+    agents: usize,
+    run: AgentControllerRunReport,
+    trace_path: Option<String>,
+    trace_records: usize,
+) -> AgentScriptRunReport {
+    AgentScriptRunReport {
+        path: options.path.display().to_string(),
+        ok: true,
+        agents,
+        steps: run.steps,
+        host_calls: run.host_calls,
+        events_emitted: run.events_emitted,
+        final_status: run.final_status.map(|status| format!("{status:?}")),
+        trace_path,
+        trace_records,
+        responses: run.responses,
+        error: None,
+    }
+}
+
+fn agent_script_run_error_report(
+    options: &AgentScriptRunOptions,
+    agents: usize,
+    trace_path: Option<String>,
+    trace_records: usize,
+    error: String,
+) -> AgentScriptRunReport {
+    AgentScriptRunReport {
+        path: options.path.display().to_string(),
+        ok: false,
+        agents,
+        steps: 0,
+        host_calls: 0,
+        events_emitted: 0,
+        final_status: None,
+        trace_path,
+        trace_records,
+        responses: Vec::new(),
+        error: Some(error),
+    }
+}
+
+fn agent_cli_session_id() -> SessionId {
+    SessionId::new("session.cli").expect("static session id")
 }
 
 fn is_awfagent_path(path: &Path) -> bool {
@@ -458,6 +555,122 @@ fn parse_agent_script_signal_arg(value: &str) -> Result<AgentScriptSignalArg, St
         ),
     };
     Ok(AgentScriptSignalArg { id, value, ty })
+}
+
+#[derive(Clone, Debug, Default)]
+struct CollectingDebugSink {
+    events: Vec<DebugEvent>,
+}
+
+impl DebugEventSink for CollectingDebugSink {
+    type Error = Infallible;
+
+    fn append(&mut self, event: &DebugEvent) -> Result<(), Self::Error> {
+        self.events.push(event.clone());
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+fn agent_trace_records(
+    run_id: &AgentRunId,
+    session_id: &SessionId,
+    events: &[DebugEvent],
+) -> Vec<AgentTraceRecord> {
+    let mut records = Vec::with_capacity(events.len() + 2);
+    records.push(agent_trace_record(
+        run_id,
+        Some(session_id),
+        0,
+        None,
+        AgentTraceKind::RunStarted,
+        serde_json::json!({ "source": "arcw agent script run" }),
+    ));
+    records.extend(events.iter().map(|event| {
+        agent_trace_record(
+            run_id,
+            Some(&event.session_id),
+            event.sequence,
+            event.tick,
+            agent_trace_kind(event.kind),
+            event.payload.clone(),
+        )
+    }));
+    records.push(agent_trace_record(
+        run_id,
+        Some(session_id),
+        events
+            .last()
+            .map_or(1, |event| event.sequence.saturating_add(1)),
+        None,
+        AgentTraceKind::RunFinished,
+        serde_json::json!({ "debug_events": events.len() }),
+    ));
+    records
+}
+
+fn agent_trace_record(
+    run_id: &AgentRunId,
+    session_id: Option<&SessionId>,
+    sequence: u64,
+    tick: Option<u64>,
+    kind: AgentTraceKind,
+    payload: serde_json::Value,
+) -> AgentTraceRecord {
+    AgentTraceRecord {
+        schema_version: 1,
+        run_id: run_id.clone(),
+        session_id: session_id.cloned(),
+        sequence,
+        tick,
+        kind,
+        payload_hash: stable_payload_hash(&payload),
+        payload,
+        blob_refs: Vec::new(),
+    }
+}
+
+fn agent_trace_kind(kind: DebugEventKind) -> AgentTraceKind {
+    match kind {
+        DebugEventKind::RunStarted | DebugEventKind::SessionStarted => AgentTraceKind::RunStarted,
+        DebugEventKind::RunFinished | DebugEventKind::SessionFinished => {
+            AgentTraceKind::RunFinished
+        }
+        DebugEventKind::StepStarted | DebugEventKind::StepFinished => AgentTraceKind::VmStep,
+        DebugEventKind::Observation => AgentTraceKind::ObservationReceived,
+        DebugEventKind::Action => AgentTraceKind::ActionCompleted,
+        DebugEventKind::Capture => AgentTraceKind::CaptureStored,
+        DebugEventKind::Diagnostic | DebugEventKind::ReplCell => AgentTraceKind::DiagnosticEmitted,
+        DebugEventKind::RagQuery => AgentTraceKind::RagQueryCompleted,
+    }
+}
+
+fn stable_payload_hash(payload: &serde_json::Value) -> StableHash {
+    let bytes = serde_json::to_vec(payload).unwrap_or_default();
+    StableHash::new(format!("blake3:{}", blake3::hash(&bytes).to_hex()))
+        .expect("generated trace payload hash is nonempty")
+}
+
+fn write_agent_trace(path: &Path, records: &[AgentTraceRecord]) -> Result<(), String> {
+    if path
+        .extension()
+        .is_none_or(|extension| extension != "arcwx")
+    {
+        return Err(format!(
+            "{} is not an .arcwx trace output path",
+            path.display()
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+    let bytes = serde_json::to_vec_pretty(records)
+        .map_err(|error| format!("failed to encode trace: {error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("failed to write {}: {error}", path.display()))
 }
 
 fn agent_script_project_index(
