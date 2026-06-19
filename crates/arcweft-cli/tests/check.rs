@@ -922,16 +922,16 @@ fn agent_repl_connects_source_from_input_session() {
     let _ = fs::remove_file(&input_path);
     fs::write(
         &input_path,
-        format!(
-            ":help\n:connect source {}\n:observe\n:actions\n:complete :capture layer\n:highlight let frame = try observe(@flow.opening)\n:capture viewport\n:quit\n",
-            rich_text_showcase_path().display()
-        ),
+        ":help\n:observe\n:actions\n:complete :capture layer\n:highlight let frame = try observe(@flow.opening)\n:capture viewport\n:quit\n",
     )
     .expect("write REPL connect input");
 
+    let connect_target = format!("source {}", rich_text_showcase_path().display());
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("repl")
+        .arg("--connect")
+        .arg(&connect_target)
         .arg("--input")
         .arg(&input_path)
         .arg("--steps")
@@ -952,22 +952,12 @@ fn agent_repl_connects_source_from_input_session() {
 
     assert_eq!(report["ok"], true);
     assert_eq!(report["final_tick"], 0);
-    let cells = report["cells"].as_array().expect("cells are present");
-    let connect = cells
-        .iter()
-        .find(|cell| {
-            cell["input"]
-                .as_str()
-                .is_some_and(|input| input.starts_with(":connect source "))
-        })
-        .expect("connect cell is present");
-    assert_eq!(connect["status"], "ok");
-    assert_eq!(connect["value"]["connected"], true);
-    assert_eq!(connect["value"]["connection"]["kind"], "source");
+    assert_eq!(report["connection"]["kind"], "source");
     assert_eq!(
-        connect["value"]["connection"]["path"],
+        report["connection"]["path"],
         rich_text_showcase_path().display().to_string()
     );
+    let cells = report["cells"].as_array().expect("cells are present");
     assert_agent_repl_meta_ok(cells, ":observe");
     assert_agent_repl_meta_ok(cells, ":actions");
     let complete = cells

@@ -257,6 +257,8 @@ pub(super) struct AgentReplOptions {
     #[arg(long = "read-only")]
     read_only: bool,
     #[arg(long)]
+    connect: Option<String>,
+    #[arg(long)]
     input: Option<PathBuf>,
     #[arg(long)]
     json: bool,

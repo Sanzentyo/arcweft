@@ -398,7 +398,7 @@ synthesizing a pointer click. Inline presentation image actions projected from
 `image(... target=..., action=...)` can therefore be exercised headlessly with
 `invoke(@target..., "action...")`.
 
-`arcw agent repl <file.arcw|--profile <id>> --input <session.txt> [--debug-db <path>] [--trace <file.arcwx> [--read-only]] [--json]`
+`arcw agent repl [<file.arcw>|--profile <id>|--connect <target>] --input <session.txt> [--debug-db <path>] [--trace <file.arcwx> [--read-only]] [--json]`
 is the deterministic first REPL frontend. It reads cells from a file or stdin,
 reserves meta commands under `:`, and currently supports `:help`, `:type`,
 `:ast`, `:hir`, `:bytecode`, `:parse`, `:classify`, `:observe`, `:actions`,
@@ -422,8 +422,9 @@ boundary rules. Incomplete cells return explicit expected boundary tokens such
 as `)`, `]`, `}`, or `"` for multiline continuation.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
-cells; remote `stdio:` endpoints are rejected until a real retained remote REPL
-transport exists. `--trace <file.arcwx>` validates a saved Agent execution trace
+cells. `--connect <target>` accepts the same `current`, `source PATH`, direct
+`.arcw` path, or profile target at startup. Remote `stdio:`/`mcp:` endpoints
+are rejected until a real retained remote REPL transport exists. `--trace <file.arcwx>` validates a saved Agent execution trace
 through the same `.arcwx` reader used by `agent script trace`, caches it as an
 Agent trace resource, and exposes the loaded resource through `:trace`.
 `:query TEXT` requires either a prior observation or a loaded trace and reuses

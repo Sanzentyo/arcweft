@@ -2033,6 +2033,7 @@ struct AgentReplRunReport {
     ok: bool,
     cells: Vec<AgentReplCellReport>,
     final_tick: Option<usize>,
+    connection: Option<AgentReplConnection>,
     debug_db: Option<String>,
     trace_path: Option<String>,
     trace_records: usize,
@@ -2100,7 +2101,9 @@ fn agent_repl_command(
     let source = agent_repl_input(options)?;
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
+    let connection = agent_repl_initial_connection(options)?;
     let mut state = AgentReplState {
+        connection,
         debug_store,
         debug_db_path,
         trace_path: trace.path,
@@ -2141,6 +2144,7 @@ fn agent_repl_command(
             ok,
             cells,
             final_tick: state.report.as_ref().map(|report| report.tick),
+            connection: state.connection.clone(),
             debug_db: state.debug_db_path.clone(),
             trace_path: state.trace_path.clone(),
             trace_records: state.trace_records,
@@ -2149,6 +2153,22 @@ fn agent_repl_command(
         })?;
     }
     if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+fn agent_repl_initial_connection(
+    options: &AgentReplOptions,
+) -> Result<Option<AgentReplConnection>, ExitCode> {
+    let Some(target) = options.connect.as_deref() else {
+        return Ok(None);
+    };
+    if options.read_only {
+        eprintln!("error: agent repl --connect is not available with --read-only");
+        return Err(ExitCode::from(2));
+    }
+    agent_repl_parse_connection(target, options).map_err(|message| {
+        eprintln!("error: {message}");
+        ExitCode::from(2)
+    })
 }
 
 fn agent_repl_debug_store(
@@ -2484,6 +2504,9 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
                 ":complete SOURCE_BEFORE_CURSOR",
                 ":highlight SOURCE",
                 ":quit"
+            ],
+            "startup_options": [
+                "--connect current|source PATH|profile ID [--manifest PATH]"
             ]
         }),
     )
