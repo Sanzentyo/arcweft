@@ -1088,6 +1088,91 @@ fn assert_repl_debug_cell_persisted(debug_db_path: &Path) {
 
 #[test]
 #[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_marks_failed_cells_partially_effectful_from_host_events() {
+    let input_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-partial-effects-{}.txt",
+        std::process::id()
+    ));
+    let debug_db_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-partial-effects-{}.sqlite3",
+        std::process::id()
+    ));
+    fs::create_dir_all(input_path.parent().expect("input target dir"))
+        .expect("create REPL partial-effects input target dir");
+    let _ = fs::remove_file(&input_path);
+    let _ = fs::remove_file(&debug_db_path);
+    fs::write(
+        &input_path,
+        "while true {}\nexpect(false, message = \"boom\")\n",
+    )
+    .expect("write REPL partial-effects input");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--debug-db")
+        .arg(&debug_db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl runs partial-effects input session");
+    assert!(
+        !output.status.success(),
+        "partial-effects REPL session should fail while returning JSON\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+    assert_eq!(report["ok"], false);
+    let cells = report["cells"].as_array().expect("cells are present");
+    assert_repl_failed_cell_effect_summary(cells, "while true {}", 0, false);
+    assert_repl_failed_cell_effect_summary(cells, "expect(false, message = \"boom\")", 1, true);
+
+    let store = DebugStore::open(&debug_db_path).expect("open REPL debug database");
+    let session = SessionId::new("session.cli").expect("CLI session id is valid");
+    let repl_cells = store
+        .repl_cells_for_session(&session)
+        .expect("load persisted REPL cells");
+    assert_eq!(repl_cells.len(), 2);
+    assert_eq!(repl_cells[0].source, "while true {}");
+    assert!(!repl_cells[0].partially_effectful);
+    assert_eq!(
+        repl_cells[0]
+            .display
+            .as_ref()
+            .and_then(|display| display["host_calls"].as_u64()),
+        Some(0)
+    );
+    assert_eq!(repl_cells[1].source, "expect(false, message = \"boom\")");
+    assert!(repl_cells[1].partially_effectful);
+    assert_eq!(
+        repl_cells[1]
+            .display
+            .as_ref()
+            .and_then(|display| display["host_calls"].as_u64()),
+        Some(1)
+    );
+}
+
+fn assert_repl_failed_cell_effect_summary(
+    cells: &[serde_json::Value],
+    input: &str,
+    host_calls: u64,
+    partially_effectful: bool,
+) {
+    let cell = cells
+        .iter()
+        .find(|cell| cell["input"] == input)
+        .unwrap_or_else(|| panic!("{input} cell is present"));
+    assert_eq!(cell["status"], "error", "{input} should fail: {cell}");
+    assert_eq!(cell["value"]["host_calls"], host_calls);
+    assert_eq!(cell["value"]["partially_effectful"], partially_effectful);
+}
+
+#[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
 fn agent_repl_saves_loads_and_drops_bindings_from_input_session() {
     let input_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/repl-save-load-{}.txt",

@@ -57,6 +57,7 @@ use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
     embedding::EmbeddingModelDescriptor,
+    event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
 };
@@ -3281,7 +3282,15 @@ fn agent_repl_eval_compiled_cell(
         ),
         Err(error) => {
             let message = error.to_string();
-            agent_repl_run_error_report(index, input, state, parse_report, &message)
+            let effect_summary = agent_repl_run_effect_summary(&runner.debug_mut().events);
+            agent_repl_run_error_report(
+                index,
+                input,
+                state,
+                &parse_report,
+                &message,
+                effect_summary,
+            )
         }
     }
 }
@@ -3413,16 +3422,24 @@ fn agent_repl_run_error_report(
     index: usize,
     input: &str,
     state: &mut AgentReplState,
-    parse_report: serde_json::Value,
+    parse_report: &serde_json::Value,
     message: &str,
+    effect_summary: AgentReplRunEffectSummary,
 ) -> AgentReplCellReport {
+    let value = serde_json::json!({
+        "parse": parse_report,
+        "run_error": message,
+        "host_calls": effect_summary.host_calls,
+        "events_emitted": effect_summary.events_emitted,
+        "partially_effectful": effect_summary.partially_effectful,
+    });
     AgentReplCellReport {
         index,
         input: input.to_owned(),
         kind: "cell".to_owned(),
         status: "error".to_owned(),
         message: Some(message.to_owned()),
-        value: Some(parse_report),
+        value: Some(value.clone()),
         quit: false,
     }
     .with_persistence(agent_repl_persist_cell(
@@ -3430,9 +3447,39 @@ fn agent_repl_run_error_report(
         index,
         input,
         "error",
-        serde_json::json!({ "run_error": message }),
-        true,
+        value,
+        effect_summary.partially_effectful,
     ))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AgentReplRunEffectSummary {
+    host_calls: usize,
+    events_emitted: u64,
+    partially_effectful: bool,
+}
+
+fn agent_repl_run_effect_summary(events: &[DebugEvent]) -> AgentReplRunEffectSummary {
+    let host_calls = events
+        .iter()
+        .filter(|event| agent_repl_effectful_debug_event(event.kind))
+        .count();
+    AgentReplRunEffectSummary {
+        host_calls,
+        events_emitted: events.last().map_or(0, |event| event.sequence),
+        partially_effectful: host_calls > 0,
+    }
+}
+
+fn agent_repl_effectful_debug_event(kind: DebugEventKind) -> bool {
+    matches!(
+        kind,
+        DebugEventKind::Observation
+            | DebugEventKind::Action
+            | DebugEventKind::Capture
+            | DebugEventKind::Assertion
+            | DebugEventKind::RagQuery
+    )
 }
 
 fn agent_repl_persist_cell(
