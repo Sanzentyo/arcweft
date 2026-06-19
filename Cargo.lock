@@ -233,6 +233,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-debug-model",
  "arcweft-render-text",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
 ]
