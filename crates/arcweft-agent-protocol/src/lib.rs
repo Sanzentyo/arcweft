@@ -391,6 +391,10 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 /// Renderer path that produced an image capture.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -478,6 +482,8 @@ pub struct AgentObservedObject {
     pub layer: String,
     pub role: String,
     pub visible: bool,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub bbox: AgentBBox,
     pub polygon: Vec<AgentPoint>,
     pub capture_refs: AgentObjectCaptureRefs,
@@ -1615,6 +1621,7 @@ mod tests {
             layer: "dialogue".to_owned(),
             role: "textbox".to_owned(),
             visible: true,
+            enabled: true,
             polygon: bbox.polygon(),
             bbox: bbox.clone(),
             capture_refs: test_capture_refs(),
@@ -2279,6 +2286,7 @@ mod tests {
             layer: "hud".to_owned(),
             role: "image".to_owned(),
             visible: true,
+            enabled: true,
             bbox: bbox.clone(),
             polygon: bbox.polygon(),
             capture_refs: test_capture_refs(),
@@ -2324,6 +2332,7 @@ mod tests {
             object_json["content"]["opacity_milli"],
             serde_json::json!(750)
         );
+        assert_eq!(object_json["enabled"], serde_json::json!(true));
         assert_eq!(
             object_json["content"]["transform"]["tx_milli"],
             serde_json::json!(12000)

@@ -277,6 +277,7 @@ mod tests {
             layer: "ui".to_owned(),
             role: "panel".to_owned(),
             visible: true,
+            enabled: true,
             polygon: bbox.polygon(),
             bbox,
             capture_refs: AgentObjectCaptureRefs {
@@ -988,6 +989,8 @@ mod tests {
                     "transform.tx = 24px".to_owned(),
                     "transform.ty = 12px".to_owned(),
                     "depth = 2500".to_owned(),
+                    "enabled = false".to_owned(),
+                    "visible = true".to_owned(),
                     "action = action.inspect.pulse".to_owned(),
                     "param.role = animated-hotspot".to_owned(),
                     "param.hit_channel = channel.preview".to_owned(),
@@ -1004,6 +1007,7 @@ mod tests {
         assert_eq!(object.entity.as_deref(), Some("image.test.pulse"));
         assert_eq!(object.object_layer.as_deref(), Some("layer.foreground"));
         assert_eq!(object.object_depth, Some(2500));
+        assert!(!object.enabled);
         assert_eq!(object.bbox.x, 36);
         assert_eq!(object.bbox.y, 46);
         assert_eq!(object.bbox.width, 56);
@@ -1047,6 +1051,16 @@ mod tests {
             })
         );
         assert_eq!(content.actions, vec!["action.inspect.pulse"]);
+        assert_eq!(
+            agent_action_targets(&observation.objects),
+            vec![AgentActionTarget {
+                id: "action.inspect.pulse".to_owned(),
+                target: "target.test.pulse".to_owned(),
+                action: AgentActionKind::Invoke,
+                kind: AgentActionDispatch::Semantic,
+                enabled: false,
+            }]
+        );
         assert_eq!(
             content.params.get("param.role"),
             Some(&AgentImageObjectParam::Text {
@@ -1096,6 +1110,43 @@ mod tests {
         assert_eq!(agent_image_call_opacity_milli("0.5"), Some(500));
         assert_eq!(agent_image_call_opacity_milli("500"), Some(500));
         assert_eq!(agent_image_call_opacity_milli("2.0"), Some(1_000));
+    }
+
+    #[test]
+    fn agent_runtime_image_call_omits_invisible_image_object() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("samples")
+            .join("image-animation.arcw");
+        let viewport = AgentViewport {
+            width: 320,
+            height: 180,
+            scale: 1.0,
+        };
+        let (observation, diagnostics) = agent_runtime_presentation_image_observation(
+            &source,
+            2,
+            &viewport,
+            &[RuntimeCall {
+                callee: "image".to_owned(),
+                args: vec![
+                    "asset = @asset.bg.pulse".to_owned(),
+                    "id = @image.test.hidden".to_owned(),
+                    "x = 12px".to_owned(),
+                    "y = 34px".to_owned(),
+                    "width = 56px".to_owned(),
+                    "height = 78px".to_owned(),
+                    "visible = false".to_owned(),
+                    "action = action.inspect.hidden".to_owned(),
+                ],
+            }],
+            0.15,
+        );
+
+        assert!(diagnostics.is_empty());
+        assert!(observation.objects.is_empty());
+        assert!(observation.image_frames.frames_by_object.is_empty());
     }
 
     #[test]
@@ -5202,16 +5253,7 @@ fn finish_agent_observation_report(
             value: value.clone(),
         })
         .collect::<Vec<_>>();
-    let actions = objects
-        .iter()
-        .map(|object| AgentActionTarget {
-            id: format!("action.advance_text.{}", object.id),
-            target: object.id.clone(),
-            action: AgentActionKind::AdvanceText,
-            kind: AgentActionDispatch::Semantic,
-            enabled: true,
-        })
-        .collect::<Vec<_>>();
+    let actions = agent_action_targets(&objects);
     let layers = agent_observed_layers("cli", tick, &objects);
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let status = flow_status_label(&executor.fiber().status);
@@ -5375,6 +5417,8 @@ struct AgentRuntimeImageCall {
     actions: Vec<arcweft_id::PublicId>,
     params: BTreeMap<arcweft_id::PublicId, ImageObjectParam>,
     background_slot: bool,
+    enabled: bool,
+    visible: bool,
 }
 
 #[derive(Debug, Default)]
@@ -5449,6 +5493,8 @@ fn agent_background_runtime_image_call(
         actions: Vec::new(),
         params: BTreeMap::new(),
         background_slot: true,
+        enabled: true,
+        visible: true,
     })
 }
 
@@ -5493,6 +5539,12 @@ fn agent_object_runtime_image_call(
         .and_then(agent_image_call_opacity_milli)
         .unwrap_or(1_000);
     let transform = agent_image_call_transform(call);
+    let enabled = agent_call_named_value(call, "enabled")
+        .and_then(agent_image_call_bool)
+        .unwrap_or(true);
+    let visible = agent_call_named_value(call, "visible")
+        .and_then(agent_image_call_bool)
+        .unwrap_or(true);
     Ok(AgentRuntimeImageCall {
         asset,
         object,
@@ -5506,6 +5558,8 @@ fn agent_object_runtime_image_call(
         actions: agent_image_call_actions(call),
         params: agent_image_call_params(call),
         background_slot: false,
+        enabled,
+        visible,
     })
 }
 
@@ -5654,6 +5708,14 @@ fn agent_image_call_opacity_milli(value: &str) -> Option<u16> {
         .ok()
 }
 
+fn agent_image_call_bool(value: &str) -> Option<bool> {
+    match value.trim().trim_matches('"').trim_matches('\'') {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
 fn agent_image_call_transform(call: &RuntimeCall) -> ImageObjectTransform {
     let mut transform = ImageObjectTransform::identity();
     if let Some(value) = agent_call_named_value(call, "transform.m11")
@@ -5759,7 +5821,9 @@ fn agent_image_presentation_input(
     .with_fit(call.fit)
     .with_opacity_milli(call.opacity_milli)
     .with_transform(call.transform)
-    .with_depth_milli(call.depth_milli);
+    .with_depth_milli(call.depth_milli)
+    .with_enabled(call.enabled)
+    .with_visible(call.visible);
     let object = call.actions.iter().cloned().fold(
         object,
         arcweft_presentation::image::ImagePresentationObject::with_action,
@@ -5825,17 +5889,46 @@ fn agent_refresh_observation_object_indexes(report: &mut AgentObservationReport)
     report.layers = agent_observed_layers("cli", report.tick, &report.objects);
     report.presentation_tree =
         AgentPresentationTree::from_layers_and_objects(&report.layers, &report.objects);
-    report.actions = report
-        .objects
+    report.actions = agent_action_targets(&report.objects);
+}
+
+fn agent_action_targets(objects: &[AgentObservedObject]) -> Vec<AgentActionTarget> {
+    objects
         .iter()
-        .map(|object| AgentActionTarget {
-            id: format!("action.advance_text.{}", object.id),
-            target: object.id.clone(),
-            action: AgentActionKind::AdvanceText,
-            kind: AgentActionDispatch::Semantic,
-            enabled: true,
-        })
-        .collect();
+        .flat_map(agent_action_targets_for_object)
+        .collect()
+}
+
+fn agent_action_targets_for_object(object: &AgentObservedObject) -> Vec<AgentActionTarget> {
+    match &object.content {
+        AgentObservedObjectContent::RichText { .. } if object.role == "textbox" => {
+            vec![AgentActionTarget {
+                id: format!("action.advance_text.{}", object.id),
+                target: object.id.clone(),
+                action: AgentActionKind::AdvanceText,
+                kind: AgentActionDispatch::Semantic,
+                enabled: object.visible && object.enabled,
+            }]
+        }
+        AgentObservedObjectContent::Image(content) => content
+            .actions
+            .iter()
+            .map(|action| AgentActionTarget {
+                id: action.clone(),
+                target: content
+                    .target
+                    .clone()
+                    .or_else(|| content.object.clone())
+                    .unwrap_or_else(|| object.id.clone()),
+                action: AgentActionKind::Invoke,
+                kind: AgentActionDispatch::Semantic,
+                enabled: object.visible && object.enabled,
+            })
+            .collect(),
+        AgentObservedObjectContent::RichText { .. } | AgentObservedObjectContent::Custom { .. } => {
+            Vec::new()
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -6258,6 +6351,7 @@ fn agent_textbox_object(
         layer: "dialogue".to_owned(),
         role: "textbox".to_owned(),
         visible: true,
+        enabled: true,
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
         capture_refs,
@@ -6376,6 +6470,7 @@ fn agent_image_observation_from_ui_item(
             layer: item.layer().public_id().as_str().to_owned(),
             role: "image".to_owned(),
             visible: semantic.is_none_or(arcweft_ui::UiSemanticNode::visible),
+            enabled: semantic.is_none_or(arcweft_ui::UiSemanticNode::enabled),
             bbox: bbox.clone(),
             polygon,
             capture_refs: agent_object_capture_refs(session_id, step, &object_id, &bbox),
@@ -7578,6 +7673,7 @@ fn agent_rich_text_child_object(
         layer: "dialogue.rich_text".to_owned(),
         role: spec.role.to_owned(),
         visible: textbox.visible,
+        enabled: textbox.enabled,
         bbox: spec.bbox.clone(),
         polygon: spec.bbox.polygon(),
         capture_refs: agent_object_capture_refs_for_page(

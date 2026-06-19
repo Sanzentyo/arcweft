@@ -47,9 +47,10 @@ preserved.
 `ImagePresentationObject` binds an encoded asset reference to a stable image
 object id, object layer, interaction target, layer-local bounds, fit,
 alignment, opacity, depth, fixed-point transform, deterministic playback
-policy, typed params, and semantic actions. It lowers to `SemanticRole::Image`
-without renderer or filesystem dependencies, so hit-test, Agent observation,
-and native submission can consume one shared object model.
+policy, typed params, enabled/visible lifecycle flags, and semantic actions. It
+lowers to `SemanticRole::Image` without renderer or filesystem dependencies,
+so hit-test, Agent observation, action dispatch metadata, and native submission
+can consume one shared object model.
 
 `arcweft-runtime-host` exposes committed UI image display items as
 `UiFrameImageItem` values carrying render layer, frame-local node id, `ImageId`,
@@ -145,8 +146,8 @@ that visual-time frame selection, not wall-clock time, drives the active image
 frame. The same sample also includes `image_sprite_overlay`, which combines a
 background image with a bounded foreground `image(...)` object using authored
 id, target, layer, bounds, fit, opacity, depth, semantic action, custom
-`transform.*` matrix/translation metadata, `param.*` metadata, and animated
-frame timing.
+`transform.*` matrix/translation metadata, enabled/visible lifecycle flags,
+`param.*` metadata, and animated frame timing.
 
 The source-level `image(...)` surface now accepts image object metadata in the
 same call that defines the visual object:
@@ -166,6 +167,8 @@ image(
   transform.tx = 24px,
   transform.ty = 12px,
   depth = 2500,
+  enabled = true,
+  visible = true,
   action = "action.inspect.pulse_sprite",
   param.role = "animated-hotspot"
 )
@@ -178,13 +181,18 @@ field.
 `transform.tx` and `transform.ty` accept pixel lengths. `transform.m11`,
 `transform.m12`, `transform.m21`, and `transform.m22` accept fixed-point matrix
 components and default to the identity matrix.
+`visible = false` omits the image object from UI lowering and Agent
+observation. `enabled = false` keeps the observed object and hit-test geometry
+available, but emitted semantic actions for that object are marked disabled.
 The UI display list preserves the semantic spec id for image nodes, and
 `UiImageSource` preserves presentation metadata for source-table based frame
 resolution. Agent observation therefore emits the authored image object id,
 target, asset, action list, custom typed params, object layer, object opacity,
 object transform, object depth, active frame index, local image time, and
 intrinsic dimensions from the same presentation object that native capture and
-hit-test use.
+hit-test use. Authored image actions are also exposed in the Agent top-level
+`actions[]` list as semantic `invoke` targets, using the authored interaction
+target when present.
 
 `arcweft-render-native` owns the first real native image rendering path:
 `capture_image_quads_rgba` uploads RGBA8 image frames to wgpu textures and
@@ -227,9 +235,9 @@ image capture.
    statically known.
 2. Generalize the source-level image surface from the current `bg(...)` and
    bounded `image(...)` calls into declared image objects with hit-test
-   proxies and lifecycle semantics. Depth, transforms, semantic actions, and
-   custom `param.*` metadata are now present on the bounded source-level call
-   path and Agent observation path.
+   proxies. Depth, transforms, lifecycle flags, semantic actions, and custom
+   `param.*` metadata are now present on the bounded source-level call path and
+   Agent observation path.
 3. Add clipped object capture, layer capture, and pinned-frame readback
    fixtures that exercise non-fullscreen image geometry through direct
    `--read-uri` and MCP resource reads.

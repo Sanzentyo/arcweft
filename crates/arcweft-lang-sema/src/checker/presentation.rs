@@ -178,6 +178,9 @@ impl TypeChecker<'_> {
                 "opacity" => {
                     self.check_presentation_image_opacity_value(value);
                 }
+                "enabled" | "visible" => {
+                    self.expect_expr_type(value, &TypeKind::Bool, "image lifecycle flag");
+                }
                 "x" | "y" | "width" | "height" | "transform.tx" | "transform.ty" => {
                     self.check_expr(value);
                 }
