@@ -31,6 +31,7 @@ pub struct ImagePlayback {
     start_time_millis: u64,
     paused_at_millis: Option<u64>,
     rate_milli: u32,
+    pinned_local_time_millis: Option<u64>,
 }
 
 /// Image source registered outside the retained fragment.
@@ -93,6 +94,7 @@ impl ImagePlayback {
             start_time_millis,
             paused_at_millis: None,
             rate_milli: 1000,
+            pinned_local_time_millis: None,
         }
     }
 
@@ -108,6 +110,12 @@ impl ImagePlayback {
         self
     }
 
+    #[must_use]
+    pub const fn pinned_local_time(mut self, local_time_millis: u64) -> Self {
+        self.pinned_local_time_millis = Some(local_time_millis);
+        self
+    }
+
     pub const fn start_time_millis(self) -> u64 {
         self.start_time_millis
     }
@@ -120,7 +128,14 @@ impl ImagePlayback {
         self.rate_milli
     }
 
+    pub const fn pinned_local_time_millis(self) -> Option<u64> {
+        self.pinned_local_time_millis
+    }
+
     pub fn local_time_millis(self, visual_time_millis: u64) -> u64 {
+        if let Some(pinned) = self.pinned_local_time_millis {
+            return pinned;
+        }
         let sample_time = self.paused_at_millis.unwrap_or(visual_time_millis);
         let elapsed = sample_time.saturating_sub(self.start_time_millis);
         if self.rate_milli == 0 {

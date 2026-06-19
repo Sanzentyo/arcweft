@@ -667,6 +667,130 @@ mod tests {
     }
 
     #[test]
+    fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
+        use arcweft_id::PublicId;
+        use arcweft_image::{
+            DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
+        };
+        use arcweft_presentation::hit::HitRect;
+        use arcweft_presentation::image::{
+            ImageAssetRef, ImageObjectId, ImageObjectPlayback, ImagePresentationObject,
+        };
+        use arcweft_presentation::input::InteractionTarget;
+        use arcweft_presentation::layer::{
+            LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
+        };
+        use arcweft_runtime_host::UiFrameCommitBuilder;
+        use arcweft_ui::{UiImagePresentationFrame, UiImagePresentationInput};
+
+        fn public_id(value: &str) -> PublicId {
+            PublicId::try_new(value).unwrap()
+        }
+
+        let dimensions = ImageDimensions::new(2, 1).unwrap();
+        let image = DecodedImage::new(
+            ImageFormat::Gif,
+            dimensions,
+            ImageRepetition::Infinite,
+            vec![
+                DecodedImageFrame::new(0, dimensions, 100, vec![8, 8, 8, 255, 9, 9, 9, 255])
+                    .unwrap(),
+                DecodedImageFrame::new(1, dimensions, 100, vec![30, 40, 50, 255, 60, 70, 80, 255])
+                    .unwrap(),
+            ],
+        )
+        .unwrap();
+        let root = LayerId::new(public_id("layer.root"));
+        let hud = LayerId::new(public_id("layer.hud"));
+        let mut layers = LayerTree::new(LayerNode::new(
+            root.clone(),
+            LayerKind::Root,
+            LayerOrder {
+                phase: RenderPhase::Background,
+                z: 0,
+                stable_index: 0,
+            },
+        ));
+        layers
+            .insert(
+                LayerNode::new(
+                    hud.clone(),
+                    LayerKind::GameUi,
+                    LayerOrder {
+                        phase: RenderPhase::GameUi,
+                        z: 0,
+                        stable_index: 0,
+                    },
+                )
+                .with_parent(root),
+            )
+            .unwrap();
+        let object = ImagePresentationObject::new(
+            ImageObjectId::new(public_id("image.logo")),
+            ImageAssetRef::new(public_id("asset.logo")),
+            hud,
+            InteractionTarget::new(public_id("target.logo")),
+            HitRect::new(10.0, 20.0, 2.0, 1.0),
+        )
+        .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150));
+        let frame =
+            UiImagePresentationFrame::from_inputs([UiImagePresentationInput::new(object, image)])
+                .unwrap();
+        let (outputs, image_sources) = frame.into_parts();
+        let mut builder = UiFrameCommitBuilder::new(&layers);
+        for (layer, output) in outputs {
+            builder.push_layer(layer, output).unwrap();
+        }
+        let commit = builder.finish();
+
+        let observation = agent_image_observation_from_ui_frame(
+            "cli",
+            5,
+            &AgentViewport {
+                width: 64,
+                height: 64,
+                scale: 1.0,
+            },
+            &commit,
+            &image_sources,
+            0,
+        );
+
+        assert_eq!(observation.objects.len(), 1);
+        let object = &observation.objects[0];
+        let AgentObservedObjectContent::Image(content) = &object.content else {
+            panic!("presentation image should become Agent image content");
+        };
+        assert_eq!(content.frame_index, Some(1));
+        assert_eq!(content.local_time_millis, Some(150));
+        let mut report = test_agent_observation_report(None);
+        report.viewport = AgentViewport {
+            width: 64,
+            height: 64,
+            scale: 1.0,
+        };
+        report.objects = observation.objects.clone();
+        let mut native_session =
+            arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
+        let result = agent_native_capture_image_with_frame_store(
+            &report,
+            &AgentCaptureReadRequest {
+                uri: format!("arcweft://session/cli/frame/5/object.{}.rgba", object.id),
+                image_kind: AgentObserveImageKind::RawRgba,
+                capture_kind: AgentObserveCaptureKind::Color,
+                scope: AgentCaptureScope::Object(object.id.clone()),
+                page: 0,
+                capture_step: 5,
+                capture_time_seconds: 0.0,
+            },
+            &mut native_session,
+            &observation.image_frames,
+        )
+        .unwrap();
+        assert_eq!(result.bytes, vec![30, 40, 50, 255, 60, 70, 80, 255]);
+    }
+
+    #[test]
     fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
         let source = arcweft_render_native::NativeFrameCapture {
             width: 8,

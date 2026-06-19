@@ -38,6 +38,10 @@ tests.
 to `UiImageSource` records containing decoded image data, fit/alignment policy,
 and deterministic playback state. Static and animated images therefore cross
 the retained-fragment/display-list boundary through the same `ImageId` path.
+`UiImagePresentationFrame` lowers decoded `ImagePresentationObject` inputs into
+layered `UiLayerOutput` values and a single shared `UiImageSourceTable`, so
+image ids remain unique across layers and pinned animated frame selection is
+preserved.
 
 `arcweft-presentation` owns the semantic image object descriptor:
 `ImagePresentationObject` binds an encoded asset reference to a stable image
@@ -136,7 +140,9 @@ same alpha-shaped geometry as color image capture.
    bundle image asset ids.
 2. Wire the live Agent native observe loop to feed actual runtime UI commits
    through the UI image item bridge so the already-carried image frame store is
-   populated from real runtime frames.
+   populated from real runtime frames. The pure presentation-image-to-UI-frame
+   lowering exists; runtime execution still needs to emit those image
+   presentation inputs from source-level declarations.
 3. Expose source-level image declarations in `.arcw` samples so real sample
    runs can populate the UI image source table without test-only setup.
 4. Add samples for PNG/JPEG/static WebP, GIF animation, animated WebP, clipped

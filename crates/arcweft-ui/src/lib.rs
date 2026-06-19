@@ -7,6 +7,7 @@ pub mod fragment;
 pub mod frame;
 pub mod image;
 pub mod layout;
+pub mod presentation_image;
 pub mod reactive;
 pub mod semantics;
 pub mod style;
@@ -33,6 +34,7 @@ pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,
     LayoutTree,
 };
+pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 pub use style::{
