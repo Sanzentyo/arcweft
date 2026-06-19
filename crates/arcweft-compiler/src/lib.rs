@@ -740,7 +740,7 @@ effects { agent.observe }
 agent @agent.opening_smoke opening_smoke()
 effects { agent.act.semantic }
 {
-    choose(@choice.opening.listen)
+    try choose(@choice.opening.listen)
 }
 ",
             &project,
@@ -786,7 +786,7 @@ effects { agent.act.semantic }
 agent @agent.advance_text advance_text()
 effects { agent.act.semantic }
 {
-    advance_text()
+    try advance_text()
 }
 ",
             &project,
@@ -831,7 +831,7 @@ effects { agent.observe }
 agent @agent.pointer_click pointer_click()
 effects { agent.act.physical }
 {
-    pointer.click(viewport_point(12u32, 34u32), button = .primary)
+    try pointer.click(viewport_point(12u32, 34u32), button = .primary)
 }
 ",
             &project,
@@ -896,7 +896,7 @@ effects { agent.act.semantic }
 agent @agent.opening_smoke opening_smoke()
 effects { agent.observe, agent.wait }
 {
-    wait(signal(@signal.ready).eq(true), timeout = 5s)
+    try wait(signal(@signal.ready).eq(true), timeout = 5s)
 }
 ",
             &project,
@@ -932,7 +932,7 @@ effects { agent.observe, agent.wait }
 agent @agent.opening_smoke opening_smoke()
 effects { agent.observe, agent.wait }
 {
-    wait(signal(@signal.current_flow).eq(@flow.opening), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)
+    try wait(signal(@signal.current_flow).eq(@flow.opening), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)
 }
 ",
             &project,
@@ -1025,7 +1025,7 @@ effects { agent.observe }
 agent @agent.composite_wait composite_wait()
 effects { agent.observe, agent.wait }
 {
-    wait(all(signal(@signal.ready).eq(true), not(metric(@metric.fps).lt(30.0f32))), timeout = 5s)
+    try wait(all(signal(@signal.ready).eq(true), not(metric(@metric.fps).lt(30.0f32))), timeout = 5s)
 }
 ",
             &project,
@@ -1053,7 +1053,7 @@ effects { agent.observe, agent.wait }
 agent @agent.debug_state debug_state()
 effects { agent.observe, agent.wait, debug.read }
 {
-    wait(
+    try wait(
         all(state("route.phase").eq("opening"), observation("tick").ge(1i64)),
         timeout = 5s,
     )
@@ -1102,7 +1102,7 @@ effects { agent.observe, agent.wait }
 agent @agent.action_probe action_probe()
 effects { agent.observe }
 {
-    let frame = observe()
+    let frame = try observe()
     expect(frame.actions.contains(choice_action(@choice.opening.listen)))
 }
 ",
@@ -1121,6 +1121,92 @@ effects { agent.observe }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_opening_smoke_try_surface() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption)
+            .with_entity(EntitySymbol::new(
+                public_id("signal.current_flow"),
+                EntityType::new(
+                    EntityKind::Signal,
+                    Some(TypeKind::entity_ref(EntityKind::Flow)),
+                ),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.signal.current_flow.v1"),
+            ))
+            .with_entity(EntitySymbol::new(
+                public_id("flow.alice_intro"),
+                EntityType::new(EntityKind::Flow, None),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.flow.alice_intro.v1"),
+            ));
+        let source = r#"
+#[agent(version = 1)]
+agent @agent.opening.listen opening_listen()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    debug.record,
+}
+{
+    let first = try observe()
+    expect(
+        first.actions.contains(choice_action(@choice.opening.listen)),
+        message = "opening choice is not currently selectable",
+    )
+
+    scope choose_listen {
+        let action = try choose(@choice.opening.listen)
+        expect(action.accepted)
+
+        let next = try wait(
+            signal(@signal.current_flow).eq(@flow.alice_intro),
+            timeout = 5s,
+            stable_frames = 2u32,
+            poll_frames = 1u32,
+        )
+        expect(next.signals.get(@signal.current_flow) == @flow.alice_intro)
+    }
+
+    let image = try capture(
+        viewport(),
+        format = .png,
+        name = "after-choice",
+    )
+    attach(image)
+    checkpoint("opening-listen-complete")
+
+    Ok(())
+}
+"#;
+        let compiled = compile_agent_source_with_project(source, &project)
+            .expect("opening smoke try surface typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Observation)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionResult)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::CaptureRef)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_invoke_intrinsic() {
         let project = project_with_agent_action(
             "activity.inventory",
@@ -1134,7 +1220,7 @@ effects { agent.observe }
 agent @agent.open_inventory open_inventory()
 effects { agent.act.semantic }
 {
-    invoke(@activity.inventory, .open, { label = "main" })
+    try invoke(@activity.inventory, .open, { label = "main" })
 }
 "#,
             &project,
@@ -1179,7 +1265,7 @@ flow @flow.opening opening {
 agent @agent.inspect_pulse inspect_pulse()
 effects { agent.act.semantic }
 {
-    invoke(@target.sample.pulse, "action.inspect.pulse")
+    try invoke(@target.sample.pulse, "action.inspect.pulse")
 }
 "#,
             &project,
@@ -1290,7 +1376,7 @@ effects { agent.act.semantic }
 agent @agent.capture_hud capture_hud()
 effects { agent.capture, debug.record }
 {
-    let shot = capture(layer(@layer.hud), format = .png, name = "hud")
+    let shot = try capture(layer(@layer.hud), format = .png, name = "hud")
     attach(shot)
     checkpoint("after-capture")
     note(fmt("captured"))
@@ -1328,7 +1414,7 @@ agent @agent.capture_view capture_view()
 agent @agent.read_resource read_resource_smoke()
 effects { agent.resource.read }
 {
-    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    let resource = try read_resource("arcweft://session/cli/observation/latest.json")
     return resource.body.json
 }
 "#,
@@ -1368,7 +1454,7 @@ effects { agent.resource.read }
 agent @agent.read_resource_value read_resource_value_smoke()
 effects { agent.resource.read }
 {
-    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    let resource = try read_resource("arcweft://session/cli/observation/latest.json")
     return resource.body.value
 }
 "#,
@@ -1394,7 +1480,7 @@ effects { agent.resource.read }
 agent @agent.attach_resource attach_resource_smoke()
 effects { agent.resource.read, debug.record }
 {
-    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    let resource = try read_resource("arcweft://session/cli/observation/latest.json")
     attach(resource)
 }
 "#,
@@ -1431,7 +1517,7 @@ agent @agent.read_resource read_resource_smoke()
 agent @agent.debug_context debug_context()
 effects { rag.query }
 {
-    rag.query(
+    try rag.query(
         "opening choice recent failures",
         roots = [@choice.opening.listen],
         graph_depth = 2u32,

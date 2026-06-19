@@ -840,6 +840,63 @@ pub(super) fn parse_contract_clause(line: &str) -> Option<ContractClause> {
         .map(|expr| ContractClause::Decreases(parse_expr_lossy(expr.trim())))
 }
 
+pub(super) fn parse_contract_clauses(lines: &[&str]) -> Vec<ContractClause> {
+    merge_contract_lines(lines)
+        .iter()
+        .filter_map(|line| parse_contract_clause(line))
+        .collect()
+}
+
+fn merge_contract_lines(lines: &[&str]) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut current: Option<(String, i32)> = None;
+
+    for line in lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+    {
+        if let Some((text, depth)) = &mut current {
+            text.push(' ');
+            text.push_str(line);
+            *depth += brace_delta(line);
+            if *depth <= 0
+                && let Some((text, _)) = current.take()
+            {
+                merged.push(text);
+            }
+            continue;
+        }
+
+        let depth = brace_delta(line);
+        if starts_contract_list(line) && depth > 0 {
+            current = Some((line.to_owned(), depth));
+        } else {
+            merged.push(line.to_owned());
+        }
+    }
+
+    if let Some((text, _)) = current {
+        merged.push(text);
+    }
+
+    merged
+}
+
+fn starts_contract_list(line: &str) -> bool {
+    ["reads ", "effects ", "modifies "]
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+}
+
+fn brace_delta(line: &str) -> i32 {
+    line.chars().fold(0, |depth, ch| match ch {
+        '{' => depth + 1,
+        '}' => depth - 1,
+        _ => depth,
+    })
+}
+
 pub(super) fn split_contract_mode(source: &str) -> (Option<String>, &str) {
     let trimmed = source.trim();
     for mode in ["prove", "check", "debug"] {

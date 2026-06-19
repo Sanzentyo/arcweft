@@ -1453,7 +1453,7 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
         (
             "observe",
             CallableSymbol::new(
-                FunctionSignature::new(TypeKind::Observation, []),
+                FunctionSignature::new(agent_result(TypeKind::Observation), []),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::Observe),
             ),
@@ -1490,7 +1490,10 @@ fn agent_observation_callables() -> Vec<(&'static str, CallableSymbol)> {
             "wait",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::Observation,
+                    TypeKind::Result {
+                        ok: Box::new(TypeKind::Observation),
+                        error: Box::new(TypeKind::Named("WaitError".to_owned())),
+                    },
                     [
                         FunctionParam::required("predicate", TypeKind::Predicate),
                         FunctionParam::required("timeout", TypeKind::Duration),
@@ -1628,7 +1631,7 @@ fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
             "pointer.click",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::ActionResult,
+                    agent_result(TypeKind::ActionResult),
                     [
                         FunctionParam::required(
                             "point",
@@ -1644,7 +1647,7 @@ fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
         (
             "advance_text",
             CallableSymbol::new(
-                FunctionSignature::new(TypeKind::ActionResult, []),
+                FunctionSignature::new(agent_result(TypeKind::ActionResult), []),
                 [EffectCapability::new("agent.act.semantic")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::AdvanceText),
             ),
@@ -1653,7 +1656,7 @@ fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
             "choose",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::ActionResult,
+                    agent_result(TypeKind::ActionResult),
                     [FunctionParam::required(
                         "choice",
                         TypeKind::entity_ref(EntityKind::ChoiceOption),
@@ -1667,7 +1670,7 @@ fn agent_action_callables() -> Vec<(&'static str, CallableSymbol)> {
             "invoke",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::ActionResult,
+                    agent_result(TypeKind::ActionResult),
                     [
                         FunctionParam::required(
                             "target",
@@ -1697,7 +1700,7 @@ fn agent_capture_callables() -> Vec<(&'static str, CallableSymbol)> {
             "capture",
             CallableSymbol::new(
                 FunctionSignature::new(
-                    TypeKind::CaptureRef,
+                    agent_result(TypeKind::CaptureRef),
                     [FunctionParam::required("target", TypeKind::CaptureTarget)],
                 ),
                 [EffectCapability::new("agent.capture")],
@@ -1748,7 +1751,7 @@ fn agent_resource_callables() -> Vec<(&'static str, CallableSymbol)> {
         "read_resource",
         CallableSymbol::new(
             FunctionSignature::new(
-                TypeKind::AgentResource,
+                agent_result(TypeKind::AgentResource),
                 [FunctionParam::required("uri", TypeKind::String)],
             ),
             [EffectCapability::new("agent.resource.read")],
@@ -1802,12 +1805,22 @@ fn agent_attach_resource_type() -> TypeKind {
     TypeKind::Choice(vec![TypeKind::CaptureRef, TypeKind::AgentResource])
 }
 
+fn agent_result(ok: TypeKind) -> TypeKind {
+    TypeKind::Result {
+        ok: Box::new(ok),
+        error: Box::new(TypeKind::Named("AgentError".to_owned())),
+    }
+}
+
 fn agent_rag_callables() -> Vec<(&'static str, CallableSymbol)> {
     vec![(
         "rag.query",
         CallableSymbol::new(
             FunctionSignature::new(
-                TypeKind::RagContextPack,
+                TypeKind::Result {
+                    ok: Box::new(TypeKind::RagContextPack),
+                    error: Box::new(TypeKind::Named("RagError".to_owned())),
+                },
                 [FunctionParam::required("query", TypeKind::String)],
             ),
             [EffectCapability::new("rag.query")],
@@ -1871,7 +1884,7 @@ mod tests {
         assert_eq!(
             env.function_signature("choose")
                 .map(FunctionSignature::return_type),
-            Some(&TypeKind::ActionResult)
+            Some(&agent_result(TypeKind::ActionResult))
         );
         assert_eq!(
             env.function_effects("choose").map(|effects| {
@@ -2014,7 +2027,7 @@ flow @flow.opening opening {
         assert_eq!(
             env.function_signature("invoke")
                 .map(FunctionSignature::return_type),
-            Some(&TypeKind::ActionResult)
+            Some(&agent_result(TypeKind::ActionResult))
         );
     }
 }

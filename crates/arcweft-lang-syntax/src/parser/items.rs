@@ -16,7 +16,7 @@ use crate::cst::{
 use crate::types::{parse_fn_signature, parse_type_ref};
 
 use super::headers::{
-    parse_callable_kind, parse_contract_clause, parse_contract_expr_list, parse_entity_decl_head,
+    parse_callable_kind, parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
     parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
     parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
     parse_required_entity_ref, parse_visibility_prefix, simple_error, split_function_header_lines,
@@ -167,10 +167,7 @@ impl Parser<'_> {
             );
             return None;
         };
-        let contracts = contract_lines
-            .iter()
-            .filter_map(|line| parse_contract_clause(line))
-            .collect();
+        let contracts = parse_contract_clauses(&contract_lines);
         let (body_statements, body_value) = parse_scope_expr_body(&body);
 
         Some(FunctionItem::new(FunctionInit {
@@ -242,10 +239,7 @@ impl Parser<'_> {
             }
             None => None,
         };
-        let contracts = contract_lines
-            .iter()
-            .filter_map(|line| parse_contract_clause(line))
-            .collect();
+        let contracts = parse_contract_clauses(&contract_lines);
         let (body_statements, body_value) =
             parse_scope_expr_body_for_dialect(&body, SourceDialect::Agent);
 
@@ -313,11 +307,7 @@ impl Parser<'_> {
         let (visibility, rest) = parse_visibility_prefix(first);
         let (kind, after_kind) = parse_callable_kind(rest.trim_start())?;
         let (name, signature_tail) = parse_name_and_tail(after_kind);
-        let contracts = header_lines
-            .iter()
-            .skip(1)
-            .filter_map(|line| parse_contract_clause(line))
-            .collect();
+        let contracts = parse_contract_clauses(&header_lines[1..]);
         let (body_statements, body_value) = parse_scope_expr_body(&body);
 
         Some(CallableItem::new(CallableItemInit {

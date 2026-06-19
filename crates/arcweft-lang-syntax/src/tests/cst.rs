@@ -10,6 +10,7 @@ use crate::cst::{
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
 use crate::{
+    ast::flow::{ContractClause, Stmt},
     ast::ids::EntityRef,
     ast::items::Item,
     expr::Expr,
@@ -82,9 +83,48 @@ effects {
         panic!("expected exactly one parsed agent item");
     };
     assert_eq!(agent.attrs().len(), 2);
-    assert_eq!(agent.contracts().len(), 1);
+    let [ContractClause::Effects(effects)] = agent.contracts() else {
+        panic!("expected a structured effects contract");
+    };
+    assert_eq!(effects.len(), 2);
+    assert!(effects.iter().all(|effect| !matches!(effect, Expr::Raw(_))));
     assert_eq!(agent.body_statements().len(), 1);
     assert!(matches!(agent.body_value(), Some(Expr::Call { .. })));
+}
+
+#[test]
+fn agent_dialect_parses_scope_statement_body() {
+    let parsed = parse_document(
+        r"
+#[agent(version = 1)]
+agent @agent.opening.listen opening_listen()
+effects {
+    agent.observe,
+    agent.act.semantic,
+}
+{
+    let first = try observe()
+    scope choose_listen {
+        let action = try choose(@choice.opening.listen)
+        expect(action.accepted)
+    }
+    Ok(first)
+}
+",
+        ParseOptions {
+            source_dialect: SourceDialect::Agent,
+        },
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
+        panic!("expected exactly one parsed agent item");
+    };
+    assert_eq!(agent.body_statements().len(), 2);
+    assert!(matches!(
+        &agent.body_statements()[1],
+        Stmt::Expr(Expr::NamedBlock { name, .. }) if name == "scope choose_listen"
+    ));
 }
 
 #[test]

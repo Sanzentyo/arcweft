@@ -1,6 +1,6 @@
 use super::headers::{
-    flow_decl_family, implicit_flow_name_from_id, parse_contract_clause, parse_flow_kind,
-    parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
+    flow_decl_family, implicit_flow_name_from_id, parse_contract_clause, parse_contract_clauses,
+    parse_flow_kind, parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
     parse_required_entity_ref_syntax, parse_visibility_prefix, slice_offset,
 };
 use super::{
@@ -56,12 +56,7 @@ impl<'a> Parser<'a> {
         let (signature_tail, inline_contracts) = split_inline_flow_contracts(&signature_tail);
         let signature = parse_flow_signature(name.as_deref(), &signature_tail);
         let mut contracts = inline_contracts;
-        contracts.extend(
-            header_lines
-                .iter()
-                .skip(1)
-                .filter_map(|line| parse_contract_clause(line)),
-        );
+        contracts.extend(parse_contract_clauses(&header_lines[1..]));
         let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
 
         Some(Flow::new(FlowInit {

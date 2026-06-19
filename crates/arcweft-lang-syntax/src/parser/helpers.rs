@@ -629,6 +629,7 @@ pub(super) fn is_typed_stmt(trimmed: &str) -> bool {
                 | "out"
                 | "goto"
                 | "thread"
+                | "scope"
                 | "defer"
                 | "yield"
                 | "signal"

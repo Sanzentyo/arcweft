@@ -790,7 +790,11 @@ impl TypeChecker<'_> {
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
             "advance_text" => {
                 self.check_function_effects(name);
-                Some(self.check_agent_no_arg_intrinsic(name, args, TypeKind::ActionResult))
+                Some(self.check_agent_no_arg_intrinsic(
+                    name,
+                    args,
+                    agent_result(TypeKind::ActionResult),
+                ))
             }
             "viewport_point" => Some(self.check_agent_viewport_point_intrinsic(name, args)),
             "pointer.click" => Some(self.check_agent_pointer_click_intrinsic(name, args)),
@@ -988,7 +992,7 @@ impl TypeChecker<'_> {
                 "capture requires a target argument".to_owned(),
             ));
         }
-        TypeKind::CaptureRef
+        agent_result(TypeKind::CaptureRef)
     }
 
     fn check_agent_viewport_point_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
@@ -1119,7 +1123,7 @@ impl TypeChecker<'_> {
                 "pointer.click requires a point argument".to_owned(),
             ));
         }
-        TypeKind::ActionResult
+        agent_result(TypeKind::ActionResult)
     }
 
     fn check_agent_read_resource_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
@@ -1174,7 +1178,7 @@ impl TypeChecker<'_> {
                 "read_resource requires a uri argument".to_owned(),
             ));
         }
-        TypeKind::AgentResource
+        agent_result(TypeKind::AgentResource)
     }
 
     fn check_agent_probe_intrinsic(
@@ -1350,7 +1354,10 @@ impl TypeChecker<'_> {
             self.errors
                 .push(TypeCheckError::new("wait requires timeout".to_owned()));
         }
-        TypeKind::Observation
+        TypeKind::Result {
+            ok: Box::new(TypeKind::Observation),
+            error: Box::new(TypeKind::Named("WaitError".to_owned())),
+        }
     }
 
     fn check_agent_invoke_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
@@ -1477,7 +1484,7 @@ impl TypeChecker<'_> {
         if let Some(args) = parsed.action_args {
             self.check_agent_invoke_args(args, &[]);
         }
-        TypeKind::ActionResult
+        agent_result(TypeKind::ActionResult)
     }
 
     fn check_resolved_agent_invoke(
@@ -1493,7 +1500,7 @@ impl TypeChecker<'_> {
             if let Some(args) = action_args {
                 self.check_agent_invoke_args(args, &[]);
             }
-            return TypeKind::ActionResult;
+            return agent_result(TypeKind::ActionResult);
         };
         let Some(signature) = actions
             .iter()
@@ -1506,14 +1513,14 @@ impl TypeChecker<'_> {
             if let Some(args) = action_args {
                 self.check_agent_invoke_args(args, &[]);
             }
-            return TypeKind::ActionResult;
+            return agent_result(TypeKind::ActionResult);
         };
         if let Some(args) = action_args {
             self.check_agent_invoke_args(args, signature.params());
         } else {
             self.check_agent_invoke_missing_args(target_id, action_name, signature.params());
         }
-        signature.return_type().clone()
+        agent_result(signature.return_type().clone())
     }
 
     fn check_agent_invoke_target(&mut self, target: &Expr) -> Option<String> {
@@ -1677,7 +1684,10 @@ impl TypeChecker<'_> {
                 "rag.query requires a query argument".to_owned(),
             ));
         }
-        TypeKind::RagContextPack
+        TypeKind::Result {
+            ok: Box::new(TypeKind::RagContextPack),
+            error: Box::new(TypeKind::Named("RagError".to_owned())),
+        }
     }
 
     fn check_wait_positive_u32_literal(&mut self, name: &str, value: &Expr) {
@@ -3155,6 +3165,13 @@ fn agent_resource_body_field_type(field: &str) -> Option<TypeKind> {
 
 fn agent_attach_resource_type() -> TypeKind {
     TypeKind::Choice(vec![TypeKind::CaptureRef, TypeKind::AgentResource])
+}
+
+fn agent_result(ok: TypeKind) -> TypeKind {
+    TypeKind::Result {
+        ok: Box::new(ok),
+        error: Box::new(TypeKind::Named("AgentError".to_owned())),
+    }
 }
 
 fn set_agent_arg_slot<'a>(
