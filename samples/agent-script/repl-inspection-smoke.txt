@@ -1,0 +1,8 @@
+# Agent REPL inspection and capture session.
+:help
+:type 1u32
+:ast signal("ready").eq(true)
+:hir return "ok"
+:bytecode return "ok"
+:capture viewport
+:quit

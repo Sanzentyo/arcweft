@@ -61,6 +61,7 @@ use arcweft_debug_model::{
 };
 use arcweft_debug_sqlite::store::{ChunkSearchResult, DebugStore};
 use arcweft_host_adapter::HostCallPolicy;
+use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
 use arcweft_lang_syntax::ast::{
     flow::Stmt,
     pattern::{Pattern, VariantPatternPayload},
@@ -2183,13 +2184,15 @@ fn agent_repl_eval_meta(
         ":help" => agent_repl_help(index, input),
         ":observe" => agent_repl_observe(index, input, options, state, adapter_registrars),
         ":actions" => agent_repl_actions(index, input, state),
-        ":query" => {
-            if rest.is_empty() {
-                agent_repl_error(index, input, "meta", ":query requires text".to_owned())
-            } else {
-                agent_repl_query(index, input, rest, state)
-            }
-        }
+        ":type" | ":ast" | ":hir" | ":bytecode" | ":capture" => agent_repl_eval_inspection_meta(
+            index,
+            input,
+            command,
+            rest,
+            options,
+            adapter_registrars,
+        ),
+        ":query" => agent_repl_eval_query_meta(index, input, rest, state),
         ":history" => agent_repl_ok(
             index,
             input,
@@ -2204,53 +2207,8 @@ fn agent_repl_eval_meta(
                 "bindings": state.bindings.values().collect::<Vec<_>>(),
             }),
         ),
-        ":drop" => {
-            if rest.is_empty() {
-                agent_repl_error(
-                    index,
-                    input,
-                    "meta",
-                    ":drop requires a binding name".to_owned(),
-                )
-            } else {
-                agent_repl_drop(index, input, rest, state)
-            }
-        }
-        ":load" => {
-            if rest.is_empty() {
-                agent_repl_error(
-                    index,
-                    input,
-                    "meta",
-                    ":load requires a .awfagent path".to_owned(),
-                )
-            } else {
-                agent_repl_load(index, input, rest, state)
-            }
-        }
-        ":save" => {
-            if rest.is_empty() {
-                agent_repl_error(
-                    index,
-                    input,
-                    "meta",
-                    ":save requires a .awfagent path".to_owned(),
-                )
-            } else {
-                agent_repl_save(index, input, rest, state)
-            }
-        }
-        ":parse" => {
-            if rest.is_empty() {
-                agent_repl_error(
-                    index,
-                    input,
-                    "meta",
-                    ":parse requires a fragment".to_owned(),
-                )
-            } else {
-                agent_repl_ok(index, input, "meta", agent_repl_parse_cell(rest))
-            }
+        ":drop" | ":load" | ":save" | ":parse" => {
+            agent_repl_eval_binding_meta(index, input, command, rest, state)
         }
         ":reset" => {
             state.report = None;
@@ -2277,6 +2235,105 @@ fn agent_repl_eval_meta(
     }
 }
 
+fn agent_repl_eval_inspection_meta(
+    index: usize,
+    input: &str,
+    command: &str,
+    rest: &str,
+    options: &AgentReplOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> AgentReplCellReport {
+    match command {
+        ":type" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":type requires an expression".to_owned(),
+        ),
+        ":type" => agent_repl_type(index, input, rest),
+        ":ast" if rest.is_empty() => {
+            agent_repl_error(index, input, "meta", ":ast requires a fragment".to_owned())
+        }
+        ":ast" => agent_repl_ast(index, input, rest),
+        ":hir" if rest.is_empty() => {
+            agent_repl_error(index, input, "meta", ":hir requires a fragment".to_owned())
+        }
+        ":hir" => agent_repl_hir(index, input, rest),
+        ":bytecode" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":bytecode requires a fragment".to_owned(),
+        ),
+        ":bytecode" => agent_repl_bytecode(index, input, rest),
+        ":capture" => agent_repl_capture(index, input, rest, options, adapter_registrars),
+        _ => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("unknown Agent REPL command `{command}`"),
+        ),
+    }
+}
+
+fn agent_repl_eval_query_meta(
+    index: usize,
+    input: &str,
+    rest: &str,
+    state: &AgentReplState,
+) -> AgentReplCellReport {
+    if rest.is_empty() {
+        agent_repl_error(index, input, "meta", ":query requires text".to_owned())
+    } else {
+        agent_repl_query(index, input, rest, state)
+    }
+}
+
+fn agent_repl_eval_binding_meta(
+    index: usize,
+    input: &str,
+    command: &str,
+    rest: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    match command {
+        ":drop" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":drop requires a binding name".to_owned(),
+        ),
+        ":drop" => agent_repl_drop(index, input, rest, state),
+        ":load" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":load requires a .awfagent path".to_owned(),
+        ),
+        ":load" => agent_repl_load(index, input, rest, state),
+        ":save" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":save requires a .awfagent path".to_owned(),
+        ),
+        ":save" => agent_repl_save(index, input, rest, state),
+        ":parse" if rest.is_empty() => agent_repl_error(
+            index,
+            input,
+            "meta",
+            ":parse requires a fragment".to_owned(),
+        ),
+        ":parse" => agent_repl_ok(index, input, "meta", agent_repl_parse_cell(rest)),
+        _ => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("unknown Agent REPL command `{command}`"),
+        ),
+    }
+}
+
 fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
     agent_repl_ok(
         index,
@@ -2285,8 +2342,13 @@ fn agent_repl_help(index: usize, input: &str) -> AgentReplCellReport {
         serde_json::json!({
             "commands": [
                 ":help",
+                ":type EXPR",
+                ":ast EXPR_OR_STMT",
+                ":hir EXPR_OR_STMT",
+                ":bytecode EXPR_OR_STMT",
                 ":observe",
                 ":actions",
+                ":capture [viewport|layer ID|object ID]",
                 ":query TEXT",
                 ":history",
                 ":bindings",
@@ -2350,6 +2412,152 @@ fn agent_repl_actions(index: usize, input: &str, state: &AgentReplState) -> Agen
             input,
             "meta",
             ":actions requires :observe first".to_owned(),
+        ),
+    }
+}
+
+fn agent_repl_type(index: usize, input: &str, fragment_source: &str) -> AgentReplCellReport {
+    let fragment = agent_repl_parse_fragment(fragment_source);
+    let parse = agent_repl_fragment_report(&fragment);
+    let compiled = match agent_repl_compile_fragment(index, fragment_source, &fragment) {
+        Ok(compiled) => compiled,
+        Err(message) => return agent_repl_error(index, input, "meta", message),
+    };
+    let Some(ty) = agent_repl_display_type(&compiled.typecheck_report) else {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            "type-check succeeded, but no displayable expression type judgment was produced"
+                .to_owned(),
+        );
+    };
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "type": ty,
+            "parse": parse,
+        }),
+    )
+}
+
+fn agent_repl_ast(index: usize, input: &str, fragment_source: &str) -> AgentReplCellReport {
+    let fragment = agent_repl_parse_fragment(fragment_source);
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "parse": agent_repl_fragment_report(&fragment),
+            "ast": fragment.kind().map(|kind| format!("{kind:#?}")),
+        }),
+    )
+}
+
+fn agent_repl_hir(index: usize, input: &str, fragment_source: &str) -> AgentReplCellReport {
+    let fragment = agent_repl_parse_fragment(fragment_source);
+    let Some(source) = agent_repl_inspection_source(index, fragment_source, &fragment) else {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            "fragment is not complete enough to lower to HIR".to_owned(),
+        );
+    };
+    match arcweft_compiler::compile_agent_source(source) {
+        Ok(compiled) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "parse": agent_repl_fragment_report(&fragment),
+                "hir": format!("{:#?}", compiled.hir),
+            }),
+        ),
+        Err(error) => agent_repl_error(index, input, "meta", error.to_string()),
+    }
+}
+
+fn agent_repl_bytecode(index: usize, input: &str, fragment_source: &str) -> AgentReplCellReport {
+    let fragment = agent_repl_parse_fragment(fragment_source);
+    let compiled = match agent_repl_compile_fragment(index, fragment_source, &fragment) {
+        Ok(compiled) => compiled,
+        Err(message) => return agent_repl_error(index, input, "meta", message),
+    };
+    let stats = compiled.bundle.bytecode.program.stats();
+    agent_repl_ok(
+        index,
+        input,
+        "meta",
+        serde_json::json!({
+            "parse": agent_repl_fragment_report(&fragment),
+            "agent_id": compiled.manifest.agent_id.as_str(),
+            "entry_flow": compiled.bundle.bytecode.program.entry_flow.as_ref().map(|flow| flow.0.as_str()),
+            "stats": {
+                "flows": stats.flows,
+                "instructions": stats.instructions,
+                "line_task_groups": stats.line_task_groups,
+                "stream_plans": stats.stream_plans,
+                "source_plans": stats.source_plans,
+            },
+            "program": format!("{:#?}", compiled.bundle.bytecode.program),
+        }),
+    )
+}
+
+fn agent_repl_capture(
+    index: usize,
+    input: &str,
+    target: &str,
+    options: &AgentReplOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> AgentReplCellReport {
+    let mut observe_options = agent_repl_observe_options(options);
+    observe_options.image = Some(AgentObserveImageKind::Png);
+    observe_options.capture = Some(AgentObserveCaptureKind::Color);
+    if let Err(message) = apply_agent_repl_capture_target(target, &mut observe_options) {
+        return agent_repl_error(index, input, "meta", message);
+    }
+    match agent_observation_for_options(&observe_options, adapter_registrars).and_then(
+        |mut observed| {
+            let image_output = agent_observe_image_output(
+                &mut observed.report,
+                &observe_options,
+                Some(&mut observed.native_session),
+                &observed.image_frames,
+            )?;
+            let resource = agent_observe_image_resource(&observed.report, image_output.as_ref());
+            Ok((observed.report, resource))
+        },
+    ) {
+        Ok((report, resource)) => {
+            let resource_summary = resource.as_ref().map(|resource| {
+                serde_json::json!({
+                    "uri": resource.uri,
+                    "kind": resource.kind,
+                    "mime_type": resource.mime_type,
+                    "hash": resource.hash,
+                })
+            });
+            agent_repl_ok(
+                index,
+                input,
+                "meta",
+                serde_json::json!({
+                    "tick": report.tick,
+                    "frame_id": report.frame_id,
+                    "images": report.images,
+                    "resource": resource_summary,
+                }),
+            )
+        }
+        Err(code) => agent_repl_error(
+            index,
+            input,
+            "meta",
+            format!("capture failed with exit code {code:?}"),
         ),
     }
 }
@@ -2665,8 +2873,68 @@ fn agent_repl_fragment_report(fragment: &ParsedFragment) -> serde_json::Value {
                     "found": error.found(),
                 })
             })
-            .collect::<Vec<_>>(),
+        .collect::<Vec<_>>(),
     })
+}
+
+fn agent_repl_compile_fragment(
+    index: usize,
+    input: &str,
+    fragment: &ParsedFragment,
+) -> Result<arcweft_compiler::CompiledAgentBundle, String> {
+    let source = agent_repl_inspection_source(index, input, fragment)
+        .ok_or_else(|| "fragment is not complete enough to compile".to_owned())?;
+    let project = agent_script_project_index(&[])?;
+    arcweft_compiler::compile_agent_bundle_with_project(source, &project)
+        .map_err(|error| error.to_string())
+}
+
+fn agent_repl_inspection_source(
+    index: usize,
+    input: &str,
+    fragment: &ParsedFragment,
+) -> Option<String> {
+    (matches!(fragment.completion(), ParseCompletion::Complete) && fragment.errors().is_empty())
+        .then(|| agent_repl_cell_source(index, input, fragment))
+}
+
+fn agent_repl_display_type(report: &TypeCheckReport) -> Option<String> {
+    report
+        .judgments
+        .iter()
+        .rev()
+        .find(|judgment| judgment.rule == TypeJudgmentRule::Return)
+        .or_else(|| report.judgments.iter().next_back())
+        .map(|judgment| format!("{:?}", judgment.ty))
+}
+
+fn apply_agent_repl_capture_target(
+    target: &str,
+    options: &mut AgentObserveOptions,
+) -> Result<(), String> {
+    let target = target.trim();
+    if target.is_empty() || target == "viewport" {
+        return Ok(());
+    }
+    let mut parts = target.split_whitespace();
+    let kind = parts.next().unwrap_or_default();
+    let id = parts
+        .next()
+        .ok_or_else(|| format!(":capture {kind} requires an id"))?;
+    if parts.next().is_some() {
+        return Err(":capture accepts only viewport, layer ID, or object ID".to_owned());
+    }
+    match kind {
+        "layer" => {
+            options.layer = Some(id.to_owned());
+            Ok(())
+        }
+        "object" => {
+            options.object = Some(id.to_owned());
+            Ok(())
+        }
+        _ => Err(":capture accepts only viewport, layer ID, or object ID".to_owned()),
+    }
 }
 
 fn agent_repl_eval_compiled_cell(

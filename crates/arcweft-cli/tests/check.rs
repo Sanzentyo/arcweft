@@ -740,6 +740,59 @@ fn agent_repl_observes_and_lists_actions_from_input_session() {
     assert_repl_debug_cell_persisted(&debug_db_path);
 }
 
+#[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_inspects_fragments_and_captures_from_input_session() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg(rich_text_showcase_path())
+        .arg("--input")
+        .arg(agent_repl_inspection_smoke_path())
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl runs inspection input session");
+    assert!(
+        output.status.success(),
+        "agent repl inspection session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+
+    assert_eq!(report["ok"], true);
+    let cells = report["cells"].as_array().expect("cells are present");
+    assert_agent_repl_meta_ok(cells, ":type 1u32");
+    assert_agent_repl_meta_ok(cells, ":ast signal(\"ready\").eq(true)");
+    assert_agent_repl_meta_ok(cells, ":hir return \"ok\"");
+    assert_agent_repl_meta_ok(cells, ":bytecode return \"ok\"");
+    let capture = cells
+        .iter()
+        .find(|cell| cell["input"] == ":capture viewport")
+        .expect("capture cell is present");
+    assert_eq!(capture["status"], "ok");
+    assert!(
+        capture["value"]["images"]
+            .as_array()
+            .is_some_and(|images| !images.is_empty()),
+        "capture cell should expose image resources: {capture}"
+    );
+}
+
+fn assert_agent_repl_meta_ok(cells: &[serde_json::Value], input: &str) {
+    let cell = cells
+        .iter()
+        .find(|cell| cell["input"] == input)
+        .unwrap_or_else(|| panic!("{input} cell is present"));
+    assert_eq!(cell["status"], "ok", "{input} should succeed: {cell}");
+    assert_eq!(cell["kind"], "meta");
+}
+
 fn assert_agent_repl_observe_bindings(
     binding_list: &[serde_json::Value],
     bindings: &serde_json::Value,
@@ -1800,6 +1853,10 @@ fn agent_script_native_invoke_action_path() -> PathBuf {
 
 fn agent_repl_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/repl-smoke.txt")
+}
+
+fn agent_repl_inspection_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/repl-inspection-smoke.txt")
 }
 
 fn agent_script_native_project_index_path() -> PathBuf {
