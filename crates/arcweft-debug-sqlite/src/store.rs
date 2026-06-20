@@ -68,6 +68,13 @@ pub struct ChunkSearchResult {
     pub privacy: PrivacyClass,
 }
 
+/// One full debug chunk returned from a debug-store search channel.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DebugChunkSearchResult {
+    pub hit: SearchHit,
+    pub chunk: DebugChunk,
+}
+
 /// One event row returned from the debug-store session timeline.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DebugTimelineEvent {
@@ -116,6 +123,25 @@ struct RawDebugScriptRun {
     trace_uri: Option<String>,
     error_json: Option<String>,
     metadata_json: String,
+}
+
+#[derive(Debug)]
+struct RawDebugChunk {
+    chunk_id: String,
+    program_hash: Option<String>,
+    source_kind: String,
+    source_key: String,
+    title: String,
+    body: String,
+    content_hash: String,
+    semantic_hash: Option<String>,
+    source_path: Option<String>,
+    entity_ids_json: String,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+    privacy_class: String,
+    metadata_json: String,
+    created_unix_ms: i64,
 }
 
 /// Current row counts for the rebuildable debug index.
@@ -742,15 +768,41 @@ impl DebugStore {
         limit: usize,
         max_privacy: PrivacyClass,
     ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        self.lexical_chunk_search_with_max_privacy(query, limit, max_privacy)
+            .map(|results| {
+                results
+                    .into_iter()
+                    .map(|result| ChunkSearchResult {
+                        hit: result.hit,
+                        title: result.chunk.title,
+                        body: result.chunk.body,
+                        source_kind: result.chunk.source_kind.as_str().to_owned(),
+                        source_key: result.chunk.source_key,
+                        privacy: result.chunk.privacy,
+                    })
+                    .collect()
+            })
+    }
+
+    pub fn lexical_chunk_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<DebugChunkSearchResult>, DebugStoreError> {
         if query.trim().is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
         let fts_query = quote_fts_literal(query.trim());
         let mut statement = self.connection.prepare(
-            "SELECT c.chunk_id, c.title, c.body, c.source_kind, c.source_key,
-                    c.privacy_class, bm25(chunks_fts, 2.0, 1.0)
+            "SELECT c.chunk_id, p.program_hash, c.source_kind, c.source_key,
+                    c.title, c.body, c.content_hash, c.semantic_hash,
+                    c.source_path, c.entity_ids_json, c.start_byte, c.end_byte,
+                    c.privacy_class, c.metadata_json, c.created_unix_ms,
+                    bm25(chunks_fts, 2.0, 1.0)
              FROM chunks_fts
              JOIN chunks AS c ON c.rowid = chunks_fts.rowid
+             LEFT JOIN programs AS p ON p.program_id = c.program_id
              WHERE chunks_fts MATCH ?1
                AND (
                  c.privacy_class = 'public'
@@ -764,39 +816,23 @@ impl DebugStore {
         let limit = i64::try_from(limit)
             .map_err(|_| DebugStoreError::IntegerOverflow("chunks_fts.limit"))?;
         let rows = statement.query_map(params![fts_query, limit, max_privacy.as_str()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, f64>(6)?,
-            ))
+            Ok((raw_debug_chunk_from_row(row)?, row.get::<_, f64>(15)?))
         })?;
         let values = rows.collect::<Result<Vec<_>, _>>()?;
         values
             .into_iter()
             .enumerate()
-            .map(
-                |(index, (chunk_id, title, body, source_kind, source_key, privacy, bm25))| {
-                    PrivacyClass::parse(&privacy)
-                        .ok_or_else(|| DebugStoreError::InvalidPrivacyClass(privacy.clone()))
-                        .map(|privacy| ChunkSearchResult {
-                            hit: SearchHit {
-                                chunk_id: ChunkId::new(chunk_id),
-                                channel: SearchChannel::Lexical,
-                                rank: index + 1,
-                                score: Some(-bm25),
-                            },
-                            title,
-                            body,
-                            source_kind,
-                            source_key,
-                            privacy,
-                        })
-                },
-            )
+            .map(|(index, (raw, bm25))| {
+                debug_chunk_from_raw(raw).map(|chunk| DebugChunkSearchResult {
+                    hit: SearchHit {
+                        chunk_id: chunk.id.clone(),
+                        channel: SearchChannel::Lexical,
+                        rank: index + 1,
+                        score: Some(-bm25),
+                    },
+                    chunk,
+                })
+            })
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -1966,6 +2002,26 @@ fn source_anchor_from_row(
     }))
 }
 
+fn raw_debug_chunk_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugChunk> {
+    Ok(RawDebugChunk {
+        chunk_id: row.get(0)?,
+        program_hash: row.get(1)?,
+        source_kind: row.get(2)?,
+        source_key: row.get(3)?,
+        title: row.get(4)?,
+        body: row.get(5)?,
+        content_hash: row.get(6)?,
+        semantic_hash: row.get(7)?,
+        source_path: row.get(8)?,
+        entity_ids_json: row.get(9)?,
+        start_byte: row.get(10)?,
+        end_byte: row.get(11)?,
+        privacy_class: row.get(12)?,
+        metadata_json: row.get(13)?,
+        created_unix_ms: row.get(14)?,
+    })
+}
+
 fn raw_debug_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugSession> {
     Ok(RawDebugSession {
         session_id: row.get(0)?,
@@ -1994,6 +2050,32 @@ fn raw_debug_script_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Ra
         trace_uri: row.get(10)?,
         error_json: row.get(11)?,
         metadata_json: row.get(12)?,
+    })
+}
+
+fn debug_chunk_from_raw(raw: RawDebugChunk) -> Result<DebugChunk, DebugStoreError> {
+    let source_kind = parse_chunk_source_kind(&raw.source_kind)
+        .ok_or_else(|| DebugStoreError::InvalidChunkSourceKind(raw.source_kind.clone()))?;
+    let privacy = PrivacyClass::parse(&raw.privacy_class)
+        .ok_or_else(|| DebugStoreError::InvalidPrivacyClass(raw.privacy_class.clone()))?;
+    let entity_ids = serde_json::from_str::<Vec<String>>(&raw.entity_ids_json)?
+        .into_iter()
+        .map(PublicId::new)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DebugChunk {
+        id: ChunkId::new(raw.chunk_id),
+        program_hash: raw.program_hash.map(StableHash::new).transpose()?,
+        source_kind,
+        source_key: raw.source_key,
+        title: raw.title,
+        body: raw.body,
+        content_hash: StableHash::new(raw.content_hash)?,
+        semantic_hash: raw.semantic_hash.map(StableHash::new).transpose()?,
+        source_anchor: source_anchor_from_row(raw.source_path, raw.start_byte, raw.end_byte)?,
+        entity_ids,
+        privacy,
+        metadata: serde_json::from_str(&raw.metadata_json)?,
+        created_unix_ms: raw.created_unix_ms,
     })
 }
 
@@ -2333,6 +2415,11 @@ mod tests {
         let hits = store.lexical_search("アリス", 10).expect("search");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:opening");
+        let chunk_hits = store
+            .lexical_chunk_search_with_max_privacy("アリス", 10, PrivacyClass::Project)
+            .expect("full chunk search");
+        assert_eq!(chunk_hits.len(), 1);
+        assert_eq!(chunk_hits[0].chunk, chunk);
     }
 
     #[test]

@@ -907,8 +907,11 @@ struct AgentRagContextReadReport {
 
 fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQueryResult, String> {
     let query_text = options.query.trim();
-    if options.trace.is_none() && options.source.is_empty() {
-        return Err("agent rag query requires --trace, --source, or both".to_owned());
+    if options.trace.is_none() && options.source.is_empty() && options.debug_db.is_none() {
+        return Err(
+            "agent rag query requires --trace, --source, --debug-db, or a combination of them"
+                .to_owned(),
+        );
     }
     if query_text.is_empty() {
         return Err("agent rag query requires a non-empty --query".to_owned());
@@ -934,6 +937,12 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
         seed_parts.push(source_index.seed);
         candidates.extend(source_index.candidates);
     }
+    if let Some(debug_db) = &options.debug_db {
+        let debug_candidates = agent_rag_debug_db_candidates(debug_db, options)?;
+        seed_parts.extend(agent_rag_debug_db_seed_parts(debug_db, &debug_candidates));
+        candidates.extend(debug_candidates);
+    }
+    let candidates = agent_rag_deduplicate_candidates(candidates);
     let query_candidates = agent_rag_query_allowed_candidates(options, &candidates);
     let program_hash = agent_rag_program_hash(&seed_parts)?;
     let query = RagQuery {
@@ -955,6 +964,69 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
     };
     let pack = agent_trace_rag_pack_from_candidates(options, query, &query_candidates);
     Ok(AgentRagQueryResult { pack, candidates })
+}
+
+fn agent_rag_debug_db_candidates(
+    path: &Path,
+    options: &AgentRagQueryOptions,
+) -> Result<Vec<AgentRagCandidate>, String> {
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("agent rag query failed to open debug DB: {error}"))?;
+    let search_limit = options.limit.saturating_mul(8).max(32);
+    let mut candidates = Vec::new();
+    let mut seen = BTreeSet::new();
+    let terms = std::iter::once(options.query.trim().to_owned())
+        .chain(options.roots.iter().map(|root| root.trim().to_owned()))
+        .filter(|term| !term.is_empty())
+        .collect::<Vec<_>>();
+    for term in terms {
+        let results = store
+            .lexical_chunk_search_with_max_privacy(&term, search_limit, options.max_privacy)
+            .map_err(|error| {
+                format!(
+                    "agent rag query failed to search debug DB `{}`: {error}",
+                    path.display()
+                )
+            })?;
+        for result in results {
+            if seen.insert(result.chunk.id.clone()) {
+                candidates.push(AgentRagCandidate {
+                    chunk: result.chunk,
+                    preferred_channel: result.hit.channel,
+                });
+            }
+        }
+    }
+    Ok(candidates)
+}
+
+fn agent_rag_debug_db_seed_parts(path: &Path, candidates: &[AgentRagCandidate]) -> Vec<String> {
+    if candidates.is_empty() {
+        return vec![format!(
+            "debug-db-empty:{}",
+            agent_content_hash(path.display().to_string())
+        )];
+    }
+    let mut seed_parts = candidates
+        .iter()
+        .map(|candidate| {
+            format!(
+                "debug-db:{}:{}",
+                candidate.chunk.id.as_str(),
+                candidate.chunk.content_hash.as_str()
+            )
+        })
+        .collect::<Vec<_>>();
+    seed_parts.sort();
+    seed_parts
+}
+
+fn agent_rag_deduplicate_candidates(candidates: Vec<AgentRagCandidate>) -> Vec<AgentRagCandidate> {
+    let mut seen = BTreeSet::new();
+    candidates
+        .into_iter()
+        .filter(|candidate| seen.insert(candidate.chunk.id.clone()))
+        .collect()
 }
 
 fn agent_trace_rag_pack_from_candidates(

@@ -2481,6 +2481,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     );
 
     assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
+    assert_agent_rag_query_reads_persisted_source_index(&db_path);
 
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
@@ -2572,6 +2573,45 @@ fn agent_rag_query_indexes_source_project_chunks() {
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_agent_rag_query_reads_persisted_source_index(db_path: &Path) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(db_path)
+        .arg("--query")
+        .arg("choice.opening")
+        .arg("--root")
+        .arg("choice.opening.listen")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query reads persisted source index");
+    assert!(
+        output.status.success(),
+        "agent rag query should read persisted source index\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("persisted source index RAG output is JSON");
+    assert_eq!(pack["query"]["text"], "choice.opening");
+    assert!(
+        pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "symbol"
+                    && item["entity_ids"].as_array().is_some_and(|ids| {
+                        ids.contains(&serde_json::json!("choice.opening.listen"))
+                    })
+                    && item["channels"].as_array().is_some_and(|channels| {
+                        channels.contains(&serde_json::json!("exact_entity"))
+                    })
+            })
+        }),
+        "agent rag query should return rooted persisted project symbol chunk: {pack}"
+    );
 }
 
 fn assert_debug_db_search_exposes_persisted_source_chunks(db_path: &Path) {
