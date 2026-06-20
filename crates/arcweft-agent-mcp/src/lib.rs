@@ -155,6 +155,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_context_read_tool_descriptor(),
         agent_debug_script_runs_tool_descriptor(),
         agent_debug_session_timeline_tool_descriptor(),
+        agent_debug_repl_cells_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -724,6 +725,33 @@ fn agent_debug_session_timeline_tool_descriptor() -> McpToolDescriptor {
                     "description": "Highest privacy class allowed in returned event payloads."
                 }
             }
+        }),
+    }
+}
+
+fn agent_debug_repl_cells_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.repl.cells".to_owned(),
+        title: Some("Read Arcweft Agent REPL Cells".to_owned()),
+        description: "Reads persisted Agent REPL cell rows from the rebuildable SQLite debug store for one session.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Agent Debug Bus session id whose REPL cells should be returned."
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 50
+                }
+            },
+            "required": ["session_id"]
         }),
     }
 }
@@ -1759,6 +1787,11 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name == "arcweft.debug.session.timeline")
         );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name == "arcweft.debug.repl.cells")
+        );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -2054,6 +2087,24 @@ mod tests {
             timeline.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
         );
+
+        let repl_cells = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.repl.cells")
+            .expect("debug REPL cells tool is described");
+        assert_eq!(
+            repl_cells.input_schema["required"],
+            serde_json::json!(["session_id"])
+        );
+        assert_eq!(
+            repl_cells.input_schema["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            repl_cells.input_schema["properties"]["session_id"]["type"],
+            "string"
+        );
+        assert_eq!(repl_cells.input_schema["properties"]["limit"]["minimum"], 1);
     }
 
     #[test]

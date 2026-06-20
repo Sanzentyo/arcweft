@@ -977,6 +977,72 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_debug_repl_cells_reads_persisted_cells() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-repl-cells-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let session_id = SessionId::new("session.mcp.repl").expect("session id");
+        store
+            .start_session(&session_id, None, "repl", "mcp", 0)
+            .expect("session");
+        for (ordinal, source) in [(1, "let observed = observe()"), (2, ":bindings")] {
+            store
+                .upsert_repl_cell(&DebugReplCell {
+                    cell_id: format!("repl:{}:{ordinal}", session_id.as_str()),
+                    session_id: session_id.clone(),
+                    run_id: None,
+                    ordinal,
+                    source: source.to_owned(),
+                    source_hash: StableHash::new(format!("blake3:mcp-repl-cell-{ordinal}"))
+                        .expect("hash"),
+                    status: "ok".to_owned(),
+                    inferred_type: None,
+                    display: Some(serde_json::json!({ "ordinal": ordinal })),
+                    partially_effectful: ordinal == 1,
+                    diagnostic_ids: vec![format!("diag.{ordinal}")],
+                    created_unix_ms: ordinal,
+                })
+                .expect("repl cell");
+        }
+        drop(store);
+
+        let result = agent_mcp_call_debug_repl_cells(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "session_id": "session.mcp.repl",
+            "limit": 1
+        }))
+        .expect("debug REPL cells succeeds");
+        let value = mcp_text_json(&result);
+        assert_eq!(value["session_id"], serde_json::json!("session.mcp.repl"));
+        assert_eq!(value["limit"], serde_json::json!(1));
+        assert_eq!(value["cells"].as_array().expect("cells").len(), 1);
+        assert_eq!(
+            value["cells"][0]["cell_id"],
+            serde_json::json!("repl:session.mcp.repl:1")
+        );
+        assert_eq!(
+            value["cells"][0]["source"],
+            serde_json::json!("let observed = observe()")
+        );
+        assert_eq!(
+            value["cells"][0]["display"]["ordinal"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            value["cells"][0]["partially_effectful"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value["cells"][0]["diagnostic_ids"][0],
+            serde_json::json!("diag.1")
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
     fn agent_mcp_rag_query_enforces_max_privacy() {
         let mut state = AgentMcpState {
             trace_resources: vec![AgentResource {
@@ -4674,11 +4740,7 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP log result: {error}"))
         }
-        "arcweft.debug.search" => {
-            let tool = agent_mcp_call_debug_search(&arguments)?;
-            serde_json::to_value(tool)
-                .map_err(|error| format!("failed to serialize MCP debug search result: {error}"))
-        }
+        tool if tool.starts_with("arcweft.debug.") => agent_mcp_debug_tool_call(tool, &arguments),
         "arcweft.rag.query" => {
             let tool = agent_mcp_call_rag_query(&arguments, state, adapter_registrars)?;
             serde_json::to_value(tool)
@@ -4694,16 +4756,6 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP RAG context item: {error}"))
         }
-        "arcweft.debug.script.runs" => {
-            let tool = agent_mcp_call_debug_script_runs(&arguments)?;
-            serde_json::to_value(tool)
-                .map_err(|error| format!("failed to serialize MCP debug script runs: {error}"))
-        }
-        "arcweft.debug.session.timeline" => {
-            let tool = agent_mcp_call_debug_session_timeline(&arguments)?;
-            serde_json::to_value(tool)
-                .map_err(|error| format!("failed to serialize MCP debug timeline: {error}"))
-        }
         "arcweft.trace.read" => {
             let tool = agent_mcp_call_trace_read(&arguments, state)?;
             serde_json::to_value(tool)
@@ -4711,6 +4763,32 @@ fn agent_mcp_tool_call(
         }
         tool => Err(format!("unsupported Arcweft MCP tool `{tool}`")),
     }
+}
+
+fn agent_mcp_debug_tool_call(
+    name: &str,
+    arguments: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let (tool, label) = match name {
+        "arcweft.debug.search" => (
+            agent_mcp_call_debug_search(arguments)?,
+            "MCP debug search result",
+        ),
+        "arcweft.debug.script.runs" => (
+            agent_mcp_call_debug_script_runs(arguments)?,
+            "MCP debug script runs",
+        ),
+        "arcweft.debug.session.timeline" => (
+            agent_mcp_call_debug_session_timeline(arguments)?,
+            "MCP debug timeline",
+        ),
+        "arcweft.debug.repl.cells" => (
+            agent_mcp_call_debug_repl_cells(arguments)?,
+            "MCP debug REPL cells",
+        ),
+        tool => return Err(format!("unsupported Arcweft MCP tool `{tool}`")),
+    };
+    serde_json::to_value(tool).map_err(|error| format!("failed to serialize {label}: {error}"))
 }
 
 fn agent_mcp_call_observe(
@@ -5679,6 +5757,55 @@ fn agent_mcp_debug_timeline_event_json(event: &DebugTimelineEvent) -> serde_json
         "privacy": event.privacy.as_str(),
         "payload": &event.payload,
         "created_unix_ms": event.created_unix_ms,
+    })
+}
+
+fn agent_mcp_call_debug_repl_cells(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(50);
+    if limit == 0 {
+        return Err("arcweft.debug.repl.cells argument limit must be at least 1".to_owned());
+    }
+    let session_id = agent_mcp_non_empty_string_argument(arguments, "session_id")
+        .ok_or_else(|| "arcweft.debug.repl.cells requires arguments.session_id".to_owned())
+        .and_then(|value| {
+            SessionId::new(value)
+                .map_err(|error| format!("arcweft.debug.repl.cells invalid session_id: {error}"))
+        })?;
+    let path = agent_mcp_debug_store_path(arguments);
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.debug.repl.cells failed to open `{path}`: {error}"))?;
+    let cells = store
+        .repl_cells_for_session(&session_id)
+        .map_err(|error| format!("arcweft.debug.repl.cells failed to read `{path}`: {error}"))?;
+    let value = serde_json::json!({
+        "path": path,
+        "session_id": session_id.as_str(),
+        "limit": limit,
+        "cells": cells
+            .iter()
+            .take(limit)
+            .map(agent_mcp_debug_repl_cell_json)
+            .collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug REPL cells")
+}
+
+fn agent_mcp_debug_repl_cell_json(cell: &DebugReplCell) -> serde_json::Value {
+    serde_json::json!({
+        "cell_id": &cell.cell_id,
+        "session_id": cell.session_id.as_str(),
+        "run_id": cell.run_id.as_ref().map(AgentRunId::as_str),
+        "ordinal": cell.ordinal,
+        "source": &cell.source,
+        "source_hash": cell.source_hash.as_str(),
+        "status": &cell.status,
+        "inferred_type": &cell.inferred_type,
+        "display": &cell.display,
+        "partially_effectful": cell.partially_effectful,
+        "diagnostic_ids": &cell.diagnostic_ids,
+        "created_unix_ms": cell.created_unix_ms,
     })
 }
 

@@ -125,6 +125,10 @@ orders recent runs by their session-local start sequence, and returns run id,
 session id, Agent id, source/artifact hashes, project binding mode, sequence
 range, trace URI, outcome, effectfulness, error, and deterministic metadata.
 It is the MCP counterpart to `arcw debug db runs`.
+`arcweft.debug.repl.cells` reads persisted Agent REPL cells from the same store
+for a required `session_id`, returning cell source, stable source hash, status,
+display JSON, diagnostics, and effectfulness. It mirrors
+`arcw debug db repl-cells`.
 
 ```arcw
 pub trait AgentDebugBus {
@@ -371,6 +375,7 @@ arcweft.rag.context.read
 arcweft.debug.search
 arcweft.debug.script.runs
 arcweft.debug.session.timeline
+arcweft.debug.repl.cells
 arcweft.trace.read
 ```
 
