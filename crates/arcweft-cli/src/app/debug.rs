@@ -229,6 +229,7 @@ struct DebugDbReport {
 #[derive(serde::Serialize)]
 struct DebugDbStatsReport {
     programs: u64,
+    source_files: u64,
     sessions: u64,
     script_runs: u64,
     debug_events: u64,
@@ -1895,6 +1896,7 @@ fn foreign_key_violation_report(
 fn stats_report(stats: DebugStoreStats) -> DebugDbStatsReport {
     DebugDbStatsReport {
         programs: stats.programs,
+        source_files: stats.source_files,
         sessions: stats.sessions,
         script_runs: stats.script_runs,
         debug_events: stats.debug_events,

@@ -39,6 +39,7 @@ use arcweft_debug_model::{
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
+    source::DebugSourceFile,
 };
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_id::PublicId as SemaPublicId;
@@ -735,6 +736,11 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
     let mut indexed_chunks = 0usize;
     let mut skipped_unchanged_chunks = 0usize;
     for (source_path, source_index) in source_indexes {
+        let mut source_file = source_index.source_file.clone();
+        source_file.program_hash = program_hash.clone();
+        store
+            .upsert_source_file(&source_file)
+            .map_err(|error| format!("failed to index RAG source file: {error}"))?;
         let mut indexed_for_source = 0usize;
         let mut skipped_for_source = 0usize;
         for candidate in &source_index.candidates {
@@ -762,6 +768,7 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
             candidate_chunks: source_index.candidates.len(),
             indexed_chunks: indexed_for_source,
             skipped_unchanged_chunks: skipped_for_source,
+            source_file_recorded: true,
             indexed: indexed_for_source > 0,
         });
     }
@@ -936,6 +943,7 @@ struct AgentRagIndexedSourceReport {
     candidate_chunks: usize,
     indexed_chunks: usize,
     skipped_unchanged_chunks: usize,
+    source_file_recorded: bool,
     indexed: bool,
 }
 
@@ -994,6 +1002,7 @@ fn agent_rag_index_session_metadata(
                             "candidate_chunks": source.candidate_chunks,
                             "indexed_chunks": source.indexed_chunks,
                             "skipped_unchanged_chunks": source.skipped_unchanged_chunks,
+                            "source_file_recorded": source.source_file_recorded,
                             "indexed": source.indexed,
                         })
                     })
@@ -1637,6 +1646,7 @@ fn agent_trace_rag_json_candidate(
 struct AgentSourceRagIndex {
     seed: String,
     source_hash: String,
+    source_file: DebugSourceFile,
     candidates: Vec<AgentRagCandidate>,
     graph_symbols: Vec<DebugGraphSymbol>,
     graph_edges: Vec<DebugGraphEdge>,
@@ -1704,6 +1714,17 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
     let project =
         project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &source_name)
             .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
+    let source_file = DebugSourceFile {
+        program_hash: StableHash::new(project.program_hash().as_str())
+            .map_err(|error| format!("invalid source file program hash: {error}"))?,
+        path: path.display().to_string(),
+        language: "arcw".to_owned(),
+        content_hash: StableHash::new(source_hash.clone())
+            .map_err(|error| format!("invalid source file content hash: {error}"))?,
+        byte_len: u64::try_from(source.len())
+            .map_err(|_| "source file byte length overflowed u64".to_owned())?,
+        metadata: BTreeMap::from([("extension".to_owned(), serde_json::json!("arcw"))]),
+    };
     let source_key_prefix = agent_source_rag_key_prefix(path);
     let mut candidates = agent_source_text_rag_candidates(path, &source, &source_key_prefix)?;
     candidates.extend(agent_project_semantic_rag_candidates(
@@ -1711,15 +1732,27 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
         &project,
         &source_key_prefix,
     )?);
-    let graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    let mut graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    agent_attach_source_file_to_graph_symbols(&mut graph_symbols, &source_file);
     let graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
         source_hash,
+        source_file,
         candidates,
         graph_symbols,
         graph_edges,
     })
+}
+
+fn agent_attach_source_file_to_graph_symbols(
+    symbols: &mut [DebugGraphSymbol],
+    source_file: &DebugSourceFile,
+) {
+    for symbol in symbols {
+        symbol.source_path = Some(source_file.path.clone());
+        symbol.source_content_hash = Some(source_file.content_hash.clone());
+    }
 }
 
 fn agent_source_rag_key_prefix(path: &Path) -> String {
@@ -1961,6 +1994,8 @@ fn agent_project_summary_graph_symbol(
             "schema_version": project.schema_version(),
             "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
         })),
+        source_path: None,
+        source_content_hash: None,
         start_byte: None,
         end_byte: None,
         semantic_hash: Some(
@@ -2005,6 +2040,8 @@ fn agent_project_entity_graph_symbol(
             "entity_kind": format!("{:?}", entity.ty().kind()),
             "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
         })),
+        source_path: None,
+        source_content_hash: None,
         start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
         end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
         semantic_hash: Some(
@@ -2062,6 +2099,8 @@ fn agent_project_action_graph_symbol(
             })).collect::<Vec<_>>(),
             "return_type": format!("{:?}", action.return_type()),
         })),
+        source_path: None,
+        source_content_hash: None,
         start_byte: None,
         end_byte: None,
         semantic_hash: Some(
@@ -2096,6 +2135,8 @@ fn agent_project_debug_query_graph_symbol(
         type_json: Some(serde_json::json!({
             "signature": format!("{:?}", query.signature()),
         })),
+        source_path: None,
+        source_content_hash: None,
         start_byte: None,
         end_byte: None,
         semantic_hash: Some(

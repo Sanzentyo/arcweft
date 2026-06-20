@@ -15,6 +15,7 @@ use arcweft_debug_model::{
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
+    source::DebugSourceFile,
     test_result::DebugTestResult,
 };
 use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
@@ -151,10 +152,21 @@ struct RawDebugChunk {
     created_unix_ms: i64,
 }
 
+#[derive(Debug)]
+struct RawDebugSourceFile {
+    program_hash: String,
+    path: String,
+    language: String,
+    content_hash: String,
+    byte_len: i64,
+    metadata_json: String,
+}
+
 /// Current row counts for the rebuildable debug index.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DebugStoreStats {
     pub programs: u64,
+    pub source_files: u64,
     pub sessions: u64,
     pub script_runs: u64,
     pub debug_events: u64,
@@ -257,6 +269,7 @@ impl DebugStore {
     pub fn stats(&self) -> Result<DebugStoreStats, DebugStoreError> {
         Ok(DebugStoreStats {
             programs: self.table_count("programs")?,
+            source_files: self.table_count("source_files")?,
             sessions: self.table_count("sessions")?,
             script_runs: self.table_count("script_runs")?,
             debug_events: self.table_count("debug_events")?,
@@ -438,6 +451,52 @@ impl DebugStore {
         )?;
         self.program_id(program_hash)?
             .ok_or_else(|| DebugStoreError::ProgramNotIndexed(program_hash.as_str().to_owned()))
+    }
+
+    pub fn upsert_source_file(&self, source: &DebugSourceFile) -> Result<(), DebugStoreError> {
+        let program_id = self.require_program_id(&source.program_hash)?;
+        let byte_len = sqlite_i64(source.byte_len, "source_files.byte_len")?;
+        self.connection.execute(
+            "INSERT INTO source_files(
+               program_id, path, language, content_hash, byte_len, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(program_id, path, content_hash) DO UPDATE SET
+               language = excluded.language,
+               byte_len = excluded.byte_len,
+               metadata_json = excluded.metadata_json",
+            params![
+                program_id,
+                &source.path,
+                &source.language,
+                source.content_hash.as_str(),
+                byte_len,
+                serde_json::to_string(&source.metadata)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn source_files_for_program(
+        &self,
+        program_hash: &StableHash,
+    ) -> Result<Vec<DebugSourceFile>, DebugStoreError> {
+        let Some(program_id) = self.program_id(program_hash)? else {
+            return Ok(Vec::new());
+        };
+        let mut statement = self.connection.prepare(
+            "SELECT p.program_hash, sf.path, sf.language, sf.content_hash,
+                    sf.byte_len, sf.metadata_json
+             FROM source_files AS sf
+             JOIN programs AS p ON p.program_id = sf.program_id
+             WHERE sf.program_id = ?1
+             ORDER BY sf.path ASC, sf.content_hash ASC",
+        )?;
+        let rows = statement.query_map([program_id], raw_debug_source_file_from_row)?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_source_file_from_raw)
+        })
+        .collect()
     }
 
     pub fn start_session(
@@ -949,6 +1008,12 @@ impl DebugStore {
 
     pub fn upsert_graph_symbol(&self, symbol: &DebugGraphSymbol) -> Result<(), DebugStoreError> {
         let program_id = self.require_program_id(&symbol.program_hash)?;
+        let source_file_id = match (&symbol.source_path, &symbol.source_content_hash) {
+            (Some(path), Some(content_hash)) => {
+                self.source_file_id(program_id, path.as_str(), content_hash.as_str())?
+            }
+            _ => None,
+        };
         let start_byte = symbol
             .start_byte
             .map(|value| sqlite_i64(value, "symbols.start_byte"))
@@ -961,13 +1026,14 @@ impl DebugStore {
             "INSERT INTO symbols(
                symbol_id, program_id, public_id, qualified_name, kind, type_json,
                source_file_id, start_byte, end_byte, semantic_hash, summary, metadata_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9, ?10, ?11)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(symbol_id) DO UPDATE SET
                program_id = excluded.program_id,
                public_id = excluded.public_id,
                qualified_name = excluded.qualified_name,
                kind = excluded.kind,
                type_json = excluded.type_json,
+               source_file_id = excluded.source_file_id,
                start_byte = excluded.start_byte,
                end_byte = excluded.end_byte,
                semantic_hash = excluded.semantic_hash,
@@ -984,6 +1050,7 @@ impl DebugStore {
                     .as_ref()
                     .map(serde_json::to_string)
                     .transpose()?,
+                source_file_id,
                 start_byte,
                 end_byte,
                 symbol.semantic_hash.as_ref().map(StableHash::as_str),
@@ -2082,6 +2149,24 @@ impl DebugStore {
             .ok_or_else(|| DebugStoreError::ProgramNotIndexed(hash.as_str().to_owned()))
     }
 
+    fn source_file_id(
+        &self,
+        program_id: i64,
+        path: &str,
+        content_hash: &str,
+    ) -> Result<Option<i64>, DebugStoreError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT source_file_id
+                 FROM source_files
+                 WHERE program_id = ?1 AND path = ?2 AND content_hash = ?3",
+                params![program_id, path, content_hash],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     fn table_count(&self, table: &'static str) -> Result<u64, DebugStoreError> {
         let count =
             self.connection
@@ -2480,6 +2565,17 @@ fn raw_debug_chunk_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebu
     })
 }
 
+fn raw_debug_source_file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugSourceFile> {
+    Ok(RawDebugSourceFile {
+        program_hash: row.get(0)?,
+        path: row.get(1)?,
+        language: row.get(2)?,
+        content_hash: row.get(3)?,
+        byte_len: row.get(4)?,
+        metadata_json: row.get(5)?,
+    })
+}
+
 fn raw_debug_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugSession> {
     Ok(RawDebugSession {
         session_id: row.get(0)?,
@@ -2534,6 +2630,18 @@ fn debug_chunk_from_raw(raw: RawDebugChunk) -> Result<DebugChunk, DebugStoreErro
         privacy,
         metadata: serde_json::from_str(&raw.metadata_json)?,
         created_unix_ms: raw.created_unix_ms,
+    })
+}
+
+fn debug_source_file_from_raw(raw: RawDebugSourceFile) -> Result<DebugSourceFile, DebugStoreError> {
+    Ok(DebugSourceFile {
+        program_hash: StableHash::new(raw.program_hash)?,
+        path: raw.path,
+        language: raw.language,
+        content_hash: StableHash::new(raw.content_hash)?,
+        byte_len: u64::try_from(raw.byte_len)
+            .map_err(|_| DebugStoreError::IntegerOverflow("source_files.byte_len"))?,
+        metadata: serde_json::from_str(&raw.metadata_json)?,
     })
 }
 
@@ -3919,6 +4027,8 @@ mod tests {
                 qualified_name: Some("flow.opening".to_owned()),
                 kind: "flow".to_owned(),
                 type_json: None,
+                source_path: None,
+                source_content_hash: None,
                 start_byte: None,
                 end_byte: None,
                 semantic_hash: None,
@@ -3934,6 +4044,8 @@ mod tests {
                 qualified_name: Some("choice.alice".to_owned()),
                 kind: "choice".to_owned(),
                 type_json: None,
+                source_path: None,
+                source_content_hash: None,
                 start_byte: None,
                 end_byte: None,
                 semantic_hash: None,
@@ -3959,6 +4071,8 @@ mod tests {
                 qualified_name: Some("textbox.main".to_owned()),
                 kind: "textbox".to_owned(),
                 type_json: None,
+                source_path: None,
+                source_content_hash: None,
                 start_byte: None,
                 end_byte: None,
                 semantic_hash: None,
@@ -4000,6 +4114,36 @@ mod tests {
                 |hit| hit.hit.chunk_id.as_str() == "graph:2" && hit.body.contains("distance=2")
             )
         );
+    }
+
+    #[test]
+    fn source_file_round_trips_for_program() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let program_hash = hash("b3:source-file-program");
+        let content_hash = hash("b3:source-file-content");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_source_file(&DebugSourceFile {
+                program_hash: program_hash.clone(),
+                path: "samples/agent-script/native-choice-dispatch.arcw".to_owned(),
+                language: "arcw".to_owned(),
+                content_hash: content_hash.clone(),
+                byte_len: 1234,
+                metadata: BTreeMap::from([("extension".to_owned(), serde_json::json!("arcw"))]),
+            })
+            .expect("source file");
+
+        let files = store
+            .source_files_for_program(&program_hash)
+            .expect("source files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].program_hash, program_hash);
+        assert_eq!(files[0].content_hash, content_hash);
+        assert_eq!(files[0].language, "arcw");
+        assert_eq!(files[0].byte_len, 1234);
+        assert_eq!(store.stats().expect("stats").source_files, 1);
     }
 
     #[test]

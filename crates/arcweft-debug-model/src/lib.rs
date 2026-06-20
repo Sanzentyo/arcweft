@@ -11,4 +11,5 @@ pub mod repl;
 pub mod script;
 pub mod session;
 pub mod sink;
+pub mod source;
 pub mod test_result;

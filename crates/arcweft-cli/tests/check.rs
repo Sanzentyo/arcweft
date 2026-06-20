@@ -2546,6 +2546,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
         "agent rag index should report a product session id: {first_report}"
     );
     assert_eq!(first_report["indexed_sources"], 1);
+    assert_eq!(first_report["sources"][0]["source_file_recorded"], true);
     assert!(
         first_report["indexed_chunks"]
             .as_u64()
@@ -2584,6 +2585,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     assert_ne!(second_session_id, first_session_id);
     assert_eq!(second_report["indexed_sources"], 0);
     assert_eq!(second_report["skipped_unchanged_sources"], 1);
+    assert_eq!(second_report["sources"][0]["source_file_recorded"], true);
     assert_eq!(second_report["indexed_chunks"], 0);
     assert!(
         second_report["skipped_unchanged_chunks"]
@@ -2593,6 +2595,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     );
 
     assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
+    assert_debug_db_source_files_are_persisted(&db_path, &first_report, &source_path);
     assert_debug_db_graph_search_exposes_indexed_project_graph_edges(&db_path);
     assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
@@ -2600,6 +2603,29 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_debug_db_source_files_are_persisted(
+    db_path: &Path,
+    report: &serde_json::Value,
+    source_path: &Path,
+) {
+    let program_hash = stable_hash(report["program_hash"].as_str().expect("program hash"));
+    let source_hash = stable_hash(
+        report["sources"][0]["source_hash"]
+            .as_str()
+            .expect("source hash"),
+    );
+    let store = DebugStore::open(db_path).expect("open RAG debug DB");
+    let source_files = store
+        .source_files_for_program(&program_hash)
+        .expect("source files for indexed program");
+    assert_eq!(source_files.len(), 1);
+    assert_eq!(source_files[0].path, source_path.display().to_string());
+    assert_eq!(source_files[0].language, "arcw");
+    assert_eq!(source_files[0].content_hash, source_hash);
+    assert!(source_files[0].byte_len > 0);
+    assert_eq!(store.stats().expect("stats").source_files, 1);
 }
 
 fn assert_debug_db_graph_search_exposes_indexed_project_graph_edges(db_path: &Path) {
@@ -4356,6 +4382,8 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             qualified_name: Some("flow.opening".to_owned()),
             kind: "flow".to_owned(),
             type_json: None,
+            source_path: None,
+            source_content_hash: None,
             start_byte: None,
             end_byte: None,
             semantic_hash: None,
@@ -4374,6 +4402,8 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             qualified_name: Some("choice.alice".to_owned()),
             kind: "choice".to_owned(),
             type_json: None,
+            source_path: None,
+            source_content_hash: None,
             start_byte: None,
             end_byte: None,
             semantic_hash: None,
@@ -4402,6 +4432,8 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             qualified_name: Some("textbox.main".to_owned()),
             kind: "textbox".to_owned(),
             type_json: None,
+            source_path: None,
+            source_content_hash: None,
             start_byte: None,
             end_byte: None,
             semantic_hash: None,

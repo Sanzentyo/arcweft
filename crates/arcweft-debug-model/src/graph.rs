@@ -11,6 +11,8 @@ pub struct DebugGraphSymbol {
     pub qualified_name: Option<String>,
     pub kind: String,
     pub type_json: Option<serde_json::Value>,
+    pub source_path: Option<String>,
+    pub source_content_hash: Option<StableHash>,
     pub start_byte: Option<u64>,
     pub end_byte: Option<u64>,
     pub semantic_hash: Option<StableHash>,
