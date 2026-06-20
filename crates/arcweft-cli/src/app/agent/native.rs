@@ -1051,9 +1051,11 @@ mod tests {
                         && item["chunk_id"]
                             .as_str()
                             .is_some_and(|id| id.contains("mcp:program."))
-                        && item["body"]
-                            .as_str()
-                            .is_some_and(|body| body.contains("\"program_rag_index\""))
+                        && item["body"].as_str().is_some_and(|body| {
+                            body.contains("\"program_rag_index\"")
+                                && body.contains("\"source_graph_symbol_kinds\"")
+                                && body.contains("\"source_graph_edge_kinds\"")
+                        })
                 })
             }),
             "MCP source RAG query should include the program-level summary: {pack}"

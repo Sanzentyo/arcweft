@@ -933,7 +933,7 @@ fn agent_rag_index_program_graph(
 ) -> Result<(), String> {
     let summary = agent_program_graph_summary(source_indexes);
     store
-        .upsert_graph_symbol(&agent_program_graph_symbol(program_hash, summary))
+        .upsert_graph_symbol(&agent_program_graph_symbol(program_hash, &summary))
         .map_err(|error| format!("failed to index RAG program graph symbol: {error}"))?;
     for source_index in source_indexes {
         store
@@ -949,6 +949,20 @@ fn agent_rag_index_program_graph(
 fn agent_program_graph_summary(
     source_indexes: &[&AgentSourceRagIndex],
 ) -> AgentProgramGraphSummary {
+    let symbol_kinds = source_indexes
+        .iter()
+        .flat_map(|source_index| source_index.graph_symbols.iter())
+        .fold(BTreeMap::new(), |mut counts, symbol| {
+            *counts.entry(symbol.kind.clone()).or_insert(0) += 1;
+            counts
+        });
+    let edge_kinds = source_indexes
+        .iter()
+        .flat_map(|source_index| source_index.graph_edges.iter())
+        .fold(BTreeMap::new(), |mut counts, edge| {
+            *counts.entry(edge.edge_kind.clone()).or_insert(0) += 1;
+            counts
+        });
     AgentProgramGraphSummary {
         sources: source_indexes.len(),
         source_graph_symbols: source_indexes
@@ -972,6 +986,8 @@ fn agent_program_graph_summary(
             .flat_map(|source_index| source_index.graph_symbols.iter())
             .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
             .count(),
+        symbol_kinds,
+        edge_kinds,
     }
 }
 
@@ -1833,7 +1849,7 @@ struct AgentSourceRagIndex {
     graph_edges: Vec<DebugGraphEdge>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentProgramGraphSummary {
     sources: usize,
     source_graph_symbols: usize,
@@ -1841,6 +1857,8 @@ struct AgentProgramGraphSummary {
     candidate_chunks: usize,
     source_bytes: u64,
     dynamic_control_flows: usize,
+    symbol_kinds: BTreeMap<String, usize>,
+    edge_kinds: BTreeMap<String, usize>,
 }
 
 fn agent_rag_source_paths(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
@@ -2016,7 +2034,7 @@ fn agent_source_file_project_graph_edge(
 
 fn agent_program_graph_symbol(
     program_hash: &StableHash,
-    summary: AgentProgramGraphSummary,
+    summary: &AgentProgramGraphSummary,
 ) -> DebugGraphSymbol {
     DebugGraphSymbol {
         symbol_id: agent_program_graph_symbol_id(program_hash),
@@ -2034,6 +2052,8 @@ fn agent_program_graph_symbol(
             "candidate_chunk_count": summary.candidate_chunks,
             "source_byte_count": summary.source_bytes,
             "dynamic_control_flow_count": summary.dynamic_control_flows,
+            "source_graph_symbol_kinds": summary.symbol_kinds,
+            "source_graph_edge_kinds": summary.edge_kinds,
         })),
         source_path: None,
         source_content_hash: None,
@@ -2072,6 +2092,14 @@ fn agent_program_graph_symbol(
             (
                 "dynamic_control_flow_count".to_owned(),
                 serde_json::json!(summary.dynamic_control_flows),
+            ),
+            (
+                "source_graph_symbol_kinds".to_owned(),
+                serde_json::json!(summary.symbol_kinds),
+            ),
+            (
+                "source_graph_edge_kinds".to_owned(),
+                serde_json::json!(summary.edge_kinds),
             ),
         ]),
     }
@@ -2750,6 +2778,8 @@ fn agent_program_summary_rag_candidate(
             "source_graph_symbols": summary.source_graph_symbols,
             "source_graph_edges": summary.source_graph_edges,
             "dynamic_control_flows": summary.dynamic_control_flows,
+            "source_graph_symbol_kinds": summary.symbol_kinds,
+            "source_graph_edge_kinds": summary.edge_kinds,
         },
         "sources": sources,
     }))
@@ -2785,6 +2815,14 @@ fn agent_program_summary_rag_candidate(
                 (
                     "source_graph_edge_count".to_owned(),
                     serde_json::json!(summary.source_graph_edges),
+                ),
+                (
+                    "source_graph_symbol_kinds".to_owned(),
+                    serde_json::json!(summary.symbol_kinds),
+                ),
+                (
+                    "source_graph_edge_kinds".to_owned(),
+                    serde_json::json!(summary.edge_kinds),
                 ),
             ]),
         },

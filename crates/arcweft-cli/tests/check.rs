@@ -3461,6 +3461,16 @@ fn assert_debug_db_graph_reports_multi_source_program_root(
         "combined program root should summarize source graph edges: {graph}"
     );
     assert_eq!(
+        program["metadata"]["source_graph_symbol_kinds"]["source_file"],
+        serde_json::json!(2),
+        "combined program root should summarize graph symbol kinds: {graph}"
+    );
+    assert_eq!(
+        program["metadata"]["source_graph_edge_kinds"]["contains_project_graph"],
+        serde_json::json!(2),
+        "combined program root should summarize graph edge kinds: {graph}"
+    );
+    assert_eq!(
         symbols
             .iter()
             .filter(|symbol| symbol["kind"] == "source_file")
@@ -3515,9 +3525,11 @@ fn assert_debug_db_rag_query_uses_program_summary(db_path: &Path) {
                     && item["chunk_id"]
                         .as_str()
                         .is_some_and(|id| id.contains("cli:program."))
-                    && item["body"]
-                        .as_str()
-                        .is_some_and(|body| body.contains("\"program_rag_index\""))
+                    && item["body"].as_str().is_some_and(|body| {
+                        body.contains("\"program_rag_index\"")
+                            && body.contains("\"source_graph_symbol_kinds\"")
+                            && body.contains("\"source_graph_edge_kinds\"")
+                    })
             })
         }),
         "persisted debug DB query should surface the program-level RAG summary: {pack}"
