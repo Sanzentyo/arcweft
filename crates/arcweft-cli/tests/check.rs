@@ -475,6 +475,48 @@ fn agent_script_run_json_executes_read_resource_smoke() {
 }
 
 #[test]
+fn agent_script_run_executes_read_resource_metadata_projection_smoke() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_read_resource_metadata_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes read_resource metadata smoke");
+
+    assert!(
+        output.status.success(),
+        "agent script read_resource metadata run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("read_resource metadata output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["responses"][0]["kind"], "resource");
+    assert_eq!(
+        json["responses"][0]["response"]["uri"],
+        "arcweft://session/cli/observation/latest.json"
+    );
+    assert_eq!(
+        json["responses"][0]["response"]["kind"],
+        "observation_latest"
+    );
+    assert_eq!(
+        json["responses"][0]["response"]["mime_type"],
+        "application/json"
+    );
+    assert_eq!(json["responses"][0]["response"]["hash"], "cli-resource");
+    assert!(
+        json["final_status"]
+            .as_str()
+            .is_some_and(|status| status.contains("cli-resource")),
+        "final status should return projected resource hash: {json}"
+    );
+}
+
+#[test]
 fn agent_script_run_persists_attach_resource_debug_record() {
     let debug_db_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/attach-resource-{}.sqlite3",
@@ -3168,6 +3210,10 @@ fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
 
 fn agent_script_cli_read_resource_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-read-resource-smoke.awfagent")
+}
+
+fn agent_script_cli_read_resource_metadata_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-read-resource-metadata-smoke.awfagent")
 }
 
 fn agent_script_cli_attach_resource_smoke_path() -> PathBuf {
