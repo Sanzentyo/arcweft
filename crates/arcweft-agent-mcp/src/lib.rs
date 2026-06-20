@@ -542,7 +542,7 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
                 },
                 "path": {
                     "type": "string",
-                    "description": "Optional filesystem path to an Arcweft debug SQLite database. When supplied, the query upserts MCP-derived chunks and records the selected RAG audit for later explain/context.read."
+                    "description": "Optional filesystem path to an Arcweft debug SQLite database. When supplied, the query reads privacy-allowed pre-indexed chunks, upserts MCP-derived chunks, and records the selected RAG audit for later explain/context.read."
                 }
             },
             "required": ["query"]

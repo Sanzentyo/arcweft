@@ -904,6 +904,70 @@ mod tests {
     }
 
     #[test]
+    fn agent_mcp_rag_query_reads_preindexed_debug_store_chunks() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-preindexed-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let program_hash = StableHash::new("blake3:mcp-rag-preindexed-program").expect("hash");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_chunk(&DebugChunk {
+                id: ChunkId::new("chunk:mcp-preindexed-choice"),
+                program_hash: Some(program_hash),
+                source_kind: ChunkSourceKind::Symbol,
+                source_key: "choice.opening.listen".to_owned(),
+                title: "choice.opening.listen".to_owned(),
+                body: "Preindexed source symbol for opening choice listen action".to_owned(),
+                content_hash: StableHash::new("blake3:mcp-rag-preindexed-chunk").expect("hash"),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: vec![PublicId::new("choice.opening.listen").expect("public id")],
+                privacy: PrivacyClass::Project,
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            })
+            .expect("chunk");
+        drop(store);
+
+        let mut state = AgentMcpState::default();
+        let query_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "choice.opening",
+                "roots": ["choice.opening.listen"],
+                "path": db_path.display().to_string(),
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG query reads preindexed chunks");
+        let pack = mcp_text_json(&query_result);
+        assert!(
+            pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["chunk_id"] == "chunk:mcp-preindexed-choice"
+                        && item["kind"] == "symbol"
+                        && item["channels"].as_array().is_some_and(|channels| {
+                            channels.contains(&serde_json::json!("exact_entity"))
+                        })
+                })
+            }),
+            "MCP RAG query should return the preindexed project symbol chunk: {pack}"
+        );
+        assert_eq!(state.rag_context_packs.len(), 1);
+        let store = DebugStore::open(&db_path).expect("debug store reopens");
+        assert_eq!(store.stats().expect("stats").rag_queries, 1);
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
     fn agent_mcp_rag_explain_and_context_read_use_persisted_audit() {
         let db_path = std::env::temp_dir().join(format!(
             "arcweft-agent-mcp-rag-audit-{}.sqlite3",
@@ -6233,7 +6297,7 @@ fn agent_mcp_call_rag_query(
     let roots = agent_mcp_rag_roots(arguments)?;
     let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
         .unwrap_or(PrivacyClass::Project);
-    let source_candidates = agent_mcp_rag_source_candidates(arguments)?;
+    let mut source_candidates = agent_mcp_rag_source_candidates(arguments)?;
     let config = AgentMcpRagQueryConfig {
         roots,
         graph_depth,
@@ -6241,6 +6305,11 @@ fn agent_mcp_call_rag_query(
         max_context_bytes,
         max_privacy,
     };
+    if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
+        source_candidates.extend(agent_mcp_rag_debug_store_candidates(
+            path, query_text, &config,
+        )?);
+    }
     let result = agent_mcp_rag_query_result(state, source_candidates, query_text, config)?;
     if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
         persist_agent_mcp_rag_query_result(path, &result)?;
@@ -6450,6 +6519,7 @@ fn agent_mcp_rag_query_result(
 ) -> Result<AgentMcpRagQueryResult, String> {
     let mut candidates = agent_mcp_rag_candidates(state)?;
     candidates.extend(source_candidates);
+    let candidates = agent_mcp_rag_deduplicate_candidates(candidates);
     let query_candidates = candidates
         .iter()
         .filter(|candidate| candidate.chunk.privacy.is_allowed_by(config.max_privacy))
@@ -6487,6 +6557,48 @@ fn agent_mcp_rag_query_result(
         config.max_context_bytes,
     );
     Ok(AgentMcpRagQueryResult { pack, candidates })
+}
+
+fn agent_mcp_rag_debug_store_candidates(
+    path: &str,
+    query_text: &str,
+    config: &AgentMcpRagQueryConfig,
+) -> Result<Vec<AgentMcpRagCandidate>, String> {
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.rag.query failed to open `{path}`: {error}"))?;
+    let search_limit = config.limit.saturating_mul(8).max(32);
+    let terms = std::iter::once(query_text.trim().to_owned())
+        .chain(config.roots.iter().map(|root| root.as_str().to_owned()))
+        .filter(|term| !term.is_empty())
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut seen = BTreeSet::new();
+    for term in terms {
+        let results = store
+            .lexical_chunk_search_with_max_privacy(&term, search_limit, config.max_privacy)
+            .map_err(|error| {
+                format!("arcweft.rag.query failed to search debug store `{path}`: {error}")
+            })?;
+        for result in results {
+            if seen.insert(result.chunk.id.clone()) {
+                candidates.push(AgentMcpRagCandidate {
+                    chunk: result.chunk,
+                    preferred_channel: result.hit.channel,
+                });
+            }
+        }
+    }
+    Ok(candidates)
+}
+
+fn agent_mcp_rag_deduplicate_candidates(
+    candidates: Vec<AgentMcpRagCandidate>,
+) -> Vec<AgentMcpRagCandidate> {
+    let mut seen = BTreeSet::new();
+    candidates
+        .into_iter()
+        .filter(|candidate| seen.insert(candidate.chunk.id.clone()))
+        .collect()
 }
 
 fn agent_mcp_rag_context_pack_from_candidates(
