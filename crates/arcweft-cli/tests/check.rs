@@ -2630,6 +2630,7 @@ entry game @entry.main {
 }
 
 pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+    let route = current_route(state)
     state
 }
 
@@ -2639,6 +2640,7 @@ pub view current_route(state: GameState) -> Ref<Flow> {
 
 flow opening effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
+    let route = current_route()
 
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
@@ -2880,6 +2882,12 @@ fn assert_debug_db_graph_exposes_project_callables(
             .iter()
             .any(|edge| edge["edge_kind"] == "contains_callable"),
         "debug db graph should expose callable ownership edges: {graph_report}"
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|edge| edge["edge_kind"] == "calls_callable"),
+        "debug db graph should expose callable dependency edges: {graph_report}"
     );
 }
 

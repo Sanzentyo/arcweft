@@ -632,6 +632,16 @@ fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProject
                 edge_kind: relation.edge_kind().as_str().to_owned(),
             }),
     );
+    edges.extend(
+        project
+            .dependency_relations()
+            .iter()
+            .map(|relation| AgentProjectGraphEdge {
+                from_symbol_id: agent_project_symbol_ref_id(relation.from()),
+                to_symbol_id: agent_project_symbol_ref_id(relation.to()),
+                edge_kind: relation.edge_kind().as_str().to_owned(),
+            }),
+    );
     edges
 }
 
@@ -653,6 +663,19 @@ fn agent_project_callable_symbol_id(name: &str) -> String {
 
 fn agent_project_debug_query_symbol_id(name: &str) -> String {
     format!("project:debug_query:{name}")
+}
+
+fn agent_project_symbol_ref_id(
+    symbol_ref: &arcweft_lang_sema::project_index::ProjectGraphSymbolRef,
+) -> String {
+    match symbol_ref {
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Entity(id) => {
+            agent_project_entity_symbol_id(id.as_str())
+        }
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
+            agent_project_callable_symbol_id(name.as_str())
+        }
+    }
 }
 
 fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {
@@ -930,8 +953,10 @@ mod tests {
     use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_lang_sema::project_index::{
         AgentActionParam, AgentActionSignature, DebugQuerySymbol, EntitySymbol, ProgramHash,
-        ProjectCallableKind, ProjectCallableSymbol, ProjectGraphRelation, ProjectGraphRelationKind,
-        ProjectSemanticIndex, QualifiedName, SemanticHash, project_semantic_index_from_hir,
+        ProjectCallableKind, ProjectCallableSymbol, ProjectGraphDependencyRelation,
+        ProjectGraphDependencyRelationKind, ProjectGraphRelation, ProjectGraphRelationKind,
+        ProjectGraphSymbolRef, ProjectSemanticIndex, QualifiedName, SemanticHash,
+        project_semantic_index_from_hir,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -1026,7 +1051,12 @@ mod tests {
                     SourceAnchor::generated(),
                     SemanticHash::new("hir:callable:view:current_route:(state: GameState)"),
                 ),
-            );
+            )
+            .with_dependency_relation(ProjectGraphDependencyRelation::new(
+                ProjectGraphSymbolRef::Callable(QualifiedName::new("update_route")),
+                ProjectGraphSymbolRef::Callable(QualifiedName::new("current_route")),
+                ProjectGraphDependencyRelationKind::CallsCallable,
+            ));
 
         let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
 
@@ -1044,6 +1074,11 @@ mod tests {
             edge.from_symbol_id == "project:summary"
                 && edge.to_symbol_id == "project:callable:update_route"
                 && edge.edge_kind == "contains_callable"
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.from_symbol_id == "project:callable:update_route"
+                && edge.to_symbol_id == "project:callable:current_route"
+                && edge.edge_kind == "calls_callable"
         }));
     }
 

@@ -69,6 +69,21 @@ pub struct ProjectGraphRelation {
     edge_kind: ProjectGraphRelationKind,
 }
 
+/// Directed semantic relation between project graph symbols.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectGraphDependencyRelation {
+    from: ProjectGraphSymbolRef,
+    to: ProjectGraphSymbolRef,
+    edge_kind: ProjectGraphDependencyRelationKind,
+}
+
+/// Endpoint of a project graph dependency relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProjectGraphSymbolRef {
+    Entity(PublicId),
+    Callable(QualifiedName),
+}
+
 /// Project-owned callable symbol declared by source code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCallableSymbol {
@@ -97,6 +112,13 @@ pub enum ProjectGraphRelationKind {
     ChoiceOptionGoto,
     FlowGoto,
     FlowInclude,
+    ReferencesEntity,
+}
+
+/// Kind of cross-symbol dependency represented in the project graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectGraphDependencyRelationKind {
+    CallsCallable,
     ReferencesEntity,
 }
 
@@ -185,6 +207,7 @@ pub struct ProjectSemanticIndex {
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
+    dependency_relations: Vec<ProjectGraphDependencyRelation>,
 }
 
 /// Policy applied while compiling Agent Script.
@@ -333,6 +356,42 @@ impl ProjectGraphRelation {
     }
 }
 
+impl ProjectGraphDependencyRelation {
+    pub const fn new(
+        from: ProjectGraphSymbolRef,
+        to: ProjectGraphSymbolRef,
+        edge_kind: ProjectGraphDependencyRelationKind,
+    ) -> Self {
+        Self {
+            from,
+            to,
+            edge_kind,
+        }
+    }
+
+    pub const fn from(&self) -> &ProjectGraphSymbolRef {
+        &self.from
+    }
+
+    pub const fn to(&self) -> &ProjectGraphSymbolRef {
+        &self.to
+    }
+
+    pub const fn edge_kind(&self) -> ProjectGraphDependencyRelationKind {
+        self.edge_kind
+    }
+}
+
+impl ProjectGraphSymbolRef {
+    pub fn entity(id: impl Into<PublicId>) -> Self {
+        Self::Entity(id.into())
+    }
+
+    pub fn callable(name: impl Into<QualifiedName>) -> Self {
+        Self::Callable(name.into())
+    }
+}
+
 impl ProjectCallableSymbol {
     /// Creates a source-owned project callable symbol.
     pub const fn new(
@@ -392,6 +451,16 @@ impl ProjectGraphRelationKind {
             Self::ChoiceOptionGoto => "choice_option_goto",
             Self::FlowGoto => "flow_goto",
             Self::FlowInclude => "flow_include",
+            Self::ReferencesEntity => "references_entity",
+        }
+    }
+}
+
+impl ProjectGraphDependencyRelationKind {
+    /// Stable lowercase graph/RAG edge label.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CallsCallable => "calls_callable",
             Self::ReferencesEntity => "references_entity",
         }
     }
@@ -501,6 +570,7 @@ impl ProjectSemanticIndex {
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
+            dependency_relations: Vec::new(),
         }
     }
 
@@ -552,6 +622,14 @@ impl ProjectSemanticIndex {
         self
     }
 
+    #[must_use]
+    pub fn with_dependency_relation(mut self, relation: ProjectGraphDependencyRelation) -> Self {
+        if !self.dependency_relations.contains(&relation) {
+            self.dependency_relations.push(relation);
+        }
+        self
+    }
+
     pub const fn schema_version(&self) -> u32 {
         self.schema_version
     }
@@ -586,6 +664,10 @@ impl ProjectSemanticIndex {
 
     pub fn relations(&self) -> &[ProjectGraphRelation] {
         &self.relations
+    }
+
+    pub fn dependency_relations(&self) -> &[ProjectGraphDependencyRelation] {
+        &self.dependency_relations
     }
 
     pub fn entity(&self, id: &PublicId) -> Option<&EntitySymbol> {
@@ -684,6 +766,7 @@ pub fn project_semantic_index_from_hir(
     for declaration in module.declarations() {
         index = index_top_level_declaration(declaration, index, source_name)?;
     }
+    index = index_project_symbol_dependency_relations(module, index)?;
     Ok(index)
 }
 
@@ -809,6 +892,491 @@ fn index_entry_relations(
         }
     }
     Ok(index)
+}
+
+fn index_project_symbol_dependency_relations(
+    module: &HirModule,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for flow in module.flows() {
+        let Some(id) = flow.id() else {
+            continue;
+        };
+        let parent =
+            ProjectGraphSymbolRef::Entity(public_id_for_relation(id, "flow dependency source")?);
+        index = index_flow_items_symbol_dependency_relations(&parent, flow.body(), index)?;
+    }
+    for declaration in module.declarations() {
+        if let HirTopLevelDecl::Callable(item) = declaration {
+            let parent = ProjectGraphSymbolRef::Callable(QualifiedName::new(item.name()));
+            index = index_stmt_body_symbol_dependency_relations(
+                &parent,
+                item.body_statements(),
+                index,
+            )?;
+            if let Some(value) = item.body_value() {
+                index = index_expr_symbol_dependency_relations(&parent, value, index)?;
+            }
+        }
+    }
+    Ok(index)
+}
+
+fn index_flow_items_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    items: &[HirFlowItem],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        index = match item {
+            HirFlowItem::Dialogue(dialogue) => {
+                index_dialogue_symbol_dependency_relations(parent, dialogue, index)?
+            }
+            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+                index_choice_symbol_dependency_relations(parent, choice, index)?
+            }
+            HirFlowItem::If(block) => {
+                let index =
+                    index_flow_items_symbol_dependency_relations(parent, block.body(), index)?;
+                index_flow_items_symbol_dependency_relations(parent, block.else_body(), index)?
+            }
+            HirFlowItem::IfLet(block) => {
+                let index =
+                    index_flow_items_symbol_dependency_relations(parent, block.body(), index)?;
+                index_flow_items_symbol_dependency_relations(parent, block.else_body(), index)?
+            }
+            HirFlowItem::Match(block) => {
+                let mut next = index;
+                for arm in block.arms() {
+                    next = index_flow_items_symbol_dependency_relations(parent, arm.body(), next)?;
+                }
+                next
+            }
+            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::While(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::WhileLet(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::For(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::Borrow(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::SourceLocale(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::Scope(block) => {
+                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
+            }
+            HirFlowItem::Select(block) => {
+                let mut next = index;
+                for branch in block.branches() {
+                    next =
+                        index_flow_items_symbol_dependency_relations(parent, branch.body(), next)?;
+                }
+                next
+            }
+            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
+                let mut next = index;
+                for branch in await_with.branches() {
+                    next =
+                        index_flow_items_symbol_dependency_relations(parent, branch.body(), next)?;
+                }
+                next
+            }
+            HirFlowItem::Thread(thread) => {
+                index_flow_items_symbol_dependency_relations(parent, thread.body(), index)?
+            }
+            HirFlowItem::LetScope { scope, .. } => {
+                let index =
+                    index_stmt_body_symbol_dependency_relations(parent, scope.statements(), index)?;
+                if let Some(value) = scope.value() {
+                    index_expr_symbol_dependency_relations(parent, value, index)?
+                } else {
+                    index
+                }
+            }
+            HirFlowItem::Stmt(stmt) => index_stmt_symbol_dependency_relations(parent, stmt, index)?,
+            HirFlowItem::Include(_) => index,
+        };
+    }
+    Ok(index)
+}
+
+fn index_dialogue_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    dialogue: &arcweft_lang_hir::model::HirDialogue,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for arg in dialogue.args() {
+        index = index_expr_symbol_dependency_relations(parent, arg.value(), index)?;
+    }
+    if let Some(rich_text) = dialogue.rich_text() {
+        index = index_expr_symbol_dependency_relations(parent, rich_text, index)?;
+    }
+    Ok(index)
+}
+
+fn index_choice_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    choice: &arcweft_lang_hir::model::HirChoice,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for option in choice.options() {
+        if let Some(condition) = option.condition() {
+            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+        }
+        if let Some(value) = option.value() {
+            index = index_expr_symbol_dependency_relations(parent, value, index)?;
+        }
+        index = match option.action() {
+            ChoiceAction::Out(expr) => index_expr_symbol_dependency_relations(parent, expr, index)?,
+            ChoiceAction::SelectBlock(statements) => {
+                index_stmt_body_symbol_dependency_relations(parent, statements, index)?
+            }
+            ChoiceAction::Goto(_) | ChoiceAction::None => index,
+        };
+    }
+    Ok(index)
+}
+
+fn index_stmt_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    stmt: &Stmt,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match stmt {
+        Stmt::Let { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::LifetimeSet { expr, .. }
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Expr(expr)
+        | Stmt::Goto(expr) => {
+            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+        }
+        Stmt::Signal { target, value } => {
+            index = index_expr_symbol_dependency_relations(parent, target, index)?;
+            index = index_expr_symbol_dependency_relations(parent, value, index)?;
+        }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
+        }
+        Stmt::DeferBlock { statements, .. } => {
+            index = index_stmt_body_symbol_dependency_relations(parent, statements, index)?;
+        }
+        Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
+            index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
+        }
+        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            if let Some(guard) = guard {
+                index = index_expr_symbol_dependency_relations(parent, guard, index)?;
+            }
+            index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
+        }
+        Stmt::For { source, body, .. } => {
+            index = index_expr_symbol_dependency_relations(parent, source, index)?;
+            index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    index = index_expr_symbol_dependency_relations(parent, guard, index)?;
+                }
+                index = index_stmt_body_symbol_dependency_relations(parent, arm.body(), index)?;
+            }
+        }
+        Stmt::LetChoice { .. }
+        | Stmt::LetScope { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Thread(_)
+        | Stmt::Wait(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_stmt_body_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    statements: &[Stmt],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for stmt in statements {
+        index = index_stmt_symbol_dependency_relations(parent, stmt, index)?;
+    }
+    Ok(index)
+}
+
+fn index_expr_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    expr: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::EntityRef(target) => {
+            if let (ProjectGraphSymbolRef::Callable(_), Some(target)) =
+                (parent, target.as_absolute())
+            {
+                index = index_symbol_dependency_relation(
+                    parent,
+                    ProjectGraphSymbolRef::Entity(public_id_for_relation(
+                        target,
+                        "callable entity reference",
+                    )?),
+                    ProjectGraphDependencyRelationKind::ReferencesEntity,
+                    index,
+                );
+            }
+        }
+        Expr::Call { callee, args } => {
+            index = index_call_expr_symbol_dependency_relations(parent, callee, args, index)?;
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            index = index_call_expr_symbol_dependency_relations(parent, receiver, args, index)?;
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::DialogueCall { callee: target, .. }
+        | Expr::Closure { body: target, .. } => {
+            index = index_expr_symbol_dependency_relations(parent, target, index)?;
+        }
+        Expr::Index {
+            target,
+            index: item,
+        }
+        | Expr::Pipe {
+            lhs: target,
+            rhs: item,
+        }
+        | Expr::Binary {
+            lhs: target,
+            rhs: item,
+            ..
+        }
+        | Expr::ArrayRepeat {
+            value: target,
+            len: item,
+        } => {
+            index = index_two_expr_symbol_dependency_relations(parent, target, item, index)?;
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            index = index_expr_list_symbol_dependency_relations(parent, items, index)?;
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            for (_, value) in fields {
+                index = index_expr_symbol_dependency_relations(parent, value, index)?;
+            }
+        }
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => {
+            index = index_expr_block_symbol_dependency_relations(
+                parent,
+                statements,
+                value.as_deref(),
+                index,
+            )?;
+        }
+        Expr::MemoBlock {
+            options,
+            statements,
+            value,
+        } => {
+            for (_, value) in options {
+                index = index_expr_symbol_dependency_relations(parent, value, index)?;
+            }
+            index = index_expr_block_symbol_dependency_relations(
+                parent,
+                statements,
+                value.as_deref(),
+                index,
+            )?;
+        }
+        Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } | Expr::Range { .. } => {
+            index = index_control_expr_symbol_dependency_relations(parent, expr, index)?;
+        }
+        Expr::Thread { .. }
+        | Expr::Literal(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Raw(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_call_expr_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    callee: &Expr,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    if let Some(name) = project_callable_callee(callee, &index) {
+        index = index_symbol_dependency_relation(
+            parent,
+            ProjectGraphSymbolRef::Callable(name),
+            ProjectGraphDependencyRelationKind::CallsCallable,
+            index,
+        );
+    }
+    index = index_expr_symbol_dependency_relations(parent, callee, index)?;
+    index_call_arg_symbol_dependency_relations(parent, args, index)
+}
+
+fn project_callable_callee(callee: &Expr, index: &ProjectSemanticIndex) -> Option<QualifiedName> {
+    let Expr::Path(path) = callee else {
+        return None;
+    };
+    let name = QualifiedName::new(path);
+    index
+        .project_callables()
+        .contains_key(&name)
+        .then_some(name)
+}
+
+fn index_two_expr_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    first: &Expr,
+    second: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_symbol_dependency_relations(parent, first, index)?;
+    index_expr_symbol_dependency_relations(parent, second, index)
+}
+
+fn index_expr_list_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    items: &[Expr],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        index = index_expr_symbol_dependency_relations(parent, item, index)?;
+    }
+    Ok(index)
+}
+
+fn index_call_arg_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for arg in args {
+        let value = match arg {
+            CallArg::Positional(value) => value,
+            CallArg::Named { value, .. } | CallArg::Spread { value } => value,
+        };
+        index = index_expr_symbol_dependency_relations(parent, value, index)?;
+    }
+    Ok(index)
+}
+
+fn index_expr_block_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_stmt_body_symbol_dependency_relations(parent, statements, index)?;
+    if let Some(value) = value {
+        index = index_expr_symbol_dependency_relations(parent, value, index)?;
+    }
+    Ok(index)
+}
+
+fn index_control_expr_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    expr: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            index = index_expr_symbol_dependency_relations(parent, then_branch, index)?;
+            if let Some(else_branch) = else_branch {
+                index = index_expr_symbol_dependency_relations(parent, else_branch, index)?;
+            }
+        }
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            if let Some(guard) = guard {
+                index = index_expr_symbol_dependency_relations(parent, guard, index)?;
+            }
+            index = index_expr_symbol_dependency_relations(parent, then_branch, index)?;
+            if let Some(else_branch) = else_branch {
+                index = index_expr_symbol_dependency_relations(parent, else_branch, index)?;
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            index = index_expr_symbol_dependency_relations(parent, scrutinee, index)?;
+            for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    index = index_expr_symbol_dependency_relations(parent, guard, index)?;
+                }
+                index = index_expr_symbol_dependency_relations(parent, arm.value(), index)?;
+            }
+        }
+        Expr::Range { start, end, .. } => {
+            if let Some(start) = start {
+                index = index_expr_symbol_dependency_relations(parent, start, index)?;
+            }
+            if let Some(end) = end {
+                index = index_expr_symbol_dependency_relations(parent, end, index)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(index)
+}
+
+fn index_symbol_dependency_relation(
+    from: &ProjectGraphSymbolRef,
+    to: ProjectGraphSymbolRef,
+    edge_kind: ProjectGraphDependencyRelationKind,
+    index: ProjectSemanticIndex,
+) -> ProjectSemanticIndex {
+    index.with_dependency_relation(ProjectGraphDependencyRelation::new(
+        from.clone(),
+        to,
+        edge_kind,
+    ))
 }
 
 fn index_flow_item_relations(
@@ -3025,6 +3593,7 @@ flow @flow.opening opening {
         let tree = parse_source(
             r#"
 pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+    let route = current_route(state)
     state
 }
 
@@ -3033,6 +3602,7 @@ pub view current_route(state: GameState) -> Ref<Flow> {
 }
 
 flow @flow.opening opening {
+    let route = current_route()
     return "ok"
 }
 "#,
@@ -3075,6 +3645,32 @@ flow @flow.opening opening {
             view.signature().return_type(),
             &TypeKind::entity_ref(EntityKind::Flow)
         );
+        let relations = index
+            .dependency_relations()
+            .iter()
+            .map(|relation| {
+                (
+                    relation.from(),
+                    relation.to(),
+                    relation.edge_kind().as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(relations.iter().any(|(from, to, kind)| {
+            matches!(from, ProjectGraphSymbolRef::Entity(id) if id.as_str() == "flow.opening")
+                && matches!(to, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "current_route")
+                && *kind == "calls_callable"
+        }));
+        assert!(relations.iter().any(|(from, to, kind)| {
+            matches!(from, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "update_route")
+                && matches!(to, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "current_route")
+                && *kind == "calls_callable"
+        }));
+        assert!(relations.iter().any(|(from, to, kind)| {
+            matches!(from, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "current_route")
+                && matches!(to, ProjectGraphSymbolRef::Entity(id) if id.as_str() == "flow.opening")
+                && *kind == "references_entity"
+        }));
     }
 
     #[test]

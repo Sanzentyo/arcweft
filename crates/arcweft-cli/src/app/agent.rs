@@ -2021,6 +2021,22 @@ fn agent_project_graph_edges(
         weight: 0.95,
         metadata: BTreeMap::new(),
     }));
+    edges.extend(
+        project
+            .dependency_relations()
+            .iter()
+            .map(|relation| DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: agent_project_graph_symbol_ref_id(
+                    source_key_prefix,
+                    relation.from(),
+                ),
+                to_symbol_id: agent_project_graph_symbol_ref_id(source_key_prefix, relation.to()),
+                edge_kind: relation.edge_kind().as_str().to_owned(),
+                weight: 0.9,
+                metadata: BTreeMap::new(),
+            }),
+    );
     Ok(edges)
 }
 
@@ -2257,6 +2273,20 @@ fn agent_project_callable_graph_symbol_id(source_key_prefix: &str, name: &str) -
 
 fn agent_project_debug_query_graph_symbol_id(source_key_prefix: &str, name: &str) -> String {
     format!("{source_key_prefix}.project.debug_query.{name}")
+}
+
+fn agent_project_graph_symbol_ref_id(
+    source_key_prefix: &str,
+    symbol_ref: &arcweft_lang_sema::project_index::ProjectGraphSymbolRef,
+) -> String {
+    match symbol_ref {
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Entity(id) => {
+            agent_project_entity_graph_symbol_id(source_key_prefix, id)
+        }
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
+            agent_project_callable_graph_symbol_id(source_key_prefix, name.as_str())
+        }
+    }
 }
 
 fn agent_project_summary_rag_candidate(
