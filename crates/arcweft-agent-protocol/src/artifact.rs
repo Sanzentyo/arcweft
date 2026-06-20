@@ -19,7 +19,7 @@ pub enum ProjectBindingMode {
 pub struct RequiredEntity {
     pub public_id: PublicId,
     pub kind: String,
-    pub type_fingerprint: StableHash,
+    pub semantic_hash: StableHash,
     pub source_anchor: Option<RequiredEntitySourceAnchor>,
 }
 

@@ -1061,12 +1061,12 @@ fn compatible_entity_mismatch(
             actual.kind
         ));
     }
-    if required.type_fingerprint != actual.type_fingerprint {
+    if required.semantic_hash != actual.semantic_hash {
         return Some(format!(
-            "required entity {} type fingerprint mismatch: expected {}, actual {}",
+            "required entity {} semantic hash mismatch: expected {}, actual {}",
             required.public_id.as_str(),
-            required.type_fingerprint.as_str(),
-            actual.type_fingerprint.as_str()
+            required.semantic_hash.as_str(),
+            actual.semantic_hash.as_str()
         ));
     }
     None
@@ -4246,8 +4246,7 @@ mod tests {
         manifest.project_binding.required_entities = vec![RequiredEntity {
             public_id: PublicId::new("signal.ready").expect("valid public id"),
             kind: "signal".to_owned(),
-            type_fingerprint: StableHash::new("shape.signal.ready.v1")
-                .expect("valid type fingerprint"),
+            semantic_hash: StableHash::new("shape.signal.ready.v1").expect("valid semantic hash"),
             source_anchor: None,
         }];
 

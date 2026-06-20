@@ -497,6 +497,8 @@ mod tests {
         assert!(json.contains("\"bundle_kind\": \"agent_controller\""));
         assert!(json.contains("\"agent\""));
         assert!(json.contains("\"declared_effects\""));
+        assert!(json.contains("\"semantic_hash\""));
+        assert!(!json.contains("\"type_fingerprint\""));
 
         let decoded = ArcweftBundle::from_json_slice(&bytes).expect("agent bundle decodes");
         assert_eq!(decoded.bundle_kind, BundleKind::AgentController);
@@ -575,7 +577,7 @@ mod tests {
                 required_entities: vec![RequiredEntity {
                     public_id: public_id("choice.opening.listen"),
                     kind: "choice_option".to_owned(),
-                    type_fingerprint: stable_hash("type:none"),
+                    semantic_hash: stable_hash("type:none"),
                     source_anchor: None,
                 }],
             },

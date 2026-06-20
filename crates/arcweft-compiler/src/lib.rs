@@ -488,7 +488,7 @@ fn required_agent_entity(
     Ok(RequiredEntity {
         public_id: AgentPublicId::new(entity.id().as_str().to_owned())?,
         kind: entity_kind_label(entity.ty().kind()).to_owned(),
-        type_fingerprint: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
+        semantic_hash: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
         source_anchor: required_entity_source_anchor(entity.source()),
     })
 }
@@ -2148,6 +2148,7 @@ effects { agent.observe }
             .as_ref()
             .expect("HIR-derived entity carries a source anchor");
 
+        assert_eq!(flow.semantic_hash.as_str(), "hir:flow:flow.opening:_");
         assert_eq!(source_anchor.path, "game.arcw");
         assert!(
             source_anchor.start_byte < source_anchor.end_byte,
