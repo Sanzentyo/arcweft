@@ -3,7 +3,10 @@ agent @agent.cli.state_wait state_wait()
 effects { agent.observe, agent.wait, debug.read }
 {
     wait(
-        all(state("route.phase").eq("opening"), observation("tick").ge(1i64)),
+        all(
+            state(state_path("route.phase")).eq("opening"),
+            observation(observation_path("tick")).ge(1i64),
+        ),
         timeout = 5s,
         stable_frames = 1u32,
         poll_frames = 1u32,

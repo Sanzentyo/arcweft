@@ -1026,6 +1026,67 @@ effects { debug.read, agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_typed_debug_path_constructors() {
+        let project = project_with_typed_debug_paths();
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_path debug_path()
+effects { debug.read, agent.observe, agent.wait }
+{
+    let route = state_path("route.phase")
+    let tick = observation_path("tick")
+    try wait(
+        all(
+            state(route).eq("opening"),
+            observation(tick).ge(1u64),
+        ),
+        timeout = 5ms,
+    )
+}
+"#,
+            &project,
+        )
+        .expect("typed debug path constructors typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::DebugStatePath)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ObservationFieldPath)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_rejects_empty_debug_path_constructor() {
+        let project = project_with_typed_debug_paths();
+        let error = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.debug_path debug_path()
+effects { debug.read }
+{
+    state_path("")
+}
+"#,
+            &project,
+        )
+        .expect_err("empty typed debug path is rejected");
+
+        assert!(error.to_string().contains("debug state path"));
+        assert!(error.to_string().contains("must not be empty"));
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_debug_path_value_mismatch() {
         let project = project_with_typed_debug_paths();
         let error = compile_agent_source_with_project(

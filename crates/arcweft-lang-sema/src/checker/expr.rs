@@ -772,18 +772,30 @@ impl TypeChecker<'_> {
             "metric" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Metric, "metric"))
             }
+            "state_path" => Some(self.check_agent_path_constructor_intrinsic(
+                name,
+                args,
+                "debug state path",
+                TypeKind::DebugStatePath,
+            )),
+            "observation_path" => Some(self.check_agent_path_constructor_intrinsic(
+                name,
+                args,
+                "observation field path",
+                TypeKind::ObservationFieldPath,
+            )),
             "state" => Some(self.check_agent_path_probe_intrinsic(
                 name,
                 args,
                 "debug state path",
-                &TypeKind::String,
+                &TypeKind::DebugStatePath,
                 DebugPathKind::State,
             )),
             "observation" => Some(self.check_agent_path_probe_intrinsic(
                 name,
                 args,
                 "observation field path",
-                &TypeKind::String,
+                &TypeKind::ObservationFieldPath,
                 DebugPathKind::Observation,
             )),
             "diagnostics" => Some(self.check_agent_no_arg_intrinsic(
@@ -1239,12 +1251,54 @@ impl TypeChecker<'_> {
         let Some(arg) = self.single_positional_agent_arg(name, args) else {
             return TypeKind::Probe(Box::new(TypeKind::AgentValue));
         };
-        self.expect_expr_type(arg, expected_path, context);
-        let value_type = Self::agent_string_literal(arg)
+        match self.check_expr(arg) {
+            Some(TypeKind::String) | None => {}
+            Some(actual) if self.types_compatible(expected_path, &actual) => {}
+            Some(actual) => self.errors.push(TypeCheckError::new(format!(
+                "{context} must have type String or {expected_path:?}, found {actual:?}"
+            ))),
+        }
+        let value_type = Self::agent_debug_path_literal(arg)
             .and_then(|path| self.env.debug_path_type(path_kind, path))
             .cloned()
             .unwrap_or(TypeKind::AgentValue);
         TypeKind::Probe(Box::new(value_type))
+    }
+
+    fn check_agent_path_constructor_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        context: &str,
+        result: TypeKind,
+    ) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return result;
+        };
+        self.expect_expr_type(arg, &TypeKind::String, context);
+        if Self::agent_string_literal(arg).is_some_and(str::is_empty) {
+            self.errors
+                .push(TypeCheckError::new(format!("{context} must not be empty")));
+        }
+        result
+    }
+
+    fn agent_debug_path_literal(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Literal(Literal::String(value)) => Some(value),
+            Expr::Call { callee, args }
+                if matches!(
+                    expr_path_label(callee).as_deref(),
+                    Some("state_path" | "observation_path")
+                ) =>
+            {
+                let [CallArg::Positional(path)] = args.as_slice() else {
+                    return None;
+                };
+                Self::agent_string_literal(path)
+            }
+            _ => None,
+        }
     }
 
     fn agent_string_literal(expr: &Expr) -> Option<&str> {

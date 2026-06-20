@@ -408,7 +408,13 @@ fn agent_controller_plan_lowers_state_and_observation_wait_predicates() {
 agent @agent.wait_state wait_state()
 effects { agent.wait, agent.observe, debug.read }
 {
-    let obs = wait(all(state("route.phase").eq("opening"), observation("tick").ge(1i64)), timeout = 5ms)
+    let obs = wait(
+        all(
+            state(state_path("route.phase")).eq("opening"),
+            observation(observation_path("tick")).ge(1i64),
+        ),
+        timeout = 5ms,
+    )
     return obs.tick
 }
 "#,

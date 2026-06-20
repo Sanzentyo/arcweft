@@ -398,9 +398,18 @@ fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {
             let [CallArg::Positional(path)] = args.as_slice() else {
                 return None;
             };
+            let probe_kind = expr_label(callee);
+            let constructor = match probe_kind.as_str() {
+                "state" => "state_path",
+                "observation" => "observation_path",
+                _ => return None,
+            };
             Some(runtime_record_expr([
-                runtime_field_expr("kind", runtime_string_expr(&expr_label(callee))),
-                runtime_field_expr("path", runtime_string_expr(&agent_string_label(path)?)),
+                runtime_field_expr("kind", runtime_string_expr(&probe_kind)),
+                runtime_field_expr(
+                    "path",
+                    runtime_string_expr(&agent_path_label(path, constructor)?),
+                ),
             ]))
         }
         _ => None,
@@ -422,6 +431,18 @@ fn agent_string_label(expr: &Expr) -> Option<String> {
         Expr::Path(path) => Some(path.clone()),
         Expr::EntityRef(entity) => Some(entity.body().to_owned()),
         _ => None,
+    }
+}
+
+fn agent_path_label(expr: &Expr, constructor: &str) -> Option<String> {
+    match expr {
+        Expr::Call { callee, args } if expr_label(callee) == constructor => {
+            let [CallArg::Positional(path)] = args.as_slice() else {
+                return None;
+            };
+            agent_string_label(path)
+        }
+        _ => agent_string_label(expr),
     }
 }
 

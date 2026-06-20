@@ -896,6 +896,8 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::Duration => Some("Duration"),
         TypeKind::Range => Some("Range"),
         TypeKind::DisplayText => Some("DisplayText"),
+        TypeKind::DebugStatePath => Some("DebugStatePath"),
+        TypeKind::ObservationFieldPath => Some("ObservationFieldPath"),
         TypeKind::Predicate => Some("Predicate"),
         TypeKind::Observation => Some("Observation"),
         TypeKind::ObservedObject => Some("ObservedObject"),

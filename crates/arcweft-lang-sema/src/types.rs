@@ -71,6 +71,8 @@ pub enum TypeKind {
     Duration,
     Range,
     DisplayText,
+    DebugStatePath,
+    ObservationFieldPath,
     Ref(EntityType),
     Probe(Box<TypeKind>),
     Predicate,
@@ -220,6 +222,8 @@ impl TypeKind {
             "char" | "Char" => Self::Char,
             "TextCluster" => Self::TextCluster,
             "Duration" => Self::Duration,
+            "DebugStatePath" => Self::DebugStatePath,
+            "ObservationFieldPath" => Self::ObservationFieldPath,
             "()" | "Unit" => Self::Unit,
             _ => return None,
         })

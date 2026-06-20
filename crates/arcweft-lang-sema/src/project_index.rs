@@ -98,6 +98,8 @@ pub enum AgentIntrinsic {
     PointerClick,
     SignalProbe,
     MetricProbe,
+    DebugStatePath,
+    ObservationFieldPath,
     StateProbe,
     ObservationProbe,
     Diagnostics,
@@ -1560,11 +1562,33 @@ fn agent_probe_callables() -> Vec<(&'static str, CallableSymbol)> {
             ),
         ),
         (
+            "state_path",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::DebugStatePath,
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::DebugStatePath),
+            ),
+        ),
+        (
+            "observation_path",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::ObservationFieldPath,
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::ObservationFieldPath),
+            ),
+        ),
+        (
             "state",
             CallableSymbol::new(
                 FunctionSignature::new(
                     TypeKind::Probe(Box::new(TypeKind::AgentValue)),
-                    [FunctionParam::required("path", TypeKind::String)],
+                    [FunctionParam::required("path", TypeKind::DebugStatePath)],
                 ),
                 [EffectCapability::new("debug.read")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::StateProbe),
@@ -1575,7 +1599,10 @@ fn agent_probe_callables() -> Vec<(&'static str, CallableSymbol)> {
             CallableSymbol::new(
                 FunctionSignature::new(
                     TypeKind::Probe(Box::new(TypeKind::AgentValue)),
-                    [FunctionParam::required("path", TypeKind::String)],
+                    [FunctionParam::required(
+                        "path",
+                        TypeKind::ObservationFieldPath,
+                    )],
                 ),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::ObservationProbe),
