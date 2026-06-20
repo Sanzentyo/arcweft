@@ -2497,6 +2497,14 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     let first_report: serde_json::Value =
         serde_json::from_slice(&first.stdout).expect("agent rag index output is JSON");
     assert_eq!(first_report["changed_only"], false);
+    let first_session_id = first_report["session_id"]
+        .as_str()
+        .expect("first RAG index session id")
+        .to_owned();
+    assert!(
+        first_session_id.starts_with("session.rag.index.cli.blake3."),
+        "agent rag index should report a product session id: {first_report}"
+    );
     assert_eq!(first_report["indexed_sources"], 1);
     assert!(
         first_report["indexed_chunks"]
@@ -2526,6 +2534,14 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     let second_report: serde_json::Value =
         serde_json::from_slice(&second.stdout).expect("agent rag index changed output is JSON");
     assert_eq!(second_report["changed_only"], true);
+    let second_session_id = second_report["session_id"]
+        .as_str()
+        .expect("second RAG index session id");
+    assert!(
+        second_session_id.starts_with("session.rag.index.cli.blake3."),
+        "agent rag index --changed should report a product session id: {second_report}"
+    );
+    assert_ne!(second_session_id, first_session_id);
     assert_eq!(second_report["indexed_sources"], 0);
     assert_eq!(second_report["skipped_unchanged_sources"], 1);
     assert_eq!(second_report["indexed_chunks"], 0);
@@ -2537,11 +2553,59 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     );
 
     assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
+    assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
 
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_agent_rag_index_sessions_are_persisted(
+    db_path: &Path,
+    first_session_id: &str,
+    second_session_id: &str,
+) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sessions")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--limit")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sessions reads RAG index sessions");
+    assert!(
+        output.status.success(),
+        "debug db sessions should list RAG index sessions\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db sessions JSON");
+    let sessions = report["sessions"].as_array().expect("sessions array");
+    for (session_id, changed_only, indexed_chunks) in [
+        (first_session_id, false, 1_u64),
+        (second_session_id, true, 0_u64),
+    ] {
+        let session = sessions
+            .iter()
+            .find(|session| session["session_id"] == session_id)
+            .unwrap_or_else(|| panic!("missing RAG index session {session_id}: {report}"));
+        assert_eq!(session["profile"], "rag");
+        assert_eq!(session["transport"], "cli");
+        assert_eq!(session["status"], "finished");
+        assert_eq!(session["metadata"]["operation"], "index");
+        assert_eq!(session["metadata"]["changed_only"], changed_only);
+        assert!(
+            session["metadata"]["indexed_chunks"]
+                .as_u64()
+                .is_some_and(|count| count >= indexed_chunks),
+            "RAG index session should preserve indexed chunk count: {session}"
+        );
+    }
 }
 
 #[test]

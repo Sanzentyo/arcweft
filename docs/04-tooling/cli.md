@@ -416,8 +416,11 @@ and records the selected query audit for later
 `arcweft.rag.explain`, `arcweft.rag.context.read`,
 `arcw debug db rag --query-id <id>`, and `arcweft.debug.search` readback.
 `arcw agent rag index --source <file-or-dir> ... --debug-db <path> [--changed]`
-can populate those source/project chunks without running a query. `arcw agent
-rag query [--trace <file.arcwx>] [--source <file-or-dir> ...]
+can populate those source/project chunks without running a query. Each index
+operation also records a finished `sessions` row with `profile = rag`, so
+`arcw debug db sessions --path <path>` can show which product/debug session
+created or skipped the index chunks. `arcw agent rag query
+[--trace <file.arcwx>] [--source <file-or-dir> ...]
 [--debug-db <path>] --query <text>
 [--max-privacy public|project|sensitive|secret] [--json]`
 builds the same explainable `RagContextPack` shape used by Agent MCP. At least
@@ -436,7 +439,8 @@ recursively expands to `.arcw` files in deterministic path order. Each source
 gets its own RAG chunk namespace so repeated text or repeated entity names from
 different source inputs do not overwrite each other in the debug store. When
 `--debug-db` is supplied, all selected-source candidates are upserted into the
-rebuildable debug store and the selected RAG query is recorded for later
+rebuildable debug store, the index operation is attached to a typed product
+session, and the selected RAG query is recorded for later
 `arcweft.rag.explain` / `arcweft.rag.context.read` readback. `arcw debug db rag
 --query-id <id> [--max-privacy public|project|sensitive|secret] [--json]`
 reconstructs the same persisted `RagContextPack` audit from `rag_queries` and

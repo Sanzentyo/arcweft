@@ -768,8 +768,29 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
         .iter()
         .filter(|source| !source.indexed)
         .count();
+    let session_id = agent_rag_index_session_id(&program_hash, options.changed)?;
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: Some(program_hash.clone()),
+            profile: "rag".to_owned(),
+            transport: "cli".to_owned(),
+            started_unix_ms: 0,
+            ended_unix_ms: Some(0),
+            status: DebugSessionStatus::Finished,
+            metadata: agent_rag_index_session_metadata(
+                options,
+                &source_reports,
+                indexed_sources,
+                skipped_unchanged_sources,
+                indexed_chunks,
+                skipped_unchanged_chunks,
+            ),
+        })
+        .map_err(|error| format!("failed to record RAG index session: {error}"))?;
     Ok(AgentRagIndexReport {
         path: options.debug_db.display().to_string(),
+        session_id: session_id.as_str().to_owned(),
         changed_only: options.changed,
         program_hash: program_hash.as_str().to_owned(),
         sources: source_reports,
@@ -871,6 +892,7 @@ struct AgentRagQueryResult {
 #[derive(serde::Serialize)]
 struct AgentRagIndexReport {
     path: String,
+    session_id: String,
     changed_only: bool,
     program_hash: String,
     sources: Vec<AgentRagIndexedSourceReport>,
@@ -888,6 +910,70 @@ struct AgentRagIndexedSourceReport {
     indexed_chunks: usize,
     skipped_unchanged_chunks: usize,
     indexed: bool,
+}
+
+fn agent_rag_index_session_id(
+    program_hash: &StableHash,
+    changed_only: bool,
+) -> Result<SessionId, String> {
+    let suffix = agent_content_hash(format!(
+        "cli:index:{}:{changed_only}",
+        program_hash.as_str()
+    ))
+    .replace(':', ".");
+    SessionId::new(format!("session.rag.index.cli.{suffix}"))
+        .map_err(|error| format!("failed to build RAG index session id: {error}"))
+}
+
+fn agent_rag_index_session_metadata(
+    options: &AgentRagIndexOptions,
+    sources: &[AgentRagIndexedSourceReport],
+    indexed_sources: usize,
+    skipped_unchanged_sources: usize,
+    indexed_chunks: usize,
+    skipped_unchanged_chunks: usize,
+) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([
+        ("operation".to_owned(), serde_json::json!("index")),
+        (
+            "changed_only".to_owned(),
+            serde_json::json!(options.changed),
+        ),
+        (
+            "indexed_sources".to_owned(),
+            serde_json::json!(indexed_sources),
+        ),
+        (
+            "skipped_unchanged_sources".to_owned(),
+            serde_json::json!(skipped_unchanged_sources),
+        ),
+        (
+            "indexed_chunks".to_owned(),
+            serde_json::json!(indexed_chunks),
+        ),
+        (
+            "skipped_unchanged_chunks".to_owned(),
+            serde_json::json!(skipped_unchanged_chunks),
+        ),
+        (
+            "sources".to_owned(),
+            serde_json::json!(
+                sources
+                    .iter()
+                    .map(|source| {
+                        serde_json::json!({
+                            "path": source.path,
+                            "source_hash": source.source_hash,
+                            "candidate_chunks": source.candidate_chunks,
+                            "indexed_chunks": source.indexed_chunks,
+                            "skipped_unchanged_chunks": source.skipped_unchanged_chunks,
+                            "indexed": source.indexed,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            ),
+        ),
+    ])
 }
 
 #[derive(serde::Serialize)]
