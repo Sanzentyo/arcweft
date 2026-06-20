@@ -20,21 +20,46 @@ chapter.
 | Windows validation exists for native Agent Script and debug/RAG paths | Windows commands and results are recorded in `agent-script-implementation.md` | Covered |
 | Linux/macOS validation procedure is documented | `agent-script-implementation.md` lists other-platform status and commands | Covered |
 
-## Remaining Before Goal Completion
+## Completion Judgement
 
-These are the remaining items that still affect the active Agent Script final
-goal:
+The package-scoped Agent Script final goal is implemented and validated against
+the 2026-06-18 package requirements. Remaining implementation notes in
+`agent-script-implementation.md` include broader product graph/player follow-up
+that is not required for the package acceptance criteria unless a later design
+explicitly expands this goal.
 
-- Re-run a compact milestone validation set after the latest lifecycle
-  privacy cut, including script source/bundle run parity, debug DB lifecycle
-  readback, RAG readback, and at least one native Agent Script scenario.
-- Refresh `agent-script-implementation.md` so the remaining section separates
-  package-goal leftovers from broader product-player work. In particular,
-  product-wide graph ownership and native/player-daemon scheduling are beyond
-  the package's initial Agent Script acceptance criteria unless a later design
-  explicitly expands this goal.
-- Run one final search for stale Agent Script package syntax and stale
-  `*.awfagent.ndjson` references before marking the goal complete.
+## Latest Compact Validation
+
+Run on Windows in this workspace after the lifecycle privacy cut:
+
+```bash
+cargo run -p arcweft-cli -- agent script check samples\agent-script\opening-smoke.awfagent --json
+cargo run -p arcweft-cli -- agent script check samples\agent-script\failure-investigation.awfagent --json
+cargo run -p arcweft-cli -- agent script build samples\agent-script\cli-run-smoke.awfagent --output target\codex-agent-script-final-validation\cli-run-smoke.awfb --json
+cargo run -p arcweft-cli -- agent script run samples\agent-script\cli-run-smoke.awfagent --json --trace-out target\codex-agent-script-final-validation\cli-run-smoke-source.arcwx
+cargo run -p arcweft-cli -- agent script run target\codex-agent-script-final-validation\cli-run-smoke.awfb --json --trace-out target\codex-agent-script-final-validation\cli-run-smoke-bundle.arcwx
+cargo run -p arcweft-cli -- agent script replay target\codex-agent-script-final-validation\cli-run-smoke-source.arcwx --expect target\codex-agent-script-final-validation\cli-run-smoke-bundle.arcwx --json
+cargo test -p arcweft-cli --test check agent_script_run_persists_debug_session_and_script_run -- --exact --nocapture
+cargo test -p arcweft-cli --test check agent_rag_query_uses_local_embedding_debug_db_channel -- --exact --nocapture
+cargo test -p arcweft-cli --test check debug_db_embed_remote_command_indexes_provider_vectors -- --exact --nocapture
+cargo run -p arcweft-cli --features native-capture -- agent script run samples\agent-script\native-choice-dispatch.awfagent --native-source samples\agent-script\native-choice-dispatch.arcw --json --trace-out target\codex-agent-script-final-validation\native-choice-dispatch.arcwx
+cargo run -p arcweft-cli -- agent script trace target\codex-agent-script-final-validation\native-choice-dispatch.arcwx --json
+```
+
+Results:
+
+- `opening-smoke.awfagent` and `failure-investigation.awfagent` checked with
+  `ok = true`.
+- Source and bundle execution of `cli-run-smoke` both completed with
+  `final_status = Done(Return("done"))`, and replay reported
+  `matched_expected = true`.
+- Debug lifecycle, local embedding RAG, and remote command embedding tests
+  passed.
+- Native choice dispatch completed with `steps = 4`, `host_calls = 3`, one
+  semantic action completion, and validated a trace with 11 records.
+- A final stable-docs/source/sample search for old Agent line-command syntax
+  and `*.awfagent.ndjson` references produced no matches. Historical review
+  notes under `docs/reviews/` are not stable design contracts.
 
 ## Explicit Non-Goals For This Package
 

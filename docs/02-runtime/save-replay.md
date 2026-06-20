@@ -73,5 +73,5 @@ migrate save from "1.2.0" to "1.3.0" {
 Agent actions are replayed as semantic actions when possible.
 
 ```bash
-arcw agent replay traces/bug.awfagent.ndjson --headless
+arcw agent script replay traces/bug.arcwx --json
 ```
