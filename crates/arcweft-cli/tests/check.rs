@@ -16,6 +16,7 @@ use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyCl
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
+use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
@@ -2117,6 +2118,71 @@ fn agent_rag_query_indexes_source_directories() {
         }),
         "directory source RAG should expand .arcw files and return rooted symbols: {directory_pack}"
     );
+}
+
+#[test]
+fn debug_db_sessions_reports_persisted_product_sessions() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/sessions-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug sessions target dir"))
+        .expect("create debug sessions target dir");
+    let store = DebugStore::open(&db_path).expect("open debug sessions database");
+    let session_id = SessionId::new("session.product").expect("session id");
+    let mut metadata = BTreeMap::new();
+    metadata.insert("target".to_owned(), serde_json::json!("native-player"));
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: None,
+            profile: "developer".to_owned(),
+            transport: "native".to_owned(),
+            started_unix_ms: 10,
+            ended_unix_ms: None,
+            status: DebugSessionStatus::Running,
+            metadata,
+        })
+        .expect("seed session");
+    let mut finished_metadata = BTreeMap::new();
+    finished_metadata.insert("outcome".to_owned(), serde_json::json!("done"));
+    store
+        .finish_session(
+            &session_id,
+            DebugSessionStatus::Finished,
+            25,
+            &finished_metadata,
+        )
+        .expect("finish session");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sessions")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--limit")
+        .arg("4")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sessions runs");
+    assert!(
+        output.status.success(),
+        "debug db sessions should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db sessions output is JSON");
+
+    assert_eq!(report["limit"], 4);
+    assert_eq!(report["sessions"][0]["session_id"], "session.product");
+    assert_eq!(report["sessions"][0]["profile"], "developer");
+    assert_eq!(report["sessions"][0]["transport"], "native");
+    assert_eq!(report["sessions"][0]["status"], "finished");
+    assert_eq!(report["sessions"][0]["ended_unix_ms"], 25);
+    assert_eq!(report["sessions"][0]["metadata"]["outcome"], "done");
 }
 
 #[test]

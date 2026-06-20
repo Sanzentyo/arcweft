@@ -2,11 +2,13 @@ use super::shared::print_json;
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
 use arcweft_debug_model::rag::SearchChannel;
+use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugStore, DebugStoreBlobRecord, DebugStoreError,
     DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport,
 };
 use clap::{Args, Subcommand};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -27,6 +29,7 @@ pub(super) enum DebugDbCommand {
     Migrate(DebugDbOptions),
     Validate(DebugDbOptions),
     Reindex(DebugDbOptions),
+    Sessions(DebugDbSessionsOptions),
     Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
@@ -49,6 +52,14 @@ pub(super) struct DebugDbDeleteOptions {
     unreferenced_blobs: bool,
     #[arg(long)]
     validate: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbSessionsOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long, default_value_t = 20)]
+    limit: usize,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -125,6 +136,26 @@ struct DebugDbReindexReport {
     path: String,
     user_version: u32,
     chunks_indexed: u64,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbSessionsReport {
+    path: String,
+    user_version: u32,
+    limit: usize,
+    sessions: Vec<DebugDbSessionReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbSessionReport {
+    session_id: String,
+    program_hash: Option<String>,
+    profile: String,
+    transport: String,
+    started_unix_ms: i64,
+    ended_unix_ms: Option<i64>,
+    status: DebugSessionStatus,
+    metadata: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(serde::Serialize)]
@@ -205,6 +236,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         }
         DebugDbCommand::Validate(options) => debug_db_validate_command(&options),
         DebugDbCommand::Reindex(options) => debug_db_reindex_command(&options),
+        DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
@@ -291,6 +323,45 @@ fn debug_db_reindex_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
         "{}: rebuilt chunk FTS index for {} chunks",
         report.path, report.chunks_indexed
     );
+    Ok(())
+}
+
+fn debug_db_sessions_command(options: &DebugDbSessionsOptions) -> Result<(), ExitCode> {
+    if options.limit == 0 {
+        eprintln!("error: debug db sessions --limit must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let sessions = store.sessions(options.limit).map_err(|error| {
+        eprintln!(
+            "error: failed to read debug sessions from {}: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let report = DebugDbSessionsReport {
+        path,
+        user_version,
+        limit: options.limit,
+        sessions: sessions.into_iter().map(debug_db_session_report).collect(),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!("{}: {} session(s)", report.path, report.sessions.len());
+    for session in &report.sessions {
+        println!(
+            "{} {} profile={} transport={} started={} ended={}",
+            session.session_id,
+            session.status.as_str(),
+            session.profile,
+            session.transport,
+            session.started_unix_ms,
+            session
+                .ended_unix_ms
+                .map_or_else(|| "-".to_owned(), |value| value.to_string())
+        );
+    }
     Ok(())
 }
 
@@ -390,6 +461,19 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         max_privacy: options.max_privacy,
         hits,
     })
+}
+
+fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
+    DebugDbSessionReport {
+        session_id: session.session_id.as_str().to_owned(),
+        program_hash: session.program_hash.map(|hash| hash.as_str().to_owned()),
+        profile: session.profile,
+        transport: session.transport,
+        started_unix_ms: session.started_unix_ms,
+        ended_unix_ms: session.ended_unix_ms,
+        status: session.status,
+        metadata: session.metadata,
+    }
 }
 
 fn validate_debug_db_search_selection(selector_count: usize, limit: usize) -> Result<(), ExitCode> {

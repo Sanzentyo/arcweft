@@ -8,6 +8,7 @@ use arcweft_debug_model::{
     history::DebugHistoryEntry,
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
+    session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
 };
 use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
@@ -39,8 +40,12 @@ pub enum DebugStoreError {
     InvalidChunkSourceKind(String),
     #[error("invalid RAG search channel stored in debug database: {0}")]
     InvalidSearchChannel(String),
+    #[error("invalid debug session status stored in debug database: {0}")]
+    InvalidSessionStatus(String),
     #[error("RAG query is not indexed: {0}")]
     RagQueryNotIndexed(String),
+    #[error("debug session is not indexed: {0}")]
+    SessionNotIndexed(String),
     #[error(transparent)]
     VectorSearch(#[from] VectorSearchError),
     #[error(transparent)]
@@ -77,6 +82,18 @@ pub struct DebugRagQueryAudit {
     pub pack: RagContextPack,
     pub status: String,
     pub created_unix_ms: i64,
+}
+
+#[derive(Debug)]
+struct RawDebugSession {
+    session_id: String,
+    program_hash: Option<String>,
+    profile: String,
+    transport: String,
+    started_unix_ms: i64,
+    ended_unix_ms: Option<i64>,
+    status: String,
+    metadata_json: String,
 }
 
 /// Current row counts for the rebuildable debug index.
@@ -251,20 +268,111 @@ impl DebugStore {
         transport: &str,
         started_unix_ms: i64,
     ) -> Result<(), DebugStoreError> {
-        let program_id = program_hash
+        self.upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: program_hash.cloned(),
+            profile: profile.to_owned(),
+            transport: transport.to_owned(),
+            started_unix_ms,
+            ended_unix_ms: None,
+            status: DebugSessionStatus::Running,
+            metadata: BTreeMap::new(),
+        })
+    }
+
+    pub fn upsert_session(&self, session: &DebugSession) -> Result<(), DebugStoreError> {
+        let program_id = session
+            .program_hash
+            .as_ref()
             .map(|hash| self.require_program_id(hash))
             .transpose()?;
+        let metadata_json = serde_json::to_string(&session.metadata)?;
         self.connection.execute(
-            "INSERT INTO sessions(\n               session_id, program_id, profile, transport, started_unix_ms, status\n             ) VALUES (?1, ?2, ?3, ?4, ?5, 'running')\n             ON CONFLICT(session_id) DO UPDATE SET\n               program_id = excluded.program_id,\n               profile = excluded.profile,\n               transport = excluded.transport,\n               status = 'running'",
+            "INSERT INTO sessions(
+               session_id, program_id, profile, transport, started_unix_ms,
+               ended_unix_ms, status, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(session_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               profile = excluded.profile,
+               transport = excluded.transport,
+               started_unix_ms = excluded.started_unix_ms,
+               ended_unix_ms = excluded.ended_unix_ms,
+               status = excluded.status,
+               metadata_json = excluded.metadata_json",
             params![
-                session_id.as_str(),
+                session.session_id.as_str(),
                 program_id,
-                profile,
-                transport,
-                started_unix_ms,
+                &session.profile,
+                &session.transport,
+                session.started_unix_ms,
+                session.ended_unix_ms,
+                session.status.as_str(),
+                metadata_json,
             ],
         )?;
         Ok(())
+    }
+
+    pub fn finish_session(
+        &self,
+        session_id: &SessionId,
+        status: DebugSessionStatus,
+        ended_unix_ms: i64,
+        metadata: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<(), DebugStoreError> {
+        let updated = self.connection.execute(
+            "UPDATE sessions
+             SET ended_unix_ms = ?2, status = ?3, metadata_json = ?4
+             WHERE session_id = ?1",
+            params![
+                session_id.as_str(),
+                ended_unix_ms,
+                status.as_str(),
+                serde_json::to_string(metadata)?,
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DebugStoreError::SessionNotIndexed(
+                session_id.as_str().to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn session(&self, session_id: &SessionId) -> Result<Option<DebugSession>, DebugStoreError> {
+        self.connection
+            .query_row(
+                "SELECT s.session_id, p.program_hash, s.profile, s.transport,
+                        s.started_unix_ms, s.ended_unix_ms, s.status, s.metadata_json
+                 FROM sessions AS s
+                 LEFT JOIN programs AS p ON p.program_id = s.program_id
+                 WHERE s.session_id = ?1",
+                [session_id.as_str()],
+                raw_debug_session_from_row,
+            )
+            .optional()?
+            .map(debug_session_from_raw)
+            .transpose()
+    }
+
+    pub fn sessions(&self, limit: usize) -> Result<Vec<DebugSession>, DebugStoreError> {
+        let limit =
+            i64::try_from(limit).map_err(|_| DebugStoreError::IntegerOverflow("sessions.limit"))?;
+        let mut statement = self.connection.prepare(
+            "SELECT s.session_id, p.program_hash, s.profile, s.transport,
+                    s.started_unix_ms, s.ended_unix_ms, s.status, s.metadata_json
+             FROM sessions AS s
+             LEFT JOIN programs AS p ON p.program_id = s.program_id
+             ORDER BY s.started_unix_ms DESC, s.session_id ASC
+             LIMIT ?1",
+        )?;
+        let rows = statement.query_map([limit], raw_debug_session_from_row)?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_session_from_raw)
+        })
+        .collect()
     }
 
     pub fn upsert_chunk(&self, chunk: &DebugChunk) -> Result<(), DebugStoreError> {
@@ -1543,6 +1651,35 @@ fn source_anchor_from_row(
     }))
 }
 
+fn raw_debug_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugSession> {
+    Ok(RawDebugSession {
+        session_id: row.get(0)?,
+        program_hash: row.get(1)?,
+        profile: row.get(2)?,
+        transport: row.get(3)?,
+        started_unix_ms: row.get(4)?,
+        ended_unix_ms: row.get(5)?,
+        status: row.get(6)?,
+        metadata_json: row.get(7)?,
+    })
+}
+
+fn debug_session_from_raw(raw: RawDebugSession) -> Result<DebugSession, DebugStoreError> {
+    let status = DebugSessionStatus::parse(&raw.status)
+        .ok_or_else(|| DebugStoreError::InvalidSessionStatus(raw.status.clone()))?;
+    let metadata = serde_json::from_str(&raw.metadata_json)?;
+    Ok(DebugSession {
+        session_id: SessionId::new(raw.session_id)?,
+        program_hash: raw.program_hash.map(StableHash::new).transpose()?,
+        profile: raw.profile,
+        transport: raw.transport,
+        started_unix_ms: raw.started_unix_ms,
+        ended_unix_ms: raw.ended_unix_ms,
+        status,
+        metadata,
+    })
+}
+
 fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
     if value.len() <= max_bytes {
         return (value.to_owned(), false);
@@ -1703,6 +1840,7 @@ mod tests {
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
         repl::DebugReplCell,
+        session::{DebugSession, DebugSessionStatus},
         sink::DebugEventSink,
     };
     use std::collections::BTreeMap;
@@ -2043,6 +2181,55 @@ mod tests {
         );
         assert_eq!(project_hits[0].hit.channel, SearchChannel::History);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
+    }
+
+    #[test]
+    fn debug_session_round_trips_and_finishes() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let program_hash = hash("blake3:session-program");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        let session_id = SessionId::new("session.product").expect("session id");
+        let mut metadata = BTreeMap::new();
+        metadata.insert("target".to_owned(), serde_json::json!("native-player"));
+        let session = DebugSession {
+            session_id: session_id.clone(),
+            program_hash: Some(program_hash.clone()),
+            profile: "developer".to_owned(),
+            transport: "native".to_owned(),
+            started_unix_ms: 10,
+            ended_unix_ms: None,
+            status: DebugSessionStatus::Running,
+            metadata,
+        };
+        store.upsert_session(&session).expect("upsert session");
+
+        assert_eq!(
+            store.session(&session_id).expect("read session"),
+            Some(session.clone())
+        );
+
+        let mut finished_metadata = BTreeMap::new();
+        finished_metadata.insert("reason".to_owned(), serde_json::json!("test-complete"));
+        store
+            .finish_session(
+                &session_id,
+                DebugSessionStatus::Finished,
+                25,
+                &finished_metadata,
+            )
+            .expect("finish session");
+        let finished = store
+            .session(&session_id)
+            .expect("read finished session")
+            .expect("session exists");
+
+        assert_eq!(finished.program_hash, Some(program_hash));
+        assert_eq!(finished.status, DebugSessionStatus::Finished);
+        assert_eq!(finished.ended_unix_ms, Some(25));
+        assert_eq!(finished.metadata["reason"], "test-complete");
+        assert_eq!(store.sessions(1).expect("list sessions"), vec![finished]);
     }
 
     #[test]
