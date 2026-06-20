@@ -493,6 +493,27 @@ impl DebugStore {
             .transpose()
     }
 
+    pub fn next_session_sequence(&self, session_id: &SessionId) -> Result<u64, DebugStoreError> {
+        let max_sequence = self.connection.query_row(
+            "SELECT MAX(sequence) FROM (
+               SELECT sequence FROM debug_events WHERE session_id = ?1
+               UNION ALL
+               SELECT started_sequence AS sequence FROM script_runs WHERE session_id = ?1
+               UNION ALL
+               SELECT finished_sequence AS sequence
+                 FROM script_runs
+                WHERE session_id = ?1 AND finished_sequence IS NOT NULL
+             )",
+            [session_id.as_str()],
+            |row| row.get::<_, Option<i64>>(0),
+        )?;
+        max_sequence.map_or(Ok(0), |sequence| {
+            u64::try_from(sequence)
+                .map_err(|_| DebugStoreError::IntegerOverflow("sessions.sequence"))
+                .map(|sequence| sequence.saturating_add(1))
+        })
+    }
+
     pub fn upsert_chunk(&self, chunk: &DebugChunk) -> Result<(), DebugStoreError> {
         let program_id = chunk
             .program_hash

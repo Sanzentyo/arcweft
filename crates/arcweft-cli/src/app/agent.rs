@@ -1912,9 +1912,16 @@ fn agent_script_persist_debug_run(
     let Some(mut store) = agent_script_debug_store(options)? else {
         return Ok(());
     };
-    let session_id = agent_script_start_debug_run(&store, options, input, run_id)?;
-    agent_script_append_debug_events(&mut store, run_id, debug_events)?;
-    agent_script_finish_debug_run(&store, &session_id, run_id, debug_events, report)?;
+    let (session_id, base_sequence) = agent_script_start_debug_run(&store, options, input, run_id)?;
+    agent_script_append_debug_events(&mut store, run_id, base_sequence, debug_events)?;
+    agent_script_finish_debug_run(
+        &store,
+        &session_id,
+        run_id,
+        base_sequence,
+        debug_events,
+        report,
+    )?;
     store
         .flush()
         .map_err(|error| format!("failed to flush Agent Script debug database: {error}"))
@@ -1946,7 +1953,7 @@ fn agent_script_start_debug_run(
     options: &AgentScriptRunOptions,
     input: &AgentScriptRunInput,
     run_id: &AgentRunId,
-) -> Result<SessionId, String> {
+) -> Result<(SessionId, u64), String> {
     let program_hash = StableHash::new(input.program_hash.clone())
         .map_err(|error| format!("invalid Agent Script program hash: {error}"))?;
     store
@@ -1975,6 +1982,9 @@ fn agent_script_start_debug_run(
             metadata: session_metadata,
         })
         .map_err(|error| format!("failed to persist Agent Script debug session: {error}"))?;
+    let base_sequence = store
+        .next_session_sequence(&session_id)
+        .map_err(|error| format!("failed to allocate Agent Script debug sequence: {error}"))?;
     let manifest = input.bundle.agent.as_ref();
     let project_binding_mode = manifest
         .map_or("unknown", |manifest| match manifest.project_binding.mode {
@@ -1990,7 +2000,7 @@ fn agent_script_start_debug_run(
             artifact_hash: None,
             source_hash: manifest.map(|manifest| manifest.source_hash.clone()),
             project_binding_mode,
-            started_sequence: 0,
+            started_sequence: base_sequence,
             finished_sequence: None,
             outcome: DebugScriptRunOutcome::Running,
             partially_effectful: false,
@@ -1999,17 +2009,19 @@ fn agent_script_start_debug_run(
             metadata: BTreeMap::new(),
         })
         .map_err(|error| format!("failed to persist Agent Script run start: {error}"))?;
-    Ok(session_id)
+    Ok((session_id, base_sequence))
 }
 
 fn agent_script_append_debug_events(
     store: &mut DebugStore,
     run_id: &AgentRunId,
+    base_sequence: u64,
     debug_events: &[DebugEvent],
 ) -> Result<(), String> {
     for event in debug_events {
         let mut event = event.clone();
         event.run_id = Some(run_id.clone());
+        event.sequence = event.sequence.saturating_add(base_sequence);
         store
             .append(&event)
             .map_err(|error| format!("failed to persist Agent Script debug event: {error}"))?;
@@ -2021,12 +2033,17 @@ fn agent_script_finish_debug_run(
     store: &DebugStore,
     session_id: &SessionId,
     run_id: &AgentRunId,
+    base_sequence: u64,
     debug_events: &[DebugEvent],
     report: &AgentScriptRunReport,
 ) -> Result<(), String> {
     let finished_sequence = debug_events
         .last()
-        .map_or(1, |event| event.sequence.saturating_add(1));
+        .map_or(base_sequence.saturating_add(1), |event| {
+            base_sequence
+                .saturating_add(event.sequence)
+                .saturating_add(1)
+        });
     let outcome = if report.ok {
         DebugScriptRunOutcome::Done
     } else {

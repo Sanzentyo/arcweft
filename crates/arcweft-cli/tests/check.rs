@@ -163,12 +163,18 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         "target/codex-agent-script-run-test/debug-db-trace-{}.arcwx",
         std::process::id()
     ));
+    let second_trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/debug-db-trace-second-{}.arcwx",
+        std::process::id()
+    ));
     let debug_db_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/script-run-{}.sqlite3",
         std::process::id()
     ));
     let run_id = format!("run.debug.{}", std::process::id());
+    let second_run_id = format!("run.debug.second.{}", std::process::id());
     let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_file(&second_trace_path);
     let _ = fs::remove_file(&debug_db_path);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -195,6 +201,26 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         serde_json::from_slice(&output.stdout).expect("script run output is JSON");
     assert_eq!(report["ok"], true);
     assert_eq!(report["debug_db"], debug_db_path.display().to_string());
+    let second_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_run_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&second_trace_path)
+        .arg("--debug-db")
+        .arg(&debug_db_path)
+        .arg("--run-id")
+        .arg(&second_run_id)
+        .output()
+        .expect("arcw agent script run persists second debug DB run");
+    assert!(
+        second_output.status.success(),
+        "second agent script debug DB run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&second_output.stdout),
+        String::from_utf8_lossy(&second_output.stderr)
+    );
 
     let store = DebugStore::open(&debug_db_path).expect("open Agent Script debug database");
     let session_id = SessionId::new("session.cli").expect("session id");
@@ -203,19 +229,30 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         .expect("load script session")
         .expect("script session persisted");
     assert_eq!(session.status, DebugSessionStatus::Finished);
-    assert_eq!(session.metadata["last_run_id"], run_id.as_str());
+    assert_eq!(session.metadata["last_run_id"], second_run_id.as_str());
     let expected_trace_path = trace_path.display().to_string();
     let persisted_run = store
         .script_run(&arcweft_agent_protocol::ids::AgentRunId::new(run_id).expect("run id"))
         .expect("load script run")
         .expect("script run persisted");
+    let second_persisted_run = store
+        .script_run(
+            &arcweft_agent_protocol::ids::AgentRunId::new(second_run_id).expect("second run id"),
+        )
+        .expect("load second script run")
+        .expect("second script run persisted");
     assert_eq!(persisted_run.outcome, DebugScriptRunOutcome::Done);
+    assert_eq!(second_persisted_run.outcome, DebugScriptRunOutcome::Done);
     assert_eq!(
         persisted_run.trace_uri.as_deref(),
         Some(expected_trace_path.as_str())
     );
+    assert!(
+        second_persisted_run.started_sequence > persisted_run.finished_sequence.unwrap(),
+        "second run should be appended after the first run sequence range"
+    );
     assert_eq!(persisted_run.metadata["steps"], report["steps"]);
-    assert_eq!(store.stats().expect("stats").script_runs, 1);
+    assert_eq!(store.stats().expect("stats").script_runs, 2);
     assert!(store.stats().expect("stats").debug_events > 0);
 }
 
