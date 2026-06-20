@@ -293,6 +293,31 @@ pub(super) struct AgentRagQueryOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+pub(super) struct AgentRagExplainOptions {
+    query_id: String,
+    #[arg(long = "debug-db")]
+    debug_db: PathBuf,
+    #[arg(long, value_parser = parse_agent_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct AgentRagContextReadOptions {
+    query_id: String,
+    chunk_id: String,
+    #[arg(long = "debug-db")]
+    debug_db: PathBuf,
+    #[arg(long, default_value_t = 4096)]
+    max_bytes: usize,
+    #[arg(long, value_parser = parse_agent_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptCheckOptions {
     path: PathBuf,
     #[arg(long)]
@@ -491,6 +516,8 @@ pub(super) fn agent_command(
 fn agent_rag_command(command: AgentRagCommand) -> Result<(), ExitCode> {
     match command {
         AgentRagCommand::Query(options) => agent_rag_query_command(&options),
+        AgentRagCommand::Explain(options) => agent_rag_explain_command(&options),
+        AgentRagCommand::ContextRead(options) => agent_rag_context_read_command(&options),
     }
 }
 
@@ -531,6 +558,158 @@ fn agent_rag_query_command(options: &AgentRagQueryOptions) -> Result<(), ExitCod
     }
 }
 
+fn agent_rag_explain_command(options: &AgentRagExplainOptions) -> Result<(), ExitCode> {
+    let query_id = options.query_id.trim();
+    if query_id.is_empty() {
+        eprintln!("agent rag explain: query id must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    match agent_rag_persisted_audit(&options.debug_db, query_id, options.max_privacy) {
+        Ok(audit) => {
+            let report = AgentRagExplainReport {
+                path: options.debug_db.display().to_string(),
+                query_id: query_id.to_owned(),
+                max_privacy: options.max_privacy,
+                status: audit.status,
+                created_unix_ms: audit.created_unix_ms,
+                query: audit.pack.query,
+                item_count: audit.pack.items.len(),
+                truncated: audit.pack.truncated,
+                items: audit
+                    .pack
+                    .items
+                    .into_iter()
+                    .map(agent_rag_explain_item_report)
+                    .collect(),
+            };
+            if options.json {
+                return print_json(&report);
+            }
+            println!(
+                "{}: RAG query {} status={} item(s)={} truncated={} max_privacy={}",
+                report.path,
+                report.query_id,
+                report.status,
+                report.item_count,
+                report.truncated,
+                report.max_privacy.as_str()
+            );
+            for item in &report.items {
+                println!(
+                    "- {} [{}] score={:.6}",
+                    item.title,
+                    item.chunk_id.as_str(),
+                    item.fused_score
+                );
+            }
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("agent rag explain: {error}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn agent_rag_context_read_command(options: &AgentRagContextReadOptions) -> Result<(), ExitCode> {
+    let query_id = options.query_id.trim();
+    if query_id.is_empty() {
+        eprintln!("agent rag context-read: query id must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    if options.chunk_id.trim().is_empty() {
+        eprintln!("agent rag context-read: chunk id must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    if options.max_bytes == 0 {
+        eprintln!("agent rag context-read --max-bytes must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    match agent_rag_context_read_report(options, query_id) {
+        Ok(report) => {
+            if options.json {
+                return print_json(&report);
+            }
+            println!(
+                "{}: RAG context {} from query {} bytes={} truncated={}",
+                report.path,
+                report.chunk_id.as_str(),
+                report.query_id,
+                report.item.body.len(),
+                report.body_truncated
+            );
+            println!("{}", report.item.body);
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("agent rag context-read: {error}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn agent_rag_context_read_report(
+    options: &AgentRagContextReadOptions,
+    query_id: &str,
+) -> Result<AgentRagContextReadReport, String> {
+    let audit = agent_rag_persisted_audit(&options.debug_db, query_id, options.max_privacy)?;
+    let mut item = audit
+        .pack
+        .items
+        .into_iter()
+        .find(|item| item.chunk_id.as_str() == options.chunk_id.trim())
+        .ok_or_else(|| {
+            format!(
+                "could not find chunk id `{}` in persisted RAG query `{query_id}`",
+                options.chunk_id.trim()
+            )
+        })?;
+    let (body, body_truncated) = truncate_utf8(&item.body, options.max_bytes);
+    item.body = body;
+    Ok(AgentRagContextReadReport {
+        path: options.debug_db.display().to_string(),
+        query_id: query_id.to_owned(),
+        chunk_id: item.chunk_id.clone(),
+        max_privacy: options.max_privacy,
+        max_bytes: options.max_bytes,
+        body_truncated,
+        item,
+    })
+}
+
+fn agent_rag_persisted_audit(
+    path: &Path,
+    query_id: &str,
+    max_privacy: PrivacyClass,
+) -> Result<arcweft_debug_sqlite::store::DebugRagQueryAudit, String> {
+    let store = DebugStore::open(path).map_err(|error| {
+        format!(
+            "failed to open persisted RAG debug DB `{}`: {error}",
+            path.display()
+        )
+    })?;
+    store
+        .rag_query_audit_with_max_privacy(query_id, max_privacy)
+        .map_err(|error| {
+            format!(
+                "failed to read persisted RAG query `{query_id}` from `{}`: {error}",
+                path.display()
+            )
+        })
+}
+
+fn agent_rag_explain_item_report(item: RagContextItem) -> AgentRagExplainItemReport {
+    AgentRagExplainItemReport {
+        chunk_id: item.chunk_id,
+        kind: item.kind,
+        title: item.title,
+        fused_score: item.fused_score,
+        channels: item.channels,
+        entity_ids: item.entity_ids,
+        source_anchor: item.source_anchor,
+    }
+}
+
 fn agent_rag_query_input_label(options: &AgentRagQueryOptions) -> String {
     match (&options.trace, options.source.as_slice()) {
         (Some(trace), []) => trace.display().to_string(),
@@ -555,6 +734,41 @@ struct AgentRagCandidate {
 struct AgentRagQueryResult {
     pack: RagContextPack,
     candidates: Vec<AgentRagCandidate>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRagExplainReport {
+    path: String,
+    query_id: String,
+    max_privacy: PrivacyClass,
+    status: String,
+    created_unix_ms: i64,
+    query: RagQuery,
+    item_count: usize,
+    truncated: bool,
+    items: Vec<AgentRagExplainItemReport>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRagExplainItemReport {
+    chunk_id: ChunkId,
+    kind: ChunkSourceKind,
+    title: String,
+    fused_score: f64,
+    channels: BTreeSet<SearchChannel>,
+    entity_ids: Vec<AgentPublicId>,
+    source_anchor: Option<DebugSourceAnchor>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRagContextReadReport {
+    path: String,
+    query_id: String,
+    chunk_id: ChunkId,
+    max_privacy: PrivacyClass,
+    max_bytes: usize,
+    body_truncated: bool,
+    item: RagContextItem,
 }
 
 fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQueryResult, String> {

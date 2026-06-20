@@ -2458,11 +2458,6 @@ fn agent_rag_query_indexes_source_project_chunks() {
         }),
         "source RAG should return rooted project symbol chunk: {pack}"
     );
-    assert!(
-        items.iter().any(|item| item["kind"] == "source"),
-        "source RAG should include source text chunks: {pack}"
-    );
-
     let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("debug")
         .arg("db")
@@ -2493,12 +2488,46 @@ fn agent_rag_query_indexes_source_project_chunks() {
         }),
         "debug db search should expose persisted project symbol chunks: {search}"
     );
+    assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
 
     assert_debug_db_rag_reads_source_project_chunks(&db_path, &pack);
 
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_debug_db_search_exposes_persisted_source_chunks(db_path: &Path) {
+    let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--query")
+        .arg("signal.set")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db search reads persisted source chunks");
+    assert!(
+        search_output.status.success(),
+        "debug db search should find source RAG chunks\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&search_output.stdout),
+        String::from_utf8_lossy(&search_output.stderr)
+    );
+    let search: serde_json::Value =
+        serde_json::from_slice(&search_output.stdout).expect("debug db source search JSON");
+    assert!(
+        search["hits"].as_array().is_some_and(|hits| {
+            hits.iter().any(|hit| {
+                hit["source_kind"] == "source"
+                    && hit["body"]
+                        .as_str()
+                        .is_some_and(|body| body.contains("signal.set"))
+            })
+        }),
+        "debug db search should expose persisted source text chunks: {search}"
+    );
 }
 
 fn assert_debug_db_rag_reads_source_project_chunks(db_path: &Path, pack: &serde_json::Value) {
@@ -2538,6 +2567,101 @@ fn assert_debug_db_rag_reads_source_project_chunks(db_path: &Path, pack: &serde_
             })
         }),
         "debug db rag should reconstruct selected persisted RAG items: {rag}"
+    );
+    assert_agent_rag_explain_reads_source_project_chunks(db_path, pack);
+    assert_agent_rag_context_read_reads_one_persisted_chunk(db_path, pack);
+}
+
+fn assert_agent_rag_explain_reads_source_project_chunks(db_path: &Path, pack: &serde_json::Value) {
+    let explain_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("explain")
+        .arg(
+            pack["query"]["query_id"]
+                .as_str()
+                .expect("RAG pack has query id"),
+        )
+        .arg("--debug-db")
+        .arg(db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag explain reads persisted RAG audit");
+    assert!(
+        explain_output.status.success(),
+        "agent rag explain should read persisted audit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&explain_output.stdout),
+        String::from_utf8_lossy(&explain_output.stderr)
+    );
+    let explain: serde_json::Value =
+        serde_json::from_slice(&explain_output.stdout).expect("agent rag explain output is JSON");
+
+    assert_eq!(explain["query_id"], pack["query"]["query_id"]);
+    assert_eq!(explain["query"]["text"], "choice.opening");
+    assert_eq!(explain["max_privacy"], "project");
+    assert_eq!(
+        explain["item_count"].as_u64(),
+        pack["items"].as_array().map(|items| items.len() as u64)
+    );
+    assert!(
+        explain["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "symbol"
+                    && item.get("body").is_none()
+                    && item["entity_ids"].as_array().is_some_and(|ids| {
+                        ids.contains(&serde_json::json!("choice.opening.listen"))
+                    })
+            })
+        }),
+        "agent rag explain should expose metadata without inlining bodies: {explain}"
+    );
+}
+
+fn assert_agent_rag_context_read_reads_one_persisted_chunk(
+    db_path: &Path,
+    pack: &serde_json::Value,
+) {
+    let chunk_id = pack["items"]
+        .as_array()
+        .expect("RAG items")
+        .iter()
+        .find(|item| item["kind"] == "symbol")
+        .and_then(|item| item["chunk_id"].as_str())
+        .expect("symbol chunk id");
+    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("context-read")
+        .arg(
+            pack["query"]["query_id"]
+                .as_str()
+                .expect("RAG pack has query id"),
+        )
+        .arg(chunk_id)
+        .arg("--debug-db")
+        .arg(db_path)
+        .arg("--max-bytes")
+        .arg("48")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag context-read reads one persisted chunk");
+    assert!(
+        read_output.status.success(),
+        "agent rag context-read should read one persisted chunk\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&read_output.stdout),
+        String::from_utf8_lossy(&read_output.stderr)
+    );
+    let read: serde_json::Value =
+        serde_json::from_slice(&read_output.stdout).expect("agent rag context-read output is JSON");
+
+    assert_eq!(read["query_id"], pack["query"]["query_id"]);
+    assert_eq!(read["chunk_id"], chunk_id);
+    assert_eq!(read["max_bytes"], 48);
+    assert!(
+        read["item"]["body"]
+            .as_str()
+            .is_some_and(|body| !body.is_empty() && body.len() <= 48),
+        "agent rag context-read should return capped body: {read}"
     );
 }
 
