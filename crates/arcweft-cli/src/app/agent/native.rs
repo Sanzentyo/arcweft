@@ -13,10 +13,10 @@ use super::{
     RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
     agent_cli_session_id, agent_rag_source_paths, agent_script_project_index,
     agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
-    agent_source_rag_index, flow_status_label, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
-    parse_agent_script_signal_arg, parse_agent_script_state_arg, parse_runtime_binding_arg,
-    parse_runtime_pure_workers, print_json, resolve_source_selection,
+    agent_script_runtime_policy, agent_source_rag_index, flow_status_label, fs,
+    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
+    native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
+    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
@@ -8128,14 +8128,7 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
         session,
         CollectingDebugSink::default(),
         NoopRagService,
-        RuntimeAgentPolicy::new([
-            RuntimeAgentCapability::Observe,
-            RuntimeAgentCapability::Act,
-            RuntimeAgentCapability::Capture,
-            RuntimeAgentCapability::ResourceRead,
-            RuntimeAgentCapability::DebugRecord,
-            RuntimeAgentCapability::Rag,
-        ]),
+        agent_script_runtime_policy(input),
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
     let run_result = runner.run_controller_bundle(

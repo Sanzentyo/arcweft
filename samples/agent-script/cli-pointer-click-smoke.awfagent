@@ -1,0 +1,11 @@
+#[agent(version = 1)]
+agent @agent.cli.pointer_click_smoke pointer_click_smoke()
+effects { agent.act.physical }
+{
+    let action = try pointer.click(
+        viewport_point(12u32, 34u32),
+        button = .secondary,
+    )
+    expect(action.accepted)
+    return action.after_state_hash
+}

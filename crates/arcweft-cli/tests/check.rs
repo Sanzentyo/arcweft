@@ -416,6 +416,32 @@ fn agent_script_run_json_executes_advance_text_smoke() {
 }
 
 #[test]
+fn agent_script_run_json_executes_pointer_click_smoke() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_pointer_click_smoke_path())
+        .arg("--json")
+        .output()
+        .expect("arcw agent script run executes pointer.click smoke");
+
+    assert!(
+        output.status.success(),
+        "agent script pointer.click run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("pointer.click run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 2);
+    assert_eq!(json["responses"][0]["kind"], "action");
+    assert_eq!(json["responses"][0]["response"]["accepted"], true);
+    assert_eq!(json["responses"][1]["kind"], "unit");
+}
+
+#[test]
 fn agent_script_run_json_executes_read_resource_smoke() {
     let trace_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/read-resource-trace-{}.arcwx",
@@ -3206,6 +3232,10 @@ fn agent_script_cli_capture_smoke_path() -> PathBuf {
 
 fn agent_script_cli_advance_text_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-advance-text-smoke.awfagent")
+}
+
+fn agent_script_cli_pointer_click_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-pointer-click-smoke.awfagent")
 }
 
 fn agent_script_cli_read_resource_smoke_path() -> PathBuf {

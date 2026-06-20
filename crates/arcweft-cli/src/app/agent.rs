@@ -1593,7 +1593,7 @@ struct AgentScriptRunReport {
     error: Option<String>,
 }
 
-struct AgentScriptRunInput {
+pub(in crate::app) struct AgentScriptRunInput {
     path: String,
     agents: usize,
     program_hash: String,
@@ -1795,14 +1795,7 @@ fn agent_script_run_bundle(
         session,
         CollectingDebugSink::default(),
         NoopRagService,
-        RuntimeAgentPolicy::new([
-            RuntimeAgentCapability::Observe,
-            RuntimeAgentCapability::Act,
-            RuntimeAgentCapability::Capture,
-            RuntimeAgentCapability::ResourceRead,
-            RuntimeAgentCapability::DebugRecord,
-            RuntimeAgentCapability::Rag,
-        ]),
+        agent_script_runtime_policy(input),
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
     let run_result = runner.run_controller_bundle(
@@ -1832,6 +1825,32 @@ fn agent_script_run_bundle(
     .map_err(|error| {
         eprintln!("error: {error}");
         ExitCode::FAILURE
+    })
+}
+
+pub(in crate::app) fn agent_script_runtime_policy(
+    input: &AgentScriptRunInput,
+) -> RuntimeAgentPolicy {
+    let mut capabilities = vec![
+        RuntimeAgentCapability::Observe,
+        RuntimeAgentCapability::Act,
+        RuntimeAgentCapability::Capture,
+        RuntimeAgentCapability::ResourceRead,
+        RuntimeAgentCapability::DebugRecord,
+        RuntimeAgentCapability::Rag,
+    ];
+    if agent_manifest_declares_effect(input, "agent.act.physical") {
+        capabilities.push(RuntimeAgentCapability::ActPhysical);
+    }
+    RuntimeAgentPolicy::new(capabilities)
+}
+
+fn agent_manifest_declares_effect(input: &AgentScriptRunInput, effect: &str) -> bool {
+    input.bundle.agent.as_ref().is_some_and(|manifest| {
+        manifest
+            .declared_effects
+            .iter()
+            .any(|declared| declared.as_str() == effect)
     })
 }
 
