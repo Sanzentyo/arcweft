@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
@@ -2916,6 +2917,54 @@ fn debug_db_vacuum_reports_page_counts() {
 }
 
 #[test]
+fn debug_db_prune_removes_rows_older_than_duration() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/prune-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug prune target dir"))
+        .expect("create debug prune target dir");
+    seed_debug_prune_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("prune")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--older-than")
+        .arg("1d")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db prune runs");
+    assert!(
+        output.status.success(),
+        "debug db prune should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db prune output is JSON");
+
+    assert_eq!(report["path"], db_path.display().to_string());
+    assert_eq!(report["older_than_millis"], 86_400_000);
+    assert_eq!(report["deleted"]["sessions"], 1);
+    assert_eq!(report["deleted"]["chunks"], 1);
+    assert_eq!(report["deleted"]["programs"], 1);
+    assert_eq!(report["stats_after"]["sessions"], 1);
+    assert_eq!(report["stats_after"]["chunks"], 1);
+    assert_eq!(report["stats_after"]["programs"], 1);
+
+    let store = DebugStore::open(&db_path).expect("open pruned debug db");
+    let hits = store
+        .lexical_search_with_max_privacy("retention", 10, PrivacyClass::Project)
+        .expect("search pruned chunks");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:new-retention");
+}
+
+#[test]
 fn debug_db_search_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/search-{}.sqlite3",
@@ -3330,6 +3379,68 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             metadata: BTreeMap::new(),
         })
         .expect("upsert graph expanded edge");
+}
+
+fn seed_debug_prune_db(path: &Path) {
+    let store = DebugStore::open(path).expect("open debug prune db");
+    let now = current_unix_millis_for_test();
+    let old = now - 2 * 86_400_000;
+    let old_program = stable_hash("b3:old-retention-program");
+    let new_program = stable_hash("b3:new-retention-program");
+    store
+        .upsert_program(&old_program, None, Some("old"), old)
+        .expect("old retention program");
+    store
+        .upsert_program(&new_program, None, Some("new"), now)
+        .expect("new retention program");
+    store
+        .start_session(
+            &SessionId::new("session.old.retention").expect("old session"),
+            Some(&old_program),
+            "test",
+            "cli",
+            old,
+        )
+        .expect("old retention session");
+    store
+        .start_session(
+            &SessionId::new("session.new.retention").expect("new session"),
+            Some(&new_program),
+            "test",
+            "cli",
+            now,
+        )
+        .expect("new retention session");
+    for (chunk_id, program_hash, created_unix_ms) in [
+        ("chunk:old-retention", old_program, old),
+        ("chunk:new-retention", new_program, now),
+    ] {
+        store
+            .upsert_chunk(&DebugChunk {
+                id: ChunkId::new(chunk_id),
+                program_hash: Some(program_hash),
+                source_kind: ChunkSourceKind::Documentation,
+                source_key: chunk_id.to_owned(),
+                title: chunk_id.to_owned(),
+                body: "retention prune marker".to_owned(),
+                content_hash: stable_hash(&format!("b3:{chunk_id}")),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy: PrivacyClass::Project,
+                metadata: BTreeMap::new(),
+                created_unix_ms,
+            })
+            .expect("retention chunk");
+    }
+}
+
+fn current_unix_millis_for_test() -> i64 {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after unix epoch")
+        .as_millis();
+    i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
 fn stable_hash(value: &str) -> StableHash {

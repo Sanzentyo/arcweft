@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DEBUG_DB_PATH: &str = ".arcweft/cache/agent-debug.sqlite3";
 
@@ -32,6 +33,7 @@ pub(super) enum DebugDbCommand {
     Migrate(DebugDbOptions),
     Validate(DebugDbOptions),
     Reindex(DebugDbOptions),
+    Prune(DebugDbPruneOptions),
     Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
     Runs(DebugDbRunsOptions),
@@ -60,6 +62,14 @@ pub(super) struct DebugDbDeleteOptions {
     unreferenced_blobs: bool,
     #[arg(long)]
     validate: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbPruneOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "older-than", value_parser = parse_debug_retention_duration_millis)]
+    older_than_millis: i64,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -198,6 +208,28 @@ struct DebugDbVacuumReport {
     freelist_count_before: u64,
     page_count_after: u64,
     freelist_count_after: u64,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbPruneReport {
+    path: String,
+    user_version: u32,
+    older_than_millis: i64,
+    cutoff_unix_ms: i64,
+    deleted: DebugDbPruneDeletedReport,
+    stats_after: DebugDbStatsReport,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbPruneDeletedReport {
+    sessions: u64,
+    rag_queries: u64,
+    chunks: u64,
+    diagnostics: u64,
+    history_entries: u64,
+    test_results: u64,
+    blobs: u64,
+    programs: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -383,6 +415,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         }
         DebugDbCommand::Validate(options) => debug_db_validate_command(&options),
         DebugDbCommand::Reindex(options) => debug_db_reindex_command(&options),
+        DebugDbCommand::Prune(options) => debug_db_prune_command(&options),
         DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
@@ -474,6 +507,62 @@ fn debug_db_reindex_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
     println!(
         "{}: rebuilt chunk FTS index for {} chunks",
         report.path, report.chunks_indexed
+    );
+    Ok(())
+}
+
+fn debug_db_prune_command(options: &DebugDbPruneOptions) -> Result<(), ExitCode> {
+    let now_unix_ms = current_unix_millis().map_err(|error| {
+        eprintln!("error: failed to read system clock for debug db prune: {error}");
+        ExitCode::FAILURE
+    })?;
+    let cutoff_unix_ms = now_unix_ms.saturating_sub(options.older_than_millis);
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let deleted = store.prune_before(cutoff_unix_ms).map_err(|error| {
+        eprintln!(
+            "error: failed to prune debug database {}: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let stats_after = store.stats().map_err(|error| {
+        eprintln!(
+            "error: failed to read debug database {} after prune: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let report = DebugDbPruneReport {
+        path,
+        user_version,
+        older_than_millis: options.older_than_millis,
+        cutoff_unix_ms,
+        deleted: DebugDbPruneDeletedReport {
+            sessions: deleted.sessions,
+            rag_queries: deleted.rag_queries,
+            chunks: deleted.chunks,
+            diagnostics: deleted.diagnostics,
+            history_entries: deleted.history_entries,
+            test_results: deleted.test_results,
+            blobs: deleted.blobs,
+            programs: deleted.programs,
+        },
+        stats_after: stats_report(stats_after),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: pruned rows older than {}ms cutoff={}",
+        report.path, report.older_than_millis, report.cutoff_unix_ms
+    );
+    println!(
+        "deleted: sessions={}, rag_queries={}, chunks={}, blobs={}, programs={}",
+        report.deleted.sessions,
+        report.deleted.rag_queries,
+        report.deleted.chunks,
+        report.deleted.blobs,
+        report.deleted.programs
     );
     Ok(())
 }
@@ -1332,6 +1421,62 @@ fn parse_debug_privacy_class(value: &str) -> Result<PrivacyClass, String> {
     })
 }
 
+fn parse_debug_retention_duration_millis(value: &str) -> Result<i64, String> {
+    let value = value.trim();
+    let Some((number, unit, multiplier)) = debug_retention_duration_parts(value) else {
+        return Err(
+            "debug db prune --older-than must use a positive duration such as 30d, 12h, 15m, 10s, or 500ms"
+                .to_owned(),
+        );
+    };
+    if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(format!(
+            "debug db prune --older-than has an invalid numeric component: `{value}`"
+        ));
+    }
+    let amount = number
+        .parse::<u128>()
+        .map_err(|error| format!("debug db prune --older-than is too large: {error}"))?;
+    if amount == 0 {
+        return Err("debug db prune --older-than must be greater than zero".to_owned());
+    }
+    let millis = amount
+        .checked_mul(multiplier)
+        .ok_or_else(|| "debug db prune --older-than is too large".to_owned())?;
+    i64::try_from(millis)
+        .map_err(|_| "debug db prune --older-than exceeds i64 milliseconds".to_owned())
+        .and_then(|millis| {
+            if millis > 0 {
+                Ok(millis)
+            } else {
+                Err(format!(
+                    "debug db prune --older-than unit `{unit}` produced an invalid duration"
+                ))
+            }
+        })
+}
+
+fn debug_retention_duration_parts(value: &str) -> Option<(&str, &str, u128)> {
+    [
+        ("ms", 1_u128),
+        ("s", 1_000),
+        ("m", 60_000),
+        ("h", 3_600_000),
+        ("d", 86_400_000),
+    ]
+    .into_iter()
+    .find_map(|(unit, multiplier)| {
+        value
+            .strip_suffix(unit)
+            .map(|number| (number, unit, multiplier))
+    })
+}
+
+fn current_unix_millis() -> Result<i64, std::time::SystemTimeError> {
+    let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+    Ok(i64::try_from(millis).unwrap_or(i64::MAX))
+}
+
 const fn debug_search_channel_label(channel: SearchChannel) -> &'static str {
     match channel {
         SearchChannel::ExactEntity => "exact_entity",
@@ -1388,6 +1533,20 @@ mod tests {
         assert!(checked_blob_file_path(root, "../escape").is_none());
         assert!(checked_blob_file_path(root, "/absolute").is_none());
         assert!(checked_blob_file_path(root, "").is_none());
+    }
+
+    #[test]
+    fn parse_debug_retention_duration_accepts_explicit_units() {
+        assert_eq!(parse_debug_retention_duration_millis("500ms"), Ok(500));
+        assert_eq!(parse_debug_retention_duration_millis("10s"), Ok(10_000));
+        assert_eq!(parse_debug_retention_duration_millis("15m"), Ok(900_000));
+        assert_eq!(parse_debug_retention_duration_millis("12h"), Ok(43_200_000));
+        assert_eq!(
+            parse_debug_retention_duration_millis("30d"),
+            Ok(2_592_000_000)
+        );
+        assert!(parse_debug_retention_duration_millis("0d").is_err());
+        assert!(parse_debug_retention_duration_millis("30").is_err());
     }
 
     #[test]

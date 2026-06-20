@@ -168,6 +168,19 @@ pub struct DebugStoreVacuumReport {
     pub freelist_count_after: u64,
 }
 
+/// Row counts removed by a debug-store retention prune.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DebugStorePruneReport {
+    pub sessions: u64,
+    pub rag_queries: u64,
+    pub chunks: u64,
+    pub diagnostics: u64,
+    pub history_entries: u64,
+    pub test_results: u64,
+    pub blobs: u64,
+    pub programs: u64,
+}
+
 /// Blob row metadata needed by CLI-side byte store lifecycle operations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DebugStoreBlobRecord {
@@ -258,6 +271,97 @@ impl DebugStore {
             page_count_after: self.pragma_count("page_count")?,
             freelist_count_after: self.pragma_count("freelist_count")?,
         })
+    }
+
+    pub fn prune_before(
+        &self,
+        cutoff_unix_ms: i64,
+    ) -> Result<DebugStorePruneReport, DebugStoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let report = DebugStorePruneReport {
+            sessions: delete_count(
+                transaction.execute(
+                    "DELETE FROM sessions
+                     WHERE coalesce(ended_unix_ms, started_unix_ms) < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "sessions.deleted",
+            )?,
+            rag_queries: delete_count(
+                transaction.execute(
+                    "DELETE FROM rag_queries WHERE created_unix_ms < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "rag_queries.deleted",
+            )?,
+            chunks: delete_count(
+                transaction.execute(
+                    "DELETE FROM chunks WHERE created_unix_ms < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "chunks.deleted",
+            )?,
+            diagnostics: delete_count(
+                transaction.execute(
+                    "DELETE FROM diagnostics WHERE created_unix_ms < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "diagnostics.deleted",
+            )?,
+            history_entries: delete_count(
+                transaction.execute(
+                    "DELETE FROM history_entries WHERE created_unix_ms < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "history_entries.deleted",
+            )?,
+            test_results: delete_count(
+                transaction.execute(
+                    "DELETE FROM test_results WHERE created_unix_ms < ?1",
+                    [cutoff_unix_ms],
+                )?,
+                "test_results.deleted",
+            )?,
+            blobs: delete_count(
+                transaction.execute(
+                    "DELETE FROM blobs
+                     WHERE last_access_unix_ms < ?1
+                       AND NOT EXISTS (
+                         SELECT 1 FROM captures WHERE captures.blob_hash = blobs.blob_hash
+                       )",
+                    [cutoff_unix_ms],
+                )?,
+                "blobs.deleted",
+            )?,
+            programs: delete_count(
+                transaction.execute(
+                    "DELETE FROM programs
+                     WHERE created_unix_ms < ?1
+                       AND NOT EXISTS (
+                         SELECT 1 FROM sessions WHERE sessions.program_id = programs.program_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM chunks WHERE chunks.program_id = programs.program_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM rag_queries WHERE rag_queries.program_id = programs.program_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM diagnostics WHERE diagnostics.program_id = programs.program_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM history_entries WHERE history_entries.program_id = programs.program_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM test_results WHERE test_results.program_id = programs.program_id
+                       )",
+                    [cutoff_unix_ms],
+                )?,
+                "programs.deleted",
+            )?,
+        };
+        transaction.commit()?;
+        Ok(report)
     }
 
     pub fn delete_unreferenced_blobs(&self) -> Result<u64, DebugStoreError> {
@@ -1662,6 +1766,10 @@ fn parse_chunk_source_kind(value: &str) -> Option<ChunkSourceKind> {
     }
 }
 
+fn delete_count(count: usize, column: &'static str) -> Result<u64, DebugStoreError> {
+    u64::try_from(count).map_err(|_| DebugStoreError::IntegerOverflow(column))
+}
+
 fn rag_policy_roots(policy: &serde_json::Value) -> Result<Vec<PublicId>, DebugStoreError> {
     policy
         .get("roots")
@@ -2605,6 +2713,170 @@ mod tests {
         assert!(report.page_count_before > 0);
         assert!(report.page_count_after > 0);
         assert!(report.freelist_count_after <= report.freelist_count_before);
+    }
+
+    #[test]
+    fn prune_before_removes_old_rebuildable_debug_rows() {
+        let mut store = DebugStore::open_in_memory().expect("open store");
+        let old_program = hash("blake3:old-program");
+        let new_program = hash("blake3:new-program");
+        seed_prune_lifecycle_rows(&mut store, &old_program, &new_program);
+        seed_prune_chunks(&store, &old_program, &new_program);
+        seed_prune_raw_rows(&store);
+
+        let report = store.prune_before(100).expect("prune old rows");
+        assert_eq!(report.sessions, 1);
+        assert_eq!(report.rag_queries, 1);
+        assert_eq!(report.chunks, 1);
+        assert_eq!(report.blobs, 1);
+        assert_eq!(report.programs, 1);
+
+        let stats = store.stats().expect("stats");
+        assert_eq!(stats.sessions, 1);
+        assert_eq!(stats.script_runs, 0);
+        assert_eq!(stats.debug_events, 0);
+        assert_eq!(stats.repl_cells, 0);
+        assert_eq!(stats.rag_queries, 1);
+        assert_eq!(stats.chunks, 1);
+        assert_eq!(stats.blobs, 1);
+        assert_eq!(stats.programs, 1);
+        assert_eq!(
+            store
+                .lexical_search_with_max_privacy("retention", 10, PrivacyClass::Project)
+                .expect("search after prune")
+                .iter()
+                .map(|hit| hit.hit.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["chunk:new-prune"]
+        );
+    }
+
+    fn seed_prune_lifecycle_rows(
+        store: &mut DebugStore,
+        old_program: &StableHash,
+        new_program: &StableHash,
+    ) {
+        store
+            .upsert_program(old_program, None, Some("old"), 10)
+            .expect("old program");
+        store
+            .upsert_program(new_program, None, Some("new"), 200)
+            .expect("new program");
+        let old_session = SessionId::new("session.old").expect("old session");
+        store
+            .start_session(&old_session, Some(old_program), "test", "cli", 10)
+            .expect("old session row");
+        store
+            .start_session(
+                &SessionId::new("session.new").expect("new session"),
+                Some(new_program),
+                "test",
+                "cli",
+                200,
+            )
+            .expect("new session row");
+        let old_run = AgentRunId::new("run.old").expect("old run");
+        store
+            .upsert_script_run(&prune_script_run(&old_session, &old_run))
+            .expect("old script run");
+        store
+            .append(&prune_debug_event(&old_session, &old_run))
+            .expect("old event");
+        store
+            .upsert_repl_cell(&prune_repl_cell(old_session, old_run))
+            .expect("old repl cell");
+    }
+
+    fn prune_script_run(session_id: &SessionId, run_id: &AgentRunId) -> DebugScriptRun {
+        DebugScriptRun {
+            run_id: run_id.clone(),
+            session_id: session_id.clone(),
+            agent_id: Some(PublicId::new("agent.old").expect("agent id")),
+            artifact_hash: None,
+            source_hash: Some(hash("blake3:old-source")),
+            project_binding_mode: "strict".to_owned(),
+            started_sequence: 1,
+            finished_sequence: None,
+            outcome: DebugScriptRunOutcome::Running,
+            partially_effectful: false,
+            trace_uri: None,
+            error: None,
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    fn prune_debug_event(session_id: &SessionId, run_id: &AgentRunId) -> DebugEvent {
+        DebugEvent {
+            schema_version: 1,
+            session_id: session_id.clone(),
+            run_id: Some(run_id.clone()),
+            sequence: 1,
+            tick: Some(1),
+            kind: DebugEventKind::Observation,
+            payload: serde_json::json!({ "message": "old" }),
+            created_unix_ms: 10,
+        }
+    }
+
+    fn prune_repl_cell(session_id: SessionId, run_id: AgentRunId) -> DebugReplCell {
+        DebugReplCell {
+            cell_id: "repl:old:1".to_owned(),
+            session_id,
+            run_id: Some(run_id),
+            ordinal: 1,
+            source: "observe()".to_owned(),
+            source_hash: hash("blake3:old-cell"),
+            status: "ok".to_owned(),
+            inferred_type: None,
+            display: None,
+            partially_effectful: false,
+            diagnostic_ids: Vec::new(),
+            created_unix_ms: 10,
+        }
+    }
+
+    fn seed_prune_chunks(store: &DebugStore, old_program: &StableHash, new_program: &StableHash) {
+        for (chunk_id, program_hash, created_unix_ms) in [
+            ("chunk:old-prune", old_program.clone(), 10),
+            ("chunk:new-prune", new_program.clone(), 200),
+        ] {
+            store
+                .upsert_chunk(&DebugChunk {
+                    id: ChunkId::new(chunk_id),
+                    program_hash: Some(program_hash),
+                    source_kind: ChunkSourceKind::Documentation,
+                    source_key: chunk_id.to_owned(),
+                    title: chunk_id.to_owned(),
+                    body: "debug retention body".to_owned(),
+                    content_hash: hash(&format!("blake3:{chunk_id}")),
+                    semantic_hash: None,
+                    source_anchor: None,
+                    entity_ids: Vec::new(),
+                    privacy: PrivacyClass::Project,
+                    metadata: BTreeMap::new(),
+                    created_unix_ms,
+                })
+                .expect("chunk row");
+        }
+    }
+
+    fn seed_prune_raw_rows(store: &DebugStore) {
+        store
+            .connection
+            .execute_batch(
+                "INSERT INTO rag_queries(
+                   query_id, query_text, query_hash, policy_json, status, created_unix_ms
+                 ) VALUES
+                   ('rag:old-prune', 'old', 'hash:old', '{}', 'selected', 10),
+                   ('rag:new-prune', 'new', 'hash:new', '{}', 'selected', 200);
+                 INSERT INTO blobs(
+                   blob_hash, media_type, byte_len, relative_path, privacy_class,
+                   created_unix_ms, last_access_unix_ms
+                 ) VALUES
+                   ('blob:old-prune', 'image/png', 1, 'blake3/old-prune', 'project', 10, 10),
+                   ('blob:new-prune', 'image/png', 1, 'blake3/new-prune', 'project', 200, 200);",
+            )
+            .expect("raw prune rows");
     }
 
     #[test]
