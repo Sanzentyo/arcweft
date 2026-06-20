@@ -3120,6 +3120,71 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
 }
 
 #[test]
+fn debug_db_close_stale_sessions_abandons_old_running_sessions() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/close-stale-sessions-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug stale sessions target dir"))
+        .expect("create debug stale sessions target dir");
+    let store = DebugStore::open(&db_path).expect("open debug sessions database");
+    let old = SessionId::new("session.old-running").expect("old session id");
+    let fresh = SessionId::new("session.fresh-running").expect("fresh session id");
+    store
+        .start_session(&old, None, "developer", "cli", 0)
+        .expect("seed old running session");
+    store
+        .start_session(&fresh, None, "developer", "cli", i64::MAX / 2)
+        .expect("seed fresh running session");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("close-stale-sessions")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--stale-after")
+        .arg("1ms")
+        .arg("--reason")
+        .arg("test-stale-close")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db close-stale-sessions runs");
+    assert!(
+        output.status.success(),
+        "debug db close-stale-sessions should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("debug db close-stale-sessions output is JSON");
+    assert_eq!(report["dry_run"], false);
+    assert_eq!(report["matched_sessions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(report["closed_sessions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        report["closed_sessions"][0]["session_id"],
+        "session.old-running"
+    );
+    assert_eq!(report["closed_sessions"][0]["status"], "abandoned");
+    assert_eq!(
+        report["closed_sessions"][0]["metadata"]["lifecycle_policy"]["reason"],
+        "test-stale-close"
+    );
+
+    let old_session = store
+        .session(&old)
+        .expect("read old session")
+        .expect("old session exists");
+    assert_eq!(old_session.status, DebugSessionStatus::Abandoned);
+    let fresh_session = store
+        .session(&fresh)
+        .expect("read fresh session")
+        .expect("fresh session exists");
+    assert_eq!(fresh_session.status, DebugSessionStatus::Running);
+}
+
+#[test]
 fn debug_db_timeline_reports_privacy_filtered_events() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/timeline-{}.sqlite3",

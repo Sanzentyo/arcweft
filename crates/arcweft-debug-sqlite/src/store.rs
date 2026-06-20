@@ -555,6 +555,60 @@ impl DebugStore {
         .collect()
     }
 
+    pub fn stale_running_sessions(
+        &self,
+        cutoff_unix_ms: i64,
+    ) -> Result<Vec<DebugSession>, DebugStoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT s.session_id, p.program_hash, s.profile, s.transport,
+                    s.started_unix_ms, s.ended_unix_ms, s.status, s.metadata_json
+             FROM sessions AS s
+             LEFT JOIN programs AS p ON p.program_id = s.program_id
+             WHERE s.status = 'running'
+               AND s.ended_unix_ms IS NULL
+               AND s.started_unix_ms <= ?1
+             ORDER BY s.started_unix_ms ASC, s.session_id ASC",
+        )?;
+        let rows = statement.query_map([cutoff_unix_ms], raw_debug_session_from_row)?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_session_from_raw)
+        })
+        .collect()
+    }
+
+    pub fn abandon_stale_running_sessions(
+        &self,
+        cutoff_unix_ms: i64,
+        ended_unix_ms: i64,
+        reason: &str,
+    ) -> Result<Vec<DebugSession>, DebugStoreError> {
+        let stale_sessions = self.stale_running_sessions(cutoff_unix_ms)?;
+        stale_sessions
+            .into_iter()
+            .map(|mut session| {
+                session.status = DebugSessionStatus::Abandoned;
+                session.ended_unix_ms = Some(ended_unix_ms);
+                session.metadata.insert(
+                    "lifecycle_policy".to_owned(),
+                    serde_json::json!({
+                        "operation": "abandon_stale_running_sessions",
+                        "reason": reason,
+                        "cutoff_unix_ms": cutoff_unix_ms,
+                        "closed_unix_ms": ended_unix_ms,
+                    }),
+                );
+                self.finish_session(
+                    &session.session_id,
+                    session.status,
+                    ended_unix_ms,
+                    &session.metadata,
+                )?;
+                Ok(session)
+            })
+            .collect()
+    }
+
     pub fn upsert_script_run(&self, run: &DebugScriptRun) -> Result<(), DebugStoreError> {
         self.connection.execute(
             "INSERT INTO script_runs(
@@ -3396,6 +3450,71 @@ mod tests {
         assert_eq!(finished.ended_unix_ms, Some(25));
         assert_eq!(finished.metadata["reason"], "test-complete");
         assert_eq!(store.sessions(1).expect("list sessions"), vec![finished]);
+    }
+
+    #[test]
+    fn stale_running_sessions_are_abandoned_by_lifecycle_policy() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let old = SessionId::new("session.old-running").expect("session id");
+        let fresh = SessionId::new("session.fresh-running").expect("session id");
+        let finished = SessionId::new("session.finished").expect("session id");
+        store
+            .start_session(&old, None, "agent", "cli", 1_000)
+            .expect("old session");
+        store
+            .start_session(&fresh, None, "agent", "cli", 5_000)
+            .expect("fresh session");
+        store
+            .start_session(&finished, None, "agent", "cli", 500)
+            .expect("finished session");
+        store
+            .finish_session(
+                &finished,
+                DebugSessionStatus::Finished,
+                750,
+                &BTreeMap::new(),
+            )
+            .expect("finish session");
+
+        let stale = store
+            .stale_running_sessions(2_000)
+            .expect("stale running sessions");
+        assert_eq!(
+            stale
+                .iter()
+                .map(|session| session.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["session.old-running"]
+        );
+
+        let abandoned = store
+            .abandon_stale_running_sessions(2_000, 6_000, "test-stale-policy")
+            .expect("abandon stale sessions");
+        assert_eq!(abandoned.len(), 1);
+        assert_eq!(abandoned[0].session_id, old);
+        assert_eq!(abandoned[0].status, DebugSessionStatus::Abandoned);
+        assert_eq!(abandoned[0].ended_unix_ms, Some(6_000));
+        assert_eq!(
+            abandoned[0].metadata["lifecycle_policy"]["reason"],
+            "test-stale-policy"
+        );
+
+        assert_eq!(
+            store
+                .session(&fresh)
+                .expect("fresh session")
+                .expect("fresh exists")
+                .status,
+            DebugSessionStatus::Running
+        );
+        assert_eq!(
+            store
+                .session(&finished)
+                .expect("finished session")
+                .expect("finished exists")
+                .status,
+            DebugSessionStatus::Finished
+        );
     }
 
     #[test]

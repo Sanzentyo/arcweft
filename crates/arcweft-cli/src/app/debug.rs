@@ -44,6 +44,7 @@ pub(super) enum DebugDbCommand {
     Prune(DebugDbPruneOptions),
     Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
+    CloseStaleSessions(DebugDbCloseStaleSessionsOptions),
     Runs(DebugDbRunsOptions),
     Rag(DebugDbRagOptions),
     Timeline(DebugDbTimelineOptions),
@@ -87,6 +88,18 @@ pub(super) struct DebugDbSessionsOptions {
     db: DebugDbOptions,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbCloseStaleSessionsOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "stale-after", value_parser = parse_debug_retention_duration_millis)]
+    stale_after_millis: i64,
+    #[arg(long, default_value = "stale_running_session")]
+    reason: String,
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -299,6 +312,19 @@ struct DebugDbSessionsReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbCloseStaleSessionsReport {
+    path: String,
+    user_version: u32,
+    stale_after_millis: i64,
+    cutoff_unix_ms: i64,
+    closed_unix_ms: i64,
+    reason: String,
+    dry_run: bool,
+    matched_sessions: Vec<DebugDbSessionReport>,
+    closed_sessions: Vec<DebugDbSessionReport>,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbRunsReport {
     path: String,
     user_version: u32,
@@ -495,6 +521,9 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Prune(options) => debug_db_prune_command(&options),
         DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
+        DebugDbCommand::CloseStaleSessions(options) => {
+            debug_db_close_stale_sessions_command(&options)
+        }
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
         DebugDbCommand::Rag(options) => debug_db_rag_command(&options),
         DebugDbCommand::Timeline(options) => debug_db_timeline_command(&options),
@@ -713,6 +742,82 @@ fn debug_db_sessions_command(options: &DebugDbSessionsOptions) -> Result<(), Exi
         );
     }
     Ok(())
+}
+
+fn debug_db_close_stale_sessions_command(
+    options: &DebugDbCloseStaleSessionsOptions,
+) -> Result<(), ExitCode> {
+    let report = debug_db_close_stale_sessions_report(options)?;
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: matched {} stale running session(s), closed {} (dry_run={})",
+        report.path,
+        report.matched_sessions.len(),
+        report.closed_sessions.len(),
+        report.dry_run
+    );
+    Ok(())
+}
+
+fn debug_db_close_stale_sessions_report(
+    options: &DebugDbCloseStaleSessionsOptions,
+) -> Result<DebugDbCloseStaleSessionsReport, ExitCode> {
+    if options.stale_after_millis <= 0 {
+        eprintln!("error: debug db close-stale-sessions --stale-after must be positive");
+        return Err(ExitCode::from(2));
+    }
+    let reason = options.reason.trim();
+    if reason.is_empty() {
+        eprintln!("error: debug db close-stale-sessions --reason must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    let now_unix_ms = current_unix_millis().map_err(|error| {
+        eprintln!("error: failed to read current time for stale session cutoff: {error}");
+        ExitCode::FAILURE
+    })?;
+    let cutoff_unix_ms = now_unix_ms.saturating_sub(options.stale_after_millis);
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let matched_sessions = store
+        .stale_running_sessions(cutoff_unix_ms)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read stale running sessions from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let closed_sessions = if options.dry_run {
+        Vec::new()
+    } else {
+        store
+            .abandon_stale_running_sessions(cutoff_unix_ms, now_unix_ms, reason)
+            .map_err(|error| {
+                eprintln!(
+                    "error: failed to close stale running sessions in {}: {error}",
+                    options.db.path.display()
+                );
+                ExitCode::FAILURE
+            })?
+    };
+    Ok(DebugDbCloseStaleSessionsReport {
+        path,
+        user_version,
+        stale_after_millis: options.stale_after_millis,
+        cutoff_unix_ms,
+        closed_unix_ms: now_unix_ms,
+        reason: reason.to_owned(),
+        dry_run: options.dry_run,
+        matched_sessions: matched_sessions
+            .into_iter()
+            .map(debug_db_session_report)
+            .collect(),
+        closed_sessions: closed_sessions
+            .into_iter()
+            .map(debug_db_session_report)
+            .collect(),
+    })
 }
 
 fn debug_db_runs_command(options: &DebugDbRunsOptions) -> Result<(), ExitCode> {

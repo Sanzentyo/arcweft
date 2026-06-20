@@ -346,6 +346,12 @@ the root, exists, and matches the indexed byte length. `arcw debug db delete
 their corresponding safe relative files while preserving files still referenced
 by captures. `arcw debug db vacuum [--json]` compacts the SQLite cache and
 reports page and freelist counts before and after the operation.
+`arcw debug db close-stale-sessions --stale-after <duration> [--reason <text>]
+[--dry-run] [--json]` applies the debug-store session lifecycle policy for
+long-lived product sessions. It finds `running` sessions whose start time is
+older than the cutoff and, unless `--dry-run` is supplied, closes them with
+status `abandoned` while recording a `lifecycle_policy` entry in session
+metadata. Finished and failed sessions are left untouched.
 `arcw debug db search --query <text>
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 the rebuildable debug-store chunk FTS index using a quoted literal query. The

@@ -22,6 +22,7 @@ pub enum DebugSessionStatus {
     Running,
     Finished,
     Failed,
+    Abandoned,
 }
 
 impl DebugSessionStatus {
@@ -30,6 +31,7 @@ impl DebugSessionStatus {
             Self::Running => "running",
             Self::Finished => "finished",
             Self::Failed => "failed",
+            Self::Abandoned => "abandoned",
         }
     }
 
@@ -38,6 +40,7 @@ impl DebugSessionStatus {
             "running" => Some(Self::Running),
             "finished" => Some(Self::Finished),
             "failed" => Some(Self::Failed),
+            "abandoned" => Some(Self::Abandoned),
             _ => None,
         }
     }
