@@ -88,6 +88,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   tool-result shapes. The CLI stdio MCP adapter can pass a listed capture URI
   directly to `arcweft.capture`, so clients do not need to parse layer/object
   ids, capture kind, or PNG/raw format out of the URI themselves.
+- `docs/implementation/agent-script-final-completion-audit.md` maps
+  `arcweft-agent-script-final-2026-06-18.zip` requirements to current
+  implementation evidence and separates remaining package-goal validation from
+  broader product-player follow-up work.
   `arcweft.session.info` also exposes resource templates, observed layers, and
   observed objects so a debugger can find rich-text child ids and capture refs
   without rereading `latest.json` or `objects.json`; after a capture, it also
