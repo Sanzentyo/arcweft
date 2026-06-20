@@ -6737,31 +6737,33 @@ fn agent_mcp_probe_value(probe: &Probe, report: &AgentObservationReport) -> Opti
         Probe::Metric { target } => agent_mcp_assignment_value(&report.metrics, target.as_str()),
         Probe::StatePath { path } => serde_json::to_value(report)
             .ok()
-            .and_then(|value| agent_json_path(&value, path).cloned())
+            .and_then(|value| agent_json_path(&value, path.as_str()).cloned())
             .and_then(|value| agent_mcp_agent_value(&value).ok()),
-        Probe::ObservationField { path } if path == "tick" => {
+        Probe::ObservationField { path } if path.as_str() == "tick" => {
             u64::try_from(report.tick).ok().map(AgentValue::U64)
         }
-        Probe::ObservationField { path } if path == "frame_id" => {
+        Probe::ObservationField { path } if path.as_str() == "frame_id" => {
             Some(AgentValue::String(report.frame_id.clone()))
         }
-        Probe::ObservationField { path } if path == "state_hash" => {
+        Probe::ObservationField { path } if path.as_str() == "state_hash" => {
             Some(AgentValue::String(report.state_hash.clone()))
         }
-        Probe::ObservationField { path } if path == "render_hash" => {
+        Probe::ObservationField { path } if path.as_str() == "render_hash" => {
             Some(AgentValue::String(report.render_hash.clone()))
         }
         Probe::ObservationField { path } => path
+            .as_str()
             .strip_prefix("signals.")
             .and_then(|signal| agent_mcp_assignment_value(&report.signals, signal))
             .or_else(|| {
-                path.strip_prefix("metrics.")
+                path.as_str()
+                    .strip_prefix("metrics.")
                     .and_then(|metric| agent_mcp_assignment_value(&report.metrics, metric))
             })
             .or_else(|| {
                 serde_json::to_value(report)
                     .ok()
-                    .and_then(|value| agent_json_path(&value, path).cloned())
+                    .and_then(|value| agent_json_path(&value, path.as_str()).cloned())
                     .and_then(|value| agent_mcp_agent_value(&value).ok())
             }),
     }

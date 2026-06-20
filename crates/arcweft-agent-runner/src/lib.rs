@@ -9,7 +9,7 @@ use arcweft_agent_protocol::{
     AgentActionTarget, AgentResource,
     artifact::{AgentBudget, ProjectBinding, ProjectBindingMode, RequiredEntity},
     ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
-    predicate::{CompareOp, Predicate, Probe},
+    predicate::{CompareOp, DebugStatePath, ObservationFieldPath, Predicate, Probe},
     protocol::{
         ActionResult, AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentAttachment,
         AgentHostRequest, AgentHostResponse, AgentInvokeAction, AgentSessionInfo, CaptureFormat,
@@ -1534,10 +1534,10 @@ fn runtime_probe(value: &RuntimeValue) -> Result<Probe, String> {
             target: runtime_record_get(fields, "target").and_then(runtime_public_id)?,
         }),
         "state" | "state_path" => Ok(Probe::StatePath {
-            path: runtime_record_string(fields, "path")?,
+            path: DebugStatePath::new(runtime_record_string(fields, "path")?)?,
         }),
         "observation" | "observation_field" => Ok(Probe::ObservationField {
-            path: runtime_record_string(fields, "path")?,
+            path: ObservationFieldPath::new(runtime_record_string(fields, "path")?)?,
         }),
         other => Err(format!("unsupported probe kind `{other}`")),
     }
@@ -2456,7 +2456,7 @@ fn parse_probe_label(value: &str) -> Result<Probe, String> {
         .and_then(|value| value.strip_suffix(')'))
     {
         return Ok(Probe::StatePath {
-            path: parse_string_label(path).unwrap_or_else(|| path.to_owned()),
+            path: DebugStatePath::new(parse_string_label(path).unwrap_or_else(|| path.to_owned()))?,
         });
     }
     if let Some(path) = value
@@ -2464,7 +2464,9 @@ fn parse_probe_label(value: &str) -> Result<Probe, String> {
         .and_then(|value| value.strip_suffix(')'))
     {
         return Ok(Probe::ObservationField {
-            path: parse_string_label(path).unwrap_or_else(|| path.to_owned()),
+            path: ObservationFieldPath::new(
+                parse_string_label(path).unwrap_or_else(|| path.to_owned()),
+            )?,
         });
     }
     Err(format!("unsupported probe `{value}`"))
@@ -2754,25 +2756,26 @@ fn observation_value(probe: &Probe, observation: &ObservationEnvelope) -> Option
         Probe::StatePath { path } => observation
             .payload
             .get("state")
-            .and_then(|state| json_path_value(state, path))
+            .and_then(|state| json_path_value(state, path.as_str()))
             .and_then(agent_value_from_json),
-        Probe::ObservationField { path } if path == "tick" => {
+        Probe::ObservationField { path } if path.as_str() == "tick" => {
             Some(AgentValue::I64(i64::try_from(observation.tick).ok()?))
         }
-        Probe::ObservationField { path } if path == "frame_id" => {
+        Probe::ObservationField { path } if path.as_str() == "frame_id" => {
             Some(AgentValue::String(observation.frame_id.clone()))
         }
-        Probe::ObservationField { path } if path == "state_hash" => {
+        Probe::ObservationField { path } if path.as_str() == "state_hash" => {
             Some(AgentValue::String(observation.state_hash.clone()))
         }
-        Probe::ObservationField { path } if path == "render_hash" => {
+        Probe::ObservationField { path } if path.as_str() == "render_hash" => {
             Some(AgentValue::String(observation.render_hash.clone()))
         }
         Probe::ObservationField { path } => path
+            .as_str()
             .strip_prefix("signals.")
             .and_then(|signal| observation.signals.get(signal).cloned())
             .or_else(|| {
-                json_path_value(&observation.payload, path).and_then(agent_value_from_json)
+                json_path_value(&observation.payload, path.as_str()).and_then(agent_value_from_json)
             }),
     }
 }
@@ -3957,14 +3960,15 @@ mod tests {
                     predicates: vec![
                         Predicate::Compare {
                             probe: Probe::StatePath {
-                                path: "route.phase".to_owned(),
+                                path: DebugStatePath::new("route.phase").expect("valid state path"),
                             },
                             op: CompareOp::Eq,
                             value: Box::new(AgentValue::String("opening".to_owned())),
                         },
                         Predicate::Compare {
                             probe: Probe::ObservationField {
-                                path: "tick".to_owned(),
+                                path: ObservationFieldPath::new("tick")
+                                    .expect("valid observation field path"),
                             },
                             op: CompareOp::GreaterOrEqual,
                             value: Box::new(AgentValue::I64(2)),
