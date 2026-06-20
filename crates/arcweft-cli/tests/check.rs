@@ -3523,6 +3523,80 @@ fn debug_db_embed_indexes_privacy_filtered_local_hash_embeddings() {
 }
 
 #[test]
+fn debug_db_embed_records_remote_provider_unavailable_diagnostic() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/embed-remote-unavailable-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug remote embed target dir"))
+        .expect("create debug remote embed target dir");
+    seed_debug_embed_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("embed")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--provider")
+        .arg("remote")
+        .arg("--model-id")
+        .arg("fixture-remote")
+        .arg("--model-revision")
+        .arg("2026-06-20")
+        .arg("--dimensions")
+        .arg("8")
+        .arg("--max-privacy")
+        .arg("secret")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db remote embed runs");
+    assert!(
+        !output.status.success(),
+        "remote embed should fail until a real provider adapter is configured\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE"),
+        "stderr should mention recorded provider diagnostic\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let diagnostic_report = debug_db_search_json(
+        &db_path,
+        "--diagnostic-query",
+        "AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE",
+        "project",
+    );
+    let hits = diagnostic_report["hits"].as_array().expect("hits");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["channel"], "diagnostics");
+    assert_eq!(hits[0]["source_kind"], "diagnostic");
+    assert!(
+        hits[0]["body"]
+            .as_str()
+            .is_some_and(|body| body.contains("remote embedding provider is not configured")),
+        "diagnostic body should explain unavailable remote provider: {diagnostic_report}"
+    );
+
+    let store = DebugStore::open(&db_path).expect("open remote embed debug db");
+    let embeddings = store
+        .load_embeddings(&EmbeddingModelDescriptor {
+            model_id: "fixture-remote".to_owned(),
+            model_revision: "2026-06-20".to_owned(),
+            dimensions: 8,
+        })
+        .expect("load remote embeddings");
+    assert!(
+        embeddings.is_empty(),
+        "remote provider failure must not synthesize stored embeddings"
+    );
+}
+
+#[test]
 fn agent_rag_query_uses_local_embedding_debug_db_channel() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/rag-local-embedding-{}.sqlite3",

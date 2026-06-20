@@ -6,6 +6,7 @@ use super::local_embedding::{
 use super::shared::print_json;
 use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
 use arcweft_debug_model::chunk::PrivacyClass;
+use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{
     EmbeddingInputPolicy, EmbeddingModelDescriptor, EmbeddingProvider,
 };
@@ -136,6 +137,8 @@ pub(super) struct DebugDbReplCellsOptions {
 pub(super) struct DebugDbEmbedOptions {
     #[command(flatten)]
     db: DebugDbOptions,
+    #[arg(long, value_enum, default_value = "local-hash")]
+    provider: DebugDbEmbeddingProvider,
     #[arg(long = "model-id", default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_ID)]
     model_id: String,
     #[arg(long = "model-revision", default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION)]
@@ -144,6 +147,35 @@ pub(super) struct DebugDbEmbedOptions {
     dimensions: u32,
     #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
     max_privacy: PrivacyClass,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum DebugDbEmbeddingProvider {
+    LocalHash,
+    Remote,
+}
+
+impl DebugDbEmbeddingProvider {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::LocalHash => "local_hash",
+            Self::Remote => "remote",
+        }
+    }
+
+    const fn scope_label(self) -> &'static str {
+        match self {
+            Self::LocalHash => "local",
+            Self::Remote => "remote",
+        }
+    }
+
+    const fn input_policy(self, max_privacy: PrivacyClass) -> EmbeddingInputPolicy {
+        match self {
+            Self::LocalHash => EmbeddingInputPolicy::local(max_privacy),
+            Self::Remote => EmbeddingInputPolicy::remote(max_privacy),
+        }
+    }
 }
 
 #[derive(Args, Clone, Debug)]
@@ -923,7 +955,7 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
     })?;
     let (store, path, user_version, stats_before) = open_debug_store(&options.db)?;
     let inputs = store
-        .embedding_inputs_with_policy(EmbeddingInputPolicy::local(options.max_privacy))
+        .embedding_inputs_with_policy(options.provider.input_policy(options.max_privacy))
         .map_err(|error| {
             eprintln!(
                 "error: failed to read embedding inputs from debug database {}: {error}",
@@ -931,6 +963,20 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
             );
             ExitCode::FAILURE
         })?;
+    if options.provider == DebugDbEmbeddingProvider::Remote {
+        record_debug_db_remote_embedding_unavailable(
+            &store,
+            &options.db.path,
+            &model,
+            options.max_privacy,
+            inputs.len(),
+        )?;
+        eprintln!(
+            "error: remote embedding provider is not configured; recorded AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE diagnostic in {}",
+            options.db.path.display()
+        );
+        return Err(ExitCode::FAILURE);
+    }
     let mut provider = LocalHashEmbeddingProvider::new(model.clone());
     let embeddings = provider.embed(&inputs).map_err(|error| {
         eprintln!("error: failed to embed debug chunks with local provider: {error}");
@@ -956,8 +1002,8 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
     Ok(DebugDbEmbedReport {
         path,
         user_version,
-        provider: "local_hash".to_owned(),
-        scope: "local".to_owned(),
+        provider: options.provider.label().to_owned(),
+        scope: options.provider.scope_label().to_owned(),
         model: DebugDbSearchModelReport {
             model_id: model.model_id,
             model_revision: model.model_revision,
@@ -975,6 +1021,58 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
             .collect(),
         stats_after: stats_report(stats_after),
     })
+}
+
+fn record_debug_db_remote_embedding_unavailable(
+    store: &DebugStore,
+    db_path: &Path,
+    model: &EmbeddingModelDescriptor,
+    max_privacy: PrivacyClass,
+    input_chunks: usize,
+) -> Result<(), ExitCode> {
+    let diagnostic_id = format!(
+        "debug-db-embedding-provider-unavailable:{}:{}:{}",
+        model.model_id, model.model_revision, model.dimensions
+    );
+    store
+        .upsert_diagnostic(&DebugDiagnostic {
+            diagnostic_id,
+            program_hash: None,
+            session_id: None,
+            run_id: None,
+            sequence: None,
+            code: Some("AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE".to_owned()),
+            severity: "error".to_owned(),
+            phase: "debug_db_embed".to_owned(),
+            message: format!(
+                "remote embedding provider is not configured for model {}@{}:{}",
+                model.model_id, model.model_revision, model.dimensions
+            ),
+            source_path: Some(db_path.display().to_string()),
+            start_byte: None,
+            end_byte: None,
+            related_ids: Vec::new(),
+            payload: serde_json::json!({
+                "provider": "remote",
+                "scope": "remote",
+                "model": {
+                    "model_id": model.model_id,
+                    "model_revision": model.model_revision,
+                    "dimensions": model.dimensions,
+                },
+                "max_privacy": max_privacy.as_str(),
+                "input_chunks_after_policy": input_chunks,
+                "reason": "provider_not_configured",
+            }),
+            created_unix_ms: current_unix_millis().unwrap_or(0),
+        })
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to record remote embedding provider diagnostic in {}: {error}",
+                db_path.display()
+            );
+            ExitCode::FAILURE
+        })
 }
 
 fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
