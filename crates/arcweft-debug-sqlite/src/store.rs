@@ -983,12 +983,32 @@ impl DebugStore {
         {
             return Ok(Vec::new());
         }
-        Ok(self
-            .graph_search_rows(query, graph_depth, limit)?
-            .into_iter()
+        let edge_rows = self.graph_search_rows(query, graph_depth, limit)?;
+        let mut excluded_symbol_ids = BTreeSet::new();
+        for row in &edge_rows {
+            excluded_symbol_ids.insert(row.from_symbol_id.clone());
+            excluded_symbol_ids.insert(row.to_symbol_id.clone());
+        }
+        let mut results = edge_rows
+            .iter()
             .enumerate()
-            .map(|(index, row)| graph_chunk_search_result(query, index, &row))
-            .collect())
+            .map(|(index, row)| graph_chunk_search_result(query, index, row))
+            .collect::<Vec<_>>();
+        let remaining = limit.saturating_sub(results.len());
+        if remaining > 0 {
+            let base_rank = results.len();
+            results.extend(
+                self.graph_symbol_search_rows(query)?
+                    .into_iter()
+                    .filter(|row| !excluded_symbol_ids.contains(&row.symbol_id))
+                    .take(remaining)
+                    .enumerate()
+                    .map(|(index, row)| {
+                        graph_symbol_chunk_search_result(query, base_rank + index, &row)
+                    }),
+            );
+        }
+        Ok(results)
     }
 
     fn graph_search_rows(
@@ -1069,6 +1089,43 @@ impl DebugStore {
                 to_qualified_name: row.get(11)?,
                 to_kind: row.get(12)?,
                 to_summary: row.get(13)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DebugStoreError::from)
+    }
+
+    fn graph_symbol_search_rows(
+        &self,
+        query: &str,
+    ) -> Result<Vec<GraphSymbolSearchRow>, DebugStoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT symbol_id, public_id, qualified_name, kind, summary,
+                    semantic_hash, start_byte, end_byte
+             FROM symbols
+             WHERE instr(lower(coalesce(public_id, '')), ?1) > 0
+                OR instr(lower(coalesce(qualified_name, '')), ?1) > 0
+                OR instr(lower(kind), ?1) > 0
+                OR instr(lower(summary), ?1) > 0
+             ORDER BY
+                CASE
+                  WHEN lower(coalesce(public_id, '')) = ?1 THEN 0
+                  WHEN lower(coalesce(qualified_name, '')) = ?1 THEN 1
+                  ELSE 2
+                END,
+                symbol_id",
+        )?;
+        let like_query = query.trim().to_lowercase();
+        let rows = statement.query_map([like_query], |row| {
+            Ok(GraphSymbolSearchRow {
+                symbol_id: row.get(0)?,
+                public_id: row.get(1)?,
+                qualified_name: row.get(2)?,
+                kind: row.get(3)?,
+                summary: row.get(4)?,
+                semantic_hash: row.get(5)?,
+                start_byte: row.get(6)?,
+                end_byte: row.get(7)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -2521,6 +2578,18 @@ struct GraphSearchRow {
 }
 
 #[derive(Debug)]
+struct GraphSymbolSearchRow {
+    symbol_id: String,
+    public_id: Option<String>,
+    qualified_name: Option<String>,
+    kind: String,
+    summary: String,
+    semantic_hash: Option<String>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+}
+
+#[derive(Debug)]
 struct RagQueryRow {
     query_text: String,
     program_hash: Option<String>,
@@ -2597,6 +2666,42 @@ fn graph_chunk_search_result(query: &str, index: usize, row: &GraphSearchRow) ->
     }
 }
 
+fn graph_symbol_chunk_search_result(
+    query: &str,
+    index: usize,
+    row: &GraphSymbolSearchRow,
+) -> ChunkSearchResult {
+    let label = graph_symbol_label(
+        &row.symbol_id,
+        row.public_id.as_deref(),
+        row.qualified_name.as_deref(),
+    );
+    let body = format!(
+        "symbol_id={}\nkind={}\nsummary={}\nsemantic_hash={}\nstart_byte={}\nend_byte={}",
+        row.symbol_id,
+        row.kind,
+        row.summary,
+        row.semantic_hash.as_deref().unwrap_or("-"),
+        row.start_byte
+            .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+        row.end_byte
+            .map_or_else(|| "-".to_owned(), |value| value.to_string())
+    );
+    ChunkSearchResult {
+        hit: SearchHit {
+            chunk_id: ChunkId::new(format!("graph_symbol:{}", row.symbol_id)),
+            channel: SearchChannel::Graph,
+            rank: index + 1,
+            score: Some(graph_symbol_score(query, row)),
+        },
+        title: format!("Graph symbol {label}"),
+        body,
+        source_kind: "graph_symbol".to_owned(),
+        source_key: row.symbol_id.clone(),
+        privacy: PrivacyClass::Project,
+    }
+}
+
 fn graph_symbol_label(
     symbol_id: &str,
     public_id: Option<&str>,
@@ -2626,6 +2731,25 @@ fn graph_score(query: &str, row: &GraphSearchRow) -> f64 {
         row.weight
     };
     base / f64::from(row.distance.max(0) + 1)
+}
+
+fn graph_symbol_score(query: &str, row: &GraphSymbolSearchRow) -> f64 {
+    let query = query.trim().to_lowercase();
+    if row
+        .public_id
+        .as_deref()
+        .is_some_and(|id| id.eq_ignore_ascii_case(&query))
+        || row
+            .qualified_name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&query))
+    {
+        2.0
+    } else if row.summary.to_lowercase().contains(&query) {
+        1.0
+    } else {
+        0.5
+    }
 }
 
 #[derive(Clone, Copy)]

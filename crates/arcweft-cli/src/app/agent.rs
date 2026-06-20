@@ -34,6 +34,7 @@ use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
+    graph::DebugGraphSymbol,
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
@@ -749,6 +750,13 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
                 .map_err(|error| format!("failed to index RAG chunk: {error}"))?;
             indexed_for_source = indexed_for_source.saturating_add(1);
         }
+        for symbol in &source_index.graph_symbols {
+            let mut symbol = symbol.clone();
+            symbol.program_hash = program_hash.clone();
+            store
+                .upsert_graph_symbol(&symbol)
+                .map_err(|error| format!("failed to index RAG graph symbol: {error}"))?;
+        }
         indexed_chunks = indexed_chunks.saturating_add(indexed_for_source);
         skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(skipped_for_source);
         source_reports.push(AgentRagIndexedSourceReport {
@@ -1278,7 +1286,7 @@ fn agent_rag_candidate_from_search_result(
     let source_kind = match result.source_kind.as_str() {
         "source" => ChunkSourceKind::Source,
         "symbol" => ChunkSourceKind::Symbol,
-        "graph_summary" | "graph_edge" => ChunkSourceKind::GraphSummary,
+        "graph_summary" | "graph_edge" | "graph_symbol" => ChunkSourceKind::GraphSummary,
         "diagnostic" => ChunkSourceKind::Diagnostic,
         "test_result" => ChunkSourceKind::TestResult,
         "agent_trace" => ChunkSourceKind::AgentTrace,
@@ -1611,6 +1619,7 @@ struct AgentSourceRagIndex {
     seed: String,
     source_hash: String,
     candidates: Vec<AgentRagCandidate>,
+    graph_symbols: Vec<DebugGraphSymbol>,
 }
 
 fn agent_rag_source_paths(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
@@ -1682,10 +1691,12 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
         &project,
         &source_key_prefix,
     )?);
+    let graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
         source_hash,
         candidates,
+        graph_symbols,
     })
 }
 
@@ -1808,6 +1819,107 @@ fn agent_project_semantic_rag_candidates(
         )?);
     }
     Ok(candidates)
+}
+
+fn agent_project_graph_symbols(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<Vec<DebugGraphSymbol>, String> {
+    let program_hash = StableHash::new(project.program_hash().as_str())
+        .map_err(|error| format!("invalid project graph program hash: {error}"))?;
+    let mut symbols = project
+        .entities()
+        .values()
+        .map(|entity| agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash))
+        .collect::<Result<Vec<_>, _>>()?;
+    symbols.extend(
+        project
+            .debug_queries()
+            .iter()
+            .map(|(name, query)| {
+                agent_project_debug_query_graph_symbol(
+                    name,
+                    query,
+                    source_key_prefix,
+                    &program_hash,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    Ok(symbols)
+}
+
+fn agent_project_entity_graph_symbol(
+    entity: &EntitySymbol,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    let public_id = agent_public_id_from_sema(entity.id())?;
+    let source_anchor = debug_anchor_from_source_anchor(entity.source())?;
+    Ok(DebugGraphSymbol {
+        symbol_id: format!(
+            "{source_key_prefix}.project.entity.{}",
+            entity.id().as_str()
+        ),
+        program_hash: program_hash.clone(),
+        public_id: Some(public_id),
+        qualified_name: Some(entity.id().as_str().to_owned()),
+        kind: format!("{:?}", entity.ty().kind()),
+        type_json: Some(serde_json::json!({
+            "entity_kind": format!("{:?}", entity.ty().kind()),
+            "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
+        })),
+        start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
+        end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
+        semantic_hash: Some(
+            StableHash::new(entity.semantic_hash().as_str())
+                .map_err(|error| format!("invalid graph entity semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Project entity {} {:?}",
+            entity.id().as_str(),
+            entity.ty().kind()
+        ),
+        metadata: BTreeMap::from([
+            ("source".to_owned(), source_anchor_json(entity.source())),
+            (
+                "agent_actions".to_owned(),
+                serde_json::json!(
+                    entity
+                        .agent_actions()
+                        .iter()
+                        .map(|action| action.action().as_str())
+                        .collect::<Vec<_>>()
+                ),
+            ),
+        ]),
+    })
+}
+
+fn agent_project_debug_query_graph_symbol(
+    name: &arcweft_lang_sema::project_index::QualifiedName,
+    query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    Ok(DebugGraphSymbol {
+        symbol_id: format!("{source_key_prefix}.project.debug_query.{}", name.as_str()),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(name.as_str().to_owned()),
+        kind: "debug_query".to_owned(),
+        type_json: Some(serde_json::json!({
+            "signature": format!("{:?}", query.signature()),
+        })),
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(name.as_str()))
+                .map_err(|error| format!("invalid graph debug query semantic hash: {error}"))?,
+        ),
+        summary: format!("Project debug query {}", name.as_str()),
+        metadata: BTreeMap::new(),
+    })
 }
 
 fn agent_project_summary_rag_candidate(

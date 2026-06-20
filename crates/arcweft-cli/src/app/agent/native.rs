@@ -7207,7 +7207,7 @@ fn agent_mcp_rag_candidate_from_search_result(
     let source_kind = match result.source_kind.as_str() {
         "source" => ChunkSourceKind::Source,
         "symbol" => ChunkSourceKind::Symbol,
-        "graph_summary" | "graph_edge" => ChunkSourceKind::GraphSummary,
+        "graph_summary" | "graph_edge" | "graph_symbol" => ChunkSourceKind::GraphSummary,
         "diagnostic" => ChunkSourceKind::Diagnostic,
         "test_result" => ChunkSourceKind::TestResult,
         "agent_trace" => ChunkSourceKind::AgentTrace,
