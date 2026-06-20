@@ -15,12 +15,12 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-source = { path = "../arcweft-source" }
 
 thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-id = { path = "../arcweft-id" }
-arcweft-source = { path = "../arcweft-source" }
 
 [lib]
 path = "src/lib.rs"

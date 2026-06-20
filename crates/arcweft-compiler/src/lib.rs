@@ -4,7 +4,7 @@ use arcweft_agent_protocol::{
     artifact::{
         AgentArtifactManifest, AgentBudget, AgentBundleKind,
         EffectCapability as AgentEffectCapability, ProjectBinding, ProjectBindingMode,
-        RequiredEntity,
+        RequiredEntity, RequiredEntitySourceAnchor, RequiredEntitySourcePosition,
     },
     ids::{PublicId as AgentPublicId, StableHash},
 };
@@ -40,6 +40,7 @@ pub use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperCandidateReport, PureHelperLowerError,
 };
 use arcweft_runtime_plan::pure::{lower_pure_helper_candidate, lower_pure_helper_candidates};
+use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
 use std::fmt;
 use thiserror::Error;
 
@@ -488,7 +489,29 @@ fn required_agent_entity(
         public_id: AgentPublicId::new(entity.id().as_str().to_owned())?,
         kind: entity_kind_label(entity.ty().kind()).to_owned(),
         type_fingerprint: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
+        source_anchor: required_entity_source_anchor(entity.source()),
     })
+}
+
+fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {
+    let SourceName::Path(path) = source.source() else {
+        return None;
+    };
+    let range = source.byte_range();
+    Some(RequiredEntitySourceAnchor {
+        path: path.clone(),
+        start_byte: u64::try_from(range.start).ok()?,
+        end_byte: u64::try_from(range.end).ok()?,
+        start: source.start().map(required_entity_source_position),
+        end: source.end().map(required_entity_source_position),
+    })
+}
+
+fn required_entity_source_position(position: SourcePosition) -> RequiredEntitySourcePosition {
+    RequiredEntitySourcePosition {
+        line: position.line,
+        column: position.column,
+    }
 }
 
 fn declared_agent_effects(agent: &HirAgent) -> Vec<AgentEffectCapability> {
@@ -749,7 +772,7 @@ mod tests {
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
-    use arcweft_source::SourceAnchor;
+    use arcweft_source::{SourceAnchor, SourceName};
 
     fn public_id(value: &str) -> PublicId {
         PublicId::try_new(value).expect("valid public id")
@@ -2079,6 +2102,56 @@ effects { agent.observe }
         assert_eq!(
             decoded.agent.as_ref().map(|agent| agent.agent_id.as_str()),
             Some("agent.observe_smoke")
+        );
+    }
+
+    #[test]
+    fn compile_agent_bundle_with_project_records_required_entity_source_anchors() {
+        let tree = parse_source(
+            r#"
+signal @signal.current_flow: Watch<Ref<Flow>>
+flow @flow.opening opening {
+    return "ok"
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let project = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-test"),
+            &SourceName::path("game.arcw"),
+        )
+        .expect("project indexes HIR entities");
+        let compiled = compile_agent_bundle_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.observe_smoke observe_smoke()
+effects { agent.observe }
+{
+    observe()
+}
+",
+            &project,
+        )
+        .expect("agent bundle compiles with project entities");
+
+        let flow = compiled
+            .manifest
+            .project_binding
+            .required_entities
+            .iter()
+            .find(|entity| entity.public_id.as_str() == "flow.opening")
+            .expect("flow entity is recorded in project binding");
+        let source_anchor = flow
+            .source_anchor
+            .as_ref()
+            .expect("HIR-derived entity carries a source anchor");
+
+        assert_eq!(source_anchor.path, "game.arcw");
+        assert!(
+            source_anchor.start_byte < source_anchor.end_byte,
+            "entity source anchor should preserve a non-empty byte range"
         );
     }
 

@@ -4248,6 +4248,7 @@ mod tests {
             kind: "signal".to_owned(),
             type_fingerprint: StableHash::new("shape.signal.ready.v1")
                 .expect("valid type fingerprint"),
+            source_anchor: None,
         }];
 
         let error = runner

@@ -576,6 +576,7 @@ mod tests {
                     public_id: public_id("choice.opening.listen"),
                     kind: "choice_option".to_owned(),
                     type_fingerprint: stable_hash("type:none"),
+                    source_anchor: None,
                 }],
             },
             declared_effects: vec![

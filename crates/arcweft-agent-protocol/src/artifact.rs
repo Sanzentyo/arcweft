@@ -20,6 +20,24 @@ pub struct RequiredEntity {
     pub public_id: PublicId,
     pub kind: String,
     pub type_fingerprint: StableHash,
+    pub source_anchor: Option<RequiredEntitySourceAnchor>,
+}
+
+/// Source location recorded for an entity dependency in an Agent artifact.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RequiredEntitySourceAnchor {
+    pub path: String,
+    pub start_byte: u64,
+    pub end_byte: u64,
+    pub start: Option<RequiredEntitySourcePosition>,
+    pub end: Option<RequiredEntitySourcePosition>,
+}
+
+/// One-based source position, when the compiler has line/column data.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RequiredEntitySourcePosition {
+    pub line: u32,
+    pub column: u32,
 }
 
 /// Compile-time target program binding stored in an Agent artifact.
