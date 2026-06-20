@@ -6,6 +6,7 @@ mod image_declarations;
 pub(in crate::app) mod jit;
 mod local_embedding;
 pub(crate) mod project;
+mod remote_embedding;
 pub(in crate::app) mod runtime;
 pub(crate) mod shared;
 mod tooling;

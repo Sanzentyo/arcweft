@@ -365,16 +365,24 @@ embedding rows for the exact model descriptor, applies the privacy ceiling
 before ranking, and uses deterministic cosine ranking from `arcweft-rag`.
 `arcw debug db embed [--provider local-hash|remote] [--model-id <id>]
 [--model-revision <rev>] [--dimensions N]
+[--remote-command <cmd>] [--remote-arg <arg>]...
 [--max-privacy public|project|sensitive|secret] [--json]` populates stored
 embeddings through an explicit provider adapter. The default `local-hash`
 provider is deterministic and offline. The command loads provider inputs
 through the debug-store embedding privacy policy, never sends `secret` chunks
 to any provider, withholds `sensitive` chunks from remote providers, writes
 normalized vectors with the source chunk `content_hash`, and reports
-embedded/skipped chunk ids. `--provider remote` currently fails unless a real
-remote adapter is configured; it records a searchable
+embedded/skipped chunk ids. `--provider remote` uses an explicit command
+adapter: Arcweft writes a JSON request to the command's stdin and reads a JSON
+response from stdout. The request has `schema_version`, `model`, and
+privacy-filtered `inputs`; the response must contain
+`{"embeddings":[{"chunk_id":"...","values":[...]}]}` for every supplied input.
+Arcweft validates chunk ids, vector dimensions, finite values, and non-zero
+norms before storing normalized vectors. If `--provider remote` is selected
+without `--remote-command`, the command records a searchable
 `AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE` diagnostic instead of generating
-placeholder vectors.
+placeholder vectors. Provider SDKs and HTTP clients belong in that external
+bridge process, not in Sans I/O debug/RAG crates.
 `arcw debug db search --graph-query <text> [--graph-depth N]
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 indexed `symbols` and `graph_edges` by public id, qualified name, symbol kind,

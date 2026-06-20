@@ -3,12 +3,13 @@ use super::local_embedding::{
     DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION, LocalHashEmbeddingProvider,
     MAX_LOCAL_EMBEDDING_DIMENSIONS,
 };
+use super::remote_embedding::RemoteCommandEmbeddingProvider;
 use super::shared::print_json;
 use arcweft_agent_protocol::ids::{AgentRunId, SessionId, StableHash};
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{
-    EmbeddingInputPolicy, EmbeddingModelDescriptor, EmbeddingProvider,
+    EmbeddingInput, EmbeddingInputPolicy, EmbeddingModelDescriptor, EmbeddingProvider,
 };
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
@@ -182,6 +183,10 @@ pub(super) struct DebugDbEmbedOptions {
     model_revision: String,
     #[arg(long = "dimensions", default_value_t = DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)]
     dimensions: u32,
+    #[arg(long = "remote-command")]
+    remote_command: Option<String>,
+    #[arg(long = "remote-arg")]
+    remote_args: Vec<String>,
     #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
     max_privacy: PrivacyClass,
 }
@@ -1263,25 +1268,7 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
             );
             ExitCode::FAILURE
         })?;
-    if options.provider == DebugDbEmbeddingProvider::Remote {
-        record_debug_db_remote_embedding_unavailable(
-            &store,
-            &options.db.path,
-            &model,
-            options.max_privacy,
-            inputs.len(),
-        )?;
-        eprintln!(
-            "error: remote embedding provider is not configured; recorded AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE diagnostic in {}",
-            options.db.path.display()
-        );
-        return Err(ExitCode::FAILURE);
-    }
-    let mut provider = LocalHashEmbeddingProvider::new(model.clone());
-    let embeddings = provider.embed(&inputs).map_err(|error| {
-        eprintln!("error: failed to embed debug chunks with local provider: {error}");
-        ExitCode::FAILURE
-    })?;
+    let embeddings = debug_db_embed_inputs(options, &store, &model, &inputs)?;
     for embedding in &embeddings {
         store.upsert_embedding(embedding).map_err(|error| {
             eprintln!(
@@ -1321,6 +1308,52 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
             .collect(),
         stats_after: stats_report(stats_after),
     })
+}
+
+fn debug_db_embed_inputs(
+    options: &DebugDbEmbedOptions,
+    store: &DebugStore,
+    model: &EmbeddingModelDescriptor,
+    inputs: &[EmbeddingInput],
+) -> Result<Vec<arcweft_debug_model::embedding::StoredEmbedding>, ExitCode> {
+    match options.provider {
+        DebugDbEmbeddingProvider::LocalHash => {
+            let mut provider = LocalHashEmbeddingProvider::new(model.clone());
+            provider.embed(inputs).map_err(|error| {
+                eprintln!("error: failed to embed debug chunks with local provider: {error}");
+                ExitCode::FAILURE
+            })
+        }
+        DebugDbEmbeddingProvider::Remote => {
+            let Some(command) = options.remote_command.as_deref().map(str::trim) else {
+                record_debug_db_remote_embedding_unavailable(
+                    store,
+                    &options.db.path,
+                    model,
+                    options.max_privacy,
+                    inputs.len(),
+                )?;
+                eprintln!(
+                    "error: remote embedding provider is not configured; recorded AGENT_DEBUG_EMBEDDING_PROVIDER_UNAVAILABLE diagnostic in {}",
+                    options.db.path.display()
+                );
+                return Err(ExitCode::FAILURE);
+            };
+            if command.is_empty() {
+                eprintln!("error: debug db embed --remote-command must not be empty");
+                return Err(ExitCode::from(2));
+            }
+            let mut provider = RemoteCommandEmbeddingProvider::new(
+                model.clone(),
+                command.to_owned(),
+                options.remote_args.clone(),
+            );
+            provider.embed(inputs).map_err(|error| {
+                eprintln!("error: failed to embed debug chunks with remote provider: {error}");
+                ExitCode::FAILURE
+            })
+        }
+    }
 }
 
 fn record_debug_db_remote_embedding_unavailable(

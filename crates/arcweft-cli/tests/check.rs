@@ -4266,6 +4266,117 @@ fn debug_db_embed_records_remote_provider_unavailable_diagnostic() {
 }
 
 #[test]
+fn debug_db_embed_remote_command_indexes_provider_vectors() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/embed-remote-command-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(
+        db_path
+            .parent()
+            .expect("debug remote command embed target dir"),
+    )
+    .expect("create debug remote command embed target dir");
+    seed_debug_embed_db(&db_path);
+    let (remote_command, remote_args) = write_remote_embedding_fixture_provider(
+        &format!("embed-remote-command-{}", std::process::id()),
+        r#"{"embeddings":[{"chunk_id":"chunk:embed-public","values":[1.0,0.0,0.0,0.0]},{"chunk_id":"chunk:embed-project","values":[0.0,2.0,0.0,0.0]}]}"#,
+    );
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
+        .arg("debug")
+        .arg("db")
+        .arg("embed")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--provider")
+        .arg("remote")
+        .arg("--remote-command")
+        .arg(remote_command)
+        .arg("--model-id")
+        .arg("fixture-remote")
+        .arg("--model-revision")
+        .arg("2026-06-20")
+        .arg("--dimensions")
+        .arg("4")
+        .arg("--max-privacy")
+        .arg("secret")
+        .arg("--json");
+    for remote_arg in remote_args {
+        command.arg("--remote-arg").arg(remote_arg);
+    }
+    let output = command.output().expect("arcw debug db remote embed runs");
+    assert!(
+        output.status.success(),
+        "remote command embed should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db remote embed output is JSON");
+
+    assert_eq!(report["provider"], "remote");
+    assert_eq!(report["scope"], "remote");
+    assert_eq!(report["input_chunks"], 2);
+    assert_eq!(report["embedded_chunks"], 2);
+    assert_eq!(report["skipped_chunks"], 2);
+    assert_eq!(report["stats_after"]["embeddings"], 2);
+    let embedded = report["embedded_chunk_ids"]
+        .as_array()
+        .expect("embedded chunk ids");
+    assert!(embedded.contains(&serde_json::json!("chunk:embed-public")));
+    assert!(embedded.contains(&serde_json::json!("chunk:embed-project")));
+    assert!(!embedded.contains(&serde_json::json!("chunk:embed-sensitive")));
+    assert!(!embedded.contains(&serde_json::json!("chunk:embed-secret")));
+
+    let store = DebugStore::open(&db_path).expect("open remote command debug db");
+    let embeddings = store
+        .load_embeddings(&EmbeddingModelDescriptor {
+            model_id: "fixture-remote".to_owned(),
+            model_revision: "2026-06-20".to_owned(),
+            dimensions: 4,
+        })
+        .expect("load remote command embeddings");
+    assert_eq!(embeddings.len(), 2);
+    assert!(
+        embeddings.iter().all(
+            |embedding| embedding.chunk_id.as_str() != "chunk:embed-sensitive"
+                && embedding.chunk_id.as_str() != "chunk:embed-secret"
+        )
+    );
+}
+
+fn write_remote_embedding_fixture_provider(name: &str, response: &str) -> (String, Vec<String>) {
+    let dir = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/{name}-provider"
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create remote embedding fixture provider dir");
+    if cfg!(windows) {
+        let script = dir.join("provider.cmd");
+        fs::write(
+            &script,
+            format!("@echo off\r\nmore >NUL\r\necho {response}\r\n"),
+        )
+        .expect("write remote embedding fixture provider cmd");
+        (
+            "cmd".to_owned(),
+            vec!["/C".to_owned(), script.display().to_string()],
+        )
+    } else {
+        let script = dir.join("provider.sh");
+        fs::write(
+            &script,
+            format!("cat >/dev/null\nprintf '%s\\n' '{response}'\n"),
+        )
+        .expect("write remote embedding fixture provider shell");
+        ("sh".to_owned(), vec![script.display().to_string()])
+    }
+}
+
+#[test]
 fn agent_rag_query_uses_local_embedding_debug_db_channel() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/rag-local-embedding-{}.sqlite3",
