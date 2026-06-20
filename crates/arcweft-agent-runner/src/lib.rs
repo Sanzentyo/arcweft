@@ -1890,6 +1890,7 @@ fn runtime_project_graph_neighborhood_payload(
 
 fn runtime_project_graph_symbol_payload(symbol: &AgentProjectGraphSymbol) -> RuntimeValue {
     let flow_control = symbol.flow_control;
+    let project_summary = symbol.project_summary;
     RuntimeValue::Record(vec![
         runtime_field("symbol_id", RuntimeValue::String(symbol.symbol_id.clone())),
         runtime_field(
@@ -1910,6 +1911,40 @@ fn runtime_project_graph_symbol_payload(symbol: &AgentProjectGraphSymbol) -> Run
         runtime_field(
             "has_flow_control",
             RuntimeValue::Bool(flow_control.is_some()),
+        ),
+        runtime_field(
+            "has_project_summary",
+            RuntimeValue::Bool(project_summary.is_some()),
+        ),
+        runtime_field(
+            "entity_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.entity_count)),
+        ),
+        runtime_field(
+            "agent_action_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.agent_action_count)),
+        ),
+        runtime_field(
+            "project_callable_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.project_callable_count)),
+        ),
+        runtime_field(
+            "relation_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.relation_count)),
+        ),
+        runtime_field(
+            "dependency_edge_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.dependency_edge_count)),
+        ),
+        runtime_field(
+            "dynamic_control_flow_count",
+            RuntimeValue::u32(
+                project_summary.map_or(0, |summary| summary.dynamic_control_flow_count),
+            ),
+        ),
+        runtime_field(
+            "debug_query_count",
+            RuntimeValue::u32(project_summary.map_or(0, |summary| summary.debug_query_count)),
         ),
         runtime_field(
             "has_dynamic_control",
@@ -3214,7 +3249,9 @@ mod tests {
         },
         ids::StableHash,
         ids::{AgentResourceUri, PublicId},
-        protocol::{AgentProjectFlowControlSummary, CaptureFormat, CaptureTarget},
+        protocol::{
+            AgentProjectFlowControlSummary, AgentProjectGraphSummary, CaptureFormat, CaptureTarget,
+        },
     };
     use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
     use arcweft_core::{
@@ -3247,6 +3284,55 @@ mod tests {
     #[derive(Default)]
     struct RecordingDebugSink {
         events: Vec<DebugEvent>,
+    }
+
+    fn project_neighbors_test_graph() -> AgentProjectGraph {
+        AgentProjectGraph {
+            symbols: vec![
+                AgentProjectGraphSymbol {
+                    symbol_id: "project:summary".to_owned(),
+                    public_id: None,
+                    qualified_name: Some("project".to_owned()),
+                    kind: "project_summary".to_owned(),
+                    semantic_hash: None,
+                    flow_control: None,
+                    project_summary: Some(AgentProjectGraphSummary {
+                        entity_count: 1,
+                        agent_action_count: 0,
+                        project_callable_count: 0,
+                        relation_count: 1,
+                        dependency_edge_count: 0,
+                        dynamic_control_flow_count: 1,
+                        debug_query_count: 0,
+                    }),
+                    summary: "Project".to_owned(),
+                },
+                AgentProjectGraphSymbol {
+                    symbol_id: "project:entity:flow.opening".to_owned(),
+                    public_id: Some(PublicId::new("flow.opening").expect("valid id")),
+                    qualified_name: None,
+                    kind: "flow".to_owned(),
+                    semantic_hash: Some("hir:flow:flow.opening:_".to_owned()),
+                    flow_control: Some(AgentProjectFlowControlSummary {
+                        has_dynamic_control: true,
+                        static_goto_count: 1,
+                        dynamic_goto_count: 1,
+                        branch_count: 0,
+                        loop_count: 0,
+                        await_count: 0,
+                        thread_count: 0,
+                        select_branch_count: 0,
+                    }),
+                    project_summary: None,
+                    summary: "Opening flow".to_owned(),
+                },
+            ],
+            edges: vec![AgentProjectGraphEdge {
+                from_symbol_id: "project:summary".to_owned(),
+                to_symbol_id: "project:entity:flow.opening".to_owned(),
+                edge_kind: "contains_entity".to_owned(),
+            }],
+        }
     }
 
     impl DebugEventSink for RecordingDebugSink {
@@ -4898,42 +4984,7 @@ mod tests {
         let mut runner = AgentRunner::new(
             MetadataSession {
                 project_entities: Vec::new(),
-                project_graph: AgentProjectGraph {
-                    symbols: vec![
-                        AgentProjectGraphSymbol {
-                            symbol_id: "project:summary".to_owned(),
-                            public_id: None,
-                            qualified_name: Some("project".to_owned()),
-                            kind: "project_summary".to_owned(),
-                            semantic_hash: None,
-                            flow_control: None,
-                            summary: "Project".to_owned(),
-                        },
-                        AgentProjectGraphSymbol {
-                            symbol_id: "project:entity:flow.opening".to_owned(),
-                            public_id: Some(PublicId::new("flow.opening").expect("valid id")),
-                            qualified_name: None,
-                            kind: "flow".to_owned(),
-                            semantic_hash: Some("hir:flow:flow.opening:_".to_owned()),
-                            flow_control: Some(AgentProjectFlowControlSummary {
-                                has_dynamic_control: true,
-                                static_goto_count: 1,
-                                dynamic_goto_count: 1,
-                                branch_count: 0,
-                                loop_count: 0,
-                                await_count: 0,
-                                thread_count: 0,
-                                select_branch_count: 0,
-                            }),
-                            summary: "Opening flow".to_owned(),
-                        },
-                    ],
-                    edges: vec![AgentProjectGraphEdge {
-                        from_symbol_id: "project:summary".to_owned(),
-                        to_symbol_id: "project:entity:flow.opening".to_owned(),
-                        edge_kind: "contains_entity".to_owned(),
-                    }],
-                },
+                project_graph: project_neighbors_test_graph(),
             },
             NullDebugEventSink,
             NoopRagService,
@@ -4981,6 +5032,27 @@ mod tests {
         ));
         assert!(matches!(
             runtime_record_get(&fields, "dynamic_goto_count"),
+            Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
+        ));
+        let summary_symbol = match &report.responses[0] {
+            AgentHostResponse::ProjectGraphNeighborhood(neighborhood) => neighborhood
+                .symbols
+                .iter()
+                .find(|symbol| symbol.kind == "project_summary")
+                .expect("project summary symbol exists"),
+            _ => panic!("project graph response"),
+        };
+        let RuntimeValue::Record(summary_fields) =
+            runtime_project_graph_symbol_payload(summary_symbol)
+        else {
+            panic!("summary symbol payload is a record");
+        };
+        assert!(matches!(
+            runtime_record_get(&summary_fields, "has_project_summary"),
+            Ok(RuntimeValue::Bool(true))
+        ));
+        assert!(matches!(
+            runtime_record_get(&summary_fields, "relation_count"),
             Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
         ));
         assert!(matches!(

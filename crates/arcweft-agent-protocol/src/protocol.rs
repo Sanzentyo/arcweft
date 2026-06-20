@@ -46,7 +46,21 @@ pub struct AgentProjectGraphSymbol {
     pub semantic_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flow_control: Option<AgentProjectFlowControlSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_summary: Option<AgentProjectGraphSummary>,
     pub summary: String,
+}
+
+/// Project-level graph counters attached to the project summary graph symbol.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectGraphSummary {
+    pub entity_count: u32,
+    pub agent_action_count: u32,
+    pub project_callable_count: u32,
+    pub relation_count: u32,
+    pub dependency_edge_count: u32,
+    pub dynamic_control_flow_count: u32,
+    pub debug_query_count: u32,
 }
 
 /// Static and dynamic control-flow counters attached to a flow graph symbol.

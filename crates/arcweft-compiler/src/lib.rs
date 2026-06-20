@@ -9,7 +9,7 @@ use arcweft_agent_protocol::{
     ids::{PublicId as AgentPublicId, StableHash},
     protocol::{
         AgentProjectFlowControlSummary, AgentProjectGraph, AgentProjectGraphEdge,
-        AgentProjectGraphSymbol,
+        AgentProjectGraphSummary, AgentProjectGraphSymbol,
     },
 };
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
@@ -516,10 +516,14 @@ fn agent_project_graph_symbols(
         kind: "project_summary".to_owned(),
         semantic_hash: None,
         flow_control: None,
+        project_summary: Some(agent_project_graph_summary(project)),
         summary: format!(
-            "Project with {} entities, {} project callables, {} dynamic-control flows, and {} debug queries",
+            "Project with {} entities, {} Agent actions, {} project callables, {} relations, {} dependency edges, {} dynamic-control flows, and {} debug queries",
             project.entities().len(),
+            agent_project_action_count(project),
             project.project_callables().len(),
+            project.relations().len(),
+            project.dependency_relations().len(),
             agent_dynamic_control_flow_count(project),
             project.debug_queries().len()
         ),
@@ -534,6 +538,7 @@ fn agent_project_graph_symbols(
             kind: entity_kind_label(entity.ty().kind()).to_owned(),
             semantic_hash: Some(entity.semantic_hash().as_str().to_owned()),
             flow_control,
+            project_summary: None,
             summary: format!(
                 "{} entity `{}`{}",
                 entity_kind_label(entity.ty().kind()),
@@ -552,6 +557,7 @@ fn agent_project_graph_symbols(
                 kind: "agent_action".to_owned(),
                 semantic_hash: None,
                 flow_control: None,
+                project_summary: None,
                 summary: format!(
                     "Agent action `{}` on `{}`",
                     action.action().as_str(),
@@ -568,6 +574,7 @@ fn agent_project_graph_symbols(
             kind: format!("project_{}", callable.kind().as_str()),
             semantic_hash: Some(callable.semantic_hash().as_str().to_owned()),
             flow_control: None,
+            project_summary: None,
             summary: format!(
                 "Project {} callable `{}`",
                 callable.kind().as_str(),
@@ -583,6 +590,7 @@ fn agent_project_graph_symbols(
             kind: "debug_query".to_owned(),
             semantic_hash: None,
             flow_control: None,
+            project_summary: None,
             summary: format!("Debug query `{}`", name.as_str()),
         });
     }
@@ -696,6 +704,28 @@ fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
         .values()
         .filter(|summary| summary.has_dynamic_control())
         .count()
+}
+
+fn agent_project_action_count(project: &ProjectSemanticIndex) -> usize {
+    project
+        .entities()
+        .values()
+        .map(|entity| entity.agent_actions().len())
+        .sum()
+}
+
+fn agent_project_graph_summary(project: &ProjectSemanticIndex) -> AgentProjectGraphSummary {
+    AgentProjectGraphSummary {
+        entity_count: usize_to_u32_saturating(project.entities().len()),
+        agent_action_count: usize_to_u32_saturating(agent_project_action_count(project)),
+        project_callable_count: usize_to_u32_saturating(project.project_callables().len()),
+        relation_count: usize_to_u32_saturating(project.relations().len()),
+        dependency_edge_count: usize_to_u32_saturating(project.dependency_relations().len()),
+        dynamic_control_flow_count: usize_to_u32_saturating(agent_dynamic_control_flow_count(
+            project,
+        )),
+        debug_query_count: usize_to_u32_saturating(project.debug_queries().len()),
+    }
 }
 
 fn agent_project_flow_control_summary(
@@ -1072,6 +1102,12 @@ mod tests {
             ));
 
         let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+        let summary = graph
+            .symbols
+            .iter()
+            .find(|symbol| symbol.kind == "project_summary")
+            .and_then(|symbol| symbol.project_summary)
+            .expect("project summary graph symbol carries typed counts");
 
         assert!(graph.symbols.iter().any(|symbol| {
             symbol
@@ -1079,6 +1115,8 @@ mod tests {
                 .as_ref()
                 .is_some_and(|id| id.as_str() == "entry.main")
         }));
+        assert_eq!(summary.entity_count, 2);
+        assert_eq!(summary.relation_count, 1);
         assert!(graph.edges.iter().any(|edge| {
             edge.from_symbol_id == "project:entity:entry.main"
                 && edge.to_symbol_id == "project:entity:flow.opening"
@@ -1126,6 +1164,12 @@ mod tests {
             ));
 
         let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+        let summary = graph
+            .symbols
+            .iter()
+            .find(|symbol| symbol.kind == "project_summary")
+            .and_then(|symbol| symbol.project_summary)
+            .expect("project summary graph symbol carries callable counts");
 
         assert!(graph.symbols.iter().any(|symbol| {
             symbol.symbol_id == "project:callable:update_route"
@@ -1147,6 +1191,8 @@ mod tests {
                 && edge.to_symbol_id == "project:callable:current_route"
                 && edge.edge_kind == "calls_callable"
         }));
+        assert_eq!(summary.project_callable_count, 2);
+        assert_eq!(summary.dependency_edge_count, 1);
     }
 
     #[test]
@@ -1178,6 +1224,12 @@ flow @flow.done done {
         .expect("project indexes flow control");
 
         let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+        let project_summary = graph
+            .symbols
+            .iter()
+            .find(|symbol| symbol.kind == "project_summary")
+            .and_then(|symbol| symbol.project_summary)
+            .expect("project summary graph symbol carries flow-control counts");
         let flow_symbol = graph
             .symbols
             .iter()
@@ -1193,6 +1245,7 @@ flow @flow.done done {
         assert!(summary.has_dynamic_control);
         assert_eq!(summary.static_goto_count, 1);
         assert_eq!(summary.dynamic_goto_count, 1);
+        assert_eq!(project_summary.dynamic_control_flow_count, 1);
     }
 
     fn project_with_agent_action(
@@ -1409,6 +1462,9 @@ effects { debug.read }
     let symbol = graph.symbols[0]
     let edge = graph.edges[0]
     expect(symbol.kind != "")
+    expect(symbol.has_project_summary)
+    expect(symbol.entity_count > 0u32)
+    expect(symbol.relation_count > 0u32)
     expect(symbol.has_flow_control == false)
     expect(symbol.dynamic_goto_count >= 0u32)
     expect(edge.kind != "")

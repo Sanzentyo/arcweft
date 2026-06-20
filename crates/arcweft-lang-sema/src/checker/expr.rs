@@ -1317,10 +1317,19 @@ impl TypeChecker<'_> {
     fn agent_project_graph_symbol_field_type(field: &str) -> Option<TypeKind> {
         Some(match field {
             "symbol_id" | "id" | "kind" | "semantic_hash" | "summary" => TypeKind::String,
-            "has_entity" | "has_semantic_hash" | "has_flow_control" | "has_dynamic_control" => {
-                TypeKind::Bool
-            }
-            "static_goto_count"
+            "has_entity"
+            | "has_semantic_hash"
+            | "has_flow_control"
+            | "has_dynamic_control"
+            | "has_project_summary" => TypeKind::Bool,
+            "entity_count"
+            | "agent_action_count"
+            | "project_callable_count"
+            | "relation_count"
+            | "dependency_edge_count"
+            | "dynamic_control_flow_count"
+            | "debug_query_count"
+            | "static_goto_count"
             | "dynamic_goto_count"
             | "branch_count"
             | "loop_count"
