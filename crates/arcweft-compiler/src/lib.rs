@@ -953,6 +953,47 @@ effects { }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_entity_meta_intrinsic() {
+        let project = project_with_entity("flow.opening", EntityKind::Flow);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.project_entity_meta project_entity_meta()
+effects { debug.read }
+{
+    let meta = try entity_meta(@flow.opening)
+    let hash = meta.semantic_hash
+    let path = meta.source.path
+    let has_source = meta.source.has_source
+    expect(meta.id == "flow.opening", "metadata id")
+    expect(meta.kind == "flow", "metadata kind")
+    expect(hash == "shape.flow.opening.v1", "semantic hash")
+    expect(path == "", "generated source path")
+    expect(has_source == false, "generated source flag")
+}
+"#,
+            &project,
+        )
+        .expect("project entity metadata intrinsic typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentEntityMetadata)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentSourceAnchor)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_advance_text_intrinsic() {
         let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
         let compiled = compile_agent_source_with_project(

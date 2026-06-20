@@ -3086,6 +3086,7 @@ pub(in crate::app) fn agent_script_runtime_policy_for_bundle(
         RuntimeAgentCapability::Act,
         RuntimeAgentCapability::Capture,
         RuntimeAgentCapability::ResourceRead,
+        RuntimeAgentCapability::DebugRead,
         RuntimeAgentCapability::DebugRecord,
         RuntimeAgentCapability::Rag,
     ];
@@ -4268,6 +4269,7 @@ impl AgentSession for CliAgentSession {
                 "agent.capture".to_owned(),
                 "agent.act.semantic".to_owned(),
                 "agent.resource.read".to_owned(),
+                "debug.read".to_owned(),
                 "debug.record".to_owned(),
             ],
         })

@@ -166,6 +166,7 @@ pub enum AgentHostRequest {
     Wait(Box<WaitRequest>),
     Capture(Box<CaptureRequest>),
     ReadResource { uri: AgentResourceUri },
+    EntityMetadata { entity: PublicId },
     RagQuery(Box<RagRequest>),
     Assert(Box<AgentAssertionRequest>),
     Attach(Box<AgentAttachment>),
@@ -180,6 +181,7 @@ pub enum AgentHostResponse {
     Action(Box<ActionResult>),
     Capture(Box<CaptureResult>),
     Resource(Box<serde_json::Value>),
+    EntityMetadata(Box<RequiredEntity>),
     RagContext(Box<serde_json::Value>),
     Unit,
 }

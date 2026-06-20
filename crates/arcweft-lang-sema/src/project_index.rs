@@ -102,6 +102,7 @@ pub enum AgentIntrinsic {
     ObservationFieldPath,
     StateProbe,
     ObservationProbe,
+    EntityMetadata,
     Diagnostics,
     PredicateExists,
     PredicateActionEnabled,
@@ -1607,6 +1608,14 @@ fn agent_probe_callables() -> Vec<(&'static str, CallableSymbol)> {
                 ),
                 [EffectCapability::new("agent.observe")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::ObservationProbe),
+            ),
+        ),
+        (
+            "entity_meta",
+            CallableSymbol::new(
+                FunctionSignature::return_only(agent_result(TypeKind::AgentEntityMetadata)),
+                [EffectCapability::new("debug.read")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::EntityMetadata),
             ),
         ),
         (

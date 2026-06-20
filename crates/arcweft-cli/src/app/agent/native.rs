@@ -10196,6 +10196,7 @@ impl AgentSession for NativeAgentScriptSession<'_> {
                 "agent.capture".to_owned(),
                 "agent.act.semantic".to_owned(),
                 "agent.resource.read".to_owned(),
+                "debug.read".to_owned(),
                 "debug.record".to_owned(),
             ],
         })

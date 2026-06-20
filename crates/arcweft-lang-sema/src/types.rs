@@ -83,6 +83,8 @@ pub enum TypeKind {
     ActionTarget,
     ActionResult,
     AgentValue,
+    AgentEntityMetadata,
+    AgentSourceAnchor,
     CaptureTarget,
     CaptureRef,
     AgentResource,

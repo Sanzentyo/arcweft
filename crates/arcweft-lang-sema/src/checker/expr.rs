@@ -766,6 +766,7 @@ impl TypeChecker<'_> {
             "object" => Some(self.check_agent_object_intrinsic(name, args)),
             "capture" => Some(self.check_agent_capture_intrinsic(name, args)),
             "read_resource" => Some(self.check_agent_read_resource_intrinsic(name, args)),
+            "entity_meta" => Some(self.check_agent_entity_meta_intrinsic(name, args)),
             "signal" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Signal, "signal"))
             }
@@ -1199,6 +1200,38 @@ impl TypeChecker<'_> {
             ));
         }
         agent_result(TypeKind::AgentResource)
+    }
+
+    fn check_agent_entity_meta_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        self.check_function_effects(name);
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return agent_result(TypeKind::AgentEntityMetadata);
+        };
+        match self.check_expr(arg) {
+            Some(TypeKind::Ref(_)) | None => {}
+            Some(actual) => self.errors.push(TypeCheckError::new(format!(
+                "entity_meta argument must be an entity reference, found {actual:?}"
+            ))),
+        }
+        agent_result(TypeKind::AgentEntityMetadata)
+    }
+
+    fn agent_entity_metadata_field_type(field: &str) -> Option<TypeKind> {
+        Some(match field {
+            "id" | "kind" | "semantic_hash" => TypeKind::String,
+            "source" => TypeKind::AgentSourceAnchor,
+            _ => return None,
+        })
+    }
+
+    fn agent_source_anchor_field_type(field: &str) -> Option<TypeKind> {
+        Some(match field {
+            "has_source" => TypeKind::Bool,
+            "path" => TypeKind::String,
+            "start_byte" | "end_byte" => TypeKind::U64,
+            "start_line" | "start_column" | "end_line" | "end_column" => TypeKind::U32,
+            _ => return None,
+        })
     }
 
     fn check_agent_probe_intrinsic(
@@ -2295,6 +2328,18 @@ impl TypeChecker<'_> {
         if method_name == "parallel" {
             return self.check_parallel_method_call(&receiver_type, args);
         }
+        if let Some(signature) = self
+            .env
+            .method_signature(&receiver_type, method_name)
+            .cloned()
+        {
+            if signature.checks_args() {
+                self.check_signature_call_args(method_name, &signature, args);
+            } else {
+                self.check_untyped_method_args(args);
+            }
+            return Some(signature.return_type().clone());
+        }
         if method_name == "len" {
             return self.check_sequence_len_method_call(&receiver_type, args);
         }
@@ -2354,15 +2399,6 @@ impl TypeChecker<'_> {
         if method_name == "say" && is_character_speaker_type(&receiver_type) {
             self.check_untyped_method_args(args);
             return Some(TypeKind::SpeakerPreset(EntityKind::Character));
-        }
-        if let Some(signature) = self
-            .env
-            .method_signature(&receiver_type, method_name)
-            .filter(|signature| signature.checks_args())
-            .cloned()
-        {
-            self.check_signature_call_args(method_name, &signature, args);
-            return Some(signature.return_type().clone());
         }
         self.check_untyped_method_args(args);
         self.env
@@ -2853,6 +2889,8 @@ impl TypeChecker<'_> {
             Some(TypeKind::ActionTarget) => agent_action_target_field_type(field),
             Some(TypeKind::ActionResult) => agent_action_result_field_type(field),
             Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
+            Some(TypeKind::AgentEntityMetadata) => Self::agent_entity_metadata_field_type(field),
+            Some(TypeKind::AgentSourceAnchor) => Self::agent_source_anchor_field_type(field),
             Some(TypeKind::AgentResource) => agent_resource_field_type(field),
             Some(TypeKind::AgentResourceBody) => agent_resource_body_field_type(field),
             Some(TypeKind::Ref(_)) => agent_entity_ref_field_type(field),

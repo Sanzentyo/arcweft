@@ -282,17 +282,16 @@ effects { agent.resource.read, debug.record }
     let report =
         lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
 
-    let FlowOp::Effect(effect) = &report.plan.flows[0].ops[1] else {
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[1] else {
         panic!(
-            "expected attach to lower to Effect, got {:?}",
+            "expected attach to lower to Await, got {:?}",
             report.plan.flows[0].ops[1]
         );
     };
-    let arcweft_core::effect::LineEffectRequest::Call(call) = effect else {
-        panic!("expected attach call effect, got {effect:?}");
-    };
-    assert_eq!(call.callee, "attach");
-    assert_eq!(call.args, ["resource"]);
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "attach");
+    assert_eq!(target.request.args.len(), 1);
+    assert!(format!("{:?}", target.request.args[0]).contains("resource"));
 }
 
 #[test]

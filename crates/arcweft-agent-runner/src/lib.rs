@@ -251,6 +251,7 @@ pub enum RuntimeAgentCapability {
     ActPhysical,
     Capture,
     ResourceRead,
+    DebugRead,
     DebugRecord,
     Rag,
 }
@@ -328,6 +329,8 @@ where
         mode: ProjectBindingMode,
         detail: String,
     },
+    #[error("Agent project entity metadata is missing for {entity}")]
+    ProjectEntityMetadataMissing { entity: String },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
     #[error("Agent assertion failed ({kind:?}): {message}")]
@@ -375,6 +378,7 @@ impl RuntimeAgentCapability {
             Self::ActPhysical => "agent.act.physical",
             Self::Capture => "agent.capture",
             Self::ResourceRead => "agent.resource.read",
+            Self::DebugRead => "debug.read",
             Self::DebugRecord => "debug.record",
             Self::Rag => "agent.rag.query",
         }
@@ -514,6 +518,9 @@ where
                 self.handle_capture_request(*request, budget.as_mut())?
             }
             AgentHostRequest::ReadResource { uri } => self.handle_read_resource_request(&uri)?,
+            AgentHostRequest::EntityMetadata { entity } => {
+                self.handle_entity_metadata_request(&entity)?
+            }
             AgentHostRequest::RagQuery(request) => {
                 self.handle_rag_query_request(*request, budget.as_mut())?
             }
@@ -656,6 +663,34 @@ where
         Ok(AgentHostResponse::Resource(Box::new(
             serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
         )))
+    }
+
+    fn handle_entity_metadata_request(
+        &mut self,
+        entity: &PublicId,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::DebugRead)?;
+        let session_info = self.session.info().map_err(AgentRunError::Session)?;
+        let metadata = session_info
+            .project_entities
+            .into_iter()
+            .find(|candidate| candidate.public_id == *entity)
+            .ok_or_else(|| AgentRunError::ProjectEntityMetadataMissing {
+                entity: entity.as_str().to_owned(),
+            })?;
+        self.emit(
+            DebugEventKind::Diagnostic,
+            None,
+            serde_json::json!({
+                "entity_metadata": {
+                    "id": metadata.public_id.as_str(),
+                    "kind": metadata.kind.as_str(),
+                    "semantic_hash": metadata.semantic_hash.as_str(),
+                    "source_anchor": metadata.source_anchor.as_ref(),
+                }
+            }),
+        )?;
+        Ok(AgentHostResponse::EntityMetadata(Box::new(metadata)))
     }
 
     fn handle_rag_query_request(
@@ -1131,6 +1166,14 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
             })
         }
+        "entity_meta" => {
+            let entity = call
+                .args
+                .first()
+                .ok_or_else(|| "entity_meta requires an entity argument".to_owned())
+                .and_then(|arg| parse_public_id_arg(arg))?;
+            Ok(AgentHostRequest::EntityMetadata { entity })
+        }
         other => Err(format!("unsupported Agent call `{other}`")),
     }
 }
@@ -1185,6 +1228,14 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
             Ok(AgentHostRequest::ReadResource {
                 uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
             })
+        }
+        "entity_meta" => {
+            let entity = args
+                .positional(0)
+                .or_else(|| args.named("entity"))
+                .ok_or_else(|| "entity_meta requires an entity argument".to_owned())
+                .and_then(runtime_public_id)?;
+            Ok(AgentHostRequest::EntityMetadata { entity })
         }
         "rag.query" => {
             runtime_rag_request(&args).map(|request| AgentHostRequest::RagQuery(Box::new(request)))
@@ -1629,9 +1680,67 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
             runtime_field("byte_len", RuntimeValue::u64(result.byte_len)),
         ]),
         AgentHostResponse::Resource(value) => runtime_resource_payload(value),
+        AgentHostResponse::EntityMetadata(metadata) => runtime_entity_metadata_payload(metadata),
         AgentHostResponse::RagContext(value) => runtime_rag_context_payload(value),
         AgentHostResponse::Unit => RuntimeValue::Unit,
     })
+}
+
+fn runtime_entity_metadata_payload(metadata: &RequiredEntity) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field(
+            "id",
+            RuntimeValue::String(metadata.public_id.as_str().to_owned()),
+        ),
+        runtime_field("kind", RuntimeValue::String(metadata.kind.clone())),
+        runtime_field(
+            "semantic_hash",
+            RuntimeValue::String(metadata.semantic_hash.as_str().to_owned()),
+        ),
+        runtime_field(
+            "source",
+            runtime_entity_source_anchor_payload(metadata.source_anchor.as_ref()),
+        ),
+    ])
+}
+
+fn runtime_entity_source_anchor_payload(
+    source: Option<&arcweft_agent_protocol::artifact::RequiredEntitySourceAnchor>,
+) -> RuntimeValue {
+    let Some(source) = source else {
+        return RuntimeValue::Record(vec![
+            runtime_field("has_source", RuntimeValue::Bool(false)),
+            runtime_field("path", RuntimeValue::String(String::new())),
+            runtime_field("start_byte", RuntimeValue::u64(0)),
+            runtime_field("end_byte", RuntimeValue::u64(0)),
+            runtime_field("start_line", RuntimeValue::u32(0)),
+            runtime_field("start_column", RuntimeValue::u32(0)),
+            runtime_field("end_line", RuntimeValue::u32(0)),
+            runtime_field("end_column", RuntimeValue::u32(0)),
+        ]);
+    };
+    RuntimeValue::Record(vec![
+        runtime_field("has_source", RuntimeValue::Bool(true)),
+        runtime_field("path", RuntimeValue::String(source.path.clone())),
+        runtime_field("start_byte", RuntimeValue::u64(source.start_byte)),
+        runtime_field("end_byte", RuntimeValue::u64(source.end_byte)),
+        runtime_field(
+            "start_line",
+            RuntimeValue::u32(source.start.map_or(0, |position| position.line)),
+        ),
+        runtime_field(
+            "start_column",
+            RuntimeValue::u32(source.start.map_or(0, |position| position.column)),
+        ),
+        runtime_field(
+            "end_line",
+            RuntimeValue::u32(source.end.map_or(0, |position| position.line)),
+        ),
+        runtime_field(
+            "end_column",
+            RuntimeValue::u32(source.end.map_or(0, |position| position.column)),
+        ),
+    ])
 }
 
 fn agent_assertion_passed(request: &AgentAssertionRequest) -> bool {
@@ -2875,7 +2984,8 @@ mod tests {
     use arcweft_agent_protocol::{
         AgentActionDispatch, AgentActionKind, AgentResourceBody, AgentResourceKind,
         artifact::{
-            AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding, ProjectBindingMode,
+            AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding,
+            ProjectBindingMode, RequiredEntitySourceAnchor, RequiredEntitySourcePosition,
         },
         ids::StableHash,
         ids::{AgentResourceUri, PublicId},
@@ -2902,6 +3012,10 @@ mod tests {
     #[derive(Default)]
     struct TestSession {
         observations: Vec<ObservationEnvelope>,
+    }
+
+    struct MetadataSession {
+        project_entities: Vec<RequiredEntity>,
     }
 
     #[derive(Default)]
@@ -2974,6 +3088,43 @@ mod tests {
 
         fn step_frames(&mut self, _count: u32) -> Result<ObservationEnvelope, Self::Error> {
             Ok(self.observations.remove(0))
+        }
+    }
+
+    impl AgentSession for MetadataSession {
+        type Error = Infallible;
+
+        fn info(&mut self) -> Result<AgentSessionInfo, Self::Error> {
+            Ok(AgentSessionInfo {
+                session_id: "session.metadata".to_owned(),
+                program_hash: "hash".to_owned(),
+                project_entities: self.project_entities.clone(),
+                profile: None,
+                capabilities: vec!["debug.read".to_owned()],
+            })
+        }
+
+        fn observe(
+            &mut self,
+            _request: ObserveRequest,
+        ) -> Result<ObservationEnvelope, Self::Error> {
+            unreachable!("metadata session only serves AgentSessionInfo")
+        }
+
+        fn act(&mut self, _action: AgentAction) -> Result<ActionResult, Self::Error> {
+            unreachable!("metadata session only serves AgentSessionInfo")
+        }
+
+        fn capture(&mut self, _request: CaptureRequest) -> Result<CaptureResult, Self::Error> {
+            unreachable!("metadata session only serves AgentSessionInfo")
+        }
+
+        fn read_resource(&mut self, _uri: &str) -> Result<AgentResource, Self::Error> {
+            unreachable!("metadata session only serves AgentSessionInfo")
+        }
+
+        fn step_frames(&mut self, _count: u32) -> Result<ObservationEnvelope, Self::Error> {
+            unreachable!("metadata session only serves AgentSessionInfo")
         }
     }
 
@@ -3328,6 +3479,40 @@ mod tests {
                                 field: "body".to_owned(),
                             }),
                             field: "json".to_owned(),
+                        }),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
+    fn entity_metadata_binding_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.entity_metadata_binding".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.entity_metadata_binding".to_owned()),
+                    ops: vec![
+                        FlowOp::Await {
+                            binding: Some(RuntimePattern::Ident("meta".to_owned())),
+                            target: AwaitTarget::new(
+                                NeedId("need.agent.entity_meta".to_owned()),
+                                TaskId("task.agent.entity_meta".to_owned()),
+                                HostTaskRequestTemplate::new(
+                                    "agent",
+                                    "entity_meta",
+                                    [HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
+                                        "flow.opening".to_owned(),
+                                    ))],
+                                ),
+                            ),
+                            pending: Vec::new(),
+                        },
+                        FlowOp::ReturnExpr(RuntimeExpr::Field {
+                            target: Box::new(RuntimeExpr::Local("meta".to_owned())),
+                            field: "semantic_hash".to_owned(),
                         }),
                     ],
                 }],
@@ -4359,6 +4544,58 @@ mod tests {
             report.final_status,
             Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
                 if value == "{\"uri\":\"agent://resource/test\"}"
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_resumes_bound_entity_metadata_response_fields() {
+        let mut runner = AgentRunner::new(
+            MetadataSession {
+                project_entities: vec![RequiredEntity {
+                    public_id: PublicId::new("flow.opening").expect("valid public id"),
+                    kind: "flow".to_owned(),
+                    semantic_hash: StableHash::new("hir:flow:flow.opening:_")
+                        .expect("valid semantic hash"),
+                    source_anchor: Some(RequiredEntitySourceAnchor {
+                        path: "game.arcw".to_owned(),
+                        start_byte: 8,
+                        end_byte: 21,
+                        start: Some(RequiredEntitySourcePosition { line: 2, column: 1 }),
+                        end: Some(RequiredEntitySourcePosition {
+                            line: 2,
+                            column: 14,
+                        }),
+                    }),
+                }],
+            },
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(
+                entity_metadata_binding_program(),
+                AgentControllerRunConfig::default(),
+            )
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.host_calls, 1);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::EntityMetadata(metadata)
+                if metadata.public_id.as_str() == "flow.opening"
+                    && metadata.semantic_hash.as_str() == "hir:flow:flow.opening:_"
+                    && metadata
+                        .source_anchor
+                        .as_ref()
+                        .is_some_and(|source| source.path == "game.arcw")
+        ));
+        assert!(matches!(
+            report.final_status,
+            Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
+                if value == "hir:flow:flow.opening:_"
         ));
     }
 

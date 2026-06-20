@@ -154,6 +154,7 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 "observe" => "observe",
                 "advance_text" => "advance_text",
                 "capture" => "capture",
+                "entity_meta" => "entity_meta",
                 "wait" => "wait",
                 "choose" => "choose",
                 "invoke" => "invoke",

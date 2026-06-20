@@ -1,0 +1,14 @@
+#[agent(version = 1)]
+agent @agent.native.entity_meta entity_meta_smoke()
+effects { debug.read }
+{
+    let meta = try entity_meta(@flow.opening)
+
+    expect(meta.id == "flow.opening")
+    expect(meta.kind == "flow")
+    expect(meta.semantic_hash != "")
+    expect(meta.source.has_source)
+    expect(meta.source.end_byte > meta.source.start_byte)
+
+    return meta.semantic_hash
+}
