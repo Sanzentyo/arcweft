@@ -513,13 +513,15 @@ fn agent_project_graph_symbols(
         kind: "project_summary".to_owned(),
         semantic_hash: None,
         summary: format!(
-            "Project with {} entities, {} project callables, and {} debug queries",
+            "Project with {} entities, {} project callables, {} dynamic-control flows, and {} debug queries",
             project.entities().len(),
             project.project_callables().len(),
+            agent_dynamic_control_flow_count(project),
             project.debug_queries().len()
         ),
     }];
     for entity in project.entities().values() {
+        let control_summary = agent_flow_control_summary_text(project, entity.id().as_str());
         symbols.push(AgentProjectGraphSymbol {
             symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
             public_id: Some(AgentPublicId::new(entity.id().as_str().to_owned())?),
@@ -527,9 +529,10 @@ fn agent_project_graph_symbols(
             kind: entity_kind_label(entity.ty().kind()).to_owned(),
             semantic_hash: Some(entity.semantic_hash().as_str().to_owned()),
             summary: format!(
-                "{} entity `{}`",
+                "{} entity `{}`{}",
                 entity_kind_label(entity.ty().kind()),
-                entity.id().as_str()
+                entity.id().as_str(),
+                control_summary
             ),
         });
         for action in entity.agent_actions() {
@@ -676,6 +679,37 @@ fn agent_project_symbol_ref_id(
             agent_project_callable_symbol_id(name.as_str())
         }
     }
+}
+
+fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
+    project
+        .flow_control_summaries()
+        .values()
+        .filter(|summary| summary.has_dynamic_control())
+        .count()
+}
+
+fn agent_flow_control_summary_text(project: &ProjectSemanticIndex, flow_id: &str) -> String {
+    let Some(summary) = project
+        .flow_control_summaries()
+        .iter()
+        .find_map(|(id, summary)| (id.as_str() == flow_id).then_some(summary))
+    else {
+        return String::new();
+    };
+    if !summary.has_dynamic_control() && summary.static_goto_count() == 0 {
+        return String::new();
+    }
+    format!(
+        " control(static_goto={}, dynamic_goto={}, branches={}, loops={}, awaits={}, threads={}, select_branches={})",
+        summary.static_goto_count(),
+        summary.dynamic_goto_count(),
+        summary.branch_count(),
+        summary.loop_count(),
+        summary.await_count(),
+        summary.thread_count(),
+        summary.select_branch_count()
+    )
 }
 
 fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {

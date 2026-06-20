@@ -2641,6 +2641,7 @@ pub view current_route(state: GameState) -> Ref<Flow> {
 flow opening effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
     let route = current_route()
+    goto route
 
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
@@ -2810,6 +2811,14 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
                     .is_some_and(|path| path.contains("project-callables-"))
         }),
         "debug db graph should expose source-owned project entity symbols: {graph_report}"
+    );
+    assert!(
+        symbols.iter().any(|symbol| {
+            symbol["public_id"] == "flow.opening"
+                && symbol["metadata"]["flow_control"]["dynamic_goto_count"] == 1
+                && symbol["metadata"]["flow_control"]["has_dynamic_control"] == true
+        }),
+        "debug db graph should expose dynamic flow-control summaries: {graph_report}"
     );
     let edges = graph_report["edges"].as_array().expect("edges");
     assert!(

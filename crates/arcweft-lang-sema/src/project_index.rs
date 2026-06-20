@@ -77,6 +77,18 @@ pub struct ProjectGraphDependencyRelation {
     edge_kind: ProjectGraphDependencyRelationKind,
 }
 
+/// Static and dynamic control-flow shape indexed for one source flow.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProjectFlowControlSummary {
+    static_gotos: usize,
+    dynamic_gotos: usize,
+    branches: usize,
+    loops: usize,
+    awaits: usize,
+    threads: usize,
+    select_branches: usize,
+}
+
 /// Endpoint of a project graph dependency relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectGraphSymbolRef {
@@ -208,6 +220,7 @@ pub struct ProjectSemanticIndex {
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
     dependency_relations: Vec<ProjectGraphDependencyRelation>,
+    flow_control_summaries: BTreeMap<PublicId, ProjectFlowControlSummary>,
 }
 
 /// Policy applied while compiling Agent Script.
@@ -379,6 +392,91 @@ impl ProjectGraphDependencyRelation {
 
     pub const fn edge_kind(&self) -> ProjectGraphDependencyRelationKind {
         self.edge_kind
+    }
+}
+
+impl ProjectFlowControlSummary {
+    /// Static `goto @flow...` statements in this flow.
+    pub const fn static_goto_count(&self) -> usize {
+        self.static_gotos
+    }
+
+    /// Dynamic `goto expr` statements whose target is not a static entity ref.
+    pub const fn dynamic_goto_count(&self) -> usize {
+        self.dynamic_gotos
+    }
+
+    /// Conditional or match control points.
+    pub const fn branch_count(&self) -> usize {
+        self.branches
+    }
+
+    /// Loop control points.
+    pub const fn loop_count(&self) -> usize {
+        self.loops
+    }
+
+    /// Await control points.
+    pub const fn await_count(&self) -> usize {
+        self.awaits
+    }
+
+    /// Thread control points.
+    pub const fn thread_count(&self) -> usize {
+        self.threads
+    }
+
+    /// Select branch arms.
+    pub const fn select_branch_count(&self) -> usize {
+        self.select_branches
+    }
+
+    /// Whether this flow contains any non-static control surface.
+    pub const fn has_dynamic_control(&self) -> bool {
+        self.dynamic_gotos > 0
+            || self.branches > 0
+            || self.loops > 0
+            || self.awaits > 0
+            || self.threads > 0
+            || self.select_branches > 0
+    }
+
+    fn record_static_goto(&mut self) {
+        self.static_gotos += 1;
+    }
+
+    fn record_dynamic_goto(&mut self) {
+        self.dynamic_gotos += 1;
+    }
+
+    fn record_branch(&mut self) {
+        self.branches += 1;
+    }
+
+    fn record_loop(&mut self) {
+        self.loops += 1;
+    }
+
+    fn record_await(&mut self) {
+        self.awaits += 1;
+    }
+
+    fn record_thread(&mut self) {
+        self.threads += 1;
+    }
+
+    fn add_select_branches(&mut self, count: usize) {
+        self.select_branches += count;
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.static_gotos += other.static_gotos;
+        self.dynamic_gotos += other.dynamic_gotos;
+        self.branches += other.branches;
+        self.loops += other.loops;
+        self.awaits += other.awaits;
+        self.threads += other.threads;
+        self.select_branches += other.select_branches;
     }
 }
 
@@ -571,6 +669,7 @@ impl ProjectSemanticIndex {
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
             dependency_relations: Vec::new(),
+            flow_control_summaries: BTreeMap::new(),
         }
     }
 
@@ -630,6 +729,16 @@ impl ProjectSemanticIndex {
         self
     }
 
+    #[must_use]
+    pub fn with_flow_control_summary(
+        mut self,
+        flow_id: PublicId,
+        summary: ProjectFlowControlSummary,
+    ) -> Self {
+        self.flow_control_summaries.insert(flow_id, summary);
+        self
+    }
+
     pub const fn schema_version(&self) -> u32 {
         self.schema_version
     }
@@ -668,6 +777,14 @@ impl ProjectSemanticIndex {
 
     pub fn dependency_relations(&self) -> &[ProjectGraphDependencyRelation] {
         &self.dependency_relations
+    }
+
+    pub fn flow_control_summaries(&self) -> &BTreeMap<PublicId, ProjectFlowControlSummary> {
+        &self.flow_control_summaries
+    }
+
+    pub fn flow_control_summary(&self, flow_id: &PublicId) -> Option<&ProjectFlowControlSummary> {
+        self.flow_control_summaries.get(flow_id)
     }
 
     pub fn entity(&self, id: &PublicId) -> Option<&EntitySymbol> {
@@ -751,6 +868,12 @@ pub fn project_semantic_index_from_hir(
         }
         index = index_flow_items(flow.body(), index, source_name)?;
         index = index_flow_item_relations(flow.id(), flow.body(), index)?;
+        if let Some(id) = flow.id() {
+            index = index.with_flow_control_summary(
+                public_id_for_relation(id, "flow control summary")?,
+                summarize_flow_control_items(flow.body()),
+            );
+        }
     }
     for agent in module.agents() {
         if let Some(id) = agent.item().id() {
@@ -892,6 +1015,459 @@ fn index_entry_relations(
         }
     }
     Ok(index)
+}
+
+fn summarize_flow_control_items(items: &[HirFlowItem]) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for item in items {
+        summary.merge(summarize_flow_control_item(item));
+    }
+    summary
+}
+
+fn summarize_flow_control_item(item: &HirFlowItem) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    match item {
+        HirFlowItem::Dialogue(dialogue) => {
+            for arg in dialogue.args() {
+                summary.merge(summarize_expr_control(arg.value()));
+            }
+            if let Some(rich_text) = dialogue.rich_text() {
+                summary.merge(summarize_expr_control(rich_text));
+            }
+        }
+        HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+            summary.record_branch();
+            for option in choice.options() {
+                if let Some(condition) = option.condition() {
+                    summary.merge(summarize_expr_control(condition));
+                }
+                if let Some(value) = option.value() {
+                    summary.merge(summarize_expr_control(value));
+                }
+                summary.merge(match option.action() {
+                    ChoiceAction::Out(expr) => summarize_expr_control(expr),
+                    ChoiceAction::SelectBlock(statements) => {
+                        summarize_stmt_body_control(statements)
+                    }
+                    ChoiceAction::Goto(_) | ChoiceAction::None => {
+                        ProjectFlowControlSummary::default()
+                    }
+                });
+            }
+        }
+        HirFlowItem::If(block) => {
+            summary.record_branch();
+            summary.merge(summarize_flow_control_items(block.body()));
+            summary.merge(summarize_flow_control_items(block.else_body()));
+        }
+        HirFlowItem::IfLet(block) => {
+            summary.record_branch();
+            summary.merge(summarize_flow_control_items(block.body()));
+            summary.merge(summarize_flow_control_items(block.else_body()));
+        }
+        HirFlowItem::Match(block) => {
+            summary.record_branch();
+            for arm in block.arms() {
+                summary.merge(summarize_flow_control_items(arm.body()));
+            }
+        }
+        HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+            summary.record_loop();
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::While(block) => {
+            summary.record_loop();
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::WhileLet(block) => {
+            summary.record_loop();
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::For(block) => {
+            summary.record_loop();
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::Borrow(block) => {
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::SourceLocale(block) => {
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::Scope(block) => {
+            summary.merge(summarize_flow_control_items(block.body()));
+        }
+        HirFlowItem::Select(block) => {
+            summary.record_branch();
+            summary.add_select_branches(block.branches().len());
+            for branch in block.branches() {
+                summary.merge(summarize_flow_control_items(branch.body()));
+            }
+        }
+        HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
+            summary.record_await();
+            for branch in await_with.branches() {
+                summary.merge(summarize_flow_control_items(branch.body()));
+            }
+        }
+        HirFlowItem::Thread(thread) => {
+            summary.record_thread();
+            summary.merge(summarize_flow_control_items(thread.body()));
+        }
+        HirFlowItem::LetScope { scope, .. } => {
+            summary.merge(summarize_stmt_body_control(scope.statements()));
+            if let Some(value) = scope.value() {
+                summary.merge(summarize_expr_control(value));
+            }
+        }
+        HirFlowItem::Stmt(stmt) => {
+            summary.merge(summarize_stmt_control(stmt));
+        }
+        HirFlowItem::Include(_) => {}
+    }
+    summary
+}
+
+fn summarize_stmt_body_control(statements: &[Stmt]) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for statement in statements {
+        summary.merge(summarize_stmt_control(statement));
+    }
+    summary
+}
+
+fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    match stmt {
+        Stmt::Goto(Expr::EntityRef(target)) if target.as_absolute().is_some() => {
+            summary.record_static_goto();
+        }
+        Stmt::Goto(expr) => {
+            summary.record_dynamic_goto();
+            summary.merge(summarize_expr_control(expr));
+        }
+        Stmt::Let { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::LifetimeSet { expr, .. }
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Expr(expr) => {
+            summary.merge(summarize_expr_control(expr));
+        }
+        Stmt::Signal { target, value } => {
+            summary.merge(summarize_expr_control(target));
+            summary.merge(summarize_expr_control(value));
+        }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            summary.record_branch();
+            summary.merge(summarize_expr_control(expr));
+            summary.merge(summarize_stmt_body_control(else_body));
+        }
+        Stmt::DeferBlock { statements, .. } => {
+            summary.merge(summarize_stmt_body_control(statements));
+        }
+        Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } => {
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::Loop { body } => {
+            summary.record_loop();
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::If { condition, body } => {
+            summary.record_branch();
+            summary.merge(summarize_expr_control(condition));
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::While { condition, body } => {
+            summary.record_loop();
+            summary.merge(summarize_expr_control(condition));
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            summary.record_loop();
+            summary.merge(summarize_expr_control(expr));
+            if let Some(guard) = guard {
+                summary.merge(summarize_expr_control(guard));
+            }
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::For { source, body, .. } => {
+            summary.record_loop();
+            summary.merge(summarize_expr_control(source));
+            summary.merge(summarize_stmt_body_control(body));
+        }
+        Stmt::Match { arms, .. } => {
+            summary.record_branch();
+            for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    summary.merge(summarize_expr_control(guard));
+                }
+                summary.merge(summarize_stmt_body_control(arm.body()));
+            }
+        }
+        Stmt::Thread(_) => {
+            summary.record_thread();
+        }
+        Stmt::Wait(_) => {
+            summary.record_await();
+        }
+        Stmt::LetChoice { .. }
+        | Stmt::LetScope { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => {}
+    }
+    summary
+}
+
+fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    match expr {
+        Expr::Call { callee, args } => {
+            summary.merge(summarize_expr_call_control(callee, args));
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            summary.merge(summarize_expr_call_control(receiver, args));
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::DialogueCall { callee: target, .. }
+        | Expr::Closure { body: target, .. } => summary.merge(summarize_expr_control(target)),
+        Expr::Index {
+            target,
+            index: item,
+        }
+        | Expr::Pipe {
+            lhs: target,
+            rhs: item,
+        }
+        | Expr::Binary {
+            lhs: target,
+            rhs: item,
+            ..
+        }
+        | Expr::ArrayRepeat {
+            value: target,
+            len: item,
+        } => {
+            summary.merge(summarize_expr_pair_control(target, item));
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            summary.merge(summarize_expr_items_control(items));
+        }
+        Expr::Record { fields: _, .. } | Expr::RecordLiteral(_) => {
+            summary.merge(summarize_expr_record_control(expr));
+        }
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => {
+            summary.merge(summarize_expr_block_control(statements, value.as_deref()));
+        }
+        Expr::MemoBlock {
+            options,
+            statements,
+            value,
+        } => {
+            summary.merge(summarize_expr_memo_block_control(
+                options,
+                statements,
+                value.as_deref(),
+            ));
+        }
+        Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } => {
+            summary.merge(summarize_expr_branch_control(expr));
+        }
+        Expr::Range { start, end, .. } => {
+            summary.merge(summarize_expr_range_control(
+                start.as_deref(),
+                end.as_deref(),
+            ));
+        }
+        Expr::Thread { .. } => summary.record_thread(),
+        Expr::Literal(_)
+        | Expr::EntityRef(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Raw(_) => {}
+    }
+    summary
+}
+
+fn summarize_expr_call_control(callee: &Expr, args: &[CallArg]) -> ProjectFlowControlSummary {
+    let mut summary = summarize_expr_control(callee);
+    summary.merge(summarize_call_args_control(args));
+    summary
+}
+
+fn summarize_expr_pair_control(lhs: &Expr, rhs: &Expr) -> ProjectFlowControlSummary {
+    let mut summary = summarize_expr_control(lhs);
+    summary.merge(summarize_expr_control(rhs));
+    summary
+}
+
+fn summarize_expr_items_control(items: &[Expr]) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for item in items {
+        summary.merge(summarize_expr_control(item));
+    }
+    summary
+}
+
+fn summarize_expr_record_control(expr: &Expr) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    match expr {
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            for (_, value) in fields {
+                summary.merge(summarize_expr_control(value));
+            }
+        }
+        _ => {}
+    }
+    summary
+}
+
+fn summarize_expr_block_control(
+    statements: &[Stmt],
+    value: Option<&Expr>,
+) -> ProjectFlowControlSummary {
+    let mut summary = summarize_stmt_body_control(statements);
+    if let Some(value) = value {
+        summary.merge(summarize_expr_control(value));
+    }
+    summary
+}
+
+fn summarize_expr_memo_block_control(
+    options: &[(String, Expr)],
+    statements: &[Stmt],
+    value: Option<&Expr>,
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for (_, value) in options {
+        summary.merge(summarize_expr_control(value));
+    }
+    summary.merge(summarize_stmt_body_control(statements));
+    if let Some(value) = value {
+        summary.merge(summarize_expr_control(value));
+    }
+    summary
+}
+
+fn summarize_expr_branch_control(expr: &Expr) -> ProjectFlowControlSummary {
+    match expr {
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => summarize_expr_if_control(condition, then_branch, else_branch.as_deref()),
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => summarize_expr_if_let_control(
+            expr,
+            guard.as_deref(),
+            then_branch,
+            else_branch.as_deref(),
+        ),
+        Expr::Match { scrutinee, arms } => summarize_expr_match_control(scrutinee, arms),
+        _ => ProjectFlowControlSummary::default(),
+    }
+}
+
+fn summarize_expr_if_control(
+    condition: &Expr,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    summary.record_branch();
+    summary.merge(summarize_expr_control(condition));
+    summary.merge(summarize_expr_control(then_branch));
+    if let Some(else_branch) = else_branch {
+        summary.merge(summarize_expr_control(else_branch));
+    }
+    summary
+}
+
+fn summarize_expr_if_let_control(
+    expr: &Expr,
+    guard: Option<&Expr>,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    summary.record_branch();
+    summary.merge(summarize_expr_control(expr));
+    if let Some(guard) = guard {
+        summary.merge(summarize_expr_control(guard));
+    }
+    summary.merge(summarize_expr_control(then_branch));
+    if let Some(else_branch) = else_branch {
+        summary.merge(summarize_expr_control(else_branch));
+    }
+    summary
+}
+
+fn summarize_expr_match_control(
+    scrutinee: &Expr,
+    arms: &[MatchExprArm],
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    summary.record_branch();
+    summary.merge(summarize_expr_control(scrutinee));
+    for arm in arms {
+        if let Some(guard) = arm.guard() {
+            summary.merge(summarize_expr_control(guard));
+        }
+        summary.merge(summarize_expr_control(arm.value()));
+    }
+    summary
+}
+
+fn summarize_expr_range_control(
+    start: Option<&Expr>,
+    end: Option<&Expr>,
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    if let Some(start) = start {
+        summary.merge(summarize_expr_control(start));
+    }
+    if let Some(end) = end {
+        summary.merge(summarize_expr_control(end));
+    }
+    summary
+}
+
+fn summarize_call_args_control(args: &[CallArg]) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for arg in args {
+        let value = match arg {
+            CallArg::Positional(value) => value,
+            CallArg::Named { value, .. } | CallArg::Spread { value } => value,
+        };
+        summary.merge(summarize_expr_control(value));
+    }
+    summary
 }
 
 fn index_project_symbol_dependency_relations(
@@ -3603,7 +4179,13 @@ pub view current_route(state: GameState) -> Ref<Flow> {
 
 flow @flow.opening opening {
     let route = current_route()
+    goto @flow.done
+    goto route
     return "ok"
+}
+
+flow @flow.done done {
+    return "done"
 }
 "#,
         )
@@ -3671,6 +4253,12 @@ flow @flow.opening opening {
                 && matches!(to, ProjectGraphSymbolRef::Entity(id) if id.as_str() == "flow.opening")
                 && *kind == "references_entity"
         }));
+        let control = index
+            .flow_control_summary(&public_id("flow.opening"))
+            .expect("flow control summary indexed");
+        assert_eq!(control.static_goto_count(), 1);
+        assert_eq!(control.dynamic_goto_count(), 1);
+        assert!(control.has_dynamic_control());
     }
 
     #[test]

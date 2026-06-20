@@ -1864,6 +1864,7 @@ fn agent_project_semantic_rag_candidates(
         candidates.push(agent_project_entity_rag_candidate(
             entity,
             source_key_prefix,
+            project,
         )?);
     }
     for (name, callable) in project.project_callables() {
@@ -1899,7 +1900,7 @@ fn agent_project_graph_symbols(
             .entities()
             .values()
             .map(|entity| {
-                agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash)
+                agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash, project)
             })
             .collect::<Result<Vec<_>, _>>()?,
     );
@@ -2067,9 +2068,10 @@ fn agent_project_summary_graph_symbol(
             .map_err(|error| format!("invalid graph project summary semantic hash: {error}"))?,
         ),
         summary: format!(
-            "Project semantic summary entities={} project_callables={} debug_queries={}",
+            "Project semantic summary entities={} project_callables={} dynamic_control_flows={} debug_queries={}",
             project.entities().len(),
             project.project_callables().len(),
+            agent_dynamic_control_flow_count(project),
             project.debug_queries().len()
         ),
         metadata: BTreeMap::from([
@@ -2080,6 +2082,10 @@ fn agent_project_summary_graph_symbol(
             (
                 "project_callable_count".to_owned(),
                 serde_json::json!(project.project_callables().len()),
+            ),
+            (
+                "dynamic_control_flow_count".to_owned(),
+                serde_json::json!(agent_dynamic_control_flow_count(project)),
             ),
             (
                 "debug_query_count".to_owned(),
@@ -2093,9 +2099,11 @@ fn agent_project_entity_graph_symbol(
     entity: &EntitySymbol,
     source_key_prefix: &str,
     program_hash: &StableHash,
+    project: &ProjectSemanticIndex,
 ) -> Result<DebugGraphSymbol, String> {
     let public_id = agent_public_id_from_sema(entity.id())?;
     let source_anchor = debug_anchor_from_source_anchor(entity.source())?;
+    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
     Ok(DebugGraphSymbol {
         symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
         program_hash: program_hash.clone(),
@@ -2105,6 +2113,7 @@ fn agent_project_entity_graph_symbol(
         type_json: Some(serde_json::json!({
             "entity_kind": format!("{:?}", entity.ty().kind()),
             "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
+            "flow_control": flow_control,
         })),
         source_path: None,
         source_content_hash: None,
@@ -2115,12 +2124,14 @@ fn agent_project_entity_graph_symbol(
                 .map_err(|error| format!("invalid graph entity semantic hash: {error}"))?,
         ),
         summary: format!(
-            "Project entity {} {:?}",
+            "Project entity {} {:?}{}",
             entity.id().as_str(),
-            entity.ty().kind()
+            entity.ty().kind(),
+            agent_flow_control_summary_text(project, entity.id())
         ),
         metadata: BTreeMap::from([
             ("source".to_owned(), source_anchor_json(entity.source())),
+            ("flow_control".to_owned(), flow_control),
             (
                 "agent_actions".to_owned(),
                 serde_json::json!(
@@ -2289,6 +2300,63 @@ fn agent_project_graph_symbol_ref_id(
     }
 }
 
+fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
+    project
+        .flow_control_summaries()
+        .values()
+        .filter(|summary| summary.has_dynamic_control())
+        .count()
+}
+
+fn agent_flow_control_summary_text(
+    project: &ProjectSemanticIndex,
+    flow_id: &SemaPublicId,
+) -> String {
+    let Some(summary) = project.flow_control_summary(flow_id) else {
+        return String::new();
+    };
+    if !summary.has_dynamic_control() && summary.static_goto_count() == 0 {
+        return String::new();
+    }
+    format!(
+        " control(static_goto={}, dynamic_goto={}, branches={}, loops={}, awaits={}, threads={}, select_branches={})",
+        summary.static_goto_count(),
+        summary.dynamic_goto_count(),
+        summary.branch_count(),
+        summary.loop_count(),
+        summary.await_count(),
+        summary.thread_count(),
+        summary.select_branch_count()
+    )
+}
+
+fn project_flow_control_summary_json(
+    summary: Option<&arcweft_lang_sema::project_index::ProjectFlowControlSummary>,
+) -> serde_json::Value {
+    let Some(summary) = summary else {
+        return serde_json::json!({
+            "has_dynamic_control": false,
+            "static_goto_count": 0,
+            "dynamic_goto_count": 0,
+            "branch_count": 0,
+            "loop_count": 0,
+            "await_count": 0,
+            "thread_count": 0,
+            "select_branch_count": 0,
+        });
+    };
+    serde_json::json!({
+        "has_dynamic_control": summary.has_dynamic_control(),
+        "static_goto_count": summary.static_goto_count(),
+        "dynamic_goto_count": summary.dynamic_goto_count(),
+        "branch_count": summary.branch_count(),
+        "loop_count": summary.loop_count(),
+        "await_count": summary.await_count(),
+        "thread_count": summary.thread_count(),
+        "select_branch_count": summary.select_branch_count(),
+    })
+}
+
 fn agent_project_summary_rag_candidate(
     path: &Path,
     project: &ProjectSemanticIndex,
@@ -2303,6 +2371,7 @@ fn agent_project_summary_rag_candidate(
             "entities": project.entities().len(),
             "callables": project.callables().len(),
             "project_callables": project.project_callables().len(),
+            "dynamic_control_flows": agent_dynamic_control_flow_count(project),
             "types": project.types().len(),
             "debug_queries": project.debug_queries().len(),
         },
@@ -2335,8 +2404,10 @@ fn agent_project_summary_rag_candidate(
 fn agent_project_entity_rag_candidate(
     entity: &EntitySymbol,
     source_key_prefix: &str,
+    project: &ProjectSemanticIndex,
 ) -> Result<AgentRagCandidate, String> {
     let entity_id = agent_public_id_from_sema(entity.id())?;
+    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
     let actions = entity
         .agent_actions()
         .iter()
@@ -2362,6 +2433,7 @@ fn agent_project_entity_rag_candidate(
         "source": source_anchor_json(entity.source()),
         "semantic_hash": entity.semantic_hash().as_str(),
         "agent_actions": actions,
+        "flow_control": flow_control,
     }))
     .map_err(|error| format!("failed to serialize project entity RAG chunk: {error}"))?;
     let mut metadata = BTreeMap::new();
@@ -2369,15 +2441,17 @@ fn agent_project_entity_rag_candidate(
         "entity_kind".to_owned(),
         serde_json::Value::String(format!("{:?}", entity.ty().kind())),
     );
+    metadata.insert("flow_control".to_owned(), flow_control);
     Ok(agent_rag_candidate(
         &format!(
             "{source_key_prefix}.project.entity.{}",
             entity.id().as_str()
         ),
         &format!(
-            "Project entity {} {:?}",
+            "Project entity {} {:?}{}",
             entity.id().as_str(),
-            entity.ty().kind()
+            entity.ty().kind(),
+            agent_flow_control_summary_text(project, entity.id())
         ),
         ChunkSourceKind::Symbol,
         SearchChannel::Graph,
