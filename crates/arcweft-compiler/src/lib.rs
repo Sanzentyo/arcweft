@@ -1426,6 +1426,13 @@ effects { agent.observe }
                 .iter()
                 .any(|judgment| judgment.ty == TypeKind::String)
         );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::ActionName)
+        );
     }
 
     #[test]

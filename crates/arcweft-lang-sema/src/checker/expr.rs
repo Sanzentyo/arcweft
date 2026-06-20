@@ -3364,7 +3364,8 @@ fn agent_action_result_field_type(field: &str) -> Option<TypeKind> {
 
 fn agent_action_target_field_type(field: &str) -> Option<TypeKind> {
     Some(match field {
-        "id" | "target" | "action" | "kind" => TypeKind::String,
+        "id" | "target" | "kind" => TypeKind::String,
+        "action" => TypeKind::ActionName,
         "enabled" => TypeKind::Bool,
         _ => return None,
     })
