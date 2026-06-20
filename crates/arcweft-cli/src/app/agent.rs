@@ -951,18 +951,12 @@ fn agent_program_graph_summary(
 ) -> AgentProgramGraphSummary {
     let symbol_kinds = source_indexes
         .iter()
-        .flat_map(|source_index| source_index.graph_symbols.iter())
-        .fold(BTreeMap::new(), |mut counts, symbol| {
-            *counts.entry(symbol.kind.clone()).or_insert(0) += 1;
-            counts
-        });
+        .map(|source_index| agent_graph_symbol_kind_counts(&source_index.graph_symbols))
+        .fold(BTreeMap::new(), agent_merge_kind_counts);
     let edge_kinds = source_indexes
         .iter()
-        .flat_map(|source_index| source_index.graph_edges.iter())
-        .fold(BTreeMap::new(), |mut counts, edge| {
-            *counts.entry(edge.edge_kind.clone()).or_insert(0) += 1;
-            counts
-        });
+        .map(|source_index| agent_graph_edge_kind_counts(&source_index.graph_edges))
+        .fold(BTreeMap::new(), agent_merge_kind_counts);
     AgentProgramGraphSummary {
         sources: source_indexes.len(),
         source_graph_symbols: source_indexes
@@ -989,6 +983,30 @@ fn agent_program_graph_summary(
         symbol_kinds,
         edge_kinds,
     }
+}
+
+fn agent_graph_symbol_kind_counts(symbols: &[DebugGraphSymbol]) -> BTreeMap<String, usize> {
+    symbols.iter().fold(BTreeMap::new(), |mut counts, symbol| {
+        *counts.entry(symbol.kind.clone()).or_insert(0) += 1;
+        counts
+    })
+}
+
+fn agent_graph_edge_kind_counts(edges: &[DebugGraphEdge]) -> BTreeMap<String, usize> {
+    edges.iter().fold(BTreeMap::new(), |mut counts, edge| {
+        *counts.entry(edge.edge_kind.clone()).or_insert(0) += 1;
+        counts
+    })
+}
+
+fn agent_merge_kind_counts(
+    mut left: BTreeMap<String, usize>,
+    right: BTreeMap<String, usize>,
+) -> BTreeMap<String, usize> {
+    for (kind, count) in right {
+        *left.entry(kind).or_insert(0) += count;
+    }
+    left
 }
 
 fn agent_graph_symbol_has_dynamic_control(symbol: &DebugGraphSymbol) -> bool {
@@ -2764,6 +2782,8 @@ fn agent_program_summary_rag_candidate(
                 "graph_symbols": source_index.graph_symbols.len(),
                 "graph_edges": source_index.graph_edges.len(),
                 "dynamic_control_flows": agent_source_dynamic_control_flow_count(source_index),
+                "graph_symbol_kinds": agent_graph_symbol_kind_counts(&source_index.graph_symbols),
+                "graph_edge_kinds": agent_graph_edge_kind_counts(&source_index.graph_edges),
             })
         })
         .collect::<Vec<_>>();

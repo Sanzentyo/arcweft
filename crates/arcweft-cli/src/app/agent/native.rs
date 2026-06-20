@@ -1055,6 +1055,8 @@ mod tests {
                             body.contains("\"program_rag_index\"")
                                 && body.contains("\"source_graph_symbol_kinds\"")
                                 && body.contains("\"source_graph_edge_kinds\"")
+                                && body.contains("\"graph_symbol_kinds\"")
+                                && body.contains("\"graph_edge_kinds\"")
                         })
                 })
             }),
