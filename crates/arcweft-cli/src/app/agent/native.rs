@@ -67,7 +67,7 @@ use arcweft_debug_model::{
     sink::DebugEventSink,
 };
 use arcweft_debug_sqlite::store::{
-    ChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
+    ChunkSearchResult, DebugChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
 };
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
@@ -124,6 +124,10 @@ struct AgentObservationTrace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_debug_model::{
+        graph::{DebugGraphEdge, DebugGraphSymbol},
+        history::DebugHistoryEntry,
+    };
 
     #[test]
     fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
@@ -994,6 +998,137 @@ mod tests {
         let store = DebugStore::open(&db_path).expect("debug store reopens");
         assert_eq!(store.stats().expect("stats").rag_queries, 1);
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_rag_query_reads_debug_store_graph_and_history_channels() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-graph-history-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        seed_mcp_rag_graph_history_debug_store(&db_path);
+
+        let mut state = AgentMcpState::default();
+        let graph_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "offers_choice",
+                "path": db_path.display().to_string(),
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG graph query succeeds");
+        let graph_pack = mcp_text_json(&graph_result);
+        assert!(
+            graph_pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["kind"] == "graph_summary"
+                        && item["chunk_id"] == "graph:1"
+                        && item["channels"]
+                            .as_array()
+                            .is_some_and(|channels| channels.contains(&serde_json::json!("graph")))
+                })
+            }),
+            "MCP RAG query should expose graph debug-store context: {graph_pack}"
+        );
+
+        let history_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "change-opening-route-fix",
+                "path": db_path.display().to_string(),
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG history query succeeds");
+        let history_pack = mcp_text_json(&history_result);
+        assert!(
+            history_pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["kind"] == "history"
+                        && item["chunk_id"] == "history:history:opening-route-fix"
+                        && item["channels"].as_array().is_some_and(|channels| {
+                            channels.contains(&serde_json::json!("history"))
+                        })
+                })
+            }),
+            "MCP RAG query should expose history debug-store context: {history_pack}"
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    fn seed_mcp_rag_graph_history_debug_store(path: &std::path::Path) {
+        let store = DebugStore::open(path).expect("debug store");
+        let program_hash = StableHash::new("blake3:mcp-rag-graph-history-program").expect("hash");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        seed_mcp_rag_graph(&store, &program_hash);
+        store
+            .upsert_history_entry(&DebugHistoryEntry {
+                history_id: "history:opening-route-fix".to_owned(),
+                program_hash: Some(program_hash),
+                symbol_id: Some("symbol:choice.listen".to_owned()),
+                change_id: "change-opening-route-fix".to_owned(),
+                operation_id: Some("op.route".to_owned()),
+                ordinal: 9,
+                semantic_hash_before: None,
+                semantic_hash_after: None,
+                summary: "Fixed opening route choice action".to_owned(),
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            })
+            .expect("history entry");
+    }
+
+    fn seed_mcp_rag_graph(store: &DebugStore, program_hash: &StableHash) {
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:flow.opening".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("flow.opening").expect("public id")),
+                qualified_name: Some("flow.opening".to_owned()),
+                kind: "flow".to_owned(),
+                type_json: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Opening flow".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("graph source");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:choice.listen".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("choice.opening.listen").expect("public id")),
+                qualified_name: Some("choice.opening.listen".to_owned()),
+                kind: "choice".to_owned(),
+                type_json: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Listen choice target".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("graph target");
+        store
+            .upsert_graph_edge(&DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: "symbol:flow.opening".to_owned(),
+                to_symbol_id: "symbol:choice.listen".to_owned(),
+                edge_kind: "offers_choice".to_owned(),
+                weight: 1.25,
+                metadata: BTreeMap::new(),
+            })
+            .expect("graph edge");
     }
 
     #[test]
@@ -6603,11 +6738,30 @@ fn agent_mcp_rag_debug_store_candidates(
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
     for term in terms {
-        let results = store
+        let mut results = store
             .lexical_chunk_search_with_max_privacy(&term, search_limit, config.max_privacy)
-            .map_err(|error| {
-                format!("arcweft.rag.query failed to search debug store `{path}`: {error}")
-            })?;
+            .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?;
+        results.extend(
+            store
+                .graph_search_with_depth_and_max_privacy(
+                    &term,
+                    config.graph_depth,
+                    search_limit,
+                    config.max_privacy,
+                )
+                .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_mcp_rag_candidate_from_search_result(result, "graph"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        results.extend(
+            store
+                .history_search_with_max_privacy(&term, search_limit, config.max_privacy)
+                .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_mcp_rag_candidate_from_search_result(result, "history"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         for result in results {
             if seen.insert(result.chunk.id.clone()) {
                 candidates.push(AgentMcpRagCandidate {
@@ -6618,6 +6772,65 @@ fn agent_mcp_rag_debug_store_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_mcp_rag_debug_store_search_error(
+    path: &str,
+    error: &arcweft_debug_sqlite::store::DebugStoreError,
+) -> String {
+    format!("arcweft.rag.query failed to search debug store `{path}`: {error}")
+}
+
+fn agent_mcp_rag_candidate_from_search_result(
+    result: ChunkSearchResult,
+    source_prefix: &str,
+) -> Result<DebugChunkSearchResult, String> {
+    let source_kind = match result.source_kind.as_str() {
+        "source" => ChunkSourceKind::Source,
+        "symbol" => ChunkSourceKind::Symbol,
+        "graph_summary" | "graph_edge" => ChunkSourceKind::GraphSummary,
+        "diagnostic" => ChunkSourceKind::Diagnostic,
+        "test_result" => ChunkSourceKind::TestResult,
+        "agent_trace" => ChunkSourceKind::AgentTrace,
+        "history" => ChunkSourceKind::History,
+        "documentation" => ChunkSourceKind::Documentation,
+        other => {
+            return Err(format!(
+                "arcweft.rag.query debug store result has unsupported source_kind `{other}`"
+            ));
+        }
+    };
+    let content_hash = agent_mcp_content_hash(&result.body);
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "search_channel".to_owned(),
+        serde_json::json!(agent_mcp_search_channel_label(result.hit.channel)),
+    );
+    metadata.insert(
+        "search_score".to_owned(),
+        serde_json::to_value(result.hit.score).map_err(|error| {
+            format!("arcweft.rag.query failed to serialize debug store search score: {error}")
+        })?,
+    );
+    Ok(DebugChunkSearchResult {
+        hit: result.hit.clone(),
+        chunk: DebugChunk {
+            id: result.hit.chunk_id,
+            program_hash: None,
+            source_kind,
+            source_key: format!("{source_prefix}:{}", result.source_key),
+            title: result.title,
+            body: result.body,
+            content_hash: StableHash::new(content_hash)
+                .expect("generated content hash is non-empty"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: result.privacy,
+            metadata,
+            created_unix_ms: 0,
+        },
+    })
 }
 
 fn agent_mcp_rag_deduplicate_candidates(
@@ -7041,6 +7254,7 @@ fn agent_mcp_rag_ranked_lists(
         SearchChannel::ExactEntity,
         SearchChannel::Lexical,
         SearchChannel::Graph,
+        SearchChannel::History,
         SearchChannel::Diagnostics,
         SearchChannel::Trace,
         SearchChannel::Summary,
@@ -7130,7 +7344,10 @@ fn agent_mcp_rag_score(
             ));
             (root_score + channel_score > 0.0).then_some(root_score + channel_score)
         }
-        SearchChannel::Diagnostics | SearchChannel::Trace | SearchChannel::Summary => {
+        SearchChannel::History
+        | SearchChannel::Diagnostics
+        | SearchChannel::Trace
+        | SearchChannel::Summary => {
             if candidate.preferred_channel != channel {
                 return None;
             }
@@ -7141,7 +7358,7 @@ fn agent_mcp_rag_score(
             let token_score = agent_mcp_count_as_f64(token_score);
             (token_score > 0.0).then_some(token_score)
         }
-        SearchChannel::Vector | SearchChannel::History => None,
+        SearchChannel::Vector => None,
     }
 }
 

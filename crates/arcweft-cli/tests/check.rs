@@ -3466,6 +3466,88 @@ fn debug_db_search_graph_filters_chunks_by_privacy() {
     );
 }
 
+#[test]
+fn agent_rag_query_uses_debug_db_graph_and_history_channels() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/rag-fusion-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug RAG fusion target dir"))
+        .expect("create debug RAG fusion target dir");
+    seed_debug_search_db(&db_path);
+
+    let graph_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("uses_textbox")
+        .arg("--graph-depth")
+        .arg("2")
+        .arg("--limit")
+        .arg("3")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query graph channel runs");
+    assert!(
+        graph_output.status.success(),
+        "agent rag query graph channel should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&graph_output.stdout),
+        String::from_utf8_lossy(&graph_output.stderr)
+    );
+    let graph_pack: serde_json::Value =
+        serde_json::from_slice(&graph_output.stdout).expect("graph RAG output is JSON");
+    assert!(
+        graph_pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "graph_summary"
+                    && item["chunk_id"] == "graph:2"
+                    && item["channels"]
+                        .as_array()
+                        .is_some_and(|channels| channels.contains(&serde_json::json!("graph")))
+            })
+        }),
+        "agent rag query should return graph debug-store context: {graph_pack}"
+    );
+
+    let history_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("change-opening-fix")
+        .arg("--limit")
+        .arg("3")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query history channel runs");
+    assert!(
+        history_output.status.success(),
+        "agent rag query history channel should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&history_output.stdout),
+        String::from_utf8_lossy(&history_output.stderr)
+    );
+    let history_pack: serde_json::Value =
+        serde_json::from_slice(&history_output.stdout).expect("history RAG output is JSON");
+    assert!(
+        history_pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "history"
+                    && item["chunk_id"] == "history:history:opening-fix"
+                    && item["channels"]
+                        .as_array()
+                        .is_some_and(|channels| channels.contains(&serde_json::json!("history")))
+            })
+        }),
+        "agent rag query should return history debug-store context: {history_pack}"
+    );
+}
+
 fn seed_debug_search_db(path: &Path) {
     let store = DebugStore::open(path).expect("open debug search db");
     let program_hash = stable_hash("b3:debug-search-program");

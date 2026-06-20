@@ -980,14 +980,30 @@ fn agent_rag_debug_db_candidates(
         .filter(|term| !term.is_empty())
         .collect::<Vec<_>>();
     for term in terms {
-        let results = store
+        let mut results = store
             .lexical_chunk_search_with_max_privacy(&term, search_limit, options.max_privacy)
-            .map_err(|error| {
-                format!(
-                    "agent rag query failed to search debug DB `{}`: {error}",
-                    path.display()
+            .map_err(|error| agent_rag_debug_db_search_error(path, &error))?;
+        results.extend(
+            store
+                .graph_search_with_depth_and_max_privacy(
+                    &term,
+                    options.graph_depth,
+                    search_limit,
+                    options.max_privacy,
                 )
-            })?;
+                .map_err(|error| agent_rag_debug_db_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_rag_candidate_from_search_result(result, "graph"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        results.extend(
+            store
+                .history_search_with_max_privacy(&term, search_limit, options.max_privacy)
+                .map_err(|error| agent_rag_debug_db_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_rag_candidate_from_search_result(result, "history"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         for result in results {
             if seen.insert(result.chunk.id.clone()) {
                 candidates.push(AgentRagCandidate {
@@ -998,6 +1014,68 @@ fn agent_rag_debug_db_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_rag_debug_db_search_error(
+    path: &Path,
+    error: &arcweft_debug_sqlite::store::DebugStoreError,
+) -> String {
+    format!(
+        "agent rag query failed to search debug DB `{}`: {error}",
+        path.display()
+    )
+}
+
+fn agent_rag_candidate_from_search_result(
+    result: arcweft_debug_sqlite::store::ChunkSearchResult,
+    source_prefix: &str,
+) -> Result<arcweft_debug_sqlite::store::DebugChunkSearchResult, String> {
+    let source_kind = match result.source_kind.as_str() {
+        "source" => ChunkSourceKind::Source,
+        "symbol" => ChunkSourceKind::Symbol,
+        "graph_summary" | "graph_edge" => ChunkSourceKind::GraphSummary,
+        "diagnostic" => ChunkSourceKind::Diagnostic,
+        "test_result" => ChunkSourceKind::TestResult,
+        "agent_trace" => ChunkSourceKind::AgentTrace,
+        "history" => ChunkSourceKind::History,
+        "documentation" => ChunkSourceKind::Documentation,
+        other => {
+            return Err(format!(
+                "agent rag query debug DB result has unsupported source_kind `{other}`"
+            ));
+        }
+    };
+    let content_hash = agent_content_hash(&result.body);
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "search_channel".to_owned(),
+        serde_json::json!(search_channel_label(result.hit.channel)),
+    );
+    metadata.insert(
+        "search_score".to_owned(),
+        serde_json::to_value(result.hit.score).map_err(|error| {
+            format!("agent rag query failed to serialize debug DB search score: {error}")
+        })?,
+    );
+    Ok(arcweft_debug_sqlite::store::DebugChunkSearchResult {
+        hit: result.hit.clone(),
+        chunk: DebugChunk {
+            id: result.hit.chunk_id,
+            program_hash: None,
+            source_kind,
+            source_key: format!("{source_prefix}:{}", result.source_key),
+            title: result.title,
+            body: result.body,
+            content_hash: StableHash::new(content_hash)
+                .expect("generated content hash is non-empty"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: result.privacy,
+            metadata,
+            created_unix_ms: 0,
+        },
+    })
 }
 
 fn agent_rag_debug_db_seed_parts(path: &Path, candidates: &[AgentRagCandidate]) -> Vec<String> {
@@ -1686,6 +1764,7 @@ fn agent_trace_rag_ranked_lists(
         SearchChannel::ExactEntity,
         SearchChannel::Lexical,
         SearchChannel::Graph,
+        SearchChannel::History,
         SearchChannel::Trace,
         SearchChannel::Summary,
     ]
@@ -1773,7 +1852,7 @@ fn agent_trace_rag_score(
             ));
             (root_score + channel_score > 0.0).then_some(root_score + channel_score)
         }
-        SearchChannel::Trace | SearchChannel::Summary => {
+        SearchChannel::History | SearchChannel::Trace | SearchChannel::Summary => {
             if candidate.preferred_channel != channel {
                 return None;
             }
@@ -1785,7 +1864,20 @@ fn agent_trace_rag_score(
             );
             (token_score > 0.0).then_some(token_score)
         }
-        SearchChannel::Vector | SearchChannel::History | SearchChannel::Diagnostics => None,
+        SearchChannel::Vector | SearchChannel::Diagnostics => None,
+    }
+}
+
+const fn search_channel_label(channel: SearchChannel) -> &'static str {
+    match channel {
+        SearchChannel::ExactEntity => "exact_entity",
+        SearchChannel::Lexical => "lexical",
+        SearchChannel::Vector => "vector",
+        SearchChannel::Graph => "graph",
+        SearchChannel::History => "history",
+        SearchChannel::Diagnostics => "diagnostics",
+        SearchChannel::Trace => "trace",
+        SearchChannel::Summary => "summary",
     }
 }
 
