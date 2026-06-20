@@ -344,7 +344,8 @@ against byte-backed files by checking each stored `relative_path` is safe under
 the root, exists, and matches the indexed byte length. `arcw debug db delete
 --unreferenced-blobs --blob-dir <dir>` deletes unreferenced blob records and
 their corresponding safe relative files while preserving files still referenced
-by captures.
+by captures. `arcw debug db vacuum [--json]` compacts the SQLite cache and
+reports page and freelist counts before and after the operation.
 `arcw debug db search --query <text>
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 the rebuildable debug-store chunk FTS index using a quoted literal query. The

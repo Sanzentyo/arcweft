@@ -31,6 +31,7 @@ pub(super) enum DebugDbCommand {
     Migrate(DebugDbOptions),
     Validate(DebugDbOptions),
     Reindex(DebugDbOptions),
+    Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
     Runs(DebugDbRunsOptions),
     Search(DebugDbSearchOptions),
@@ -149,6 +150,16 @@ struct DebugDbReindexReport {
     path: String,
     user_version: u32,
     chunks_indexed: u64,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbVacuumReport {
+    path: String,
+    user_version: u32,
+    page_count_before: u64,
+    freelist_count_before: u64,
+    page_count_after: u64,
+    freelist_count_after: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -275,6 +286,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         }
         DebugDbCommand::Validate(options) => debug_db_validate_command(&options),
         DebugDbCommand::Reindex(options) => debug_db_reindex_command(&options),
+        DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
@@ -362,6 +374,37 @@ fn debug_db_reindex_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
     println!(
         "{}: rebuilt chunk FTS index for {} chunks",
         report.path, report.chunks_indexed
+    );
+    Ok(())
+}
+
+fn debug_db_vacuum_command(options: &DebugDbOptions) -> Result<(), ExitCode> {
+    let (store, path, user_version, _) = open_debug_store(options)?;
+    let vacuum = store.vacuum().map_err(|error| {
+        eprintln!(
+            "error: failed to vacuum debug database {}: {error}",
+            options.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let report = DebugDbVacuumReport {
+        path,
+        user_version,
+        page_count_before: vacuum.page_count_before,
+        freelist_count_before: vacuum.freelist_count_before,
+        page_count_after: vacuum.page_count_after,
+        freelist_count_after: vacuum.freelist_count_after,
+    };
+    if options.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: vacuumed pages {} -> {}, freelist {} -> {}",
+        report.path,
+        report.page_count_before,
+        report.page_count_after,
+        report.freelist_count_before,
+        report.freelist_count_after
     );
     Ok(())
 }

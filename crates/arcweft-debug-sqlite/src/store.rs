@@ -159,6 +159,15 @@ pub struct DebugStoreReindexReport {
     pub chunks_indexed: u64,
 }
 
+/// Result of compacting the `SQLite` debug store with `VACUUM`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DebugStoreVacuumReport {
+    pub page_count_before: u64,
+    pub freelist_count_before: u64,
+    pub page_count_after: u64,
+    pub freelist_count_after: u64,
+}
+
 /// Blob row metadata needed by CLI-side byte store lifecycle operations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DebugStoreBlobRecord {
@@ -236,6 +245,18 @@ impl DebugStore {
             .execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('optimize')", [])?;
         Ok(DebugStoreReindexReport {
             chunks_indexed: self.table_count("chunks")?,
+        })
+    }
+
+    pub fn vacuum(&self) -> Result<DebugStoreVacuumReport, DebugStoreError> {
+        let page_count_before = self.pragma_count("page_count")?;
+        let freelist_count_before = self.pragma_count("freelist_count")?;
+        self.connection.execute_batch("VACUUM")?;
+        Ok(DebugStoreVacuumReport {
+            page_count_before,
+            freelist_count_before,
+            page_count_after: self.pragma_count("page_count")?,
+            freelist_count_after: self.pragma_count("freelist_count")?,
         })
     }
 
@@ -1459,6 +1480,13 @@ impl DebugStore {
         u64::try_from(count).map_err(|_| DebugStoreError::IntegerOverflow(table))
     }
 
+    fn pragma_count(&self, pragma: &'static str) -> Result<u64, DebugStoreError> {
+        let count = self
+            .connection
+            .query_row(&format!("PRAGMA {pragma}"), [], |row| row.get::<_, i64>(0))?;
+        u64::try_from(count).map_err(|_| DebugStoreError::IntegerOverflow(pragma))
+    }
+
     fn integrity_messages(&self) -> Result<Vec<String>, DebugStoreError> {
         let mut statement = self.connection.prepare("PRAGMA integrity_check")?;
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
@@ -2567,6 +2595,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["run.script.third", "run.script.first"]
         );
+    }
+
+    #[test]
+    fn vacuum_reports_page_counts() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let report = store.vacuum().expect("vacuum store");
+
+        assert!(report.page_count_before > 0);
+        assert!(report.page_count_after > 0);
+        assert!(report.freelist_count_after <= report.freelist_count_before);
     }
 
     #[test]

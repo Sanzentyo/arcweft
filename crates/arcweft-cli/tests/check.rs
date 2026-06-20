@@ -2339,6 +2339,48 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
 }
 
 #[test]
+fn debug_db_vacuum_reports_page_counts() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/vacuum-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug vacuum target dir"))
+        .expect("create debug vacuum target dir");
+    seed_debug_search_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("vacuum")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw debug db vacuum runs");
+    assert!(
+        output.status.success(),
+        "debug db vacuum should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db vacuum output is JSON");
+
+    assert_eq!(report["path"], db_path.display().to_string());
+    assert!(report["page_count_before"].as_u64().expect("page count") > 0);
+    assert!(report["page_count_after"].as_u64().expect("page count") > 0);
+    assert!(
+        report["freelist_count_after"]
+            .as_u64()
+            .expect("freelist after")
+            <= report["freelist_count_before"]
+                .as_u64()
+                .expect("freelist before")
+    );
+}
+
+#[test]
 fn debug_db_search_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/search-{}.sqlite3",
