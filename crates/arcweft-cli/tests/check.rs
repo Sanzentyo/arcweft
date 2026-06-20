@@ -2327,13 +2327,17 @@ fn assert_agent_rag_query_trace(trace_path: &Path) {
                 .as_array()
                 .is_some_and(|channels| channels.contains(&serde_json::json!("exact_entity")))
     }));
-    assert_agent_rag_query_persisted_debug_store(&db_path);
+    let query_id = pack["query"]["query_id"]
+        .as_str()
+        .expect("RAG query id")
+        .to_owned();
+    assert_agent_rag_query_persisted_debug_store(&db_path, &query_id);
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
 }
 
-fn assert_agent_rag_query_persisted_debug_store(db_path: &Path) {
+fn assert_agent_rag_query_persisted_debug_store(db_path: &Path, query_id: &str) {
     let status_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("debug")
         .arg("db")
@@ -2352,6 +2356,7 @@ fn assert_agent_rag_query_persisted_debug_store(db_path: &Path) {
     let status: serde_json::Value =
         serde_json::from_slice(&status_output.stdout).expect("debug db status JSON");
     assert_eq!(status["stats"]["rag_queries"], 1);
+    assert_eq!(status["stats"]["sessions"], 1);
     assert!(
         status["stats"]["chunks"]
             .as_u64()
@@ -2384,6 +2389,55 @@ fn assert_agent_rag_query_persisted_debug_store(db_path: &Path) {
             .is_some_and(|hits| !hits.is_empty()),
         "agent rag query should create searchable RAG chunks: {search}"
     );
+
+    let rag_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("rag")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--query-id")
+        .arg(query_id)
+        .arg("--json")
+        .output()
+        .expect("arcw debug db rag reads persisted RAG audit session");
+    assert!(
+        rag_output.status.success(),
+        "debug db rag should find RAG session ownership\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rag_output.stdout),
+        String::from_utf8_lossy(&rag_output.stderr)
+    );
+    let rag: serde_json::Value =
+        serde_json::from_slice(&rag_output.stdout).expect("debug db rag JSON");
+    let session_id = rag["session_id"].as_str().expect("RAG session id");
+    assert!(
+        session_id.starts_with("session.rag.cli.blake3."),
+        "RAG audit should carry a product session id: {rag}"
+    );
+    assert_eq!(rag["run_id"], serde_json::Value::Null);
+
+    let sessions_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sessions")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sessions reads RAG query session");
+    assert!(
+        sessions_output.status.success(),
+        "debug db sessions should list RAG query session\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sessions_output.stdout),
+        String::from_utf8_lossy(&sessions_output.stderr)
+    );
+    let sessions: serde_json::Value =
+        serde_json::from_slice(&sessions_output.stdout).expect("debug db sessions JSON");
+    assert_eq!(sessions["sessions"][0]["session_id"], session_id);
+    assert_eq!(sessions["sessions"][0]["profile"], "rag");
+    assert_eq!(sessions["sessions"][0]["transport"], "cli");
+    assert_eq!(sessions["sessions"][0]["status"], "finished");
+    assert_eq!(sessions["sessions"][0]["metadata"]["query_id"], query_id);
 }
 
 fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {

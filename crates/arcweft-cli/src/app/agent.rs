@@ -623,6 +623,8 @@ fn agent_rag_explain_command(options: &AgentRagExplainOptions) -> Result<(), Exi
             let report = AgentRagExplainReport {
                 path: options.debug_db.display().to_string(),
                 query_id: query_id.to_owned(),
+                session_id: audit.session_id.as_ref().map(|id| id.as_str().to_owned()),
+                run_id: audit.run_id.as_ref().map(|id| id.as_str().to_owned()),
                 max_privacy: options.max_privacy,
                 status: audit.status,
                 created_unix_ms: audit.created_unix_ms,
@@ -892,6 +894,8 @@ struct AgentRagIndexedSourceReport {
 struct AgentRagExplainReport {
     path: String,
     query_id: String,
+    session_id: Option<String>,
+    run_id: Option<String>,
     max_privacy: PrivacyClass,
     status: String,
     created_unix_ms: i64,
@@ -1377,6 +1381,19 @@ fn persist_agent_rag_query_result(path: &Path, result: &AgentRagQueryResult) -> 
     store
         .upsert_program(&result.pack.query.program_hash, None, None, 0)
         .map_err(|error| format!("agent rag query failed to index RAG program: {error}"))?;
+    let session_id = agent_rag_query_session_id("cli", &result.pack.query.query_id)?;
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: Some(result.pack.query.program_hash.clone()),
+            profile: "rag".to_owned(),
+            transport: "cli".to_owned(),
+            started_unix_ms: 0,
+            ended_unix_ms: Some(0),
+            status: DebugSessionStatus::Finished,
+            metadata: agent_rag_query_session_metadata(result),
+        })
+        .map_err(|error| format!("agent rag query failed to record RAG session: {error}"))?;
     for candidate in &result.candidates {
         let mut chunk = candidate.chunk.clone();
         chunk.program_hash = Some(result.pack.query.program_hash.clone());
@@ -1385,8 +1402,57 @@ fn persist_agent_rag_query_result(path: &Path, result: &AgentRagQueryResult) -> 
             .map_err(|error| format!("agent rag query failed to index RAG chunk: {error}"))?;
     }
     store
-        .record_rag_context_pack(&result.pack, None, None, None, "selected", 0)
+        .record_rag_context_pack(&result.pack, Some(&session_id), None, None, "selected", 0)
         .map_err(|error| format!("agent rag query failed to record RAG audit: {error}"))
+}
+
+fn agent_rag_query_session_id(transport: &str, query_id: &str) -> Result<SessionId, String> {
+    let suffix = agent_content_hash(format!("{transport}:{query_id}")).replace(':', ".");
+    SessionId::new(format!("session.rag.{transport}.{suffix}"))
+        .map_err(|error| format!("failed to build RAG session id: {error}"))
+}
+
+fn agent_rag_query_session_metadata(
+    result: &AgentRagQueryResult,
+) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([
+        (
+            "query_id".to_owned(),
+            serde_json::json!(result.pack.query.query_id),
+        ),
+        (
+            "query_text".to_owned(),
+            serde_json::json!(result.pack.query.text),
+        ),
+        (
+            "item_count".to_owned(),
+            serde_json::json!(result.pack.items.len()),
+        ),
+        (
+            "truncated".to_owned(),
+            serde_json::json!(result.pack.truncated),
+        ),
+        (
+            "roots".to_owned(),
+            serde_json::json!(
+                result
+                    .pack
+                    .query
+                    .roots
+                    .iter()
+                    .map(AgentPublicId::as_str)
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        (
+            "graph_depth".to_owned(),
+            serde_json::json!(result.pack.query.graph_depth),
+        ),
+        (
+            "max_context_bytes".to_owned(),
+            serde_json::json!(result.pack.query.max_context_bytes),
+        ),
+    ])
 }
 
 fn agent_trace_rag_candidates(

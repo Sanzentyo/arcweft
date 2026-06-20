@@ -1082,6 +1082,22 @@ mod tests {
             }),
             "MCP RAG query should return vector-enriched context: {pack}"
         );
+        let store = DebugStore::open(&db_path).expect("debug store reopens");
+        let query_id = pack["query"]["query_id"].as_str().expect("query id");
+        let audit = store
+            .rag_query_audit_with_max_privacy(query_id, PrivacyClass::Project)
+            .expect("RAG audit");
+        let session_id = audit.session_id.expect("MCP RAG session id");
+        assert!(session_id.as_str().starts_with("session.rag.mcp.blake3."));
+        assert_eq!(audit.run_id, None);
+        let session = store
+            .session(&session_id)
+            .expect("read MCP RAG session")
+            .expect("persisted MCP RAG session");
+        assert_eq!(session.profile, "rag");
+        assert_eq!(session.transport, "mcp");
+        assert_eq!(session.status, DebugSessionStatus::Finished);
+        assert_eq!(session.metadata["query_id"], query_id);
         let _ = std::fs::remove_file(&db_path);
     }
 
@@ -6830,6 +6846,21 @@ fn agent_mcp_rag_query_audit_explanation_json(audit: &DebugRagQueryAudit) -> ser
     let mut value = agent_mcp_rag_context_explanation_json(&audit.pack);
     if let serde_json::Value::Object(fields) = &mut value {
         fields.insert(
+            "session_id".to_owned(),
+            audit
+                .session_id
+                .as_ref()
+                .map_or(serde_json::Value::Null, |id| {
+                    serde_json::Value::String(id.as_str().to_owned())
+                }),
+        );
+        fields.insert(
+            "run_id".to_owned(),
+            audit.run_id.as_ref().map_or(serde_json::Value::Null, |id| {
+                serde_json::Value::String(id.as_str().to_owned())
+            }),
+        );
+        fields.insert(
             "status".to_owned(),
             serde_json::Value::String(audit.status.clone()),
         );
@@ -7306,6 +7337,21 @@ fn persist_agent_mcp_rag_query_result(
         .map_err(|error| {
             format!("arcweft.rag.query failed to index program in `{path}`: {error}")
         })?;
+    let session_id = agent_mcp_rag_query_session_id(&result.pack.query.query_id)?;
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: Some(result.pack.query.program_hash.clone()),
+            profile: "rag".to_owned(),
+            transport: "mcp".to_owned(),
+            started_unix_ms: 0,
+            ended_unix_ms: Some(0),
+            status: DebugSessionStatus::Finished,
+            metadata: agent_mcp_rag_query_session_metadata(result),
+        })
+        .map_err(|error| {
+            format!("arcweft.rag.query failed to record RAG session in `{path}`: {error}")
+        })?;
     for candidate in &result.candidates {
         let mut chunk = candidate.chunk.clone();
         chunk.program_hash = Some(result.pack.query.program_hash.clone());
@@ -7314,10 +7360,59 @@ fn persist_agent_mcp_rag_query_result(
         })?;
     }
     store
-        .record_rag_context_pack(&result.pack, None, None, None, "selected", 0)
+        .record_rag_context_pack(&result.pack, Some(&session_id), None, None, "selected", 0)
         .map_err(|error| {
             format!("arcweft.rag.query failed to record RAG audit in `{path}`: {error}")
         })
+}
+
+fn agent_mcp_rag_query_session_id(query_id: &str) -> Result<SessionId, String> {
+    let suffix = agent_mcp_content_hash(format!("mcp:{query_id}")).replace(':', ".");
+    SessionId::new(format!("session.rag.mcp.{suffix}"))
+        .map_err(|error| format!("failed to build MCP RAG session id: {error}"))
+}
+
+fn agent_mcp_rag_query_session_metadata(
+    result: &AgentMcpRagQueryResult,
+) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([
+        (
+            "query_id".to_owned(),
+            serde_json::json!(result.pack.query.query_id),
+        ),
+        (
+            "query_text".to_owned(),
+            serde_json::json!(result.pack.query.text),
+        ),
+        (
+            "item_count".to_owned(),
+            serde_json::json!(result.pack.items.len()),
+        ),
+        (
+            "truncated".to_owned(),
+            serde_json::json!(result.pack.truncated),
+        ),
+        (
+            "roots".to_owned(),
+            serde_json::json!(
+                result
+                    .pack
+                    .query
+                    .roots
+                    .iter()
+                    .map(PublicId::as_str)
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        (
+            "graph_depth".to_owned(),
+            serde_json::json!(result.pack.query.graph_depth),
+        ),
+        (
+            "max_context_bytes".to_owned(),
+            serde_json::json!(result.pack.query.max_context_bytes),
+        ),
+    ])
 }
 
 fn agent_mcp_optional_debug_store_path(arguments: &serde_json::Value) -> Option<&str> {

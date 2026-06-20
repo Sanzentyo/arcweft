@@ -97,6 +97,8 @@ pub struct DebugTimelineEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DebugRagQueryAudit {
     pub pack: RagContextPack,
+    pub session_id: Option<SessionId>,
+    pub run_id: Option<AgentRunId>,
     pub status: String,
     pub created_unix_ms: i64,
 }
@@ -1773,6 +1775,8 @@ impl DebugStore {
                 items,
                 truncated,
             },
+            session_id: row.session_id.map(SessionId::new).transpose()?,
+            run_id: row.run_id.map(AgentRunId::new).transpose()?,
             status: row.status,
             created_unix_ms: row.created_unix_ms,
         })
@@ -1781,7 +1785,8 @@ impl DebugStore {
     fn rag_query_row(&self, query_id: &str) -> Result<RagQueryRow, DebugStoreError> {
         self.connection
             .query_row(
-                "SELECT q.query_text, p.program_hash, q.policy_json, q.status, q.created_unix_ms
+                "SELECT q.query_text, p.program_hash, q.session_id, q.run_id,
+                        q.policy_json, q.status, q.created_unix_ms
                  FROM rag_queries AS q
                  LEFT JOIN programs AS p ON p.program_id = q.program_id
                  WHERE q.query_id = ?1",
@@ -1790,9 +1795,11 @@ impl DebugStore {
                     Ok(RagQueryRow {
                         query_text: row.get(0)?,
                         program_hash: row.get(1)?,
-                        policy_json: row.get(2)?,
-                        status: row.get(3)?,
-                        created_unix_ms: row.get(4)?,
+                        session_id: row.get(2)?,
+                        run_id: row.get(3)?,
+                        policy_json: row.get(4)?,
+                        status: row.get(5)?,
+                        created_unix_ms: row.get(6)?,
                     })
                 },
             )
@@ -2517,6 +2524,8 @@ struct GraphSearchRow {
 struct RagQueryRow {
     query_text: String,
     program_hash: Option<String>,
+    session_id: Option<String>,
+    run_id: Option<String>,
     policy_json: String,
     status: String,
     created_unix_ms: i64,
