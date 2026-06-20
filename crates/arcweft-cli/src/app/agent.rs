@@ -57,6 +57,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, path::Path};
 
 #[cfg(feature = "native-capture")]
@@ -82,6 +83,8 @@ use arcweft_runtime_host::NativeTaskBridge;
 
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH: u32 = 1280;
 pub(in crate::app) const AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
+const AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS: i64 = 24 * 60 * 60 * 1000;
+const AGENT_DEBUG_RUNTIME_STALE_REASON: &str = "runtime_session_start";
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentObserveOptions {
@@ -3191,22 +3194,20 @@ fn agent_script_start_debug_run(
         "native".to_owned(),
         serde_json::json!(agent_script_run_uses_native_session_for_metadata(options)),
     );
-    store
-        .upsert_session(&DebugSession {
-            session_id: session_id.clone(),
-            program_hash: Some(program_hash),
-            profile: "script".to_owned(),
-            transport: if agent_script_run_uses_native_session_for_metadata(options) {
-                "native".to_owned()
-            } else {
-                "cli".to_owned()
-            },
-            started_unix_ms: 0,
-            ended_unix_ms: None,
-            status: DebugSessionStatus::Running,
-            metadata: session_metadata,
-        })
-        .map_err(|error| format!("failed to persist Agent Script debug session: {error}"))?;
+    let transport = if agent_script_run_uses_native_session_for_metadata(options) {
+        "native"
+    } else {
+        "cli"
+    };
+    agent_debug_start_runtime_session(
+        store,
+        session_id.clone(),
+        Some(program_hash),
+        "script",
+        transport,
+        session_metadata,
+        "Agent Script debug session",
+    )?;
     let base_sequence = store
         .next_session_sequence(&session_id)
         .map_err(|error| format!("failed to allocate Agent Script debug sequence: {error}"))?;
@@ -3309,18 +3310,107 @@ fn agent_script_finish_debug_run(
     session_finish_metadata.insert("runs".to_owned(), serde_json::json!(1));
     session_finish_metadata.insert("last_run_id".to_owned(), serde_json::json!(run_id.as_str()));
     session_finish_metadata.insert("ok".to_owned(), serde_json::json!(report.ok));
+    agent_debug_finish_runtime_session(
+        store,
+        session_id,
+        if report.ok {
+            DebugSessionStatus::Finished
+        } else {
+            DebugSessionStatus::Failed
+        },
+        &session_finish_metadata,
+        "Agent Script debug session",
+    )
+}
+
+fn agent_debug_start_runtime_session(
+    store: &DebugStore,
+    session_id: SessionId,
+    program_hash: Option<StableHash>,
+    profile: &str,
+    transport: &str,
+    metadata: BTreeMap<String, serde_json::Value>,
+    context: &str,
+) -> Result<i64, String> {
+    let started_unix_ms = agent_debug_current_unix_millis()
+        .map_err(|error| format!("failed to read current time for {context}: {error}"))?;
+    let mut session = DebugSession {
+        session_id,
+        program_hash,
+        profile: profile.to_owned(),
+        transport: transport.to_owned(),
+        started_unix_ms,
+        ended_unix_ms: None,
+        status: DebugSessionStatus::Running,
+        metadata,
+    };
     store
-        .finish_session(
-            session_id,
-            if report.ok {
-                DebugSessionStatus::Finished
-            } else {
-                DebugSessionStatus::Failed
-            },
-            0,
-            &session_finish_metadata,
+        .upsert_session(&session)
+        .map_err(|error| format!("failed to persist {context}: {error}"))?;
+    let closed_sessions =
+        agent_debug_close_stale_running_sessions_for_runtime(store, started_unix_ms, context)?;
+    session.metadata.insert(
+        "lifecycle_policy".to_owned(),
+        agent_debug_runtime_lifecycle_policy_metadata(started_unix_ms, &closed_sessions),
+    );
+    store
+        .upsert_session(&session)
+        .map_err(|error| format!("failed to persist {context} lifecycle metadata: {error}"))?;
+    Ok(started_unix_ms)
+}
+
+fn agent_debug_finish_runtime_session(
+    store: &DebugStore,
+    session_id: &SessionId,
+    status: DebugSessionStatus,
+    metadata: &BTreeMap<String, serde_json::Value>,
+    context: &str,
+) -> Result<(), String> {
+    let ended_unix_ms = agent_debug_current_unix_millis()
+        .map_err(|error| format!("failed to read current time for {context}: {error}"))?;
+    store
+        .finish_session(session_id, status, ended_unix_ms, metadata)
+        .map_err(|error| format!("failed to finish {context}: {error}"))
+}
+
+fn agent_debug_close_stale_running_sessions_for_runtime(
+    store: &DebugStore,
+    now_unix_ms: i64,
+    context: &str,
+) -> Result<Vec<DebugSession>, String> {
+    let cutoff_unix_ms = now_unix_ms.saturating_sub(AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS);
+    store
+        .abandon_stale_running_sessions(
+            cutoff_unix_ms,
+            now_unix_ms,
+            AGENT_DEBUG_RUNTIME_STALE_REASON,
         )
-        .map_err(|error| format!("failed to finish Agent Script debug session: {error}"))
+        .map_err(|error| format!("failed to apply {context} lifecycle policy: {error}"))
+}
+
+fn agent_debug_runtime_lifecycle_policy_metadata(
+    now_unix_ms: i64,
+    closed_sessions: &[DebugSession],
+) -> serde_json::Value {
+    let cutoff_unix_ms = now_unix_ms.saturating_sub(AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS);
+    let closed_session_ids = closed_sessions
+        .iter()
+        .map(|session| session.session_id.as_str())
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "operation": "runtime_session_start",
+        "stale_after_millis": AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS,
+        "cutoff_unix_ms": cutoff_unix_ms,
+        "closed_unix_ms": now_unix_ms,
+        "reason": AGENT_DEBUG_RUNTIME_STALE_REASON,
+        "closed_count": closed_session_ids.len(),
+        "closed_sessions": closed_session_ids,
+    })
+}
+
+fn agent_debug_current_unix_millis() -> Result<i64, std::time::SystemTimeError> {
+    let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+    Ok(i64::try_from(millis).unwrap_or(i64::MAX))
 }
 
 fn agent_script_run_uses_native_session_for_metadata(options: &AgentScriptRunOptions) -> bool {

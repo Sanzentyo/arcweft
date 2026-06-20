@@ -10,9 +10,10 @@ use super::{
     AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
     CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
-    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_rag_select_context_chunk,
-    agent_rag_source_paths, agent_script_project_index, agent_script_run_bundle,
-    agent_script_run_input, agent_script_run_report_from_result, agent_script_runtime_policy,
+    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_debug_finish_runtime_session,
+    agent_debug_start_runtime_session, agent_rag_select_context_chunk, agent_rag_source_paths,
+    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
+    agent_script_run_report_from_result, agent_script_runtime_policy,
     agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
     load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
     native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
@@ -3444,21 +3445,38 @@ fn agent_repl_finish_debug_session(state: &mut AgentReplState, ok: bool) -> Resu
             })?,
         );
     }
-    store
-        .finish_session(
-            &agent_cli_session_id(),
-            if ok {
-                DebugSessionStatus::Finished
-            } else {
-                DebugSessionStatus::Failed
-            },
-            0,
-            &metadata,
-        )
-        .map_err(|error| {
-            eprintln!("error: failed to finish REPL debug database session: {error}");
-            ExitCode::FAILURE
-        })
+    agent_debug_finish_runtime_session(
+        store,
+        &agent_cli_session_id(),
+        if ok {
+            DebugSessionStatus::Finished
+        } else {
+            DebugSessionStatus::Failed
+        },
+        &metadata,
+        "REPL debug database session",
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+fn agent_repl_start_debug_session(store: &DebugStore) -> Result<(), ExitCode> {
+    agent_debug_start_runtime_session(
+        store,
+        agent_cli_session_id(),
+        None,
+        "repl",
+        "cli",
+        BTreeMap::new(),
+        "REPL debug database session",
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 fn agent_repl_initial_connection(
@@ -3496,15 +3514,7 @@ fn agent_repl_debug_store(
         );
         ExitCode::FAILURE
     })?;
-    store
-        .start_session(&agent_cli_session_id(), None, "repl", "cli", 0)
-        .map_err(|error| {
-            eprintln!(
-                "error: failed to initialize REPL debug database session {}: {error}",
-                path.display()
-            );
-            ExitCode::FAILURE
-        })?;
+    agent_repl_start_debug_session(&store)?;
     Ok((Some(store), Some(path.display().to_string())))
 }
 

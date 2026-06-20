@@ -182,6 +182,7 @@ fn agent_script_run_persists_debug_session_and_script_run() {
     let _ = fs::remove_file(&trace_path);
     let _ = fs::remove_file(&second_trace_path);
     let _ = fs::remove_file(&debug_db_path);
+    let stale_session_id = seed_stale_script_session(&debug_db_path);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -236,6 +237,7 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         .expect("script session persisted");
     assert_eq!(session.status, DebugSessionStatus::Finished);
     assert_eq!(session.metadata["last_run_id"], second_run_id.as_str());
+    assert_stale_script_session_abandoned(&store, &stale_session_id);
     let expected_trace_path = trace_path.display().to_string();
     let persisted_run = store
         .script_run(&arcweft_agent_protocol::ids::AgentRunId::new(run_id).expect("run id"))
@@ -262,6 +264,38 @@ fn agent_script_run_persists_debug_session_and_script_run() {
     assert!(store.stats().expect("stats").debug_events > 0);
 
     assert_debug_db_runs_report(&debug_db_path, &second_run_id);
+}
+
+fn seed_stale_script_session(debug_db_path: &Path) -> SessionId {
+    let stale_session_id = SessionId::new("session.script.stale").expect("stale session id");
+    let stale_started_unix_ms = current_unix_millis_for_test() - (2 * 86_400_000);
+    DebugStore::open(debug_db_path)
+        .expect("seed debug DB")
+        .start_session(
+            &stale_session_id,
+            None,
+            "script",
+            "cli",
+            stale_started_unix_ms,
+        )
+        .expect("seed stale running session");
+    stale_session_id
+}
+
+fn assert_stale_script_session_abandoned(store: &DebugStore, stale_session_id: &SessionId) {
+    let stale_session = store
+        .session(stale_session_id)
+        .expect("load stale script session")
+        .expect("stale script session persists");
+    assert_eq!(stale_session.status, DebugSessionStatus::Abandoned);
+    assert_eq!(
+        stale_session.metadata["lifecycle_policy"]["reason"],
+        "runtime_session_start"
+    );
+    assert_eq!(
+        stale_session.metadata["lifecycle_policy"]["operation"],
+        "abandon_stale_running_sessions"
+    );
 }
 
 fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
@@ -1585,7 +1619,13 @@ fn assert_repl_debug_cell_persisted(debug_db_path: &Path) {
         .expect("load persisted REPL session")
         .expect("REPL session is persisted");
     assert_eq!(persisted_session.status, DebugSessionStatus::Finished);
-    assert_eq!(persisted_session.ended_unix_ms, Some(0));
+    assert!(persisted_session.started_unix_ms > 0);
+    assert!(
+        persisted_session
+            .ended_unix_ms
+            .is_some_and(|ended| ended >= persisted_session.started_unix_ms),
+        "REPL debug session should record a real end timestamp: {persisted_session:?}"
+    );
     assert_eq!(
         persisted_session.metadata["persisted_cells"].as_u64(),
         Some(1)
