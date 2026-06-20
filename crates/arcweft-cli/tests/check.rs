@@ -3430,10 +3430,34 @@ fn assert_debug_db_graph_reports_multi_source_program_root(
     let symbols = graph["symbols"].as_array().expect("graph symbols");
     let edges = graph["edges"].as_array().expect("graph edges");
 
+    let program = symbols
+        .iter()
+        .find(|symbol| symbol["kind"] == "program")
+        .expect("multi-source graph should expose a combined program root");
+    assert_eq!(program["metadata"]["source_count"], serde_json::json!(2));
     assert!(
-        symbols.iter().any(|symbol| symbol["kind"] == "program"
-            && symbol["metadata"]["source_count"] == serde_json::json!(2)),
-        "multi-source graph should expose a combined program root: {graph}"
+        program["metadata"]["candidate_chunk_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "combined program root should summarize indexed RAG chunks: {graph}"
+    );
+    assert!(
+        program["metadata"]["source_byte_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "combined program root should summarize indexed source bytes: {graph}"
+    );
+    assert!(
+        program["metadata"]["source_graph_symbol_count"]
+            .as_u64()
+            .is_some_and(|count| count >= 2),
+        "combined program root should summarize source graph symbols: {graph}"
+    );
+    assert!(
+        program["metadata"]["source_graph_edge_count"]
+            .as_u64()
+            .is_some_and(|count| count >= 2),
+        "combined program root should summarize source graph edges: {graph}"
     );
     assert_eq!(
         symbols

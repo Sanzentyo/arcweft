@@ -901,11 +901,9 @@ fn agent_rag_index_program_graph(
     program_hash: &StableHash,
     source_indexes: &[&AgentSourceRagIndex],
 ) -> Result<(), String> {
+    let summary = agent_program_graph_summary(source_indexes);
     store
-        .upsert_graph_symbol(&agent_program_graph_symbol(
-            program_hash,
-            source_indexes.len(),
-        ))
+        .upsert_graph_symbol(&agent_program_graph_symbol(program_hash, summary))
         .map_err(|error| format!("failed to index RAG program graph symbol: {error}"))?;
     for source_index in source_indexes {
         store
@@ -916,6 +914,44 @@ fn agent_rag_index_program_graph(
             .map_err(|error| format!("failed to index RAG program source-file edge: {error}"))?;
     }
     Ok(())
+}
+
+fn agent_program_graph_summary(
+    source_indexes: &[&AgentSourceRagIndex],
+) -> AgentProgramGraphSummary {
+    AgentProgramGraphSummary {
+        sources: source_indexes.len(),
+        source_graph_symbols: source_indexes
+            .iter()
+            .map(|source_index| source_index.graph_symbols.len())
+            .sum(),
+        source_graph_edges: source_indexes
+            .iter()
+            .map(|source_index| source_index.graph_edges.len())
+            .sum(),
+        candidate_chunks: source_indexes
+            .iter()
+            .map(|source_index| source_index.candidates.len())
+            .sum(),
+        source_bytes: source_indexes
+            .iter()
+            .map(|source_index| source_index.source_file.byte_len)
+            .sum(),
+        dynamic_control_flows: source_indexes
+            .iter()
+            .flat_map(|source_index| source_index.graph_symbols.iter())
+            .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
+            .count(),
+    }
+}
+
+fn agent_graph_symbol_has_dynamic_control(symbol: &DebugGraphSymbol) -> bool {
+    symbol
+        .metadata
+        .get("flow_control")
+        .and_then(|value| value.get("has_dynamic_control"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn agent_rag_context_read_report(
@@ -1760,6 +1796,16 @@ struct AgentSourceRagIndex {
     graph_edges: Vec<DebugGraphEdge>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AgentProgramGraphSummary {
+    sources: usize,
+    source_graph_symbols: usize,
+    source_graph_edges: usize,
+    candidate_chunks: usize,
+    source_bytes: u64,
+    dynamic_control_flows: usize,
+}
+
 fn agent_rag_source_paths(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     let mut files = BTreeSet::new();
     for input in inputs {
@@ -1931,7 +1977,10 @@ fn agent_source_file_project_graph_edge(
     }
 }
 
-fn agent_program_graph_symbol(program_hash: &StableHash, source_count: usize) -> DebugGraphSymbol {
+fn agent_program_graph_symbol(
+    program_hash: &StableHash,
+    summary: AgentProgramGraphSummary,
+) -> DebugGraphSymbol {
     DebugGraphSymbol {
         symbol_id: agent_program_graph_symbol_id(program_hash),
         program_hash: program_hash.clone(),
@@ -1942,7 +1991,12 @@ fn agent_program_graph_symbol(program_hash: &StableHash, source_count: usize) ->
         qualified_name: Some(format!("program.{}", program_hash.as_str())),
         kind: "program".to_owned(),
         type_json: Some(serde_json::json!({
-            "source_count": source_count,
+            "source_count": summary.sources,
+            "source_graph_symbol_count": summary.source_graph_symbols,
+            "source_graph_edge_count": summary.source_graph_edges,
+            "candidate_chunk_count": summary.candidate_chunks,
+            "source_byte_count": summary.source_bytes,
+            "dynamic_control_flow_count": summary.dynamic_control_flows,
         })),
         source_path: None,
         source_content_hash: None,
@@ -1950,11 +2004,39 @@ fn agent_program_graph_symbol(program_hash: &StableHash, source_count: usize) ->
         end_byte: None,
         semantic_hash: Some(program_hash.clone()),
         summary: format!(
-            "Program `{}` with {} indexed source files",
+            "Program `{}` with {} indexed source files, {} candidate chunks, {} graph symbols, and {} graph edges",
             program_hash.as_str(),
-            source_count
+            summary.sources,
+            summary.candidate_chunks,
+            summary.source_graph_symbols,
+            summary.source_graph_edges
         ),
-        metadata: BTreeMap::from([("source_count".to_owned(), serde_json::json!(source_count))]),
+        metadata: BTreeMap::from([
+            (
+                "source_count".to_owned(),
+                serde_json::json!(summary.sources),
+            ),
+            (
+                "source_graph_symbol_count".to_owned(),
+                serde_json::json!(summary.source_graph_symbols),
+            ),
+            (
+                "source_graph_edge_count".to_owned(),
+                serde_json::json!(summary.source_graph_edges),
+            ),
+            (
+                "candidate_chunk_count".to_owned(),
+                serde_json::json!(summary.candidate_chunks),
+            ),
+            (
+                "source_byte_count".to_owned(),
+                serde_json::json!(summary.source_bytes),
+            ),
+            (
+                "dynamic_control_flow_count".to_owned(),
+                serde_json::json!(summary.dynamic_control_flows),
+            ),
+        ]),
     }
 }
 
