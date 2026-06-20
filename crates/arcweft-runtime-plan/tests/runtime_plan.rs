@@ -401,6 +401,55 @@ effects { agent.wait, agent.observe }
 }
 
 #[test]
+fn agent_controller_plan_lowers_action_enabled_wait_predicate() {
+    let tree = parse_agent_ok(
+        r"
+#[agent(version = 1)]
+agent @agent.wait_action wait_action()
+effects { agent.wait, agent.observe }
+{
+    let listen = choice_action(@choice.opening.listen)
+    let obs = wait(action_enabled(listen), timeout = 5ms)
+    return obs.tick
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
+    let agent = hir.agents().first().expect("agent item lowers");
+
+    let report =
+        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
+
+    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected choice_action to lower to Let, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert!(format!("{pattern:?}").contains("listen"));
+    assert!(format!("{expr:?}").contains("choice.opening.listen"));
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[1] else {
+        panic!(
+            "expected wait let to lower to Await, got {:?}",
+            report.plan.flows[0].ops[1]
+        );
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "wait");
+    let predicate = target.request.args[0].value();
+    let RuntimeExpr::Record(fields) = predicate else {
+        panic!("expected predicate record, got {predicate:?}");
+    };
+    assert!(fields.iter().any(|field| {
+        field.name == "kind"
+            && matches!(&field.value, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "action_enabled")
+    }));
+    assert!(format!("{predicate:?}").contains("Local(\"listen\")"));
+    assert!(format!("{predicate:?}").contains("target"));
+}
+
+#[test]
 fn agent_controller_plan_lowers_state_and_observation_wait_predicates() {
     let tree = parse_agent_ok(
         r#"

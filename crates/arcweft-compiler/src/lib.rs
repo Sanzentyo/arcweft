@@ -1190,6 +1190,33 @@ effects { agent.observe, agent.wait }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_action_enabled_predicate() {
+        let project = project_with_entity("choice.opening.listen", EntityKind::ChoiceOption);
+        let compiled = compile_agent_source_with_project(
+            r"
+#[agent(version = 1)]
+agent @agent.action_wait action_wait()
+effects { agent.observe, agent.wait }
+{
+    let listen = choice_action(@choice.opening.listen)
+    try wait(action_enabled(listen), timeout = 5s)
+}
+",
+            &project,
+        )
+        .expect("action_enabled predicate typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::Predicate)
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_rejects_signal_payload_mismatch() {
         let project =
             project_with_typed_entity("signal.ready", EntityKind::Signal, Some(TypeKind::Bool));

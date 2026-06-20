@@ -804,6 +804,7 @@ impl TypeChecker<'_> {
                 TypeKind::Named("Diagnostics".to_owned()),
             )),
             "exists" => Some(self.check_agent_exists_intrinsic(name, args)),
+            "action_enabled" => Some(self.check_agent_action_enabled_intrinsic(name, args)),
             "all" | "any" => Some(self.check_agent_predicate_list_intrinsic(name, args)),
             "not" => Some(self.check_agent_not_predicate_intrinsic(name, args)),
             "wait" => Some(self.check_agent_wait_intrinsic(name, args)),
@@ -1318,6 +1319,14 @@ impl TypeChecker<'_> {
                 "exists argument must be a Probe, found {actual:?}"
             ))),
         }
+        TypeKind::Predicate
+    }
+
+    fn check_agent_action_enabled_intrinsic(&mut self, name: &str, args: &[CallArg]) -> TypeKind {
+        let Some(arg) = self.single_positional_agent_arg(name, args) else {
+            return TypeKind::Predicate;
+        };
+        self.expect_expr_type(arg, &TypeKind::ActionTarget, "action_enabled target");
         TypeKind::Predicate
     }
 

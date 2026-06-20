@@ -104,6 +104,7 @@ pub enum AgentIntrinsic {
     ObservationProbe,
     Diagnostics,
     PredicateExists,
+    PredicateActionEnabled,
     PredicateAll,
     PredicateAny,
     PredicateNot,
@@ -1633,6 +1634,17 @@ fn agent_predicate_callables() -> Vec<(&'static str, CallableSymbol)> {
                 ),
                 [],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateExists),
+            ),
+        ),
+        (
+            "action_enabled",
+            CallableSymbol::new(
+                FunctionSignature::new(
+                    TypeKind::Predicate,
+                    [FunctionParam::required("target", TypeKind::ActionTarget)],
+                ),
+                [],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::PredicateActionEnabled),
             ),
         ),
         (

@@ -326,6 +326,21 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
                 runtime_field_expr("probe", lower_agent_probe_expr(probe)?),
             ]))
         }
+        Expr::Call { callee, args } if expr_label(callee) == "action_enabled" => {
+            let [CallArg::Positional(target)] = args.as_slice() else {
+                return None;
+            };
+            Some(runtime_record_expr([
+                runtime_field_expr("kind", runtime_string_expr("action_enabled")),
+                runtime_field_expr(
+                    "target",
+                    RuntimeExpr::Field {
+                        target: Box::new(lower_agent_host_arg_expr(target)),
+                        field: "target".to_owned(),
+                    },
+                ),
+            ]))
+        }
         Expr::Call { callee, args } if matches!(expr_label(callee).as_str(), "all" | "any") => {
             let kind = expr_label(callee);
             let predicates = lower_agent_predicate_args(args)?;
