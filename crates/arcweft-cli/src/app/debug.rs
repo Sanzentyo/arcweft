@@ -1,7 +1,10 @@
 use super::shared::print_json;
 use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
 use arcweft_debug_model::chunk::PrivacyClass;
-use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
+use arcweft_debug_model::embedding::{
+    EmbeddingError, EmbeddingInput, EmbeddingInputPolicy, EmbeddingModelDescriptor,
+    EmbeddingProvider, StoredEmbedding,
+};
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
 use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
@@ -12,12 +15,18 @@ use arcweft_debug_sqlite::store::{
 };
 use clap::{Args, Subcommand};
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DEBUG_DB_PATH: &str = ".arcweft/cache/agent-debug.sqlite3";
+const DEFAULT_LOCAL_EMBEDDING_MODEL_ID: &str = "arcweft-local-hash";
+const DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION: &str = "1";
+const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS: u32 = 32;
+const MAX_LOCAL_EMBEDDING_DIMENSIONS: u32 = 4096;
 
 #[derive(Debug, Subcommand)]
 pub(super) enum DebugCommand {
@@ -40,6 +49,7 @@ pub(super) enum DebugDbCommand {
     Rag(DebugDbRagOptions),
     Timeline(DebugDbTimelineOptions),
     ReplCells(DebugDbReplCellsOptions),
+    Embed(DebugDbEmbedOptions),
     Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
@@ -122,6 +132,20 @@ pub(super) struct DebugDbReplCellsOptions {
     session_id: String,
     #[arg(long, default_value_t = 50)]
     limit: usize,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbEmbedOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "model-id", default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_ID)]
+    model_id: String,
+    #[arg(long = "model-revision", default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION)]
+    model_revision: String,
+    #[arg(long = "dimensions", default_value_t = DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)]
+    dimensions: u32,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -330,6 +354,21 @@ struct DebugDbReplCellReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbEmbedReport {
+    path: String,
+    user_version: u32,
+    provider: String,
+    scope: String,
+    model: DebugDbSearchModelReport,
+    max_privacy: PrivacyClass,
+    input_chunks: usize,
+    embedded_chunks: usize,
+    skipped_chunks: u64,
+    embedded_chunk_ids: Vec<String>,
+    stats_after: DebugDbStatsReport,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbSessionReport {
     session_id: String,
     program_hash: Option<String>,
@@ -428,6 +467,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Rag(options) => debug_db_rag_command(&options),
         DebugDbCommand::Timeline(options) => debug_db_timeline_command(&options),
         DebugDbCommand::ReplCells(options) => debug_db_repl_cells_command(&options),
+        DebugDbCommand::Embed(options) => debug_db_embed_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
@@ -856,6 +896,85 @@ fn debug_db_repl_cells_command(options: &DebugDbReplCellsOptions) -> Result<(), 
     Ok(())
 }
 
+fn debug_db_embed_command(options: &DebugDbEmbedOptions) -> Result<(), ExitCode> {
+    let report = debug_db_embed_report(options)?;
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: embedded {} chunk(s) with {}@{}:{} (max_privacy={}, skipped={})",
+        report.path,
+        report.embedded_chunks,
+        report.model.model_id,
+        report.model.model_revision,
+        report.model.dimensions,
+        report.max_privacy.as_str(),
+        report.skipped_chunks
+    );
+    Ok(())
+}
+
+fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedReport, ExitCode> {
+    let model = debug_db_embed_model(options).map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::from(2)
+    })?;
+    let (store, path, user_version, stats_before) = open_debug_store(&options.db)?;
+    let inputs = store
+        .embedding_inputs_with_policy(EmbeddingInputPolicy::local(options.max_privacy))
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read embedding inputs from debug database {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let mut provider = DebugLocalHashEmbeddingProvider::new(model.clone());
+    let embeddings = provider.embed(&inputs).map_err(|error| {
+        eprintln!("error: failed to embed debug chunks with local provider: {error}");
+        ExitCode::FAILURE
+    })?;
+    for embedding in &embeddings {
+        store.upsert_embedding(embedding).map_err(|error| {
+            eprintln!(
+                "error: failed to write embedding for {} into debug database {}: {error}",
+                embedding.chunk_id.as_str(),
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    }
+    let stats_after = store.stats().map_err(|error| {
+        eprintln!(
+            "error: failed to read debug database {} after embedding: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    Ok(DebugDbEmbedReport {
+        path,
+        user_version,
+        provider: "local_hash".to_owned(),
+        scope: "local".to_owned(),
+        model: DebugDbSearchModelReport {
+            model_id: model.model_id,
+            model_revision: model.model_revision,
+            dimensions: model.dimensions,
+        },
+        max_privacy: options.max_privacy,
+        input_chunks: inputs.len(),
+        embedded_chunks: embeddings.len(),
+        skipped_chunks: stats_before
+            .chunks
+            .saturating_sub(u64::try_from(inputs.len()).unwrap_or(u64::MAX)),
+        embedded_chunk_ids: embeddings
+            .into_iter()
+            .map(|embedding| embedding.chunk_id.as_str().to_owned())
+            .collect(),
+        stats_after: stats_report(stats_after),
+    })
+}
+
 fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
     let report = debug_db_search_report(options)?;
     if options.db.json {
@@ -968,6 +1087,111 @@ fn debug_db_search_text_selectors(
         diagnostic_query: trimmed_non_empty(options.diagnostic_query.as_deref()),
         test_query: trimmed_non_empty(options.test_query.as_deref()),
     }
+}
+
+fn debug_db_embed_model(options: &DebugDbEmbedOptions) -> Result<EmbeddingModelDescriptor, String> {
+    let model_id = options.model_id.trim();
+    if model_id.is_empty() {
+        return Err("debug db embed --model-id must not be empty".to_owned());
+    }
+    let model_revision = options.model_revision.trim();
+    if model_revision.is_empty() {
+        return Err("debug db embed --model-revision must not be empty".to_owned());
+    }
+    if options.dimensions == 0 {
+        return Err("debug db embed --dimensions must be at least 1".to_owned());
+    }
+    if options.dimensions > MAX_LOCAL_EMBEDDING_DIMENSIONS {
+        return Err(format!(
+            "debug db embed --dimensions must be at most {MAX_LOCAL_EMBEDDING_DIMENSIONS}"
+        ));
+    }
+    Ok(EmbeddingModelDescriptor {
+        model_id: model_id.to_owned(),
+        model_revision: model_revision.to_owned(),
+        dimensions: options.dimensions,
+    })
+}
+
+#[derive(Debug)]
+struct DebugLocalHashEmbeddingError {
+    source: EmbeddingError,
+}
+
+impl fmt::Display for DebugLocalHashEmbeddingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.source)
+    }
+}
+
+impl Error for DebugLocalHashEmbeddingError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+struct DebugLocalHashEmbeddingProvider {
+    descriptor: EmbeddingModelDescriptor,
+}
+
+impl DebugLocalHashEmbeddingProvider {
+    fn new(descriptor: EmbeddingModelDescriptor) -> Self {
+        Self { descriptor }
+    }
+}
+
+impl EmbeddingProvider for DebugLocalHashEmbeddingProvider {
+    type Error = DebugLocalHashEmbeddingError;
+
+    fn descriptor(&self) -> EmbeddingModelDescriptor {
+        self.descriptor.clone()
+    }
+
+    fn embed(&mut self, inputs: &[EmbeddingInput]) -> Result<Vec<StoredEmbedding>, Self::Error> {
+        let descriptor = self.descriptor();
+        let created_unix_ms = current_unix_millis().unwrap_or(0);
+        inputs
+            .iter()
+            .map(|input| {
+                let values = debug_local_hash_embedding_values(
+                    input.chunk_id.as_str(),
+                    &input.text,
+                    descriptor.dimensions,
+                );
+                StoredEmbedding::normalized(
+                    input.chunk_id.clone(),
+                    descriptor.clone(),
+                    values,
+                    input.content_hash.clone(),
+                    created_unix_ms,
+                )
+                .map_err(|source| DebugLocalHashEmbeddingError { source })
+            })
+            .collect()
+    }
+}
+
+fn debug_local_hash_embedding_values(chunk_id: &str, text: &str, dimensions: u32) -> Vec<f32> {
+    let dimensions = usize::try_from(dimensions).expect("u32 dimensions fit usize");
+    let mut values = vec![0.0; dimensions];
+    let dimensions_u64 = u64::try_from(dimensions).expect("dimensions fit u64");
+    let bytes = chunk_id
+        .bytes()
+        .chain(std::iter::once(0))
+        .chain(text.bytes());
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        let index = usize::try_from(hash % dimensions_u64).expect("index fits usize");
+        let sign = if hash & 1 == 0 { 1.0 } else { -1.0 };
+        let weight = 1.0 + f32::from(byte % 7) / 7.0;
+        values[index] += sign * weight;
+    }
+    if values.iter().all(|value| value.abs() <= f32::EPSILON) {
+        values[0] = 1.0;
+    }
+    values
 }
 
 fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {

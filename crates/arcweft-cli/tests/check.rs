@@ -3304,6 +3304,84 @@ fn debug_db_search_vector_filters_chunks_by_privacy() {
 }
 
 #[test]
+fn debug_db_embed_indexes_privacy_filtered_local_hash_embeddings() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/embed-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug embed target dir"))
+        .expect("create debug embed target dir");
+    seed_debug_embed_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("embed")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--model-id")
+        .arg("fixture-local-hash")
+        .arg("--model-revision")
+        .arg("1")
+        .arg("--dimensions")
+        .arg("8")
+        .arg("--max-privacy")
+        .arg("sensitive")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db embed runs");
+    assert!(
+        output.status.success(),
+        "debug db embed should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db embed output is JSON");
+
+    assert_eq!(report["provider"], "local_hash");
+    assert_eq!(report["scope"], "local");
+    assert_eq!(report["model"]["model_id"], "fixture-local-hash");
+    assert_eq!(report["model"]["model_revision"], "1");
+    assert_eq!(report["model"]["dimensions"], 8);
+    assert_eq!(report["max_privacy"], "sensitive");
+    assert_eq!(report["input_chunks"], 3);
+    assert_eq!(report["embedded_chunks"], 3);
+    assert_eq!(report["skipped_chunks"], 1);
+    assert_eq!(report["stats_after"]["embeddings"], 3);
+    let embedded = report["embedded_chunk_ids"]
+        .as_array()
+        .expect("embedded chunk ids");
+    assert_eq!(embedded.len(), 3);
+    assert!(embedded.contains(&serde_json::json!("chunk:embed-public")));
+    assert!(embedded.contains(&serde_json::json!("chunk:embed-project")));
+    assert!(embedded.contains(&serde_json::json!("chunk:embed-sensitive")));
+    assert!(!embedded.contains(&serde_json::json!("chunk:embed-secret")));
+
+    let store = DebugStore::open(&db_path).expect("open embedded debug db");
+    let embeddings = store
+        .load_embeddings(&EmbeddingModelDescriptor {
+            model_id: "fixture-local-hash".to_owned(),
+            model_revision: "1".to_owned(),
+            dimensions: 8,
+        })
+        .expect("load local hash embeddings");
+    assert_eq!(embeddings.len(), 3);
+    assert!(
+        embeddings
+            .iter()
+            .all(|embedding| embedding.values.len() == 8
+                && embedding.values.iter().all(|value| value.is_finite()))
+    );
+    assert!(
+        embeddings
+            .iter()
+            .all(|embedding| embedding.chunk_id.as_str() != "chunk:embed-secret")
+    );
+}
+
+#[test]
 fn debug_db_search_history_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/history-search-{}.sqlite3",
@@ -3734,6 +3812,34 @@ fn seed_debug_search_db(path: &Path) {
         .expect("upsert debug history");
     seed_debug_search_diagnostics(&store, program_hash.clone());
     seed_debug_search_graph(&store, program_hash);
+}
+
+fn seed_debug_embed_db(path: &Path) {
+    let store = DebugStore::open(path).expect("open debug embed db");
+    for (name, privacy) in [
+        ("public", PrivacyClass::Public),
+        ("project", PrivacyClass::Project),
+        ("sensitive", PrivacyClass::Sensitive),
+        ("secret", PrivacyClass::Secret),
+    ] {
+        store
+            .upsert_chunk(&DebugChunk {
+                id: ChunkId::new(format!("chunk:embed-{name}")),
+                program_hash: None,
+                source_kind: ChunkSourceKind::Documentation,
+                source_key: format!("embed-{name}"),
+                title: format!("{name} embedding title"),
+                body: format!("{name} embedding body"),
+                content_hash: stable_hash(&format!("b3:embed-{name}")),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy,
+                metadata: BTreeMap::default(),
+                created_unix_ms: 0,
+            })
+            .expect("upsert debug embed chunk");
+    }
 }
 
 fn seed_debug_search_diagnostics(store: &DebugStore, program_hash: StableHash) {
