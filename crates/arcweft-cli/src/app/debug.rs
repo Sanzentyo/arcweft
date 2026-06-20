@@ -1,9 +1,13 @@
+use super::local_embedding::{
+    DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_MODEL_ID,
+    DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION, LocalHashEmbeddingProvider,
+    MAX_LOCAL_EMBEDDING_DIMENSIONS,
+};
 use super::shared::print_json;
 use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::embedding::{
-    EmbeddingError, EmbeddingInput, EmbeddingInputPolicy, EmbeddingModelDescriptor,
-    EmbeddingProvider, StoredEmbedding,
+    EmbeddingInputPolicy, EmbeddingModelDescriptor, EmbeddingProvider,
 };
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
 use arcweft_debug_model::repl::DebugReplCell;
@@ -15,18 +19,12 @@ use arcweft_debug_sqlite::store::{
 };
 use clap::{Args, Subcommand};
 use std::collections::BTreeMap;
-use std::error::Error;
-use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DEBUG_DB_PATH: &str = ".arcweft/cache/agent-debug.sqlite3";
-const DEFAULT_LOCAL_EMBEDDING_MODEL_ID: &str = "arcweft-local-hash";
-const DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION: &str = "1";
-const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS: u32 = 32;
-const MAX_LOCAL_EMBEDDING_DIMENSIONS: u32 = 4096;
 
 #[derive(Debug, Subcommand)]
 pub(super) enum DebugCommand {
@@ -929,7 +927,7 @@ fn debug_db_embed_report(options: &DebugDbEmbedOptions) -> Result<DebugDbEmbedRe
             );
             ExitCode::FAILURE
         })?;
-    let mut provider = DebugLocalHashEmbeddingProvider::new(model.clone());
+    let mut provider = LocalHashEmbeddingProvider::new(model.clone());
     let embeddings = provider.embed(&inputs).map_err(|error| {
         eprintln!("error: failed to embed debug chunks with local provider: {error}");
         ExitCode::FAILURE
@@ -1111,87 +1109,6 @@ fn debug_db_embed_model(options: &DebugDbEmbedOptions) -> Result<EmbeddingModelD
         model_revision: model_revision.to_owned(),
         dimensions: options.dimensions,
     })
-}
-
-#[derive(Debug)]
-struct DebugLocalHashEmbeddingError {
-    source: EmbeddingError,
-}
-
-impl fmt::Display for DebugLocalHashEmbeddingError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}", self.source)
-    }
-}
-
-impl Error for DebugLocalHashEmbeddingError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.source)
-    }
-}
-
-struct DebugLocalHashEmbeddingProvider {
-    descriptor: EmbeddingModelDescriptor,
-}
-
-impl DebugLocalHashEmbeddingProvider {
-    fn new(descriptor: EmbeddingModelDescriptor) -> Self {
-        Self { descriptor }
-    }
-}
-
-impl EmbeddingProvider for DebugLocalHashEmbeddingProvider {
-    type Error = DebugLocalHashEmbeddingError;
-
-    fn descriptor(&self) -> EmbeddingModelDescriptor {
-        self.descriptor.clone()
-    }
-
-    fn embed(&mut self, inputs: &[EmbeddingInput]) -> Result<Vec<StoredEmbedding>, Self::Error> {
-        let descriptor = self.descriptor();
-        let created_unix_ms = current_unix_millis().unwrap_or(0);
-        inputs
-            .iter()
-            .map(|input| {
-                let values = debug_local_hash_embedding_values(
-                    input.chunk_id.as_str(),
-                    &input.text,
-                    descriptor.dimensions,
-                );
-                StoredEmbedding::normalized(
-                    input.chunk_id.clone(),
-                    descriptor.clone(),
-                    values,
-                    input.content_hash.clone(),
-                    created_unix_ms,
-                )
-                .map_err(|source| DebugLocalHashEmbeddingError { source })
-            })
-            .collect()
-    }
-}
-
-fn debug_local_hash_embedding_values(chunk_id: &str, text: &str, dimensions: u32) -> Vec<f32> {
-    let dimensions = usize::try_from(dimensions).expect("u32 dimensions fit usize");
-    let mut values = vec![0.0; dimensions];
-    let dimensions_u64 = u64::try_from(dimensions).expect("dimensions fit u64");
-    let bytes = chunk_id
-        .bytes()
-        .chain(std::iter::once(0))
-        .chain(text.bytes());
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        let index = usize::try_from(hash % dimensions_u64).expect("index fits usize");
-        let sign = if hash & 1 == 0 { 1.0 } else { -1.0 };
-        let weight = 1.0 + f32::from(byte % 7) / 7.0;
-        values[index] += sign * weight;
-    }
-    if values.iter().all(|value| value.abs() <= f32::EPSILON) {
-        values[0] = 1.0;
-    }
-    values
 }
 
 fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {

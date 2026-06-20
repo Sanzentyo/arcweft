@@ -357,6 +357,13 @@ window.
 [--limit N] [--json]` runs the stored-vector channel. It loads normalized
 embedding rows for the exact model descriptor, applies the privacy ceiling
 before ranking, and uses deterministic cosine ranking from `arcweft-rag`.
+`arcw debug db embed [--model-id <id>] [--model-revision <rev>]
+[--dimensions N] [--max-privacy public|project|sensitive|secret] [--json]`
+populates those stored embeddings through the deterministic local hash adapter.
+The command loads provider inputs through the debug-store embedding privacy
+policy, never sends `secret` chunks to the provider, writes normalized vectors
+with the source chunk `content_hash`, and reports embedded/skipped chunk ids.
+It is an offline debug adapter, not a remote embedding service.
 `arcw debug db search --graph-query <text> [--graph-depth N]
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` searches
 indexed `symbols` and `graph_edges` by public id, qualified name, symbol kind,
@@ -369,8 +376,12 @@ labels, so `--max-privacy public` returns no graph hits.
 `history_entries` by change ID, operation ID, and summary. History rows are
 treated as project-private until an explicit history privacy column exists, so
 `--max-privacy public` returns no history hits. `--query`, `--query-vector`,
-`--graph-query`, and `--history-query` are mutually exclusive; provider
-embedding I/O remains outside this command.
+`--graph-query`, and `--history-query` are mutually exclusive.
+`arcw agent rag query --debug-db <path> --query <text> --local-embedding`
+uses the same local hash query embedding to add stored-vector hits to the
+RRF-selected context pack. If no matching embedding rows exist, the command
+continues with the existing lexical/graph/history/diagnostic/test channels, so
+the vector channel is an explicit enrichment rather than a required query path.
 The stdio MCP server exposes the same rebuildable-store channels as
 `arcweft.debug.search`. The tool accepts exactly one of `query`, `query_vector`
 with `model_id` and `model_revision`, `graph_query` with optional

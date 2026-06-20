@@ -3382,6 +3382,83 @@ fn debug_db_embed_indexes_privacy_filtered_local_hash_embeddings() {
 }
 
 #[test]
+fn agent_rag_query_uses_local_embedding_debug_db_channel() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/rag-local-embedding-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("rag local embedding target dir"))
+        .expect("create rag local embedding target dir");
+    seed_debug_embed_db(&db_path);
+
+    let embed_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("embed")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--model-id")
+        .arg("fixture-local-hash")
+        .arg("--model-revision")
+        .arg("1")
+        .arg("--dimensions")
+        .arg("8")
+        .arg("--max-privacy")
+        .arg("sensitive")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db embed runs");
+    assert!(
+        embed_output.status.success(),
+        "debug db embed should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&embed_output.stdout),
+        String::from_utf8_lossy(&embed_output.stderr)
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("sensitive embedding body")
+        .arg("--local-embedding")
+        .arg("--local-embedding-model-id")
+        .arg("fixture-local-hash")
+        .arg("--local-embedding-model-revision")
+        .arg("1")
+        .arg("--local-embedding-dimensions")
+        .arg("8")
+        .arg("--max-privacy")
+        .arg("sensitive")
+        .arg("--limit")
+        .arg("2")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query local embedding runs");
+    assert!(
+        output.status.success(),
+        "agent rag query should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent rag query output is JSON");
+    let items = pack["items"].as_array().expect("rag items");
+    assert!(
+        items
+            .iter()
+            .any(|item| item["chunk_id"] == "chunk:embed-sensitive"
+                && item["channels"]
+                    .as_array()
+                    .is_some_and(|channels| channels.contains(&serde_json::json!("vector")))),
+        "expected sensitive chunk to include vector channel: {pack}"
+    );
+}
+
+#[test]
 fn debug_db_search_history_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/history-search-{}.sqlite3",

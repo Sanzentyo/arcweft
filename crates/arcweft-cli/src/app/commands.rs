@@ -70,7 +70,7 @@ pub(super) enum AgentCommand {
     Repl(Box<AgentReplOptions>),
     Rag {
         #[command(subcommand)]
-        command: AgentRagCommand,
+        command: Box<AgentRagCommand>,
     },
     Script {
         #[command(subcommand)]

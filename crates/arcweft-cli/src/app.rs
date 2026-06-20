@@ -4,6 +4,7 @@ mod commands;
 mod debug;
 mod image_declarations;
 pub(in crate::app) mod jit;
+mod local_embedding;
 pub(crate) mod project;
 pub(in crate::app) mod runtime;
 pub(crate) mod shared;

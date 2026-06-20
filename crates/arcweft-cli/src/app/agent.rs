@@ -1,4 +1,9 @@
 use super::commands::{AgentCommand, AgentRagCommand, AgentScriptCommand};
+use super::local_embedding::{
+    DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_MODEL_ID,
+    DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION, MAX_LOCAL_EMBEDDING_DIMENSIONS,
+    local_hash_query_embedding,
+};
 use super::project::ProfileOptions;
 use super::runtime::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
@@ -26,6 +31,7 @@ use arcweft_debug_model::{
     chunk::{
         ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor as DebugSourceAnchor,
     },
+    embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
@@ -300,6 +306,17 @@ pub(super) struct AgentRagQueryOptions {
     max_privacy: PrivacyClass,
     #[arg(long = "debug-db")]
     debug_db: Option<PathBuf>,
+    #[arg(long = "local-embedding")]
+    local_embedding: bool,
+    #[arg(long = "local-embedding-model-id", default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_ID)]
+    local_embedding_model_id: String,
+    #[arg(
+        long = "local-embedding-model-revision",
+        default_value = DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION
+    )]
+    local_embedding_model_revision: String,
+    #[arg(long = "local-embedding-dimensions", default_value_t = DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)]
+    local_embedding_dimensions: u32,
     #[arg(long)]
     json: bool,
 }
@@ -501,7 +518,7 @@ pub(super) fn agent_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
-        AgentCommand::Rag { command } => agent_rag_command(command),
+        AgentCommand::Rag { command } => agent_rag_command(*command),
         AgentCommand::Script { command } => agent_script_command(*command, adapter_registrars),
         command => native::agent_command(command, adapter_registrars),
     }
@@ -513,7 +530,7 @@ pub(super) fn agent_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     match command {
-        AgentCommand::Rag { command } => agent_rag_command(command),
+        AgentCommand::Rag { command } => agent_rag_command(*command),
         AgentCommand::Script { command } => agent_script_command(*command, adapter_registrars),
         AgentCommand::Observe(_)
         | AgentCommand::HitTest(_)
@@ -922,6 +939,12 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
     if options.max_context_bytes == 0 {
         return Err("agent rag query --max-context-bytes must be at least 1".to_owned());
     }
+    if options.local_embedding && options.debug_db.is_none() {
+        return Err("agent rag query --local-embedding requires --debug-db".to_owned());
+    }
+    if options.local_embedding {
+        agent_rag_local_embedding_model(options)?;
+    }
     let roots = agent_rag_roots(&options.roots)?;
     let mut candidates = Vec::new();
     let mut seed_parts = Vec::new();
@@ -975,6 +998,16 @@ fn agent_rag_debug_db_candidates(
     let search_limit = options.limit.saturating_mul(8).max(32);
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
+    if options.local_embedding {
+        for result in agent_rag_debug_db_vector_results(&store, path, options, search_limit)? {
+            if seen.insert(result.chunk.id.clone()) {
+                candidates.push(AgentRagCandidate {
+                    chunk: result.chunk,
+                    preferred_channel: result.hit.channel,
+                });
+            }
+        }
+    }
     let terms = std::iter::once(options.query.trim().to_owned())
         .chain(options.roots.iter().map(|root| root.trim().to_owned()))
         .filter(|term| !term.is_empty())
@@ -1030,6 +1063,50 @@ fn agent_rag_debug_db_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_rag_debug_db_vector_results(
+    store: &DebugStore,
+    path: &Path,
+    options: &AgentRagQueryOptions,
+    search_limit: usize,
+) -> Result<Vec<arcweft_debug_sqlite::store::DebugChunkSearchResult>, String> {
+    let model = agent_rag_local_embedding_model(options)?;
+    let query_vector = local_hash_query_embedding(options.query.trim(), model.dimensions);
+    store
+        .vector_search_with_max_privacy(&model, &query_vector, search_limit, options.max_privacy)
+        .map_err(|error| agent_rag_debug_db_search_error(path, &error))?
+        .into_iter()
+        .map(|result| agent_rag_candidate_from_search_result(result, "vector"))
+        .collect()
+}
+
+fn agent_rag_local_embedding_model(
+    options: &AgentRagQueryOptions,
+) -> Result<EmbeddingModelDescriptor, String> {
+    let model_id = options.local_embedding_model_id.trim();
+    if model_id.is_empty() {
+        return Err("agent rag query --local-embedding-model-id must not be empty".to_owned());
+    }
+    let model_revision = options.local_embedding_model_revision.trim();
+    if model_revision.is_empty() {
+        return Err(
+            "agent rag query --local-embedding-model-revision must not be empty".to_owned(),
+        );
+    }
+    if options.local_embedding_dimensions == 0 {
+        return Err("agent rag query --local-embedding-dimensions must be at least 1".to_owned());
+    }
+    if options.local_embedding_dimensions > MAX_LOCAL_EMBEDDING_DIMENSIONS {
+        return Err(format!(
+            "agent rag query --local-embedding-dimensions must be at most {MAX_LOCAL_EMBEDDING_DIMENSIONS}"
+        ));
+    }
+    Ok(EmbeddingModelDescriptor {
+        model_id: model_id.to_owned(),
+        model_revision: model_revision.to_owned(),
+        dimensions: options.local_embedding_dimensions,
+    })
 }
 
 fn agent_rag_debug_db_search_error(
@@ -1779,6 +1856,7 @@ fn agent_trace_rag_ranked_lists(
     [
         SearchChannel::ExactEntity,
         SearchChannel::Lexical,
+        SearchChannel::Vector,
         SearchChannel::Graph,
         SearchChannel::History,
         SearchChannel::Diagnostics,
@@ -1884,7 +1962,17 @@ fn agent_trace_rag_score(
             );
             (token_score > 0.0).then_some(token_score)
         }
-        SearchChannel::Vector => None,
+        SearchChannel::Vector => {
+            if candidate.preferred_channel != SearchChannel::Vector {
+                return None;
+            }
+            candidate
+                .chunk
+                .metadata
+                .get("search_score")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|score| score.is_finite())
+        }
     }
 }
 
@@ -3641,6 +3729,10 @@ mod tests {
             max_context_bytes: 4096,
             max_privacy: PrivacyClass::Project,
             debug_db: None,
+            local_embedding: false,
+            local_embedding_model_id: DEFAULT_LOCAL_EMBEDDING_MODEL_ID.to_owned(),
+            local_embedding_model_revision: DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION.to_owned(),
+            local_embedding_dimensions: DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
             json: true,
         }
     }
