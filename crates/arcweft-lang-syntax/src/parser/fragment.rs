@@ -197,10 +197,20 @@ fn incomplete_syntax_expected_tokens(source: &str) -> Option<Vec<ExpectedToken>>
     if trimmed_start.is_empty() {
         return None;
     }
+    if ends_at_block_intro_boundary(trimmed_start) {
+        return Some(vec![ExpectedToken::new("{")]);
+    }
     if ends_at_expression_boundary(trimmed_start) {
         return Some(vec![ExpectedToken::new("expression")]);
     }
     None
+}
+
+fn ends_at_block_intro_boundary(trimmed_start: &str) -> bool {
+    trimmed_start == "else"
+        || trimmed_start == "with"
+        || trimmed_start.ends_with(" else")
+        || trimmed_start.ends_with(" with")
 }
 
 fn ends_at_expression_boundary(trimmed_start: &str) -> bool {
@@ -221,6 +231,7 @@ fn ends_at_expression_boundary(trimmed_start: &str) -> bool {
         || trimmed_start.ends_with("<=")
         || trimmed_start.ends_with("&&")
         || trimmed_start.ends_with("||")
+        || trimmed_start.ends_with("=>")
         || trimmed_start.ends_with('+')
         || trimmed_start.ends_with('-')
         || trimmed_start.ends_with('*')
@@ -304,6 +315,7 @@ mod tests {
             "signal(@signal.ready).",
             "metric(@metric.score) >",
             "state(\"route.phase\").eq(",
+            "try observe() with { error e =>",
         ] {
             let parsed = parse_fragment(
                 source,
@@ -322,6 +334,33 @@ mod tests {
             assert_eq!(
                 expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
                 ["expression"]
+            );
+        }
+    }
+
+    #[test]
+    fn fragment_reports_incomplete_agent_block_introducers() {
+        for source in [
+            "try observe() with",
+            "if diagnostics().has_error() { return \"bad\" } else",
+        ] {
+            let parsed = parse_fragment(
+                source,
+                FragmentKind::Statements,
+                ParseOptions {
+                    source_dialect: SourceDialect::Agent,
+                },
+            );
+
+            let ParseCompletion::Incomplete { expected } = parsed.completion() else {
+                panic!(
+                    "expected incomplete parse for {source}, got {:?}",
+                    parsed.completion()
+                );
+            };
+            assert_eq!(
+                expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
+                ["{"]
             );
         }
     }

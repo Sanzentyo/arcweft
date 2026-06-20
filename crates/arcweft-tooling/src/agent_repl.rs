@@ -885,6 +885,7 @@ mod tests {
             "signal(@signal.ready).",
             "metric(@metric.score) >",
             "state(\"route.phase\").eq(",
+            "try observe() with { error e =>",
         ] {
             let classified = agent_repl_classify_cell(source);
 
@@ -894,6 +895,23 @@ mod tests {
                 "{source} should be incomplete"
             );
             assert_eq!(classified.completion.expected, ["expression"]);
+        }
+    }
+
+    #[test]
+    fn repl_classify_cell_reports_incomplete_block_introducers() {
+        for source in [
+            "try observe() with",
+            "if diagnostics().has_error() { return \"bad\" } else",
+        ] {
+            let classified = agent_repl_classify_cell(source);
+
+            assert_eq!(
+                classified.completion.kind,
+                AgentReplCellCompletionKind::Incomplete,
+                "{source} should be incomplete"
+            );
+            assert_eq!(classified.completion.expected, ["{"]);
         }
     }
 }
