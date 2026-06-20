@@ -3,7 +3,14 @@
 agent @agent.native.choice_dispatch native_choice_dispatch()
 effects { agent.observe, agent.act.semantic, agent.wait }
 {
-    observe()
+    let listen = choice_action(@choice.opening.listen)
+
+    wait(
+        action_enabled(listen),
+        timeout = 5s,
+        stable_frames = 1u32,
+        poll_frames = 1u32,
+    )
 
     choose(@choice.opening.listen)
 
