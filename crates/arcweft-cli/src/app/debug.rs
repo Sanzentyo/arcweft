@@ -100,6 +100,8 @@ pub(super) struct DebugDbSourcesOptions {
     db: DebugDbOptions,
     #[arg(long = "program-hash")]
     program_hash: String,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -108,6 +110,8 @@ pub(super) struct DebugDbGraphOptions {
     db: DebugDbOptions,
     #[arg(long = "program-hash")]
     program_hash: String,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -337,6 +341,7 @@ struct DebugDbSourcesReport {
     path: String,
     user_version: u32,
     program_hash: String,
+    max_privacy: PrivacyClass,
     sources: Vec<DebugDbSourceFileReport>,
 }
 
@@ -345,6 +350,7 @@ struct DebugDbGraphReport {
     path: String,
     user_version: u32,
     program_hash: String,
+    max_privacy: PrivacyClass,
     symbol_count: usize,
     edge_count: usize,
     symbols: Vec<DebugDbGraphSymbolReport>,
@@ -829,19 +835,24 @@ fn debug_db_sources_command(options: &DebugDbSourcesOptions) -> Result<(), ExitC
         ExitCode::from(2)
     })?;
     let (store, path, user_version, _) = open_debug_store(&options.db)?;
-    let sources = store
-        .source_files_for_program(&program_hash)
-        .map_err(|error| {
-            eprintln!(
-                "error: failed to read debug source files from {}: {error}",
-                options.db.path.display()
-            );
-            ExitCode::FAILURE
-        })?;
+    let sources = if PrivacyClass::Project.is_allowed_by(options.max_privacy) {
+        store
+            .source_files_for_program(&program_hash)
+            .map_err(|error| {
+                eprintln!(
+                    "error: failed to read debug source files from {}: {error}",
+                    options.db.path.display()
+                );
+                ExitCode::FAILURE
+            })?
+    } else {
+        Vec::new()
+    };
     let report = DebugDbSourcesReport {
         path,
         user_version,
         program_hash: program_hash.as_str().to_owned(),
+        max_privacy: options.max_privacy,
         sources: sources
             .into_iter()
             .map(debug_db_source_file_report)
@@ -851,10 +862,11 @@ fn debug_db_sources_command(options: &DebugDbSourcesOptions) -> Result<(), ExitC
         return print_json(&report);
     }
     println!(
-        "{}: {} source file(s) for {}",
+        "{}: {} source file(s) for {} max_privacy={}",
         report.path,
         report.sources.len(),
-        report.program_hash
+        report.program_hash,
+        report.max_privacy.as_str()
     );
     for source in &report.sources {
         println!(
@@ -871,28 +883,34 @@ fn debug_db_graph_command(options: &DebugDbGraphOptions) -> Result<(), ExitCode>
         ExitCode::from(2)
     })?;
     let (store, path, user_version, _) = open_debug_store(&options.db)?;
-    let symbols = store
-        .graph_symbols_for_program(&program_hash)
-        .map_err(|error| {
-            eprintln!(
-                "error: failed to read debug graph symbols from {}: {error}",
-                options.db.path.display()
-            );
-            ExitCode::FAILURE
-        })?;
-    let edges = store
-        .graph_edges_for_program(&program_hash)
-        .map_err(|error| {
-            eprintln!(
-                "error: failed to read debug graph edges from {}: {error}",
-                options.db.path.display()
-            );
-            ExitCode::FAILURE
-        })?;
+    let (symbols, edges) = if PrivacyClass::Project.is_allowed_by(options.max_privacy) {
+        let symbols = store
+            .graph_symbols_for_program(&program_hash)
+            .map_err(|error| {
+                eprintln!(
+                    "error: failed to read debug graph symbols from {}: {error}",
+                    options.db.path.display()
+                );
+                ExitCode::FAILURE
+            })?;
+        let edges = store
+            .graph_edges_for_program(&program_hash)
+            .map_err(|error| {
+                eprintln!(
+                    "error: failed to read debug graph edges from {}: {error}",
+                    options.db.path.display()
+                );
+                ExitCode::FAILURE
+            })?;
+        (symbols, edges)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let report = DebugDbGraphReport {
         path,
         user_version,
         program_hash: program_hash.as_str().to_owned(),
+        max_privacy: options.max_privacy,
         symbol_count: symbols.len(),
         edge_count: edges.len(),
         symbols: symbols
@@ -905,8 +923,12 @@ fn debug_db_graph_command(options: &DebugDbGraphOptions) -> Result<(), ExitCode>
         return print_json(&report);
     }
     println!(
-        "{}: {} graph symbol(s), {} edge(s) for {}",
-        report.path, report.symbol_count, report.edge_count, report.program_hash
+        "{}: {} graph symbol(s), {} edge(s) for {} max_privacy={}",
+        report.path,
+        report.symbol_count,
+        report.edge_count,
+        report.program_hash,
+        report.max_privacy.as_str()
     );
     for edge in &report.edges {
         println!(

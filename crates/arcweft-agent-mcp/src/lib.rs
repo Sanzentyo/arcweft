@@ -840,6 +840,12 @@ fn agent_debug_source_files_tool_descriptor() -> McpToolDescriptor {
                 "program_hash": {
                     "type": "string",
                     "description": "Program hash whose source-file inventory should be returned."
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Maximum privacy class the caller may receive. Source-file inventory is project-private and is omitted for public."
                 }
             },
             "required": ["program_hash"]
@@ -862,6 +868,12 @@ fn agent_debug_graph_inventory_tool_descriptor() -> McpToolDescriptor {
                 "program_hash": {
                     "type": "string",
                     "description": "Program hash whose graph symbol and edge inventory should be returned."
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Maximum privacy class the caller may receive. Graph inventory is project-private and is omitted for public."
                 }
             },
             "required": ["program_hash"]
@@ -2303,6 +2315,14 @@ mod tests {
             source_files.input_schema["properties"]["program_hash"]["type"],
             "string"
         );
+        assert_eq!(
+            source_files.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+        assert_eq!(
+            source_files.input_schema["properties"]["max_privacy"]["default"],
+            "project"
+        );
     }
 
     #[test]
@@ -2320,6 +2340,14 @@ mod tests {
         assert_eq!(
             graph.input_schema["properties"]["program_hash"]["type"],
             "string"
+        );
+        assert_eq!(
+            graph.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+        assert_eq!(
+            graph.input_schema["properties"]["max_privacy"]["default"],
+            "project"
         );
     }
 

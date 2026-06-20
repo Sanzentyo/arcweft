@@ -2659,6 +2659,7 @@ fn assert_debug_db_sources_command_reports_indexed_source_files(
     let sources_report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("debug db sources output is JSON");
     assert_eq!(sources_report["sources"].as_array().map(Vec::len), Some(1));
+    assert_eq!(sources_report["max_privacy"], "project");
     assert_eq!(
         sources_report["program_hash"], report["program_hash"],
         "debug db sources should report the queried program hash"
@@ -2677,6 +2678,34 @@ fn assert_debug_db_sources_command_reports_indexed_source_files(
             .as_u64()
             .is_some_and(|byte_len| byte_len > 0),
         "debug db sources should preserve byte length: {sources_report}"
+    );
+
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sources")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--program-hash")
+        .arg(report["program_hash"].as_str().expect("program hash"))
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sources public runs");
+    assert!(
+        public_output.status.success(),
+        "debug db sources public should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&public_output.stdout),
+        String::from_utf8_lossy(&public_output.stderr)
+    );
+    let public_report: serde_json::Value = serde_json::from_slice(&public_output.stdout)
+        .expect("debug db sources public output is JSON");
+    assert_eq!(public_report["max_privacy"], "public");
+    assert_eq!(
+        public_report["sources"].as_array().map(Vec::len),
+        Some(0),
+        "project-private source inventory should be omitted at public ceiling"
     );
 }
 
@@ -2707,6 +2736,7 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
         graph_report["program_hash"], report["program_hash"],
         "debug db graph should report the queried program hash"
     );
+    assert_eq!(graph_report["max_privacy"], "project");
     assert!(
         graph_report["symbol_count"]
             .as_u64()
@@ -2736,6 +2766,41 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
             .iter()
             .any(|edge| edge["edge_kind"] == "contains_entity"),
         "debug db graph should expose ownership edges: {graph_report}"
+    );
+
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("graph")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--program-hash")
+        .arg(report["program_hash"].as_str().expect("program hash"))
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph public runs");
+    assert!(
+        public_output.status.success(),
+        "debug db graph public should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&public_output.stdout),
+        String::from_utf8_lossy(&public_output.stderr)
+    );
+    let public_graph_report: serde_json::Value = serde_json::from_slice(&public_output.stdout)
+        .expect("debug db graph public output is JSON");
+    assert_eq!(public_graph_report["max_privacy"], "public");
+    assert_eq!(public_graph_report["symbol_count"], 0);
+    assert_eq!(public_graph_report["edge_count"], 0);
+    assert_eq!(
+        public_graph_report["symbols"].as_array().map(Vec::len),
+        Some(0),
+        "project-private graph symbols should be omitted at public ceiling"
+    );
+    assert_eq!(
+        public_graph_report["edges"].as_array().map(Vec::len),
+        Some(0),
+        "project-private graph edges should be omitted at public ceiling"
     );
 }
 

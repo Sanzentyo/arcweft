@@ -1650,6 +1650,7 @@ mod tests {
             value["program_hash"],
             serde_json::json!(program_hash.as_str())
         );
+        assert_eq!(value["max_privacy"], serde_json::json!("project"));
         let sources = value["sources"].as_array().expect("sources");
         assert_eq!(sources.len(), 1);
         assert_eq!(
@@ -1666,19 +1667,27 @@ mod tests {
             sources[0]["metadata"]["extension"],
             serde_json::json!("arcw")
         );
+
+        let public_result = agent_mcp_call_debug_source_files(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "program_hash": program_hash.as_str(),
+            "max_privacy": "public"
+        }))
+        .expect("public debug source files succeeds");
+        let public_value = mcp_text_json(&public_result);
+        assert_eq!(public_value["max_privacy"], serde_json::json!("public"));
+        assert_eq!(
+            public_value["sources"].as_array().map(Vec::len),
+            Some(0),
+            "project-private source inventory should be omitted at public ceiling"
+        );
         let _ = std::fs::remove_file(&db_path);
     }
 
-    #[test]
-    fn agent_mcp_debug_graph_inventory_reads_program_symbols_and_edges() {
-        let db_path = std::env::temp_dir().join(format!(
-            "arcweft-agent-mcp-graph-inventory-{}.sqlite3",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&db_path);
+    fn seed_mcp_debug_graph_inventory(db_path: &std::path::Path) -> (StableHash, StableHash) {
         let program_hash = StableHash::new("blake3:mcp-graph-program").expect("program hash");
         let content_hash = StableHash::new("blake3:mcp-graph-content").expect("content hash");
-        let store = DebugStore::open(&db_path).expect("debug store");
+        let store = DebugStore::open(db_path).expect("debug store");
         store
             .upsert_program(&program_hash, None, Some("."), 0)
             .expect("program");
@@ -1737,6 +1746,17 @@ mod tests {
             })
             .expect("edge");
         drop(store);
+        (program_hash, content_hash)
+    }
+
+    #[test]
+    fn agent_mcp_debug_graph_inventory_reads_program_symbols_and_edges() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-graph-inventory-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let (program_hash, content_hash) = seed_mcp_debug_graph_inventory(&db_path);
 
         let result = agent_mcp_call_debug_graph_inventory(&serde_json::json!({
             "path": db_path.display().to_string(),
@@ -1748,6 +1768,7 @@ mod tests {
             value["program_hash"],
             serde_json::json!(program_hash.as_str())
         );
+        assert_eq!(value["max_privacy"], serde_json::json!("project"));
         assert_eq!(value["symbol_count"], serde_json::json!(2));
         assert_eq!(value["edge_count"], serde_json::json!(1));
         assert!(
@@ -1768,6 +1789,27 @@ mod tests {
         assert_eq!(
             value["edges"][0]["metadata"]["via"],
             serde_json::json!("test")
+        );
+
+        let public_result = agent_mcp_call_debug_graph_inventory(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "program_hash": program_hash.as_str(),
+            "max_privacy": "public"
+        }))
+        .expect("public debug graph inventory succeeds");
+        let public_value = mcp_text_json(&public_result);
+        assert_eq!(public_value["max_privacy"], serde_json::json!("public"));
+        assert_eq!(public_value["symbol_count"], serde_json::json!(0));
+        assert_eq!(public_value["edge_count"], serde_json::json!(0));
+        assert_eq!(
+            public_value["symbols"].as_array().map(Vec::len),
+            Some(0),
+            "project-private graph symbols should be omitted at public ceiling"
+        );
+        assert_eq!(
+            public_value["edges"].as_array().map(Vec::len),
+            Some(0),
+            "project-private graph edges should be omitted at public ceiling"
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -6921,14 +6963,22 @@ fn agent_mcp_call_debug_source_files(
             })
         })?;
     let path = agent_mcp_debug_store_path(arguments);
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.debug.source.files")?;
     let store = DebugStore::open(path)
         .map_err(|error| format!("arcweft.debug.source.files failed to open `{path}`: {error}"))?;
-    let sources = store
-        .source_files_for_program(&program_hash)
-        .map_err(|error| format!("arcweft.debug.source.files failed to read `{path}`: {error}"))?;
+    let sources = if PrivacyClass::Project.is_allowed_by(max_privacy) {
+        store
+            .source_files_for_program(&program_hash)
+            .map_err(|error| {
+                format!("arcweft.debug.source.files failed to read `{path}`: {error}")
+            })?
+    } else {
+        Vec::new()
+    };
     let value = serde_json::json!({
         "path": path,
         "program_hash": program_hash.as_str(),
+        "max_privacy": max_privacy.as_str(),
         "sources": sources
             .iter()
             .map(agent_mcp_debug_source_file_json)
@@ -6959,22 +7009,30 @@ fn agent_mcp_call_debug_graph_inventory(
             })
         })?;
     let path = agent_mcp_debug_store_path(arguments);
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.debug.graph.inventory")?;
     let store = DebugStore::open(path).map_err(|error| {
         format!("arcweft.debug.graph.inventory failed to open `{path}`: {error}")
     })?;
-    let symbols = store
-        .graph_symbols_for_program(&program_hash)
-        .map_err(|error| {
+    let (symbols, edges) =
+        if PrivacyClass::Project.is_allowed_by(max_privacy) {
+            let symbols = store.graph_symbols_for_program(&program_hash).map_err(|error| {
             format!("arcweft.debug.graph.inventory failed to read symbols from `{path}`: {error}")
         })?;
-    let edges = store
-        .graph_edges_for_program(&program_hash)
-        .map_err(|error| {
-            format!("arcweft.debug.graph.inventory failed to read edges from `{path}`: {error}")
-        })?;
+            let edges = store
+                .graph_edges_for_program(&program_hash)
+                .map_err(|error| {
+                    format!(
+                        "arcweft.debug.graph.inventory failed to read edges from `{path}`: {error}"
+                    )
+                })?;
+            (symbols, edges)
+        } else {
+            (Vec::new(), Vec::new())
+        };
     let value = serde_json::json!({
         "path": path,
         "program_hash": program_hash.as_str(),
+        "max_privacy": max_privacy.as_str(),
         "symbol_count": symbols.len(),
         "edge_count": edges.len(),
         "symbols": symbols
