@@ -44,7 +44,22 @@ pub struct AgentProjectGraphSymbol {
     pub qualified_name: Option<String>,
     pub kind: String,
     pub semantic_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow_control: Option<AgentProjectFlowControlSummary>,
     pub summary: String,
+}
+
+/// Static and dynamic control-flow counters attached to a flow graph symbol.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectFlowControlSummary {
+    pub has_dynamic_control: bool,
+    pub static_goto_count: u32,
+    pub dynamic_goto_count: u32,
+    pub branch_count: u32,
+    pub loop_count: u32,
+    pub await_count: u32,
+    pub thread_count: u32,
+    pub select_branch_count: u32,
 }
 
 /// One directed graph edge known to the Agent runtime.

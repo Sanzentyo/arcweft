@@ -7,7 +7,10 @@ use arcweft_agent_protocol::{
         RequiredEntity, RequiredEntitySourceAnchor, RequiredEntitySourcePosition,
     },
     ids::{PublicId as AgentPublicId, StableHash},
-    protocol::{AgentProjectGraph, AgentProjectGraphEdge, AgentProjectGraphSymbol},
+    protocol::{
+        AgentProjectFlowControlSummary, AgentProjectGraph, AgentProjectGraphEdge,
+        AgentProjectGraphSymbol,
+    },
 };
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
 use arcweft_core::bytecode::BytecodeProgram;
@@ -512,6 +515,7 @@ fn agent_project_graph_symbols(
         qualified_name: Some("project".to_owned()),
         kind: "project_summary".to_owned(),
         semantic_hash: None,
+        flow_control: None,
         summary: format!(
             "Project with {} entities, {} project callables, {} dynamic-control flows, and {} debug queries",
             project.entities().len(),
@@ -522,12 +526,14 @@ fn agent_project_graph_symbols(
     }];
     for entity in project.entities().values() {
         let control_summary = agent_flow_control_summary_text(project, entity.id().as_str());
+        let flow_control = agent_project_flow_control_summary(project, entity.id().as_str());
         symbols.push(AgentProjectGraphSymbol {
             symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
             public_id: Some(AgentPublicId::new(entity.id().as_str().to_owned())?),
             qualified_name: None,
             kind: entity_kind_label(entity.ty().kind()).to_owned(),
             semantic_hash: Some(entity.semantic_hash().as_str().to_owned()),
+            flow_control,
             summary: format!(
                 "{} entity `{}`{}",
                 entity_kind_label(entity.ty().kind()),
@@ -545,6 +551,7 @@ fn agent_project_graph_symbols(
                 qualified_name: Some(action.action().as_str().to_owned()),
                 kind: "agent_action".to_owned(),
                 semantic_hash: None,
+                flow_control: None,
                 summary: format!(
                     "Agent action `{}` on `{}`",
                     action.action().as_str(),
@@ -560,6 +567,7 @@ fn agent_project_graph_symbols(
             qualified_name: Some(name.as_str().to_owned()),
             kind: format!("project_{}", callable.kind().as_str()),
             semantic_hash: Some(callable.semantic_hash().as_str().to_owned()),
+            flow_control: None,
             summary: format!(
                 "Project {} callable `{}`",
                 callable.kind().as_str(),
@@ -574,6 +582,7 @@ fn agent_project_graph_symbols(
             qualified_name: Some(name.as_str().to_owned()),
             kind: "debug_query".to_owned(),
             semantic_hash: None,
+            flow_control: None,
             summary: format!("Debug query `{}`", name.as_str()),
         });
     }
@@ -689,6 +698,26 @@ fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
         .count()
 }
 
+fn agent_project_flow_control_summary(
+    project: &ProjectSemanticIndex,
+    flow_id: &str,
+) -> Option<AgentProjectFlowControlSummary> {
+    let summary = project
+        .flow_control_summaries()
+        .iter()
+        .find_map(|(id, summary)| (id.as_str() == flow_id).then_some(summary))?;
+    Some(AgentProjectFlowControlSummary {
+        has_dynamic_control: summary.has_dynamic_control(),
+        static_goto_count: usize_to_u32_saturating(summary.static_goto_count()),
+        dynamic_goto_count: usize_to_u32_saturating(summary.dynamic_goto_count()),
+        branch_count: usize_to_u32_saturating(summary.branch_count()),
+        loop_count: usize_to_u32_saturating(summary.loop_count()),
+        await_count: usize_to_u32_saturating(summary.await_count()),
+        thread_count: usize_to_u32_saturating(summary.thread_count()),
+        select_branch_count: usize_to_u32_saturating(summary.select_branch_count()),
+    })
+}
+
 fn agent_flow_control_summary_text(project: &ProjectSemanticIndex, flow_id: &str) -> String {
     let Some(summary) = project
         .flow_control_summaries()
@@ -710,6 +739,10 @@ fn agent_flow_control_summary_text(project: &ProjectSemanticIndex, flow_id: &str
         summary.thread_count(),
         summary.select_branch_count()
     )
+}
+
+fn usize_to_u32_saturating(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {
@@ -1116,6 +1149,52 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn agent_project_graph_snapshot_preserves_flow_control_summary() {
+        let tree = parse_source(
+            r#"
+pub view current_route() -> Ref<Flow> {
+    return @flow.done
+}
+
+flow @flow.opening opening {
+    let route = current_route()
+    goto @flow.done
+    goto route
+}
+
+flow @flow.done done {
+    return "done"
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let project = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-test"),
+            &SourceName::path("game.arcw"),
+        )
+        .expect("project indexes flow control");
+
+        let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+        let flow_symbol = graph
+            .symbols
+            .iter()
+            .find(|symbol| {
+                symbol
+                    .public_id
+                    .as_ref()
+                    .is_some_and(|id| id.as_str() == "flow.opening")
+            })
+            .expect("flow symbol exists");
+        let summary = flow_symbol.flow_control.expect("flow control summary");
+
+        assert!(summary.has_dynamic_control);
+        assert_eq!(summary.static_goto_count, 1);
+        assert_eq!(summary.dynamic_goto_count, 1);
+    }
+
     fn project_with_agent_action(
         id: &str,
         kind: EntityKind,
@@ -1330,6 +1409,8 @@ effects { debug.read }
     let symbol = graph.symbols[0]
     let edge = graph.edges[0]
     expect(symbol.kind != "")
+    expect(symbol.has_flow_control == false)
+    expect(symbol.dynamic_goto_count >= 0u32)
     expect(edge.kind != "")
 }
 "#,

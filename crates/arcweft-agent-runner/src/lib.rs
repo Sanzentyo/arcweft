@@ -1889,6 +1889,7 @@ fn runtime_project_graph_neighborhood_payload(
 }
 
 fn runtime_project_graph_symbol_payload(symbol: &AgentProjectGraphSymbol) -> RuntimeValue {
+    let flow_control = symbol.flow_control;
     RuntimeValue::Record(vec![
         runtime_field("symbol_id", RuntimeValue::String(symbol.symbol_id.clone())),
         runtime_field(
@@ -1906,6 +1907,42 @@ fn runtime_project_graph_symbol_payload(symbol: &AgentProjectGraphSymbol) -> Run
             ),
         ),
         runtime_field("kind", RuntimeValue::String(symbol.kind.clone())),
+        runtime_field(
+            "has_flow_control",
+            RuntimeValue::Bool(flow_control.is_some()),
+        ),
+        runtime_field(
+            "has_dynamic_control",
+            RuntimeValue::Bool(flow_control.is_some_and(|summary| summary.has_dynamic_control)),
+        ),
+        runtime_field(
+            "static_goto_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.static_goto_count)),
+        ),
+        runtime_field(
+            "dynamic_goto_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.dynamic_goto_count)),
+        ),
+        runtime_field(
+            "branch_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.branch_count)),
+        ),
+        runtime_field(
+            "loop_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.loop_count)),
+        ),
+        runtime_field(
+            "await_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.await_count)),
+        ),
+        runtime_field(
+            "thread_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.thread_count)),
+        ),
+        runtime_field(
+            "select_branch_count",
+            RuntimeValue::u32(flow_control.map_or(0, |summary| summary.select_branch_count)),
+        ),
         runtime_field(
             "has_semantic_hash",
             RuntimeValue::Bool(symbol.semantic_hash.as_ref().is_some()),
@@ -3178,7 +3215,7 @@ mod tests {
         },
         ids::StableHash,
         ids::{AgentResourceUri, PublicId},
-        protocol::{CaptureFormat, CaptureTarget},
+        protocol::{AgentProjectFlowControlSummary, CaptureFormat, CaptureTarget},
     };
     use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
     use arcweft_core::{
@@ -4851,6 +4888,7 @@ mod tests {
                             qualified_name: Some("project".to_owned()),
                             kind: "project_summary".to_owned(),
                             semantic_hash: None,
+                            flow_control: None,
                             summary: "Project".to_owned(),
                         },
                         AgentProjectGraphSymbol {
@@ -4859,6 +4897,16 @@ mod tests {
                             qualified_name: None,
                             kind: "flow".to_owned(),
                             semantic_hash: Some("hir:flow:flow.opening:_".to_owned()),
+                            flow_control: Some(AgentProjectFlowControlSummary {
+                                has_dynamic_control: true,
+                                static_goto_count: 1,
+                                dynamic_goto_count: 1,
+                                branch_count: 0,
+                                loop_count: 0,
+                                await_count: 0,
+                                thread_count: 0,
+                                select_branch_count: 0,
+                            }),
                             summary: "Opening flow".to_owned(),
                         },
                     ],
@@ -4890,6 +4938,32 @@ mod tests {
                     && neighborhood.symbols.len() == 2
                     && neighborhood.edges.len() == 1
                     && neighborhood.edges[0].edge_kind == "contains_entity"
+                    && neighborhood.symbols.iter().any(|symbol| symbol.public_id.as_ref().is_some_and(|id| id.as_str() == "flow.opening")
+                        && symbol.flow_control.is_some_and(|summary| summary.dynamic_goto_count == 1 && summary.has_dynamic_control))
+        ));
+        let flow_symbol = match &report.responses[0] {
+            AgentHostResponse::ProjectGraphNeighborhood(neighborhood) => neighborhood
+                .symbols
+                .iter()
+                .find(|symbol| {
+                    symbol
+                        .public_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str() == "flow.opening")
+                })
+                .expect("flow symbol exists"),
+            _ => panic!("project graph response"),
+        };
+        let RuntimeValue::Record(fields) = runtime_project_graph_symbol_payload(flow_symbol) else {
+            panic!("symbol payload is a record");
+        };
+        assert!(matches!(
+            runtime_record_get(&fields, "has_dynamic_control"),
+            Ok(RuntimeValue::Bool(true))
+        ));
+        assert!(matches!(
+            runtime_record_get(&fields, "dynamic_goto_count"),
+            Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
         ));
         assert!(matches!(
             report.final_status,
