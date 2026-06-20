@@ -72,6 +72,7 @@ use arcweft_debug_model::{
     script::DebugScriptRun,
     session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
+    source::DebugSourceFile,
 };
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
@@ -1609,6 +1610,60 @@ mod tests {
         assert_eq!(
             value["cells"][0]["diagnostic_ids"][0],
             serde_json::json!("diag.1")
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_debug_source_files_reads_program_inventory() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-source-files-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let program_hash = StableHash::new("blake3:mcp-source-program").expect("program hash");
+        let content_hash = StableHash::new("blake3:mcp-source-content").expect("content hash");
+        let store = DebugStore::open(&db_path).expect("debug store");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_source_file(&DebugSourceFile {
+                program_hash: program_hash.clone(),
+                path: "samples/agent-script/native-choice-dispatch.arcw".to_owned(),
+                language: "arcw".to_owned(),
+                content_hash: content_hash.clone(),
+                byte_len: 1234,
+                metadata: BTreeMap::from([("extension".to_owned(), serde_json::json!("arcw"))]),
+            })
+            .expect("source file");
+        drop(store);
+
+        let result = agent_mcp_call_debug_source_files(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "program_hash": program_hash.as_str()
+        }))
+        .expect("debug source files succeeds");
+        let value = mcp_text_json(&result);
+        assert_eq!(
+            value["program_hash"],
+            serde_json::json!(program_hash.as_str())
+        );
+        let sources = value["sources"].as_array().expect("sources");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(
+            sources[0]["path"],
+            serde_json::json!("samples/agent-script/native-choice-dispatch.arcw")
+        );
+        assert_eq!(sources[0]["language"], serde_json::json!("arcw"));
+        assert_eq!(
+            sources[0]["content_hash"],
+            serde_json::json!(content_hash.as_str())
+        );
+        assert_eq!(sources[0]["byte_len"], serde_json::json!(1234));
+        assert_eq!(
+            sources[0]["metadata"]["extension"],
+            serde_json::json!("arcw")
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -5615,6 +5670,10 @@ fn agent_mcp_debug_tool_call(
             agent_mcp_call_debug_repl_cells(arguments)?,
             "MCP debug REPL cells",
         ),
+        "arcweft.debug.source.files" => (
+            agent_mcp_call_debug_source_files(arguments)?,
+            "MCP debug source files",
+        ),
         tool => return Err(format!("unsupported Arcweft MCP tool `{tool}`")),
     };
     serde_json::to_value(tool).map_err(|error| format!("failed to serialize {label}: {error}"))
@@ -6740,6 +6799,44 @@ fn agent_mcp_debug_repl_cell_json(cell: &DebugReplCell) -> serde_json::Value {
         "partially_effectful": cell.partially_effectful,
         "diagnostic_ids": &cell.diagnostic_ids,
         "created_unix_ms": cell.created_unix_ms,
+    })
+}
+
+fn agent_mcp_call_debug_source_files(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let program_hash = agent_mcp_non_empty_string_argument(arguments, "program_hash")
+        .ok_or_else(|| "arcweft.debug.source.files requires arguments.program_hash".to_owned())
+        .and_then(|value| {
+            StableHash::new(value).map_err(|error| {
+                format!("arcweft.debug.source.files invalid program_hash: {error}")
+            })
+        })?;
+    let path = agent_mcp_debug_store_path(arguments);
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.debug.source.files failed to open `{path}`: {error}"))?;
+    let sources = store
+        .source_files_for_program(&program_hash)
+        .map_err(|error| format!("arcweft.debug.source.files failed to read `{path}`: {error}"))?;
+    let value = serde_json::json!({
+        "path": path,
+        "program_hash": program_hash.as_str(),
+        "sources": sources
+            .iter()
+            .map(agent_mcp_debug_source_file_json)
+            .collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug source files")
+}
+
+fn agent_mcp_debug_source_file_json(source: &DebugSourceFile) -> serde_json::Value {
+    serde_json::json!({
+        "program_hash": source.program_hash.as_str(),
+        "path": &source.path,
+        "language": &source.language,
+        "content_hash": source.content_hash.as_str(),
+        "byte_len": source.byte_len,
+        "metadata": &source.metadata,
     })
 }
 

@@ -157,6 +157,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_debug_close_stale_sessions_tool_descriptor(),
         agent_debug_session_timeline_tool_descriptor(),
         agent_debug_repl_cells_tool_descriptor(),
+        agent_debug_source_files_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -819,6 +820,28 @@ fn agent_debug_repl_cells_tool_descriptor() -> McpToolDescriptor {
                 }
             },
             "required": ["session_id"]
+        }),
+    }
+}
+
+fn agent_debug_source_files_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.source.files".to_owned(),
+        title: Some("Read Arcweft Debug Source Files".to_owned()),
+        description: "Reads program-owned source-file inventory rows from the rebuildable SQLite debug store.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "program_hash": {
+                    "type": "string",
+                    "description": "Program hash whose source-file inventory should be returned."
+                }
+            },
+            "required": ["program_hash"]
         }),
     }
 }
@@ -1868,6 +1891,11 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name == "arcweft.debug.repl.cells")
         );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name == "arcweft.debug.source.files")
+        );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -2226,6 +2254,27 @@ mod tests {
             "string"
         );
         assert_eq!(repl_cells.input_schema["properties"]["limit"]["minimum"], 1);
+    }
+
+    #[test]
+    fn debug_source_files_tool_schema_is_described() {
+        let tools = agent_tool_descriptors();
+        let source_files = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.source.files")
+            .expect("debug source files tool is described");
+        assert_eq!(
+            source_files.input_schema["required"],
+            serde_json::json!(["program_hash"])
+        );
+        assert_eq!(
+            source_files.input_schema["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            source_files.input_schema["properties"]["program_hash"]["type"],
+            "string"
+        );
     }
 
     #[test]

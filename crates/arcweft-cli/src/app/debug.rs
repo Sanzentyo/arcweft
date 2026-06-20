@@ -4,7 +4,7 @@ use super::local_embedding::{
     MAX_LOCAL_EMBEDDING_DIMENSIONS,
 };
 use super::shared::print_json;
-use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
+use arcweft_agent_protocol::ids::{AgentRunId, SessionId, StableHash};
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{
@@ -14,6 +14,7 @@ use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
 use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
+use arcweft_debug_model::source::DebugSourceFile;
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugStore, DebugStoreBlobRecord, DebugStoreError,
     DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport, DebugTimelineEvent,
@@ -44,6 +45,7 @@ pub(super) enum DebugDbCommand {
     Prune(DebugDbPruneOptions),
     Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
+    Sources(DebugDbSourcesOptions),
     CloseStaleSessions(DebugDbCloseStaleSessionsOptions),
     Runs(DebugDbRunsOptions),
     Rag(DebugDbRagOptions),
@@ -88,6 +90,14 @@ pub(super) struct DebugDbSessionsOptions {
     db: DebugDbOptions,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbSourcesOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "program-hash")]
+    program_hash: String,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -313,6 +323,14 @@ struct DebugDbSessionsReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbSourcesReport {
+    path: String,
+    user_version: u32,
+    program_hash: String,
+    sources: Vec<DebugDbSourceFileReport>,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbCloseStaleSessionsReport {
     path: String,
     user_version: u32,
@@ -348,6 +366,16 @@ struct DebugDbRunReport {
     partially_effectful: bool,
     trace_uri: Option<String>,
     error: Option<serde_json::Value>,
+    metadata: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbSourceFileReport {
+    program_hash: String,
+    path: String,
+    language: String,
+    content_hash: String,
+    byte_len: u64,
     metadata: BTreeMap<String, serde_json::Value>,
 }
 
@@ -522,6 +550,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Prune(options) => debug_db_prune_command(&options),
         DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
+        DebugDbCommand::Sources(options) => debug_db_sources_command(&options),
         DebugDbCommand::CloseStaleSessions(options) => {
             debug_db_close_stale_sessions_command(&options)
         }
@@ -740,6 +769,48 @@ fn debug_db_sessions_command(options: &DebugDbSessionsOptions) -> Result<(), Exi
             session
                 .ended_unix_ms
                 .map_or_else(|| "-".to_owned(), |value| value.to_string())
+        );
+    }
+    Ok(())
+}
+
+fn debug_db_sources_command(options: &DebugDbSourcesOptions) -> Result<(), ExitCode> {
+    let program_hash = StableHash::new(options.program_hash.trim()).map_err(|error| {
+        eprintln!("error: invalid debug db sources --program-hash: {error}");
+        ExitCode::from(2)
+    })?;
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let sources = store
+        .source_files_for_program(&program_hash)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read debug source files from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let report = DebugDbSourcesReport {
+        path,
+        user_version,
+        program_hash: program_hash.as_str().to_owned(),
+        sources: sources
+            .into_iter()
+            .map(debug_db_source_file_report)
+            .collect(),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: {} source file(s) for {}",
+        report.path,
+        report.sources.len(),
+        report.program_hash
+    );
+    for source in &report.sources {
+        println!(
+            "{} language={} bytes={} hash={}",
+            source.path, source.language, source.byte_len, source.content_hash
         );
     }
     Ok(())
@@ -1351,6 +1422,17 @@ fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
         trace_uri: run.trace_uri,
         error: run.error,
         metadata: run.metadata,
+    }
+}
+
+fn debug_db_source_file_report(source: DebugSourceFile) -> DebugDbSourceFileReport {
+    DebugDbSourceFileReport {
+        program_hash: source.program_hash.as_str().to_owned(),
+        path: source.path,
+        language: source.language,
+        content_hash: source.content_hash.as_str().to_owned(),
+        byte_len: source.byte_len,
+        metadata: source.metadata,
     }
 }
 

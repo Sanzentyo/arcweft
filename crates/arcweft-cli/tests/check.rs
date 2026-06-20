@@ -2596,6 +2596,11 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
 
     assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
     assert_debug_db_source_files_are_persisted(&db_path, &first_report, &source_path);
+    assert_debug_db_sources_command_reports_indexed_source_files(
+        &db_path,
+        &first_report,
+        &source_path,
+    );
     assert_debug_db_graph_search_exposes_indexed_project_graph_edges(&db_path);
     assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
@@ -2626,6 +2631,52 @@ fn assert_debug_db_source_files_are_persisted(
     assert_eq!(source_files[0].content_hash, source_hash);
     assert!(source_files[0].byte_len > 0);
     assert_eq!(store.stats().expect("stats").source_files, 1);
+}
+
+fn assert_debug_db_sources_command_reports_indexed_source_files(
+    db_path: &Path,
+    report: &serde_json::Value,
+    source_path: &Path,
+) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sources")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--program-hash")
+        .arg(report["program_hash"].as_str().expect("program hash"))
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sources runs");
+    assert!(
+        output.status.success(),
+        "debug db sources should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sources_report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db sources output is JSON");
+    assert_eq!(sources_report["sources"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        sources_report["program_hash"], report["program_hash"],
+        "debug db sources should report the queried program hash"
+    );
+    assert_eq!(
+        sources_report["sources"][0]["path"],
+        serde_json::json!(source_path.display().to_string())
+    );
+    assert_eq!(sources_report["sources"][0]["language"], "arcw");
+    assert_eq!(
+        sources_report["sources"][0]["content_hash"],
+        report["sources"][0]["source_hash"]
+    );
+    assert!(
+        sources_report["sources"][0]["byte_len"]
+            .as_u64()
+            .is_some_and(|byte_len| byte_len > 0),
+        "debug db sources should preserve byte length: {sources_report}"
+    );
 }
 
 fn assert_debug_db_graph_search_exposes_indexed_project_graph_edges(db_path: &Path) {
