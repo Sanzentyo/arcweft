@@ -445,9 +445,11 @@ returns only records deliberately marked public. Source indexing parses and
 lowers each `.arcw` file, builds the Agent project semantic index for each
 source, and emits `source` chunks with byte-range anchors plus `symbol` /
 `graph_summary` chunks for project entities, debug queries, and the project
-semantic summary. It also upserts project entities and debug queries into the
-debug store's graph-symbol table, so `arcw debug db search --graph-query <id>`
-can retrieve indexed project symbols even before a RAG query runs. `--source` can be supplied multiple times; a directory source
+semantic summary. It also upserts project summary, entity, Agent action, and
+debug-query graph symbols plus ownership/action graph edges into the debug
+store, so `arcw debug db search --graph-query <id>` can retrieve indexed
+project symbols and their source-owned graph relationships even before a RAG
+query runs. `--source` can be supplied multiple times; a directory source
 recursively expands to `.arcw` files in deterministic path order. Each source
 gets its own RAG chunk namespace so repeated text or repeated entity names from
 different source inputs do not overwrite each other in the debug store. When

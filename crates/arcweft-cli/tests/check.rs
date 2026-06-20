@@ -2553,7 +2553,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     );
 
     assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
-    assert_debug_db_graph_search_exposes_indexed_project_symbols(&db_path);
+    assert_debug_db_graph_search_exposes_indexed_project_graph_edges(&db_path);
     assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
 
@@ -2562,7 +2562,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
 }
 
-fn assert_debug_db_graph_search_exposes_indexed_project_symbols(db_path: &Path) {
+fn assert_debug_db_graph_search_exposes_indexed_project_graph_edges(db_path: &Path) {
     let public_report =
         debug_db_search_json(db_path, "--graph-query", "choice.opening.listen", "public");
     assert_eq!(public_report["hits"].as_array().map(Vec::len), Some(0));
@@ -2572,15 +2572,15 @@ fn assert_debug_db_graph_search_exposes_indexed_project_symbols(db_path: &Path) 
     assert!(
         hits.iter().any(|hit| {
             hit["channel"] == "graph"
-                && hit["source_kind"] == "graph_symbol"
-                && hit["source_key"]
+                && hit["source_kind"] == "graph_edge"
+                && hit["title"]
                     .as_str()
-                    .is_some_and(|key| key.contains("choice.opening.listen"))
-                && hit["body"]
-                    .as_str()
-                    .is_some_and(|body| body.contains("Project entity choice.opening.listen"))
+                    .is_some_and(|title| title.contains("--contains_entity-->"))
+                && hit["body"].as_str().is_some_and(|body| {
+                    body.contains("to_summary=Project entity choice.opening.listen")
+                })
         }),
-        "debug db graph search should expose indexed project graph symbols: {report}"
+        "debug db graph search should expose indexed project graph ownership edges: {report}"
     );
 }
 

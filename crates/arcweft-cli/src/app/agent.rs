@@ -34,7 +34,7 @@ use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
-    graph::DebugGraphSymbol,
+    graph::{DebugGraphEdge, DebugGraphSymbol},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
@@ -44,8 +44,8 @@ use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_id::PublicId as SemaPublicId;
 use arcweft_lang_sema::{
     project_index::{
-        EntitySymbol, ProgramHash, ProjectSemanticIndex, SemanticHash,
-        project_semantic_index_from_hir,
+        AgentActionSignature, EntitySymbol, ProgramHash, ProjectSemanticIndex, QualifiedName,
+        SemanticHash, project_semantic_index_from_hir,
     },
     types::{EntityKind, EntityType, TypeKind},
 };
@@ -750,13 +750,7 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
                 .map_err(|error| format!("failed to index RAG chunk: {error}"))?;
             indexed_for_source = indexed_for_source.saturating_add(1);
         }
-        for symbol in &source_index.graph_symbols {
-            let mut symbol = symbol.clone();
-            symbol.program_hash = program_hash.clone();
-            store
-                .upsert_graph_symbol(&symbol)
-                .map_err(|error| format!("failed to index RAG graph symbol: {error}"))?;
-        }
+        agent_rag_index_graph(&store, &program_hash, &source_index)?;
         indexed_chunks = indexed_chunks.saturating_add(indexed_for_source);
         skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(skipped_for_source);
         source_reports.push(AgentRagIndexedSourceReport {
@@ -807,6 +801,28 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
         indexed_chunks,
         skipped_unchanged_chunks,
     })
+}
+
+fn agent_rag_index_graph(
+    store: &DebugStore,
+    program_hash: &StableHash,
+    source_index: &AgentSourceRagIndex,
+) -> Result<(), String> {
+    for symbol in &source_index.graph_symbols {
+        let mut symbol = symbol.clone();
+        symbol.program_hash = program_hash.clone();
+        store
+            .upsert_graph_symbol(&symbol)
+            .map_err(|error| format!("failed to index RAG graph symbol: {error}"))?;
+    }
+    for edge in &source_index.graph_edges {
+        let mut edge = edge.clone();
+        edge.program_hash = program_hash.clone();
+        store
+            .upsert_graph_edge(&edge)
+            .map_err(|error| format!("failed to index RAG graph edge: {error}"))?;
+    }
+    Ok(())
 }
 
 fn agent_rag_context_read_report(
@@ -1620,6 +1636,7 @@ struct AgentSourceRagIndex {
     source_hash: String,
     candidates: Vec<AgentRagCandidate>,
     graph_symbols: Vec<DebugGraphSymbol>,
+    graph_edges: Vec<DebugGraphEdge>,
 }
 
 fn agent_rag_source_paths(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
@@ -1692,11 +1709,13 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
         &source_key_prefix,
     )?);
     let graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    let graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
         source_hash,
         candidates,
         graph_symbols,
+        graph_edges,
     })
 }
 
@@ -1827,11 +1846,36 @@ fn agent_project_graph_symbols(
 ) -> Result<Vec<DebugGraphSymbol>, String> {
     let program_hash = StableHash::new(project.program_hash().as_str())
         .map_err(|error| format!("invalid project graph program hash: {error}"))?;
-    let mut symbols = project
-        .entities()
-        .values()
-        .map(|entity| agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut symbols = vec![agent_project_summary_graph_symbol(
+        project,
+        source_key_prefix,
+        &program_hash,
+    )?];
+    symbols.extend(
+        project
+            .entities()
+            .values()
+            .map(|entity| {
+                agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    for entity in project.entities().values() {
+        symbols.extend(
+            entity
+                .agent_actions()
+                .iter()
+                .map(|action| {
+                    agent_project_action_graph_symbol(
+                        entity,
+                        action,
+                        source_key_prefix,
+                        &program_hash,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
     symbols.extend(
         project
             .debug_queries()
@@ -1849,6 +1893,98 @@ fn agent_project_graph_symbols(
     Ok(symbols)
 }
 
+fn agent_project_graph_edges(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<Vec<DebugGraphEdge>, String> {
+    let program_hash = StableHash::new(project.program_hash().as_str())
+        .map_err(|error| format!("invalid project graph program hash: {error}"))?;
+    let summary_symbol_id = agent_project_summary_graph_symbol_id(source_key_prefix);
+    let mut edges = project
+        .entities()
+        .values()
+        .map(|entity| DebugGraphEdge {
+            program_hash: program_hash.clone(),
+            from_symbol_id: summary_symbol_id.clone(),
+            to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
+            edge_kind: "contains_entity".to_owned(),
+            weight: 1.0,
+            metadata: BTreeMap::from([(
+                "entity_kind".to_owned(),
+                serde_json::json!(format!("{:?}", entity.ty().kind())),
+            )]),
+        })
+        .collect::<Vec<_>>();
+    for entity in project.entities().values() {
+        edges.extend(entity.agent_actions().iter().map(|action| DebugGraphEdge {
+            program_hash: program_hash.clone(),
+            from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
+            to_symbol_id: agent_project_action_graph_symbol_id(
+                source_key_prefix,
+                entity.id(),
+                action.action().as_str(),
+            ),
+            edge_kind: "exposes_agent_action".to_owned(),
+            weight: 0.9,
+            metadata: BTreeMap::from([(
+                "action".to_owned(),
+                serde_json::json!(action.action().as_str()),
+            )]),
+        }));
+    }
+    edges.extend(project.debug_queries().keys().map(|name| DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: summary_symbol_id.clone(),
+        to_symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
+        edge_kind: "contains_debug_query".to_owned(),
+        weight: 0.8,
+        metadata: BTreeMap::new(),
+    }));
+    Ok(edges)
+}
+
+fn agent_project_summary_graph_symbol(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(format!("{source_key_prefix}.project")),
+        kind: "project_summary".to_owned(),
+        type_json: Some(serde_json::json!({
+            "schema_version": project.schema_version(),
+            "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
+        })),
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(format!(
+                "{}:project_summary",
+                project.program_hash().as_str()
+            )))
+            .map_err(|error| format!("invalid graph project summary semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Project semantic summary entities={} debug_queries={}",
+            project.entities().len(),
+            project.debug_queries().len()
+        ),
+        metadata: BTreeMap::from([
+            (
+                "entity_count".to_owned(),
+                serde_json::json!(project.entities().len()),
+            ),
+            (
+                "debug_query_count".to_owned(),
+                serde_json::json!(project.debug_queries().len()),
+            ),
+        ]),
+    })
+}
+
 fn agent_project_entity_graph_symbol(
     entity: &EntitySymbol,
     source_key_prefix: &str,
@@ -1857,10 +1993,7 @@ fn agent_project_entity_graph_symbol(
     let public_id = agent_public_id_from_sema(entity.id())?;
     let source_anchor = debug_anchor_from_source_anchor(entity.source())?;
     Ok(DebugGraphSymbol {
-        symbol_id: format!(
-            "{source_key_prefix}.project.entity.{}",
-            entity.id().as_str()
-        ),
+        symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
         program_hash: program_hash.clone(),
         public_id: Some(public_id),
         qualified_name: Some(entity.id().as_str().to_owned()),
@@ -1896,14 +2029,63 @@ fn agent_project_entity_graph_symbol(
     })
 }
 
+fn agent_project_action_graph_symbol(
+    entity: &EntitySymbol,
+    action: &AgentActionSignature,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_action_graph_symbol_id(
+            source_key_prefix,
+            entity.id(),
+            action.action().as_str(),
+        ),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(format!(
+            "{}.{}",
+            entity.id().as_str(),
+            action.action().as_str()
+        )),
+        kind: "agent_action".to_owned(),
+        type_json: Some(serde_json::json!({
+            "entity": entity.id().as_str(),
+            "action": action.action().as_str(),
+            "params": action.params().iter().map(|param| serde_json::json!({
+                "name": param.name(),
+                "type": format!("{:?}", param.ty()),
+                "has_default": param.has_default(),
+            })).collect::<Vec<_>>(),
+            "return_type": format!("{:?}", action.return_type()),
+        })),
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(format!(
+                "{}:{}",
+                entity.semantic_hash().as_str(),
+                action.action().as_str()
+            )))
+            .map_err(|error| format!("invalid graph action semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Agent action {} on {}",
+            action.action().as_str(),
+            entity.id().as_str()
+        ),
+        metadata: BTreeMap::from([("entity".to_owned(), serde_json::json!(entity.id().as_str()))]),
+    })
+}
+
 fn agent_project_debug_query_graph_symbol(
-    name: &arcweft_lang_sema::project_index::QualifiedName,
+    name: &QualifiedName,
     query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
     source_key_prefix: &str,
     program_hash: &StableHash,
 ) -> Result<DebugGraphSymbol, String> {
     Ok(DebugGraphSymbol {
-        symbol_id: format!("{source_key_prefix}.project.debug_query.{}", name.as_str()),
+        symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
         program_hash: program_hash.clone(),
         public_id: None,
         qualified_name: Some(name.as_str().to_owned()),
@@ -1920,6 +2102,29 @@ fn agent_project_debug_query_graph_symbol(
         summary: format!("Project debug query {}", name.as_str()),
         metadata: BTreeMap::new(),
     })
+}
+
+fn agent_project_summary_graph_symbol_id(source_key_prefix: &str) -> String {
+    format!("{source_key_prefix}.project.summary")
+}
+
+fn agent_project_entity_graph_symbol_id(source_key_prefix: &str, id: &SemaPublicId) -> String {
+    format!("{source_key_prefix}.project.entity.{}", id.as_str())
+}
+
+fn agent_project_action_graph_symbol_id(
+    source_key_prefix: &str,
+    entity_id: &SemaPublicId,
+    action: &str,
+) -> String {
+    format!(
+        "{source_key_prefix}.project.entity.{}.action.{action}",
+        entity_id.as_str()
+    )
+}
+
+fn agent_project_debug_query_graph_symbol_id(source_key_prefix: &str, name: &str) -> String {
+    format!("{source_key_prefix}.project.debug_query.{name}")
 }
 
 fn agent_project_summary_rag_candidate(
