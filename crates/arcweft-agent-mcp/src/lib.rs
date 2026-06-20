@@ -547,6 +547,27 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
                 "path": {
                     "type": "string",
                     "description": "Optional filesystem path to an Arcweft debug SQLite database. When supplied, the query reads privacy-allowed pre-indexed chunks, upserts MCP-derived chunks, and records the selected RAG audit for later explain/context.read."
+                },
+                "local_embedding": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, use the deterministic local hash query embedding to fuse stored-vector hits from path into the RAG context pack. Requires path."
+                },
+                "local_embedding_model_id": {
+                    "type": "string",
+                    "default": "arcweft-local-hash",
+                    "description": "Local embedding model id used to select stored debug-store embeddings."
+                },
+                "local_embedding_model_revision": {
+                    "type": "string",
+                    "default": "1",
+                    "description": "Local embedding model revision used to select stored debug-store embeddings."
+                },
+                "local_embedding_dimensions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 32,
+                    "description": "Local embedding vector dimensions used to select stored debug-store embeddings."
                 }
             },
             "required": ["query"]
@@ -1979,6 +2000,22 @@ mod tests {
         assert_eq!(
             rag.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["local_embedding"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["local_embedding_model_id"]["type"],
+            "string"
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["local_embedding_model_revision"]["type"],
+            "string"
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["local_embedding_dimensions"]["minimum"],
+            1
         );
     }
 

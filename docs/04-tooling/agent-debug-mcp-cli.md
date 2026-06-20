@@ -119,6 +119,13 @@ or `history_query` for indexed history search. Optional `path`, `limit`, and
 and ranking for the relevant channel. The tool returns chunk ids, title/body
 text, source kind/key, privacy, search channel, rank, and score. It does not
 require an observation or trace to be cached in the MCP session.
+`arcweft.rag.query` can also opt into the same local stored-vector channel with
+`local_embedding = true`, `path`, and optional
+`local_embedding_model_id` / `local_embedding_model_revision` /
+`local_embedding_dimensions`. The query text is hashed through the deterministic
+local embedding adapter, matching rows are fused into the returned
+`RagContextPack`, and missing embeddings fall back to the existing
+lexical/graph/history/diagnostic/test-result channels.
 `arcweft.debug.script.runs` reads persisted Agent Script lifecycle rows from
 the same SQLite store. It accepts optional `path`, `session_id`, and `limit`,
 orders recent runs by their session-local start sequence, and returns run id,

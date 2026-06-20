@@ -23,6 +23,11 @@ use crate::app::image_declarations::{
     DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
     public_image_ref_arg, runtime_arg_name,
 };
+use crate::app::local_embedding::{
+    DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_MODEL_ID,
+    DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION, MAX_LOCAL_EMBEDDING_DIMENSIONS,
+    local_hash_query_embedding,
+};
 use arcweft_agent_mcp::{
     McpCallToolResult, McpContentBlock, agent_tool_descriptors, list_resource_templates_result,
     list_resources_result, read_resource_result, resource_descriptor, tool_result_for_resource,
@@ -999,6 +1004,83 @@ mod tests {
         assert_eq!(state.rag_context_packs.len(), 1);
         let store = DebugStore::open(&db_path).expect("debug store reopens");
         assert_eq!(store.stats().expect("stats").rag_queries, 1);
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_rag_query_uses_local_embedding_debug_store_channel() {
+        use crate::app::local_embedding::LocalHashEmbeddingProvider;
+        use arcweft_debug_model::embedding::{EmbeddingInput, EmbeddingProvider};
+
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-local-embedding-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let program_hash = StableHash::new("blake3:mcp-rag-local-embedding-program").expect("hash");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        let chunk = DebugChunk {
+            id: ChunkId::new("chunk:mcp-local-embedding"),
+            program_hash: Some(program_hash),
+            source_kind: ChunkSourceKind::Documentation,
+            source_key: "mcp-local-embedding".to_owned(),
+            title: "MCP local embedding context".to_owned(),
+            body: "MCP local vector body for Agent RAG".to_owned(),
+            content_hash: StableHash::new("blake3:mcp-rag-local-embedding-chunk").expect("hash"),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        };
+        store.upsert_chunk(&chunk).expect("chunk");
+        let model = EmbeddingModelDescriptor {
+            model_id: "fixture-local-hash".to_owned(),
+            model_revision: "1".to_owned(),
+            dimensions: 8,
+        };
+        let mut provider = LocalHashEmbeddingProvider::new(model);
+        let embeddings = provider
+            .embed(&[EmbeddingInput::from_chunk(&chunk)])
+            .expect("local embedding");
+        for embedding in &embeddings {
+            store.upsert_embedding(embedding).expect("embedding");
+        }
+        drop(store);
+
+        let mut state = AgentMcpState::default();
+        let query_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "MCP local vector body",
+                "path": db_path.display().to_string(),
+                "local_embedding": true,
+                "local_embedding_model_id": "fixture-local-hash",
+                "local_embedding_model_revision": "1",
+                "local_embedding_dimensions": 8,
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG query uses local embedding channel");
+        let pack = mcp_text_json(&query_result);
+        assert!(
+            pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["chunk_id"] == "chunk:mcp-local-embedding"
+                        && item["channels"]
+                            .as_array()
+                            .is_some_and(|channels| channels.contains(&serde_json::json!("vector")))
+                })
+            }),
+            "MCP RAG query should return vector-enriched context: {pack}"
+        );
         let _ = std::fs::remove_file(&db_path);
     }
 
@@ -6533,6 +6615,12 @@ fn agent_mcp_call_rag_query(
     let roots = agent_mcp_rag_roots(arguments)?;
     let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
         .unwrap_or(PrivacyClass::Project);
+    let local_embedding =
+        agent_mcp_bool_argument(arguments, "local_embedding", "arcweft.rag.query")?
+            .unwrap_or(false);
+    if local_embedding && agent_mcp_optional_debug_store_path(arguments).is_none() {
+        return Err("arcweft.rag.query local_embedding requires arguments.path".to_owned());
+    }
     let mut source_candidates = agent_mcp_rag_source_candidates(arguments)?;
     let config = AgentMcpRagQueryConfig {
         roots,
@@ -6540,6 +6628,8 @@ fn agent_mcp_call_rag_query(
         limit,
         max_context_bytes,
         max_privacy,
+        local_embedding,
+        local_embedding_model: agent_mcp_rag_local_embedding_model(arguments)?,
     };
     if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
         source_candidates.extend(agent_mcp_rag_debug_store_candidates(
@@ -6726,6 +6816,8 @@ struct AgentMcpRagQueryConfig {
     limit: usize,
     max_context_bytes: usize,
     max_privacy: PrivacyClass,
+    local_embedding: bool,
+    local_embedding_model: EmbeddingModelDescriptor,
 }
 
 fn agent_mcp_rag_context_pack(
@@ -6743,6 +6835,12 @@ fn agent_mcp_rag_context_pack(
         limit,
         max_context_bytes,
         max_privacy,
+        local_embedding: false,
+        local_embedding_model: EmbeddingModelDescriptor {
+            model_id: DEFAULT_LOCAL_EMBEDDING_MODEL_ID.to_owned(),
+            model_revision: DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION.to_owned(),
+            dimensions: DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
+        },
     };
     agent_mcp_rag_query_result(state, Vec::new(), query_text, config).map(|result| result.pack)
 }
@@ -6809,6 +6907,22 @@ fn agent_mcp_rag_debug_store_candidates(
         .collect::<Vec<_>>();
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
+    if config.local_embedding {
+        for result in agent_mcp_rag_debug_store_vector_results(
+            &store,
+            path,
+            query_text,
+            config,
+            search_limit,
+        )? {
+            if seen.insert(result.chunk.id.clone()) {
+                candidates.push(AgentMcpRagCandidate {
+                    chunk: result.chunk,
+                    preferred_channel: result.hit.channel,
+                });
+            }
+        }
+    }
     for term in terms {
         let mut results = store
             .lexical_chunk_search_with_max_privacy(&term, search_limit, config.max_privacy)
@@ -6860,6 +6974,56 @@ fn agent_mcp_rag_debug_store_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_mcp_rag_debug_store_vector_results(
+    store: &DebugStore,
+    path: &str,
+    query_text: &str,
+    config: &AgentMcpRagQueryConfig,
+    search_limit: usize,
+) -> Result<Vec<DebugChunkSearchResult>, String> {
+    let query_vector =
+        local_hash_query_embedding(query_text.trim(), config.local_embedding_model.dimensions);
+    store
+        .vector_search_with_max_privacy(
+            &config.local_embedding_model,
+            &query_vector,
+            search_limit,
+            config.max_privacy,
+        )
+        .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
+        .into_iter()
+        .map(|result| agent_mcp_rag_candidate_from_search_result(result, "vector"))
+        .collect()
+}
+
+fn agent_mcp_rag_local_embedding_model(
+    arguments: &serde_json::Value,
+) -> Result<EmbeddingModelDescriptor, String> {
+    let model_id = agent_mcp_non_empty_string_argument(arguments, "local_embedding_model_id")
+        .unwrap_or(DEFAULT_LOCAL_EMBEDDING_MODEL_ID);
+    let model_revision =
+        agent_mcp_non_empty_string_argument(arguments, "local_embedding_model_revision")
+            .unwrap_or(DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION);
+    let dimensions =
+        agent_mcp_u32_argument(arguments, "local_embedding_dimensions", "arcweft.rag.query")?
+            .unwrap_or(DEFAULT_LOCAL_EMBEDDING_DIMENSIONS);
+    if dimensions == 0 {
+        return Err(
+            "arcweft.rag.query argument local_embedding_dimensions must be at least 1".to_owned(),
+        );
+    }
+    if dimensions > MAX_LOCAL_EMBEDDING_DIMENSIONS {
+        return Err(format!(
+            "arcweft.rag.query argument local_embedding_dimensions must be at most {MAX_LOCAL_EMBEDDING_DIMENSIONS}"
+        ));
+    }
+    Ok(EmbeddingModelDescriptor {
+        model_id: model_id.to_owned(),
+        model_revision: model_revision.to_owned(),
+        dimensions,
+    })
 }
 
 fn agent_mcp_rag_debug_store_search_error(
@@ -7341,6 +7505,7 @@ fn agent_mcp_rag_ranked_lists(
     [
         SearchChannel::ExactEntity,
         SearchChannel::Lexical,
+        SearchChannel::Vector,
         SearchChannel::Graph,
         SearchChannel::History,
         SearchChannel::Diagnostics,
@@ -7446,7 +7611,17 @@ fn agent_mcp_rag_score(
             let token_score = agent_mcp_count_as_f64(token_score);
             (token_score > 0.0).then_some(token_score)
         }
-        SearchChannel::Vector => None,
+        SearchChannel::Vector => {
+            if candidate.preferred_channel != SearchChannel::Vector {
+                return None;
+            }
+            candidate
+                .chunk
+                .metadata
+                .get("search_score")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|score| score.is_finite())
+        }
     }
 }
 
