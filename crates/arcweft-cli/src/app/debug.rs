@@ -2,7 +2,7 @@ use super::shared::print_json;
 use arcweft_agent_protocol::ids::SessionId;
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
-use arcweft_debug_model::rag::SearchChannel;
+use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::{
@@ -34,6 +34,7 @@ pub(super) enum DebugDbCommand {
     Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
     Runs(DebugDbRunsOptions),
+    Rag(DebugDbRagOptions),
     Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
@@ -74,6 +75,16 @@ pub(super) struct DebugDbRunsOptions {
     session_id: Option<String>,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbRagOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "query-id")]
+    query_id: String,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -197,6 +208,17 @@ struct DebugDbRunReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbRagReport {
+    path: String,
+    user_version: u32,
+    query_id: String,
+    max_privacy: PrivacyClass,
+    status: String,
+    created_unix_ms: i64,
+    pack: RagContextPack,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbSessionReport {
     session_id: String,
     program_hash: Option<String>,
@@ -289,6 +311,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
+        DebugDbCommand::Rag(options) => debug_db_rag_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
@@ -493,6 +516,54 @@ fn debug_db_runs_command(options: &DebugDbRunsOptions) -> Result<(), ExitCode> {
             run.finished_sequence
                 .map_or_else(|| "-".to_owned(), |value| value.to_string()),
             run.agent_id.as_deref().unwrap_or("-")
+        );
+    }
+    Ok(())
+}
+
+fn debug_db_rag_command(options: &DebugDbRagOptions) -> Result<(), ExitCode> {
+    let query_id = options.query_id.trim();
+    if query_id.is_empty() {
+        eprintln!("error: debug db rag --query-id must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let audit = store
+        .rag_query_audit_with_max_privacy(query_id, options.max_privacy)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read persisted RAG query from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let report = DebugDbRagReport {
+        path,
+        user_version,
+        query_id: query_id.to_owned(),
+        max_privacy: options.max_privacy,
+        status: audit.status,
+        created_unix_ms: audit.created_unix_ms,
+        pack: audit.pack,
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: RAG query {} status={} item(s)={} truncated={} max_privacy={}",
+        report.path,
+        report.query_id,
+        report.status,
+        report.pack.items.len(),
+        report.pack.truncated,
+        report.max_privacy.as_str()
+    );
+    for item in &report.pack.items {
+        println!(
+            "- {} [{}] score={:.6}",
+            item.title,
+            item.chunk_id.as_str(),
+            item.fused_score
         );
     }
     Ok(())

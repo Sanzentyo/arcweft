@@ -2139,9 +2139,51 @@ fn agent_rag_query_indexes_source_project_chunks() {
         "debug db search should expose persisted project symbol chunks: {search}"
     );
 
+    assert_debug_db_rag_reads_source_project_chunks(&db_path, &pack);
+
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_debug_db_rag_reads_source_project_chunks(db_path: &Path, pack: &serde_json::Value) {
+    let rag_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("rag")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--query-id")
+        .arg(
+            pack["query"]["query_id"]
+                .as_str()
+                .expect("RAG pack has query id"),
+        )
+        .arg("--json")
+        .output()
+        .expect("arcw debug db rag reads persisted RAG audit");
+    assert!(
+        rag_output.status.success(),
+        "debug db rag should read persisted RAG audit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rag_output.stdout),
+        String::from_utf8_lossy(&rag_output.stderr)
+    );
+    let rag: serde_json::Value =
+        serde_json::from_slice(&rag_output.stdout).expect("debug db rag output is JSON");
+    assert_eq!(rag["query_id"], pack["query"]["query_id"]);
+    assert_eq!(rag["max_privacy"], "project");
+    assert_eq!(rag["pack"]["query"]["text"], "choice.opening");
+    assert!(
+        rag["pack"]["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "symbol"
+                    && item["entity_ids"].as_array().is_some_and(|ids| {
+                        ids.contains(&serde_json::json!("choice.opening.listen"))
+                    })
+            })
+        }),
+        "debug db rag should reconstruct selected persisted RAG items: {rag}"
+    );
 }
 
 #[test]

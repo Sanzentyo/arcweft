@@ -389,8 +389,8 @@ or array of `.arcw` files/directories to parse and lower only for RAG context.
 Directory entries expand recursively to `.arcw` files in deterministic path
 order. When `path` is supplied, MCP upserts all observation/trace/source
 candidates into the debug store and records the selected query audit for later
-`arcweft.rag.explain`, `arcweft.rag.context.read`, and
-`arcweft.debug.search` readback.
+`arcweft.rag.explain`, `arcweft.rag.context.read`,
+`arcw debug db rag --query-id <id>`, and `arcweft.debug.search` readback.
 `arcw agent rag query [--trace <file.arcwx>] [--source <file-or-dir> ...] --query <text>
 [--max-privacy public|project|sensitive|secret] [--debug-db <path>] [--json]`
 builds the same explainable `RagContextPack` shape used by Agent MCP. At least
@@ -409,7 +409,11 @@ gets its own RAG chunk namespace so repeated text or repeated entity names from
 different source inputs do not overwrite each other in the debug store. When
 `--debug-db` is supplied, all selected-source candidates are upserted into the
 rebuildable debug store and the selected RAG query is recorded for later
-`arcweft.rag.explain` / `arcweft.rag.context.read` readback.
+`arcweft.rag.explain` / `arcweft.rag.context.read` readback. `arcw debug db rag
+--query-id <id> [--max-privacy public|project|sensitive|secret] [--json]`
+reconstructs the same persisted `RagContextPack` audit from `rag_queries` and
+`rag_query_hits`, reapplying chunk privacy filtering before returning selected
+items.
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return
