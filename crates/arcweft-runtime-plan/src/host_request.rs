@@ -406,10 +406,7 @@ fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {
             };
             Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&probe_kind)),
-                runtime_field_expr(
-                    "path",
-                    runtime_string_expr(&agent_path_label(path, constructor)?),
-                ),
+                runtime_field_expr("path", lower_agent_path_expr(path, constructor)?),
             ]))
         }
         _ => None,
@@ -425,24 +422,15 @@ fn agent_id_label(expr: &Expr) -> Option<String> {
     }
 }
 
-fn agent_string_label(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Literal(Literal::String(value)) => Some(value.clone()),
-        Expr::Path(path) => Some(path.clone()),
-        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
-        _ => None,
-    }
-}
-
-fn agent_path_label(expr: &Expr, constructor: &str) -> Option<String> {
+fn lower_agent_path_expr(expr: &Expr, constructor: &str) -> Option<RuntimeExpr> {
     match expr {
         Expr::Call { callee, args } if expr_label(callee) == constructor => {
             let [CallArg::Positional(path)] = args.as_slice() else {
                 return None;
             };
-            agent_string_label(path)
+            Some(lower_agent_host_arg_expr(path))
         }
-        _ => agent_string_label(expr),
+        _ => Some(lower_agent_host_arg_expr(expr)),
     }
 }
 

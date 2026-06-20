@@ -408,10 +408,12 @@ fn agent_controller_plan_lowers_state_and_observation_wait_predicates() {
 agent @agent.wait_state wait_state()
 effects { agent.wait, agent.observe, debug.read }
 {
+    let route = state_path("route.phase")
+    let tick = observation_path("tick")
     let obs = wait(
         all(
-            state(state_path("route.phase")).eq("opening"),
-            observation(observation_path("tick")).ge(1i64),
+            state(route).eq("opening"),
+            observation(tick).ge(1i64),
         ),
         timeout = 5ms,
     )
@@ -425,17 +427,37 @@ effects { agent.wait, agent.observe, debug.read }
     let report =
         lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
 
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
+    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[0] else {
+        panic!(
+            "expected route path constructor to lower to Let, got {:?}",
+            report.plan.flows[0].ops[0]
+        );
+    };
+    assert!(format!("{pattern:?}").contains("route"));
+    assert!(
+        matches!(expr, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "route.phase")
+    );
+
+    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[1] else {
+        panic!(
+            "expected observation path constructor to lower to Let, got {:?}",
+            report.plan.flows[0].ops[1]
+        );
+    };
+    assert!(format!("{pattern:?}").contains("tick"));
+    assert!(matches!(expr, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "tick"));
+
+    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[2] else {
         panic!(
             "expected wait let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
+            report.plan.flows[0].ops[2]
         );
     };
     assert_eq!(target.request.capability.0, "agent");
     assert_eq!(target.request.operation, "wait");
     let predicate = target.request.args[0].value();
-    assert!(format!("{predicate:?}").contains("route.phase"));
-    assert!(format!("{predicate:?}").contains("tick"));
+    assert!(format!("{predicate:?}").contains("Local(\"route\")"));
+    assert!(format!("{predicate:?}").contains("Local(\"tick\")"));
 }
 
 #[test]

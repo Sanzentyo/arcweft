@@ -666,6 +666,9 @@ fn lower_strict_call_expr(
     args: &[CallArg],
     helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
+    if let Some(lowered) = lower_agent_path_constructor_call(callee, args, helpers) {
+        return lowered;
+    }
     if let Some(lowered) = lower_choice_action_call(callee, args) {
         return Ok(lowered);
     }
@@ -689,6 +692,28 @@ fn lower_strict_call_expr(
         },
         Ok,
     )
+}
+
+fn lower_agent_path_constructor_call(
+    callee: &Expr,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    if !matches!(
+        expr_label(callee).as_str(),
+        "state_path" | "observation_path"
+    ) {
+        return None;
+    }
+    Some(match args {
+        [arg] if arg.name().is_none() && !arg.is_spread() => {
+            lower_runtime_expr_strict_with_helpers(arg.value(), helpers)
+        }
+        _ => Err(format!(
+            "{} requires exactly one positional path argument",
+            expr_label(callee)
+        )),
+    })
 }
 
 fn lower_strict_method_call_expr(
