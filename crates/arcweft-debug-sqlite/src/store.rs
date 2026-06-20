@@ -493,6 +493,33 @@ impl DebugStore {
             .transpose()
     }
 
+    pub fn script_runs(
+        &self,
+        session_id: Option<&SessionId>,
+        limit: usize,
+    ) -> Result<Vec<DebugScriptRun>, DebugStoreError> {
+        let limit = i64::try_from(limit)
+            .map_err(|_| DebugStoreError::IntegerOverflow("script_runs.limit"))?;
+        let mut statement = self.connection.prepare(
+            "SELECT run_id, session_id, agent_id, artifact_hash, source_hash,
+                    project_binding_mode, started_sequence, finished_sequence,
+                    outcome, partially_effectful, trace_uri, error_json, metadata_json
+             FROM script_runs
+             WHERE (?1 IS NULL OR session_id = ?1)
+             ORDER BY started_sequence DESC, run_id ASC
+             LIMIT ?2",
+        )?;
+        let rows = statement
+            .query_map(params![session_id.map(SessionId::as_str), limit], |row| {
+                raw_debug_script_run_from_row(row)
+            })?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_script_run_from_raw)
+        })
+        .collect()
+    }
+
     pub fn next_session_sequence(&self, session_id: &SessionId) -> Result<u64, DebugStoreError> {
         let max_sequence = self.connection.query_row(
             "SELECT MAX(sequence) FROM (
@@ -2488,6 +2515,58 @@ mod tests {
         assert_eq!(persisted.metadata["steps"], 2);
         assert_eq!(store.stats().expect("stats").script_runs, 1);
         assert_eq!(store.stats().expect("stats").debug_events, 1);
+    }
+
+    #[test]
+    fn script_runs_list_filters_by_session_and_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let first_session = SessionId::new("session.script.one").expect("session id");
+        let second_session = SessionId::new("session.script.two").expect("session id");
+        store
+            .start_session(&first_session, None, "script", "cli", 0)
+            .expect("first session");
+        store
+            .start_session(&second_session, None, "script", "cli", 0)
+            .expect("second session");
+
+        for (run_id, session_id, started_sequence) in [
+            ("run.script.first", &first_session, 1),
+            ("run.script.second", &second_session, 2),
+            ("run.script.third", &first_session, 3),
+        ] {
+            store
+                .upsert_script_run(&DebugScriptRun {
+                    run_id: AgentRunId::new(run_id).expect("run id"),
+                    session_id: session_id.clone(),
+                    agent_id: Some(PublicId::new("agent.script").expect("agent id")),
+                    artifact_hash: None,
+                    source_hash: Some(hash("blake3:script-source")),
+                    project_binding_mode: "strict".to_owned(),
+                    started_sequence,
+                    finished_sequence: Some(started_sequence + 1),
+                    outcome: DebugScriptRunOutcome::Done,
+                    partially_effectful: false,
+                    trace_uri: None,
+                    error: None,
+                    metadata: BTreeMap::new(),
+                })
+                .expect("script run");
+        }
+
+        let latest = store.script_runs(None, 1).expect("latest run");
+        assert_eq!(latest.len(), 1);
+        assert_eq!(latest[0].run_id.as_str(), "run.script.third");
+
+        let first_session_runs = store
+            .script_runs(Some(&first_session), 10)
+            .expect("first session runs");
+        assert_eq!(
+            first_session_runs
+                .iter()
+                .map(|run| run.run_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["run.script.third", "run.script.first"]
+        );
     }
 
     #[test]

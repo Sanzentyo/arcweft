@@ -237,7 +237,7 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         .expect("script run persisted");
     let second_persisted_run = store
         .script_run(
-            &arcweft_agent_protocol::ids::AgentRunId::new(second_run_id).expect("second run id"),
+            &arcweft_agent_protocol::ids::AgentRunId::new(&second_run_id).expect("second run id"),
         )
         .expect("load second script run")
         .expect("second script run persisted");
@@ -254,6 +254,39 @@ fn agent_script_run_persists_debug_session_and_script_run() {
     assert_eq!(persisted_run.metadata["steps"], report["steps"]);
     assert_eq!(store.stats().expect("stats").script_runs, 2);
     assert!(store.stats().expect("stats").debug_events > 0);
+
+    assert_debug_db_runs_report(&debug_db_path, &second_run_id);
+}
+
+fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
+    let runs_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("runs")
+        .arg("--path")
+        .arg(debug_db_path)
+        .arg("--session-id")
+        .arg("session.cli")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db runs reads script runs");
+    assert!(
+        runs_output.status.success(),
+        "debug db runs should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&runs_output.stdout),
+        String::from_utf8_lossy(&runs_output.stderr)
+    );
+    let runs_report: serde_json::Value =
+        serde_json::from_slice(&runs_output.stdout).expect("debug db runs output is JSON");
+    let runs = runs_report["runs"].as_array().expect("runs array");
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0]["run_id"], second_run_id);
+    assert_eq!(runs[0]["outcome"], "done");
+    assert_eq!(runs[0]["session_id"], "session.cli");
+    assert!(
+        runs[0]["started_sequence"].as_u64().expect("sequence")
+            > runs[1]["finished_sequence"].as_u64().expect("sequence")
+    );
 }
 
 #[test]
