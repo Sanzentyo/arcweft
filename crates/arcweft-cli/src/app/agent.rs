@@ -2447,6 +2447,11 @@ fn agent_project_summary_graph_symbol(
     source_key_prefix: &str,
     program_hash: &StableHash,
 ) -> Result<DebugGraphSymbol, String> {
+    let entity_kind_counts = agent_project_entity_kind_counts(project);
+    let relation_kind_counts = agent_project_relation_kind_counts(project);
+    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
+    let flow_control_counts = agent_project_flow_control_counts_json(project);
+    let agent_action_count = agent_project_action_count(project);
     Ok(DebugGraphSymbol {
         symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
         program_hash: program_hash.clone(),
@@ -2469,9 +2474,12 @@ fn agent_project_summary_graph_symbol(
             .map_err(|error| format!("invalid graph project summary semantic hash: {error}"))?,
         ),
         summary: format!(
-            "Project semantic summary entities={} project_callables={} dynamic_control_flows={} debug_queries={}",
+            "Project semantic summary entities={} agent_actions={} project_callables={} relations={} dependency_edges={} dynamic_control_flows={} debug_queries={}",
             project.entities().len(),
+            agent_action_count,
             project.project_callables().len(),
+            project.relations().len(),
+            project.dependency_relations().len(),
             agent_dynamic_control_flow_count(project),
             project.debug_queries().len()
         ),
@@ -2485,6 +2493,18 @@ fn agent_project_summary_graph_symbol(
                 serde_json::json!(project.project_callables().len()),
             ),
             (
+                "agent_action_count".to_owned(),
+                serde_json::json!(agent_action_count),
+            ),
+            (
+                "relation_count".to_owned(),
+                serde_json::json!(project.relations().len()),
+            ),
+            (
+                "dependency_edge_count".to_owned(),
+                serde_json::json!(project.dependency_relations().len()),
+            ),
+            (
                 "dynamic_control_flow_count".to_owned(),
                 serde_json::json!(agent_dynamic_control_flow_count(project)),
             ),
@@ -2492,6 +2512,19 @@ fn agent_project_summary_graph_symbol(
                 "debug_query_count".to_owned(),
                 serde_json::json!(project.debug_queries().len()),
             ),
+            (
+                "entity_kind_counts".to_owned(),
+                serde_json::json!(entity_kind_counts),
+            ),
+            (
+                "relation_kind_counts".to_owned(),
+                serde_json::json!(relation_kind_counts),
+            ),
+            (
+                "dependency_edge_kind_counts".to_owned(),
+                serde_json::json!(dependency_edge_kind_counts),
+            ),
+            ("flow_control_counts".to_owned(), flow_control_counts),
         ]),
     })
 }
@@ -2717,6 +2750,82 @@ fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
         .count()
 }
 
+fn agent_project_action_count(project: &ProjectSemanticIndex) -> usize {
+    project
+        .entities()
+        .values()
+        .map(|entity| entity.agent_actions().len())
+        .sum()
+}
+
+fn agent_project_entity_kind_counts(project: &ProjectSemanticIndex) -> BTreeMap<String, usize> {
+    project
+        .entities()
+        .values()
+        .fold(BTreeMap::new(), |mut counts, entity| {
+            *counts
+                .entry(format!("{:?}", entity.ty().kind()))
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+fn agent_project_relation_kind_counts(project: &ProjectSemanticIndex) -> BTreeMap<String, usize> {
+    project
+        .relations()
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, relation| {
+            *counts
+                .entry(relation.edge_kind().as_str().to_owned())
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+fn agent_project_dependency_edge_kind_counts(
+    project: &ProjectSemanticIndex,
+) -> BTreeMap<String, usize> {
+    project
+        .dependency_relations()
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, relation| {
+            *counts
+                .entry(relation.edge_kind().as_str().to_owned())
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+fn agent_project_flow_control_counts_json(project: &ProjectSemanticIndex) -> serde_json::Value {
+    let summaries = project
+        .flow_control_summaries()
+        .values()
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "symbol_count": summaries
+            .iter()
+            .filter(|summary| {
+                summary.has_dynamic_control()
+                    || summary.static_goto_count() > 0
+                    || summary.dynamic_goto_count() > 0
+                    || summary.branch_count() > 0
+                    || summary.loop_count() > 0
+                    || summary.await_count() > 0
+                    || summary.thread_count() > 0
+                    || summary.select_branch_count() > 0
+            })
+            .count(),
+        "has_dynamic_control": summaries.iter().any(|summary| summary.has_dynamic_control()),
+        "static_goto_count": summaries.iter().map(|summary| summary.static_goto_count()).sum::<usize>(),
+        "dynamic_goto_count": summaries.iter().map(|summary| summary.dynamic_goto_count()).sum::<usize>(),
+        "branch_count": summaries.iter().map(|summary| summary.branch_count()).sum::<usize>(),
+        "loop_count": summaries.iter().map(|summary| summary.loop_count()).sum::<usize>(),
+        "await_count": summaries.iter().map(|summary| summary.await_count()).sum::<usize>(),
+        "thread_count": summaries.iter().map(|summary| summary.thread_count()).sum::<usize>(),
+        "select_branch_count": summaries.iter().map(|summary| summary.select_branch_count()).sum::<usize>(),
+    })
+}
+
 fn agent_flow_control_summary_text(
     project: &ProjectSemanticIndex,
     flow_id: &SemaPublicId,
@@ -2786,6 +2895,7 @@ fn agent_program_summary_rag_candidate(
                 "graph_edge_kinds": agent_graph_edge_kind_counts(&source_index.graph_edges),
                 "flow_control_counts": agent_source_flow_control_counts_json(source_index),
                 "flow_control_symbols": agent_source_flow_control_symbols_json(source_index),
+                "project_summary": agent_source_project_summary_json(source_index),
             })
         })
         .collect::<Vec<_>>();
@@ -2945,11 +3055,33 @@ fn agent_flow_control_json_has_control(flow_control: &serde_json::Value) -> bool
         })
 }
 
+fn agent_source_project_summary_json(
+    source_index: &AgentSourceRagIndex,
+) -> Option<serde_json::Value> {
+    source_index
+        .graph_symbols
+        .iter()
+        .find(|symbol| symbol.kind == "project_summary")
+        .map(|symbol| {
+            serde_json::json!({
+                "symbol_id": symbol.symbol_id.as_str(),
+                "qualified_name": symbol.qualified_name.as_deref(),
+                "summary": symbol.summary.as_str(),
+                "metadata": &symbol.metadata,
+            })
+        })
+}
+
 fn agent_project_summary_rag_candidate(
     path: &Path,
     project: &ProjectSemanticIndex,
     source_key_prefix: &str,
 ) -> Result<AgentRagCandidate, String> {
+    let entity_kind_counts = agent_project_entity_kind_counts(project);
+    let relation_kind_counts = agent_project_relation_kind_counts(project);
+    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
+    let flow_control_counts = agent_project_flow_control_counts_json(project);
+    let agent_action_count = agent_project_action_count(project);
     let body = serde_json::to_string_pretty(&serde_json::json!({
         "schema_version": project.schema_version(),
         "kind": "project_semantic_index",
@@ -2959,9 +3091,16 @@ fn agent_project_summary_rag_candidate(
             "entities": project.entities().len(),
             "callables": project.callables().len(),
             "project_callables": project.project_callables().len(),
+            "agent_actions": agent_action_count,
+            "relations": project.relations().len(),
+            "dependency_edges": project.dependency_relations().len(),
             "dynamic_control_flows": agent_dynamic_control_flow_count(project),
             "types": project.types().len(),
             "debug_queries": project.debug_queries().len(),
+            "entity_kinds": entity_kind_counts,
+            "relation_kinds": relation_kind_counts,
+            "dependency_edge_kinds": dependency_edge_kind_counts,
+            "flow_control": flow_control_counts,
         },
     }))
     .map_err(|error| format!("failed to serialize project RAG summary: {error}"))?;
@@ -2969,6 +3108,26 @@ fn agent_project_summary_rag_candidate(
     metadata.insert(
         "path".to_owned(),
         serde_json::Value::String(path.display().to_string()),
+    );
+    metadata.insert(
+        "entity_kind_counts".to_owned(),
+        serde_json::json!(agent_project_entity_kind_counts(project)),
+    );
+    metadata.insert(
+        "relation_kind_counts".to_owned(),
+        serde_json::json!(agent_project_relation_kind_counts(project)),
+    );
+    metadata.insert(
+        "dependency_edge_kind_counts".to_owned(),
+        serde_json::json!(agent_project_dependency_edge_kind_counts(project)),
+    );
+    metadata.insert(
+        "flow_control_counts".to_owned(),
+        agent_project_flow_control_counts_json(project),
+    );
+    metadata.insert(
+        "agent_action_count".to_owned(),
+        serde_json::json!(agent_action_count),
     );
     Ok(agent_rag_candidate(
         &format!("{source_key_prefix}.project.summary"),

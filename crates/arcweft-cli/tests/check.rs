@@ -2829,6 +2829,7 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
     );
     assert_debug_db_graph_exposes_source_file_ownership(symbols, edges, report, &graph_report);
     assert_debug_db_graph_exposes_project_callables(symbols, edges, &graph_report);
+    assert_debug_db_graph_exposes_project_domain_summary(symbols, &graph_report);
 
     let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("debug")
@@ -2923,6 +2924,48 @@ fn assert_debug_db_graph_exposes_project_callables(
             .iter()
             .any(|edge| edge["edge_kind"] == "calls_callable"),
         "debug db graph should expose callable dependency edges: {graph_report}"
+    );
+}
+
+fn assert_debug_db_graph_exposes_project_domain_summary(
+    symbols: &[serde_json::Value],
+    graph_report: &serde_json::Value,
+) {
+    let summary = symbols
+        .iter()
+        .find(|symbol| symbol["kind"] == "project_summary")
+        .expect("debug db graph should expose a project summary symbol");
+    assert!(
+        summary["metadata"]["entity_kind_counts"]["Flow"]
+            .as_u64()
+            .is_some_and(|count| count >= 3),
+        "project summary should expose entity kind counts: {graph_report}"
+    );
+    assert_eq!(
+        summary["metadata"]["relation_kind_counts"]["contains_choice"],
+        serde_json::json!(1),
+        "project summary should expose domain relation kinds: {graph_report}"
+    );
+    assert_eq!(
+        summary["metadata"]["relation_kind_counts"]["contains_choice_option"],
+        serde_json::json!(2),
+        "project summary should count choice option ownership: {graph_report}"
+    );
+    assert_eq!(
+        summary["metadata"]["relation_kind_counts"]["choice_option_goto"],
+        serde_json::json!(2),
+        "project summary should count choice option goto edges: {graph_report}"
+    );
+    assert!(
+        summary["metadata"]["dependency_edge_kind_counts"]["calls_callable"]
+            .as_u64()
+            .is_some_and(|count| count >= 2),
+        "project summary should expose callable dependency kinds: {graph_report}"
+    );
+    assert_eq!(
+        summary["metadata"]["flow_control_counts"]["dynamic_goto_count"],
+        serde_json::json!(1),
+        "project summary should expose aggregate flow-control counts: {graph_report}"
     );
 }
 
@@ -3533,6 +3576,10 @@ fn assert_debug_db_rag_query_uses_program_summary(db_path: &Path) {
                             && body.contains("\"graph_edge_kinds\"")
                             && body.contains("\"flow_control_counts\"")
                             && body.contains("\"flow_control_symbols\"")
+                            && body.contains("\"project_summary\"")
+                            && body.contains("\"entity_kind_counts\"")
+                            && body.contains("\"relation_kind_counts\"")
+                            && body.contains("\"dependency_edge_kind_counts\"")
                     })
             })
         }),
