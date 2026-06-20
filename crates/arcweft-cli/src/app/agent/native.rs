@@ -1057,6 +1057,7 @@ mod tests {
                                 && body.contains("\"source_graph_edge_kinds\"")
                                 && body.contains("\"graph_symbol_kinds\"")
                                 && body.contains("\"graph_edge_kinds\"")
+                                && body.contains("\"flow_control_counts\"")
                                 && body.contains("\"flow_control_symbols\"")
                         })
                 })

@@ -2784,6 +2784,7 @@ fn agent_program_summary_rag_candidate(
                 "dynamic_control_flows": agent_source_dynamic_control_flow_count(source_index),
                 "graph_symbol_kinds": agent_graph_symbol_kind_counts(&source_index.graph_symbols),
                 "graph_edge_kinds": agent_graph_edge_kind_counts(&source_index.graph_edges),
+                "flow_control_counts": agent_source_flow_control_counts_json(source_index),
                 "flow_control_symbols": agent_source_flow_control_symbols_json(source_index),
             })
         })
@@ -2856,6 +2857,45 @@ fn agent_source_dynamic_control_flow_count(source_index: &AgentSourceRagIndex) -
         .iter()
         .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
         .count()
+}
+
+fn agent_source_flow_control_counts_json(source_index: &AgentSourceRagIndex) -> serde_json::Value {
+    let flow_controls = source_index
+        .graph_symbols
+        .iter()
+        .filter_map(|symbol| symbol.metadata.get("flow_control"))
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "symbol_count": flow_controls
+            .iter()
+            .filter(|flow_control| agent_flow_control_json_has_control(flow_control))
+            .count(),
+        "has_dynamic_control": flow_controls.iter().any(|flow_control| {
+            flow_control
+                .get("has_dynamic_control")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        }),
+        "static_goto_count": agent_flow_control_json_sum(&flow_controls, "static_goto_count"),
+        "dynamic_goto_count": agent_flow_control_json_sum(&flow_controls, "dynamic_goto_count"),
+        "branch_count": agent_flow_control_json_sum(&flow_controls, "branch_count"),
+        "loop_count": agent_flow_control_json_sum(&flow_controls, "loop_count"),
+        "await_count": agent_flow_control_json_sum(&flow_controls, "await_count"),
+        "thread_count": agent_flow_control_json_sum(&flow_controls, "thread_count"),
+        "select_branch_count": agent_flow_control_json_sum(&flow_controls, "select_branch_count"),
+    })
+}
+
+fn agent_flow_control_json_sum(flow_controls: &[&serde_json::Value], field: &str) -> u64 {
+    flow_controls
+        .iter()
+        .map(|flow_control| {
+            flow_control
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        })
+        .sum()
 }
 
 fn agent_source_flow_control_symbols_json(
