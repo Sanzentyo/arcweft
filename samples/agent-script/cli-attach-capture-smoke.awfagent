@@ -1,0 +1,14 @@
+#[agent(version = 1)]
+agent @agent.cli.attach_capture_smoke attach_capture_smoke()
+effects { agent.capture, debug.record }
+{
+    let shot = try capture(
+        viewport(),
+        format = .png,
+        kind = .color,
+        name = "viewport-attachment",
+    )
+    attach(shot)
+    checkpoint("after-attach-capture")
+    return shot.uri
+}

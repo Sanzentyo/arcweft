@@ -550,6 +550,91 @@ fn agent_script_run_persists_attach_resource_debug_record() {
     );
 }
 
+#[test]
+fn agent_script_run_persists_attach_capture_debug_record() {
+    let debug_db_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/attach-capture-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&debug_db_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_attach_capture_smoke_path())
+        .arg("--json")
+        .arg("--debug-db")
+        .arg(&debug_db_path)
+        .output()
+        .expect("arcw agent script run persists attached capture debug record");
+
+    assert!(
+        output.status.success(),
+        "agent script attach capture run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("attach capture run output is JSON");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["host_calls"], 3);
+    assert_eq!(json["responses"][0]["kind"], "capture");
+    assert_eq!(json["responses"][1]["kind"], "unit");
+    assert_eq!(json["responses"][2]["kind"], "unit");
+
+    let timeline_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("timeline")
+        .arg("--path")
+        .arg(&debug_db_path)
+        .arg("--session-id")
+        .arg("session.cli")
+        .arg("--run-id")
+        .arg("run.cli")
+        .arg("--limit")
+        .arg("32")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db timeline reads attached capture debug record");
+    assert!(
+        timeline_output.status.success(),
+        "debug db timeline should expose attached capture record\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&timeline_output.stdout),
+        String::from_utf8_lossy(&timeline_output.stderr)
+    );
+    let timeline: serde_json::Value =
+        serde_json::from_slice(&timeline_output.stdout).expect("timeline output is JSON");
+    let events = timeline["events"]
+        .as_array()
+        .expect("timeline events array");
+    let capture = events
+        .iter()
+        .find(|event| event["kind"] == "capture")
+        .expect("timeline records capture event");
+    let capture_uri = capture["payload"]["uri"]
+        .as_str()
+        .expect("capture payload has uri");
+    assert!(
+        events.iter().any(|event| {
+            event["kind"] == "diagnostic"
+                && event["payload"]["attachment"]["uri"] == capture_uri
+                && event["payload"]["attachment"]["media_type"] == "image/png"
+                && event["payload"]["attachment"]["byte_len"]
+                    .as_u64()
+                    .is_some_and(|bytes| bytes > 0)
+        }),
+        "timeline should contain attached CaptureRef payload: {timeline}"
+    );
+    assert!(
+        events.iter().any(|event| {
+            event["kind"] == "diagnostic"
+                && event["payload"]["checkpoint"] == "after-attach-capture"
+        }),
+        "timeline should contain checkpoint after capture attach: {timeline}"
+    );
+}
+
 fn agent_test_blob_path(root: &Path, content_hash: &str) -> PathBuf {
     let hex = content_hash
         .strip_prefix("blake3:")
@@ -3087,6 +3172,10 @@ fn agent_script_cli_read_resource_smoke_path() -> PathBuf {
 
 fn agent_script_cli_attach_resource_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-attach-resource-smoke.awfagent")
+}
+
+fn agent_script_cli_attach_capture_smoke_path() -> PathBuf {
+    workspace_path("samples/agent-script/cli-attach-capture-smoke.awfagent")
 }
 
 fn agent_script_cli_read_resource_value_smoke_path() -> PathBuf {
