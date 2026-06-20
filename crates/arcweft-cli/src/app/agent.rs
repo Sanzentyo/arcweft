@@ -1733,8 +1733,16 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
         &source_key_prefix,
     )?);
     let mut graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    graph_symbols.push(agent_source_file_graph_symbol(
+        &source_file,
+        &source_key_prefix,
+    ));
     agent_attach_source_file_to_graph_symbols(&mut graph_symbols, &source_file);
-    let graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
+    let mut graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
+    graph_edges.push(agent_source_file_project_graph_edge(
+        &source_file,
+        &source_key_prefix,
+    ));
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
         source_hash,
@@ -1743,6 +1751,72 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
         graph_symbols,
         graph_edges,
     })
+}
+
+fn agent_source_file_graph_symbol(
+    source_file: &DebugSourceFile,
+    source_key_prefix: &str,
+) -> DebugGraphSymbol {
+    DebugGraphSymbol {
+        symbol_id: agent_source_file_graph_symbol_id(source_key_prefix),
+        program_hash: source_file.program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(source_file.path.clone()),
+        kind: "source_file".to_owned(),
+        type_json: Some(serde_json::json!({
+            "language": source_file.language,
+            "byte_len": source_file.byte_len,
+        })),
+        source_path: Some(source_file.path.clone()),
+        source_content_hash: Some(source_file.content_hash.clone()),
+        start_byte: Some(0),
+        end_byte: Some(source_file.byte_len),
+        semantic_hash: Some(source_file.content_hash.clone()),
+        summary: format!(
+            "Source file `{}` language={} bytes={} hash={}",
+            source_file.path,
+            source_file.language,
+            source_file.byte_len,
+            source_file.content_hash.as_str()
+        ),
+        metadata: BTreeMap::from([
+            (
+                "language".to_owned(),
+                serde_json::json!(source_file.language),
+            ),
+            (
+                "content_hash".to_owned(),
+                serde_json::json!(source_file.content_hash.as_str()),
+            ),
+            (
+                "byte_len".to_owned(),
+                serde_json::json!(source_file.byte_len),
+            ),
+        ]),
+    }
+}
+
+fn agent_source_file_project_graph_edge(
+    source_file: &DebugSourceFile,
+    source_key_prefix: &str,
+) -> DebugGraphEdge {
+    DebugGraphEdge {
+        program_hash: source_file.program_hash.clone(),
+        from_symbol_id: agent_source_file_graph_symbol_id(source_key_prefix),
+        to_symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
+        edge_kind: "contains_project_graph".to_owned(),
+        weight: 1.0,
+        metadata: BTreeMap::from([
+            (
+                "source_path".to_owned(),
+                serde_json::json!(source_file.path),
+            ),
+            (
+                "source_content_hash".to_owned(),
+                serde_json::json!(source_file.content_hash.as_str()),
+            ),
+        ]),
+    }
 }
 
 fn agent_attach_source_file_to_graph_symbols(
@@ -2261,6 +2335,10 @@ fn agent_project_debug_query_graph_symbol(
 
 fn agent_project_summary_graph_symbol_id(source_key_prefix: &str) -> String {
     format!("{source_key_prefix}.project.summary")
+}
+
+fn agent_source_file_graph_symbol_id(source_key_prefix: &str) -> String {
+    format!("{source_key_prefix}.source_file")
 }
 
 fn agent_project_entity_graph_symbol_id(source_key_prefix: &str, id: &SemaPublicId) -> String {

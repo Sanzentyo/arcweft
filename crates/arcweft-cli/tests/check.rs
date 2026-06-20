@@ -2827,6 +2827,7 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
             .any(|edge| edge["edge_kind"] == "contains_entity"),
         "debug db graph should expose ownership edges: {graph_report}"
     );
+    assert_debug_db_graph_exposes_source_file_ownership(symbols, edges, report, &graph_report);
     assert_debug_db_graph_exposes_project_callables(symbols, edges, &graph_report);
 
     let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2862,6 +2863,31 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
         public_graph_report["edges"].as_array().map(Vec::len),
         Some(0),
         "project-private graph edges should be omitted at public ceiling"
+    );
+}
+
+fn assert_debug_db_graph_exposes_source_file_ownership(
+    symbols: &[serde_json::Value],
+    edges: &[serde_json::Value],
+    report: &serde_json::Value,
+    graph_report: &serde_json::Value,
+) {
+    assert!(
+        symbols.iter().any(|symbol| {
+            symbol["kind"] == "source_file"
+                && symbol["qualified_name"]
+                    .as_str()
+                    .is_some_and(|path| path.contains("project-callables-"))
+                && symbol["metadata"]["content_hash"] == report["sources"][0]["source_hash"]
+        }),
+        "debug db graph should expose source-file graph symbols: {graph_report}"
+    );
+    assert!(
+        edges.iter().any(|edge| {
+            edge["edge_kind"] == "contains_project_graph"
+                && edge["metadata"]["source_content_hash"] == report["sources"][0]["source_hash"]
+        }),
+        "debug db graph should expose source-file project-graph ownership edges: {graph_report}"
     );
 }
 
@@ -2919,6 +2945,26 @@ fn assert_debug_db_graph_search_exposes_indexed_project_graph_edges(db_path: &Pa
                 })
         }),
         "debug db graph search should expose indexed project graph ownership edges: {report}"
+    );
+    let source_report = debug_db_search_json(
+        db_path,
+        "--graph-query",
+        "contains_project_graph",
+        "project",
+    );
+    let source_hits = source_report["hits"].as_array().expect("source graph hits");
+    assert!(
+        source_hits.iter().any(|hit| {
+            hit["channel"] == "graph"
+                && hit["source_kind"] == "graph_edge"
+                && hit["title"]
+                    .as_str()
+                    .is_some_and(|title| title.contains("--contains_project_graph-->"))
+                && hit["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains("from_kind=source_file"))
+        }),
+        "debug db graph search should expose source-file project graph ownership: {source_report}"
     );
 }
 
