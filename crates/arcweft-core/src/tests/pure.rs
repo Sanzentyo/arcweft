@@ -486,6 +486,27 @@ fn vm_pure_backend_requires_observed_object_by_role() {
 }
 
 #[test]
+fn vm_pure_backend_projects_entity_ref_metadata_fields() {
+    for (field, expected) in [
+        ("id", "choice.opening.listen"),
+        ("family", "choice"),
+        ("name", "opening.listen"),
+    ] {
+        let helper = value_helper(RuntimeExpr::Field {
+            target: Box::new(RuntimeExpr::EntityRef("choice.opening.listen".to_owned())),
+            field: field.to_owned(),
+        });
+        let mut backend = VmRuntimePureCallBackend::default();
+
+        let value = backend
+            .call_values(&helper, &[RuntimeValue::Unit])
+            .expect("entity ref metadata field evaluates");
+
+        assert_eq!(value, RuntimeValue::String(expected.to_owned()));
+    }
+}
+
+#[test]
 fn vm_runtime_value_fallback_records_pure_call_stats() {
     let helper = RuntimePureHelper {
         id: RuntimePureHelperId(0),

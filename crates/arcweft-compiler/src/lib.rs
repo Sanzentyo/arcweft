@@ -897,6 +897,39 @@ effects { agent.act.semantic }
     }
 
     #[test]
+    fn compile_agent_source_with_project_checks_entity_ref_metadata_fields() {
+        let project = project_with_entity("flow.opening", EntityKind::Flow);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.project_ref_metadata project_ref_metadata()
+effects { }
+{
+    let route_id = (@flow.opening).id
+    let route_family = (@flow.opening).family
+    let route_name = (@flow.opening).name
+    expect(route_id == "flow.opening", "id field")
+    expect(route_family == "flow", "family field")
+    expect(route_name == "opening", "name field")
+}
+"#,
+            &project,
+        )
+        .expect("project entity ref metadata fields typecheck");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .filter(|judgment| judgment.ty == TypeKind::String)
+                .count()
+                >= 3
+        );
+    }
+
+    #[test]
     fn compile_agent_source_with_project_checks_advance_text_intrinsic() {
         let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"));
         let compiled = compile_agent_source_with_project(

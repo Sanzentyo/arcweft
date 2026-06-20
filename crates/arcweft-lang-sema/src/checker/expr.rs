@@ -2855,6 +2855,7 @@ impl TypeChecker<'_> {
             Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
             Some(TypeKind::AgentResource) => agent_resource_field_type(field),
             Some(TypeKind::AgentResourceBody) => agent_resource_body_field_type(field),
+            Some(TypeKind::Ref(_)) => agent_entity_ref_field_type(field),
             Some(TypeKind::Map { value, .. }) => Some(*value),
             Some(TypeKind::Named(name)) if name == "HttpRequestContext" => match field {
                 "method" | "path" | "body" => Some(TypeKind::String),
@@ -3367,6 +3368,13 @@ fn agent_action_target_field_type(field: &str) -> Option<TypeKind> {
         "id" | "target" | "kind" => TypeKind::String,
         "action" => TypeKind::ActionName,
         "enabled" => TypeKind::Bool,
+        _ => return None,
+    })
+}
+
+fn agent_entity_ref_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "id" | "family" | "name" => TypeKind::String,
         _ => return None,
     })
 }

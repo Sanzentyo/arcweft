@@ -668,11 +668,34 @@ impl Engine {
                     field: field.to_owned(),
                     value: "record sequence".to_owned(),
                 }),
+            RuntimeValue::EntityRef(id) => {
+                Self::entity_ref_field(&id, field).ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.to_owned(),
+                    value: "entity reference".to_owned(),
+                })
+            }
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),
                 value: runtime_value_label(&value),
             }),
         }
+    }
+
+    fn entity_ref_field(id: &str, field: &str) -> Option<RuntimeValue> {
+        Some(match field {
+            "id" => RuntimeValue::String(id.to_owned()),
+            "family" => RuntimeValue::String(Self::entity_ref_family(id).to_owned()),
+            "name" => RuntimeValue::String(Self::entity_ref_name(id).to_owned()),
+            _ => return None,
+        })
+    }
+
+    fn entity_ref_family(id: &str) -> &str {
+        id.split_once('.').map_or(id, |(family, _)| family)
+    }
+
+    fn entity_ref_name(id: &str) -> &str {
+        id.split_once('.').map_or("", |(_, name)| name)
     }
 
     fn evaluate_project_tuple_expr(
