@@ -64,6 +64,9 @@ pub fn parse_document(source: impl Into<String>, options: ParseOptions) -> Parse
 
 /// Parses a fragment using the same syntax components as full documents.
 pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -> ParsedFragment {
+    if let Some(expected) = incomplete_syntax_expected_tokens(source) {
+        return ParsedFragment::incomplete(expected);
+    }
     if let Some(expected) = incomplete_boundary_expected_tokens(source) {
         return ParsedFragment::incomplete(expected);
     }
@@ -188,6 +191,25 @@ fn incomplete_boundary_expected_tokens(source: &str) -> Option<Vec<ExpectedToken
     })
 }
 
+fn incomplete_syntax_expected_tokens(source: &str) -> Option<Vec<ExpectedToken>> {
+    let trimmed = source.trim_end();
+    let trimmed_start = trimmed.trim_start();
+    if trimmed_start.is_empty() {
+        return None;
+    }
+    if trimmed_start == "return"
+        || trimmed_start == "try"
+        || trimmed_start.ends_with('=')
+        || trimmed_start.ends_with("= try")
+        || trimmed_start.ends_with("(try")
+        || trimmed_start.ends_with("[try")
+        || trimmed_start.ends_with(", try")
+    {
+        return Some(vec![ExpectedToken::new("expression")]);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +269,29 @@ mod tests {
             expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
             ["\""]
         );
+    }
+
+    #[test]
+    fn fragment_reports_incomplete_expression_after_statement_heads() {
+        for source in ["let value =", "return", "try"] {
+            let parsed = parse_fragment(
+                source,
+                FragmentKind::Statements,
+                ParseOptions {
+                    source_dialect: SourceDialect::Agent,
+                },
+            );
+
+            let ParseCompletion::Incomplete { expected } = parsed.completion() else {
+                panic!(
+                    "expected incomplete parse for {source}, got {:?}",
+                    parsed.completion()
+                );
+            };
+            assert_eq!(
+                expected.iter().map(ExpectedToken::text).collect::<Vec<_>>(),
+                ["expression"]
+            );
+        }
     }
 }

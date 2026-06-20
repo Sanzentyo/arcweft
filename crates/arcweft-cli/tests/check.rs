@@ -1262,6 +1262,16 @@ fn agent_repl_inspects_fragments_and_captures_from_input_session() {
         incomplete["value"]["completion"]["expected"],
         serde_json::json!(["\""])
     );
+    let incomplete_expr = cells
+        .iter()
+        .find(|cell| cell["input"] == ":classify let value =")
+        .expect("incomplete expression classify cell is present");
+    assert_eq!(incomplete_expr["status"], "ok");
+    assert_eq!(incomplete_expr["value"]["completion"]["kind"], "incomplete");
+    assert_eq!(
+        incomplete_expr["value"]["completion"]["expected"],
+        serde_json::json!(["expression"])
+    );
     assert_agent_repl_meta_ok(cells, ":ast signal(\"ready\").eq(true)");
     assert_agent_repl_meta_ok(cells, ":hir return \"ok\"");
     assert_agent_repl_meta_ok(cells, ":bytecode return \"ok\"");

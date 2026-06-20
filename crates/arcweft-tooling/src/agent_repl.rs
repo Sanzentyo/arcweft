@@ -839,4 +839,18 @@ mod tests {
         );
         assert_eq!(classified.completion.expected, ["\""]);
     }
+
+    #[test]
+    fn repl_classify_cell_reports_incomplete_expression_boundaries() {
+        for source in ["let value =", "return", "try"] {
+            let classified = agent_repl_classify_cell(source);
+
+            assert_eq!(
+                classified.completion.kind,
+                AgentReplCellCompletionKind::Incomplete,
+                "{source} should be incomplete"
+            );
+            assert_eq!(classified.completion.expected, ["expression"]);
+        }
+    }
 }
