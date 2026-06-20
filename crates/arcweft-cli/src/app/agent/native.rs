@@ -62,6 +62,7 @@ use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
+    session::DebugSessionStatus,
 };
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
@@ -2533,6 +2534,8 @@ fn agent_repl_command(
         }
     }
 
+    agent_repl_finish_debug_session(&mut state, ok)?;
+
     if options.json {
         print_json(&AgentReplRunReport {
             ok,
@@ -2547,6 +2550,46 @@ fn agent_repl_command(
         })?;
     }
     if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+fn agent_repl_finish_debug_session(state: &mut AgentReplState, ok: bool) -> Result<(), ExitCode> {
+    let Some(store) = &state.debug_store else {
+        return Ok(());
+    };
+    let mut metadata = BTreeMap::new();
+    metadata.insert("cells".to_owned(), serde_json::json!(state.history.len()));
+    metadata.insert(
+        "persisted_cells".to_owned(),
+        serde_json::json!(state.persisted_cells),
+    );
+    metadata.insert("read_only".to_owned(), serde_json::json!(state.read_only));
+    if let Some(report) = &state.report {
+        metadata.insert("final_tick".to_owned(), serde_json::json!(report.tick));
+    }
+    if let Some(connection) = &state.connection {
+        metadata.insert(
+            "connection".to_owned(),
+            serde_json::to_value(connection).map_err(|error| {
+                eprintln!("error: failed to serialize REPL session metadata: {error}");
+                ExitCode::FAILURE
+            })?,
+        );
+    }
+    store
+        .finish_session(
+            &agent_cli_session_id(),
+            if ok {
+                DebugSessionStatus::Finished
+            } else {
+                DebugSessionStatus::Failed
+            },
+            0,
+            &metadata,
+        )
+        .map_err(|error| {
+            eprintln!("error: failed to finish REPL debug database session: {error}");
+            ExitCode::FAILURE
+        })
 }
 
 fn agent_repl_initial_connection(

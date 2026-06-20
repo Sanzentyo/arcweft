@@ -1170,6 +1170,17 @@ fn assert_agent_repl_observe_bindings(
 fn assert_repl_debug_cell_persisted(debug_db_path: &Path) {
     let store = DebugStore::open(debug_db_path).expect("open REPL debug database");
     let session = SessionId::new("session.cli").expect("CLI session id is valid");
+    let persisted_session = store
+        .session(&session)
+        .expect("load persisted REPL session")
+        .expect("REPL session is persisted");
+    assert_eq!(persisted_session.status, DebugSessionStatus::Finished);
+    assert_eq!(persisted_session.ended_unix_ms, Some(0));
+    assert_eq!(
+        persisted_session.metadata["persisted_cells"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(persisted_session.metadata["read_only"], false);
     let repl_cells = store
         .repl_cells_for_session(&session)
         .expect("load persisted REPL cells");
@@ -1244,6 +1255,15 @@ fn agent_repl_marks_failed_cells_partially_effectful_from_host_events() {
 
     let store = DebugStore::open(&debug_db_path).expect("open REPL debug database");
     let session = SessionId::new("session.cli").expect("CLI session id is valid");
+    let persisted_session = store
+        .session(&session)
+        .expect("load failed REPL session")
+        .expect("REPL session is persisted");
+    assert_eq!(persisted_session.status, DebugSessionStatus::Failed);
+    assert_eq!(
+        persisted_session.metadata["persisted_cells"].as_u64(),
+        Some(3)
+    );
     let repl_cells = store
         .repl_cells_for_session(&session)
         .expect("load persisted REPL cells");
