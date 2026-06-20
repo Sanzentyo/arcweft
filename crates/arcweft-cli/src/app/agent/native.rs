@@ -11,13 +11,14 @@ use super::{
     CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
     RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_debug_finish_runtime_session,
-    agent_debug_start_runtime_session, agent_rag_select_context_chunk, agent_rag_source_paths,
-    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
-    agent_script_run_report_from_result, agent_script_runtime_policy,
-    agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
-    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
-    native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
-    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
+    agent_debug_start_runtime_session, agent_program_summary_rag_candidate, agent_rag_program_hash,
+    agent_rag_select_context_chunk, agent_rag_source_paths, agent_script_project_index,
+    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
+    agent_script_runtime_policy, agent_script_runtime_policy_for_bundle, agent_source_rag_index,
+    flow_status_label, fs, load_and_check_selection,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
+    parse_agent_script_signal_arg, parse_agent_script_state_arg, parse_runtime_binding_arg,
+    parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
@@ -1010,6 +1011,47 @@ mod tests {
         let store = DebugStore::open(&db_path).expect("debug store reopens");
         assert_eq!(store.stats().expect("stats").rag_queries, 1);
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_rag_query_includes_source_program_summary() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let choice_source = workspace_root.join("samples/agent-script/native-choice-dispatch.arcw");
+        let rich_text_source = workspace_root.join("samples/rich-text-showcase.arcw");
+        let mut state = AgentMcpState::default();
+
+        let query_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "program_rag_index",
+                "sources": [
+                    choice_source.display().to_string(),
+                    rich_text_source.display().to_string()
+                ],
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG query builds source program summary");
+        let pack = mcp_text_json(&query_result);
+
+        assert!(
+            pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["kind"] == "graph_summary"
+                        && item["chunk_id"]
+                            .as_str()
+                            .is_some_and(|id| id.contains("mcp:program."))
+                        && item["body"]
+                            .as_str()
+                            .is_some_and(|body| body.contains("\"program_rag_index\""))
+                })
+            }),
+            "MCP source RAG query should include the program-level summary: {pack}"
+        );
+        assert_eq!(state.rag_context_packs.len(), 1);
     }
 
     #[test]
@@ -7945,19 +7987,27 @@ fn agent_mcp_rag_source_candidates(
 ) -> Result<Vec<AgentMcpRagCandidate>, String> {
     let inputs = agent_mcp_rag_source_inputs(arguments)?;
     let paths = agent_rag_source_paths(&inputs)?;
-    paths
+    let source_indexes = paths
         .iter()
-        .map(|path| {
-            agent_source_rag_index(path).map(|index| {
-                index
-                    .candidates
-                    .into_iter()
-                    .map(agent_mcp_rag_candidate_from_cli_source)
-                    .collect::<Vec<_>>()
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|groups| groups.into_iter().flatten().collect())
+        .map(|path| agent_source_rag_index(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut candidates = source_indexes
+        .iter()
+        .flat_map(|index| index.candidates.iter().cloned())
+        .map(agent_mcp_rag_candidate_from_cli_source)
+        .collect::<Vec<_>>();
+    if !source_indexes.is_empty() {
+        let seed_parts = source_indexes
+            .iter()
+            .map(|index| index.seed.clone())
+            .collect::<Vec<_>>();
+        let program_hash = agent_rag_program_hash(&seed_parts)?;
+        let source_index_refs = source_indexes.iter().collect::<Vec<_>>();
+        candidates.push(agent_mcp_rag_candidate_from_cli_source(
+            agent_program_summary_rag_candidate(&program_hash, &source_index_refs)?,
+        ));
+    }
+    Ok(candidates)
 }
 
 fn agent_mcp_rag_candidate_from_cli_source(
