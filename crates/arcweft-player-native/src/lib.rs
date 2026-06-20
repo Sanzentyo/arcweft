@@ -14,8 +14,8 @@ use arcweft_core::step::{
 use arcweft_render_native::NativeFrameContentBBox;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use arcweft_runtime_host::{
-    BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
-    run_bundle_with_native_adapters,
+    BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats,
+    RuntimeExecutorStats, run_bundle_with_native_adapters,
 };
 use serde::Serialize;
 use std::path::Path;
@@ -36,9 +36,22 @@ pub struct HeadlessPlayerReport {
     pub diagnostics: Vec<String>,
     pub steps: usize,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<NativePlayerRuntimeMetadata>,
     #[cfg(feature = "dev-capture")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_capture: Option<NativePlayerCaptureMetadata>,
+}
+
+/// Runtime-host metadata emitted by product `.awfb` player execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct NativePlayerRuntimeMetadata {
+    pub source: String,
+    pub bytecode_instructions: usize,
+    pub adapter_manifests: usize,
+    pub executor: BundleRunnerExecutor,
+    pub executor_stats: RuntimeExecutorStats,
+    pub native_io: NativeTaskStats,
 }
 
 /// Metadata for a native offscreen framebuffer capture emitted by the player binary.
@@ -121,6 +134,7 @@ pub fn run_headless(
                 diagnostics,
                 steps,
                 status: flow_status_label(&engine.fiber().status),
+                runtime: None,
                 #[cfg(feature = "dev-capture")]
                 native_capture: None,
             });
@@ -131,6 +145,7 @@ pub fn run_headless(
         diagnostics,
         steps,
         status: flow_status_label(&engine.fiber().status),
+        runtime: None,
         #[cfg(feature = "dev-capture")]
         native_capture: None,
     })
@@ -168,6 +183,14 @@ pub fn run_bundle_headless(
         diagnostics,
         steps: runner.steps.len(),
         status: runner.final_status,
+        runtime: Some(NativePlayerRuntimeMetadata {
+            source: runner.source,
+            bytecode_instructions: runner.bytecode_instructions,
+            adapter_manifests: runner.adapter_manifests,
+            executor: runner.executor,
+            executor_stats: runner.executor_stats,
+            native_io: runner.native_io,
+        }),
         #[cfg(feature = "dev-capture")]
         native_capture: None,
     })
@@ -338,6 +361,15 @@ mod tests {
         assert_eq!(report.steps, 2);
         assert_eq!(report.frames.len(), 1);
         assert_eq!(report.frames[0].text, "Hello bundle");
+        let runtime = report
+            .runtime
+            .as_ref()
+            .expect("bundle player report includes runtime metadata");
+        assert_eq!(runtime.source, "bundle-display.arcw");
+        assert_eq!(runtime.bytecode_instructions, 2);
+        assert_eq!(runtime.adapter_manifests, 0);
+        assert_eq!(runtime.executor, BundleRunnerExecutor::BytecodeVm);
+        assert_eq!(runtime.native_io.scheduler.submitted, 0);
     }
 
     #[cfg(not(feature = "dev-capture"))]
@@ -399,6 +431,7 @@ mod tests {
             diagnostics: Vec::new(),
             steps: 0,
             status: "done".to_owned(),
+            runtime: None,
             native_capture: Some(NativePlayerCaptureMetadata {
                 renderer: "native_offscreen_wgpu_glyphon".to_owned(),
                 format: "png".to_owned(),

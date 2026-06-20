@@ -248,10 +248,13 @@ feature-gated behind `dev-capture`, keeping the default product-player argv
 focused on bundle execution. The headless report API follows the same boundary:
 the `native_capture` JSON field and `NativePlayerCaptureMetadata` type exist
 only for `dev-capture` builds, so default product-player reports do not expose
-debug readback metadata. The player `.awfb` execution path now calls
-`arcweft-runtime-host`'s bundle runner and resolves display frames from the
-typed `FlowEvent`s retained in `BundleRunnerStepSummary`; source execution
-and direct `NativePlayerProgram` execution remain `dev-source` paths. The
+debug readback metadata. Default product-player headless reports do expose
+typed product runtime metadata from `arcweft-runtime-host`: bytecode size,
+adapter manifest count, executor stats, and native I/O scheduler stats. The
+player `.awfb` execution path now calls `arcweft-runtime-host`'s bundle runner
+and resolves display frames from the typed `FlowEvent`s retained in
+`BundleRunnerStepSummary`; source execution and direct `NativePlayerProgram`
+execution remain `dev-source` paths. The
 remaining architectural cuts are:
 
 1. Continue moving compile-driver behavior toward `arcweft-compiler`.

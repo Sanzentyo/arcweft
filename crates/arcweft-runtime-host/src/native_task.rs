@@ -33,7 +33,7 @@ pub struct NativeTaskBridge {
     stats: NativeTaskStats,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct NativeTaskStats {
     pub completed_tasks: usize,
     pub failed_tasks: usize,
@@ -56,7 +56,7 @@ pub struct NativeTaskStats {
     pub scheduler: NativeSchedulerStats,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct NativeSchedulerStats {
     pub submitted: usize,
     pub joined: usize,
@@ -85,7 +85,7 @@ pub struct NativeSchedulerStats {
     pub completed_by_class: NativeTaskClassCounts,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct NativeTaskClassCounts {
     pub local_ui: usize,
     pub io: usize,

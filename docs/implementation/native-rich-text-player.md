@@ -387,6 +387,11 @@ runner; source input is a development convenience only. Native capture is a
 development/debug harness and is exposed by the `dev-capture` feature rather
 than the default product player argv. The `native_capture` JSON report field and
 `NativePlayerCaptureMetadata` API are also present only in `dev-capture` builds.
+Default product-player headless JSON still exposes product runtime metadata:
+the `runtime` report section records the runtime-host source label, bytecode
+instruction count, adapter manifest count, executor choice, executor stats, and
+native I/O scheduler stats. This keeps product lifecycle/scheduler readback
+available without exposing framebuffer debug capture data.
 
 Capture the first resolved frame through the native `wgpu`/`glyphon` offscreen
 renderer and include readback metadata in the JSON report:
