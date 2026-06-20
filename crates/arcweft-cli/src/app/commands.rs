@@ -80,6 +80,7 @@ pub(super) enum AgentCommand {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum AgentRagCommand {
+    Index(super::agent::AgentRagIndexOptions),
     Query(super::agent::AgentRagQueryOptions),
     Explain(super::agent::AgentRagExplainOptions),
     ContextRead(super::agent::AgentRagContextReadOptions),

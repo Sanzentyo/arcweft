@@ -269,6 +269,18 @@ pub(super) struct AgentReplOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+pub(super) struct AgentRagIndexOptions {
+    #[arg(long)]
+    source: Vec<PathBuf>,
+    #[arg(long = "debug-db")]
+    debug_db: PathBuf,
+    #[arg(long)]
+    changed: bool,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 pub(super) struct AgentRagQueryOptions {
     #[arg(long)]
     trace: Option<PathBuf>,
@@ -515,9 +527,33 @@ pub(super) fn agent_command(
 
 fn agent_rag_command(command: AgentRagCommand) -> Result<(), ExitCode> {
     match command {
+        AgentRagCommand::Index(options) => agent_rag_index_command(&options),
         AgentRagCommand::Query(options) => agent_rag_query_command(&options),
         AgentRagCommand::Explain(options) => agent_rag_explain_command(&options),
         AgentRagCommand::ContextRead(options) => agent_rag_context_read_command(&options),
+    }
+}
+
+fn agent_rag_index_command(options: &AgentRagIndexOptions) -> Result<(), ExitCode> {
+    match agent_rag_index_report(options) {
+        Ok(report) => {
+            if options.json {
+                return print_json(&report);
+            }
+            println!(
+                "{}: indexed {} chunk(s), skipped {} unchanged chunk(s), sources indexed={}, skipped={}",
+                report.path,
+                report.indexed_chunks,
+                report.skipped_unchanged_chunks,
+                report.indexed_sources,
+                report.skipped_unchanged_sources
+            );
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("agent rag index: {error}");
+            Err(ExitCode::FAILURE)
+        }
     }
 }
 
@@ -648,6 +684,82 @@ fn agent_rag_context_read_command(options: &AgentRagContextReadOptions) -> Resul
     }
 }
 
+fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagIndexReport, String> {
+    if options.source.is_empty() {
+        return Err("agent rag index requires at least one --source file or directory".to_owned());
+    }
+    let source_paths = agent_rag_source_paths(&options.source)?;
+    if source_paths.is_empty() {
+        return Err("agent rag index found no .arcw source files".to_owned());
+    }
+    let source_indexes = source_paths
+        .iter()
+        .map(|path| agent_source_rag_index(path).map(|index| (path, index)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let seed_parts = source_indexes
+        .iter()
+        .map(|(_, index)| index.seed.clone())
+        .collect::<Vec<_>>();
+    let program_hash = agent_rag_program_hash(&seed_parts)?;
+    let store = DebugStore::open(&options.debug_db)
+        .map_err(|error| format!("failed to open RAG debug DB: {error}"))?;
+    store
+        .upsert_program(&program_hash, None, None, 0)
+        .map_err(|error| format!("failed to index RAG program: {error}"))?;
+
+    let mut source_reports = Vec::new();
+    let mut indexed_chunks = 0usize;
+    let mut skipped_unchanged_chunks = 0usize;
+    for (source_path, source_index) in source_indexes {
+        let mut indexed_for_source = 0usize;
+        let mut skipped_for_source = 0usize;
+        for candidate in &source_index.candidates {
+            if options.changed
+                && store
+                    .chunk_content_hash_exists(&candidate.chunk.content_hash)
+                    .map_err(|error| format!("failed to check existing RAG chunk: {error}"))?
+            {
+                skipped_for_source = skipped_for_source.saturating_add(1);
+                continue;
+            }
+            let mut chunk = candidate.chunk.clone();
+            chunk.program_hash = Some(program_hash.clone());
+            store
+                .upsert_chunk(&chunk)
+                .map_err(|error| format!("failed to index RAG chunk: {error}"))?;
+            indexed_for_source = indexed_for_source.saturating_add(1);
+        }
+        indexed_chunks = indexed_chunks.saturating_add(indexed_for_source);
+        skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(skipped_for_source);
+        source_reports.push(AgentRagIndexedSourceReport {
+            path: source_path.display().to_string(),
+            source_hash: source_index.source_hash,
+            candidate_chunks: source_index.candidates.len(),
+            indexed_chunks: indexed_for_source,
+            skipped_unchanged_chunks: skipped_for_source,
+            indexed: indexed_for_source > 0,
+        });
+    }
+    let indexed_sources = source_reports
+        .iter()
+        .filter(|source| source.indexed)
+        .count();
+    let skipped_unchanged_sources = source_reports
+        .iter()
+        .filter(|source| !source.indexed)
+        .count();
+    Ok(AgentRagIndexReport {
+        path: options.debug_db.display().to_string(),
+        changed_only: options.changed,
+        program_hash: program_hash.as_str().to_owned(),
+        sources: source_reports,
+        indexed_sources,
+        skipped_unchanged_sources,
+        indexed_chunks,
+        skipped_unchanged_chunks,
+    })
+}
+
 fn agent_rag_context_read_report(
     options: &AgentRagContextReadOptions,
     query_id: &str,
@@ -734,6 +846,28 @@ struct AgentRagCandidate {
 struct AgentRagQueryResult {
     pack: RagContextPack,
     candidates: Vec<AgentRagCandidate>,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRagIndexReport {
+    path: String,
+    changed_only: bool,
+    program_hash: String,
+    sources: Vec<AgentRagIndexedSourceReport>,
+    indexed_sources: usize,
+    skipped_unchanged_sources: usize,
+    indexed_chunks: usize,
+    skipped_unchanged_chunks: usize,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRagIndexedSourceReport {
+    path: String,
+    source_hash: String,
+    candidate_chunks: usize,
+    indexed_chunks: usize,
+    skipped_unchanged_chunks: usize,
+    indexed: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -1018,6 +1152,7 @@ fn agent_trace_rag_json_candidate(
 
 struct AgentSourceRagIndex {
     seed: String,
+    source_hash: String,
     candidates: Vec<AgentRagCandidate>,
 }
 
@@ -1092,6 +1227,7 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
     )?);
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
+        source_hash,
         candidates,
     })
 }

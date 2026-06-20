@@ -2411,6 +2411,83 @@ fn assert_agent_rag_query_trace_respects_privacy(trace_path: &Path) {
 }
 
 #[test]
+fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-rag-source/index-rag-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("RAG index DB parent"))
+        .expect("create RAG index DB parent");
+    let source_path = workspace_path("samples/agent-script/native-choice-dispatch.arcw");
+
+    let first = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("index")
+        .arg("--source")
+        .arg(&source_path)
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag index runs");
+    assert!(
+        first.status.success(),
+        "agent rag index should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let first_report: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("agent rag index output is JSON");
+    assert_eq!(first_report["changed_only"], false);
+    assert_eq!(first_report["indexed_sources"], 1);
+    assert!(
+        first_report["indexed_chunks"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "agent rag index should persist chunks: {first_report}"
+    );
+
+    let second = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("index")
+        .arg("--source")
+        .arg(&source_path)
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--changed")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag index --changed runs");
+    assert!(
+        second.status.success(),
+        "agent rag index --changed should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let second_report: serde_json::Value =
+        serde_json::from_slice(&second.stdout).expect("agent rag index changed output is JSON");
+    assert_eq!(second_report["changed_only"], true);
+    assert_eq!(second_report["indexed_sources"], 0);
+    assert_eq!(second_report["skipped_unchanged_sources"], 1);
+    assert_eq!(second_report["indexed_chunks"], 0);
+    assert!(
+        second_report["skipped_unchanged_chunks"]
+            .as_u64()
+            .is_some_and(|count| count == first_report["indexed_chunks"].as_u64().unwrap()),
+        "agent rag index --changed should skip already indexed chunks: {second_report}"
+    );
+
+    assert_debug_db_search_exposes_persisted_source_chunks(&db_path);
+
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+#[test]
 fn agent_rag_query_indexes_source_project_chunks() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-rag-source/source-rag-{}.sqlite3",

@@ -715,6 +715,19 @@ impl DebugStore {
         Ok(())
     }
 
+    pub fn chunk_content_hash_exists(
+        &self,
+        content_hash: &StableHash,
+    ) -> Result<bool, DebugStoreError> {
+        self.connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM chunks WHERE content_hash = ?1)",
+                [content_hash.as_str()],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(DebugStoreError::from)
+    }
+
     pub fn lexical_search(
         &self,
         query: &str,
