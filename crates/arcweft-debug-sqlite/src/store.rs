@@ -1313,6 +1313,17 @@ impl DebugStore {
         Ok(events)
     }
 
+    pub fn next_event_sequence(&self, session_id: &SessionId) -> Result<u64, DebugStoreError> {
+        let next = self.connection.query_row(
+            "SELECT COALESCE(MAX(sequence) + 1, 0)
+             FROM debug_events
+             WHERE session_id = ?1",
+            [session_id.as_str()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        u64::try_from(next).map_err(|_| DebugStoreError::IntegerOverflow("debug_events.sequence"))
+    }
+
     pub fn record_rag_context_pack(
         &self,
         pack: &RagContextPack,

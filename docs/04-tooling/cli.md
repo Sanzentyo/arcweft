@@ -394,15 +394,21 @@ source/project context. `source` still observes that `.arcw` file before
 querying and also indexes the source/project chunks; `sources` accepts a string
 or array of `.arcw` files/directories to parse and lower only for RAG context.
 Directory entries expand recursively to `.arcw` files in deterministic path
-order. When `path` is supplied, MCP upserts all observation/trace/source
-candidates into the debug store and records the selected query audit for later
+order. When `path` is supplied, MCP first searches privacy-allowed pre-indexed
+chunks already present in that debug store using the query text and explicit
+roots, then upserts all observation/trace/source candidates into the debug store
+and records the selected query audit for later
 `arcweft.rag.explain`, `arcweft.rag.context.read`,
 `arcw debug db rag --query-id <id>`, and `arcweft.debug.search` readback.
-`arcw agent rag query [--trace <file.arcwx>] [--source <file-or-dir> ...] --query <text>
-[--max-privacy public|project|sensitive|secret] [--debug-db <path>] [--json]`
+`arcw agent rag index --source <file-or-dir> ... --debug-db <path> [--changed]`
+can populate those source/project chunks without running a query. `arcw agent
+rag query [--trace <file.arcwx>] [--source <file-or-dir> ...]
+[--debug-db <path>] --query <text>
+[--max-privacy public|project|sensitive|secret] [--json]`
 builds the same explainable `RagContextPack` shape used by Agent MCP. At least
-one of `--trace` or `--source` is required, and both can be supplied to fuse
-trace-derived and source/project-derived context in one pack. The default
+one of `--trace`, `--source`, or `--debug-db` is required, and they can be
+combined to fuse trace-derived, source/project-derived, and pre-indexed
+debug-store context in one pack. The default
 privacy ceiling is `project`; chunks whose `privacy_class` / `privacy` is above
 the ceiling are excluded before ranking and byte trimming. Trace records without
 an explicit privacy field default to `project`, so `--max-privacy public`
@@ -506,7 +512,10 @@ current frame yet. MCP `resources/read` is the direct MCP resource protocol
 readback, while the `arcweft.resource.read` tool applies an Agent privacy gate:
 the optional `max_privacy` argument defaults to `project`, image/capture blobs
 are treated as `sensitive`, and trace JSON uses explicit record privacy when
-present. `--viewport-width` and `--viewport-height` set the observed
+present. When `arcweft.resource.read` receives a debug SQLite `path`, allowed
+and blocked reads are also written as `resource_read` debug events with URI,
+resource kind, privacy ceiling, and outcome payloads so product-mode clients can
+audit sensitive readback decisions. `--viewport-width` and `--viewport-height` set the observed
 screen size used by Agent geometry and native PNG/raw framebuffer capture.
 `--textbox-height` optionally overrides the observed dialogue textbox height,
 which is useful for layout-sensitive rich-text debugging such as long vertical

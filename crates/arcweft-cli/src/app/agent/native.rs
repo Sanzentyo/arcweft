@@ -63,7 +63,8 @@ use arcweft_debug_model::{
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
     script::DebugScriptRun,
-    session::DebugSessionStatus,
+    session::{DebugSession, DebugSessionStatus},
+    sink::DebugEventSink,
 };
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
@@ -531,6 +532,11 @@ mod tests {
 
     #[test]
     fn agent_mcp_resource_read_enforces_capture_privacy() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-resource-read-audit-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
         let mut state = AgentMcpState {
             report: Some(test_agent_observation_report(None)),
             capture_resources: vec![AgentResource {
@@ -550,7 +556,10 @@ mod tests {
         };
 
         let default_result = agent_mcp_call_resource_read(
-            &serde_json::json!({"uri": "arcweft://session/cli/frame/0/color.png"}),
+            &serde_json::json!({
+                "uri": "arcweft://session/cli/frame/0/color.png",
+                "path": db_path.display().to_string()
+            }),
             &mut state,
         )
         .expect("resource privacy block serializes");
@@ -562,12 +571,31 @@ mod tests {
         let allowed_result = agent_mcp_call_resource_read(
             &serde_json::json!({
                 "uri": "arcweft://session/cli/frame/0/color.png",
-                "max_privacy": "sensitive"
+                "max_privacy": "sensitive",
+                "path": db_path.display().to_string()
             }),
             &mut state,
         )
         .expect("sensitive resource read succeeds");
         assert!(!allowed_result.is_error);
+        let store = DebugStore::open(&db_path).expect("debug store opens");
+        let events = store
+            .session_timeline_with_max_privacy(
+                Some("session.mcp.resource_read"),
+                None,
+                10,
+                PrivacyClass::Sensitive,
+            )
+            .expect("resource read audit timeline");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_kind, "resource_read");
+        assert_eq!(events[0].payload["outcome"], serde_json::json!("blocked"));
+        assert_eq!(events[0].payload["privacy"], serde_json::json!("sensitive"));
+        assert_eq!(
+            events[0].payload["max_privacy"],
+            serde_json::json!("project")
+        );
+        assert_eq!(events[1].payload["outcome"], serde_json::json!("allowed"));
 
         let direct_default = agent_mcp_resource_read(
             &serde_json::json!({"uri": "arcweft://session/cli/frame/0/color.png"}),
@@ -589,6 +617,7 @@ mod tests {
             direct_allowed["contents"][0]["uri"],
             serde_json::json!("arcweft://session/cli/frame/0/color.png")
         );
+        let _ = std::fs::remove_file(&db_path);
     }
 
     #[test]
@@ -7658,14 +7687,17 @@ fn agent_mcp_call_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
+    let audit_path = agent_mcp_optional_debug_store_path(arguments);
     if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
         .map_err(|error| format!("failed to build Agent session context: {error}"))?
     {
         if let Some(error) =
             agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
         {
+            agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "blocked")?;
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
+        agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
         return tool_result_for_resource(&resource)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"));
     }
@@ -7673,8 +7705,10 @@ fn agent_mcp_call_resource_read(
         if let Some(error) =
             agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
         {
+            agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "blocked")?;
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
+        agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
         return tool_result_for_resource(&resource)
             .map_err(|error| format!("failed to serialize MCP trace resource: {error}"));
     }
@@ -7693,10 +7727,75 @@ fn agent_mcp_call_resource_read(
     if let Some(error) =
         agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
     {
+        agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "blocked")?;
         return agent_mcp_json_tool_error(&error, "resource privacy");
     }
+    agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
     tool_result_for_resource(&resource)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
+}
+
+fn agent_mcp_audit_resource_read(
+    path: Option<&str>,
+    requested_uri: &str,
+    resource: &AgentResource,
+    max_privacy: PrivacyClass,
+    outcome: &str,
+) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let mut store = DebugStore::open(path).map_err(|error| {
+        format!("arcweft.resource.read failed to open audit store `{path}`: {error}")
+    })?;
+    let session_id = SessionId::new("session.mcp.resource_read")
+        .map_err(|error| format!("invalid MCP resource audit session id: {error}"))?;
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: None,
+            profile: "mcp".to_owned(),
+            transport: "stdio".to_owned(),
+            started_unix_ms: 0,
+            ended_unix_ms: None,
+            status: DebugSessionStatus::Running,
+            metadata: BTreeMap::from([(
+                "surface".to_owned(),
+                serde_json::Value::String("arcweft.resource.read".to_owned()),
+            )]),
+        })
+        .map_err(|error| {
+            format!("arcweft.resource.read failed to upsert audit session in `{path}`: {error}")
+        })?;
+    let privacy = agent_mcp_resource_privacy(resource);
+    let sequence = store.next_event_sequence(&session_id).map_err(|error| {
+        format!("arcweft.resource.read failed to allocate audit sequence in `{path}`: {error}")
+    })?;
+    store
+        .append(&DebugEvent {
+            schema_version: 1,
+            session_id,
+            run_id: None,
+            sequence,
+            tick: None,
+            kind: DebugEventKind::ResourceRead,
+            payload: serde_json::json!({
+                "surface": "arcweft.resource.read",
+                "requested_uri": requested_uri,
+                "resolved_uri": resource.uri,
+                "kind": resource.kind,
+                "mime_type": resource.mime_type,
+                "hash": resource.hash,
+                "privacy": privacy.as_str(),
+                "max_privacy": max_privacy.as_str(),
+                "outcome": outcome,
+            }),
+            created_unix_ms: 0,
+        })
+        .map_err(|error| {
+            format!("arcweft.resource.read failed to write audit event to `{path}`: {error}")
+        })?;
+    Ok(())
 }
 
 fn agent_mcp_resource_read_privacy_error(

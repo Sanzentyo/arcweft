@@ -322,6 +322,10 @@ fn agent_resource_read_tool_descriptor() -> McpToolDescriptor {
                     "enum": ["public", "project", "sensitive", "secret"],
                     "default": "project",
                     "description": "Highest privacy class allowed for returned resource contents. Image/capture resources are sensitive by default."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional filesystem path to an Arcweft debug SQLite database. When supplied, allowed and blocked resource reads are audited as resource_read debug events."
                 }
             },
             "required": ["uri"]
@@ -1763,6 +1767,10 @@ mod tests {
         assert_eq!(
             resource_read.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+        assert_eq!(
+            resource_read.input_schema["properties"]["path"]["type"],
+            serde_json::json!("string")
         );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.capture"));
         assert!(tools.iter().any(|tool| tool.name == "arcweft.hit_test"));
