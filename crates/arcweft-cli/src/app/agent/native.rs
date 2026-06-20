@@ -87,6 +87,8 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
     RichTextTextSource, RuntimeLineContext,
 };
+#[cfg(feature = "agent-repl")]
+use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
 use arcweft_tooling::agent_repl::{
     AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_classification_from_fragment,
     agent_repl_classify_cell, agent_repl_completions, agent_repl_highlight_tokens,
@@ -104,6 +106,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::ValueEnum;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+#[cfg(feature = "agent-repl")]
+use std::io::IsTerminal as _;
 use std::io::{BufRead as _, Read as _, Write as _};
 use thiserror::Error;
 
@@ -1027,6 +1031,36 @@ mod tests {
             .map(|item| item.chunk_id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(ids, vec!["chunk:a", "chunk:c"]);
+    }
+
+    #[cfg(feature = "agent-repl")]
+    #[test]
+    fn agent_repl_reedline_validator_uses_fragment_completion() {
+        assert!(matches!(
+            reedline::Validator::validate(&AgentReplReedlineValidator, "let value ="),
+            reedline::ValidationResult::Incomplete
+        ));
+        assert!(matches!(
+            reedline::Validator::validate(&AgentReplReedlineValidator, "let value = 1u32"),
+            reedline::ValidationResult::Complete
+        ));
+    }
+
+    #[cfg(feature = "agent-repl")]
+    #[test]
+    fn agent_repl_reedline_completer_uses_tooling_candidates() {
+        let mut completer = AgentReplReedlineCompleter {
+            context: AgentReplCompletionContext::default(),
+        };
+
+        let suggestions = reedline::Completer::complete(&mut completer, "state_", 6);
+
+        assert!(suggestions.iter().any(|suggestion| {
+            suggestion.value == "state_path"
+                && suggestion.display_value() == "state_path"
+                && suggestion.span.start == 0
+                && suggestion.span.end == 6
+        }));
     }
 
     #[test]
@@ -2613,11 +2647,22 @@ fn agent_repl_command(
     options: &AgentReplOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
+    let mut state = agent_repl_initial_state(options)?;
+    #[cfg(feature = "agent-repl")]
+    {
+        if agent_repl_uses_interactive_editor(options) {
+            return agent_repl_interactive_command(options, state, adapter_registrars);
+        }
+    }
     let source = agent_repl_input(options)?;
+    agent_repl_scripted_command(options, &mut state, adapter_registrars, &source)
+}
+
+fn agent_repl_initial_state(options: &AgentReplOptions) -> Result<AgentReplState, ExitCode> {
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
     let connection = agent_repl_initial_connection(options)?;
-    let mut state = AgentReplState {
+    Ok(AgentReplState {
         connection,
         debug_store,
         debug_db_path,
@@ -2626,7 +2671,15 @@ fn agent_repl_command(
         trace_resources: trace.resources,
         read_only: options.read_only,
         ..AgentReplState::default()
-    };
+    })
+}
+
+fn agent_repl_scripted_command(
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+    source: &str,
+) -> Result<(), ExitCode> {
     let mut cells = Vec::new();
     let mut ok = true;
 
@@ -2635,7 +2688,7 @@ fn agent_repl_command(
         if input.is_empty() || input.starts_with('#') {
             continue;
         }
-        let report = agent_repl_eval_line(index, input, options, &mut state, adapter_registrars);
+        let report = agent_repl_eval_line(index, input, options, &mut *state, adapter_registrars);
         let quit = report.quit;
         ok &= report.status != "error";
         state.history.push(AgentReplHistoryEntry {
@@ -2654,7 +2707,7 @@ fn agent_repl_command(
         }
     }
 
-    agent_repl_finish_debug_session(&mut state, ok)?;
+    agent_repl_finish_debug_session(state, ok)?;
 
     if options.json {
         print_json(&AgentReplRunReport {
@@ -2670,6 +2723,148 @@ fn agent_repl_command(
         })?;
     }
     if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+#[cfg(feature = "agent-repl")]
+fn agent_repl_uses_interactive_editor(options: &AgentReplOptions) -> bool {
+    options.input.is_none() && !options.json && std::io::stdin().is_terminal()
+}
+
+#[cfg(feature = "agent-repl")]
+fn agent_repl_interactive_command(
+    options: &AgentReplOptions,
+    mut state: AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    let mut editor = agent_repl_line_editor(&state)?;
+    let prompt = reedline::DefaultPrompt::new(
+        reedline::DefaultPromptSegment::Basic("arcw".to_owned()),
+        reedline::DefaultPromptSegment::Basic("agent".to_owned()),
+    );
+    let mut ok = true;
+    let mut index = 0usize;
+    loop {
+        match editor.read_line(&prompt) {
+            Ok(reedline::Signal::Success(buffer)) => {
+                let input = buffer.trim();
+                if input.is_empty() || input.starts_with('#') {
+                    continue;
+                }
+                let report =
+                    agent_repl_eval_line(index, input, options, &mut state, adapter_registrars);
+                let quit = report.quit;
+                ok &= report.status != "error";
+                state.history.push(AgentReplHistoryEntry {
+                    index: report.index,
+                    input: report.input.clone(),
+                    kind: report.kind.clone(),
+                    status: report.status.clone(),
+                });
+                agent_repl_print_cell(&report);
+                index = index.saturating_add(1);
+                editor = agent_repl_line_editor(&state)?;
+                if quit {
+                    break;
+                }
+            }
+            Ok(reedline::Signal::CtrlD) => break,
+            Ok(reedline::Signal::CtrlC) => {
+                eprintln!("^C");
+                break;
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("error: Agent REPL editor failed: {error}");
+                ok = false;
+                break;
+            }
+        }
+    }
+    agent_repl_finish_debug_session(&mut state, ok)?;
+    if ok { Ok(()) } else { Err(ExitCode::from(2)) }
+}
+
+#[cfg(feature = "agent-repl")]
+fn agent_repl_line_editor(state: &AgentReplState) -> Result<reedline::Reedline, ExitCode> {
+    let mut editor = reedline::Reedline::create()
+        .with_validator(Box::new(AgentReplReedlineValidator))
+        .with_completer(Box::new(AgentReplReedlineCompleter {
+            context: agent_repl_completion_context(state),
+        }));
+    let history_path = agent_repl_history_path().map_err(|error| {
+        eprintln!("error: failed to create Agent REPL history directory: {error}");
+        ExitCode::FAILURE
+    })?;
+    if let Some(path) = history_path {
+        let history = reedline::FileBackedHistory::with_file(512, path).map_err(|error| {
+            eprintln!("error: failed to open Agent REPL history: {error}");
+            ExitCode::FAILURE
+        })?;
+        editor = editor.with_history(Box::new(history));
+    }
+    Ok(editor)
+}
+
+#[cfg(feature = "agent-repl")]
+fn agent_repl_history_path() -> std::io::Result<Option<PathBuf>> {
+    let Some(home) = std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+    else {
+        return Ok(None);
+    };
+    let dir = home.join(".arcweft");
+    std::fs::create_dir_all(&dir)?;
+    Ok(Some(dir.join("agent-repl-history.txt")))
+}
+
+#[cfg(feature = "agent-repl")]
+struct AgentReplReedlineValidator;
+
+#[cfg(feature = "agent-repl")]
+impl reedline::Validator for AgentReplReedlineValidator {
+    fn validate(&self, line: &str) -> reedline::ValidationResult {
+        match agent_repl_classify_cell(line).completion.kind {
+            AgentReplCellCompletionKind::Incomplete => reedline::ValidationResult::Incomplete,
+            _ => reedline::ValidationResult::Complete,
+        }
+    }
+}
+
+#[cfg(feature = "agent-repl")]
+struct AgentReplReedlineCompleter {
+    context: AgentReplCompletionContext,
+}
+
+#[cfg(feature = "agent-repl")]
+impl reedline::Completer for AgentReplReedlineCompleter {
+    fn complete(&mut self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
+        let prefix = &line[..pos.min(line.len())];
+        let replacement_start = agent_repl_completion_replacement_start(prefix);
+        agent_repl_completions(prefix, &self.context)
+            .into_iter()
+            .map(|item| reedline::Suggestion {
+                value: item.insert_text.unwrap_or(item.label.clone()),
+                display_override: Some(item.label),
+                description: item.detail,
+                span: reedline::Span::new(replacement_start, pos.min(line.len())),
+                ..reedline::Suggestion::default()
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "agent-repl")]
+fn agent_repl_completion_replacement_start(source_before_cursor: &str) -> usize {
+    source_before_cursor
+        .char_indices()
+        .rev()
+        .find_map(|(index, character)| {
+            (!(character.is_alphanumeric()
+                || matches!(character, '_' | '.' | ':' | '@' | '-' | '/')))
+            .then_some(index + character.len_utf8())
+        })
+        .unwrap_or(0)
 }
 
 fn agent_repl_finish_debug_session(state: &mut AgentReplState, ok: bool) -> Result<(), ExitCode> {
