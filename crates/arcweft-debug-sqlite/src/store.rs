@@ -3,7 +3,10 @@ use arcweft_agent_protocol::ids::{AgentRunId, IdentifierError, PublicId, Session
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor},
     diagnostic::DebugDiagnostic,
-    embedding::{EmbeddingModelDescriptor, StoredEmbedding},
+    embedding::{
+        EmbeddingInput, EmbeddingInputPolicy, EmbeddingModelDescriptor, StoredEmbedding,
+        embedding_inputs_for_chunks,
+    },
     event::DebugEvent,
     graph::{DebugGraphEdge, DebugGraphSymbol},
     history::DebugHistoryEntry,
@@ -860,6 +863,32 @@ impl DebugStore {
         hits.into_iter()
             .map(|hit| self.chunk_search_result_for_hit(hit))
             .collect()
+    }
+
+    pub fn embedding_inputs_with_policy(
+        &self,
+        policy: EmbeddingInputPolicy,
+    ) -> Result<Vec<EmbeddingInput>, DebugStoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT c.chunk_id, p.program_hash, c.source_kind, c.source_key,
+                    c.title, c.body, c.content_hash, c.semantic_hash,
+                    c.source_path, c.entity_ids_json, c.start_byte, c.end_byte,
+                    c.privacy_class, c.metadata_json, c.created_unix_ms
+             FROM chunks AS c
+             LEFT JOIN programs AS p ON p.program_id = c.program_id
+             WHERE c.privacy_class = 'public'
+                OR (?1 IN ('project', 'sensitive', 'secret') AND c.privacy_class = 'project')
+                OR (?1 IN ('sensitive', 'secret') AND c.privacy_class = 'sensitive')
+                OR (?1 = 'secret' AND c.privacy_class = 'secret')
+             ORDER BY c.chunk_id",
+        )?;
+        let rows = statement.query_map([policy.max_privacy.as_str()], raw_debug_chunk_from_row)?;
+        let chunks = rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(debug_chunk_from_raw)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(embedding_inputs_for_chunks(chunks.iter(), policy))
     }
 
     pub fn upsert_graph_symbol(&self, symbol: &DebugGraphSymbol) -> Result<(), DebugStoreError> {
@@ -2690,7 +2719,7 @@ mod tests {
     use arcweft_debug_model::{
         chunk::{ChunkSourceKind, PrivacyClass},
         diagnostic::DebugDiagnostic,
-        embedding::StoredEmbedding,
+        embedding::{EmbeddingInputPolicy, StoredEmbedding},
         event::DebugEventKind,
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
@@ -3008,6 +3037,65 @@ mod tests {
         assert_eq!(hits[0].hit.chunk_id.as_str(), "chunk:public-vector");
         assert_eq!(hits[0].hit.channel, SearchChannel::Vector);
         assert_eq!(hits[0].privacy, PrivacyClass::Public);
+    }
+
+    #[test]
+    fn embedding_inputs_apply_provider_privacy_policy_before_adapter_io() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        for privacy in [
+            PrivacyClass::Public,
+            PrivacyClass::Project,
+            PrivacyClass::Sensitive,
+            PrivacyClass::Secret,
+        ] {
+            store
+                .upsert_chunk(&privacy_fixture_chunk(privacy))
+                .expect("chunk");
+        }
+
+        let local_inputs = store
+            .embedding_inputs_with_policy(EmbeddingInputPolicy::local(PrivacyClass::Sensitive))
+            .expect("local embedding inputs");
+        assert_eq!(
+            local_inputs
+                .iter()
+                .map(|input| input.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["chunk:project", "chunk:public", "chunk:sensitive"]
+        );
+
+        let remote_inputs = store
+            .embedding_inputs_with_policy(EmbeddingInputPolicy::remote(PrivacyClass::Secret))
+            .expect("remote embedding inputs");
+        assert_eq!(
+            remote_inputs
+                .iter()
+                .map(|input| input.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["chunk:project", "chunk:public"]
+        );
+        assert!(remote_inputs.iter().all(|input| {
+            matches!(input.privacy, PrivacyClass::Public | PrivacyClass::Project)
+        }));
+    }
+
+    fn privacy_fixture_chunk(privacy: PrivacyClass) -> DebugChunk {
+        let name = privacy.as_str();
+        DebugChunk {
+            id: ChunkId::new(format!("chunk:{name}")),
+            program_hash: None,
+            source_kind: ChunkSourceKind::Documentation,
+            source_key: name.to_owned(),
+            title: format!("{name} title"),
+            body: format!("{name} body"),
+            content_hash: hash(format!("blake3:{name}").as_str()),
+            semantic_hash: None,
+            source_anchor: None,
+            entity_ids: Vec::new(),
+            privacy,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        }
     }
 
     #[test]
