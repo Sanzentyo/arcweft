@@ -4961,6 +4961,10 @@ fn agent_mcp_call_script_run(
                 .blob_dir
                 .as_ref()
                 .map(|path| path.display().to_string()),
+            debug_db: options
+                .debug_db
+                .as_ref()
+                .map(|path| path.display().to_string()),
             blobs_written: 0,
             blob_bytes: 0,
             responses: Vec::new(),
@@ -5063,6 +5067,10 @@ fn agent_mcp_script_run_options(
             .map(PathBuf::from),
         blob_dir: arguments
             .get("blob_dir")
+            .and_then(serde_json::Value::as_str)
+            .map(PathBuf::from),
+        debug_db: arguments
+            .get("debug_db")
             .and_then(serde_json::Value::as_str)
             .map(PathBuf::from),
         run_id: arguments
@@ -7969,14 +7977,18 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
         eprintln!("error: invalid run id: {error}");
         ExitCode::from(2)
     })?;
-    Ok(agent_script_run_report_from_result(
+    agent_script_run_report_from_result(
         options,
         input,
         run_result,
         &run_id,
         &debug_events,
         blob_result,
-    ))
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 #[derive(Debug, Error)]

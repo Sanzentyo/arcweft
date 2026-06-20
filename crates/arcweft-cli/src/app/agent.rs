@@ -28,6 +28,8 @@ use arcweft_debug_model::{
     },
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
+    script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
+    session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
 };
 use arcweft_debug_sqlite::store::DebugStore;
@@ -382,6 +384,8 @@ pub(super) struct AgentScriptRunOptions {
     trace_out: Option<PathBuf>,
     #[arg(long = "blob-dir")]
     blob_dir: Option<PathBuf>,
+    #[arg(long = "debug-db")]
+    debug_db: Option<PathBuf>,
     #[arg(long, default_value = "run.cli")]
     run_id: String,
 }
@@ -1582,6 +1586,7 @@ struct AgentScriptRunReport {
     trace_path: Option<String>,
     trace_records: usize,
     blob_dir: Option<String>,
+    debug_db: Option<String>,
     blobs_written: usize,
     blob_bytes: u64,
     responses: Vec<AgentHostResponse>,
@@ -1680,6 +1685,10 @@ fn agent_script_run_command(
             trace_records: 0,
             blob_dir: options
                 .blob_dir
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            debug_db: options
+                .debug_db
                 .as_ref()
                 .map(|path| path.display().to_string()),
             blobs_written: 0,
@@ -1812,14 +1821,18 @@ fn agent_script_run_bundle(
         eprintln!("error: invalid run id: {error}");
         ExitCode::from(2)
     })?;
-    Ok(agent_script_run_report_from_result(
+    agent_script_run_report_from_result(
         options,
         input,
         run_result,
         &run_id,
         &debug_events,
         blob_result,
-    ))
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 #[cfg(feature = "native-capture")]
@@ -1834,14 +1847,14 @@ fn agent_script_run_report_from_result(
     run_id: &AgentRunId,
     debug_events: &[DebugEvent],
     blob_result: Result<AgentBlobWriteReport, String>,
-) -> AgentScriptRunReport {
+) -> Result<AgentScriptRunReport, String> {
     let trace_records = agent_trace_records(run_id, &agent_cli_session_id(), debug_events);
     let trace_result = options
         .trace_out
         .as_ref()
         .map(|path| write_agent_trace(path, &trace_records).map(|()| path.display().to_string()))
         .transpose();
-    match (run_result, trace_result, blob_result) {
+    let mut report = match (run_result, trace_result, blob_result) {
         (Ok(run), Ok(trace_path), Ok(blob_report)) => agent_script_run_success_report(
             &input.path,
             input.agents,
@@ -1880,6 +1893,203 @@ fn agent_script_run_report_from_result(
             AgentBlobWriteReport::default(),
             error,
         ),
+    };
+    report.debug_db = options
+        .debug_db
+        .as_ref()
+        .map(|path| path.display().to_string());
+    agent_script_persist_debug_run(options, input, run_id, debug_events, &report)?;
+    Ok(report)
+}
+
+fn agent_script_persist_debug_run(
+    options: &AgentScriptRunOptions,
+    input: &AgentScriptRunInput,
+    run_id: &AgentRunId,
+    debug_events: &[DebugEvent],
+    report: &AgentScriptRunReport,
+) -> Result<(), String> {
+    let Some(mut store) = agent_script_debug_store(options)? else {
+        return Ok(());
+    };
+    let session_id = agent_script_start_debug_run(&store, options, input, run_id)?;
+    agent_script_append_debug_events(&mut store, run_id, debug_events)?;
+    agent_script_finish_debug_run(&store, &session_id, run_id, debug_events, report)?;
+    store
+        .flush()
+        .map_err(|error| format!("failed to flush Agent Script debug database: {error}"))
+}
+
+fn agent_script_debug_store(options: &AgentScriptRunOptions) -> Result<Option<DebugStore>, String> {
+    let Some(path) = &options.debug_db else {
+        return Ok(None);
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create debug database directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let store = DebugStore::open(path).map_err(|error| {
+        format!(
+            "failed to open Agent Script debug database {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(Some(store))
+}
+
+fn agent_script_start_debug_run(
+    store: &DebugStore,
+    options: &AgentScriptRunOptions,
+    input: &AgentScriptRunInput,
+    run_id: &AgentRunId,
+) -> Result<SessionId, String> {
+    let program_hash = StableHash::new(input.program_hash.clone())
+        .map_err(|error| format!("invalid Agent Script program hash: {error}"))?;
+    store
+        .upsert_program(&program_hash, None, None, 0)
+        .map_err(|error| format!("failed to persist Agent Script debug program: {error}"))?;
+    let session_id = agent_cli_session_id();
+    let mut session_metadata = BTreeMap::new();
+    session_metadata.insert("path".to_owned(), serde_json::json!(input.path));
+    session_metadata.insert(
+        "native".to_owned(),
+        serde_json::json!(agent_script_run_uses_native_session_for_metadata(options)),
+    );
+    store
+        .upsert_session(&DebugSession {
+            session_id: session_id.clone(),
+            program_hash: Some(program_hash),
+            profile: "script".to_owned(),
+            transport: if agent_script_run_uses_native_session_for_metadata(options) {
+                "native".to_owned()
+            } else {
+                "cli".to_owned()
+            },
+            started_unix_ms: 0,
+            ended_unix_ms: None,
+            status: DebugSessionStatus::Running,
+            metadata: session_metadata,
+        })
+        .map_err(|error| format!("failed to persist Agent Script debug session: {error}"))?;
+    let manifest = input.bundle.agent.as_ref();
+    let project_binding_mode = manifest
+        .map_or("unknown", |manifest| match manifest.project_binding.mode {
+            arcweft_agent_protocol::artifact::ProjectBindingMode::Strict => "strict",
+            arcweft_agent_protocol::artifact::ProjectBindingMode::Compatible => "compatible",
+        })
+        .to_owned();
+    store
+        .upsert_script_run(&DebugScriptRun {
+            run_id: run_id.clone(),
+            session_id: session_id.clone(),
+            agent_id: manifest.map(|manifest| manifest.agent_id.clone()),
+            artifact_hash: None,
+            source_hash: manifest.map(|manifest| manifest.source_hash.clone()),
+            project_binding_mode,
+            started_sequence: 0,
+            finished_sequence: None,
+            outcome: DebugScriptRunOutcome::Running,
+            partially_effectful: false,
+            trace_uri: None,
+            error: None,
+            metadata: BTreeMap::new(),
+        })
+        .map_err(|error| format!("failed to persist Agent Script run start: {error}"))?;
+    Ok(session_id)
+}
+
+fn agent_script_append_debug_events(
+    store: &mut DebugStore,
+    run_id: &AgentRunId,
+    debug_events: &[DebugEvent],
+) -> Result<(), String> {
+    for event in debug_events {
+        let mut event = event.clone();
+        event.run_id = Some(run_id.clone());
+        store
+            .append(&event)
+            .map_err(|error| format!("failed to persist Agent Script debug event: {error}"))?;
+    }
+    Ok(())
+}
+
+fn agent_script_finish_debug_run(
+    store: &DebugStore,
+    session_id: &SessionId,
+    run_id: &AgentRunId,
+    debug_events: &[DebugEvent],
+    report: &AgentScriptRunReport,
+) -> Result<(), String> {
+    let finished_sequence = debug_events
+        .last()
+        .map_or(1, |event| event.sequence.saturating_add(1));
+    let outcome = if report.ok {
+        DebugScriptRunOutcome::Done
+    } else {
+        DebugScriptRunOutcome::Failed
+    };
+    let mut run_metadata = BTreeMap::new();
+    run_metadata.insert("steps".to_owned(), serde_json::json!(report.steps));
+    run_metadata.insert(
+        "host_calls".to_owned(),
+        serde_json::json!(report.host_calls),
+    );
+    run_metadata.insert(
+        "events_emitted".to_owned(),
+        serde_json::json!(report.events_emitted),
+    );
+    run_metadata.insert(
+        "trace_records".to_owned(),
+        serde_json::json!(report.trace_records),
+    );
+    let error = report
+        .error
+        .as_ref()
+        .map(|message| serde_json::json!({ "message": message }));
+    store
+        .finish_script_run(
+            run_id,
+            &DebugScriptRunFinish {
+                outcome,
+                finished_sequence,
+                partially_effectful: report.host_calls > 0,
+                trace_uri: report.trace_path.clone(),
+                error,
+                metadata: run_metadata,
+            },
+        )
+        .map_err(|error| format!("failed to persist Agent Script run finish: {error}"))?;
+    let mut session_finish_metadata = BTreeMap::new();
+    session_finish_metadata.insert("runs".to_owned(), serde_json::json!(1));
+    session_finish_metadata.insert("last_run_id".to_owned(), serde_json::json!(run_id.as_str()));
+    session_finish_metadata.insert("ok".to_owned(), serde_json::json!(report.ok));
+    store
+        .finish_session(
+            session_id,
+            if report.ok {
+                DebugSessionStatus::Finished
+            } else {
+                DebugSessionStatus::Failed
+            },
+            0,
+            &session_finish_metadata,
+        )
+        .map_err(|error| format!("failed to finish Agent Script debug session: {error}"))
+}
+
+fn agent_script_run_uses_native_session_for_metadata(options: &AgentScriptRunOptions) -> bool {
+    #[cfg(feature = "native-capture")]
+    {
+        agent_script_run_uses_native_session(options)
+    }
+    #[cfg(not(feature = "native-capture"))]
+    {
+        let _ = options;
+        false
     }
 }
 
@@ -1902,6 +2112,7 @@ fn agent_script_run_success_report(
         trace_path,
         trace_records,
         blob_dir: blob_report.dir,
+        debug_db: None,
         blobs_written: blob_report.count,
         blob_bytes: blob_report.bytes,
         responses: run.responses,
@@ -1928,6 +2139,7 @@ fn agent_script_run_error_report(
         trace_path,
         trace_records,
         blob_dir: blob_report.dir,
+        debug_db: None,
         blobs_written: blob_report.count,
         blob_bytes: blob_report.bytes,
         responses: Vec::new(),

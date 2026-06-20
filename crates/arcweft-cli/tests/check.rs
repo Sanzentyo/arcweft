@@ -16,6 +16,7 @@ use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyCl
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
+use arcweft_debug_model::script::DebugScriptRunOutcome;
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
@@ -154,6 +155,68 @@ fn agent_script_run_json_executes_cli_session_smoke() {
     assert_agent_script_replay_matches(&trace_path, &bundle_trace_path);
     assert_agent_rag_query_trace(&trace_path);
     assert_agent_rag_query_trace_respects_privacy(&trace_path);
+}
+
+#[test]
+fn agent_script_run_persists_debug_session_and_script_run() {
+    let trace_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/debug-db-trace-{}.arcwx",
+        std::process::id()
+    ));
+    let debug_db_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/script-run-{}.sqlite3",
+        std::process::id()
+    ));
+    let run_id = format!("run.debug.{}", std::process::id());
+    let _ = fs::remove_file(&trace_path);
+    let _ = fs::remove_file(&debug_db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("run")
+        .arg(agent_script_cli_run_smoke_path())
+        .arg("--json")
+        .arg("--trace-out")
+        .arg(&trace_path)
+        .arg("--debug-db")
+        .arg(&debug_db_path)
+        .arg("--run-id")
+        .arg(&run_id)
+        .output()
+        .expect("arcw agent script run persists debug DB");
+    assert!(
+        output.status.success(),
+        "agent script debug DB run should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script run output is JSON");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["debug_db"], debug_db_path.display().to_string());
+
+    let store = DebugStore::open(&debug_db_path).expect("open Agent Script debug database");
+    let session_id = SessionId::new("session.cli").expect("session id");
+    let session = store
+        .session(&session_id)
+        .expect("load script session")
+        .expect("script session persisted");
+    assert_eq!(session.status, DebugSessionStatus::Finished);
+    assert_eq!(session.metadata["last_run_id"], run_id.as_str());
+    let expected_trace_path = trace_path.display().to_string();
+    let persisted_run = store
+        .script_run(&arcweft_agent_protocol::ids::AgentRunId::new(run_id).expect("run id"))
+        .expect("load script run")
+        .expect("script run persisted");
+    assert_eq!(persisted_run.outcome, DebugScriptRunOutcome::Done);
+    assert_eq!(
+        persisted_run.trace_uri.as_deref(),
+        Some(expected_trace_path.as_str())
+    );
+    assert_eq!(persisted_run.metadata["steps"], report["steps"]);
+    assert_eq!(store.stats().expect("stats").script_runs, 1);
+    assert!(store.stats().expect("stats").debug_events > 0);
 }
 
 #[test]

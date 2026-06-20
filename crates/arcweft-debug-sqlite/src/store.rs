@@ -8,6 +8,7 @@ use arcweft_debug_model::{
     history::DebugHistoryEntry,
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
+    script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
 };
@@ -42,10 +43,14 @@ pub enum DebugStoreError {
     InvalidSearchChannel(String),
     #[error("invalid debug session status stored in debug database: {0}")]
     InvalidSessionStatus(String),
+    #[error("invalid script run outcome stored in debug database: {0}")]
+    InvalidScriptRunOutcome(String),
     #[error("RAG query is not indexed: {0}")]
     RagQueryNotIndexed(String),
     #[error("debug session is not indexed: {0}")]
     SessionNotIndexed(String),
+    #[error("script run is not indexed: {0}")]
+    ScriptRunNotIndexed(String),
     #[error(transparent)]
     VectorSearch(#[from] VectorSearchError),
     #[error(transparent)]
@@ -93,6 +98,23 @@ struct RawDebugSession {
     started_unix_ms: i64,
     ended_unix_ms: Option<i64>,
     status: String,
+    metadata_json: String,
+}
+
+#[derive(Debug)]
+struct RawDebugScriptRun {
+    run_id: String,
+    session_id: String,
+    agent_id: Option<String>,
+    artifact_hash: Option<String>,
+    source_hash: Option<String>,
+    project_binding_mode: String,
+    started_sequence: i64,
+    finished_sequence: Option<i64>,
+    outcome: String,
+    partially_effectful: i64,
+    trace_uri: Option<String>,
+    error_json: Option<String>,
     metadata_json: String,
 }
 
@@ -373,6 +395,102 @@ impl DebugStore {
                 .and_then(debug_session_from_raw)
         })
         .collect()
+    }
+
+    pub fn upsert_script_run(&self, run: &DebugScriptRun) -> Result<(), DebugStoreError> {
+        self.connection.execute(
+            "INSERT INTO script_runs(
+               run_id, session_id, agent_id, artifact_hash, source_hash,
+               project_binding_mode, started_sequence, finished_sequence, outcome,
+               partially_effectful, trace_uri, error_json, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(run_id) DO UPDATE SET
+               session_id = excluded.session_id,
+               agent_id = excluded.agent_id,
+               artifact_hash = excluded.artifact_hash,
+               source_hash = excluded.source_hash,
+               project_binding_mode = excluded.project_binding_mode,
+               started_sequence = excluded.started_sequence,
+               finished_sequence = excluded.finished_sequence,
+               outcome = excluded.outcome,
+               partially_effectful = excluded.partially_effectful,
+               trace_uri = excluded.trace_uri,
+               error_json = excluded.error_json,
+               metadata_json = excluded.metadata_json",
+            params![
+                run.run_id.as_str(),
+                run.session_id.as_str(),
+                run.agent_id.as_ref().map(PublicId::as_str),
+                run.artifact_hash.as_ref().map(StableHash::as_str),
+                run.source_hash.as_ref().map(StableHash::as_str),
+                &run.project_binding_mode,
+                sqlite_i64(run.started_sequence, "script_runs.started_sequence")?,
+                run.finished_sequence
+                    .map(|sequence| sqlite_i64(sequence, "script_runs.finished_sequence"))
+                    .transpose()?,
+                run.outcome.as_str(),
+                sqlite_bool(run.partially_effectful),
+                run.trace_uri.as_deref(),
+                run.error.as_ref().map(serde_json::to_string).transpose()?,
+                serde_json::to_string(&run.metadata)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn finish_script_run(
+        &self,
+        run_id: &AgentRunId,
+        finish: &DebugScriptRunFinish,
+    ) -> Result<(), DebugStoreError> {
+        let updated = self.connection.execute(
+            "UPDATE script_runs
+             SET finished_sequence = ?2,
+                 outcome = ?3,
+                 partially_effectful = ?4,
+                 trace_uri = ?5,
+                 error_json = ?6,
+                 metadata_json = ?7
+             WHERE run_id = ?1",
+            params![
+                run_id.as_str(),
+                sqlite_i64(finish.finished_sequence, "script_runs.finished_sequence")?,
+                finish.outcome.as_str(),
+                sqlite_bool(finish.partially_effectful),
+                finish.trace_uri.as_deref(),
+                finish
+                    .error
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+                serde_json::to_string(&finish.metadata)?,
+            ],
+        )?;
+        if updated == 0 {
+            return Err(DebugStoreError::ScriptRunNotIndexed(
+                run_id.as_str().to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn script_run(
+        &self,
+        run_id: &AgentRunId,
+    ) -> Result<Option<DebugScriptRun>, DebugStoreError> {
+        self.connection
+            .query_row(
+                "SELECT run_id, session_id, agent_id, artifact_hash, source_hash,
+                        project_binding_mode, started_sequence, finished_sequence,
+                        outcome, partially_effectful, trace_uri, error_json, metadata_json
+                 FROM script_runs
+                 WHERE run_id = ?1",
+                [run_id.as_str()],
+                raw_debug_script_run_from_row,
+            )
+            .optional()?
+            .map(debug_script_run_from_raw)
+            .transpose()
     }
 
     pub fn upsert_chunk(&self, chunk: &DebugChunk) -> Result<(), DebugStoreError> {
@@ -1664,6 +1782,24 @@ fn raw_debug_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDe
     })
 }
 
+fn raw_debug_script_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugScriptRun> {
+    Ok(RawDebugScriptRun {
+        run_id: row.get(0)?,
+        session_id: row.get(1)?,
+        agent_id: row.get(2)?,
+        artifact_hash: row.get(3)?,
+        source_hash: row.get(4)?,
+        project_binding_mode: row.get(5)?,
+        started_sequence: row.get(6)?,
+        finished_sequence: row.get(7)?,
+        outcome: row.get(8)?,
+        partially_effectful: row.get(9)?,
+        trace_uri: row.get(10)?,
+        error_json: row.get(11)?,
+        metadata_json: row.get(12)?,
+    })
+}
+
 fn debug_session_from_raw(raw: RawDebugSession) -> Result<DebugSession, DebugStoreError> {
     let status = DebugSessionStatus::parse(&raw.status)
         .ok_or_else(|| DebugStoreError::InvalidSessionStatus(raw.status.clone()))?;
@@ -1680,6 +1816,36 @@ fn debug_session_from_raw(raw: RawDebugSession) -> Result<DebugSession, DebugSto
     })
 }
 
+fn debug_script_run_from_raw(raw: RawDebugScriptRun) -> Result<DebugScriptRun, DebugStoreError> {
+    let outcome = DebugScriptRunOutcome::parse(&raw.outcome)
+        .ok_or_else(|| DebugStoreError::InvalidScriptRunOutcome(raw.outcome.clone()))?;
+    Ok(DebugScriptRun {
+        run_id: AgentRunId::new(raw.run_id)?,
+        session_id: SessionId::new(raw.session_id)?,
+        agent_id: raw.agent_id.map(PublicId::new).transpose()?,
+        artifact_hash: raw.artifact_hash.map(StableHash::new).transpose()?,
+        source_hash: raw.source_hash.map(StableHash::new).transpose()?,
+        project_binding_mode: raw.project_binding_mode,
+        started_sequence: u64::try_from(raw.started_sequence)
+            .map_err(|_| DebugStoreError::IntegerOverflow("script_runs.started_sequence"))?,
+        finished_sequence: raw
+            .finished_sequence
+            .map(|sequence| {
+                u64::try_from(sequence)
+                    .map_err(|_| DebugStoreError::IntegerOverflow("script_runs.finished_sequence"))
+            })
+            .transpose()?,
+        outcome,
+        partially_effectful: raw.partially_effectful != 0,
+        trace_uri: raw.trace_uri,
+        error: raw
+            .error_json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?,
+        metadata: serde_json::from_str(&raw.metadata_json)?,
+    })
+}
+
 fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
     if value.len() <= max_bytes {
         return (value.to_owned(), false);
@@ -1693,6 +1859,10 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
 
 fn sqlite_i64(value: u64, column: &'static str) -> Result<i64, DebugStoreError> {
     i64::try_from(value).map_err(|_| DebugStoreError::IntegerOverflow(column))
+}
+
+const fn sqlite_bool(value: bool) -> i64 {
+    if value { 1 } else { 0 }
 }
 
 fn history_score(query: &str, change_id: &str, body: &str) -> f64 {
@@ -1840,6 +2010,7 @@ mod tests {
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
         repl::DebugReplCell,
+        script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
         session::{DebugSession, DebugSessionStatus},
         sink::DebugEventSink,
     };
@@ -2230,6 +2401,72 @@ mod tests {
         assert_eq!(finished.ended_unix_ms, Some(25));
         assert_eq!(finished.metadata["reason"], "test-complete");
         assert_eq!(store.sessions(1).expect("list sessions"), vec![finished]);
+    }
+
+    #[test]
+    fn debug_script_run_round_trips_and_finishes() {
+        let mut store = DebugStore::open_in_memory().expect("open store");
+        let session_id = SessionId::new("session.script").expect("session id");
+        let run_id = AgentRunId::new("run.script").expect("run id");
+        store
+            .start_session(&session_id, None, "script", "cli", 0)
+            .expect("session");
+        let run = DebugScriptRun {
+            run_id: run_id.clone(),
+            session_id: session_id.clone(),
+            agent_id: Some(PublicId::new("agent.script").expect("agent id")),
+            artifact_hash: None,
+            source_hash: Some(hash("blake3:script-source")),
+            project_binding_mode: "strict".to_owned(),
+            started_sequence: 0,
+            finished_sequence: None,
+            outcome: DebugScriptRunOutcome::Running,
+            partially_effectful: false,
+            trace_uri: None,
+            error: None,
+            metadata: BTreeMap::new(),
+        };
+        store.upsert_script_run(&run).expect("script run");
+        store
+            .append(&DebugEvent {
+                schema_version: 1,
+                session_id: session_id.clone(),
+                run_id: Some(run_id.clone()),
+                sequence: 1,
+                tick: Some(7),
+                kind: DebugEventKind::Observation,
+                payload: serde_json::json!({ "message": "observed" }),
+                created_unix_ms: 0,
+            })
+            .expect("debug event");
+        let mut metadata = BTreeMap::new();
+        metadata.insert("steps".to_owned(), serde_json::json!(2));
+        store
+            .finish_script_run(
+                &run_id,
+                &DebugScriptRunFinish {
+                    outcome: DebugScriptRunOutcome::Done,
+                    finished_sequence: 2,
+                    partially_effectful: true,
+                    trace_uri: Some("target/run.arcwx".to_owned()),
+                    error: None,
+                    metadata,
+                },
+            )
+            .expect("finish script run");
+
+        let persisted = store
+            .script_run(&run_id)
+            .expect("load script run")
+            .expect("script run exists");
+
+        assert_eq!(persisted.outcome, DebugScriptRunOutcome::Done);
+        assert_eq!(persisted.finished_sequence, Some(2));
+        assert!(persisted.partially_effectful);
+        assert_eq!(persisted.trace_uri.as_deref(), Some("target/run.arcwx"));
+        assert_eq!(persisted.metadata["steps"], 2);
+        assert_eq!(store.stats().expect("stats").script_runs, 1);
+        assert_eq!(store.stats().expect("stats").debug_events, 1);
     }
 
     #[test]

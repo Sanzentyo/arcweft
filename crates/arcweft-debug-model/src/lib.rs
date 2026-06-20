@@ -7,5 +7,6 @@ pub mod graph;
 pub mod history;
 pub mod rag;
 pub mod repl;
+pub mod script;
 pub mod session;
 pub mod sink;
