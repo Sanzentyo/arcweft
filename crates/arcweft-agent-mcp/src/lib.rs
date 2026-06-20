@@ -154,6 +154,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_explain_tool_descriptor(),
         agent_rag_context_read_tool_descriptor(),
         agent_debug_script_runs_tool_descriptor(),
+        agent_debug_close_stale_sessions_tool_descriptor(),
         agent_debug_session_timeline_tool_descriptor(),
         agent_debug_repl_cells_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
@@ -722,6 +723,39 @@ fn agent_debug_script_runs_tool_descriptor() -> McpToolDescriptor {
                     "default": 20
                 }
             }
+        }),
+    }
+}
+
+fn agent_debug_close_stale_sessions_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.sessions.close_stale".to_owned(),
+        title: Some("Close Stale Arcweft Debug Sessions".to_owned()),
+        description: "Applies the debug-store lifecycle policy for long-lived running sessions, optionally as a dry run, and closes stale rows as abandoned.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "stale_after_millis": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Running sessions older than this duration are stale."
+                },
+                "reason": {
+                    "type": "string",
+                    "default": "stale_running_session",
+                    "description": "Lifecycle policy reason recorded in session metadata."
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, report matching sessions without closing them."
+                }
+            },
+            "required": ["stale_after_millis"]
         }),
     }
 }
@@ -1822,6 +1856,11 @@ mod tests {
         assert!(
             tools
                 .iter()
+                .any(|tool| tool.name == "arcweft.debug.sessions.close_stale")
+        );
+        assert!(
+            tools
+                .iter()
                 .any(|tool| tool.name == "arcweft.debug.session.timeline")
         );
         assert!(
@@ -2129,6 +2168,23 @@ mod tests {
         assert_eq!(
             script_runs.input_schema["properties"]["limit"]["minimum"],
             1
+        );
+
+        let close_stale = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.sessions.close_stale")
+            .expect("debug close stale sessions tool is described");
+        assert_eq!(
+            close_stale.input_schema["required"],
+            serde_json::json!(["stale_after_millis"])
+        );
+        assert_eq!(
+            close_stale.input_schema["properties"]["stale_after_millis"]["minimum"],
+            1
+        );
+        assert_eq!(
+            close_stale.input_schema["properties"]["dry_run"]["type"],
+            "boolean"
         );
 
         let timeline = tools

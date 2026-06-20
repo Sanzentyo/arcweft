@@ -116,6 +116,7 @@ use std::fmt::Write as _;
 #[cfg(feature = "agent-repl")]
 use std::io::IsTerminal as _;
 use std::io::{BufRead as _, Read as _, Write as _};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
@@ -1603,6 +1604,81 @@ mod tests {
         assert_eq!(
             value["cells"][0]["diagnostic_ids"][0],
             serde_json::json!("diag.1")
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_debug_close_stale_sessions_abandons_running_sessions() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-close-stale-sessions-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let stale = SessionId::new("session.mcp.stale").expect("stale session id");
+        let fresh = SessionId::new("session.mcp.fresh").expect("fresh session id");
+        store
+            .start_session(&stale, None, "agent", "mcp", 0)
+            .expect("stale session");
+        store
+            .start_session(&fresh, None, "agent", "mcp", i64::MAX / 2)
+            .expect("fresh session");
+        drop(store);
+
+        let dry_run = agent_mcp_call_debug_close_stale_sessions(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "stale_after_millis": 1,
+            "reason": "mcp-test-stale",
+            "dry_run": true
+        }))
+        .expect("debug close stale dry-run succeeds");
+        let dry_value = mcp_text_json(&dry_run);
+        assert_eq!(dry_value["dry_run"], serde_json::json!(true));
+        assert_eq!(
+            dry_value["matched_sessions"][0]["session_id"],
+            serde_json::json!("session.mcp.stale")
+        );
+        assert!(
+            dry_value["closed_sessions"]
+                .as_array()
+                .expect("closed sessions")
+                .is_empty()
+        );
+
+        let result = agent_mcp_call_debug_close_stale_sessions(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "stale_after_millis": 1,
+            "reason": "mcp-test-stale"
+        }))
+        .expect("debug close stale succeeds");
+        let value = mcp_text_json(&result);
+        assert_eq!(value["dry_run"], serde_json::json!(false));
+        assert_eq!(
+            value["closed_sessions"][0]["status"],
+            serde_json::json!("abandoned")
+        );
+        assert_eq!(
+            value["closed_sessions"][0]["metadata"]["lifecycle_policy"]["reason"],
+            serde_json::json!("mcp-test-stale")
+        );
+
+        let store = DebugStore::open(&db_path).expect("debug store reopens");
+        assert_eq!(
+            store
+                .session(&stale)
+                .expect("read stale")
+                .expect("stale exists")
+                .status,
+            DebugSessionStatus::Abandoned
+        );
+        assert_eq!(
+            store
+                .session(&fresh)
+                .expect("read fresh")
+                .expect("fresh exists")
+                .status,
+            DebugSessionStatus::Running
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -5513,6 +5589,10 @@ fn agent_mcp_debug_tool_call(
             agent_mcp_call_debug_script_runs(arguments)?,
             "MCP debug script runs",
         ),
+        "arcweft.debug.sessions.close_stale" => (
+            agent_mcp_call_debug_close_stale_sessions(arguments)?,
+            "MCP debug close stale sessions",
+        ),
         "arcweft.debug.session.timeline" => (
             agent_mcp_call_debug_session_timeline(arguments)?,
             "MCP debug timeline",
@@ -6470,6 +6550,91 @@ fn agent_mcp_debug_script_run_json(run: &DebugScriptRun) -> serde_json::Value {
         "error": &run.error,
         "metadata": &run.metadata,
     })
+}
+
+fn agent_mcp_call_debug_close_stale_sessions(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let stale_after_millis = agent_mcp_u64_argument(
+        arguments,
+        "stale_after_millis",
+        "arcweft.debug.sessions.close_stale",
+    )?
+    .ok_or_else(|| {
+        "arcweft.debug.sessions.close_stale requires arguments.stale_after_millis".to_owned()
+    })?;
+    if stale_after_millis == 0 {
+        return Err(
+            "arcweft.debug.sessions.close_stale argument stale_after_millis must be at least 1"
+                .to_owned(),
+        );
+    }
+    let stale_after_millis = i64::try_from(stale_after_millis).map_err(|_| {
+        "arcweft.debug.sessions.close_stale argument stale_after_millis is too large".to_owned()
+    })?;
+    let reason =
+        agent_mcp_non_empty_string_argument(arguments, "reason").unwrap_or("stale_running_session");
+    let dry_run = arguments
+        .get("dry_run")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let now_unix_ms = agent_mcp_current_unix_millis();
+    let cutoff_unix_ms = now_unix_ms.saturating_sub(stale_after_millis);
+    let path = agent_mcp_debug_store_path(arguments);
+    let store = DebugStore::open(path).map_err(|error| {
+        format!("arcweft.debug.sessions.close_stale failed to open `{path}`: {error}")
+    })?;
+    let matched_sessions = store
+        .stale_running_sessions(cutoff_unix_ms)
+        .map_err(|error| {
+            format!("arcweft.debug.sessions.close_stale failed to read `{path}`: {error}")
+        })?;
+    let closed_sessions = if dry_run {
+        Vec::new()
+    } else {
+        store
+            .abandon_stale_running_sessions(cutoff_unix_ms, now_unix_ms, reason)
+            .map_err(|error| {
+                format!("arcweft.debug.sessions.close_stale failed to update `{path}`: {error}")
+            })?
+    };
+    let value = serde_json::json!({
+        "path": path,
+        "stale_after_millis": stale_after_millis,
+        "cutoff_unix_ms": cutoff_unix_ms,
+        "closed_unix_ms": now_unix_ms,
+        "reason": reason,
+        "dry_run": dry_run,
+        "matched_sessions": matched_sessions
+            .iter()
+            .map(agent_mcp_debug_session_json)
+            .collect::<Vec<_>>(),
+        "closed_sessions": closed_sessions
+            .iter()
+            .map(agent_mcp_debug_session_json)
+            .collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug close stale sessions")
+}
+
+fn agent_mcp_debug_session_json(session: &DebugSession) -> serde_json::Value {
+    serde_json::json!({
+        "session_id": session.session_id.as_str(),
+        "program_hash": session.program_hash.as_ref().map(StableHash::as_str),
+        "profile": &session.profile,
+        "transport": &session.transport,
+        "started_unix_ms": session.started_unix_ms,
+        "ended_unix_ms": session.ended_unix_ms,
+        "status": session.status.as_str(),
+        "metadata": &session.metadata,
+    })
+}
+
+fn agent_mcp_current_unix_millis() -> i64 {
+    let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return 0;
+    };
+    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
 }
 
 fn agent_mcp_call_debug_session_timeline(
