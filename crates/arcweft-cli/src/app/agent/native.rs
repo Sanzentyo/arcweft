@@ -10,9 +10,9 @@ use super::{
     AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
     CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
-    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_rag_source_paths,
-    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
-    agent_script_run_report_from_result, agent_script_runtime_policy,
+    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_rag_select_context_chunk,
+    agent_rag_source_paths, agent_script_project_index, agent_script_run_bundle,
+    agent_script_run_input, agent_script_run_report_from_result, agent_script_runtime_policy,
     agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
     load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
     native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
@@ -974,6 +974,59 @@ mod tests {
         assert_eq!(read["truncated"], serde_json::json!(true));
         assert_eq!(read["returned_bytes"], serde_json::json!(9));
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_rag_context_pack_deduplicates_semantic_hashes() {
+        fn chunk(id: &str, semantic_hash: &str) -> DebugChunk {
+            DebugChunk {
+                id: ChunkId::new(id),
+                program_hash: None,
+                source_kind: ChunkSourceKind::Source,
+                source_key: id.to_owned(),
+                title: id.to_owned(),
+                body: format!("alpha context {id}"),
+                content_hash: StableHash::new(format!("blake3:{id}")).expect("hash"),
+                semantic_hash: Some(StableHash::new(semantic_hash).expect("semantic hash")),
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy: PrivacyClass::Project,
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            }
+        }
+        let candidates = vec![
+            AgentMcpRagCandidate {
+                chunk: chunk("chunk:a", "blake3:same-semantic"),
+                preferred_channel: SearchChannel::Lexical,
+            },
+            AgentMcpRagCandidate {
+                chunk: chunk("chunk:b", "blake3:same-semantic"),
+                preferred_channel: SearchChannel::Lexical,
+            },
+            AgentMcpRagCandidate {
+                chunk: chunk("chunk:c", "blake3:unique-semantic"),
+                preferred_channel: SearchChannel::Lexical,
+            },
+        ];
+        let query = RagQuery {
+            query_id: "query.mcp.semantic.dedupe".to_owned(),
+            text: "alpha".to_owned(),
+            program_hash: StableHash::new("blake3:mcp-semantic-dedupe").expect("hash"),
+            roots: Vec::new(),
+            graph_depth: 1,
+            limit: 2,
+            max_context_bytes: 4096,
+        };
+
+        let pack = agent_mcp_rag_context_pack_from_candidates(query, &candidates, 2, 4096);
+
+        let ids = pack
+            .items
+            .iter()
+            .map(|item| item.chunk_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["chunk:a", "chunk:c"]);
     }
 
     #[test]
@@ -6213,7 +6266,7 @@ fn agent_mcp_rag_context_pack_from_candidates(
     let fused = reciprocal_rank_fusion(
         &agent_mcp_rag_ranked_lists(candidates, &query),
         &FusionConfig::default(),
-        limit,
+        candidates.len(),
     );
     let by_id = candidates
         .iter()
@@ -6222,10 +6275,22 @@ fn agent_mcp_rag_context_pack_from_candidates(
     let mut used_bytes = 0usize;
     let mut truncated = false;
     let mut items = Vec::new();
+    let mut selected_semantic_hashes = BTreeSet::new();
+    let mut selected_source_anchors = Vec::new();
     for hit in fused {
+        if items.len() >= limit {
+            break;
+        }
         let Some(chunk) = by_id.get(&hit.chunk_id).copied() else {
             continue;
         };
+        if !agent_rag_select_context_chunk(
+            chunk,
+            &mut selected_semantic_hashes,
+            &mut selected_source_anchors,
+        ) {
+            continue;
+        }
         let remaining = max_context_bytes.saturating_sub(used_bytes);
         if remaining == 0 {
             truncated = true;

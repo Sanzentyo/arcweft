@@ -617,7 +617,7 @@ fn agent_trace_rag_pack_from_candidates(
     let fused = reciprocal_rank_fusion(
         &agent_trace_rag_ranked_lists(candidates, &query),
         &FusionConfig::default(),
-        options.limit,
+        candidates.len(),
     );
     let by_id = candidates
         .iter()
@@ -626,10 +626,22 @@ fn agent_trace_rag_pack_from_candidates(
     let mut items = Vec::new();
     let mut used_bytes = 0usize;
     let mut truncated = false;
+    let mut selected_semantic_hashes = BTreeSet::new();
+    let mut selected_source_anchors = Vec::new();
     for hit in fused {
+        if items.len() >= options.limit {
+            break;
+        }
         let Some(chunk) = by_id.get(&hit.chunk_id).copied() else {
             continue;
         };
+        if !agent_rag_select_context_chunk(
+            chunk,
+            &mut selected_semantic_hashes,
+            &mut selected_source_anchors,
+        ) {
+            continue;
+        }
         let remaining = options.max_context_bytes.saturating_sub(used_bytes);
         if remaining == 0 {
             truncated = true;
@@ -658,6 +670,41 @@ fn agent_trace_rag_pack_from_candidates(
         items,
         truncated,
     }
+}
+
+pub(in crate::app) fn agent_rag_select_context_chunk(
+    chunk: &DebugChunk,
+    selected_semantic_hashes: &mut BTreeSet<StableHash>,
+    selected_source_anchors: &mut Vec<DebugSourceAnchor>,
+) -> bool {
+    if chunk
+        .semantic_hash
+        .as_ref()
+        .is_some_and(|hash| selected_semantic_hashes.contains(hash))
+    {
+        return false;
+    }
+    if chunk.source_anchor.as_ref().is_some_and(|anchor| {
+        selected_source_anchors
+            .iter()
+            .any(|selected| agent_rag_source_anchors_overlap(selected, anchor))
+    }) {
+        return false;
+    }
+
+    if let Some(hash) = &chunk.semantic_hash {
+        selected_semantic_hashes.insert(hash.clone());
+    }
+    if let Some(anchor) = &chunk.source_anchor {
+        selected_source_anchors.push(anchor.clone());
+    }
+    true
+}
+
+fn agent_rag_source_anchors_overlap(left: &DebugSourceAnchor, right: &DebugSourceAnchor) -> bool {
+    left.path == right.path
+        && ((left.start_byte == right.start_byte && left.end_byte == right.end_byte)
+            || (left.start_byte < right.end_byte && right.start_byte < left.end_byte))
 }
 
 fn agent_rag_query_allowed_candidates(
@@ -3038,5 +3085,147 @@ fn agent_value_to_json(value: &AgentValue) -> serde_json::Value {
             serde_json::Value::Array(values.iter().map(agent_value_to_json).collect())
         }
         AgentValue::Map(values) => agent_values_to_json(values),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_hash(value: &str) -> StableHash {
+        StableHash::new(format!("blake3:{value}")).expect("test hash is nonempty")
+    }
+
+    fn test_rag_options() -> AgentRagQueryOptions {
+        AgentRagQueryOptions {
+            trace: None,
+            source: vec![PathBuf::from("test.arcw")],
+            query: "alpha".to_owned(),
+            roots: Vec::new(),
+            graph_depth: 1,
+            limit: 2,
+            max_context_bytes: 4096,
+            max_privacy: PrivacyClass::Project,
+            debug_db: None,
+            json: true,
+        }
+    }
+
+    fn test_rag_query() -> RagQuery {
+        RagQuery {
+            query_id: "query.test".to_owned(),
+            text: "alpha".to_owned(),
+            program_hash: test_hash("program"),
+            roots: Vec::new(),
+            graph_depth: 1,
+            limit: 2,
+            max_context_bytes: 4096,
+        }
+    }
+
+    fn test_chunk(
+        id: &str,
+        semantic_hash: Option<StableHash>,
+        source_anchor: Option<DebugSourceAnchor>,
+    ) -> DebugChunk {
+        DebugChunk {
+            id: ChunkId::new(id),
+            program_hash: None,
+            source_kind: ChunkSourceKind::Source,
+            source_key: id.to_owned(),
+            title: id.to_owned(),
+            body: format!("alpha context {id}"),
+            content_hash: test_hash(id),
+            semantic_hash,
+            source_anchor,
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            metadata: BTreeMap::new(),
+            created_unix_ms: 0,
+        }
+    }
+
+    fn test_candidate(chunk: DebugChunk) -> AgentRagCandidate {
+        AgentRagCandidate {
+            chunk,
+            preferred_channel: SearchChannel::Lexical,
+        }
+    }
+
+    fn item_ids(pack: &RagContextPack) -> Vec<&str> {
+        pack.items
+            .iter()
+            .map(|item| item.chunk_id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn agent_rag_context_pack_deduplicates_semantic_hashes() {
+        let candidates = vec![
+            test_candidate(test_chunk(
+                "chunk:a",
+                Some(test_hash("same-semantic")),
+                None,
+            )),
+            test_candidate(test_chunk(
+                "chunk:b",
+                Some(test_hash("same-semantic")),
+                None,
+            )),
+            test_candidate(test_chunk(
+                "chunk:c",
+                Some(test_hash("unique-semantic")),
+                None,
+            )),
+        ];
+
+        let pack = agent_trace_rag_pack_from_candidates(
+            &test_rag_options(),
+            test_rag_query(),
+            &candidates,
+        );
+
+        assert_eq!(item_ids(&pack), vec!["chunk:a", "chunk:c"]);
+    }
+
+    #[test]
+    fn agent_rag_context_pack_deduplicates_overlapping_source_spans() {
+        let candidates = vec![
+            test_candidate(test_chunk(
+                "chunk:a",
+                None,
+                Some(DebugSourceAnchor {
+                    path: "game.arcw".to_owned(),
+                    start_byte: 0,
+                    end_byte: 20,
+                }),
+            )),
+            test_candidate(test_chunk(
+                "chunk:b",
+                None,
+                Some(DebugSourceAnchor {
+                    path: "game.arcw".to_owned(),
+                    start_byte: 10,
+                    end_byte: 30,
+                }),
+            )),
+            test_candidate(test_chunk(
+                "chunk:c",
+                None,
+                Some(DebugSourceAnchor {
+                    path: "game.arcw".to_owned(),
+                    start_byte: 30,
+                    end_byte: 40,
+                }),
+            )),
+        ];
+
+        let pack = agent_trace_rag_pack_from_candidates(
+            &test_rag_options(),
+            test_rag_query(),
+            &candidates,
+        );
+
+        assert_eq!(item_ids(&pack), vec!["chunk:a", "chunk:c"]);
     }
 }
