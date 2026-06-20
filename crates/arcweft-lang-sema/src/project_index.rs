@@ -18,10 +18,11 @@ use arcweft_lang_syntax::{
         flow::FlowKind,
         flow::Stmt,
         ids::EntityRef,
-        items::{EntityDeclKind, EntryItem},
+        items::{CallableItem, CallableKind, EntityDeclKind, EntryItem},
+        pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
-    types::{TypeRef, parse_type_ref},
+    types::{FnSignature as SyntaxFnSignature, TypeRef, parse_fn_signature, parse_type_ref},
 };
 use arcweft_source::{SourceAnchor, SourceName};
 use std::collections::BTreeMap;
@@ -66,6 +67,22 @@ pub struct ProjectGraphRelation {
     from: PublicId,
     to: PublicId,
     edge_kind: ProjectGraphRelationKind,
+}
+
+/// Project-owned callable symbol declared by source code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectCallableSymbol {
+    kind: ProjectCallableKind,
+    signature: FunctionSignature,
+    source: SourceAnchor,
+    semantic_hash: SemanticHash,
+}
+
+/// Source callable family represented in the project graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectCallableKind {
+    Reducer,
+    View,
 }
 
 /// Kind of semantic relation represented in the project graph.
@@ -164,6 +181,7 @@ pub struct ProjectSemanticIndex {
     bundle_hash: Option<BundleHash>,
     entities: BTreeMap<PublicId, EntitySymbol>,
     callables: BTreeMap<QualifiedName, CallableSymbol>,
+    project_callables: BTreeMap<QualifiedName, ProjectCallableSymbol>,
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
@@ -196,6 +214,8 @@ pub enum ProjectSemanticIndexError {
     },
     #[error("invalid signal type for `{id}`: {message}")]
     InvalidSignalType { id: String, message: String },
+    #[error("invalid callable signature for `{name}`: {message}")]
+    InvalidCallableSignature { name: String, message: String },
 }
 
 impl ProgramHash {
@@ -310,6 +330,53 @@ impl ProjectGraphRelation {
 
     pub const fn edge_kind(&self) -> ProjectGraphRelationKind {
         self.edge_kind
+    }
+}
+
+impl ProjectCallableSymbol {
+    /// Creates a source-owned project callable symbol.
+    pub const fn new(
+        kind: ProjectCallableKind,
+        signature: FunctionSignature,
+        source: SourceAnchor,
+        semantic_hash: SemanticHash,
+    ) -> Self {
+        Self {
+            kind,
+            signature,
+            source,
+            semantic_hash,
+        }
+    }
+
+    /// Callable family from source syntax.
+    pub const fn kind(&self) -> ProjectCallableKind {
+        self.kind
+    }
+
+    /// Typed callable signature projected from source syntax.
+    pub const fn signature(&self) -> &FunctionSignature {
+        &self.signature
+    }
+
+    /// Source range that declared this callable.
+    pub const fn source(&self) -> &SourceAnchor {
+        &self.source
+    }
+
+    /// Stable semantic shape hash for graph/RAG indexing.
+    pub const fn semantic_hash(&self) -> &SemanticHash {
+        &self.semantic_hash
+    }
+}
+
+impl ProjectCallableKind {
+    /// Stable lowercase graph/RAG label.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reducer => "reducer",
+            Self::View => "view",
+        }
     }
 }
 
@@ -430,6 +497,7 @@ impl ProjectSemanticIndex {
             bundle_hash: None,
             entities: BTreeMap::new(),
             callables: agent_prelude_callables(),
+            project_callables: BTreeMap::new(),
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
@@ -451,6 +519,16 @@ impl ProjectSemanticIndex {
     #[must_use]
     pub fn with_callable(mut self, name: QualifiedName, symbol: CallableSymbol) -> Self {
         self.callables.insert(name, symbol);
+        self
+    }
+
+    #[must_use]
+    pub fn with_project_callable(
+        mut self,
+        name: QualifiedName,
+        symbol: ProjectCallableSymbol,
+    ) -> Self {
+        self.project_callables.insert(name, symbol);
         self
     }
 
@@ -494,6 +572,10 @@ impl ProjectSemanticIndex {
         &self.callables
     }
 
+    pub fn project_callables(&self) -> &BTreeMap<QualifiedName, ProjectCallableSymbol> {
+        &self.project_callables
+    }
+
     pub fn types(&self) -> &BTreeMap<TypeName, TypeKind> {
         &self.types
     }
@@ -512,6 +594,10 @@ impl ProjectSemanticIndex {
 
     pub fn callable(&self, name: &QualifiedName) -> Option<&CallableSymbol> {
         self.callables.get(name)
+    }
+
+    pub fn project_callable(&self, name: &QualifiedName) -> Option<&ProjectCallableSymbol> {
+        self.project_callables.get(name)
     }
 
     pub fn typecheck_env(&self) -> TypeCheckEnv {
@@ -596,80 +682,94 @@ pub fn project_semantic_index_from_hir(
         }
     }
     for declaration in module.declarations() {
-        match declaration {
-            HirTopLevelDecl::Source(source) => {
-                if let Some(id) = source.id() {
-                    index = index.with_entity(entity_symbol(
-                        id,
-                        EntityKind::Source,
-                        None,
-                        source_name.clone(),
-                        "source",
-                    )?);
-                }
-            }
-            HirTopLevelDecl::EntityDecl(item) => {
-                let value = if item.kind() == EntityDeclKind::Signal {
-                    signal_value_type(item.id().body(), item.signature_tail())?
-                } else {
-                    None
-                };
+        index = index_top_level_declaration(declaration, index, source_name)?;
+    }
+    Ok(index)
+}
+
+fn index_top_level_declaration(
+    declaration: &HirTopLevelDecl,
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match declaration {
+        HirTopLevelDecl::Source(source) => {
+            if let Some(id) = source.id() {
                 index = index.with_entity(entity_symbol(
-                    item.id(),
-                    entity_decl_kind(item.kind()),
-                    value,
-                    source_name.clone(),
-                    entity_decl_kind_label(item.kind()),
-                )?);
-            }
-            HirTopLevelDecl::Entry(item) => {
-                index = index.with_entity(entity_symbol(
-                    item.id(),
-                    EntityKind::Entry,
+                    id,
+                    EntityKind::Source,
                     None,
                     source_name.clone(),
-                    "entry",
+                    "source",
                 )?);
-                index = index_entry_relations(item.id(), item.items(), index)?;
             }
-            HirTopLevelDecl::Test(item) => {
-                if let Some(id) = item.id().as_absolute() {
-                    index = index.with_entity(entity_symbol(
-                        id,
-                        EntityKind::Test,
-                        None,
-                        source_name.clone(),
-                        "test",
-                    )?);
-                }
-            }
-            HirTopLevelDecl::Bench(item) => {
-                if let Some(id) = item.id().as_absolute() {
-                    index = index.with_entity(entity_symbol(
-                        id,
-                        EntityKind::Bench,
-                        None,
-                        source_name.clone(),
-                        "bench",
-                    )?);
-                }
-            }
-            HirTopLevelDecl::Callable(_)
-            | HirTopLevelDecl::State(_)
-            | HirTopLevelDecl::Trait(_)
-            | HirTopLevelDecl::Impl(_)
-            | HirTopLevelDecl::Enum(_)
-            | HirTopLevelDecl::ExternCapability(_)
-            | HirTopLevelDecl::ExternMod(_)
-            | HirTopLevelDecl::DialogueDefaults(_)
-            | HirTopLevelDecl::Struct(_)
-            | HirTopLevelDecl::TypeAlias(_)
-            | HirTopLevelDecl::Hook(_)
-            | HirTopLevelDecl::MemoFn(_)
-            | HirTopLevelDecl::Proof(_)
-            | HirTopLevelDecl::TrustedAxiom(_)
-            | HirTopLevelDecl::Parser(_) => {}
         }
+        HirTopLevelDecl::EntityDecl(item) => {
+            let value = if item.kind() == EntityDeclKind::Signal {
+                signal_value_type(item.id().body(), item.signature_tail())?
+            } else {
+                None
+            };
+            index = index.with_entity(entity_symbol(
+                item.id(),
+                entity_decl_kind(item.kind()),
+                value,
+                source_name.clone(),
+                entity_decl_kind_label(item.kind()),
+            )?);
+        }
+        HirTopLevelDecl::Entry(item) => {
+            index = index.with_entity(entity_symbol(
+                item.id(),
+                EntityKind::Entry,
+                None,
+                source_name.clone(),
+                "entry",
+            )?);
+            index = index_entry_relations(item.id(), item.items(), index)?;
+        }
+        HirTopLevelDecl::Test(item) => {
+            if let Some(id) = item.id().as_absolute() {
+                index = index.with_entity(entity_symbol(
+                    id,
+                    EntityKind::Test,
+                    None,
+                    source_name.clone(),
+                    "test",
+                )?);
+            }
+        }
+        HirTopLevelDecl::Bench(item) => {
+            if let Some(id) = item.id().as_absolute() {
+                index = index.with_entity(entity_symbol(
+                    id,
+                    EntityKind::Bench,
+                    None,
+                    source_name.clone(),
+                    "bench",
+                )?);
+            }
+        }
+        HirTopLevelDecl::Callable(item) => {
+            index = index.with_project_callable(
+                QualifiedName::new(item.name()),
+                project_callable_symbol(item, source_name.clone())?,
+            );
+        }
+        HirTopLevelDecl::State(_)
+        | HirTopLevelDecl::Trait(_)
+        | HirTopLevelDecl::Impl(_)
+        | HirTopLevelDecl::Enum(_)
+        | HirTopLevelDecl::ExternCapability(_)
+        | HirTopLevelDecl::ExternMod(_)
+        | HirTopLevelDecl::DialogueDefaults(_)
+        | HirTopLevelDecl::Struct(_)
+        | HirTopLevelDecl::TypeAlias(_)
+        | HirTopLevelDecl::Hook(_)
+        | HirTopLevelDecl::MemoFn(_)
+        | HirTopLevelDecl::Proof(_)
+        | HirTopLevelDecl::TrustedAxiom(_)
+        | HirTopLevelDecl::Parser(_) => {}
     }
     Ok(index)
 }
@@ -1912,6 +2012,79 @@ fn entity_symbol(
     ))
 }
 
+fn project_callable_symbol(
+    item: &CallableItem,
+    source_name: SourceName,
+) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
+    let signature = project_callable_signature(item)?;
+    let kind = project_callable_kind(item.kind());
+    let source = SourceAnchor::new(source_name, item.range().as_range());
+    let semantic_hash = SemanticHash::new(format!(
+        "hir:callable:{}:{}:{}",
+        kind.as_str(),
+        item.name(),
+        item.signature_tail().trim()
+    ));
+    Ok(ProjectCallableSymbol::new(
+        kind,
+        signature,
+        source,
+        semantic_hash,
+    ))
+}
+
+fn project_callable_kind(kind: CallableKind) -> ProjectCallableKind {
+    match kind {
+        CallableKind::Reducer => ProjectCallableKind::Reducer,
+        CallableKind::View => ProjectCallableKind::View,
+    }
+}
+
+fn project_callable_signature(
+    item: &CallableItem,
+) -> Result<FunctionSignature, ProjectSemanticIndexError> {
+    let signature_source = format!("fn {}{}", item.name(), item.signature_tail());
+    let signature = parse_fn_signature(&signature_source).map_err(|error| {
+        ProjectSemanticIndexError::InvalidCallableSignature {
+            name: item.name().to_owned(),
+            message: error.to_string(),
+        }
+    })?;
+    Ok(function_signature_from_syntax(&signature))
+}
+
+fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSignature {
+    let return_type = signature
+        .return_type()
+        .map_or_else(|| TypeKind::Named("_".to_owned()), project_type_ref_kind);
+    let params = signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .map(|param| {
+            let name = callable_param_name(param.pattern()).unwrap_or("_");
+            let ty = project_type_ref_kind(param.ty());
+            if param.is_rest() {
+                FunctionParam::rest(name, ty)
+            } else if param.default().is_some() {
+                FunctionParam::defaulted(name, ty)
+            } else {
+                FunctionParam::required(name, ty)
+            }
+        });
+    FunctionSignature::new(return_type, params)
+}
+
+fn callable_param_name(pattern: &Pattern) -> Option<&str> {
+    match pattern {
+        Pattern::Ident(name)
+        | Pattern::MutIdent(name)
+        | Pattern::Typed { name, .. }
+        | Pattern::Whole { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
+}
+
 fn signal_value_type(
     id: &str,
     signature_tail: &str,
@@ -2844,6 +3017,63 @@ flow @flow.opening opening {
                 EntityKind::Signal,
                 TypeKind::entity_ref(EntityKind::Flow)
             ))
+        );
+    }
+
+    #[test]
+    fn project_index_from_hir_preserves_project_callables_separately_from_agent_prelude() {
+        let tree = parse_source(
+            r#"
+pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+    state
+}
+
+pub view current_route(state: GameState) -> Ref<Flow> {
+    @flow.opening
+}
+
+flow @flow.opening opening {
+    return "ok"
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let index = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-a"),
+            &SourceName::path("game.arcw"),
+        )
+        .expect("HIR indexes project callables");
+
+        assert!(
+            index
+                .callable(&QualifiedName::new("update_route"))
+                .is_none()
+        );
+        let reducer = index
+            .project_callable(&QualifiedName::new("update_route"))
+            .expect("reducer callable indexed");
+        assert_eq!(reducer.kind(), ProjectCallableKind::Reducer);
+        assert_eq!(reducer.signature().params().len(), 2);
+        assert_eq!(
+            reducer.signature().return_type(),
+            &TypeKind::Named("GameState".to_owned())
+        );
+        assert!(
+            reducer
+                .semantic_hash()
+                .as_str()
+                .contains("hir:callable:reducer:update_route")
+        );
+
+        let view = index
+            .project_callable(&QualifiedName::new("current_route"))
+            .expect("view callable indexed");
+        assert_eq!(view.kind(), ProjectCallableKind::View);
+        assert_eq!(
+            view.signature().return_type(),
+            &TypeKind::entity_ref(EntityKind::Flow)
         );
     }
 

@@ -513,8 +513,9 @@ fn agent_project_graph_symbols(
         kind: "project_summary".to_owned(),
         semantic_hash: None,
         summary: format!(
-            "Project with {} entities and {} debug queries",
+            "Project with {} entities, {} project callables, and {} debug queries",
             project.entities().len(),
+            project.project_callables().len(),
             project.debug_queries().len()
         ),
     }];
@@ -548,6 +549,20 @@ fn agent_project_graph_symbols(
                 ),
             });
         }
+    }
+    for (name, callable) in project.project_callables() {
+        symbols.push(AgentProjectGraphSymbol {
+            symbol_id: agent_project_callable_symbol_id(name.as_str()),
+            public_id: None,
+            qualified_name: Some(name.as_str().to_owned()),
+            kind: format!("project_{}", callable.kind().as_str()),
+            semantic_hash: Some(callable.semantic_hash().as_str().to_owned()),
+            summary: format!(
+                "Project {} callable `{}`",
+                callable.kind().as_str(),
+                name.as_str()
+            ),
+        });
     }
     for name in project.debug_queries().keys() {
         symbols.push(AgentProjectGraphSymbol {
@@ -589,6 +604,16 @@ fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProject
     }
     edges.extend(
         project
+            .project_callables()
+            .keys()
+            .map(|name| AgentProjectGraphEdge {
+                from_symbol_id: agent_project_summary_symbol_id(),
+                to_symbol_id: agent_project_callable_symbol_id(name.as_str()),
+                edge_kind: "contains_callable".to_owned(),
+            }),
+    );
+    edges.extend(
+        project
             .debug_queries()
             .keys()
             .map(|name| AgentProjectGraphEdge {
@@ -620,6 +645,10 @@ fn agent_project_entity_symbol_id(id: &str) -> String {
 
 fn agent_project_action_symbol_id(entity_id: &str, action: &str) -> String {
     format!("project:action:{entity_id}:{action}")
+}
+
+fn agent_project_callable_symbol_id(name: &str) -> String {
+    format!("project:callable:{name}")
 }
 
 fn agent_project_debug_query_symbol_id(name: &str) -> String {
@@ -898,11 +927,11 @@ mod tests {
     use arcweft_bundle::BundleKind;
     use arcweft_id::PublicId;
     use arcweft_lang_hir::lower::lower_to_hir;
-    use arcweft_lang_sema::env::FunctionSignature;
+    use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_lang_sema::project_index::{
         AgentActionParam, AgentActionSignature, DebugQuerySymbol, EntitySymbol, ProgramHash,
-        ProjectGraphRelation, ProjectGraphRelationKind, ProjectSemanticIndex, QualifiedName,
-        SemanticHash, project_semantic_index_from_hir,
+        ProjectCallableKind, ProjectCallableSymbol, ProjectGraphRelation, ProjectGraphRelationKind,
+        ProjectSemanticIndex, QualifiedName, SemanticHash, project_semantic_index_from_hir,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -962,6 +991,59 @@ mod tests {
             edge.from_symbol_id == "project:entity:entry.main"
                 && edge.to_symbol_id == "project:entity:flow.opening"
                 && edge.edge_kind == "entry_start"
+        }));
+    }
+
+    #[test]
+    fn agent_project_graph_snapshot_preserves_project_callables() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"))
+            .with_project_callable(
+                QualifiedName::new("update_route"),
+                ProjectCallableSymbol::new(
+                    ProjectCallableKind::Reducer,
+                    FunctionSignature::new(
+                        TypeKind::Named("GameState".to_owned()),
+                        [
+                            FunctionParam::required(
+                                "state",
+                                TypeKind::Named("GameState".to_owned()),
+                            ),
+                            FunctionParam::required(
+                                "event",
+                                TypeKind::Named("GameEvent".to_owned()),
+                            ),
+                        ],
+                    ),
+                    SourceAnchor::generated(),
+                    SemanticHash::new("hir:callable:reducer:update_route:(state: GameState)"),
+                ),
+            )
+            .with_project_callable(
+                QualifiedName::new("current_route"),
+                ProjectCallableSymbol::new(
+                    ProjectCallableKind::View,
+                    FunctionSignature::new(TypeKind::entity_ref(EntityKind::Flow), []),
+                    SourceAnchor::generated(),
+                    SemanticHash::new("hir:callable:view:current_route:(state: GameState)"),
+                ),
+            );
+
+        let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+
+        assert!(graph.symbols.iter().any(|symbol| {
+            symbol.symbol_id == "project:callable:update_route"
+                && symbol.qualified_name.as_deref() == Some("update_route")
+                && symbol.kind == "project_reducer"
+        }));
+        assert!(graph.symbols.iter().any(|symbol| {
+            symbol.symbol_id == "project:callable:current_route"
+                && symbol.qualified_name.as_deref() == Some("current_route")
+                && symbol.kind == "project_view"
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.from_symbol_id == "project:summary"
+                && edge.to_symbol_id == "project:callable:update_route"
+                && edge.edge_kind == "contains_callable"
         }));
     }
 

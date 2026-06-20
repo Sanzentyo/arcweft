@@ -2515,7 +2515,11 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     let _ = fs::remove_file(&db_path);
     fs::create_dir_all(db_path.parent().expect("RAG index DB parent"))
         .expect("create RAG index DB parent");
-    let source_path = workspace_path("samples/agent-script/native-choice-dispatch.arcw");
+    let source_path = workspace_path(&format!(
+        "target/codex-agent-rag-source/project-callables-{}.arcw",
+        std::process::id()
+    ));
+    write_project_callable_rag_fixture(&source_path);
 
     let first = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -2606,9 +2610,54 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
     assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
 
-    let _ = fs::remove_file(&db_path);
+    remove_sqlite_files(&db_path);
+}
+
+fn remove_sqlite_files(db_path: &Path) {
+    let _ = fs::remove_file(db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn write_project_callable_rag_fixture(source_path: &Path) {
+    fs::write(
+        source_path,
+        r#"
+signal @signal.current_flow: Watch<Ref<Flow>>
+
+entry game @entry.main {
+    start @flow.opening
+}
+
+pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+    state
+}
+
+pub view current_route(state: GameState) -> Ref<Flow> {
+    @flow.opening
+}
+
+flow opening effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.opening)
+
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+        @choice.opening.silent "黙っている" -> @flow.quiet_intro
+    }
+}
+
+flow alice_intro effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.alice_intro)
+    return "alice_intro"
+}
+
+flow quiet_intro effects { signal.write } {
+    signal.set(@signal.current_flow, @flow.quiet_intro)
+    return "quiet_intro"
+}
+"#,
+    )
+    .expect("write temporary RAG project source");
 }
 
 fn assert_debug_db_source_files_are_persisted(
@@ -2756,7 +2805,7 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
                 && symbol["kind"] == "ChoiceOption"
                 && symbol["source_path"]
                     .as_str()
-                    .is_some_and(|path| path.ends_with("native-choice-dispatch.arcw"))
+                    .is_some_and(|path| path.contains("project-callables-"))
         }),
         "debug db graph should expose source-owned project entity symbols: {graph_report}"
     );
@@ -2767,6 +2816,7 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
             .any(|edge| edge["edge_kind"] == "contains_entity"),
         "debug db graph should expose ownership edges: {graph_report}"
     );
+    assert_debug_db_graph_exposes_project_callables(symbols, edges, &graph_report);
 
     let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("debug")
@@ -2801,6 +2851,35 @@ fn assert_debug_db_graph_command_reports_indexed_project_graph(
         public_graph_report["edges"].as_array().map(Vec::len),
         Some(0),
         "project-private graph edges should be omitted at public ceiling"
+    );
+}
+
+fn assert_debug_db_graph_exposes_project_callables(
+    symbols: &[serde_json::Value],
+    edges: &[serde_json::Value],
+    graph_report: &serde_json::Value,
+) {
+    assert!(
+        symbols.iter().any(|symbol| {
+            symbol["qualified_name"] == "update_route"
+                && symbol["kind"] == "project_reducer"
+                && symbol["semantic_hash"]
+                    .as_str()
+                    .is_some_and(|hash| hash.contains("hir:callable:reducer:update_route"))
+        }),
+        "debug db graph should expose project reducer symbols: {graph_report}"
+    );
+    assert!(
+        symbols.iter().any(|symbol| {
+            symbol["qualified_name"] == "current_route" && symbol["kind"] == "project_view"
+        }),
+        "debug db graph should expose project view symbols: {graph_report}"
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|edge| edge["edge_kind"] == "contains_callable"),
+        "debug db graph should expose callable ownership edges: {graph_report}"
     );
 }
 
