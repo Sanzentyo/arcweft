@@ -1,0 +1,12 @@
+pub fragment @frag.intro intro: FlowFragment {
+    return "intro"
+}
+
+flow @flow.opening opening {
+    include @frag.intro
+    goto @flow.next
+}
+
+flow @flow.next next {
+    return "next"
+}

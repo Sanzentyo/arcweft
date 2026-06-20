@@ -1,0 +1,15 @@
+#[agent(version = 1)]
+agent @agent.native.project_graph_relations project_graph_relations_smoke()
+effects { debug.read }
+{
+    let graph = try project_neighbors(@flow.opening, depth = 1u32)
+
+    expect(graph.root == "flow.opening")
+    expect(graph.node_count >= 4u32)
+    expect(graph.edge_count >= 3u32)
+
+    expect(graph.edges[1].kind == "flow_include")
+    expect(graph.edges[2].kind == "flow_goto")
+
+    return graph.edge_count
+}

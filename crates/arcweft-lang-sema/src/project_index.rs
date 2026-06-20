@@ -77,6 +77,8 @@ pub enum ProjectGraphRelationKind {
     ContainsChoice,
     ContainsChoiceOption,
     ChoiceOptionGoto,
+    FlowGoto,
+    FlowInclude,
 }
 
 /// Agent-visible semantic action attached to an entity.
@@ -319,6 +321,8 @@ impl ProjectGraphRelationKind {
             Self::ContainsChoice => "contains_choice",
             Self::ContainsChoiceOption => "contains_choice_option",
             Self::ChoiceOptionGoto => "choice_option_goto",
+            Self::FlowGoto => "flow_goto",
+            Self::FlowInclude => "flow_include",
         }
     }
 }
@@ -781,8 +785,92 @@ fn index_flow_item_relations(
             HirFlowItem::Thread(thread) => {
                 index = index_flow_item_relations(parent, thread.body(), index)?;
             }
-            HirFlowItem::Stmt(_) | HirFlowItem::LetScope { .. } | HirFlowItem::Include(_) => {}
+            HirFlowItem::Stmt(stmt) => {
+                index = index_stmt_relations(parent, stmt, index)?;
+            }
+            HirFlowItem::Include(target) => {
+                if let Some(parent) = parent {
+                    index = index_entity_relation(
+                        parent,
+                        target,
+                        ProjectGraphRelationKind::FlowInclude,
+                        index,
+                    )?;
+                }
+            }
+            HirFlowItem::LetScope { .. } => {}
         }
+    }
+    Ok(index)
+}
+
+fn index_stmt_relations(
+    parent: Option<&EntityRef>,
+    stmt: &Stmt,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match stmt {
+        Stmt::Goto(Expr::EntityRef(target)) => {
+            if let (Some(parent), Some(target)) = (parent, target.as_absolute()) {
+                index = index_entity_relation(
+                    parent,
+                    target,
+                    ProjectGraphRelationKind::FlowGoto,
+                    index,
+                )?;
+            }
+        }
+        Stmt::LetElse { else_body, .. } => {
+            index = index_stmt_body_relations(parent, else_body, index)?;
+        }
+        Stmt::DeferBlock { statements, .. } => {
+            index = index_stmt_body_relations(parent, statements, index)?;
+        }
+        Stmt::On { body, .. }
+        | Stmt::UnsafeLifetime { body, .. }
+        | Stmt::Loop { body }
+        | Stmt::If { body, .. }
+        | Stmt::While { body, .. }
+        | Stmt::WhileLet { body, .. }
+        | Stmt::For { body, .. } => {
+            index = index_stmt_body_relations(parent, body, index)?;
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                index = index_stmt_body_relations(parent, arm.body(), index)?;
+            }
+        }
+        Stmt::Goto(_)
+        | Stmt::Let { .. }
+        | Stmt::Return(_)
+        | Stmt::Out { .. }
+        | Stmt::LetChoice { .. }
+        | Stmt::LetScope { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Thread(_)
+        | Stmt::Defer { .. }
+        | Stmt::Yield(_)
+        | Stmt::Signal { .. }
+        | Stmt::LifetimeSet { .. }
+        | Stmt::Wait(_)
+        | Stmt::Close(_)
+        | Stmt::Select(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Expr(_)
+        | Stmt::Raw(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_stmt_body_relations(
+    parent: Option<&EntityRef>,
+    statements: &[Stmt],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for stmt in statements {
+        index = index_stmt_relations(parent, stmt, index)?;
     }
     Ok(index)
 }
@@ -2222,9 +2310,15 @@ entry game @entry.main {
 
 flow @flow.opening opening {
     narrator.say(id=@say.opening)[hello]
+    include @frag.intro
     choice @choice.opening {
         @choice.opening.listen "Listen" -> @flow.listen
     }
+    goto @flow.listen
+}
+
+pub fragment @frag.intro intro: FlowFragment {
+    return "intro"
 }
 
 flow @flow.listen listen {
@@ -2266,6 +2360,8 @@ flow @flow.listen listen {
             "flow.listen",
             "choice_option_goto"
         )));
+        assert!(relations.contains(&("flow.opening", "frag.intro", "flow_include")));
+        assert!(relations.contains(&("flow.opening", "flow.listen", "flow_goto")));
     }
 
     #[test]
