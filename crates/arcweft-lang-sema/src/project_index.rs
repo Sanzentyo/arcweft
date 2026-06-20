@@ -13,7 +13,12 @@ use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
-    ast::{flow::FlowKind, flow::Stmt, ids::EntityRef, items::EntityDeclKind},
+    ast::{
+        flow::FlowKind,
+        flow::Stmt,
+        ids::EntityRef,
+        items::{EntityDeclKind, EntryItem},
+    },
     expr::{CallArg, Expr, Literal, MatchExprArm},
     types::{TypeRef, parse_type_ref},
 };
@@ -52,6 +57,26 @@ pub struct EntitySymbol {
     source: SourceAnchor,
     semantic_hash: SemanticHash,
     agent_actions: Vec<AgentActionSignature>,
+}
+
+/// Directed semantic relation between two project entities.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectGraphRelation {
+    from: PublicId,
+    to: PublicId,
+    edge_kind: ProjectGraphRelationKind,
+}
+
+/// Kind of semantic relation represented in the project graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectGraphRelationKind {
+    EntryStart,
+    EntryRun,
+    EntryRoute,
+    ContainsDialogue,
+    ContainsChoice,
+    ContainsChoiceOption,
+    ChoiceOptionGoto,
 }
 
 /// Agent-visible semantic action attached to an entity.
@@ -137,6 +162,7 @@ pub struct ProjectSemanticIndex {
     callables: BTreeMap<QualifiedName, CallableSymbol>,
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
+    relations: Vec<ProjectGraphRelation>,
 }
 
 /// Policy applied while compiling Agent Script.
@@ -261,6 +287,42 @@ impl EntitySymbol {
     }
 }
 
+impl ProjectGraphRelation {
+    pub const fn new(from: PublicId, to: PublicId, edge_kind: ProjectGraphRelationKind) -> Self {
+        Self {
+            from,
+            to,
+            edge_kind,
+        }
+    }
+
+    pub const fn from(&self) -> &PublicId {
+        &self.from
+    }
+
+    pub const fn to(&self) -> &PublicId {
+        &self.to
+    }
+
+    pub const fn edge_kind(&self) -> ProjectGraphRelationKind {
+        self.edge_kind
+    }
+}
+
+impl ProjectGraphRelationKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EntryStart => "entry_start",
+            Self::EntryRun => "entry_run",
+            Self::EntryRoute => "entry_route",
+            Self::ContainsDialogue => "contains_dialogue",
+            Self::ContainsChoice => "contains_choice",
+            Self::ContainsChoiceOption => "contains_choice_option",
+            Self::ChoiceOptionGoto => "choice_option_goto",
+        }
+    }
+}
+
 impl AgentActionSignature {
     pub fn new(
         action: QualifiedName,
@@ -363,6 +425,7 @@ impl ProjectSemanticIndex {
             callables: agent_prelude_callables(),
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
+            relations: Vec::new(),
         }
     }
 
@@ -396,6 +459,14 @@ impl ProjectSemanticIndex {
         self
     }
 
+    #[must_use]
+    pub fn with_relation(mut self, relation: ProjectGraphRelation) -> Self {
+        if !self.relations.contains(&relation) {
+            self.relations.push(relation);
+        }
+        self
+    }
+
     pub const fn schema_version(&self) -> u32 {
         self.schema_version
     }
@@ -422,6 +493,10 @@ impl ProjectSemanticIndex {
 
     pub fn debug_queries(&self) -> &BTreeMap<QualifiedName, DebugQuerySymbol> {
         &self.debug_queries
+    }
+
+    pub fn relations(&self) -> &[ProjectGraphRelation] {
+        &self.relations
     }
 
     pub fn entity(&self, id: &PublicId) -> Option<&EntitySymbol> {
@@ -500,6 +575,7 @@ pub fn project_semantic_index_from_hir(
             index = index.with_entity(entity_symbol(id, kind, None, source_name.clone(), "flow")?);
         }
         index = index_flow_items(flow.body(), index, source_name)?;
+        index = index_flow_item_relations(flow.id(), flow.body(), index)?;
     }
     for agent in module.agents() {
         if let Some(id) = agent.item().id() {
@@ -547,6 +623,7 @@ pub fn project_semantic_index_from_hir(
                     source_name.clone(),
                     "entry",
                 )?);
+                index = index_entry_relations(item.id(), item.items(), index)?;
             }
             HirTopLevelDecl::Test(item) => {
                 if let Some(id) = item.id().as_absolute() {
@@ -588,6 +665,176 @@ pub fn project_semantic_index_from_hir(
         }
     }
     Ok(index)
+}
+
+fn index_entry_relations(
+    entry_id: &EntityRef,
+    items: &[EntryItem],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        match item {
+            EntryItem::Start(target) => {
+                index = index_entity_relation(
+                    entry_id,
+                    target,
+                    ProjectGraphRelationKind::EntryStart,
+                    index,
+                )?;
+            }
+            EntryItem::Run(target) => {
+                index = index_entity_relation(
+                    entry_id,
+                    target,
+                    ProjectGraphRelationKind::EntryRun,
+                    index,
+                )?;
+            }
+            EntryItem::Route { target, .. } => {
+                index = index_entity_relation(
+                    entry_id,
+                    target,
+                    ProjectGraphRelationKind::EntryRoute,
+                    index,
+                )?;
+            }
+            EntryItem::Option { .. } | EntryItem::Raw(_) => {}
+        }
+    }
+    Ok(index)
+}
+
+fn index_flow_item_relations(
+    parent: Option<&EntityRef>,
+    items: &[HirFlowItem],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        match item {
+            HirFlowItem::Dialogue(dialogue) => {
+                if let (Some(parent), Some(id)) = (parent, dialogue.id()) {
+                    index = index_entity_relation(
+                        parent,
+                        id,
+                        ProjectGraphRelationKind::ContainsDialogue,
+                        index,
+                    )?;
+                }
+            }
+            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+                if let Some(choice_id) = choice.id() {
+                    if let Some(parent) = parent {
+                        index = index_entity_relation(
+                            parent,
+                            choice_id,
+                            ProjectGraphRelationKind::ContainsChoice,
+                            index,
+                        )?;
+                    }
+                    index = index_choice_relations(choice_id, choice.options(), index)?;
+                }
+            }
+            HirFlowItem::If(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+                index = index_flow_item_relations(parent, block.else_body(), index)?;
+            }
+            HirFlowItem::IfLet(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+                index = index_flow_item_relations(parent, block.else_body(), index)?;
+            }
+            HirFlowItem::Match(block) => {
+                for arm in block.arms() {
+                    index = index_flow_item_relations(parent, arm.body(), index)?;
+                }
+            }
+            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::While(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::WhileLet(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::For(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::Borrow(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::SourceLocale(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::Scope(block) => {
+                index = index_flow_item_relations(parent, block.body(), index)?;
+            }
+            HirFlowItem::Select(block) => {
+                for branch in block.branches() {
+                    index = index_flow_item_relations(parent, branch.body(), index)?;
+                }
+            }
+            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
+                for branch in await_with.branches() {
+                    index = index_flow_item_relations(parent, branch.body(), index)?;
+                }
+            }
+            HirFlowItem::Thread(thread) => {
+                index = index_flow_item_relations(parent, thread.body(), index)?;
+            }
+            HirFlowItem::Stmt(_) | HirFlowItem::LetScope { .. } | HirFlowItem::Include(_) => {}
+        }
+    }
+    Ok(index)
+}
+
+fn index_choice_relations(
+    choice_id: &EntityRef,
+    options: &[arcweft_lang_hir::model::HirChoiceOption],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for option in options {
+        if let Some(option_id) = option.id() {
+            index = index_entity_relation(
+                choice_id,
+                option_id,
+                ProjectGraphRelationKind::ContainsChoiceOption,
+                index,
+            )?;
+            if let Some(target) = option.target() {
+                index = index_entity_relation(
+                    option_id,
+                    target,
+                    ProjectGraphRelationKind::ChoiceOptionGoto,
+                    index,
+                )?;
+            }
+        }
+    }
+    Ok(index)
+}
+
+fn index_entity_relation(
+    from: &EntityRef,
+    to: &EntityRef,
+    edge_kind: ProjectGraphRelationKind,
+    index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let from = public_id_for_relation(from, edge_kind.as_str())?;
+    let to = public_id_for_relation(to, edge_kind.as_str())?;
+    Ok(index.with_relation(ProjectGraphRelation::new(from, to, edge_kind)))
+}
+
+fn public_id_for_relation(
+    id: &EntityRef,
+    kind: &'static str,
+) -> Result<PublicId, ProjectSemanticIndexError> {
+    PublicId::try_new(id.body().to_owned()).map_err(|error| {
+        ProjectSemanticIndexError::InvalidPublicId {
+            id: id.body().to_owned(),
+            kind,
+            message: error.to_string(),
+        }
+    })
 }
 
 fn index_flow_items(
@@ -1934,7 +2181,7 @@ mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
-    use arcweft_source::SourceAnchor;
+    use arcweft_source::{SourceAnchor, SourceName};
 
     fn public_id(value: &str) -> PublicId {
         PublicId::try_new(value).expect("valid public id")
@@ -1963,6 +2210,62 @@ mod tests {
                 TypeKind::Bool
             ))
         );
+    }
+
+    #[test]
+    fn project_index_records_entry_and_flow_entity_relations() {
+        let tree = parse_source(
+            r#"
+entry game @entry.main {
+    start @flow.opening
+}
+
+flow @flow.opening opening {
+    narrator.say(id=@say.opening)[hello]
+    choice @choice.opening {
+        @choice.opening.listen "Listen" -> @flow.listen
+    }
+}
+
+flow @flow.listen listen {
+    return "listen"
+}
+"#,
+        )
+        .into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("source lowers");
+        let index = project_semantic_index_from_hir(
+            &hir,
+            ProgramHash::new("program-test"),
+            &SourceName::path("test.arcw"),
+        )
+        .expect("project index builds");
+
+        let relations = index
+            .relations()
+            .iter()
+            .map(|relation| {
+                (
+                    relation.from().as_str(),
+                    relation.to().as_str(),
+                    relation.edge_kind().as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert!(relations.contains(&("entry.main", "flow.opening", "entry_start")));
+        assert!(relations.contains(&("flow.opening", "say.opening", "contains_dialogue")));
+        assert!(relations.contains(&("flow.opening", "choice.opening", "contains_choice")));
+        assert!(relations.contains(&(
+            "choice.opening",
+            "choice.opening.listen",
+            "contains_choice_option"
+        )));
+        assert!(relations.contains(&(
+            "choice.opening.listen",
+            "flow.listen",
+            "choice_option_goto"
+        )));
     }
 
     #[test]

@@ -1976,6 +1976,14 @@ fn agent_project_graph_edges(
         weight: 0.8,
         metadata: BTreeMap::new(),
     }));
+    edges.extend(project.relations().iter().map(|relation| DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.from()),
+        to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.to()),
+        edge_kind: relation.edge_kind().as_str().to_owned(),
+        weight: 0.95,
+        metadata: BTreeMap::new(),
+    }));
     Ok(edges)
 }
 

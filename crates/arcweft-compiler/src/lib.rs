@@ -597,6 +597,16 @@ fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProject
                 edge_kind: "contains_debug_query".to_owned(),
             }),
     );
+    edges.extend(
+        project
+            .relations()
+            .iter()
+            .map(|relation| AgentProjectGraphEdge {
+                from_symbol_id: agent_project_entity_symbol_id(relation.from().as_str()),
+                to_symbol_id: agent_project_entity_symbol_id(relation.to().as_str()),
+                edge_kind: relation.edge_kind().as_str().to_owned(),
+            }),
+    );
     edges
 }
 
@@ -891,7 +901,8 @@ mod tests {
     use arcweft_lang_sema::env::FunctionSignature;
     use arcweft_lang_sema::project_index::{
         AgentActionParam, AgentActionSignature, DebugQuerySymbol, EntitySymbol, ProgramHash,
-        ProjectSemanticIndex, QualifiedName, SemanticHash, project_semantic_index_from_hir,
+        ProjectGraphRelation, ProjectGraphRelationKind, ProjectSemanticIndex, QualifiedName,
+        SemanticHash, project_semantic_index_from_hir,
     };
     use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
     use arcweft_render_text::{RichTextColor, RichTextStyle};
@@ -916,6 +927,42 @@ mod tests {
             SourceAnchor::generated(),
             SemanticHash::new(format!("shape.{id}.v1")),
         ))
+    }
+
+    #[test]
+    fn agent_project_graph_snapshot_preserves_project_relations() {
+        let project = ProjectSemanticIndex::new(ProgramHash::new("program-test"))
+            .with_entity(EntitySymbol::new(
+                public_id("entry.main"),
+                EntityType::new(EntityKind::Entry, None),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.entry.main.v1"),
+            ))
+            .with_entity(EntitySymbol::new(
+                public_id("flow.opening"),
+                EntityType::new(EntityKind::Flow, None),
+                SourceAnchor::generated(),
+                SemanticHash::new("shape.flow.opening.v1"),
+            ))
+            .with_relation(ProjectGraphRelation::new(
+                public_id("entry.main"),
+                public_id("flow.opening"),
+                ProjectGraphRelationKind::EntryStart,
+            ));
+
+        let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
+
+        assert!(graph.symbols.iter().any(|symbol| {
+            symbol
+                .public_id
+                .as_ref()
+                .is_some_and(|id| id.as_str() == "entry.main")
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.from_symbol_id == "project:entity:entry.main"
+                && edge.to_symbol_id == "project:entity:flow.opening"
+                && edge.edge_kind == "entry_start"
+        }));
     }
 
     fn project_with_agent_action(

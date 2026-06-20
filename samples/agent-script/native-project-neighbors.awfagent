@@ -6,13 +6,15 @@ effects { debug.read }
 
     expect(graph.root == "flow.opening")
     expect(graph.node_count >= 2u32)
-    expect(graph.edge_count >= 1u32)
+    expect(graph.edge_count >= 2u32)
 
     let root = graph.symbols[0]
-    let edge = graph.edges[0]
+    let ownership_edge = graph.edges[0]
+    let relation_edge = graph.edges[1]
 
     expect(root.kind != "")
-    expect(edge.kind == "contains_entity")
+    expect(ownership_edge.kind == "contains_entity")
+    expect(relation_edge.kind == "entry_start")
 
     return graph.edge_count
 }
