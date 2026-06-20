@@ -3459,6 +3459,74 @@ fn agent_rag_query_uses_local_embedding_debug_db_channel() {
 }
 
 #[test]
+fn agent_rag_query_records_local_embedding_fallback_diagnostic() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/rag-local-embedding-fallback-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(
+        db_path
+            .parent()
+            .expect("rag local embedding fallback target dir"),
+    )
+    .expect("create rag local embedding fallback target dir");
+    seed_debug_embed_db(&db_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("public embedding body")
+        .arg("--local-embedding")
+        .arg("--local-embedding-model-id")
+        .arg("fixture-local-hash")
+        .arg("--local-embedding-model-revision")
+        .arg("1")
+        .arg("--local-embedding-dimensions")
+        .arg("8")
+        .arg("--max-privacy")
+        .arg("project")
+        .arg("--limit")
+        .arg("2")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query local embedding fallback runs");
+    assert!(
+        output.status.success(),
+        "agent rag query should succeed with fallback\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let diagnostic_report = debug_db_search_json(
+        &db_path,
+        "--diagnostic-query",
+        "AGENT_RAG_EMBEDDING_FALLBACK",
+        "project",
+    );
+    let hits = diagnostic_report["hits"].as_array().expect("hits");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["channel"], "diagnostics");
+    assert_eq!(hits[0]["source_kind"], "diagnostic");
+    assert!(
+        hits[0]["chunk_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("diagnostic:agent-rag-local-embedding-fallback:")),
+        "diagnostic id should be stable-prefixed: {diagnostic_report}"
+    );
+    assert!(
+        hits[0]["body"]
+            .as_str()
+            .is_some_and(|body| body.contains("using lexical fallback channels")),
+        "diagnostic body should explain fallback: {diagnostic_report}"
+    );
+}
+
+#[test]
 fn debug_db_search_history_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/history-search-{}.sqlite3",

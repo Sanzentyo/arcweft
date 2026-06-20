@@ -63,6 +63,7 @@ use arcweft_core::step::InputEvent as RuntimeInputEvent;
 use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
+    diagnostic::DebugDiagnostic,
     embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
@@ -1080,6 +1081,84 @@ mod tests {
                 })
             }),
             "MCP RAG query should return vector-enriched context: {pack}"
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_rag_query_records_local_embedding_fallback_diagnostic() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-local-embedding-fallback-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let program_hash =
+            StableHash::new("blake3:mcp-rag-local-embedding-fallback-program").expect("hash");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_chunk(&DebugChunk {
+                id: ChunkId::new("chunk:mcp-local-embedding-fallback"),
+                program_hash: Some(program_hash),
+                source_kind: ChunkSourceKind::Documentation,
+                source_key: "mcp-local-embedding-fallback".to_owned(),
+                title: "MCP local embedding fallback context".to_owned(),
+                body: "MCP local fallback lexical body".to_owned(),
+                content_hash: StableHash::new("blake3:mcp-rag-local-embedding-fallback-chunk")
+                    .expect("hash"),
+                semantic_hash: None,
+                source_anchor: None,
+                entity_ids: Vec::new(),
+                privacy: PrivacyClass::Project,
+                metadata: BTreeMap::new(),
+                created_unix_ms: 0,
+            })
+            .expect("chunk");
+        drop(store);
+
+        let mut state = AgentMcpState::default();
+        let query_result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": "MCP local fallback lexical body",
+                "path": db_path.display().to_string(),
+                "local_embedding": true,
+                "local_embedding_model_id": "fixture-local-hash",
+                "local_embedding_model_revision": "1",
+                "local_embedding_dimensions": 8,
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            &mut state,
+            &[],
+        )
+        .expect("MCP RAG query falls back from missing local embeddings");
+        let pack = mcp_text_json(&query_result);
+        assert!(
+            pack["items"].as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item["chunk_id"] == "chunk:mcp-local-embedding-fallback")
+            }),
+            "MCP RAG query should still return lexical context: {pack}"
+        );
+        let store = DebugStore::open(&db_path).expect("debug store reopens");
+        let diagnostics = store
+            .diagnostic_search_with_max_privacy(
+                "AGENT_RAG_EMBEDDING_FALLBACK",
+                4,
+                PrivacyClass::Project,
+            )
+            .expect("diagnostic search");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .hit
+                .chunk_id
+                .as_str()
+                .starts_with("diagnostic:agent-mcp-rag-local-embedding-fallback:")
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -6908,13 +6987,17 @@ fn agent_mcp_rag_debug_store_candidates(
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
     if config.local_embedding {
-        for result in agent_mcp_rag_debug_store_vector_results(
+        let vector_results = agent_mcp_rag_debug_store_vector_results(
             &store,
             path,
             query_text,
             config,
             search_limit,
-        )? {
+        )?;
+        if vector_results.is_empty() {
+            agent_mcp_rag_record_local_embedding_fallback(&store, path, query_text, config)?;
+        }
+        for result in vector_results {
             if seen.insert(result.chunk.id.clone()) {
                 candidates.push(AgentMcpRagCandidate {
                     chunk: result.chunk,
@@ -6974,6 +7057,59 @@ fn agent_mcp_rag_debug_store_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_mcp_rag_record_local_embedding_fallback(
+    store: &DebugStore,
+    path: &str,
+    query_text: &str,
+    config: &AgentMcpRagQueryConfig,
+) -> Result<(), String> {
+    let model = &config.local_embedding_model;
+    let query = query_text.trim();
+    let diagnostic_id = format!(
+        "agent-mcp-rag-local-embedding-fallback:{}",
+        agent_mcp_content_hash(format!(
+            "{}:{}:{}:{}",
+            path, query, model.model_id, model.model_revision
+        ))
+    );
+    store
+        .upsert_diagnostic(&DebugDiagnostic {
+            diagnostic_id,
+            program_hash: None,
+            session_id: None,
+            run_id: None,
+            sequence: None,
+            code: Some("AGENT_RAG_EMBEDDING_FALLBACK".to_owned()),
+            severity: "warning".to_owned(),
+            phase: "agent_rag".to_owned(),
+            message: format!(
+                "local embedding channel produced no hits for model {}@{}:{}; using lexical fallback channels",
+                model.model_id, model.model_revision, model.dimensions
+            ),
+            source_path: Some(path.to_owned()),
+            start_byte: None,
+            end_byte: None,
+            related_ids: Vec::new(),
+            payload: serde_json::json!({
+                "provider": "local_hash",
+                "model": {
+                    "model_id": model.model_id,
+                    "model_revision": model.model_revision,
+                    "dimensions": model.dimensions,
+                },
+                "query": query,
+                "fallback_channels": ["lexical", "graph", "history", "diagnostics", "test_result"],
+                "reason": "no_vector_hits",
+            }),
+            created_unix_ms: 0,
+        })
+        .map_err(|error| {
+            format!(
+                "arcweft.rag.query failed to record local embedding fallback diagnostic in `{path}`: {error}"
+            )
+        })
 }
 
 fn agent_mcp_rag_debug_store_vector_results(

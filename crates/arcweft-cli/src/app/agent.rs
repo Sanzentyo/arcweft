@@ -31,6 +31,7 @@ use arcweft_debug_model::{
     chunk::{
         ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor as DebugSourceAnchor,
     },
+    diagnostic::DebugDiagnostic,
     embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
@@ -999,7 +1000,12 @@ fn agent_rag_debug_db_candidates(
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
     if options.local_embedding {
-        for result in agent_rag_debug_db_vector_results(&store, path, options, search_limit)? {
+        let vector_results =
+            agent_rag_debug_db_vector_results(&store, path, options, search_limit)?;
+        if vector_results.is_empty() {
+            agent_rag_record_local_embedding_fallback(&store, path, options)?;
+        }
+        for result in vector_results {
             if seen.insert(result.chunk.id.clone()) {
                 candidates.push(AgentRagCandidate {
                     chunk: result.chunk,
@@ -1063,6 +1069,62 @@ fn agent_rag_debug_db_candidates(
         }
     }
     Ok(candidates)
+}
+
+fn agent_rag_record_local_embedding_fallback(
+    store: &DebugStore,
+    path: &Path,
+    options: &AgentRagQueryOptions,
+) -> Result<(), String> {
+    let model = agent_rag_local_embedding_model(options)?;
+    let query = options.query.trim();
+    let diagnostic_id = format!(
+        "agent-rag-local-embedding-fallback:{}",
+        agent_content_hash(format!(
+            "{}:{}:{}:{}",
+            path.display(),
+            query,
+            model.model_id,
+            model.model_revision
+        ))
+    );
+    store
+        .upsert_diagnostic(&DebugDiagnostic {
+            diagnostic_id,
+            program_hash: None,
+            session_id: None,
+            run_id: None,
+            sequence: None,
+            code: Some("AGENT_RAG_EMBEDDING_FALLBACK".to_owned()),
+            severity: "warning".to_owned(),
+            phase: "agent_rag".to_owned(),
+            message: format!(
+                "local embedding channel produced no hits for model {}@{}:{}; using lexical fallback channels",
+                model.model_id, model.model_revision, model.dimensions
+            ),
+            source_path: Some(path.display().to_string()),
+            start_byte: None,
+            end_byte: None,
+            related_ids: Vec::new(),
+            payload: serde_json::json!({
+                "provider": "local_hash",
+                "model": {
+                    "model_id": model.model_id,
+                    "model_revision": model.model_revision,
+                    "dimensions": model.dimensions,
+                },
+                "query": query,
+                "fallback_channels": ["lexical", "graph", "history", "diagnostics", "test_result"],
+                "reason": "no_vector_hits",
+            }),
+            created_unix_ms: 0,
+        })
+        .map_err(|error| {
+            format!(
+                "agent rag query failed to record local embedding fallback diagnostic in `{}`: {error}",
+                path.display()
+            )
+        })
 }
 
 fn agent_rag_debug_db_vector_results(

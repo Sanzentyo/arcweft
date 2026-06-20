@@ -382,6 +382,10 @@ uses the same local hash query embedding to add stored-vector hits to the
 RRF-selected context pack. If no matching embedding rows exist, the command
 continues with the existing lexical/graph/history/diagnostic/test channels, so
 the vector channel is an explicit enrichment rather than a required query path.
+When this local vector path falls back because it produced no hits, the command
+records an `AGENT_RAG_EMBEDDING_FALLBACK` warning diagnostic in the same debug
+store so `debug db search --diagnostic-query AGENT_RAG_EMBEDDING_FALLBACK` can
+explain why the selected context came only from non-vector channels.
 The stdio MCP server exposes the same rebuildable-store channels as
 `arcweft.debug.search`. The tool accepts exactly one of `query`, `query_vector`
 with `model_id` and `model_revision`, `graph_query` with optional

@@ -125,7 +125,9 @@ require an observation or trace to be cached in the MCP session.
 `local_embedding_dimensions`. The query text is hashed through the deterministic
 local embedding adapter, matching rows are fused into the returned
 `RagContextPack`, and missing embeddings fall back to the existing
-lexical/graph/history/diagnostic/test-result channels.
+lexical/graph/history/diagnostic/test-result channels. That local fallback is
+recorded as an `AGENT_RAG_EMBEDDING_FALLBACK` warning diagnostic in the same
+debug store for later `arcweft.debug.search` or `debug db search` readback.
 `arcweft.debug.script.runs` reads persisted Agent Script lifecycle rows from
 the same SQLite store. It accepts optional `path`, `session_id`, and `limit`,
 orders recent runs by their session-local start sequence, and returns run id,
