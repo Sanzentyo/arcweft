@@ -1,0 +1,2 @@
+try pointer.click(viewport_point(24u32, 48u32), button = .primary)
+:bindings

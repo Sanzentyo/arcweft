@@ -1831,6 +1831,12 @@ fn agent_script_run_bundle(
 pub(in crate::app) fn agent_script_runtime_policy(
     input: &AgentScriptRunInput,
 ) -> RuntimeAgentPolicy {
+    agent_script_runtime_policy_for_bundle(&input.bundle)
+}
+
+pub(in crate::app) fn agent_script_runtime_policy_for_bundle(
+    bundle: &ArcweftBundle,
+) -> RuntimeAgentPolicy {
     let mut capabilities = vec![
         RuntimeAgentCapability::Observe,
         RuntimeAgentCapability::Act,
@@ -1839,14 +1845,14 @@ pub(in crate::app) fn agent_script_runtime_policy(
         RuntimeAgentCapability::DebugRecord,
         RuntimeAgentCapability::Rag,
     ];
-    if agent_manifest_declares_effect(input, "agent.act.physical") {
+    if agent_bundle_declares_effect(bundle, "agent.act.physical") {
         capabilities.push(RuntimeAgentCapability::ActPhysical);
     }
     RuntimeAgentPolicy::new(capabilities)
 }
 
-fn agent_manifest_declares_effect(input: &AgentScriptRunInput, effect: &str) -> bool {
-    input.bundle.agent.as_ref().is_some_and(|manifest| {
+fn agent_bundle_declares_effect(bundle: &ArcweftBundle, effect: &str) -> bool {
+    bundle.agent.as_ref().is_some_and(|manifest| {
         manifest
             .declared_effects
             .iter()

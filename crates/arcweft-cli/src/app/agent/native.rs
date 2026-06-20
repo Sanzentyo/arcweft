@@ -10,10 +10,10 @@ use super::{
     AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
     CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
-    RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
-    agent_cli_session_id, agent_rag_source_paths, agent_script_project_index,
-    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
-    agent_script_runtime_policy, agent_source_rag_index, flow_status_label, fs,
+    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_rag_source_paths,
+    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
+    agent_script_run_report_from_result, agent_script_runtime_policy,
+    agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
     load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
     native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
     parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
@@ -3637,7 +3637,7 @@ fn agent_repl_saved_source(state: &AgentReplState) -> String {
         body.push_str("\n    return \"saved\"");
     }
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
 }
 
@@ -3807,14 +3807,7 @@ fn agent_repl_eval_compiled_cell(
         ),
         CollectingDebugSink::default(),
         NoopRagService,
-        RuntimeAgentPolicy::new([
-            RuntimeAgentCapability::Observe,
-            RuntimeAgentCapability::Act,
-            RuntimeAgentCapability::Capture,
-            RuntimeAgentCapability::ResourceRead,
-            RuntimeAgentCapability::DebugRecord,
-            RuntimeAgentCapability::Rag,
-        ]),
+        agent_script_runtime_policy_for_bundle(&compiled.bundle),
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
     let run_result = runner.run_controller_bundle(
@@ -4174,7 +4167,7 @@ fn agent_repl_cell_source(
         )
     };
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
     )
 }
 

@@ -1777,6 +1777,86 @@ fn agent_repl_saves_loads_and_drops_bindings_from_input_session() {
 }
 
 #[test]
+#[ignore = "tier 2 native Agent REPL E2E: requires native-capture feature subprocess"]
+fn agent_repl_executes_and_saves_physical_pointer_cell() {
+    let input_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-pointer-click-{}.txt",
+        std::process::id()
+    ));
+    let saved_path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/repl-pointer-click-saved-{}.awfagent",
+        std::process::id()
+    ));
+    fs::create_dir_all(input_path.parent().expect("input target dir"))
+        .expect("create REPL pointer input target dir");
+    let _ = fs::remove_file(&input_path);
+    let _ = fs::remove_file(&saved_path);
+    fs::write(
+        &input_path,
+        format!(
+            "try pointer.click(viewport_point(24u32, 48u32), button = .primary)\n:save {}\n:quit\n",
+            saved_path.display()
+        ),
+    )
+    .expect("write REPL pointer input");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("repl")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent repl runs physical pointer input session");
+    assert!(
+        output.status.success(),
+        "agent repl physical pointer session should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("agent repl output is JSON");
+    assert_eq!(report["ok"], true);
+    let cells = report["cells"].as_array().expect("cells are present");
+    let action_cell = cells
+        .iter()
+        .find(|cell| {
+            cell["input"] == "try pointer.click(viewport_point(24u32, 48u32), button = .primary)"
+        })
+        .expect("pointer action cell is present");
+    assert_eq!(action_cell["status"], "ok");
+    assert_eq!(action_cell["value"]["host_calls"], 1);
+    assert_eq!(action_cell["value"]["responses"][0]["kind"], "action");
+    assert_eq!(
+        action_cell["value"]["responses"][0]["response"]["accepted"],
+        true
+    );
+
+    let saved_source = fs::read_to_string(&saved_path).expect("saved REPL source exists");
+    assert!(saved_source.contains("agent.act.physical"));
+    assert!(saved_source.contains("pointer.click"));
+
+    let check_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("script")
+        .arg("check")
+        .arg(&saved_path)
+        .arg("--json")
+        .output()
+        .expect("arcw agent script check validates saved physical REPL agent");
+    assert!(
+        check_output.status.success(),
+        "saved physical REPL agent should pass script check\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check_output.stdout),
+        String::from_utf8_lossy(&check_output.stderr)
+    );
+    let check_json: serde_json::Value =
+        serde_json::from_slice(&check_output.stdout).expect("script check output is JSON");
+    assert_eq!(check_json["ok"], true);
+    assert_eq!(check_json["agents"], 1);
+}
+
+#[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_reads_agent_trace_resource() {
     let trace_path = workspace_path(&format!(
