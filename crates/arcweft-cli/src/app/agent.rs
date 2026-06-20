@@ -3828,6 +3828,14 @@ pub(in crate::app) struct AgentScriptRunInput {
     bundle: ArcweftBundle,
 }
 
+struct AgentScriptDebugRunFinishContext<'a> {
+    session_id: &'a SessionId,
+    options: &'a AgentScriptRunOptions,
+    input: &'a AgentScriptRunInput,
+    run_id: &'a AgentRunId,
+    base_sequence: u64,
+}
+
 #[derive(serde::Serialize)]
 struct AgentScriptTraceReport {
     path: String,
@@ -4174,9 +4182,13 @@ fn agent_script_persist_debug_run(
     agent_script_append_debug_events(&mut store, run_id, base_sequence, debug_events)?;
     agent_script_finish_debug_run(
         &store,
-        &session_id,
-        run_id,
-        base_sequence,
+        &AgentScriptDebugRunFinishContext {
+            session_id: &session_id,
+            options,
+            input,
+            run_id,
+            base_sequence,
+        },
         debug_events,
         report,
     )?;
@@ -4218,12 +4230,7 @@ fn agent_script_start_debug_run(
         .upsert_program(&program_hash, None, None, 0)
         .map_err(|error| format!("failed to persist Agent Script debug program: {error}"))?;
     let session_id = agent_cli_session_id();
-    let mut session_metadata = BTreeMap::new();
-    session_metadata.insert("path".to_owned(), serde_json::json!(input.path));
-    session_metadata.insert(
-        "native".to_owned(),
-        serde_json::json!(agent_script_run_uses_native_session_for_metadata(options)),
-    );
+    let session_metadata = agent_script_debug_session_metadata(options, input);
     let transport = if agent_script_run_uses_native_session_for_metadata(options) {
         "native"
     } else {
@@ -4262,10 +4269,82 @@ fn agent_script_start_debug_run(
             partially_effectful: false,
             trace_uri: None,
             error: None,
-            metadata: BTreeMap::new(),
+            metadata: agent_script_debug_run_metadata(input),
         })
         .map_err(|error| format!("failed to persist Agent Script run start: {error}"))?;
     Ok((session_id, base_sequence))
+}
+
+fn agent_script_debug_session_metadata(
+    options: &AgentScriptRunOptions,
+    input: &AgentScriptRunInput,
+) -> BTreeMap<String, serde_json::Value> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("path".to_owned(), serde_json::json!(input.path));
+    metadata.insert(
+        "native".to_owned(),
+        serde_json::json!(agent_script_run_uses_native_session_for_metadata(options)),
+    );
+    metadata.insert(
+        "project_entities".to_owned(),
+        agent_script_project_entities_metadata(&input.project_entities),
+    );
+    metadata.insert(
+        "project_graph".to_owned(),
+        agent_script_project_graph_metadata(&input.project_graph),
+    );
+    metadata
+}
+
+fn agent_script_debug_run_metadata(
+    input: &AgentScriptRunInput,
+) -> BTreeMap<String, serde_json::Value> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "project_entities".to_owned(),
+        agent_script_project_entities_metadata(&input.project_entities),
+    );
+    metadata.insert(
+        "project_graph".to_owned(),
+        agent_script_project_graph_metadata(&input.project_graph),
+    );
+    metadata
+}
+
+fn agent_script_project_entities_metadata(entities: &[RequiredEntity]) -> serde_json::Value {
+    let mut kind_counts = BTreeMap::<String, usize>::new();
+    for entity in entities {
+        *kind_counts.entry(entity.kind.clone()).or_insert(0) += 1;
+    }
+    serde_json::json!({
+        "count": entities.len(),
+        "kind_counts": kind_counts,
+    })
+}
+
+fn agent_script_project_graph_metadata(graph: &AgentProjectGraph) -> serde_json::Value {
+    let mut symbol_kind_counts = BTreeMap::<String, usize>::new();
+    for symbol in &graph.symbols {
+        *symbol_kind_counts.entry(symbol.kind.clone()).or_insert(0) += 1;
+    }
+    let mut edge_kind_counts = BTreeMap::<String, usize>::new();
+    for edge in &graph.edges {
+        *edge_kind_counts.entry(edge.edge_kind.clone()).or_insert(0) += 1;
+    }
+    let summary_symbol = graph
+        .symbols
+        .iter()
+        .find(|symbol| symbol.kind == "project_summary");
+    let project_summary = summary_symbol.and_then(|symbol| symbol.project_summary);
+    serde_json::json!({
+        "symbol_count": graph.symbols.len(),
+        "edge_count": graph.edges.len(),
+        "summary_symbol_id": summary_symbol.map(|symbol| symbol.symbol_id.as_str()),
+        "has_project_summary": project_summary.is_some(),
+        "project_summary": project_summary,
+        "symbol_kind_counts": symbol_kind_counts,
+        "edge_kind_counts": edge_kind_counts,
+    })
 }
 
 fn agent_script_append_debug_events(
@@ -4287,25 +4366,25 @@ fn agent_script_append_debug_events(
 
 fn agent_script_finish_debug_run(
     store: &DebugStore,
-    session_id: &SessionId,
-    run_id: &AgentRunId,
-    base_sequence: u64,
+    context: &AgentScriptDebugRunFinishContext<'_>,
     debug_events: &[DebugEvent],
     report: &AgentScriptRunReport,
 ) -> Result<(), String> {
-    let finished_sequence = debug_events
-        .last()
-        .map_or(base_sequence.saturating_add(1), |event| {
-            base_sequence
-                .saturating_add(event.sequence)
-                .saturating_add(1)
-        });
+    let finished_sequence =
+        debug_events
+            .last()
+            .map_or(context.base_sequence.saturating_add(1), |event| {
+                context
+                    .base_sequence
+                    .saturating_add(event.sequence)
+                    .saturating_add(1)
+            });
     let outcome = if report.ok {
         DebugScriptRunOutcome::Done
     } else {
         DebugScriptRunOutcome::Failed
     };
-    let mut run_metadata = BTreeMap::new();
+    let mut run_metadata = agent_script_debug_run_metadata(context.input);
     run_metadata.insert("steps".to_owned(), serde_json::json!(report.steps));
     run_metadata.insert(
         "host_calls".to_owned(),
@@ -4325,7 +4404,7 @@ fn agent_script_finish_debug_run(
         .map(|message| serde_json::json!({ "message": message }));
     store
         .finish_script_run(
-            run_id,
+            context.run_id,
             &DebugScriptRunFinish {
                 outcome,
                 finished_sequence,
@@ -4336,13 +4415,17 @@ fn agent_script_finish_debug_run(
             },
         )
         .map_err(|error| format!("failed to persist Agent Script run finish: {error}"))?;
-    let mut session_finish_metadata = BTreeMap::new();
+    let mut session_finish_metadata =
+        agent_script_debug_session_metadata(context.options, context.input);
     session_finish_metadata.insert("runs".to_owned(), serde_json::json!(1));
-    session_finish_metadata.insert("last_run_id".to_owned(), serde_json::json!(run_id.as_str()));
+    session_finish_metadata.insert(
+        "last_run_id".to_owned(),
+        serde_json::json!(context.run_id.as_str()),
+    );
     session_finish_metadata.insert("ok".to_owned(), serde_json::json!(report.ok));
     agent_debug_finish_runtime_session(
         store,
-        session_id,
+        context.session_id,
         if report.ok {
             DebugSessionStatus::Finished
         } else {

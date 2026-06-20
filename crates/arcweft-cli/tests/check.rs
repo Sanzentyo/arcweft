@@ -237,6 +237,7 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         .expect("script session persisted");
     assert_eq!(session.status, DebugSessionStatus::Finished);
     assert_eq!(session.metadata["last_run_id"], second_run_id.as_str());
+    assert_agent_script_project_metadata(&session.metadata);
     assert_stale_script_session_abandoned(&store, &stale_session_id);
     let expected_trace_path = trace_path.display().to_string();
     let persisted_run = store
@@ -260,10 +261,33 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         "second run should be appended after the first run sequence range"
     );
     assert_eq!(persisted_run.metadata["steps"], report["steps"]);
+    assert_agent_script_project_metadata(&persisted_run.metadata);
+    assert_agent_script_project_metadata(&second_persisted_run.metadata);
     assert_eq!(store.stats().expect("stats").script_runs, 2);
     assert!(store.stats().expect("stats").debug_events > 0);
 
     assert_debug_db_runs_report(&debug_db_path, &second_run_id);
+}
+
+fn assert_agent_script_project_metadata(metadata: &BTreeMap<String, serde_json::Value>) {
+    let entities = &metadata["project_entities"];
+    assert_eq!(entities["count"], 0);
+    assert_eq!(entities["kind_counts"].as_object().unwrap().len(), 0);
+
+    let graph = &metadata["project_graph"];
+    assert_eq!(graph["has_project_summary"], true);
+    assert_eq!(graph["summary_symbol_id"], "project:summary");
+    assert_eq!(graph["symbol_count"], 1);
+    assert_eq!(graph["edge_count"], 0);
+    assert_eq!(graph["symbol_kind_counts"]["project_summary"], 1);
+    assert_eq!(graph["edge_kind_counts"].as_object().unwrap().len(), 0);
+    assert_eq!(graph["project_summary"]["entity_count"], 0);
+    assert_eq!(graph["project_summary"]["agent_action_count"], 0);
+    assert_eq!(graph["project_summary"]["project_callable_count"], 0);
+    assert_eq!(graph["project_summary"]["relation_count"], 0);
+    assert_eq!(graph["project_summary"]["dependency_edge_count"], 0);
+    assert_eq!(graph["project_summary"]["dynamic_control_flow_count"], 0);
+    assert_eq!(graph["project_summary"]["debug_query_count"], 0);
 }
 
 fn seed_stale_script_session(debug_db_path: &Path) -> SessionId {
@@ -323,6 +347,14 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
     assert_eq!(runs[0]["run_id"], second_run_id);
     assert_eq!(runs[0]["outcome"], "done");
     assert_eq!(runs[0]["session_id"], "session.cli");
+    assert_eq!(
+        runs[0]["metadata"]["project_graph"]["has_project_summary"],
+        true
+    );
+    assert_eq!(
+        runs[0]["metadata"]["project_graph"]["summary_symbol_id"],
+        "project:summary"
+    );
     assert!(
         runs[0]["started_sequence"].as_u64().expect("sequence")
             > runs[1]["finished_sequence"].as_u64().expect("sequence")
