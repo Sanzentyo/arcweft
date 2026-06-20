@@ -4311,7 +4311,9 @@ fn agent_script_debug_run_metadata(
     metadata
 }
 
-fn agent_script_project_entities_metadata(entities: &[RequiredEntity]) -> serde_json::Value {
+pub(in crate::app::agent) fn agent_script_project_entities_metadata(
+    entities: &[RequiredEntity],
+) -> serde_json::Value {
     let mut kind_counts = BTreeMap::<String, usize>::new();
     for entity in entities {
         *kind_counts.entry(entity.kind.clone()).or_insert(0) += 1;
@@ -4322,7 +4324,9 @@ fn agent_script_project_entities_metadata(entities: &[RequiredEntity]) -> serde_
     })
 }
 
-fn agent_script_project_graph_metadata(graph: &AgentProjectGraph) -> serde_json::Value {
+pub(in crate::app::agent) fn agent_script_project_graph_metadata(
+    graph: &AgentProjectGraph,
+) -> serde_json::Value {
     let mut symbol_kind_counts = BTreeMap::<String, usize>::new();
     for symbol in &graph.symbols {
         *symbol_kind_counts.entry(symbol.kind.clone()).or_insert(0) += 1;

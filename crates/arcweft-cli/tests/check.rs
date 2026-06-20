@@ -31273,6 +31273,16 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
     assert!(info["latest_capture"]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(info["capture_resource_count"], 2);
     assert_eq!(info["native_capture_session_active"], true);
+    assert_eq!(
+        info["project"]["project_graph"]["has_project_summary"],
+        true
+    );
+    assert!(
+        info["project"]["project_graph"]["project_summary"]["entity_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "session info should expose native project graph summary: {info}"
+    );
     assert_eq!(info["latest_capture"]["crop_origin"]["space"], "viewport");
     assert_eq!(
         info["latest_capture_uri"],

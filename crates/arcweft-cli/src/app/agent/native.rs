@@ -14,6 +14,7 @@ use super::{
     agent_debug_finish_runtime_session, agent_debug_start_runtime_session,
     agent_program_summary_rag_candidate, agent_rag_index_graph, agent_rag_index_program_graph,
     agent_rag_program_hash, agent_rag_select_context_chunk, agent_rag_source_paths,
+    agent_script_project_entities_metadata, agent_script_project_graph_metadata,
     agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
     agent_script_run_report_from_result, agent_script_runtime_policy,
     agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
@@ -82,6 +83,7 @@ use arcweft_debug_sqlite::store::{
 };
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
+use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_hir};
 use arcweft_lang_syntax::ast::{
     flow::Stmt,
     ids::EntityRefSyntax,
@@ -99,6 +101,7 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
     RichTextTextSource, RuntimeLineContext,
 };
+use arcweft_source::SourceName;
 #[cfg(feature = "agent-repl")]
 use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
 use arcweft_tooling::agent_repl::{
@@ -648,6 +651,7 @@ mod tests {
         });
         let mut state = AgentMcpState {
             report: Some(report),
+            project_context: Some(test_agent_mcp_project_context()),
             trace_resources: vec![AgentResource {
                 uri: "arcweft://run/run.test/trace.arcwx".to_owned(),
                 kind: AgentResourceKind::Trace,
@@ -678,6 +682,14 @@ mod tests {
             body["resources"]["trace_resource_count"],
             serde_json::json!(1)
         );
+        assert_eq!(
+            body["project"]["project_graph"]["summary_symbol_id"],
+            serde_json::json!("project:summary")
+        );
+        assert_eq!(
+            body["project"]["project_graph"]["project_summary"]["entity_count"],
+            serde_json::json!(2)
+        );
         assert!(
             !serde_json::to_string(body)
                 .expect("context serializes")
@@ -707,6 +719,48 @@ mod tests {
         )
         .expect("project context read succeeds");
         assert!(!allowed.is_error);
+
+        let session_info = agent_mcp_call_session_info(&state).expect("session info reads");
+        let info = mcp_text_json(&session_info);
+        assert_eq!(
+            info["project"]["project_graph"]["project_summary"]["agent_action_count"],
+            serde_json::json!(1)
+        );
+    }
+
+    fn test_agent_mcp_project_context() -> AgentMcpProjectContext {
+        AgentMcpProjectContext {
+            project_entities: serde_json::json!({
+                "count": 2,
+                "kind_counts": {
+                    "flow": 1,
+                    "choice_option": 1,
+                },
+            }),
+            project_graph: serde_json::json!({
+                "symbol_count": 3,
+                "edge_count": 2,
+                "summary_symbol_id": "project:summary",
+                "has_project_summary": true,
+                "project_summary": {
+                    "entity_count": 2,
+                    "agent_action_count": 1,
+                    "project_callable_count": 0,
+                    "relation_count": 1,
+                    "dependency_edge_count": 0,
+                    "dynamic_control_flow_count": 0,
+                    "debug_query_count": 0,
+                },
+                "symbol_kind_counts": {
+                    "project_summary": 1,
+                    "flow": 1,
+                    "choice_option": 1,
+                },
+                "edge_kind_counts": {
+                    "contains_entity": 2,
+                },
+            }),
+        }
     }
 
     #[test]
@@ -4567,6 +4621,7 @@ fn agent_repl_query(
         capture_resources: Vec::new(),
         trace_resources: state.trace_resources.clone(),
         rag_context_packs: Vec::new(),
+        project_context: None,
         native_capture_session: None,
         runtime: None,
         observe_options: None,
@@ -5636,6 +5691,7 @@ struct AgentMcpState {
     capture_resources: Vec<AgentResource>,
     trace_resources: Vec<AgentResource>,
     rag_context_packs: Vec<RagContextPack>,
+    project_context: Option<AgentMcpProjectContext>,
     native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
     runtime: Option<NativeAgentRuntimeState>,
     observe_options: Option<AgentObserveOptions>,
@@ -5672,9 +5728,45 @@ struct NativeAgentRuntimeState {
     catalog: LineDisplayCatalog,
     source_path: PathBuf,
     host_policy: HostCallPolicy,
+    project_context: AgentMcpProjectContext,
     native_session: arcweft_render_native::NativeOffscreenCaptureSession,
     task_events: Vec<TaskEvent>,
     next_tick: usize,
+}
+
+#[derive(Clone, Debug)]
+struct AgentMcpProjectContext {
+    project_entities: serde_json::Value,
+    project_graph: serde_json::Value,
+}
+
+impl AgentMcpProjectContext {
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "project_entities": self.project_entities,
+            "project_graph": self.project_graph,
+        })
+    }
+}
+
+fn agent_mcp_project_context_from_hir(
+    hir: &arcweft_lang_hir::model::HirModule,
+    source_path: &Path,
+) -> Result<AgentMcpProjectContext, String> {
+    let project = project_semantic_index_from_hir(
+        hir,
+        ProgramHash::new(format!("native-source:{}", source_path.display())),
+        &SourceName::path(source_path.display().to_string()),
+    )
+    .map_err(|error| error.to_string())?;
+    let project_entities = arcweft_compiler::agent_required_entities_from_project(&project)
+        .map_err(|error| error.to_string())?;
+    let project_graph = arcweft_compiler::agent_project_graph_from_project(&project)
+        .map_err(|error| error.to_string())?;
+    Ok(AgentMcpProjectContext {
+        project_entities: agent_script_project_entities_metadata(&project_entities),
+        project_graph: agent_script_project_graph_metadata(&project_graph),
+    })
 }
 
 struct AgentMcpObservation {
@@ -5947,6 +6039,7 @@ fn agent_mcp_store_observation(state: &mut AgentMcpState, observed: AgentMcpObse
     state.report = Some(observed.report);
     state.image_output = observed.image_output;
     state.image_frames = observed.image_frames;
+    state.project_context = Some(observed.runtime.project_context.clone());
     state.runtime = Some(observed.runtime);
     state.observe_options = Some(observed.options);
     state.native_capture_session = None;
@@ -5975,6 +6068,7 @@ fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResul
             "objects": report.objects,
             "capture_resource_count": state.capture_resources.len(),
             "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
+            "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
             "latest_capture": latest_capture.and_then(|resource| resource.image.as_ref()),
             "latest_capture_uri": latest_capture.map(|resource| resource.uri.as_str()),
             "latest_capture_resource": latest_capture_descriptor,
@@ -5993,6 +6087,7 @@ fn agent_mcp_call_session_info(state: &AgentMcpState) -> Result<McpCallToolResul
             "capture_resource_count": 0,
             "trace_resource_count": state.trace_resources.len(),
             "native_capture_session_active": false,
+            "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
             "latest_capture": null,
             "latest_capture_uri": null,
             "latest_capture_resource": null,
@@ -8919,6 +9014,8 @@ fn agent_mcp_run_observation(
     .map_err(|_| "failed to resolve runtime pure config".to_owned())?;
     let checked = load_and_check_selection(&selection, None)
         .map_err(|_| "failed to check MCP observe source".to_owned())?;
+    let project_context = agent_mcp_project_context_from_hir(&checked.hir, selection.path())
+        .map_err(|error| format!("failed to build MCP project context: {error}"))?;
     let host_policy = native_host_policy_for_selection(&selection)
         .map_err(|_| "failed to resolve native host policy".to_owned())?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
@@ -8935,6 +9032,7 @@ fn agent_mcp_run_observation(
         catalog: lowered.line_display_catalog,
         source_path: selection.path().to_owned(),
         host_policy,
+        project_context,
         native_session,
         task_events: Vec::new(),
         next_tick: 0,
@@ -9345,6 +9443,7 @@ fn agent_mcp_session_context_resource(
             "native_runtime_active": state.runtime.is_some(),
             "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
         },
+        "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
     });
     let bytes = serde_json::to_vec(&body)?;
     Ok(Some(AgentResource {
@@ -9938,6 +10037,11 @@ fn native_agent_runtime_state_for_options(
         options.math_wgpu_min_elements,
     )?;
     let checked = load_and_check_selection(&selection, None)?;
+    let project_context = agent_mcp_project_context_from_hir(&checked.hir, selection.path())
+        .map_err(|error| {
+            eprintln!("error: failed to build native project context: {error}");
+            ExitCode::FAILURE
+        })?;
     let native_session = agent_native_capture_session_for_hir(&checked.hir)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
@@ -9956,6 +10060,7 @@ fn native_agent_runtime_state_for_options(
         catalog: lowered.line_display_catalog,
         source_path: selection.path().to_owned(),
         host_policy,
+        project_context,
         native_session,
         task_events: Vec::new(),
         next_tick: 0,
