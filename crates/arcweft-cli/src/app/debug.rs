@@ -1,5 +1,5 @@
 use super::shared::print_json;
-use arcweft_agent_protocol::ids::SessionId;
+use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
@@ -7,7 +7,7 @@ use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugStore, DebugStoreBlobRecord, DebugStoreError,
-    DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport,
+    DebugStoreForeignKeyViolation, DebugStoreStats, DebugStoreValidationReport, DebugTimelineEvent,
 };
 use clap::{Args, Subcommand};
 use std::collections::BTreeMap;
@@ -35,6 +35,7 @@ pub(super) enum DebugDbCommand {
     Sessions(DebugDbSessionsOptions),
     Runs(DebugDbRunsOptions),
     Rag(DebugDbRagOptions),
+    Timeline(DebugDbTimelineOptions),
     Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
@@ -83,6 +84,20 @@ pub(super) struct DebugDbRagOptions {
     db: DebugDbOptions,
     #[arg(long = "query-id")]
     query_id: String,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbTimelineOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "session-id")]
+    session_id: Option<String>,
+    #[arg(long = "run-id")]
+    run_id: Option<String>,
+    #[arg(long, default_value_t = 50)]
+    limit: usize,
     #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
     max_privacy: PrivacyClass,
 }
@@ -219,6 +234,29 @@ struct DebugDbRagReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbTimelineReport {
+    path: String,
+    user_version: u32,
+    session_id: Option<String>,
+    run_id: Option<String>,
+    limit: usize,
+    max_privacy: PrivacyClass,
+    events: Vec<DebugDbTimelineEventReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbTimelineEventReport {
+    session_id: String,
+    run_id: Option<String>,
+    sequence: u64,
+    tick: Option<u64>,
+    kind: String,
+    privacy: PrivacyClass,
+    payload: serde_json::Value,
+    created_unix_ms: i64,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbSessionReport {
     session_id: String,
     program_hash: Option<String>,
@@ -312,6 +350,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
         DebugDbCommand::Rag(options) => debug_db_rag_command(&options),
+        DebugDbCommand::Timeline(options) => debug_db_timeline_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
@@ -569,6 +608,80 @@ fn debug_db_rag_command(options: &DebugDbRagOptions) -> Result<(), ExitCode> {
     Ok(())
 }
 
+fn debug_db_timeline_command(options: &DebugDbTimelineOptions) -> Result<(), ExitCode> {
+    if options.limit == 0 {
+        eprintln!("error: debug db timeline --limit must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    let session_id = options
+        .session_id
+        .as_deref()
+        .map(SessionId::new)
+        .transpose()
+        .map_err(|error| {
+            eprintln!("error: invalid debug db timeline --session-id: {error}");
+            ExitCode::from(2)
+        })?;
+    let run_id = options
+        .run_id
+        .as_deref()
+        .map(AgentRunId::new)
+        .transpose()
+        .map_err(|error| {
+            eprintln!("error: invalid debug db timeline --run-id: {error}");
+            ExitCode::from(2)
+        })?;
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let events = store
+        .session_timeline_with_max_privacy(
+            session_id.as_ref().map(SessionId::as_str),
+            run_id.as_ref().map(AgentRunId::as_str),
+            options.limit,
+            options.max_privacy,
+        )
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read debug timeline from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let report = DebugDbTimelineReport {
+        path,
+        user_version,
+        session_id: session_id.as_ref().map(|id| id.as_str().to_owned()),
+        run_id: run_id.as_ref().map(|id| id.as_str().to_owned()),
+        limit: options.limit,
+        max_privacy: options.max_privacy,
+        events: events
+            .into_iter()
+            .map(debug_db_timeline_event_report)
+            .collect(),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: {} timeline event(s) max_privacy={}",
+        report.path,
+        report.events.len(),
+        report.max_privacy.as_str()
+    );
+    for event in &report.events {
+        println!(
+            "{} {} session={} run={} tick={}",
+            event.sequence,
+            event.kind,
+            event.session_id,
+            event.run_id.as_deref().unwrap_or("-"),
+            event
+                .tick
+                .map_or_else(|| "-".to_owned(), |tick| tick.to_string())
+        );
+    }
+    Ok(())
+}
+
 fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
     let report = debug_db_search_report(options)?;
     if options.db.json {
@@ -695,6 +808,19 @@ fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
         trace_uri: run.trace_uri,
         error: run.error,
         metadata: run.metadata,
+    }
+}
+
+fn debug_db_timeline_event_report(event: DebugTimelineEvent) -> DebugDbTimelineEventReport {
+    DebugDbTimelineEventReport {
+        session_id: event.session_id,
+        run_id: event.run_id,
+        sequence: event.sequence,
+        tick: event.tick,
+        kind: event.event_kind,
+        privacy: event.privacy,
+        payload: event.payload,
+        created_unix_ms: event.created_unix_ms,
     }
 }
 

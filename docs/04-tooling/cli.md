@@ -381,6 +381,10 @@ observation.
 `arcweft.debug.script.runs` reads persisted Agent Script run lifecycle rows
 from the same store with optional `path`, `session_id`, and `limit`, mirroring
 `arcw debug db runs` for MCP clients.
+`arcw debug db timeline [--session-id ID] [--run-id ID]
+[--max-privacy public|project|sensitive|secret] [--limit N] [--json]` reads
+persisted debug events in session order and applies payload privacy filtering
+before the limit, matching `arcweft.debug.session.timeline`.
 MCP `arcweft.rag.query` uses the same `RagContextPack` output shape and can
 combine cached observation context, cached `.arcwx` trace context, and
 source/project context. `source` still observes that `.arcw` file before

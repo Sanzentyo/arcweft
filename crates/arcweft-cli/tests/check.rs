@@ -14,10 +14,12 @@ use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
+use arcweft_debug_model::event::{DebugEvent, DebugEventKind};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
+use arcweft_debug_model::sink::DebugEventSink;
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
@@ -2378,6 +2380,76 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
     assert_eq!(report["sessions"][0]["status"], "finished");
     assert_eq!(report["sessions"][0]["ended_unix_ms"], 25);
     assert_eq!(report["sessions"][0]["metadata"]["outcome"], "done");
+}
+
+#[test]
+fn debug_db_timeline_reports_privacy_filtered_events() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/timeline-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug timeline target dir"))
+        .expect("create debug timeline target dir");
+    let mut store = DebugStore::open(&db_path).expect("open debug timeline database");
+    let session_id = SessionId::new("session.timeline.cli").expect("session id");
+    store
+        .start_session(&session_id, None, "developer", "cli", 0)
+        .expect("seed timeline session");
+    for (sequence, privacy, message) in [
+        (1, "secret", "hidden event"),
+        (2, "public", "visible event"),
+    ] {
+        store
+            .append(&DebugEvent {
+                schema_version: 1,
+                session_id: session_id.clone(),
+                run_id: None,
+                sequence,
+                tick: Some(sequence + 10),
+                kind: DebugEventKind::Diagnostic,
+                payload: serde_json::json!({
+                    "privacy_class": privacy,
+                    "message": message,
+                }),
+                created_unix_ms: i64::try_from(sequence).expect("sequence fits i64"),
+            })
+            .expect("seed timeline event");
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("timeline")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--session-id")
+        .arg(session_id.as_str())
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db timeline runs");
+    assert!(
+        output.status.success(),
+        "debug db timeline should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db timeline output is JSON");
+
+    assert_eq!(report["session_id"], "session.timeline.cli");
+    assert_eq!(report["limit"], 1);
+    assert_eq!(report["max_privacy"], "public");
+    let events = report["events"].as_array().expect("events array");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["sequence"], 2);
+    assert_eq!(events[0]["kind"], "diagnostic");
+    assert_eq!(events[0]["privacy"], "public");
+    assert_eq!(events[0]["payload"]["message"], "visible event");
 }
 
 #[test]
