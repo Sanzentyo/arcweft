@@ -12,9 +12,10 @@ use arcweft_agent_protocol::{
     predicate::{CompareOp, DebugStatePath, ObservationFieldPath, Predicate, Probe},
     protocol::{
         ActionResult, AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentAttachment,
-        AgentHostRequest, AgentHostResponse, AgentInvokeAction, AgentSessionInfo, CaptureFormat,
-        CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
-        PointerButton, RagRequest, WaitRequest,
+        AgentHostRequest, AgentHostResponse, AgentInvokeAction, AgentProjectGraph,
+        AgentProjectGraphEdge, AgentProjectGraphNeighborhood, AgentProjectGraphSymbol,
+        AgentSessionInfo, CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget,
+        ObservationEnvelope, ObserveRequest, PointerButton, RagRequest, WaitRequest,
     },
     trace::{AgentTraceKind, AgentTraceRecord},
     value::AgentValue,
@@ -131,6 +132,7 @@ impl ReplayAgentSession {
                 session_id,
                 program_hash,
                 project_entities: Vec::new(),
+                project_graph: AgentProjectGraph::default(),
                 profile: Some("trace.replay".to_owned()),
                 capabilities: vec![
                     "observe".to_owned(),
@@ -331,6 +333,8 @@ where
     },
     #[error("Agent project entity metadata is missing for {entity}")]
     ProjectEntityMetadataMissing { entity: String },
+    #[error("Agent project graph is missing symbol for {entity}")]
+    ProjectGraphSymbolMissing { entity: String },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
     #[error("Agent assertion failed ({kind:?}): {message}")]
@@ -521,6 +525,9 @@ where
             AgentHostRequest::EntityMetadata { entity } => {
                 self.handle_entity_metadata_request(&entity)?
             }
+            AgentHostRequest::ProjectGraphNeighborhood { root, depth } => {
+                self.handle_project_graph_neighborhood_request(&root, depth)?
+            }
             AgentHostRequest::RagQuery(request) => {
                 self.handle_rag_query_request(*request, budget.as_mut())?
             }
@@ -691,6 +698,34 @@ where
             }),
         )?;
         Ok(AgentHostResponse::EntityMetadata(Box::new(metadata)))
+    }
+
+    fn handle_project_graph_neighborhood_request(
+        &mut self,
+        root: &PublicId,
+        depth: u32,
+    ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
+        self.ensure(RuntimeAgentCapability::DebugRead)?;
+        let session_info = self.session.info().map_err(AgentRunError::Session)?;
+        let neighborhood = project_graph_neighborhood(&session_info.project_graph, root, depth)
+            .ok_or_else(|| AgentRunError::ProjectGraphSymbolMissing {
+                entity: root.as_str().to_owned(),
+            })?;
+        self.emit(
+            DebugEventKind::Diagnostic,
+            None,
+            serde_json::json!({
+                "project_graph_neighborhood": {
+                    "root": root.as_str(),
+                    "depth": depth,
+                    "symbol_count": neighborhood.symbols.len(),
+                    "edge_count": neighborhood.edges.len(),
+                }
+            }),
+        )?;
+        Ok(AgentHostResponse::ProjectGraphNeighborhood(Box::new(
+            neighborhood,
+        )))
     }
 
     fn handle_rag_query_request(
@@ -1174,6 +1209,14 @@ fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, 
                 .and_then(|arg| parse_public_id_arg(arg))?;
             Ok(AgentHostRequest::EntityMetadata { entity })
         }
+        "project_neighbors" => {
+            let root = call
+                .args
+                .first()
+                .ok_or_else(|| "project_neighbors requires a root argument".to_owned())
+                .and_then(|arg| parse_public_id_arg(arg))?;
+            Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth: 1 })
+        }
         other => Err(format!("unsupported Agent call `{other}`")),
     }
 }
@@ -1236,6 +1279,15 @@ fn agent_host_request_from_task(request: &HostTaskRequest) -> Result<AgentHostRe
                 .ok_or_else(|| "entity_meta requires an entity argument".to_owned())
                 .and_then(runtime_public_id)?;
             Ok(AgentHostRequest::EntityMetadata { entity })
+        }
+        "project_neighbors" => {
+            let root = args
+                .positional(0)
+                .or_else(|| args.named("root"))
+                .ok_or_else(|| "project_neighbors requires a root argument".to_owned())
+                .and_then(runtime_public_id)?;
+            let depth = args.named("depth").map_or(Ok(1), runtime_u32)?;
+            Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth })
         }
         "rag.query" => {
             runtime_rag_request(&args).map(|request| AgentHostRequest::RagQuery(Box::new(request)))
@@ -1681,8 +1733,62 @@ fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload
         ]),
         AgentHostResponse::Resource(value) => runtime_resource_payload(value),
         AgentHostResponse::EntityMetadata(metadata) => runtime_entity_metadata_payload(metadata),
+        AgentHostResponse::ProjectGraphNeighborhood(neighborhood) => {
+            runtime_project_graph_neighborhood_payload(neighborhood)
+        }
         AgentHostResponse::RagContext(value) => runtime_rag_context_payload(value),
         AgentHostResponse::Unit => RuntimeValue::Unit,
+    })
+}
+
+fn project_graph_neighborhood(
+    graph: &AgentProjectGraph,
+    root: &PublicId,
+    depth: u32,
+) -> Option<AgentProjectGraphNeighborhood> {
+    let root_symbol = graph
+        .symbols
+        .iter()
+        .find(|symbol| symbol.public_id.as_ref() == Some(root))?;
+    let mut selected_symbols = BTreeSet::from([root_symbol.symbol_id.clone()]);
+    let mut frontier = BTreeSet::from([root_symbol.symbol_id.clone()]);
+    let mut selected_edges = BTreeSet::new();
+    for _ in 0..depth {
+        let mut next_frontier = BTreeSet::new();
+        for (index, edge) in graph.edges.iter().enumerate() {
+            let touches_frontier =
+                frontier.contains(&edge.from_symbol_id) || frontier.contains(&edge.to_symbol_id);
+            if !touches_frontier {
+                continue;
+            }
+            selected_edges.insert(index);
+            if selected_symbols.insert(edge.from_symbol_id.clone()) {
+                next_frontier.insert(edge.from_symbol_id.clone());
+            }
+            if selected_symbols.insert(edge.to_symbol_id.clone()) {
+                next_frontier.insert(edge.to_symbol_id.clone());
+            }
+        }
+        frontier = next_frontier;
+        if frontier.is_empty() {
+            break;
+        }
+    }
+    Some(AgentProjectGraphNeighborhood {
+        root: root.clone(),
+        symbols: graph
+            .symbols
+            .iter()
+            .filter(|symbol| selected_symbols.contains(&symbol.symbol_id))
+            .cloned()
+            .collect(),
+        edges: graph
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| selected_edges.contains(index))
+            .map(|(_, edge)| edge.clone())
+            .collect(),
     })
 }
 
@@ -1740,6 +1846,89 @@ fn runtime_entity_source_anchor_payload(
             "end_column",
             RuntimeValue::u32(source.end.map_or(0, |position| position.column)),
         ),
+    ])
+}
+
+fn runtime_project_graph_neighborhood_payload(
+    neighborhood: &AgentProjectGraphNeighborhood,
+) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field(
+            "root",
+            RuntimeValue::String(neighborhood.root.as_str().to_owned()),
+        ),
+        runtime_field(
+            "node_count",
+            RuntimeValue::u32(u32::try_from(neighborhood.symbols.len()).unwrap_or(u32::MAX)),
+        ),
+        runtime_field(
+            "edge_count",
+            RuntimeValue::u32(u32::try_from(neighborhood.edges.len()).unwrap_or(u32::MAX)),
+        ),
+        runtime_field(
+            "symbols",
+            arcweft_core::value::runtime_sequence_values(
+                neighborhood
+                    .symbols
+                    .iter()
+                    .map(runtime_project_graph_symbol_payload)
+                    .collect(),
+            ),
+        ),
+        runtime_field(
+            "edges",
+            arcweft_core::value::runtime_sequence_values(
+                neighborhood
+                    .edges
+                    .iter()
+                    .map(runtime_project_graph_edge_payload)
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+fn runtime_project_graph_symbol_payload(symbol: &AgentProjectGraphSymbol) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field("symbol_id", RuntimeValue::String(symbol.symbol_id.clone())),
+        runtime_field(
+            "has_entity",
+            RuntimeValue::Bool(symbol.public_id.as_ref().is_some()),
+        ),
+        runtime_field(
+            "id",
+            RuntimeValue::String(
+                symbol
+                    .public_id
+                    .as_ref()
+                    .map_or("", PublicId::as_str)
+                    .to_owned(),
+            ),
+        ),
+        runtime_field("kind", RuntimeValue::String(symbol.kind.clone())),
+        runtime_field(
+            "has_semantic_hash",
+            RuntimeValue::Bool(symbol.semantic_hash.as_ref().is_some()),
+        ),
+        runtime_field(
+            "semantic_hash",
+            RuntimeValue::String(symbol.semantic_hash.clone().unwrap_or_default()),
+        ),
+        runtime_field("summary", RuntimeValue::String(symbol.summary.clone())),
+    ])
+}
+
+fn runtime_project_graph_edge_payload(edge: &AgentProjectGraphEdge) -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        runtime_field(
+            "from_symbol_id",
+            RuntimeValue::String(edge.from_symbol_id.clone()),
+        ),
+        runtime_field(
+            "to_symbol_id",
+            RuntimeValue::String(edge.to_symbol_id.clone()),
+        ),
+        runtime_field("kind", RuntimeValue::String(edge.edge_kind.clone())),
     ])
 }
 
@@ -3016,6 +3205,7 @@ mod tests {
 
     struct MetadataSession {
         project_entities: Vec<RequiredEntity>,
+        project_graph: AgentProjectGraph,
     }
 
     #[derive(Default)]
@@ -3044,6 +3234,7 @@ mod tests {
                 session_id: "session.test".to_owned(),
                 program_hash: "hash".to_owned(),
                 project_entities: Vec::new(),
+                project_graph: AgentProjectGraph::default(),
                 profile: None,
                 capabilities: Vec::new(),
             })
@@ -3099,6 +3290,7 @@ mod tests {
                 session_id: "session.metadata".to_owned(),
                 program_hash: "hash".to_owned(),
                 project_entities: self.project_entities.clone(),
+                project_graph: self.project_graph.clone(),
                 profile: None,
                 capabilities: vec!["debug.read".to_owned()],
             })
@@ -3513,6 +3705,52 @@ mod tests {
                         FlowOp::ReturnExpr(RuntimeExpr::Field {
                             target: Box::new(RuntimeExpr::Local("meta".to_owned())),
                             field: "semantic_hash".to_owned(),
+                        }),
+                    ],
+                }],
+                Vec::new(),
+            )
+            .expect("runtime plan is valid"),
+        )
+    }
+
+    fn project_neighbors_binding_program() -> BytecodeProgram {
+        BytecodeProgram::from_runtime_plan(
+            RuntimePlan::new(
+                Some(FlowRuntimeId("agent.project_neighbors_binding".to_owned())),
+                vec![RuntimeFlow {
+                    id: FlowRuntimeId("agent.project_neighbors_binding".to_owned()),
+                    ops: vec![
+                        FlowOp::Await {
+                            binding: Some(RuntimePattern::Ident("graph".to_owned())),
+                            target: AwaitTarget::new(
+                                NeedId("need.agent.project_neighbors".to_owned()),
+                                TaskId("task.agent.project_neighbors".to_owned()),
+                                HostTaskRequestTemplate::new(
+                                    "agent",
+                                    "project_neighbors",
+                                    [
+                                        HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
+                                            "flow.opening".to_owned(),
+                                        )),
+                                        HostTaskArgTemplate::positional(RuntimeExpr::Variant {
+                                            path: Some("agent".to_owned()),
+                                            name: AGENT_NAMED_ARGS_VARIANT.to_owned(),
+                                            payload: Some(Box::new(RuntimeExpr::Record(vec![
+                                                RuntimeFieldExpr {
+                                                    name: "depth".to_owned(),
+                                                    value: RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                                },
+                                            ]))),
+                                        }),
+                                    ],
+                                ),
+                            ),
+                            pending: Vec::new(),
+                        },
+                        FlowOp::ReturnExpr(RuntimeExpr::Field {
+                            target: Box::new(RuntimeExpr::Local("graph".to_owned())),
+                            field: "edge_count".to_owned(),
                         }),
                     ],
                 }],
@@ -4567,6 +4805,7 @@ mod tests {
                         }),
                     }),
                 }],
+                project_graph: AgentProjectGraph::default(),
             },
             NullDebugEventSink,
             NoopRagService,
@@ -4596,6 +4835,65 @@ mod tests {
             report.final_status,
             Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
                 if value == "hir:flow:flow.opening:_"
+        ));
+    }
+
+    #[test]
+    fn controller_bytecode_resumes_project_graph_neighborhood_fields() {
+        let mut runner = AgentRunner::new(
+            MetadataSession {
+                project_entities: Vec::new(),
+                project_graph: AgentProjectGraph {
+                    symbols: vec![
+                        AgentProjectGraphSymbol {
+                            symbol_id: "project:summary".to_owned(),
+                            public_id: None,
+                            qualified_name: Some("project".to_owned()),
+                            kind: "project_summary".to_owned(),
+                            semantic_hash: None,
+                            summary: "Project".to_owned(),
+                        },
+                        AgentProjectGraphSymbol {
+                            symbol_id: "project:entity:flow.opening".to_owned(),
+                            public_id: Some(PublicId::new("flow.opening").expect("valid id")),
+                            qualified_name: None,
+                            kind: "flow".to_owned(),
+                            semantic_hash: Some("hir:flow:flow.opening:_".to_owned()),
+                            summary: "Opening flow".to_owned(),
+                        },
+                    ],
+                    edges: vec![AgentProjectGraphEdge {
+                        from_symbol_id: "project:summary".to_owned(),
+                        to_symbol_id: "project:entity:flow.opening".to_owned(),
+                        edge_kind: "contains_entity".to_owned(),
+                    }],
+                },
+            },
+            NullDebugEventSink,
+            NoopRagService,
+            RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
+            AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+        );
+
+        let report = runner
+            .run_controller_bytecode(
+                project_neighbors_binding_program(),
+                AgentControllerRunConfig::default(),
+            )
+            .expect("controller bytecode runs");
+
+        assert_eq!(report.host_calls, 1);
+        assert!(matches!(
+            &report.responses[0],
+            AgentHostResponse::ProjectGraphNeighborhood(neighborhood)
+                if neighborhood.root.as_str() == "flow.opening"
+                    && neighborhood.symbols.len() == 2
+                    && neighborhood.edges.len() == 1
+                    && neighborhood.edges[0].edge_kind == "contains_entity"
+        ));
+        assert!(matches!(
+            report.final_status,
+            Some(FlowFiberStatus::Done(FlowExit::Return(_)))
         ));
     }
 

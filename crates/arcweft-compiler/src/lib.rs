@@ -7,6 +7,7 @@ use arcweft_agent_protocol::{
         RequiredEntity, RequiredEntitySourceAnchor, RequiredEntitySourcePosition,
     },
     ids::{PublicId as AgentPublicId, StableHash},
+    protocol::{AgentProjectGraph, AgentProjectGraphEdge, AgentProjectGraphSymbol},
 };
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
 use arcweft_core::bytecode::BytecodeProgram;
@@ -482,6 +483,15 @@ pub fn agent_required_entities_from_project(
         .collect()
 }
 
+/// Builds the Agent runtime project graph snapshot for debug/readback calls.
+pub fn agent_project_graph_from_project(
+    project: &ProjectSemanticIndex,
+) -> Result<AgentProjectGraph, arcweft_agent_protocol::ids::IdentifierError> {
+    let symbols = agent_project_graph_symbols(project)?;
+    let edges = agent_project_graph_edges(project);
+    Ok(AgentProjectGraph { symbols, edges })
+}
+
 fn required_agent_entity(
     entity: &arcweft_lang_sema::project_index::EntitySymbol,
 ) -> Result<RequiredEntity, arcweft_agent_protocol::ids::IdentifierError> {
@@ -491,6 +501,119 @@ fn required_agent_entity(
         semantic_hash: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
         source_anchor: required_entity_source_anchor(entity.source()),
     })
+}
+
+fn agent_project_graph_symbols(
+    project: &ProjectSemanticIndex,
+) -> Result<Vec<AgentProjectGraphSymbol>, arcweft_agent_protocol::ids::IdentifierError> {
+    let mut symbols = vec![AgentProjectGraphSymbol {
+        symbol_id: agent_project_summary_symbol_id(),
+        public_id: None,
+        qualified_name: Some("project".to_owned()),
+        kind: "project_summary".to_owned(),
+        semantic_hash: None,
+        summary: format!(
+            "Project with {} entities and {} debug queries",
+            project.entities().len(),
+            project.debug_queries().len()
+        ),
+    }];
+    for entity in project.entities().values() {
+        symbols.push(AgentProjectGraphSymbol {
+            symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
+            public_id: Some(AgentPublicId::new(entity.id().as_str().to_owned())?),
+            qualified_name: None,
+            kind: entity_kind_label(entity.ty().kind()).to_owned(),
+            semantic_hash: Some(entity.semantic_hash().as_str().to_owned()),
+            summary: format!(
+                "{} entity `{}`",
+                entity_kind_label(entity.ty().kind()),
+                entity.id().as_str()
+            ),
+        });
+        for action in entity.agent_actions() {
+            symbols.push(AgentProjectGraphSymbol {
+                symbol_id: agent_project_action_symbol_id(
+                    entity.id().as_str(),
+                    action.action().as_str(),
+                ),
+                public_id: None,
+                qualified_name: Some(action.action().as_str().to_owned()),
+                kind: "agent_action".to_owned(),
+                semantic_hash: None,
+                summary: format!(
+                    "Agent action `{}` on `{}`",
+                    action.action().as_str(),
+                    entity.id().as_str()
+                ),
+            });
+        }
+    }
+    for name in project.debug_queries().keys() {
+        symbols.push(AgentProjectGraphSymbol {
+            symbol_id: agent_project_debug_query_symbol_id(name.as_str()),
+            public_id: None,
+            qualified_name: Some(name.as_str().to_owned()),
+            kind: "debug_query".to_owned(),
+            semantic_hash: None,
+            summary: format!("Debug query `{}`", name.as_str()),
+        });
+    }
+    Ok(symbols)
+}
+
+fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProjectGraphEdge> {
+    let mut edges = project
+        .entities()
+        .values()
+        .map(|entity| AgentProjectGraphEdge {
+            from_symbol_id: agent_project_summary_symbol_id(),
+            to_symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
+            edge_kind: "contains_entity".to_owned(),
+        })
+        .collect::<Vec<_>>();
+    for entity in project.entities().values() {
+        edges.extend(
+            entity
+                .agent_actions()
+                .iter()
+                .map(|action| AgentProjectGraphEdge {
+                    from_symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
+                    to_symbol_id: agent_project_action_symbol_id(
+                        entity.id().as_str(),
+                        action.action().as_str(),
+                    ),
+                    edge_kind: "exposes_agent_action".to_owned(),
+                }),
+        );
+    }
+    edges.extend(
+        project
+            .debug_queries()
+            .keys()
+            .map(|name| AgentProjectGraphEdge {
+                from_symbol_id: agent_project_summary_symbol_id(),
+                to_symbol_id: agent_project_debug_query_symbol_id(name.as_str()),
+                edge_kind: "contains_debug_query".to_owned(),
+            }),
+    );
+    edges
+}
+
+fn agent_project_summary_symbol_id() -> String {
+    "project:summary".to_owned()
+}
+
+fn agent_project_entity_symbol_id(id: &str) -> String {
+    format!("project:entity:{id}")
+}
+
+fn agent_project_action_symbol_id(entity_id: &str, action: &str) -> String {
+    format!("project:action:{entity_id}:{action}")
+}
+
+fn agent_project_debug_query_symbol_id(name: &str) -> String {
+    format!("project:debug_query:{name}")
 }
 
 fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {
@@ -990,6 +1113,53 @@ effects { debug.read }
                 .judgments
                 .iter()
                 .any(|judgment| judgment.ty == TypeKind::AgentSourceAnchor)
+        );
+    }
+
+    #[test]
+    fn compile_agent_source_with_project_checks_project_neighbors_intrinsic() {
+        let project = project_with_entity("flow.opening", EntityKind::Flow);
+        let compiled = compile_agent_source_with_project(
+            r#"
+#[agent(version = 1)]
+agent @agent.project_neighbors project_neighbors_smoke()
+effects { debug.read }
+{
+    let graph = try project_neighbors(@flow.opening, depth = 1u32)
+    expect(graph.root == "flow.opening")
+    expect(graph.node_count > 0u32)
+    expect(graph.edge_count > 0u32)
+    let symbol = graph.symbols[0]
+    let edge = graph.edges[0]
+    expect(symbol.kind != "")
+    expect(edge.kind != "")
+}
+"#,
+            &project,
+        )
+        .expect("project graph neighborhood intrinsic typechecks");
+
+        assert!(compiled.typecheck_report.diagnostics.is_empty());
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentProjectGraphNeighborhood)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentProjectGraphSymbol)
+        );
+        assert!(
+            compiled
+                .typecheck_report
+                .judgments
+                .iter()
+                .any(|judgment| judgment.ty == TypeKind::AgentProjectGraphEdge)
         );
     }
 

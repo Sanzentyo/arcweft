@@ -767,6 +767,7 @@ impl TypeChecker<'_> {
             "capture" => Some(self.check_agent_capture_intrinsic(name, args)),
             "read_resource" => Some(self.check_agent_read_resource_intrinsic(name, args)),
             "entity_meta" => Some(self.check_agent_entity_meta_intrinsic(name, args)),
+            "project_neighbors" => Some(self.check_agent_project_neighbors_intrinsic(name, args)),
             "signal" => {
                 Some(self.check_agent_probe_intrinsic(name, args, &EntityKind::Signal, "signal"))
             }
@@ -1230,6 +1231,100 @@ impl TypeChecker<'_> {
             "path" => TypeKind::String,
             "start_byte" | "end_byte" => TypeKind::U64,
             "start_line" | "start_column" | "end_line" | "end_column" => TypeKind::U32,
+            _ => return None,
+        })
+    }
+
+    fn check_agent_project_neighbors_intrinsic(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+    ) -> TypeKind {
+        self.check_function_effects(name);
+        let mut root_seen = false;
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    if positional_index == 0 {
+                        root_seen = true;
+                        self.check_agent_entity_ref_arg(value, "project_neighbors root");
+                    } else {
+                        self.errors.push(TypeCheckError::new(
+                            "project_neighbors received too many positional arguments".to_owned(),
+                        ));
+                        self.check_expr(value);
+                    }
+                    positional_index += 1;
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "root" => {
+                    root_seen = true;
+                    self.check_agent_entity_ref_arg(value, "project_neighbors root");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } if arg_name == "depth" => {
+                    self.expect_expr_type(value, &TypeKind::U32, "project_neighbors depth");
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "project_neighbors has no parameter named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "project_neighbors does not accept spread arguments".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
+        }
+        if !root_seen {
+            self.errors.push(TypeCheckError::new(
+                "project_neighbors requires a root argument".to_owned(),
+            ));
+        }
+        agent_result(TypeKind::AgentProjectGraphNeighborhood)
+    }
+
+    fn check_agent_entity_ref_arg(&mut self, value: &Expr, label: &str) {
+        match self.check_expr(value) {
+            Some(TypeKind::Ref(_)) | None => {}
+            Some(actual) => self.errors.push(TypeCheckError::new(format!(
+                "{label} must be an entity reference, found {actual:?}"
+            ))),
+        }
+    }
+
+    fn agent_project_graph_neighborhood_field_type(field: &str) -> Option<TypeKind> {
+        Some(match field {
+            "root" => TypeKind::String,
+            "node_count" | "edge_count" => TypeKind::U32,
+            "symbols" => TypeKind::Vec(Box::new(TypeKind::AgentProjectGraphSymbol)),
+            "edges" => TypeKind::Vec(Box::new(TypeKind::AgentProjectGraphEdge)),
+            _ => return None,
+        })
+    }
+
+    fn agent_project_graph_symbol_field_type(field: &str) -> Option<TypeKind> {
+        Some(match field {
+            "symbol_id" | "id" | "kind" | "semantic_hash" | "summary" => TypeKind::String,
+            "has_entity" | "has_semantic_hash" => TypeKind::Bool,
+            _ => return None,
+        })
+    }
+
+    fn agent_project_graph_edge_field_type(field: &str) -> Option<TypeKind> {
+        Some(match field {
+            "from_symbol_id" | "to_symbol_id" | "kind" => TypeKind::String,
             _ => return None,
         })
     }
@@ -2891,6 +2986,15 @@ impl TypeChecker<'_> {
             Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
             Some(TypeKind::AgentEntityMetadata) => Self::agent_entity_metadata_field_type(field),
             Some(TypeKind::AgentSourceAnchor) => Self::agent_source_anchor_field_type(field),
+            Some(TypeKind::AgentProjectGraphNeighborhood) => {
+                Self::agent_project_graph_neighborhood_field_type(field)
+            }
+            Some(TypeKind::AgentProjectGraphSymbol) => {
+                Self::agent_project_graph_symbol_field_type(field)
+            }
+            Some(TypeKind::AgentProjectGraphEdge) => {
+                Self::agent_project_graph_edge_field_type(field)
+            }
             Some(TypeKind::AgentResource) => agent_resource_field_type(field),
             Some(TypeKind::AgentResourceBody) => agent_resource_body_field_type(field),
             Some(TypeKind::Ref(_)) => agent_entity_ref_field_type(field),

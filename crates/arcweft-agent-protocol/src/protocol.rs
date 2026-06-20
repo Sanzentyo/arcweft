@@ -15,8 +15,54 @@ pub struct AgentSessionInfo {
     pub program_hash: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub project_entities: Vec<RequiredEntity>,
+    #[serde(default, skip_serializing_if = "AgentProjectGraph::is_empty")]
+    pub project_graph: AgentProjectGraph,
     pub profile: Option<String>,
     pub capabilities: Vec<String>,
+}
+
+/// Agent-readable project graph snapshot for typed debug/readback queries.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectGraph {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<AgentProjectGraphSymbol>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<AgentProjectGraphEdge>,
+}
+
+impl AgentProjectGraph {
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty() && self.edges.is_empty()
+    }
+}
+
+/// One graph symbol known to the Agent runtime.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectGraphSymbol {
+    pub symbol_id: String,
+    pub public_id: Option<PublicId>,
+    pub qualified_name: Option<String>,
+    pub kind: String,
+    pub semantic_hash: Option<String>,
+    pub summary: String,
+}
+
+/// One directed graph edge known to the Agent runtime.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectGraphEdge {
+    pub from_symbol_id: String,
+    pub to_symbol_id: String,
+    pub edge_kind: String,
+}
+
+/// Typed Agent response containing graph symbols and edges near one root.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentProjectGraphNeighborhood {
+    pub root: PublicId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<AgentProjectGraphSymbol>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<AgentProjectGraphEdge>,
 }
 
 /// Minimal observation request used by the controller host boundary.
@@ -167,6 +213,7 @@ pub enum AgentHostRequest {
     Capture(Box<CaptureRequest>),
     ReadResource { uri: AgentResourceUri },
     EntityMetadata { entity: PublicId },
+    ProjectGraphNeighborhood { root: PublicId, depth: u32 },
     RagQuery(Box<RagRequest>),
     Assert(Box<AgentAssertionRequest>),
     Attach(Box<AgentAttachment>),
@@ -182,6 +229,7 @@ pub enum AgentHostResponse {
     Capture(Box<CaptureResult>),
     Resource(Box<serde_json::Value>),
     EntityMetadata(Box<RequiredEntity>),
+    ProjectGraphNeighborhood(Box<AgentProjectGraphNeighborhood>),
     RagContext(Box<serde_json::Value>),
     Unit,
 }

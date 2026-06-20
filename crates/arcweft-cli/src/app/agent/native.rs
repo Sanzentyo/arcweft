@@ -4815,12 +4815,17 @@ fn agent_repl_eval_compiled_cell(
         Ok(entities) => entities,
         Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
     };
+    let project_graph = match arcweft_compiler::agent_project_graph_from_project(&project) {
+        Ok(graph) => graph,
+        Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
+    };
     let mut runner = AgentRunner::new(
         CliAgentSession::new(
             Vec::new(),
             Vec::new(),
             project.program_hash().as_str().to_owned(),
             project_entities,
+            project_graph,
         ),
         CollectingDebugSink::default(),
         NoopRagService,
@@ -9862,6 +9867,7 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
         adapter_registrars,
         input.program_hash.clone(),
         input.project_entities.clone(),
+        input.project_graph.clone(),
     );
     let mut runner = AgentRunner::new(
         session,
@@ -9919,6 +9925,7 @@ struct NativeAgentScriptSession<'a> {
     adapter_registrars: &'a [NativeAdapterRegistrar],
     program_hash: String,
     project_entities: Vec<RequiredEntity>,
+    project_graph: arcweft_agent_protocol::protocol::AgentProjectGraph,
     runtime: Option<NativeAgentRuntimeState>,
     observed: Option<NativeAgentObservedSnapshot>,
     capture_blobs: Vec<AgentCaptureBlob>,
@@ -9930,6 +9937,7 @@ impl<'a> NativeAgentScriptSession<'a> {
         adapter_registrars: &'a [NativeAdapterRegistrar],
         program_hash: String,
         project_entities: Vec<RequiredEntity>,
+        project_graph: arcweft_agent_protocol::protocol::AgentProjectGraph,
     ) -> Self {
         Self {
             options: AgentObserveOptions {
@@ -9968,6 +9976,7 @@ impl<'a> NativeAgentScriptSession<'a> {
             adapter_registrars,
             program_hash,
             project_entities,
+            project_graph,
             runtime: None,
             observed: None,
             capture_blobs: Vec::new(),
@@ -10189,6 +10198,7 @@ impl AgentSession for NativeAgentScriptSession<'_> {
             session_id: "session.native".to_owned(),
             program_hash: self.program_hash.clone(),
             project_entities: self.project_entities.clone(),
+            project_graph: self.project_graph.clone(),
             profile: self.options.profile.profile.clone(),
             capabilities: vec![
                 "agent.observe".to_owned(),

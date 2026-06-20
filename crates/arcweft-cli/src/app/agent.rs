@@ -15,8 +15,8 @@ use arcweft_agent_protocol::{
     artifact::RequiredEntity,
     ids::{AgentResourceUri, AgentRunId, PublicId as AgentPublicId, SessionId, StableHash},
     protocol::{
-        ActionResult, AgentAction, AgentHostResponse, AgentSessionInfo, CaptureFormat,
-        CaptureRequest, CaptureResult, ObservationEnvelope, ObserveRequest,
+        ActionResult, AgentAction, AgentHostResponse, AgentProjectGraph, AgentSessionInfo,
+        CaptureFormat, CaptureRequest, CaptureResult, ObservationEnvelope, ObserveRequest,
     },
     trace::{AgentTraceKind, AgentTraceRecord},
     value::AgentValue,
@@ -2842,6 +2842,7 @@ pub(in crate::app) struct AgentScriptRunInput {
     agents: usize,
     program_hash: String,
     project_entities: Vec<RequiredEntity>,
+    project_graph: AgentProjectGraph,
     bundle: ArcweftBundle,
 }
 
@@ -2979,6 +2980,7 @@ fn agent_script_run_source_input(
     let project = agent_script_compile_project_index(options)?;
     let program_hash = project.program_hash().as_str().to_owned();
     let project_entities = agent_project_entities(&project)?;
+    let project_graph = agent_project_graph(&project)?;
     let compiled = arcweft_compiler::compile_agent_bundle_with_project(source, &project)
         .map_err(|error| error.to_string())?;
     Ok(AgentScriptRunInput {
@@ -2986,6 +2988,7 @@ fn agent_script_run_source_input(
         agents: compiled.hir.agents().len(),
         program_hash,
         project_entities,
+        project_graph,
         bundle: compiled.bundle,
     })
 }
@@ -3008,12 +3011,14 @@ fn agent_script_run_bundle_input(
     let project = agent_script_compile_project_index(options)?;
     let program_hash = project.program_hash().as_str().to_owned();
     let project_entities = agent_project_entities(&project)?;
+    let project_graph = agent_project_graph(&project)?;
     let agents = usize::from(bundle.agent.is_some());
     Ok(AgentScriptRunInput {
         path: path.display().to_string(),
         agents,
         program_hash,
         project_entities,
+        project_graph,
         bundle,
     })
 }
@@ -3034,6 +3039,7 @@ fn agent_script_run_bundle(
         options.states.clone(),
         input.program_hash.clone(),
         input.project_entities.clone(),
+        input.project_graph.clone(),
     );
     let mut runner = AgentRunner::new(
         session,
@@ -4177,6 +4183,10 @@ fn agent_project_entities(project: &ProjectSemanticIndex) -> Result<Vec<Required
         .map_err(|error| error.to_string())
 }
 
+fn agent_project_graph(project: &ProjectSemanticIndex) -> Result<AgentProjectGraph, String> {
+    arcweft_compiler::agent_project_graph_from_project(project).map_err(|error| error.to_string())
+}
+
 fn agent_script_signal_symbols(
     signals: &[AgentScriptSignalArg],
 ) -> Result<Vec<EntitySymbol>, String> {
@@ -4202,6 +4212,7 @@ fn agent_script_signal_symbol(signal: &AgentScriptSignalArg, id: SemaPublicId) -
 struct CliAgentSession {
     program_hash: String,
     project_entities: Vec<RequiredEntity>,
+    project_graph: AgentProjectGraph,
     tick: u64,
     signals: BTreeMap<String, AgentValue>,
     states: BTreeMap<String, AgentValue>,
@@ -4215,10 +4226,12 @@ impl CliAgentSession {
         states: Vec<AgentScriptStateArg>,
         program_hash: String,
         project_entities: Vec<RequiredEntity>,
+        project_graph: AgentProjectGraph,
     ) -> Self {
         Self {
             program_hash,
             project_entities,
+            project_graph,
             tick: 0,
             signals: signals
                 .into_iter()
@@ -4262,6 +4275,7 @@ impl AgentSession for CliAgentSession {
             session_id: "session.cli".to_owned(),
             program_hash: self.program_hash.clone(),
             project_entities: self.project_entities.clone(),
+            project_graph: self.project_graph.clone(),
             profile: Some("cli".to_owned()),
             capabilities: vec![
                 "agent.observe".to_owned(),

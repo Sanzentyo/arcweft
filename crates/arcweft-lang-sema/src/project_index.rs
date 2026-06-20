@@ -103,6 +103,7 @@ pub enum AgentIntrinsic {
     StateProbe,
     ObservationProbe,
     EntityMetadata,
+    ProjectGraphNeighborhood,
     Diagnostics,
     PredicateExists,
     PredicateActionEnabled,
@@ -1616,6 +1617,16 @@ fn agent_probe_callables() -> Vec<(&'static str, CallableSymbol)> {
                 FunctionSignature::return_only(agent_result(TypeKind::AgentEntityMetadata)),
                 [EffectCapability::new("debug.read")],
                 CallableLowering::AgentIntrinsic(AgentIntrinsic::EntityMetadata),
+            ),
+        ),
+        (
+            "project_neighbors",
+            CallableSymbol::new(
+                FunctionSignature::return_only(agent_result(
+                    TypeKind::AgentProjectGraphNeighborhood,
+                )),
+                [EffectCapability::new("debug.read")],
+                CallableLowering::AgentIntrinsic(AgentIntrinsic::ProjectGraphNeighborhood),
             ),
         ),
         (
