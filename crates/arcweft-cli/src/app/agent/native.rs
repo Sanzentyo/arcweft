@@ -144,6 +144,7 @@ mod tests {
         diagnostic::DebugDiagnostic,
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
+        script::DebugScriptRunOutcome,
         test_result::DebugTestResult,
     };
 
@@ -1830,6 +1831,90 @@ mod tests {
             public_value["sources"].as_array().map(Vec::len),
             Some(0),
             "project-private source inventory should be omitted at public ceiling"
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_debug_script_runs_enforces_max_privacy() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-script-runs-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let store = DebugStore::open(&db_path).expect("debug store");
+        let session_id = SessionId::new("session.mcp.script").expect("session id");
+        store
+            .start_session(&session_id, None, "script", "mcp", 0)
+            .expect("session");
+        let metadata = BTreeMap::from([
+            (
+                "project_entities".to_owned(),
+                serde_json::json!({
+                    "count": 1,
+                    "kind_counts": { "flow": 1 }
+                }),
+            ),
+            (
+                "project_graph".to_owned(),
+                serde_json::json!({
+                    "symbol_count": 2,
+                    "edge_count": 1,
+                    "summary_symbol_id": "project:summary",
+                    "project_summary": {
+                        "agent_action_count": 1
+                    }
+                }),
+            ),
+            ("steps".to_owned(), serde_json::json!(2)),
+        ]);
+        store
+            .upsert_script_run(&DebugScriptRun {
+                run_id: AgentRunId::new("run.mcp.script").expect("run id"),
+                session_id: session_id.clone(),
+                agent_id: Some(PublicId::new("agent.mcp").expect("agent id")),
+                artifact_hash: None,
+                source_hash: Some(StableHash::new("blake3:mcp-script-source").expect("hash")),
+                project_binding_mode: "strict".to_owned(),
+                started_sequence: 1,
+                finished_sequence: Some(2),
+                outcome: DebugScriptRunOutcome::Done,
+                partially_effectful: false,
+                trace_uri: Some("target/run.mcp.script.arcwx".to_owned()),
+                error: None,
+                metadata,
+            })
+            .expect("script run");
+        drop(store);
+
+        let result = agent_mcp_call_debug_script_runs(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "session_id": "session.mcp.script"
+        }))
+        .expect("debug script runs succeeds");
+        let value = mcp_text_json(&result);
+        assert_eq!(value["max_privacy"], serde_json::json!("project"));
+        assert_eq!(value["runs"][0]["metadata"]["steps"], serde_json::json!(2));
+        assert_eq!(
+            value["runs"][0]["project"]["graph_summary_symbol_id"],
+            serde_json::json!("project:summary")
+        );
+
+        let public_result = agent_mcp_call_debug_script_runs(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "session_id": "session.mcp.script",
+            "max_privacy": "public"
+        }))
+        .expect("public debug script runs succeeds");
+        let public_value = mcp_text_json(&public_result);
+        assert_eq!(public_value["max_privacy"], serde_json::json!("public"));
+        assert!(public_value["runs"][0]["project"].is_null());
+        assert_eq!(
+            public_value["runs"][0]["metadata"]
+                .as_object()
+                .map(serde_json::Map::len),
+            Some(0),
+            "project-private script run metadata should be omitted at public ceiling"
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -6934,6 +7019,7 @@ fn agent_mcp_call_debug_script_runs(
     if limit == 0 {
         return Err("arcweft.debug.script.runs argument limit must be at least 1".to_owned());
     }
+    let max_privacy = agent_mcp_max_privacy_argument(arguments, "arcweft.debug.script.runs")?;
     let session_id = agent_mcp_non_empty_string_argument(arguments, "session_id")
         .map(SessionId::new)
         .transpose()
@@ -6948,12 +7034,17 @@ fn agent_mcp_call_debug_script_runs(
         "path": path,
         "session_id": session_id.as_ref().map(SessionId::as_str),
         "limit": limit,
-        "runs": runs.iter().map(agent_mcp_debug_script_run_json).collect::<Vec<_>>(),
+        "max_privacy": max_privacy.as_str(),
+        "runs": runs.iter().map(|run| agent_mcp_debug_script_run_json(run, max_privacy)).collect::<Vec<_>>(),
     });
     agent_mcp_json_tool_result(&value, "debug script runs")
 }
 
-fn agent_mcp_debug_script_run_json(run: &DebugScriptRun) -> serde_json::Value {
+fn agent_mcp_debug_script_run_json(
+    run: &DebugScriptRun,
+    max_privacy: PrivacyClass,
+) -> serde_json::Value {
+    let include_project_metadata = PrivacyClass::Project.is_allowed_by(max_privacy);
     serde_json::json!({
         "run_id": run.run_id.as_str(),
         "session_id": run.session_id.as_str(),
@@ -6967,8 +7058,8 @@ fn agent_mcp_debug_script_run_json(run: &DebugScriptRun) -> serde_json::Value {
         "partially_effectful": run.partially_effectful,
         "trace_uri": &run.trace_uri,
         "error": &run.error,
-        "project": debug_project_readback_json(&run.metadata),
-        "metadata": &run.metadata,
+        "project": if include_project_metadata { debug_project_readback_json(&run.metadata) } else { None },
+        "metadata": if include_project_metadata { serde_json::json!(&run.metadata) } else { serde_json::json!({}) },
     })
 }
 

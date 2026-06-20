@@ -342,6 +342,7 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
     );
     let runs_report: serde_json::Value =
         serde_json::from_slice(&runs_output.stdout).expect("debug db runs output is JSON");
+    assert_eq!(runs_report["max_privacy"], "project");
     let runs = runs_report["runs"].as_array().expect("runs array");
     assert_eq!(runs.len(), 2);
     assert_eq!(runs[0]["run_id"], second_run_id);
@@ -369,6 +370,40 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
     assert!(
         runs[0]["started_sequence"].as_u64().expect("sequence")
             > runs[1]["finished_sequence"].as_u64().expect("sequence")
+    );
+
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("runs")
+        .arg("--path")
+        .arg(debug_db_path)
+        .arg("--session-id")
+        .arg("session.cli")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db runs reads public script runs");
+    assert!(
+        public_output.status.success(),
+        "debug db runs public should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&public_output.stdout),
+        String::from_utf8_lossy(&public_output.stderr)
+    );
+    let public_report: serde_json::Value =
+        serde_json::from_slice(&public_output.stdout).expect("debug db runs public output is JSON");
+    assert_eq!(public_report["max_privacy"], "public");
+    let public_runs = public_report["runs"].as_array().expect("public runs array");
+    assert_eq!(public_runs.len(), 2);
+    assert_eq!(public_runs[0]["run_id"], second_run_id);
+    assert!(public_runs[0]["project"].is_null());
+    assert_eq!(
+        public_runs[0]["metadata"]
+            .as_object()
+            .map(serde_json::Map::len),
+        Some(0),
+        "project-private lifecycle metadata should be omitted at public ceiling"
     );
 }
 
@@ -3728,6 +3763,7 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
         serde_json::from_slice(&output.stdout).expect("debug db sessions output is JSON");
 
     assert_eq!(report["limit"], 4);
+    assert_eq!(report["max_privacy"], "project");
     assert_eq!(report["sessions"][0]["session_id"], "session.product");
     assert_eq!(report["sessions"][0]["profile"], "developer");
     assert_eq!(report["sessions"][0]["transport"], "native");
@@ -3748,6 +3784,45 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
     assert_eq!(
         report["sessions"][0]["project"]["project_summary"]["agent_action_count"],
         1
+    );
+
+    assert_debug_db_sessions_public_privacy(&db_path);
+}
+
+fn assert_debug_db_sessions_public_privacy(db_path: &Path) {
+    let public_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("sessions")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--limit")
+        .arg("4")
+        .arg("--max-privacy")
+        .arg("public")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db sessions public runs");
+    assert!(
+        public_output.status.success(),
+        "debug db sessions public should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&public_output.stdout),
+        String::from_utf8_lossy(&public_output.stderr)
+    );
+    let public_report: serde_json::Value = serde_json::from_slice(&public_output.stdout)
+        .expect("debug db sessions public output is JSON");
+    assert_eq!(public_report["max_privacy"], "public");
+    assert_eq!(
+        public_report["sessions"][0]["session_id"],
+        "session.product"
+    );
+    assert!(public_report["sessions"][0]["project"].is_null());
+    assert_eq!(
+        public_report["sessions"][0]["metadata"]
+            .as_object()
+            .map(serde_json::Map::len),
+        Some(0),
+        "project-private session metadata should be omitted at public ceiling"
     );
 }
 
@@ -31088,6 +31163,7 @@ fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
         "MCP debug script runs result is JSON",
     );
     assert_eq!(report["session_id"], "session.mcp.script");
+    assert_eq!(report["max_privacy"], "project");
     let runs = report["runs"].as_array().expect("runs array");
     assert_eq!(runs.len(), 2);
     assert_eq!(runs[0]["run_id"], "run.mcp.second");

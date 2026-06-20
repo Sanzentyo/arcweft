@@ -93,6 +93,8 @@ pub(super) struct DebugDbSessionsOptions {
     db: DebugDbOptions,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -135,6 +137,8 @@ pub(super) struct DebugDbRunsOptions {
     session_id: Option<String>,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+    #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
+    max_privacy: PrivacyClass,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -338,6 +342,7 @@ struct DebugDbSessionsReport {
     path: String,
     user_version: u32,
     limit: usize,
+    max_privacy: PrivacyClass,
     sessions: Vec<DebugDbSessionReport>,
 }
 
@@ -381,6 +386,7 @@ struct DebugDbRunsReport {
     user_version: u32,
     session_id: Option<String>,
     limit: usize,
+    max_privacy: PrivacyClass,
     runs: Vec<DebugDbRunReport>,
 }
 
@@ -814,12 +820,21 @@ fn debug_db_sessions_command(options: &DebugDbSessionsOptions) -> Result<(), Exi
         path,
         user_version,
         limit: options.limit,
-        sessions: sessions.into_iter().map(debug_db_session_report).collect(),
+        max_privacy: options.max_privacy,
+        sessions: sessions
+            .into_iter()
+            .map(|session| debug_db_session_report_with_privacy(session, options.max_privacy))
+            .collect(),
     };
     if options.db.json {
         return print_json(&report);
     }
-    println!("{}: {} session(s)", report.path, report.sessions.len());
+    println!(
+        "{}: {} session(s) max_privacy={}",
+        report.path,
+        report.sessions.len(),
+        report.max_privacy.as_str()
+    );
     for session in &report.sessions {
         println!(
             "{} {} profile={} transport={} started={} ended={}",
@@ -1051,12 +1066,21 @@ fn debug_db_runs_command(options: &DebugDbRunsOptions) -> Result<(), ExitCode> {
         user_version,
         session_id: session_id.as_ref().map(|id| id.as_str().to_owned()),
         limit: options.limit,
-        runs: runs.into_iter().map(debug_db_run_report).collect(),
+        max_privacy: options.max_privacy,
+        runs: runs
+            .into_iter()
+            .map(|run| debug_db_run_report_with_privacy(run, options.max_privacy))
+            .collect(),
     };
     if options.db.json {
         return print_json(&report);
     }
-    println!("{}: {} run(s)", report.path, report.runs.len());
+    println!(
+        "{}: {} run(s) max_privacy={}",
+        report.path,
+        report.runs.len(),
+        report.max_privacy.as_str()
+    );
     for run in &report.runs {
         println!(
             "{} {} session={} seq={}..{} agent={}",
@@ -1553,7 +1577,22 @@ fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
 }
 
 fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
-    let project = debug_project_readback_json(&session.metadata);
+    debug_db_session_report_with_privacy(session, PrivacyClass::Project)
+}
+
+fn debug_db_session_report_with_privacy(
+    session: DebugSession,
+    max_privacy: PrivacyClass,
+) -> DebugDbSessionReport {
+    let include_project_metadata = PrivacyClass::Project.is_allowed_by(max_privacy);
+    let project = include_project_metadata
+        .then(|| debug_project_readback_json(&session.metadata))
+        .flatten();
+    let metadata = if include_project_metadata {
+        session.metadata
+    } else {
+        BTreeMap::new()
+    };
     DebugDbSessionReport {
         session_id: session.session_id.as_str().to_owned(),
         program_hash: session.program_hash.map(|hash| hash.as_str().to_owned()),
@@ -1563,12 +1602,23 @@ fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
         ended_unix_ms: session.ended_unix_ms,
         status: session.status,
         project,
-        metadata: session.metadata,
+        metadata,
     }
 }
 
-fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
-    let project = debug_project_readback_json(&run.metadata);
+fn debug_db_run_report_with_privacy(
+    run: DebugScriptRun,
+    max_privacy: PrivacyClass,
+) -> DebugDbRunReport {
+    let include_project_metadata = PrivacyClass::Project.is_allowed_by(max_privacy);
+    let project = include_project_metadata
+        .then(|| debug_project_readback_json(&run.metadata))
+        .flatten();
+    let metadata = if include_project_metadata {
+        run.metadata
+    } else {
+        BTreeMap::new()
+    };
     DebugDbRunReport {
         run_id: run.run_id.as_str().to_owned(),
         session_id: run.session_id.as_str().to_owned(),
@@ -1583,7 +1633,7 @@ fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
         trace_uri: run.trace_uri,
         error: run.error,
         project,
-        metadata: run.metadata,
+        metadata,
     }
 }
 

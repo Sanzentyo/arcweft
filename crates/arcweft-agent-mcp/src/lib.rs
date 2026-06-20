@@ -723,6 +723,12 @@ fn agent_debug_script_runs_tool_descriptor() -> McpToolDescriptor {
                     "type": "integer",
                     "minimum": 1,
                     "default": 20
+                },
+                "max_privacy": {
+                    "type": "string",
+                    "enum": ["public", "project", "sensitive", "secret"],
+                    "default": "project",
+                    "description": "Maximum privacy class allowed in lifecycle metadata readback. Project metadata and summary are omitted when set to public."
                 }
             }
         }),
@@ -2236,6 +2242,14 @@ mod tests {
         assert_eq!(
             script_runs.input_schema["properties"]["limit"]["minimum"],
             1
+        );
+        assert_eq!(
+            script_runs.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+        assert_eq!(
+            script_runs.input_schema["properties"]["max_privacy"]["default"],
+            "project"
         );
 
         let close_stale = tools

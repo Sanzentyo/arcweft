@@ -413,15 +413,19 @@ apply to every selector. It defaults to `.arcweft/cache/agent-debug.sqlite3`
 and returns chunk IDs plus source metadata without requiring a native
 observation.
 `arcweft.debug.script.runs` reads persisted Agent Script run lifecycle rows
-from the same store with optional `path`, `session_id`, and `limit`, mirroring
-`arcw debug db runs` for MCP clients. `arcw debug db sessions`, `arcw debug db
-runs`, and `arcweft.debug.script.runs` expose a top-level `project` summary
-when persisted lifecycle metadata contains Agent Script project shape data. The
-summary repeats only scheduler/readback-friendly counters: entity count and
-kind histogram, graph symbol/edge counts, symbol/edge-kind histograms,
-`project:summary` id, and aggregate project-summary counters. Consumers do not
-need to parse the raw lifecycle `metadata.project_graph` object to make
-product scheduling or context-pruning decisions.
+from the same store with optional `path`, `session_id`, `limit`, and
+`max_privacy`, mirroring `arcw debug db runs` for MCP clients. `arcw debug db
+sessions`, `arcw debug db runs`, and `arcweft.debug.script.runs` expose a
+top-level `project` summary when persisted lifecycle metadata contains Agent
+Script project shape data and the selected privacy ceiling permits project
+metadata. The summary repeats only scheduler/readback-friendly counters: entity
+count and kind histogram, graph symbol/edge counts, symbol/edge-kind
+histograms, `project:summary` id, and aggregate project-summary counters.
+Consumers do not need to parse the raw lifecycle `metadata.project_graph`
+object to make product scheduling or context-pruning decisions. With
+`--max-privacy public` / `max_privacy = "public"`, the lifecycle row remains
+discoverable but project-private `metadata` and the lifted `project` summary
+are omitted.
 `arcw debug db timeline [--session-id ID] [--run-id ID]
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` reads
 persisted debug events in session order and applies payload privacy filtering
