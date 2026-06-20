@@ -735,43 +735,24 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
     let mut source_reports = Vec::new();
     let mut indexed_chunks = 0usize;
     let mut skipped_unchanged_chunks = 0usize;
-    for (source_path, source_index) in source_indexes {
-        let mut source_file = source_index.source_file.clone();
-        source_file.program_hash = program_hash.clone();
-        store
-            .upsert_source_file(&source_file)
-            .map_err(|error| format!("failed to index RAG source file: {error}"))?;
-        let mut indexed_for_source = 0usize;
-        let mut skipped_for_source = 0usize;
-        for candidate in &source_index.candidates {
-            if options.changed
-                && store
-                    .chunk_content_hash_exists(&candidate.chunk.content_hash)
-                    .map_err(|error| format!("failed to check existing RAG chunk: {error}"))?
-            {
-                skipped_for_source = skipped_for_source.saturating_add(1);
-                continue;
-            }
-            let mut chunk = candidate.chunk.clone();
-            chunk.program_hash = Some(program_hash.clone());
-            store
-                .upsert_chunk(&chunk)
-                .map_err(|error| format!("failed to index RAG chunk: {error}"))?;
-            indexed_for_source = indexed_for_source.saturating_add(1);
-        }
-        agent_rag_index_graph(&store, &program_hash, &source_index)?;
+    for (source_path, source_index) in &source_indexes {
+        let (report, indexed_for_source, skipped_for_source) = agent_rag_index_source(
+            &store,
+            &program_hash,
+            source_path,
+            source_index,
+            options.changed,
+            source_indexes.len() > 1,
+        )?;
         indexed_chunks = indexed_chunks.saturating_add(indexed_for_source);
         skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(skipped_for_source);
-        source_reports.push(AgentRagIndexedSourceReport {
-            path: source_path.display().to_string(),
-            source_hash: source_index.source_hash,
-            candidate_chunks: source_index.candidates.len(),
-            indexed_chunks: indexed_for_source,
-            skipped_unchanged_chunks: skipped_for_source,
-            source_file_recorded: true,
-            indexed: indexed_for_source > 0,
-        });
+        source_reports.push(report);
     }
+    let source_index_refs = source_indexes
+        .iter()
+        .map(|(_, index)| index)
+        .collect::<Vec<_>>();
+    agent_rag_index_program_graph(&store, &program_hash, &source_index_refs)?;
     let indexed_sources = source_reports
         .iter()
         .filter(|source| source.indexed)
@@ -813,14 +794,67 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
     })
 }
 
+fn agent_rag_index_source(
+    store: &DebugStore,
+    program_hash: &StableHash,
+    source_path: &Path,
+    source_index: &AgentSourceRagIndex,
+    changed_only: bool,
+    scope_public_ids: bool,
+) -> Result<(AgentRagIndexedSourceReport, usize, usize), String> {
+    let mut source_file = source_index.source_file.clone();
+    source_file.program_hash = program_hash.clone();
+    store
+        .upsert_source_file(&source_file)
+        .map_err(|error| format!("failed to index RAG source file: {error}"))?;
+
+    let mut indexed_chunks = 0usize;
+    let mut skipped_unchanged_chunks = 0usize;
+    for candidate in &source_index.candidates {
+        if changed_only
+            && store
+                .chunk_content_hash_exists(&candidate.chunk.content_hash)
+                .map_err(|error| format!("failed to check existing RAG chunk: {error}"))?
+        {
+            skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(1);
+            continue;
+        }
+        let mut chunk = candidate.chunk.clone();
+        chunk.program_hash = Some(program_hash.clone());
+        store
+            .upsert_chunk(&chunk)
+            .map_err(|error| format!("failed to index RAG chunk: {error}"))?;
+        indexed_chunks = indexed_chunks.saturating_add(1);
+    }
+
+    agent_rag_index_graph(store, program_hash, source_index, scope_public_ids)?;
+    Ok((
+        AgentRagIndexedSourceReport {
+            path: source_path.display().to_string(),
+            source_hash: source_index.source_hash.clone(),
+            candidate_chunks: source_index.candidates.len(),
+            indexed_chunks,
+            skipped_unchanged_chunks,
+            source_file_recorded: true,
+            indexed: indexed_chunks > 0,
+        },
+        indexed_chunks,
+        skipped_unchanged_chunks,
+    ))
+}
+
 fn agent_rag_index_graph(
     store: &DebugStore,
     program_hash: &StableHash,
     source_index: &AgentSourceRagIndex,
+    scope_public_ids: bool,
 ) -> Result<(), String> {
     for symbol in &source_index.graph_symbols {
         let mut symbol = symbol.clone();
         symbol.program_hash = program_hash.clone();
+        if scope_public_ids {
+            agent_scope_graph_symbol_public_id(&mut symbol, source_index);
+        }
         store
             .upsert_graph_symbol(&symbol)
             .map_err(|error| format!("failed to index RAG graph symbol: {error}"))?;
@@ -831,6 +865,55 @@ fn agent_rag_index_graph(
         store
             .upsert_graph_edge(&edge)
             .map_err(|error| format!("failed to index RAG graph edge: {error}"))?;
+    }
+    Ok(())
+}
+
+fn agent_scope_graph_symbol_public_id(
+    symbol: &mut DebugGraphSymbol,
+    source_index: &AgentSourceRagIndex,
+) {
+    if symbol.kind == "source_file" {
+        return;
+    }
+    let Some(public_id) = &symbol.public_id else {
+        return;
+    };
+    let source_public_id = public_id.as_str().to_owned();
+    symbol.metadata.insert(
+        "source_public_id".to_owned(),
+        serde_json::json!(source_public_id),
+    );
+    if symbol.qualified_name.is_none() {
+        symbol.qualified_name = Some(source_public_id.clone());
+    }
+    symbol.public_id = Some(
+        AgentPublicId::new(format!(
+            "{}.{}",
+            source_index.source_key_prefix, source_public_id
+        ))
+        .expect("source-scoped graph public id is nonempty"),
+    );
+}
+
+fn agent_rag_index_program_graph(
+    store: &DebugStore,
+    program_hash: &StableHash,
+    source_indexes: &[&AgentSourceRagIndex],
+) -> Result<(), String> {
+    store
+        .upsert_graph_symbol(&agent_program_graph_symbol(
+            program_hash,
+            source_indexes.len(),
+        ))
+        .map_err(|error| format!("failed to index RAG program graph symbol: {error}"))?;
+    for source_index in source_indexes {
+        store
+            .upsert_graph_edge(&agent_program_source_file_graph_edge(
+                program_hash,
+                source_index,
+            ))
+            .map_err(|error| format!("failed to index RAG program source-file edge: {error}"))?;
     }
     Ok(())
 }
@@ -921,6 +1004,7 @@ struct AgentRagCandidate {
 struct AgentRagQueryResult {
     pack: RagContextPack,
     candidates: Vec<AgentRagCandidate>,
+    source_indexes: Vec<AgentSourceRagIndex>,
 }
 
 #[derive(serde::Serialize)]
@@ -1075,6 +1159,7 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
     let roots = agent_rag_roots(&options.roots)?;
     let mut candidates = Vec::new();
     let mut seed_parts = Vec::new();
+    let mut source_indexes = Vec::new();
     if let Some(trace) = &options.trace {
         let records = read_and_validate_agent_trace_records(trace)?;
         let trace_report = validate_agent_trace(trace, &records, None)?;
@@ -1084,8 +1169,9 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
     let source_paths = agent_rag_source_paths(&options.source)?;
     for source in &source_paths {
         let source_index = agent_source_rag_index(source)?;
-        seed_parts.push(source_index.seed);
-        candidates.extend(source_index.candidates);
+        seed_parts.push(source_index.seed.clone());
+        candidates.extend(source_index.candidates.clone());
+        source_indexes.push(source_index);
     }
     if let Some(debug_db) = &options.debug_db {
         let debug_candidates = agent_rag_debug_db_candidates(debug_db, options)?;
@@ -1113,7 +1199,11 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
         max_context_bytes: options.max_context_bytes,
     };
     let pack = agent_trace_rag_pack_from_candidates(options, query, &query_candidates);
-    Ok(AgentRagQueryResult { pack, candidates })
+    Ok(AgentRagQueryResult {
+        pack,
+        candidates,
+        source_indexes,
+    })
 }
 
 fn agent_rag_debug_db_candidates(
@@ -1523,6 +1613,23 @@ fn persist_agent_rag_query_result(path: &Path, result: &AgentRagQueryResult) -> 
             .upsert_chunk(&chunk)
             .map_err(|error| format!("agent rag query failed to index RAG chunk: {error}"))?;
     }
+    if !result.source_indexes.is_empty() {
+        for source_index in &result.source_indexes {
+            let mut source_file = source_index.source_file.clone();
+            source_file.program_hash = result.pack.query.program_hash.clone();
+            store
+                .upsert_source_file(&source_file)
+                .map_err(|error| format!("agent rag query failed to index source file: {error}"))?;
+            agent_rag_index_graph(
+                &store,
+                &result.pack.query.program_hash,
+                source_index,
+                result.source_indexes.len() > 1,
+            )?;
+        }
+        let source_index_refs = result.source_indexes.iter().collect::<Vec<_>>();
+        agent_rag_index_program_graph(&store, &result.pack.query.program_hash, &source_index_refs)?;
+    }
     store
         .record_rag_context_pack(&result.pack, Some(&session_id), None, None, "selected", 0)
         .map_err(|error| format!("agent rag query failed to record RAG audit: {error}"))
@@ -1646,6 +1753,7 @@ fn agent_trace_rag_json_candidate(
 struct AgentSourceRagIndex {
     seed: String,
     source_hash: String,
+    source_key_prefix: String,
     source_file: DebugSourceFile,
     candidates: Vec<AgentRagCandidate>,
     graph_symbols: Vec<DebugGraphSymbol>,
@@ -1746,6 +1854,7 @@ fn agent_source_rag_index(path: &Path) -> Result<AgentSourceRagIndex, String> {
     Ok(AgentSourceRagIndex {
         seed: format!("source:{}:{source_hash}", path.display()),
         source_hash,
+        source_key_prefix,
         source_file,
         candidates,
         graph_symbols,
@@ -1760,7 +1869,10 @@ fn agent_source_file_graph_symbol(
     DebugGraphSymbol {
         symbol_id: agent_source_file_graph_symbol_id(source_key_prefix),
         program_hash: source_file.program_hash.clone(),
-        public_id: None,
+        public_id: Some(
+            AgentPublicId::new(format!("source_file.{}", source_file.content_hash.as_str()))
+                .expect("source-file graph public id is nonempty"),
+        ),
         qualified_name: Some(source_file.path.clone()),
         kind: "source_file".to_owned(),
         type_json: Some(serde_json::json!({
@@ -1814,6 +1926,56 @@ fn agent_source_file_project_graph_edge(
             (
                 "source_content_hash".to_owned(),
                 serde_json::json!(source_file.content_hash.as_str()),
+            ),
+        ]),
+    }
+}
+
+fn agent_program_graph_symbol(program_hash: &StableHash, source_count: usize) -> DebugGraphSymbol {
+    DebugGraphSymbol {
+        symbol_id: agent_program_graph_symbol_id(program_hash),
+        program_hash: program_hash.clone(),
+        public_id: Some(
+            AgentPublicId::new(format!("program.{}", program_hash.as_str()))
+                .expect("program graph public id is nonempty"),
+        ),
+        qualified_name: Some(format!("program.{}", program_hash.as_str())),
+        kind: "program".to_owned(),
+        type_json: Some(serde_json::json!({
+            "source_count": source_count,
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(program_hash.clone()),
+        summary: format!(
+            "Program `{}` with {} indexed source files",
+            program_hash.as_str(),
+            source_count
+        ),
+        metadata: BTreeMap::from([("source_count".to_owned(), serde_json::json!(source_count))]),
+    }
+}
+
+fn agent_program_source_file_graph_edge(
+    program_hash: &StableHash,
+    source_index: &AgentSourceRagIndex,
+) -> DebugGraphEdge {
+    DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: agent_program_graph_symbol_id(program_hash),
+        to_symbol_id: agent_source_file_graph_symbol_id(&source_index.source_key_prefix),
+        edge_kind: "contains_source_file".to_owned(),
+        weight: 1.0,
+        metadata: BTreeMap::from([
+            (
+                "source_path".to_owned(),
+                serde_json::json!(source_index.source_file.path),
+            ),
+            (
+                "source_content_hash".to_owned(),
+                serde_json::json!(source_index.source_file.content_hash.as_str()),
             ),
         ]),
     }
@@ -2335,6 +2497,10 @@ fn agent_project_debug_query_graph_symbol(
 
 fn agent_project_summary_graph_symbol_id(source_key_prefix: &str) -> String {
     format!("{source_key_prefix}.project.summary")
+}
+
+fn agent_program_graph_symbol_id(program_hash: &StableHash) -> String {
+    format!("program.{}.summary", program_hash.as_str())
 }
 
 fn agent_source_file_graph_symbol_id(source_key_prefix: &str) -> String {

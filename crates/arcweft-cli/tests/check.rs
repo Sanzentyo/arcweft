@@ -3360,6 +3360,7 @@ fn agent_rag_query_indexes_multiple_sources() {
         }),
         "multi-source RAG should namespace source/project chunks by source input: {pack}"
     );
+    assert_debug_db_graph_reports_multi_source_program_root(&db_path, &pack);
 
     for query in ["choice.opening.listen", "flow.rich_text_showcase"] {
         let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -3397,6 +3398,67 @@ fn agent_rag_query_indexes_multiple_sources() {
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
     let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn assert_debug_db_graph_reports_multi_source_program_root(
+    db_path: &Path,
+    pack: &serde_json::Value,
+) {
+    let graph_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("graph")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--program-hash")
+        .arg(
+            pack["query"]["program_hash"]
+                .as_str()
+                .expect("program hash"),
+        )
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph reads multi-source graph");
+    assert!(
+        graph_output.status.success(),
+        "debug db graph should read multi-source graph\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&graph_output.stdout),
+        String::from_utf8_lossy(&graph_output.stderr)
+    );
+    let graph: serde_json::Value =
+        serde_json::from_slice(&graph_output.stdout).expect("multi-source graph JSON");
+    let symbols = graph["symbols"].as_array().expect("graph symbols");
+    let edges = graph["edges"].as_array().expect("graph edges");
+
+    assert!(
+        symbols.iter().any(|symbol| symbol["kind"] == "program"
+            && symbol["metadata"]["source_count"] == serde_json::json!(2)),
+        "multi-source graph should expose a combined program root: {graph}"
+    );
+    assert_eq!(
+        symbols
+            .iter()
+            .filter(|symbol| symbol["kind"] == "source_file")
+            .count(),
+        2,
+        "multi-source graph should expose both source-file symbols: {graph}"
+    );
+    assert_eq!(
+        edges
+            .iter()
+            .filter(|edge| edge["edge_kind"] == "contains_source_file")
+            .count(),
+        2,
+        "multi-source graph should connect program root to both source files: {graph}"
+    );
+    assert_eq!(
+        edges
+            .iter()
+            .filter(|edge| edge["edge_kind"] == "contains_project_graph")
+            .count(),
+        2,
+        "multi-source graph should connect both source files to project graph slices: {graph}"
+    );
 }
 
 #[test]
