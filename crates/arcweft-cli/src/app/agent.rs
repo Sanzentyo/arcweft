@@ -752,6 +752,14 @@ fn agent_rag_index_report(options: &AgentRagIndexOptions) -> Result<AgentRagInde
         .iter()
         .map(|(_, index)| index)
         .collect::<Vec<_>>();
+    let (indexed_program_chunks, skipped_program_chunks) = agent_rag_index_program_summary_chunk(
+        &store,
+        &program_hash,
+        &source_index_refs,
+        options.changed,
+    )?;
+    indexed_chunks = indexed_chunks.saturating_add(indexed_program_chunks);
+    skipped_unchanged_chunks = skipped_unchanged_chunks.saturating_add(skipped_program_chunks);
     agent_rag_index_program_graph(&store, &program_hash, &source_index_refs)?;
     let indexed_sources = source_reports
         .iter()
@@ -841,6 +849,28 @@ fn agent_rag_index_source(
         indexed_chunks,
         skipped_unchanged_chunks,
     ))
+}
+
+fn agent_rag_index_program_summary_chunk(
+    store: &DebugStore,
+    program_hash: &StableHash,
+    source_indexes: &[&AgentSourceRagIndex],
+    changed_only: bool,
+) -> Result<(usize, usize), String> {
+    let candidate = agent_program_summary_rag_candidate(program_hash, source_indexes)?;
+    if changed_only
+        && store
+            .chunk_content_hash_exists(&candidate.chunk.content_hash)
+            .map_err(|error| format!("failed to check existing RAG program summary: {error}"))?
+    {
+        return Ok((0, 1));
+    }
+    let mut chunk = candidate.chunk;
+    chunk.program_hash = Some(program_hash.clone());
+    store
+        .upsert_chunk(&chunk)
+        .map_err(|error| format!("failed to index RAG program summary: {error}"))?;
+    Ok((1, 0))
 }
 
 fn agent_rag_index_graph(
@@ -1214,9 +1244,16 @@ fn agent_rag_query_result(options: &AgentRagQueryOptions) -> Result<AgentRagQuer
         seed_parts.extend(agent_rag_debug_db_seed_parts(debug_db, &debug_candidates));
         candidates.extend(debug_candidates);
     }
+    let program_hash = agent_rag_program_hash(&seed_parts)?;
+    if !source_indexes.is_empty() {
+        let source_index_refs = source_indexes.iter().collect::<Vec<_>>();
+        candidates.push(agent_program_summary_rag_candidate(
+            &program_hash,
+            &source_index_refs,
+        )?);
+    }
     let candidates = agent_rag_deduplicate_candidates(candidates);
     let query_candidates = agent_rag_query_allowed_candidates(options, &candidates);
-    let program_hash = agent_rag_program_hash(&seed_parts)?;
     let query = RagQuery {
         query_id: agent_content_hash(format!(
             "{}:{}:{}:{}:{}:{}",
@@ -2681,6 +2718,85 @@ fn project_flow_control_summary_json(
         "thread_count": summary.thread_count(),
         "select_branch_count": summary.select_branch_count(),
     })
+}
+
+fn agent_program_summary_rag_candidate(
+    program_hash: &StableHash,
+    source_indexes: &[&AgentSourceRagIndex],
+) -> Result<AgentRagCandidate, String> {
+    let summary = agent_program_graph_summary(source_indexes);
+    let sources = source_indexes
+        .iter()
+        .map(|source_index| {
+            serde_json::json!({
+                "path": source_index.source_file.path,
+                "content_hash": source_index.source_file.content_hash.as_str(),
+                "byte_len": source_index.source_file.byte_len,
+                "candidate_chunks": source_index.candidates.len(),
+                "graph_symbols": source_index.graph_symbols.len(),
+                "graph_edges": source_index.graph_edges.len(),
+                "dynamic_control_flows": agent_source_dynamic_control_flow_count(source_index),
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": 1,
+        "kind": "program_rag_index",
+        "program_hash": program_hash.as_str(),
+        "counts": {
+            "sources": summary.sources,
+            "candidate_chunks": summary.candidate_chunks,
+            "source_bytes": summary.source_bytes,
+            "source_graph_symbols": summary.source_graph_symbols,
+            "source_graph_edges": summary.source_graph_edges,
+            "dynamic_control_flows": summary.dynamic_control_flows,
+        },
+        "sources": sources,
+    }))
+    .map_err(|error| format!("failed to serialize program RAG summary: {error}"))?;
+    Ok(agent_rag_candidate(
+        &format!("program.{}.summary", program_hash.as_str()),
+        "Program RAG index summary",
+        ChunkSourceKind::GraphSummary,
+        SearchChannel::Summary,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(program_hash.clone()),
+            metadata: BTreeMap::from([
+                (
+                    "program_hash".to_owned(),
+                    serde_json::json!(program_hash.as_str()),
+                ),
+                (
+                    "source_count".to_owned(),
+                    serde_json::json!(summary.sources),
+                ),
+                (
+                    "candidate_chunk_count".to_owned(),
+                    serde_json::json!(summary.candidate_chunks),
+                ),
+                (
+                    "source_graph_symbol_count".to_owned(),
+                    serde_json::json!(summary.source_graph_symbols),
+                ),
+                (
+                    "source_graph_edge_count".to_owned(),
+                    serde_json::json!(summary.source_graph_edges),
+                ),
+            ]),
+        },
+    ))
+}
+
+fn agent_source_dynamic_control_flow_count(source_index: &AgentSourceRagIndex) -> usize {
+    source_index
+        .graph_symbols
+        .iter()
+        .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
+        .count()
 }
 
 fn agent_project_summary_rag_candidate(

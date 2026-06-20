@@ -3361,6 +3361,7 @@ fn agent_rag_query_indexes_multiple_sources() {
         "multi-source RAG should namespace source/project chunks by source input: {pack}"
     );
     assert_debug_db_graph_reports_multi_source_program_root(&db_path, &pack);
+    assert_debug_db_rag_query_uses_program_summary(&db_path);
 
     for query in ["choice.opening.listen", "flow.rich_text_showcase"] {
         let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -3482,6 +3483,44 @@ fn assert_debug_db_graph_reports_multi_source_program_root(
             .count(),
         2,
         "multi-source graph should connect both source files to project graph slices: {graph}"
+    );
+}
+
+fn assert_debug_db_rag_query_uses_program_summary(db_path: &Path) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--debug-db")
+        .arg(db_path)
+        .arg("--query")
+        .arg("program_rag_index")
+        .arg("--limit")
+        .arg("4")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query reads persisted program RAG summary");
+    assert!(
+        output.status.success(),
+        "agent rag query should read persisted program RAG summary\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("program summary RAG query JSON");
+    assert!(
+        pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "graph_summary"
+                    && item["chunk_id"]
+                        .as_str()
+                        .is_some_and(|id| id.contains("cli:program."))
+                    && item["body"]
+                        .as_str()
+                        .is_some_and(|body| body.contains("\"program_rag_index\""))
+            })
+        }),
+        "persisted debug DB query should surface the program-level RAG summary: {pack}"
     );
 }
 
