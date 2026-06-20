@@ -4,6 +4,8 @@
 :classify let frame = try observe()
 :classify note("unterminated
 :classify let value =
+:complete state_
+:complete read_resource(
 :ast signal("ready").eq(true)
 :hir return "ok"
 :bytecode return "ok"

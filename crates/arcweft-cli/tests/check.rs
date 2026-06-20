@@ -1272,6 +1272,38 @@ fn agent_repl_inspects_fragments_and_captures_from_input_session() {
         incomplete_expr["value"]["completion"]["expected"],
         serde_json::json!(["expression"])
     );
+    let state_completion = cells
+        .iter()
+        .find(|cell| cell["input"] == ":complete state_")
+        .expect("state_path completion cell is present");
+    assert_eq!(state_completion["status"], "ok");
+    assert!(
+        state_completion["value"]["items"]
+            .as_array()
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item["label"] == "state_path" && item["kind"] == "prelude_function")
+            }),
+        "completion should expose state_path: {state_completion}"
+    );
+    let read_resource_completion = cells
+        .iter()
+        .find(|cell| cell["input"] == ":complete read_resource(")
+        .expect("read_resource completion cell is present");
+    assert_eq!(read_resource_completion["status"], "ok");
+    assert!(
+        read_resource_completion["value"]["items"]
+            .as_array()
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["label"] == "uri"
+                        && item["kind"] == "named_parameter"
+                        && item["insert_text"] == "uri = "
+                })
+            }),
+        "completion should expose read_resource uri parameter: {read_resource_completion}"
+    );
     assert_agent_repl_meta_ok(cells, ":ast signal(\"ready\").eq(true)");
     assert_agent_repl_meta_ok(cells, ":hir return \"ok\"");
     assert_agent_repl_meta_ok(cells, ":bytecode return \"ok\"");

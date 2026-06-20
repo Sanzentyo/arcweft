@@ -471,6 +471,8 @@ fn named_parameter_candidates(source: &str) -> Vec<AgentReplCompletionItem> {
         &["args"]
     } else if lowered.contains("pointer.click(") {
         &["button"]
+    } else if lowered.contains("read_resource(") {
+        &["uri"]
     } else {
         &[]
     };
@@ -668,10 +670,13 @@ fn agent_prelude_functions() -> Vec<&'static str> {
         "deny",
         "signal",
         "metric",
+        "state_path",
+        "observation_path",
         "state",
         "observation",
         "diagnostics",
         "exists",
+        "action_enabled",
         "all",
         "any",
         "not",
@@ -766,6 +771,35 @@ mod tests {
         assert_eq!(layers[0].kind, AgentReplCompletionKind::LayerId);
         assert_eq!(objects[0].label, "object.dialogue.0.0");
         assert_eq!(objects[0].kind, AgentReplCompletionKind::ObjectId);
+    }
+
+    #[test]
+    fn repl_completion_exposes_current_agent_prelude_intrinsics() {
+        let state = agent_repl_completions("state_", &AgentReplCompletionContext::default());
+        let observation =
+            agent_repl_completions("observation_", &AgentReplCompletionContext::default());
+        let action = agent_repl_completions("action_", &AgentReplCompletionContext::default());
+
+        assert!(state.iter().any(|item| item.label == "state_path"
+            && item.kind == AgentReplCompletionKind::PreludeFunction));
+        assert!(
+            observation
+                .iter()
+                .any(|item| item.label == "observation_path"
+                    && item.kind == AgentReplCompletionKind::PreludeFunction)
+        );
+        assert!(action.iter().any(|item| item.label == "action_enabled"
+            && item.kind == AgentReplCompletionKind::PreludeFunction));
+    }
+
+    #[test]
+    fn repl_completion_exposes_read_resource_uri_parameter() {
+        let items =
+            agent_repl_completions("read_resource(", &AgentReplCompletionContext::default());
+
+        assert!(items.iter().any(|item| item.label == "uri"
+            && item.kind == AgentReplCompletionKind::NamedParameter
+            && item.insert_text.as_deref() == Some("uri = ")));
     }
 
     #[test]
