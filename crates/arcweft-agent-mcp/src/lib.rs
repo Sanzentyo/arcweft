@@ -153,6 +153,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_rag_query_tool_descriptor(),
         agent_rag_explain_tool_descriptor(),
         agent_rag_context_read_tool_descriptor(),
+        agent_debug_script_runs_tool_descriptor(),
         agent_debug_session_timeline_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
@@ -661,6 +662,32 @@ fn agent_rag_context_read_tool_descriptor() -> McpToolDescriptor {
                 }
             },
             "required": ["chunk_id"]
+        }),
+    }
+}
+
+fn agent_debug_script_runs_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.script.runs".to_owned(),
+        title: Some("Read Arcweft Agent Script Runs".to_owned()),
+        description: "Reads persisted Agent Script run lifecycle rows from the rebuildable SQLite debug store with optional session filtering.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional Agent Debug Bus session id filter."
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 20
+                }
+            }
         }),
     }
 }
@@ -1725,6 +1752,11 @@ mod tests {
         assert!(
             tools
                 .iter()
+                .any(|tool| tool.name == "arcweft.debug.script.runs")
+        );
+        assert!(
+            tools
+                .iter()
                 .any(|tool| tool.name == "arcweft.debug.session.timeline")
         );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
@@ -1981,6 +2013,23 @@ mod tests {
         );
         assert_eq!(
             context_read.input_schema["properties"]["max_bytes"]["minimum"],
+            1
+        );
+
+        let script_runs = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.script.runs")
+            .expect("debug script runs tool is described");
+        assert_eq!(
+            script_runs.input_schema["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            script_runs.input_schema["properties"]["session_id"]["type"],
+            "string"
+        );
+        assert_eq!(
+            script_runs.input_schema["properties"]["limit"]["minimum"],
             1
         );
 

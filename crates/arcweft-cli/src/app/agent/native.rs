@@ -29,7 +29,7 @@ use arcweft_agent_mcp::{
     tool_result_for_resources, trace_resource,
 };
 use arcweft_agent_protocol::artifact::RequiredEntity;
-use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, StableHash};
+use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
 use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentInvokeAction, AgentSessionInfo, CaptureFormat, CaptureRequest,
@@ -62,6 +62,7 @@ use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
+    script::DebugScriptRun,
     session::DebugSessionStatus,
 };
 use arcweft_debug_sqlite::store::{
@@ -4693,6 +4694,11 @@ fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP RAG context item: {error}"))
         }
+        "arcweft.debug.script.runs" => {
+            let tool = agent_mcp_call_debug_script_runs(&arguments)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP debug script runs: {error}"))
+        }
         "arcweft.debug.session.timeline" => {
             let tool = agent_mcp_call_debug_session_timeline(&arguments)?;
             serde_json::to_value(tool)
@@ -5586,6 +5592,50 @@ fn agent_mcp_debug_search_hit_json(result: &ChunkSearchResult) -> serde_json::Va
         "channel": agent_mcp_search_channel_label(result.hit.channel),
         "rank": result.hit.rank,
         "score": result.hit.score,
+    })
+}
+
+fn agent_mcp_call_debug_script_runs(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let limit = agent_mcp_usize_argument(arguments, "limit").unwrap_or(20);
+    if limit == 0 {
+        return Err("arcweft.debug.script.runs argument limit must be at least 1".to_owned());
+    }
+    let session_id = agent_mcp_non_empty_string_argument(arguments, "session_id")
+        .map(SessionId::new)
+        .transpose()
+        .map_err(|error| format!("arcweft.debug.script.runs invalid session_id: {error}"))?;
+    let path = agent_mcp_debug_store_path(arguments);
+    let store = DebugStore::open(path)
+        .map_err(|error| format!("arcweft.debug.script.runs failed to open `{path}`: {error}"))?;
+    let runs = store
+        .script_runs(session_id.as_ref(), limit)
+        .map_err(|error| format!("arcweft.debug.script.runs failed to read `{path}`: {error}"))?;
+    let value = serde_json::json!({
+        "path": path,
+        "session_id": session_id.as_ref().map(SessionId::as_str),
+        "limit": limit,
+        "runs": runs.iter().map(agent_mcp_debug_script_run_json).collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug script runs")
+}
+
+fn agent_mcp_debug_script_run_json(run: &DebugScriptRun) -> serde_json::Value {
+    serde_json::json!({
+        "run_id": run.run_id.as_str(),
+        "session_id": run.session_id.as_str(),
+        "agent_id": run.agent_id.as_ref().map(PublicId::as_str),
+        "artifact_hash": run.artifact_hash.as_ref().map(StableHash::as_str),
+        "source_hash": run.source_hash.as_ref().map(StableHash::as_str),
+        "project_binding_mode": &run.project_binding_mode,
+        "started_sequence": run.started_sequence,
+        "finished_sequence": run.finished_sequence,
+        "outcome": run.outcome.as_str(),
+        "partially_effectful": run.partially_effectful,
+        "trace_uri": &run.trace_uri,
+        "error": &run.error,
+        "metadata": &run.metadata,
     })
 }
 

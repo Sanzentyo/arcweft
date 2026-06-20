@@ -377,6 +377,9 @@ with `model_id` and `model_revision`, `graph_query` with optional
 apply to every selector. It defaults to `.arcweft/cache/agent-debug.sqlite3`
 and returns chunk IDs plus source metadata without requiring a native
 observation.
+`arcweft.debug.script.runs` reads persisted Agent Script run lifecycle rows
+from the same store with optional `path`, `session_id`, and `limit`, mirroring
+`arcw debug db runs` for MCP clients.
 MCP `arcweft.rag.query` uses the same `RagContextPack` output shape and can
 combine cached observation context, cached `.arcwx` trace context, and
 source/project context. `source` still observes that `.arcw` file before

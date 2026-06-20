@@ -119,6 +119,12 @@ or `history_query` for indexed history search. Optional `path`, `limit`, and
 and ranking for the relevant channel. The tool returns chunk ids, title/body
 text, source kind/key, privacy, search channel, rank, and score. It does not
 require an observation or trace to be cached in the MCP session.
+`arcweft.debug.script.runs` reads persisted Agent Script lifecycle rows from
+the same SQLite store. It accepts optional `path`, `session_id`, and `limit`,
+orders recent runs by their session-local start sequence, and returns run id,
+session id, Agent id, source/artifact hashes, project binding mode, sequence
+range, trace URI, outcome, effectfulness, error, and deterministic metadata.
+It is the MCP counterpart to `arcw debug db runs`.
 
 ```arcw
 pub trait AgentDebugBus {
@@ -360,7 +366,11 @@ arcweft.get_state
 arcweft.signal_get
 arcweft.log_query
 arcweft.rag.query
+arcweft.rag.explain
+arcweft.rag.context.read
 arcweft.debug.search
+arcweft.debug.script.runs
+arcweft.debug.session.timeline
 arcweft.trace.read
 ```
 

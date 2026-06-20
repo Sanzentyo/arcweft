@@ -9,14 +9,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
 };
-use arcweft_agent_protocol::ids::{SessionId, StableHash};
+use arcweft_agent_protocol::ids::{AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
-use arcweft_debug_model::script::DebugScriptRunOutcome;
+use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
@@ -28522,6 +28522,85 @@ fn agent_mcp_stdio_dispatches_semantic_action() {
     assert_eq!(action["after_tick"], 1);
     assert_eq!(action["action"]["kind"], "advance_text");
     assert_eq!(action["after"]["tick"], 1);
+}
+
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/mcp-script-runs-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug script runs target dir"))
+        .expect("create debug script runs target dir");
+    let store = DebugStore::open(&db_path).expect("open debug script runs db");
+    let session_id = SessionId::new("session.mcp.script").expect("session id");
+    store
+        .start_session(&session_id, None, "script", "mcp", 0)
+        .expect("seed session");
+    for (run_id, started_sequence) in [("run.mcp.first", 1), ("run.mcp.second", 3)] {
+        store
+            .upsert_script_run(&DebugScriptRun {
+                run_id: AgentRunId::new(run_id).expect("run id"),
+                session_id: session_id.clone(),
+                agent_id: Some(PublicId::new("agent.mcp").expect("agent id")),
+                artifact_hash: None,
+                source_hash: Some(stable_hash("blake3:mcp-script-source")),
+                project_binding_mode: "strict".to_owned(),
+                started_sequence,
+                finished_sequence: Some(started_sequence + 1),
+                outcome: DebugScriptRunOutcome::Done,
+                partially_effectful: started_sequence > 1,
+                trace_uri: Some(format!("target/{run_id}.arcwx")),
+                error: None,
+                metadata: BTreeMap::from([("steps".to_owned(), serde_json::json!(2))]),
+            })
+            .expect("seed script run");
+    }
+    let requests = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.debug.script.runs",
+                "arguments": {
+                    "path": db_path.display().to_string(),
+                    "session_id": "session.mcp.script",
+                    "limit": 2
+                }
+            }
+        }),
+    ];
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp debug script runs should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+    assert!(
+        responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools list is array")
+            .iter()
+            .any(|tool| tool["name"] == "arcweft.debug.script.runs")
+    );
+    let report = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "MCP debug script runs result is JSON",
+    );
+    assert_eq!(report["session_id"], "session.mcp.script");
+    let runs = report["runs"].as_array().expect("runs array");
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0]["run_id"], "run.mcp.second");
+    assert_eq!(runs[0]["outcome"], "done");
+    assert_eq!(runs[0]["partially_effectful"], true);
+    assert_eq!(runs[1]["run_id"], "run.mcp.first");
 }
 
 #[test]
