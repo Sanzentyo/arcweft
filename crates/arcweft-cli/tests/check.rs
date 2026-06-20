@@ -2601,6 +2601,7 @@ fn agent_rag_index_persists_source_chunks_and_skips_unchanged() {
         &first_report,
         &source_path,
     );
+    assert_debug_db_graph_command_reports_indexed_project_graph(&db_path, &first_report);
     assert_debug_db_graph_search_exposes_indexed_project_graph_edges(&db_path);
     assert_agent_rag_index_sessions_are_persisted(&db_path, &first_session_id, second_session_id);
     assert_agent_rag_query_reads_persisted_source_index(&db_path);
@@ -2676,6 +2677,65 @@ fn assert_debug_db_sources_command_reports_indexed_source_files(
             .as_u64()
             .is_some_and(|byte_len| byte_len > 0),
         "debug db sources should preserve byte length: {sources_report}"
+    );
+}
+
+fn assert_debug_db_graph_command_reports_indexed_project_graph(
+    db_path: &Path,
+    report: &serde_json::Value,
+) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("graph")
+        .arg("--path")
+        .arg(db_path)
+        .arg("--program-hash")
+        .arg(report["program_hash"].as_str().expect("program hash"))
+        .arg("--json")
+        .output()
+        .expect("arcw debug db graph runs");
+    assert!(
+        output.status.success(),
+        "debug db graph should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let graph_report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db graph output is JSON");
+    assert_eq!(
+        graph_report["program_hash"], report["program_hash"],
+        "debug db graph should report the queried program hash"
+    );
+    assert!(
+        graph_report["symbol_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "debug db graph should expose indexed symbols: {graph_report}"
+    );
+    assert!(
+        graph_report["edge_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "debug db graph should expose indexed edges: {graph_report}"
+    );
+    let symbols = graph_report["symbols"].as_array().expect("symbols");
+    assert!(
+        symbols.iter().any(|symbol| {
+            symbol["public_id"] == "choice.opening.listen"
+                && symbol["kind"] == "ChoiceOption"
+                && symbol["source_path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("native-choice-dispatch.arcw"))
+        }),
+        "debug db graph should expose source-owned project entity symbols: {graph_report}"
+    );
+    let edges = graph_report["edges"].as_array().expect("edges");
+    assert!(
+        edges
+            .iter()
+            .any(|edge| edge["edge_kind"] == "contains_entity"),
+        "debug db graph should expose ownership edges: {graph_report}"
     );
 }
 

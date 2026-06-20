@@ -67,6 +67,7 @@ use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     embedding::EmbeddingModelDescriptor,
     event::{DebugEvent, DebugEventKind},
+    graph::{DebugGraphEdge, DebugGraphSymbol},
     rag::{RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit},
     repl::DebugReplCell,
     script::DebugScriptRun,
@@ -1664,6 +1665,109 @@ mod tests {
         assert_eq!(
             sources[0]["metadata"]["extension"],
             serde_json::json!("arcw")
+        );
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn agent_mcp_debug_graph_inventory_reads_program_symbols_and_edges() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-graph-inventory-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
+        let program_hash = StableHash::new("blake3:mcp-graph-program").expect("program hash");
+        let content_hash = StableHash::new("blake3:mcp-graph-content").expect("content hash");
+        let store = DebugStore::open(&db_path).expect("debug store");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_source_file(&DebugSourceFile {
+                program_hash: program_hash.clone(),
+                path: "samples/agent-script/native-choice-dispatch.arcw".to_owned(),
+                language: "arcw".to_owned(),
+                content_hash: content_hash.clone(),
+                byte_len: 1234,
+                metadata: BTreeMap::new(),
+            })
+            .expect("source file");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:flow.opening".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("flow.opening").expect("public id")),
+                qualified_name: Some("flow.opening".to_owned()),
+                kind: "flow".to_owned(),
+                type_json: Some(serde_json::json!({"returns": "String"})),
+                source_path: Some("samples/agent-script/native-choice-dispatch.arcw".to_owned()),
+                source_content_hash: Some(content_hash.clone()),
+                start_byte: Some(8),
+                end_byte: Some(40),
+                semantic_hash: Some(StableHash::new("blake3:mcp-graph-symbol").expect("hash")),
+                summary: "Opening flow".to_owned(),
+                metadata: BTreeMap::from([("role".to_owned(), serde_json::json!("entry"))]),
+            })
+            .expect("flow symbol");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:choice.listen".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("choice.listen").expect("public id")),
+                qualified_name: Some("choice.listen".to_owned()),
+                kind: "choice".to_owned(),
+                type_json: None,
+                source_path: None,
+                source_content_hash: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Listen choice".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("choice symbol");
+        store
+            .upsert_graph_edge(&DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: "symbol:flow.opening".to_owned(),
+                to_symbol_id: "symbol:choice.listen".to_owned(),
+                edge_kind: "offers_choice".to_owned(),
+                weight: 0.75,
+                metadata: BTreeMap::from([("via".to_owned(), serde_json::json!("test"))]),
+            })
+            .expect("edge");
+        drop(store);
+
+        let result = agent_mcp_call_debug_graph_inventory(&serde_json::json!({
+            "path": db_path.display().to_string(),
+            "program_hash": program_hash.as_str()
+        }))
+        .expect("debug graph inventory succeeds");
+        let value = mcp_text_json(&result);
+        assert_eq!(
+            value["program_hash"],
+            serde_json::json!(program_hash.as_str())
+        );
+        assert_eq!(value["symbol_count"], serde_json::json!(2));
+        assert_eq!(value["edge_count"], serde_json::json!(1));
+        assert!(
+            value["symbols"]
+                .as_array()
+                .expect("symbols")
+                .iter()
+                .any(|symbol| {
+                    symbol["symbol_id"] == "symbol:flow.opening"
+                        && symbol["source_content_hash"] == content_hash.as_str()
+                        && symbol["metadata"]["role"] == "entry"
+                })
+        );
+        assert_eq!(
+            value["edges"][0]["edge_kind"],
+            serde_json::json!("offers_choice")
+        );
+        assert_eq!(
+            value["edges"][0]["metadata"]["via"],
+            serde_json::json!("test")
         );
         let _ = std::fs::remove_file(&db_path);
     }
@@ -5674,6 +5778,10 @@ fn agent_mcp_debug_tool_call(
             agent_mcp_call_debug_source_files(arguments)?,
             "MCP debug source files",
         ),
+        "arcweft.debug.graph.inventory" => (
+            agent_mcp_call_debug_graph_inventory(arguments)?,
+            "MCP debug graph inventory",
+        ),
         tool => return Err(format!("unsupported Arcweft MCP tool `{tool}`")),
     };
     serde_json::to_value(tool).map_err(|error| format!("failed to serialize {label}: {error}"))
@@ -6837,6 +6945,76 @@ fn agent_mcp_debug_source_file_json(source: &DebugSourceFile) -> serde_json::Val
         "content_hash": source.content_hash.as_str(),
         "byte_len": source.byte_len,
         "metadata": &source.metadata,
+    })
+}
+
+fn agent_mcp_call_debug_graph_inventory(
+    arguments: &serde_json::Value,
+) -> Result<McpCallToolResult, String> {
+    let program_hash = agent_mcp_non_empty_string_argument(arguments, "program_hash")
+        .ok_or_else(|| "arcweft.debug.graph.inventory requires arguments.program_hash".to_owned())
+        .and_then(|value| {
+            StableHash::new(value).map_err(|error| {
+                format!("arcweft.debug.graph.inventory invalid program_hash: {error}")
+            })
+        })?;
+    let path = agent_mcp_debug_store_path(arguments);
+    let store = DebugStore::open(path).map_err(|error| {
+        format!("arcweft.debug.graph.inventory failed to open `{path}`: {error}")
+    })?;
+    let symbols = store
+        .graph_symbols_for_program(&program_hash)
+        .map_err(|error| {
+            format!("arcweft.debug.graph.inventory failed to read symbols from `{path}`: {error}")
+        })?;
+    let edges = store
+        .graph_edges_for_program(&program_hash)
+        .map_err(|error| {
+            format!("arcweft.debug.graph.inventory failed to read edges from `{path}`: {error}")
+        })?;
+    let value = serde_json::json!({
+        "path": path,
+        "program_hash": program_hash.as_str(),
+        "symbol_count": symbols.len(),
+        "edge_count": edges.len(),
+        "symbols": symbols
+            .iter()
+            .map(agent_mcp_debug_graph_symbol_json)
+            .collect::<Vec<_>>(),
+        "edges": edges
+            .iter()
+            .map(agent_mcp_debug_graph_edge_json)
+            .collect::<Vec<_>>(),
+    });
+    agent_mcp_json_tool_result(&value, "debug graph inventory")
+}
+
+fn agent_mcp_debug_graph_symbol_json(symbol: &DebugGraphSymbol) -> serde_json::Value {
+    serde_json::json!({
+        "program_hash": symbol.program_hash.as_str(),
+        "symbol_id": &symbol.symbol_id,
+        "public_id": symbol.public_id.as_ref().map(PublicId::as_str),
+        "qualified_name": &symbol.qualified_name,
+        "kind": &symbol.kind,
+        "type_json": &symbol.type_json,
+        "source_path": &symbol.source_path,
+        "source_content_hash": symbol.source_content_hash.as_ref().map(StableHash::as_str),
+        "start_byte": symbol.start_byte,
+        "end_byte": symbol.end_byte,
+        "semantic_hash": symbol.semantic_hash.as_ref().map(StableHash::as_str),
+        "summary": &symbol.summary,
+        "metadata": &symbol.metadata,
+    })
+}
+
+fn agent_mcp_debug_graph_edge_json(edge: &DebugGraphEdge) -> serde_json::Value {
+    serde_json::json!({
+        "program_hash": edge.program_hash.as_str(),
+        "from_symbol_id": &edge.from_symbol_id,
+        "to_symbol_id": &edge.to_symbol_id,
+        "edge_kind": &edge.edge_kind,
+        "weight": edge.weight,
+        "metadata": &edge.metadata,
     })
 }
 

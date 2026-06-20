@@ -10,6 +10,7 @@ use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{
     EmbeddingInputPolicy, EmbeddingModelDescriptor, EmbeddingProvider,
 };
+use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
 use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
@@ -46,6 +47,7 @@ pub(super) enum DebugDbCommand {
     Vacuum(DebugDbOptions),
     Sessions(DebugDbSessionsOptions),
     Sources(DebugDbSourcesOptions),
+    Graph(DebugDbGraphOptions),
     CloseStaleSessions(DebugDbCloseStaleSessionsOptions),
     Runs(DebugDbRunsOptions),
     Rag(DebugDbRagOptions),
@@ -94,6 +96,14 @@ pub(super) struct DebugDbSessionsOptions {
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct DebugDbSourcesOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "program-hash")]
+    program_hash: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbGraphOptions {
     #[command(flatten)]
     db: DebugDbOptions,
     #[arg(long = "program-hash")]
@@ -331,6 +341,17 @@ struct DebugDbSourcesReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbGraphReport {
+    path: String,
+    user_version: u32,
+    program_hash: String,
+    symbol_count: usize,
+    edge_count: usize,
+    symbols: Vec<DebugDbGraphSymbolReport>,
+    edges: Vec<DebugDbGraphEdgeReport>,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbCloseStaleSessionsReport {
     path: String,
     user_version: u32,
@@ -376,6 +397,33 @@ struct DebugDbSourceFileReport {
     language: String,
     content_hash: String,
     byte_len: u64,
+    metadata: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbGraphSymbolReport {
+    program_hash: String,
+    symbol_id: String,
+    public_id: Option<String>,
+    qualified_name: Option<String>,
+    kind: String,
+    type_json: Option<serde_json::Value>,
+    source_path: Option<String>,
+    source_content_hash: Option<String>,
+    start_byte: Option<u64>,
+    end_byte: Option<u64>,
+    semantic_hash: Option<String>,
+    summary: String,
+    metadata: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbGraphEdgeReport {
+    program_hash: String,
+    from_symbol_id: String,
+    to_symbol_id: String,
+    edge_kind: String,
+    weight: f64,
     metadata: BTreeMap<String, serde_json::Value>,
 }
 
@@ -551,6 +599,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Vacuum(options) => debug_db_vacuum_command(&options),
         DebugDbCommand::Sessions(options) => debug_db_sessions_command(&options),
         DebugDbCommand::Sources(options) => debug_db_sources_command(&options),
+        DebugDbCommand::Graph(options) => debug_db_graph_command(&options),
         DebugDbCommand::CloseStaleSessions(options) => {
             debug_db_close_stale_sessions_command(&options)
         }
@@ -811,6 +860,58 @@ fn debug_db_sources_command(options: &DebugDbSourcesOptions) -> Result<(), ExitC
         println!(
             "{} language={} bytes={} hash={}",
             source.path, source.language, source.byte_len, source.content_hash
+        );
+    }
+    Ok(())
+}
+
+fn debug_db_graph_command(options: &DebugDbGraphOptions) -> Result<(), ExitCode> {
+    let program_hash = StableHash::new(options.program_hash.trim()).map_err(|error| {
+        eprintln!("error: invalid debug db graph --program-hash: {error}");
+        ExitCode::from(2)
+    })?;
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let symbols = store
+        .graph_symbols_for_program(&program_hash)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read debug graph symbols from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let edges = store
+        .graph_edges_for_program(&program_hash)
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to read debug graph edges from {}: {error}",
+                options.db.path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    let report = DebugDbGraphReport {
+        path,
+        user_version,
+        program_hash: program_hash.as_str().to_owned(),
+        symbol_count: symbols.len(),
+        edge_count: edges.len(),
+        symbols: symbols
+            .into_iter()
+            .map(debug_db_graph_symbol_report)
+            .collect(),
+        edges: edges.into_iter().map(debug_db_graph_edge_report).collect(),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!(
+        "{}: {} graph symbol(s), {} edge(s) for {}",
+        report.path, report.symbol_count, report.edge_count, report.program_hash
+    );
+    for edge in &report.edges {
+        println!(
+            "{} --{}--> {} weight={}",
+            edge.from_symbol_id, edge.edge_kind, edge.to_symbol_id, edge.weight
         );
     }
     Ok(())
@@ -1433,6 +1534,37 @@ fn debug_db_source_file_report(source: DebugSourceFile) -> DebugDbSourceFileRepo
         content_hash: source.content_hash.as_str().to_owned(),
         byte_len: source.byte_len,
         metadata: source.metadata,
+    }
+}
+
+fn debug_db_graph_symbol_report(symbol: DebugGraphSymbol) -> DebugDbGraphSymbolReport {
+    DebugDbGraphSymbolReport {
+        program_hash: symbol.program_hash.as_str().to_owned(),
+        symbol_id: symbol.symbol_id,
+        public_id: symbol.public_id.map(|id| id.as_str().to_owned()),
+        qualified_name: symbol.qualified_name,
+        kind: symbol.kind,
+        type_json: symbol.type_json,
+        source_path: symbol.source_path,
+        source_content_hash: symbol
+            .source_content_hash
+            .map(|hash| hash.as_str().to_owned()),
+        start_byte: symbol.start_byte,
+        end_byte: symbol.end_byte,
+        semantic_hash: symbol.semantic_hash.map(|hash| hash.as_str().to_owned()),
+        summary: symbol.summary,
+        metadata: symbol.metadata,
+    }
+}
+
+fn debug_db_graph_edge_report(edge: DebugGraphEdge) -> DebugDbGraphEdgeReport {
+    DebugDbGraphEdgeReport {
+        program_hash: edge.program_hash.as_str().to_owned(),
+        from_symbol_id: edge.from_symbol_id,
+        to_symbol_id: edge.to_symbol_id,
+        edge_kind: edge.edge_kind,
+        weight: edge.weight,
+        metadata: edge.metadata,
     }
 }
 

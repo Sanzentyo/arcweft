@@ -158,6 +158,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_debug_session_timeline_tool_descriptor(),
         agent_debug_repl_cells_tool_descriptor(),
         agent_debug_source_files_tool_descriptor(),
+        agent_debug_graph_inventory_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
 }
@@ -839,6 +840,28 @@ fn agent_debug_source_files_tool_descriptor() -> McpToolDescriptor {
                 "program_hash": {
                     "type": "string",
                     "description": "Program hash whose source-file inventory should be returned."
+                }
+            },
+            "required": ["program_hash"]
+        }),
+    }
+}
+
+fn agent_debug_graph_inventory_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.debug.graph.inventory".to_owned(),
+        title: Some("Read Arcweft Debug Graph Inventory".to_owned()),
+        description: "Reads program-owned graph symbol and edge inventory rows from the rebuildable SQLite debug store.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path to the Arcweft debug SQLite database. Defaults to .arcweft/cache/agent-debug.sqlite3."
+                },
+                "program_hash": {
+                    "type": "string",
+                    "description": "Program hash whose graph symbol and edge inventory should be returned."
                 }
             },
             "required": ["program_hash"]
@@ -1896,6 +1919,11 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name == "arcweft.debug.source.files")
         );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name == "arcweft.debug.graph.inventory")
+        );
         assert!(tools.iter().any(|tool| tool.name == "arcweft.trace.read"));
     }
 
@@ -2273,6 +2301,24 @@ mod tests {
         );
         assert_eq!(
             source_files.input_schema["properties"]["program_hash"]["type"],
+            "string"
+        );
+    }
+
+    #[test]
+    fn debug_graph_inventory_tool_schema_is_described() {
+        let tools = agent_tool_descriptors();
+        let graph = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.debug.graph.inventory")
+            .expect("debug graph inventory tool is described");
+        assert_eq!(
+            graph.input_schema["required"],
+            serde_json::json!(["program_hash"])
+        );
+        assert_eq!(graph.input_schema["properties"]["path"]["type"], "string");
+        assert_eq!(
+            graph.input_schema["properties"]["program_hash"]["type"],
             "string"
         );
     }

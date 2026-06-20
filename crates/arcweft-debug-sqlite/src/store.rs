@@ -162,6 +162,33 @@ struct RawDebugSourceFile {
     metadata_json: String,
 }
 
+#[derive(Debug)]
+struct RawDebugGraphSymbol {
+    program_hash: String,
+    symbol_id: String,
+    public_id: Option<String>,
+    qualified_name: Option<String>,
+    kind: String,
+    type_json: Option<String>,
+    source_path: Option<String>,
+    source_content_hash: Option<String>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+    semantic_hash: Option<String>,
+    summary: String,
+    metadata_json: String,
+}
+
+#[derive(Debug)]
+struct RawDebugGraphEdge {
+    program_hash: String,
+    from_symbol_id: String,
+    to_symbol_id: String,
+    edge_kind: String,
+    weight: f64,
+    metadata_json: String,
+}
+
 /// Current row counts for the rebuildable debug index.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DebugStoreStats {
@@ -1080,6 +1107,57 @@ impl DebugStore {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn graph_symbols_for_program(
+        &self,
+        program_hash: &StableHash,
+    ) -> Result<Vec<DebugGraphSymbol>, DebugStoreError> {
+        let Some(program_id) = self.program_id(program_hash)? else {
+            return Ok(Vec::new());
+        };
+        let mut statement = self.connection.prepare(
+            "SELECT p.program_hash, s.symbol_id, s.public_id, s.qualified_name,
+                    s.kind, s.type_json, sf.path, sf.content_hash,
+                    s.start_byte, s.end_byte, s.semantic_hash, s.summary,
+                    s.metadata_json
+             FROM symbols AS s
+             JOIN programs AS p ON p.program_id = s.program_id
+             LEFT JOIN source_files AS sf ON sf.source_file_id = s.source_file_id
+             WHERE s.program_id = ?1
+             ORDER BY s.kind ASC,
+                      COALESCE(s.public_id, s.qualified_name, s.symbol_id) ASC,
+                      s.symbol_id ASC",
+        )?;
+        let rows = statement.query_map([program_id], raw_debug_graph_symbol_from_row)?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_graph_symbol_from_raw)
+        })
+        .collect()
+    }
+
+    pub fn graph_edges_for_program(
+        &self,
+        program_hash: &StableHash,
+    ) -> Result<Vec<DebugGraphEdge>, DebugStoreError> {
+        let Some(program_id) = self.program_id(program_hash)? else {
+            return Ok(Vec::new());
+        };
+        let mut statement = self.connection.prepare(
+            "SELECT p.program_hash, ge.from_symbol_id, ge.to_symbol_id,
+                    ge.edge_kind, ge.weight, ge.metadata_json
+             FROM graph_edges AS ge
+             JOIN programs AS p ON p.program_id = ge.program_id
+             WHERE ge.program_id = ?1
+             ORDER BY ge.from_symbol_id ASC, ge.edge_kind ASC, ge.to_symbol_id ASC",
+        )?;
+        let rows = statement.query_map([program_id], raw_debug_graph_edge_from_row)?;
+        rows.map(|row| {
+            row.map_err(DebugStoreError::from)
+                .and_then(debug_graph_edge_from_raw)
+        })
+        .collect()
     }
 
     pub fn graph_search_with_max_privacy(
@@ -2576,6 +2654,37 @@ fn raw_debug_source_file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<R
     })
 }
 
+fn raw_debug_graph_symbol_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<RawDebugGraphSymbol> {
+    Ok(RawDebugGraphSymbol {
+        program_hash: row.get(0)?,
+        symbol_id: row.get(1)?,
+        public_id: row.get(2)?,
+        qualified_name: row.get(3)?,
+        kind: row.get(4)?,
+        type_json: row.get(5)?,
+        source_path: row.get(6)?,
+        source_content_hash: row.get(7)?,
+        start_byte: row.get(8)?,
+        end_byte: row.get(9)?,
+        semantic_hash: row.get(10)?,
+        summary: row.get(11)?,
+        metadata_json: row.get(12)?,
+    })
+}
+
+fn raw_debug_graph_edge_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugGraphEdge> {
+    Ok(RawDebugGraphEdge {
+        program_hash: row.get(0)?,
+        from_symbol_id: row.get(1)?,
+        to_symbol_id: row.get(2)?,
+        edge_kind: row.get(3)?,
+        weight: row.get(4)?,
+        metadata_json: row.get(5)?,
+    })
+}
+
 fn raw_debug_session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDebugSession> {
     Ok(RawDebugSession {
         session_id: row.get(0)?,
@@ -2641,6 +2750,52 @@ fn debug_source_file_from_raw(raw: RawDebugSourceFile) -> Result<DebugSourceFile
         content_hash: StableHash::new(raw.content_hash)?,
         byte_len: u64::try_from(raw.byte_len)
             .map_err(|_| DebugStoreError::IntegerOverflow("source_files.byte_len"))?,
+        metadata: serde_json::from_str(&raw.metadata_json)?,
+    })
+}
+
+fn debug_graph_symbol_from_raw(
+    raw: RawDebugGraphSymbol,
+) -> Result<DebugGraphSymbol, DebugStoreError> {
+    Ok(DebugGraphSymbol {
+        symbol_id: raw.symbol_id,
+        program_hash: StableHash::new(raw.program_hash)?,
+        public_id: raw.public_id.map(PublicId::new).transpose()?,
+        qualified_name: raw.qualified_name,
+        kind: raw.kind,
+        type_json: raw
+            .type_json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?,
+        source_path: raw.source_path,
+        source_content_hash: raw.source_content_hash.map(StableHash::new).transpose()?,
+        start_byte: raw
+            .start_byte
+            .map(|value| {
+                u64::try_from(value)
+                    .map_err(|_| DebugStoreError::IntegerOverflow("symbols.start_byte"))
+            })
+            .transpose()?,
+        end_byte: raw
+            .end_byte
+            .map(|value| {
+                u64::try_from(value)
+                    .map_err(|_| DebugStoreError::IntegerOverflow("symbols.end_byte"))
+            })
+            .transpose()?,
+        semantic_hash: raw.semantic_hash.map(StableHash::new).transpose()?,
+        summary: raw.summary,
+        metadata: serde_json::from_str(&raw.metadata_json)?,
+    })
+}
+
+fn debug_graph_edge_from_raw(raw: RawDebugGraphEdge) -> Result<DebugGraphEdge, DebugStoreError> {
+    Ok(DebugGraphEdge {
+        program_hash: StableHash::new(raw.program_hash)?,
+        from_symbol_id: raw.from_symbol_id,
+        to_symbol_id: raw.to_symbol_id,
+        edge_kind: raw.edge_kind,
+        weight: raw.weight,
         metadata: serde_json::from_str(&raw.metadata_json)?,
     })
 }
@@ -4144,6 +4299,99 @@ mod tests {
         assert_eq!(files[0].language, "arcw");
         assert_eq!(files[0].byte_len, 1234);
         assert_eq!(store.stats().expect("stats").source_files, 1);
+    }
+
+    #[test]
+    fn graph_inventory_round_trips_for_program() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let program_hash = hash("blake3:graph-inventory-program");
+        let content_hash = hash("blake3:graph-inventory-content");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_source_file(&DebugSourceFile {
+                program_hash: program_hash.clone(),
+                path: "samples/agent-script/native-choice-dispatch.arcw".to_owned(),
+                language: "arcw".to_owned(),
+                content_hash: content_hash.clone(),
+                byte_len: 2048,
+                metadata: BTreeMap::new(),
+            })
+            .expect("source file");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:flow.opening".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("flow.opening").expect("public id")),
+                qualified_name: Some("flow.opening".to_owned()),
+                kind: "flow".to_owned(),
+                type_json: Some(serde_json::json!({"returns": "String"})),
+                source_path: Some("samples/agent-script/native-choice-dispatch.arcw".to_owned()),
+                source_content_hash: Some(content_hash.clone()),
+                start_byte: Some(10),
+                end_byte: Some(42),
+                semantic_hash: Some(hash("blake3:symbol-flow-opening")),
+                summary: "Opening flow".to_owned(),
+                metadata: BTreeMap::from([("role".to_owned(), serde_json::json!("entry"))]),
+            })
+            .expect("from symbol");
+        store
+            .upsert_graph_symbol(&DebugGraphSymbol {
+                symbol_id: "symbol:choice.listen".to_owned(),
+                program_hash: program_hash.clone(),
+                public_id: Some(PublicId::new("choice.listen").expect("public id")),
+                qualified_name: Some("choice.listen".to_owned()),
+                kind: "agent_action".to_owned(),
+                type_json: None,
+                source_path: None,
+                source_content_hash: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash: None,
+                summary: "Listen choice".to_owned(),
+                metadata: BTreeMap::new(),
+            })
+            .expect("to symbol");
+        store
+            .upsert_graph_edge(&DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: "symbol:flow.opening".to_owned(),
+                to_symbol_id: "symbol:choice.listen".to_owned(),
+                edge_kind: "offers_action".to_owned(),
+                weight: 0.75,
+                metadata: BTreeMap::from([("via".to_owned(), serde_json::json!("test"))]),
+            })
+            .expect("edge");
+
+        let symbols = store
+            .graph_symbols_for_program(&program_hash)
+            .expect("symbols");
+        assert_eq!(symbols.len(), 2);
+        let flow = symbols
+            .iter()
+            .find(|symbol| symbol.symbol_id == "symbol:flow.opening")
+            .expect("flow symbol");
+        assert_eq!(flow.program_hash, program_hash);
+        assert_eq!(
+            flow.public_id.as_ref().map(PublicId::as_str),
+            Some("flow.opening")
+        );
+        assert_eq!(flow.source_content_hash, Some(content_hash));
+        assert_eq!(flow.start_byte, Some(10));
+        assert_eq!(flow.end_byte, Some(42));
+        assert_eq!(
+            flow.type_json,
+            Some(serde_json::json!({"returns": "String"}))
+        );
+        assert_eq!(flow.metadata["role"], serde_json::json!("entry"));
+
+        let edges = store.graph_edges_for_program(&program_hash).expect("edges");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].from_symbol_id, "symbol:flow.opening");
+        assert_eq!(edges[0].to_symbol_id, "symbol:choice.listen");
+        assert_eq!(edges[0].edge_kind, "offers_action");
+        assert_eq!(edges[0].metadata["via"], serde_json::json!("test"));
     }
 
     #[test]
