@@ -1991,6 +1991,135 @@ fn agent_rag_query_indexes_source_project_chunks() {
 }
 
 #[test]
+fn agent_rag_query_indexes_multiple_sources() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-rag-source/multi-source-rag-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("multi-source RAG DB parent"))
+        .expect("create multi-source RAG DB parent");
+    let choice_source = workspace_path("samples/agent-script/native-choice-dispatch.arcw");
+    let rich_text_source = workspace_path("samples/rich-text-showcase.arcw");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--source")
+        .arg(&choice_source)
+        .arg("--source")
+        .arg(&rich_text_source)
+        .arg("--debug-db")
+        .arg(&db_path)
+        .arg("--query")
+        .arg("choice.opening rich_text")
+        .arg("--limit")
+        .arg("12")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query indexes multiple sources");
+    assert!(
+        output.status.success(),
+        "agent rag query should index repeated --source inputs\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("multi-source RAG output is JSON");
+    assert_eq!(pack["query"]["text"], "choice.opening rich_text");
+    assert!(
+        pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["chunk_id"]
+                    .as_str()
+                    .is_some_and(|id| id.contains("source.blake3:"))
+                    && item["source_anchor"]["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("rich-text-showcase.arcw"))
+            })
+        }),
+        "multi-source RAG should namespace source/project chunks by source input: {pack}"
+    );
+
+    for query in ["choice.opening.listen", "flow.rich_text_showcase"] {
+        let search_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("debug")
+            .arg("db")
+            .arg("search")
+            .arg("--path")
+            .arg(&db_path)
+            .arg("--query")
+            .arg(query)
+            .arg("--json")
+            .output()
+            .expect("arcw debug db search reads multi-source RAG chunks");
+        assert!(
+            search_output.status.success(),
+            "debug db search should find multi-source RAG chunks for {query}\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&search_output.stdout),
+            String::from_utf8_lossy(&search_output.stderr)
+        );
+        let search: serde_json::Value =
+            serde_json::from_slice(&search_output.stdout).expect("multi-source search JSON");
+        assert!(
+            search["hits"].as_array().is_some_and(|hits| {
+                hits.iter().any(|hit| {
+                    hit["source_kind"] == "symbol"
+                        && hit["chunk_id"]
+                            .as_str()
+                            .is_some_and(|id| id.contains(query))
+                })
+            }),
+            "debug db search should expose persisted project symbol chunks for {query}: {search}"
+        );
+    }
+
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+#[test]
+fn agent_rag_query_indexes_source_directories() {
+    let directory_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("rag")
+        .arg("query")
+        .arg("--source")
+        .arg(workspace_path("samples/agent-script"))
+        .arg("--query")
+        .arg("signal.current_flow")
+        .arg("--root")
+        .arg("signal.current_flow")
+        .arg("--json")
+        .output()
+        .expect("arcw agent rag query indexes a source directory");
+    assert!(
+        directory_output.status.success(),
+        "agent rag query should index .arcw files under a source directory\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&directory_output.stdout),
+        String::from_utf8_lossy(&directory_output.stderr)
+    );
+    let directory_pack: serde_json::Value =
+        serde_json::from_slice(&directory_output.stdout).expect("directory RAG output is JSON");
+    assert!(
+        directory_pack["items"].as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                item["kind"] == "symbol"
+                    && item["entity_ids"]
+                        .as_array()
+                        .is_some_and(|ids| ids.contains(&serde_json::json!("signal.current_flow")))
+                    && item["source_anchor"]["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("native-project-index.arcw"))
+            })
+        }),
+        "directory source RAG should expand .arcw files and return rooted symbols: {directory_pack}"
+    );
+}
+
+#[test]
 fn debug_db_search_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/search-{}.sqlite3",
