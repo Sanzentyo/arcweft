@@ -140,25 +140,17 @@ Use code fences consistently:
 
 ## Scope and completion boundaries
 
-- When a task is driven by an attached package, review the package's own
-  acceptance criteria and compare them with current implementation evidence
-  before marking the goal complete. Do not redefine success around the subset
-  already implemented.
-- If a package requirement is intentionally out of scope for the current cut,
-  document that as an explicit non-goal or keep the goal open. Avoid silently
-  treating a missing feature as complete because nearby functionality exists.
-- For Agent Script work, `docs/implementation/agent-script-final-completion-audit.md`
-  records the current package-scope completion evidence for
-  `arcweft-agent-script-final-2026-06-18.zip`. Broader product graph/player
-  follow-up in `docs/implementation/agent-script-implementation.md` must not be
-  mistaken for package completion evidence.
-- `stdio:` / `mcp:` remote REPL endpoints are not implemented. They currently
-  fail explicitly; do not describe them as supported unless a real retained
-  remote REPL transport has been implemented and validated.
-- Product-wide graph ownership and native/player daemon scheduling are broader
-  product runtime work. Current Agent Script validation covers CLI/native
-  controller runs, traces, debug DB, RAG, and MCP tooling; it does not prove a
-  long-lived product player daemon or product-wide scheduling model.
+- When a task is driven by an attached package or design brief, derive concrete
+  acceptance criteria from that source and compare them with current
+  implementation evidence before marking the goal complete. Do not redefine
+  success around the subset already implemented.
+- Keep task-specific completion audits, non-goals, and follow-up boundaries in
+  `docs/implementation/` rather than hard-coding them into this file. Use
+  AGENTS.md only for durable repository-wide workflow and architecture rules.
+- If a requirement is intentionally out of scope for the current cut, document
+  that as an explicit non-goal in the relevant implementation note or keep the
+  goal open. Avoid silently treating a missing feature as complete because
+  nearby functionality exists.
 
 ## Acceptance criteria for each task
 
