@@ -197,17 +197,38 @@ fn incomplete_syntax_expected_tokens(source: &str) -> Option<Vec<ExpectedToken>>
     if trimmed_start.is_empty() {
         return None;
     }
-    if trimmed_start == "return"
+    if ends_at_expression_boundary(trimmed_start) {
+        return Some(vec![ExpectedToken::new("expression")]);
+    }
+    None
+}
+
+fn ends_at_expression_boundary(trimmed_start: &str) -> bool {
+    trimmed_start == "return"
         || trimmed_start == "try"
         || trimmed_start.ends_with('=')
+        || trimmed_start.ends_with('(')
+        || trimmed_start.ends_with('[')
+        || trimmed_start.ends_with(',')
+        || trimmed_start.ends_with('.')
         || trimmed_start.ends_with("= try")
         || trimmed_start.ends_with("(try")
         || trimmed_start.ends_with("[try")
         || trimmed_start.ends_with(", try")
-    {
-        return Some(vec![ExpectedToken::new("expression")]);
-    }
-    None
+        || trimmed_start.ends_with("==")
+        || trimmed_start.ends_with("!=")
+        || trimmed_start.ends_with(">=")
+        || trimmed_start.ends_with("<=")
+        || trimmed_start.ends_with("&&")
+        || trimmed_start.ends_with("||")
+        || trimmed_start.ends_with('+')
+        || trimmed_start.ends_with('-')
+        || trimmed_start.ends_with('*')
+        || trimmed_start.ends_with('/')
+        || trimmed_start.ends_with('%')
+        || trimmed_start.ends_with('<')
+        || trimmed_start.ends_with('>')
+        || trimmed_start.ends_with('!')
 }
 
 #[cfg(test)]
@@ -273,7 +294,17 @@ mod tests {
 
     #[test]
     fn fragment_reports_incomplete_expression_after_statement_heads() {
-        for source in ["let value =", "return", "try"] {
+        for source in [
+            "let value =",
+            "return",
+            "try",
+            "wait(",
+            "all([",
+            "any([signal(@signal.ready),",
+            "signal(@signal.ready).",
+            "metric(@metric.score) >",
+            "state(\"route.phase\").eq(",
+        ] {
             let parsed = parse_fragment(
                 source,
                 FragmentKind::Statements,

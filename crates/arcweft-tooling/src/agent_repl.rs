@@ -876,7 +876,16 @@ mod tests {
 
     #[test]
     fn repl_classify_cell_reports_incomplete_expression_boundaries() {
-        for source in ["let value =", "return", "try"] {
+        for source in [
+            "let value =",
+            "return",
+            "try",
+            "wait(",
+            "any([signal(@signal.ready),",
+            "signal(@signal.ready).",
+            "metric(@metric.score) >",
+            "state(\"route.phase\").eq(",
+        ] {
             let classified = agent_repl_classify_cell(source);
 
             assert_eq!(
