@@ -17,6 +17,7 @@ use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_model::event::{DebugEvent, DebugEventKind};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
 use arcweft_debug_model::history::DebugHistoryEntry;
+use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_model::sink::DebugEventSink;
@@ -2450,6 +2451,75 @@ fn debug_db_timeline_reports_privacy_filtered_events() {
     assert_eq!(events[0]["kind"], "diagnostic");
     assert_eq!(events[0]["privacy"], "public");
     assert_eq!(events[0]["payload"]["message"], "visible event");
+}
+
+#[test]
+fn debug_db_repl_cells_reports_persisted_cells() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/repl-cells-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("debug repl cells target dir"))
+        .expect("create debug repl cells target dir");
+    let store = DebugStore::open(&db_path).expect("open debug repl cells database");
+    let session_id = SessionId::new("session.repl.cli").expect("session id");
+    store
+        .start_session(&session_id, None, "repl", "cli", 0)
+        .expect("seed REPL session");
+    for (ordinal, source) in [(1, "let observed = observe()"), (2, ":bindings")] {
+        store
+            .upsert_repl_cell(&DebugReplCell {
+                cell_id: format!("repl:{}:{ordinal}", session_id.as_str()),
+                session_id: session_id.clone(),
+                run_id: None,
+                ordinal,
+                source: source.to_owned(),
+                source_hash: StableHash::new(format!("blake3:repl-cell-{ordinal}"))
+                    .expect("source hash"),
+                status: "ok".to_owned(),
+                inferred_type: None,
+                display: Some(serde_json::json!({ "ordinal": ordinal })),
+                partially_effectful: ordinal == 1,
+                diagnostic_ids: vec![format!("diag.{ordinal}")],
+                created_unix_ms: ordinal,
+            })
+            .expect("seed REPL cell");
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("repl-cells")
+        .arg("--path")
+        .arg(&db_path)
+        .arg("--session-id")
+        .arg(session_id.as_str())
+        .arg("--limit")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw debug db repl-cells runs");
+    assert!(
+        output.status.success(),
+        "debug db repl-cells should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("debug db repl-cells output is JSON");
+
+    assert_eq!(report["session_id"], "session.repl.cli");
+    assert_eq!(report["limit"], 1);
+    let cells = report["cells"].as_array().expect("cells array");
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0]["cell_id"], "repl:session.repl.cli:1");
+    assert_eq!(cells[0]["ordinal"], 1);
+    assert_eq!(cells[0]["source"], "let observed = observe()");
+    assert_eq!(cells[0]["status"], "ok");
+    assert_eq!(cells[0]["display"]["ordinal"], 1);
+    assert_eq!(cells[0]["partially_effectful"], true);
+    assert_eq!(cells[0]["diagnostic_ids"][0], "diag.1");
 }
 
 #[test]

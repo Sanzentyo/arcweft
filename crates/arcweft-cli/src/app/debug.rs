@@ -3,6 +3,7 @@ use arcweft_agent_protocol::ids::{AgentRunId, SessionId};
 use arcweft_debug_model::chunk::PrivacyClass;
 use arcweft_debug_model::embedding::EmbeddingModelDescriptor;
 use arcweft_debug_model::rag::{RagContextPack, SearchChannel};
+use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_sqlite::store::{
@@ -36,6 +37,7 @@ pub(super) enum DebugDbCommand {
     Runs(DebugDbRunsOptions),
     Rag(DebugDbRagOptions),
     Timeline(DebugDbTimelineOptions),
+    ReplCells(DebugDbReplCellsOptions),
     Search(DebugDbSearchOptions),
     Delete(DebugDbDeleteOptions),
 }
@@ -100,6 +102,16 @@ pub(super) struct DebugDbTimelineOptions {
     limit: usize,
     #[arg(long, value_parser = parse_debug_privacy_class, default_value = "project")]
     max_privacy: PrivacyClass,
+}
+
+#[derive(Args, Clone, Debug)]
+pub(super) struct DebugDbReplCellsOptions {
+    #[command(flatten)]
+    db: DebugDbOptions,
+    #[arg(long = "session-id")]
+    session_id: String,
+    #[arg(long, default_value_t = 50)]
+    limit: usize,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -257,6 +269,31 @@ struct DebugDbTimelineEventReport {
 }
 
 #[derive(serde::Serialize)]
+struct DebugDbReplCellsReport {
+    path: String,
+    user_version: u32,
+    session_id: String,
+    limit: usize,
+    cells: Vec<DebugDbReplCellReport>,
+}
+
+#[derive(serde::Serialize)]
+struct DebugDbReplCellReport {
+    cell_id: String,
+    session_id: String,
+    run_id: Option<String>,
+    ordinal: i64,
+    source: String,
+    source_hash: String,
+    status: String,
+    inferred_type: Option<serde_json::Value>,
+    display: Option<serde_json::Value>,
+    partially_effectful: bool,
+    diagnostic_ids: Vec<String>,
+    created_unix_ms: i64,
+}
+
+#[derive(serde::Serialize)]
 struct DebugDbSessionReport {
     session_id: String,
     program_hash: Option<String>,
@@ -351,6 +388,7 @@ fn debug_db_command(command: DebugDbCommand) -> Result<(), ExitCode> {
         DebugDbCommand::Runs(options) => debug_db_runs_command(&options),
         DebugDbCommand::Rag(options) => debug_db_rag_command(&options),
         DebugDbCommand::Timeline(options) => debug_db_timeline_command(&options),
+        DebugDbCommand::ReplCells(options) => debug_db_repl_cells_command(&options),
         DebugDbCommand::Search(options) => debug_db_search_command(&options),
         DebugDbCommand::Delete(options) => debug_db_delete_command(&options),
     }
@@ -682,6 +720,47 @@ fn debug_db_timeline_command(options: &DebugDbTimelineOptions) -> Result<(), Exi
     Ok(())
 }
 
+fn debug_db_repl_cells_command(options: &DebugDbReplCellsOptions) -> Result<(), ExitCode> {
+    if options.limit == 0 {
+        eprintln!("error: debug db repl-cells --limit must be at least 1");
+        return Err(ExitCode::from(2));
+    }
+    let session_id = SessionId::new(options.session_id.trim()).map_err(|error| {
+        eprintln!("error: invalid debug db repl-cells --session-id: {error}");
+        ExitCode::from(2)
+    })?;
+    let (store, path, user_version, _) = open_debug_store(&options.db)?;
+    let cells = store.repl_cells_for_session(&session_id).map_err(|error| {
+        eprintln!(
+            "error: failed to read debug REPL cells from {}: {error}",
+            options.db.path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let report = DebugDbReplCellsReport {
+        path,
+        user_version,
+        session_id: session_id.as_str().to_owned(),
+        limit: options.limit,
+        cells: cells
+            .into_iter()
+            .take(options.limit)
+            .map(debug_db_repl_cell_report)
+            .collect(),
+    };
+    if options.db.json {
+        return print_json(&report);
+    }
+    println!("{}: {} REPL cell(s)", report.path, report.cells.len());
+    for cell in &report.cells {
+        println!(
+            "{} {} status={} effectful={} source={:?}",
+            cell.ordinal, cell.cell_id, cell.status, cell.partially_effectful, cell.source
+        );
+    }
+    Ok(())
+}
+
 fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCode> {
     let report = debug_db_search_report(options)?;
     if options.db.json {
@@ -821,6 +900,23 @@ fn debug_db_timeline_event_report(event: DebugTimelineEvent) -> DebugDbTimelineE
         privacy: event.privacy,
         payload: event.payload,
         created_unix_ms: event.created_unix_ms,
+    }
+}
+
+fn debug_db_repl_cell_report(cell: DebugReplCell) -> DebugDbReplCellReport {
+    DebugDbReplCellReport {
+        cell_id: cell.cell_id,
+        session_id: cell.session_id.as_str().to_owned(),
+        run_id: cell.run_id.map(|id| id.as_str().to_owned()),
+        ordinal: cell.ordinal,
+        source: cell.source,
+        source_hash: cell.source_hash.as_str().to_owned(),
+        status: cell.status,
+        inferred_type: cell.inferred_type,
+        display: cell.display,
+        partially_effectful: cell.partially_effectful,
+        diagnostic_ids: cell.diagnostic_ids,
+        created_unix_ms: cell.created_unix_ms,
     }
 }
 

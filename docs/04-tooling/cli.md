@@ -385,6 +385,9 @@ from the same store with optional `path`, `session_id`, and `limit`, mirroring
 [--max-privacy public|project|sensitive|secret] [--limit N] [--json]` reads
 persisted debug events in session order and applies payload privacy filtering
 before the limit, matching `arcweft.debug.session.timeline`.
+`arcw debug db repl-cells --session-id ID [--limit N] [--json]` reads typed
+Agent REPL cell rows persisted in `repl_cells`, including source hashes,
+status, display JSON, diagnostics, and effectfulness.
 MCP `arcweft.rag.query` uses the same `RagContextPack` output shape and can
 combine cached observation context, cached `.arcwx` trace context, and
 source/project context. `source` still observes that `.arcw` file before
