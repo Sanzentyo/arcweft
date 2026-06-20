@@ -2784,6 +2784,7 @@ fn agent_program_summary_rag_candidate(
                 "dynamic_control_flows": agent_source_dynamic_control_flow_count(source_index),
                 "graph_symbol_kinds": agent_graph_symbol_kind_counts(&source_index.graph_symbols),
                 "graph_edge_kinds": agent_graph_edge_kind_counts(&source_index.graph_edges),
+                "flow_control_symbols": agent_source_flow_control_symbols_json(source_index),
             })
         })
         .collect::<Vec<_>>();
@@ -2855,6 +2856,53 @@ fn agent_source_dynamic_control_flow_count(source_index: &AgentSourceRagIndex) -
         .iter()
         .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
         .count()
+}
+
+fn agent_source_flow_control_symbols_json(
+    source_index: &AgentSourceRagIndex,
+) -> Vec<serde_json::Value> {
+    source_index
+        .graph_symbols
+        .iter()
+        .filter_map(|symbol| {
+            let flow_control = symbol.metadata.get("flow_control")?;
+            if !agent_flow_control_json_has_control(flow_control) {
+                return None;
+            }
+            Some(serde_json::json!({
+                "symbol_id": symbol.symbol_id.as_str(),
+                "public_id": symbol.public_id.as_ref().map(AgentPublicId::as_str),
+                "qualified_name": symbol.qualified_name.as_deref(),
+                "kind": symbol.kind.as_str(),
+                "summary": symbol.summary.as_str(),
+                "flow_control": flow_control,
+            }))
+        })
+        .collect()
+}
+
+fn agent_flow_control_json_has_control(flow_control: &serde_json::Value) -> bool {
+    flow_control
+        .get("has_dynamic_control")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        || [
+            "static_goto_count",
+            "dynamic_goto_count",
+            "branch_count",
+            "loop_count",
+            "await_count",
+            "thread_count",
+            "select_branch_count",
+        ]
+        .into_iter()
+        .any(|field| {
+            flow_control
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                > 0
+        })
 }
 
 fn agent_project_summary_rag_candidate(
