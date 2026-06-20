@@ -568,6 +568,27 @@ mod tests {
         )
         .expect("sensitive resource read succeeds");
         assert!(!allowed_result.is_error);
+
+        let direct_default = agent_mcp_resource_read(
+            &serde_json::json!({"uri": "arcweft://session/cli/frame/0/color.png"}),
+            &mut state,
+        )
+        .expect_err("direct resources/read blocks sensitive resources by default");
+        assert!(direct_default.contains("resources/read resource"));
+        assert!(direct_default.contains("sensitive"));
+
+        let direct_allowed = agent_mcp_resource_read(
+            &serde_json::json!({
+                "uri": "arcweft://session/cli/frame/0/color.png",
+                "max_privacy": "sensitive"
+            }),
+            &mut state,
+        )
+        .expect("direct resources/read accepts explicit sensitive read");
+        assert_eq!(
+            direct_allowed["contents"][0]["uri"],
+            serde_json::json!("arcweft://session/cli/frame/0/color.png")
+        );
     }
 
     #[test]
@@ -4878,6 +4899,7 @@ fn agent_mcp_resource_read(
     params: &serde_json::Value,
     state: &mut AgentMcpState,
 ) -> Result<serde_json::Value, String> {
+    let max_privacy = agent_mcp_max_privacy_argument(params, "resources/read")?;
     let uri = params
         .get("uri")
         .and_then(serde_json::Value::as_str)
@@ -4885,12 +4907,22 @@ fn agent_mcp_resource_read(
     if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
         .map_err(|error| format!("failed to build Agent session context: {error}"))?
     {
+        if let Some(error) =
+            agent_mcp_resource_read_privacy_error(&resource, max_privacy, "resources/read")
+        {
+            return Err(agent_mcp_resource_read_privacy_message(&error));
+        }
         let read = read_resource_result(&resource)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"))?;
         return serde_json::to_value(read)
             .map_err(|error| format!("failed to serialize MCP read: {error}"));
     }
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
+        if let Some(error) =
+            agent_mcp_resource_read_privacy_error(&resource, max_privacy, "resources/read")
+        {
+            return Err(agent_mcp_resource_read_privacy_message(&error));
+        }
         let read = read_resource_result(&resource)
             .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
         return serde_json::to_value(read)
@@ -4911,6 +4943,11 @@ fn agent_mcp_resource_read(
         agent_mcp_uncached_resource_by_uri(&report, uri, state)
             .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
     };
+    if let Some(error) =
+        agent_mcp_resource_read_privacy_error(&resource, max_privacy, "resources/read")
+    {
+        return Err(agent_mcp_resource_read_privacy_message(&error));
+    }
     let read = read_resource_result(&resource)
         .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
     serde_json::to_value(read).map_err(|error| format!("failed to serialize MCP read: {error}"))
@@ -7512,14 +7549,18 @@ fn agent_mcp_call_resource_read(
     if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
         .map_err(|error| format!("failed to build Agent session context: {error}"))?
     {
-        if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+        if let Some(error) =
+            agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
+        {
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         return tool_result_for_resource(&resource)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"));
     }
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
-        if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+        if let Some(error) =
+            agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
+        {
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         return tool_result_for_resource(&resource)
@@ -7537,7 +7578,9 @@ fn agent_mcp_call_resource_read(
         agent_mcp_uncached_resource_by_uri(&report, uri, state)
             .map_err(|_| format!("failed to read Agent resource `{uri}`"))?
     };
-    if let Some(error) = agent_mcp_resource_read_privacy_error(&resource, max_privacy) {
+    if let Some(error) =
+        agent_mcp_resource_read_privacy_error(&resource, max_privacy, "arcweft.resource.read")
+    {
         return agent_mcp_json_tool_error(&error, "resource privacy");
     }
     tool_result_for_resource(&resource)
@@ -7547,13 +7590,15 @@ fn agent_mcp_call_resource_read(
 fn agent_mcp_resource_read_privacy_error(
     resource: &AgentResource,
     max_privacy: PrivacyClass,
+    surface: &str,
 ) -> Option<serde_json::Value> {
     let privacy = agent_mcp_resource_privacy(resource);
     (!privacy.is_allowed_by(max_privacy)).then(|| {
         serde_json::json!({
             "status": "blocked",
             "error": format!(
-                "arcweft.resource.read resource {} is {} and exceeds max_privacy {}",
+                "{} resource {} is {} and exceeds max_privacy {}",
+                surface,
                 resource.uri,
                 privacy.as_str(),
                 max_privacy.as_str(),
@@ -7563,6 +7608,13 @@ fn agent_mcp_resource_read_privacy_error(
             "max_privacy": max_privacy.as_str(),
         })
     })
+}
+
+fn agent_mcp_resource_read_privacy_message(value: &serde_json::Value) -> String {
+    value
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(|| value.to_string(), str::to_owned)
 }
 
 fn agent_mcp_resource_privacy(resource: &AgentResource) -> PrivacyClass {

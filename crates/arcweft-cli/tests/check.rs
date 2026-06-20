@@ -30532,7 +30532,8 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
             "id": 4,
             "method": "resources/read",
             "params": {
-                "uri": layer_uri
+                "uri": layer_uri,
+                "max_privacy": "sensitive"
             }
         }),
     ];
@@ -31006,7 +31007,8 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
             "id": 9,
             "method": "resources/read",
             "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
+                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba",
+                "max_privacy": "sensitive"
             }
         }),
         serde_json::json!({
@@ -31014,7 +31016,8 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
             "id": 10,
             "method": "resources/read",
             "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png"
+                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png",
+                "max_privacy": "sensitive"
             }
         }),
         serde_json::json!({
@@ -31033,7 +31036,8 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
             "id": 12,
             "method": "resources/read",
             "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
+                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba",
+                "max_privacy": "sensitive"
             }
         }),
     ]
