@@ -14,6 +14,7 @@ use arcweft_agent_protocol::ids::{AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
+use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
 use arcweft_debug_model::event::{DebugEvent, DebugEventKind};
 use arcweft_debug_model::graph::{DebugGraphEdge, DebugGraphSymbol};
@@ -22,6 +23,7 @@ use arcweft_debug_model::repl::DebugReplCell;
 use arcweft_debug_model::script::{DebugScriptRun, DebugScriptRunOutcome};
 use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_model::sink::DebugEventSink;
+use arcweft_debug_model::test_result::DebugTestResult;
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
@@ -3366,6 +3368,101 @@ fn debug_db_search_history_filters_chunks_by_privacy() {
 }
 
 #[test]
+fn debug_db_search_diagnostics_and_tests_filter_by_privacy() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-debug-search-test/diagnostic-test-search-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(
+        db_path
+            .parent()
+            .expect("debug diagnostic search target dir"),
+    )
+    .expect("create debug diagnostic search target dir");
+    seed_debug_search_db(&db_path);
+
+    assert_debug_db_search_empty(&db_path, "--diagnostic-query", "glyph_wobble", "public");
+    let diagnostic_report =
+        debug_db_search_json(&db_path, "--diagnostic-query", "glyph_wobble", "project");
+    assert_eq!(diagnostic_report["diagnostic_query"], "glyph_wobble");
+    assert_debug_db_search_single_hit(
+        &diagnostic_report,
+        "diagnostic:diag:missing-shader",
+        "diagnostics",
+        "diagnostic",
+    );
+
+    assert_debug_db_search_empty(
+        &db_path,
+        "--test-query",
+        "rich-text-visual-regression",
+        "public",
+    );
+    let test_report = debug_db_search_json(
+        &db_path,
+        "--test-query",
+        "rich-text-visual-regression",
+        "project",
+    );
+    assert_eq!(test_report["test_query"], "rich-text-visual-regression");
+    assert_debug_db_search_single_hit(
+        &test_report,
+        "test_result:test:visual-regression",
+        "diagnostics",
+        "test_result",
+    );
+}
+
+fn debug_db_search_json(
+    db_path: &Path,
+    selector: &str,
+    query: &str,
+    max_privacy: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("debug")
+        .arg("db")
+        .arg("search")
+        .arg("--path")
+        .arg(db_path)
+        .arg(selector)
+        .arg(query)
+        .arg("--limit")
+        .arg("1")
+        .arg("--max-privacy")
+        .arg(max_privacy)
+        .arg("--json")
+        .output()
+        .unwrap_or_else(|error| panic!("arcw debug db search runs: {error}"));
+    assert!(
+        output.status.success(),
+        "debug db search should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("debug db search output is JSON")
+}
+
+fn assert_debug_db_search_empty(db_path: &Path, selector: &str, query: &str, max_privacy: &str) {
+    let report = debug_db_search_json(db_path, selector, query, max_privacy);
+    assert_eq!(report["hits"].as_array().map(Vec::len), Some(0));
+}
+
+fn assert_debug_db_search_single_hit(
+    report: &serde_json::Value,
+    chunk_id: &str,
+    channel: &str,
+    source_kind: &str,
+) {
+    let hits = report["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["chunk_id"], chunk_id);
+    assert_eq!(hits[0]["channel"], channel);
+    assert_eq!(hits[0]["source_kind"], source_kind);
+}
+
+#[test]
 fn debug_db_search_graph_filters_chunks_by_privacy() {
     let db_path = workspace_path(&format!(
         "target/codex-agent-debug-search-test/graph-search-{}.sqlite3",
@@ -3477,74 +3574,85 @@ fn agent_rag_query_uses_debug_db_graph_and_history_channels() {
         .expect("create debug RAG fusion target dir");
     seed_debug_search_db(&db_path);
 
-    let graph_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("rag")
-        .arg("query")
-        .arg("--debug-db")
-        .arg(&db_path)
-        .arg("--query")
-        .arg("uses_textbox")
-        .arg("--graph-depth")
-        .arg("2")
-        .arg("--limit")
-        .arg("3")
-        .arg("--json")
-        .output()
-        .expect("arcw agent rag query graph channel runs");
-    assert!(
-        graph_output.status.success(),
-        "agent rag query graph channel should succeed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&graph_output.stdout),
-        String::from_utf8_lossy(&graph_output.stderr)
+    assert_agent_rag_debug_store_item(
+        &db_path,
+        "uses_textbox",
+        Some("2"),
+        "graph_summary",
+        "graph:2",
+        "graph",
     );
-    let graph_pack: serde_json::Value =
-        serde_json::from_slice(&graph_output.stdout).expect("graph RAG output is JSON");
-    assert!(
-        graph_pack["items"].as_array().is_some_and(|items| {
-            items.iter().any(|item| {
-                item["kind"] == "graph_summary"
-                    && item["chunk_id"] == "graph:2"
-                    && item["channels"]
-                        .as_array()
-                        .is_some_and(|channels| channels.contains(&serde_json::json!("graph")))
-            })
-        }),
-        "agent rag query should return graph debug-store context: {graph_pack}"
+    assert_agent_rag_debug_store_item(
+        &db_path,
+        "change-opening-fix",
+        None,
+        "history",
+        "history:history:opening-fix",
+        "history",
     );
+    assert_agent_rag_debug_store_item(
+        &db_path,
+        "glyph_wobble",
+        None,
+        "diagnostic",
+        "diagnostic:diag:missing-shader",
+        "diagnostics",
+    );
+    assert_agent_rag_debug_store_item(
+        &db_path,
+        "rich-text-visual-regression",
+        None,
+        "test_result",
+        "test_result:test:visual-regression",
+        "diagnostics",
+    );
+}
 
-    let history_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+fn assert_agent_rag_debug_store_item(
+    db_path: &Path,
+    query: &str,
+    graph_depth: Option<&str>,
+    kind: &str,
+    chunk_id: &str,
+    channel: &str,
+) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    command
         .arg("agent")
         .arg("rag")
         .arg("query")
         .arg("--debug-db")
-        .arg(&db_path)
+        .arg(db_path)
         .arg("--query")
-        .arg("change-opening-fix")
+        .arg(query)
         .arg("--limit")
         .arg("3")
-        .arg("--json")
+        .arg("--json");
+    if let Some(graph_depth) = graph_depth {
+        command.arg("--graph-depth").arg(graph_depth);
+    }
+    let output = command
         .output()
-        .expect("arcw agent rag query history channel runs");
+        .unwrap_or_else(|error| panic!("arcw agent rag query `{query}` runs: {error}"));
     assert!(
-        history_output.status.success(),
-        "agent rag query history channel should succeed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&history_output.stdout),
-        String::from_utf8_lossy(&history_output.stderr)
+        output.status.success(),
+        "agent rag query should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
-    let history_pack: serde_json::Value =
-        serde_json::from_slice(&history_output.stdout).expect("history RAG output is JSON");
+    let pack: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("RAG output is JSON");
     assert!(
-        history_pack["items"].as_array().is_some_and(|items| {
+        pack["items"].as_array().is_some_and(|items| {
             items.iter().any(|item| {
-                item["kind"] == "history"
-                    && item["chunk_id"] == "history:history:opening-fix"
+                item["kind"] == kind
+                    && item["chunk_id"] == chunk_id
                     && item["channels"]
                         .as_array()
-                        .is_some_and(|channels| channels.contains(&serde_json::json!("history")))
+                        .is_some_and(|channels| channels.contains(&serde_json::json!(channel)))
             })
         }),
-        "agent rag query should return history debug-store context: {history_pack}"
+        "agent rag query should return {kind} debug-store context: {pack}"
     );
 }
 
@@ -3624,7 +3732,45 @@ fn seed_debug_search_db(path: &Path) {
             created_unix_ms: 0,
         })
         .expect("upsert debug history");
+    seed_debug_search_diagnostics(&store, program_hash.clone());
     seed_debug_search_graph(&store, program_hash);
+}
+
+fn seed_debug_search_diagnostics(store: &DebugStore, program_hash: StableHash) {
+    store
+        .upsert_diagnostic(&DebugDiagnostic {
+            diagnostic_id: "diag:missing-shader".to_owned(),
+            program_hash: Some(program_hash.clone()),
+            session_id: None,
+            run_id: None,
+            sequence: Some(11),
+            code: Some("RT_SHADER_MISSING".to_owned()),
+            severity: "error".to_owned(),
+            phase: "render".to_owned(),
+            message: "missing shader binding for glyph wobble".to_owned(),
+            source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+            start_byte: Some(120),
+            end_byte: Some(180),
+            related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],
+            payload: serde_json::json!({ "shader": "glyph_wobble" }),
+            created_unix_ms: 0,
+        })
+        .expect("upsert debug diagnostic");
+    store
+        .upsert_test_result(&DebugTestResult {
+            test_result_id: "test:visual-regression".to_owned(),
+            program_hash: Some(program_hash),
+            run_id: None,
+            test_id: "rich-text-visual-regression".to_owned(),
+            kind: "visual".to_owned(),
+            outcome: "failed".to_owned(),
+            duration_millis: Some(57),
+            diagnostic_ids: vec!["diag:missing-shader".to_owned()],
+            artifact_refs: vec!["blob:rich-text-visual-diff".to_owned()],
+            summary: "visual regression detected missing shader output".to_owned(),
+            created_unix_ms: 0,
+        })
+        .expect("upsert debug test result");
 }
 
 fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {

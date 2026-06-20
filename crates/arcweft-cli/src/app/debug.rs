@@ -136,6 +136,10 @@ pub(super) struct DebugDbSearchOptions {
     graph_query: Option<String>,
     #[arg(long = "history-query")]
     history_query: Option<String>,
+    #[arg(long = "diagnostic-query")]
+    diagnostic_query: Option<String>,
+    #[arg(long = "test-query")]
+    test_query: Option<String>,
     #[arg(long = "graph-depth", default_value_t = 1)]
     graph_depth: u32,
     #[arg(long = "model-id")]
@@ -359,6 +363,8 @@ struct DebugDbSearchReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     graph_depth: Option<u32>,
     history_query: Option<String>,
+    diagnostic_query: Option<String>,
+    test_query: Option<String>,
     model: Option<DebugDbSearchModelReport>,
     limit: usize,
     max_privacy: PrivacyClass,
@@ -860,11 +866,7 @@ fn debug_db_search_command(options: &DebugDbSearchOptions) -> Result<(), ExitCod
 }
 
 fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearchReport, ExitCode> {
-    let query = options
-        .query
-        .as_deref()
-        .map(str::trim)
-        .filter(|query| !query.is_empty());
+    let selectors = debug_db_search_text_selectors(options);
     let query_vector = options
         .query_vector
         .as_deref()
@@ -875,21 +877,7 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
             ExitCode::from(2)
         })?;
     let has_query_vector = query_vector.is_some();
-    let graph_query = options
-        .graph_query
-        .as_deref()
-        .map(str::trim)
-        .filter(|query| !query.is_empty());
-    let history_query = options
-        .history_query
-        .as_deref()
-        .map(str::trim)
-        .filter(|query| !query.is_empty());
-    let selector_count = usize::from(query.is_some())
-        + usize::from(has_query_vector)
-        + usize::from(graph_query.is_some())
-        + usize::from(history_query.is_some());
-    validate_debug_db_search_selection(selector_count, options.limit)?;
+    validate_debug_db_search_selection(selectors.count(has_query_vector), options.limit)?;
     let (store, path, _, _) = open_debug_store(&options.db)?;
     let model = query_vector
         .as_ref()
@@ -903,11 +891,11 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
     let hits = debug_db_search_hits(
         &store,
         options,
-        query,
-        query_vector.as_deref(),
-        graph_query,
-        history_query,
-        model.as_ref(),
+        DebugDbSearchHitRequest {
+            selectors: &selectors,
+            query_vector: query_vector.as_deref(),
+            model: model.as_ref(),
+        },
     )
     .map_err(|error| {
         eprintln!(
@@ -932,11 +920,13 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         .collect::<Vec<_>>();
     Ok(DebugDbSearchReport {
         path,
-        query: query.map(str::to_owned),
+        query: selectors.query.map(str::to_owned),
         query_vector_dimensions: query_vector.as_ref().map(Vec::len),
-        graph_query: graph_query.map(str::to_owned),
-        graph_depth: graph_query.map(|_| options.graph_depth),
-        history_query: history_query.map(str::to_owned),
+        graph_query: selectors.graph_query.map(str::to_owned),
+        graph_depth: selectors.graph_query.map(|_| options.graph_depth),
+        history_query: selectors.history_query.map(str::to_owned),
+        diagnostic_query: selectors.diagnostic_query.map(str::to_owned),
+        test_query: selectors.test_query.map(str::to_owned),
         model: model.map(|model| DebugDbSearchModelReport {
             model_id: model.model_id,
             model_revision: model.model_revision,
@@ -946,6 +936,42 @@ fn debug_db_search_report(options: &DebugDbSearchOptions) -> Result<DebugDbSearc
         max_privacy: options.max_privacy,
         hits,
     })
+}
+
+#[derive(Clone, Copy)]
+struct DebugDbSearchTextSelectors<'a> {
+    query: Option<&'a str>,
+    graph_query: Option<&'a str>,
+    history_query: Option<&'a str>,
+    diagnostic_query: Option<&'a str>,
+    test_query: Option<&'a str>,
+}
+
+impl DebugDbSearchTextSelectors<'_> {
+    fn count(self, has_query_vector: bool) -> usize {
+        usize::from(self.query.is_some())
+            + usize::from(has_query_vector)
+            + usize::from(self.graph_query.is_some())
+            + usize::from(self.history_query.is_some())
+            + usize::from(self.diagnostic_query.is_some())
+            + usize::from(self.test_query.is_some())
+    }
+}
+
+fn debug_db_search_text_selectors(
+    options: &DebugDbSearchOptions,
+) -> DebugDbSearchTextSelectors<'_> {
+    DebugDbSearchTextSelectors {
+        query: trimmed_non_empty(options.query.as_deref()),
+        graph_query: trimmed_non_empty(options.graph_query.as_deref()),
+        history_query: trimmed_non_empty(options.history_query.as_deref()),
+        diagnostic_query: trimmed_non_empty(options.diagnostic_query.as_deref()),
+        test_query: trimmed_non_empty(options.test_query.as_deref()),
+    }
+}
+
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|text| !text.is_empty())
 }
 
 fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
@@ -1012,13 +1038,13 @@ fn debug_db_repl_cell_report(cell: DebugReplCell) -> DebugDbReplCellReport {
 fn validate_debug_db_search_selection(selector_count: usize, limit: usize) -> Result<(), ExitCode> {
     if selector_count == 0 {
         eprintln!(
-            "error: debug db search requires one of --query, --query-vector, --graph-query, or --history-query"
+            "error: debug db search requires one of --query, --query-vector, --graph-query, --history-query, --diagnostic-query, or --test-query"
         );
         return Err(ExitCode::from(2));
     }
     if selector_count > 1 {
         eprintln!(
-            "error: debug db search accepts only one of --query, --query-vector, --graph-query, or --history-query"
+            "error: debug db search accepts only one of --query, --query-vector, --graph-query, --history-query, --diagnostic-query, or --test-query"
         );
         return Err(ExitCode::from(2));
     }
@@ -1054,16 +1080,12 @@ fn print_debug_db_search_report(report: &DebugDbSearchReport) {
 fn debug_db_search_hits(
     store: &DebugStore,
     options: &DebugDbSearchOptions,
-    query: Option<&str>,
-    query_vector: Option<&[f32]>,
-    graph_query: Option<&str>,
-    history_query: Option<&str>,
-    model: Option<&EmbeddingModelDescriptor>,
+    request: DebugDbSearchHitRequest<'_>,
 ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
-    if let Some(query) = query {
+    if let Some(query) = request.selectors.query {
         return store.lexical_search_with_max_privacy(query, options.limit, options.max_privacy);
     }
-    if let Some(query) = graph_query {
+    if let Some(query) = request.selectors.graph_query {
         return store.graph_search_with_depth_and_max_privacy(
             query,
             options.graph_depth,
@@ -1071,12 +1093,33 @@ fn debug_db_search_hits(
             options.max_privacy,
         );
     }
-    if let Some(query) = history_query {
+    if let Some(query) = request.selectors.history_query {
         return store.history_search_with_max_privacy(query, options.limit, options.max_privacy);
     }
-    let vector = query_vector.expect("query vector is validated before search");
-    let model = model.expect("embedding model is validated before vector search");
+    if let Some(query) = request.selectors.diagnostic_query {
+        return store.diagnostic_search_with_max_privacy(query, options.limit, options.max_privacy);
+    }
+    if let Some(query) = request.selectors.test_query {
+        return store.test_result_search_with_max_privacy(
+            query,
+            options.limit,
+            options.max_privacy,
+        );
+    }
+    let vector = request
+        .query_vector
+        .expect("query vector is validated before search");
+    let model = request
+        .model
+        .expect("embedding model is validated before vector search");
     store.vector_search_with_max_privacy(model, vector, options.limit, options.max_privacy)
+}
+
+#[derive(Clone, Copy)]
+struct DebugDbSearchHitRequest<'a> {
+    selectors: &'a DebugDbSearchTextSelectors<'a>,
+    query_vector: Option<&'a [f32]>,
+    model: Option<&'a EmbeddingModelDescriptor>,
 }
 
 fn debug_search_model(

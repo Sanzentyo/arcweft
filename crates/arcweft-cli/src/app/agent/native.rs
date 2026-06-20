@@ -125,8 +125,10 @@ struct AgentObservationTrace {
 mod tests {
     use super::*;
     use arcweft_debug_model::{
+        diagnostic::DebugDiagnostic,
         graph::{DebugGraphEdge, DebugGraphSymbol},
         history::DebugHistoryEntry,
+        test_result::DebugTestResult,
     };
 
     #[test]
@@ -951,7 +953,7 @@ mod tests {
         store
             .upsert_chunk(&DebugChunk {
                 id: ChunkId::new("chunk:mcp-preindexed-choice"),
-                program_hash: Some(program_hash),
+                program_hash: Some(program_hash.clone()),
                 source_kind: ChunkSourceKind::Symbol,
                 source_key: "choice.opening.listen".to_owned(),
                 title: "choice.opening.listen".to_owned(),
@@ -1010,58 +1012,74 @@ mod tests {
         seed_mcp_rag_graph_history_debug_store(&db_path);
 
         let mut state = AgentMcpState::default();
-        let graph_result = agent_mcp_call_rag_query(
-            &serde_json::json!({
-                "query": "offers_choice",
-                "path": db_path.display().to_string(),
-                "limit": 4,
-                "max_context_bytes": 4096,
-                "max_privacy": "project"
-            }),
+        assert_mcp_rag_debug_store_item(
+            &db_path,
             &mut state,
-            &[],
-        )
-        .expect("MCP RAG graph query succeeds");
-        let graph_pack = mcp_text_json(&graph_result);
-        assert!(
-            graph_pack["items"].as_array().is_some_and(|items| {
-                items.iter().any(|item| {
-                    item["kind"] == "graph_summary"
-                        && item["chunk_id"] == "graph:1"
-                        && item["channels"]
-                            .as_array()
-                            .is_some_and(|channels| channels.contains(&serde_json::json!("graph")))
-                })
-            }),
-            "MCP RAG query should expose graph debug-store context: {graph_pack}"
+            "offers_choice",
+            "graph_summary",
+            "graph:1",
+            "graph",
         );
-
-        let history_result = agent_mcp_call_rag_query(
-            &serde_json::json!({
-                "query": "change-opening-route-fix",
-                "path": db_path.display().to_string(),
-                "limit": 4,
-                "max_context_bytes": 4096,
-                "max_privacy": "project"
-            }),
+        assert_mcp_rag_debug_store_item(
+            &db_path,
             &mut state,
-            &[],
-        )
-        .expect("MCP RAG history query succeeds");
-        let history_pack = mcp_text_json(&history_result);
-        assert!(
-            history_pack["items"].as_array().is_some_and(|items| {
-                items.iter().any(|item| {
-                    item["kind"] == "history"
-                        && item["chunk_id"] == "history:history:opening-route-fix"
-                        && item["channels"].as_array().is_some_and(|channels| {
-                            channels.contains(&serde_json::json!("history"))
-                        })
-                })
-            }),
-            "MCP RAG query should expose history debug-store context: {history_pack}"
+            "change-opening-route-fix",
+            "history",
+            "history:history:opening-route-fix",
+            "history",
+        );
+        assert_mcp_rag_debug_store_item(
+            &db_path,
+            &mut state,
+            "glyph_wobble",
+            "diagnostic",
+            "diagnostic:diag:mcp-missing-shader",
+            "diagnostics",
+        );
+        assert_mcp_rag_debug_store_item(
+            &db_path,
+            &mut state,
+            "mcp-rich-text-visual",
+            "test_result",
+            "test_result:test:mcp-visual-regression",
+            "diagnostics",
         );
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    fn assert_mcp_rag_debug_store_item(
+        db_path: &std::path::Path,
+        state: &mut AgentMcpState,
+        query: &str,
+        kind: &str,
+        chunk_id: &str,
+        channel: &str,
+    ) {
+        let result = agent_mcp_call_rag_query(
+            &serde_json::json!({
+                "query": query,
+                "path": db_path.display().to_string(),
+                "limit": 4,
+                "max_context_bytes": 4096,
+                "max_privacy": "project"
+            }),
+            state,
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("MCP RAG query `{query}` succeeds: {error}"));
+        let pack = mcp_text_json(&result);
+        assert!(
+            pack["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["kind"] == kind
+                        && item["chunk_id"] == chunk_id
+                        && item["channels"]
+                            .as_array()
+                            .is_some_and(|channels| channels.contains(&serde_json::json!(channel)))
+                })
+            }),
+            "MCP RAG query should expose {kind} debug-store context: {pack}"
+        );
     }
 
     fn seed_mcp_rag_graph_history_debug_store(path: &std::path::Path) {
@@ -1074,7 +1092,7 @@ mod tests {
         store
             .upsert_history_entry(&DebugHistoryEntry {
                 history_id: "history:opening-route-fix".to_owned(),
-                program_hash: Some(program_hash),
+                program_hash: Some(program_hash.clone()),
                 symbol_id: Some("symbol:choice.listen".to_owned()),
                 change_id: "change-opening-route-fix".to_owned(),
                 operation_id: Some("op.route".to_owned()),
@@ -1086,6 +1104,40 @@ mod tests {
                 created_unix_ms: 0,
             })
             .expect("history entry");
+        store
+            .upsert_diagnostic(&DebugDiagnostic {
+                diagnostic_id: "diag:mcp-missing-shader".to_owned(),
+                program_hash: Some(program_hash.clone()),
+                session_id: None,
+                run_id: None,
+                sequence: Some(5),
+                code: Some("MCP_SHADER_MISSING".to_owned()),
+                severity: "error".to_owned(),
+                phase: "render".to_owned(),
+                message: "missing MCP glyph wobble shader".to_owned(),
+                source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+                start_byte: Some(20),
+                end_byte: Some(40),
+                related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],
+                payload: serde_json::json!({ "shader": "glyph_wobble" }),
+                created_unix_ms: 0,
+            })
+            .expect("diagnostic");
+        store
+            .upsert_test_result(&DebugTestResult {
+                test_result_id: "test:mcp-visual-regression".to_owned(),
+                program_hash: Some(program_hash),
+                run_id: None,
+                test_id: "mcp-rich-text-visual".to_owned(),
+                kind: "visual".to_owned(),
+                outcome: "failed".to_owned(),
+                duration_millis: Some(88),
+                diagnostic_ids: vec!["diag:mcp-missing-shader".to_owned()],
+                artifact_refs: vec!["blob:mcp-visual-diff".to_owned()],
+                summary: "MCP visual regression detected missing shader output".to_owned(),
+                created_unix_ms: 0,
+            })
+            .expect("test result");
     }
 
     fn seed_mcp_rag_graph(store: &DebugStore, program_hash: &StableHash) {
@@ -6066,19 +6118,23 @@ fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallT
     let query_vector = agent_mcp_query_vector_argument(arguments, "query_vector")?;
     let graph_query = agent_mcp_non_empty_string_argument(arguments, "graph_query");
     let history_query = agent_mcp_non_empty_string_argument(arguments, "history_query");
+    let diagnostic_query = agent_mcp_non_empty_string_argument(arguments, "diagnostic_query");
+    let test_query = agent_mcp_non_empty_string_argument(arguments, "test_query");
     let selector_count = usize::from(query.is_some())
         + usize::from(query_vector.is_some())
         + usize::from(graph_query.is_some())
-        + usize::from(history_query.is_some());
+        + usize::from(history_query.is_some())
+        + usize::from(diagnostic_query.is_some())
+        + usize::from(test_query.is_some());
     if selector_count == 0 {
         return Err(
-            "arcweft.debug.search requires one of query, query_vector, graph_query, or history_query"
+            "arcweft.debug.search requires one of query, query_vector, graph_query, history_query, diagnostic_query, or test_query"
                 .to_owned(),
         );
     }
     if selector_count > 1 {
         return Err(
-            "arcweft.debug.search accepts only one of query, query_vector, graph_query, or history_query"
+            "arcweft.debug.search accepts only one of query, query_vector, graph_query, history_query, diagnostic_query, or test_query"
                 .to_owned(),
         );
     }
@@ -6098,6 +6154,8 @@ fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallT
         query_vector: query_vector.as_deref(),
         graph_query,
         history_query,
+        diagnostic_query,
+        test_query,
         graph_depth,
         limit,
         max_privacy,
@@ -6114,6 +6172,8 @@ fn agent_mcp_call_debug_search(arguments: &serde_json::Value) -> Result<McpCallT
         "graph_query": graph_query,
         "graph_depth": graph_query.map(|_| graph_depth),
         "history_query": history_query,
+        "diagnostic_query": diagnostic_query,
+        "test_query": test_query,
         "limit": limit,
         "max_privacy": max_privacy.as_str(),
         "hits": hits,
@@ -6126,6 +6186,8 @@ struct AgentMcpDebugSearchRequest<'a> {
     query_vector: Option<&'a [f32]>,
     graph_query: Option<&'a str>,
     history_query: Option<&'a str>,
+    diagnostic_query: Option<&'a str>,
+    test_query: Option<&'a str>,
     graph_depth: u32,
     limit: usize,
     max_privacy: PrivacyClass,
@@ -6154,6 +6216,16 @@ fn agent_mcp_debug_search_hits(
     if let Some(query) = request.history_query {
         return store
             .history_search_with_max_privacy(query, request.limit, request.max_privacy)
+            .map_err(|error| error.to_string());
+    }
+    if let Some(query) = request.diagnostic_query {
+        return store
+            .diagnostic_search_with_max_privacy(query, request.limit, request.max_privacy)
+            .map_err(|error| error.to_string());
+    }
+    if let Some(query) = request.test_query {
+        return store
+            .test_result_search_with_max_privacy(query, request.limit, request.max_privacy)
             .map_err(|error| error.to_string());
     }
     let vector = request
@@ -6760,6 +6832,22 @@ fn agent_mcp_rag_debug_store_candidates(
                 .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
                 .into_iter()
                 .map(|result| agent_mcp_rag_candidate_from_search_result(result, "history"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        results.extend(
+            store
+                .diagnostic_search_with_max_privacy(&term, search_limit, config.max_privacy)
+                .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_mcp_rag_candidate_from_search_result(result, "diagnostic"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        results.extend(
+            store
+                .test_result_search_with_max_privacy(&term, search_limit, config.max_privacy)
+                .map_err(|error| agent_mcp_rag_debug_store_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_mcp_rag_candidate_from_search_result(result, "test"))
                 .collect::<Result<Vec<_>, _>>()?,
         );
         for result in results {

@@ -2,6 +2,7 @@ use crate::encoding::{VectorBlobError, decode_f32_le, encode_f32_le};
 use arcweft_agent_protocol::ids::{AgentRunId, IdentifierError, PublicId, SessionId, StableHash};
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass, SourceAnchor},
+    diagnostic::DebugDiagnostic,
     embedding::{EmbeddingModelDescriptor, StoredEmbedding},
     event::DebugEvent,
     graph::{DebugGraphEdge, DebugGraphSymbol},
@@ -11,6 +12,7 @@ use arcweft_debug_model::{
     script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
     session::{DebugSession, DebugSessionStatus},
     sink::DebugEventSink,
+    test_result::DebugTestResult,
 };
 use arcweft_rag::vector::{VectorCandidate, VectorSearchError, rank_vectors};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -1252,6 +1254,304 @@ impl DebugStore {
             .collect()
     }
 
+    pub fn upsert_diagnostic(&self, diagnostic: &DebugDiagnostic) -> Result<(), DebugStoreError> {
+        let program_id = diagnostic
+            .program_hash
+            .as_ref()
+            .map(|hash| self.require_program_id(hash))
+            .transpose()?;
+        let sequence = diagnostic
+            .sequence
+            .map(|value| sqlite_i64(value, "diagnostics.sequence"))
+            .transpose()?;
+        let start_byte = diagnostic
+            .start_byte
+            .map(|value| sqlite_i64(value, "diagnostics.start_byte"))
+            .transpose()?;
+        let end_byte = diagnostic
+            .end_byte
+            .map(|value| sqlite_i64(value, "diagnostics.end_byte"))
+            .transpose()?;
+        self.connection.execute(
+            "INSERT INTO diagnostics(
+               diagnostic_id, program_id, session_id, run_id, sequence, code,
+               severity, phase, message, source_path, start_byte, end_byte,
+               related_ids_json, payload_json, created_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(diagnostic_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               session_id = excluded.session_id,
+               run_id = excluded.run_id,
+               sequence = excluded.sequence,
+               code = excluded.code,
+               severity = excluded.severity,
+               phase = excluded.phase,
+               message = excluded.message,
+               source_path = excluded.source_path,
+               start_byte = excluded.start_byte,
+               end_byte = excluded.end_byte,
+               related_ids_json = excluded.related_ids_json,
+               payload_json = excluded.payload_json,
+               created_unix_ms = excluded.created_unix_ms",
+            params![
+                &diagnostic.diagnostic_id,
+                program_id,
+                diagnostic.session_id.as_ref().map(SessionId::as_str),
+                diagnostic.run_id.as_ref().map(AgentRunId::as_str),
+                sequence,
+                diagnostic.code.as_deref(),
+                &diagnostic.severity,
+                &diagnostic.phase,
+                &diagnostic.message,
+                diagnostic.source_path.as_deref(),
+                start_byte,
+                end_byte,
+                serde_json::to_string(&diagnostic.related_ids)?,
+                serde_json::to_string(&diagnostic.payload)?,
+                diagnostic.created_unix_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn diagnostic_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        if query.trim().is_empty()
+            || limit == 0
+            || !PrivacyClass::Project.is_allowed_by(max_privacy)
+        {
+            return Ok(Vec::new());
+        }
+        let like_query = query.trim().to_lowercase();
+        let mut statement = self.connection.prepare(
+            "SELECT diagnostic_id, code, severity, phase, message, source_path,
+                    start_byte, end_byte, related_ids_json, payload_json, sequence
+             FROM diagnostics
+             WHERE instr(lower(diagnostic_id), ?1) > 0
+                OR instr(lower(coalesce(code, '')), ?1) > 0
+                OR instr(lower(severity), ?1) > 0
+                OR instr(lower(phase), ?1) > 0
+                OR instr(lower(message), ?1) > 0
+                OR instr(lower(coalesce(source_path, '')), ?1) > 0
+                OR instr(lower(related_ids_json), ?1) > 0
+                OR instr(lower(payload_json), ?1) > 0
+             ORDER BY CASE severity
+                        WHEN 'error' THEN 0
+                        WHEN 'warning' THEN 1
+                        ELSE 2
+                      END,
+                      coalesce(sequence, 9223372036854775807),
+                      diagnostic_id
+             LIMIT ?2",
+        )?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DebugStoreError::IntegerOverflow("diagnostics.limit"))?;
+        let rows = statement.query_map(params![like_query, limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<i64>>(6)?,
+                row.get::<_, Option<i64>>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, Option<i64>>(10)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .enumerate()
+            .map(
+                |(
+                    index,
+                    (
+                        diagnostic_id,
+                        code,
+                        severity,
+                        phase,
+                        message,
+                        source_path,
+                        start_byte,
+                        end_byte,
+                        related_ids_json,
+                        payload_json,
+                        sequence,
+                    ),
+                )| {
+                    let title = code.as_ref().map_or_else(
+                        || format!("{severity} diagnostic {diagnostic_id}"),
+                        |code| format!("{severity} diagnostic {code}"),
+                    );
+                    let body = diagnostic_search_body(DiagnosticSearchBodyFields {
+                        phase: &phase,
+                        message: &message,
+                        source_path: source_path.as_deref(),
+                        start_byte,
+                        end_byte,
+                        sequence,
+                        related_ids_json: &related_ids_json,
+                        payload_json: &payload_json,
+                    });
+                    let score = diagnostic_score(query, code.as_deref(), &severity, &body);
+                    Ok(ChunkSearchResult {
+                        hit: SearchHit {
+                            chunk_id: ChunkId::new(format!("diagnostic:{diagnostic_id}")),
+                            channel: SearchChannel::Diagnostics,
+                            rank: index + 1,
+                            score: Some(score),
+                        },
+                        title,
+                        body,
+                        source_kind: "diagnostic".to_owned(),
+                        source_key: diagnostic_id,
+                        privacy: PrivacyClass::Project,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    pub fn upsert_test_result(&self, result: &DebugTestResult) -> Result<(), DebugStoreError> {
+        let program_id = result
+            .program_hash
+            .as_ref()
+            .map(|hash| self.require_program_id(hash))
+            .transpose()?;
+        let duration_millis = result
+            .duration_millis
+            .map(|value| sqlite_i64(value, "test_results.duration_millis"))
+            .transpose()?;
+        self.connection.execute(
+            "INSERT INTO test_results(
+               test_result_id, program_id, run_id, test_id, kind, outcome,
+               duration_millis, diagnostic_ids_json, artifact_refs_json, summary,
+               created_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(test_result_id) DO UPDATE SET
+               program_id = excluded.program_id,
+               run_id = excluded.run_id,
+               test_id = excluded.test_id,
+               kind = excluded.kind,
+               outcome = excluded.outcome,
+               duration_millis = excluded.duration_millis,
+               diagnostic_ids_json = excluded.diagnostic_ids_json,
+               artifact_refs_json = excluded.artifact_refs_json,
+               summary = excluded.summary,
+               created_unix_ms = excluded.created_unix_ms",
+            params![
+                &result.test_result_id,
+                program_id,
+                result.run_id.as_ref().map(AgentRunId::as_str),
+                &result.test_id,
+                &result.kind,
+                &result.outcome,
+                duration_millis,
+                serde_json::to_string(&result.diagnostic_ids)?,
+                serde_json::to_string(&result.artifact_refs)?,
+                &result.summary,
+                result.created_unix_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn test_result_search_with_max_privacy(
+        &self,
+        query: &str,
+        limit: usize,
+        max_privacy: PrivacyClass,
+    ) -> Result<Vec<ChunkSearchResult>, DebugStoreError> {
+        if query.trim().is_empty()
+            || limit == 0
+            || !PrivacyClass::Project.is_allowed_by(max_privacy)
+        {
+            return Ok(Vec::new());
+        }
+        let like_query = query.trim().to_lowercase();
+        let mut statement = self.connection.prepare(
+            "SELECT test_result_id, test_id, kind, outcome, duration_millis,
+                    diagnostic_ids_json, artifact_refs_json, summary
+             FROM test_results
+             WHERE instr(lower(test_result_id), ?1) > 0
+                OR instr(lower(test_id), ?1) > 0
+                OR instr(lower(kind), ?1) > 0
+                OR instr(lower(outcome), ?1) > 0
+                OR instr(lower(summary), ?1) > 0
+                OR instr(lower(diagnostic_ids_json), ?1) > 0
+                OR instr(lower(artifact_refs_json), ?1) > 0
+             ORDER BY CASE outcome
+                        WHEN 'failed' THEN 0
+                        WHEN 'error' THEN 0
+                        WHEN 'flaky' THEN 1
+                        ELSE 2
+                      END,
+                      created_unix_ms DESC,
+                      test_result_id
+             LIMIT ?2",
+        )?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DebugStoreError::IntegerOverflow("test_results.limit"))?;
+        let rows = statement.query_map(params![like_query, limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .enumerate()
+            .map(
+                |(
+                    index,
+                    (
+                        test_result_id,
+                        test_id,
+                        kind,
+                        outcome,
+                        duration_millis,
+                        diagnostic_ids_json,
+                        artifact_refs_json,
+                        summary,
+                    ),
+                )| {
+                    let title = format!("{outcome} {kind} {test_id}");
+                    let body = test_result_search_body(
+                        duration_millis,
+                        &diagnostic_ids_json,
+                        &artifact_refs_json,
+                        &summary,
+                    );
+                    Ok(ChunkSearchResult {
+                        hit: SearchHit {
+                            chunk_id: ChunkId::new(format!("test_result:{test_result_id}")),
+                            channel: SearchChannel::Diagnostics,
+                            rank: index + 1,
+                            score: Some(test_result_score(query, &test_id, &outcome, &body)),
+                        },
+                        title,
+                        body,
+                        source_kind: "test_result".to_owned(),
+                        source_key: test_result_id,
+                        privacy: PrivacyClass::Project,
+                    })
+                },
+            )
+            .collect()
+    }
+
     pub fn session_timeline_with_max_privacy(
         &self,
         session_id: Option<&str>,
@@ -2290,11 +2590,106 @@ fn graph_score(query: &str, row: &GraphSearchRow) -> f64 {
     base / f64::from(row.distance.max(0) + 1)
 }
 
+#[derive(Clone, Copy)]
+struct DiagnosticSearchBodyFields<'a> {
+    phase: &'a str,
+    message: &'a str,
+    source_path: Option<&'a str>,
+    start_byte: Option<i64>,
+    end_byte: Option<i64>,
+    sequence: Option<i64>,
+    related_ids_json: &'a str,
+    payload_json: &'a str,
+}
+
+fn diagnostic_search_body(fields: DiagnosticSearchBodyFields<'_>) -> String {
+    let mut lines = vec![format!("phase={}", fields.phase), fields.message.to_owned()];
+    if let Some(sequence) = fields.sequence {
+        lines.push(format!("sequence={sequence}"));
+    }
+    if let Some(source_path) = fields.source_path {
+        lines.push(format!("source_path={source_path}"));
+    }
+    if let (Some(start), Some(end)) = (fields.start_byte, fields.end_byte) {
+        lines.push(format!("range={start}..{end}"));
+    }
+    if fields.related_ids_json != "[]" {
+        lines.push(format!("related_ids={}", fields.related_ids_json));
+    }
+    if fields.payload_json != "{}" {
+        lines.push(format!("payload={}", fields.payload_json));
+    }
+    lines.join("\n")
+}
+
+fn diagnostic_score(query: &str, code: Option<&str>, severity: &str, body: &str) -> f64 {
+    let query = query.trim().to_lowercase();
+    let exact = if code.is_some_and(|code| code.eq_ignore_ascii_case(&query)) {
+        4.0
+    } else {
+        0.0
+    };
+    let severity_boost = match severity {
+        "error" => 2.0,
+        "warning" => 1.0,
+        _ => 0.0,
+    };
+    let body_match = if body.to_lowercase().contains(&query) {
+        1.0
+    } else {
+        0.0
+    };
+    exact + severity_boost + body_match
+}
+
+fn test_result_search_body(
+    duration_millis: Option<i64>,
+    diagnostic_ids_json: &str,
+    artifact_refs_json: &str,
+    summary: &str,
+) -> String {
+    let mut lines = Vec::new();
+    if let Some(duration) = duration_millis {
+        lines.push(format!("duration_millis={duration}"));
+    }
+    if diagnostic_ids_json != "[]" {
+        lines.push(format!("diagnostic_ids={diagnostic_ids_json}"));
+    }
+    if artifact_refs_json != "[]" {
+        lines.push(format!("artifact_refs={artifact_refs_json}"));
+    }
+    if !summary.is_empty() {
+        lines.push(summary.to_owned());
+    }
+    lines.join("\n")
+}
+
+fn test_result_score(query: &str, test_id: &str, outcome: &str, body: &str) -> f64 {
+    let query = query.trim().to_lowercase();
+    let exact = if test_id.eq_ignore_ascii_case(&query) {
+        4.0
+    } else {
+        0.0
+    };
+    let outcome_boost = match outcome {
+        "failed" | "error" => 2.0,
+        "flaky" => 1.0,
+        _ => 0.0,
+    };
+    let body_match = if body.to_lowercase().contains(&query) {
+        1.0
+    } else {
+        0.0
+    };
+    exact + outcome_boost + body_match
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use arcweft_debug_model::{
         chunk::{ChunkSourceKind, PrivacyClass},
+        diagnostic::DebugDiagnostic,
         embedding::StoredEmbedding,
         event::DebugEventKind,
         graph::{DebugGraphEdge, DebugGraphSymbol},
@@ -2303,6 +2698,7 @@ mod tests {
         script::{DebugScriptRun, DebugScriptRunFinish, DebugScriptRunOutcome},
         session::{DebugSession, DebugSessionStatus},
         sink::DebugEventSink,
+        test_result::DebugTestResult,
     };
     use std::collections::BTreeMap;
 
@@ -2647,6 +3043,89 @@ mod tests {
         );
         assert_eq!(project_hits[0].hit.channel, SearchChannel::History);
         assert_eq!(project_hits[0].privacy, PrivacyClass::Project);
+    }
+
+    #[test]
+    fn diagnostic_and_test_result_search_filter_project_privacy_before_limit() {
+        let store = DebugStore::open_in_memory().expect("open store");
+        let program_hash = hash("blake3:diagnostic-test-program");
+        store
+            .upsert_program(&program_hash, None, Some("."), 0)
+            .expect("program");
+        store
+            .upsert_diagnostic(&DebugDiagnostic {
+                diagnostic_id: "diag:missing-shader".to_owned(),
+                program_hash: Some(program_hash.clone()),
+                session_id: None,
+                run_id: None,
+                sequence: Some(3),
+                code: Some("RT_SHADER_MISSING".to_owned()),
+                severity: "error".to_owned(),
+                phase: "render".to_owned(),
+                message: "missing shader binding for glyph wobble".to_owned(),
+                source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+                start_byte: Some(12),
+                end_byte: Some(34),
+                related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],
+                payload: serde_json::json!({ "shader": "glyph_wobble" }),
+                created_unix_ms: 0,
+            })
+            .expect("diagnostic");
+        store
+            .upsert_test_result(&DebugTestResult {
+                test_result_id: "test:visual-regression".to_owned(),
+                program_hash: Some(program_hash),
+                run_id: None,
+                test_id: "rich-text-visual-regression".to_owned(),
+                kind: "visual".to_owned(),
+                outcome: "failed".to_owned(),
+                duration_millis: Some(42),
+                diagnostic_ids: vec!["diag:missing-shader".to_owned()],
+                artifact_refs: vec!["blob:visual-diff".to_owned()],
+                summary: "visual regression detected missing shader output".to_owned(),
+                created_unix_ms: 0,
+            })
+            .expect("test result");
+
+        let public_diagnostics = store
+            .diagnostic_search_with_max_privacy("glyph_wobble", 1, PrivacyClass::Public)
+            .expect("public diagnostic search");
+        assert!(public_diagnostics.is_empty());
+        let diagnostics = store
+            .diagnostic_search_with_max_privacy("glyph_wobble", 1, PrivacyClass::Project)
+            .expect("project diagnostic search");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].source_kind, "diagnostic");
+        assert_eq!(diagnostics[0].hit.channel, SearchChannel::Diagnostics);
+        assert_eq!(
+            diagnostics[0].hit.chunk_id.as_str(),
+            "diagnostic:diag:missing-shader"
+        );
+        assert!(diagnostics[0].body.contains("related_ids"));
+
+        let public_tests = store
+            .test_result_search_with_max_privacy(
+                "rich-text-visual-regression",
+                1,
+                PrivacyClass::Public,
+            )
+            .expect("public test search");
+        assert!(public_tests.is_empty());
+        let tests = store
+            .test_result_search_with_max_privacy(
+                "rich-text-visual-regression",
+                1,
+                PrivacyClass::Project,
+            )
+            .expect("project test search");
+        assert_eq!(tests.len(), 1);
+        assert_eq!(tests[0].source_kind, "test_result");
+        assert_eq!(tests[0].hit.channel, SearchChannel::Diagnostics);
+        assert_eq!(
+            tests[0].hit.chunk_id.as_str(),
+            "test_result:test:visual-regression"
+        );
+        assert!(tests[0].body.contains("diagnostic_ids"));
     }
 
     #[test]

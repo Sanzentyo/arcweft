@@ -558,7 +558,7 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "arcweft.debug.search".to_owned(),
         title: Some("Search Arcweft Debug Store".to_owned()),
-        description: "Searches the rebuildable Arcweft debug SQLite store through lexical, vector, graph, or history channels with privacy filtering before limit.".to_owned(),
+        description: "Searches the rebuildable Arcweft debug SQLite store through lexical, vector, graph, history, diagnostic, or test-result channels with privacy filtering before limit.".to_owned(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -585,6 +585,14 @@ fn agent_debug_search_tool_descriptor() -> McpToolDescriptor {
                 "history_query": {
                     "type": "string",
                     "description": "Text query for indexed history entries."
+                },
+                "diagnostic_query": {
+                    "type": "string",
+                    "description": "Text query for indexed diagnostics by id, code, severity, phase, message, source path, related ids, and payload."
+                },
+                "test_query": {
+                    "type": "string",
+                    "description": "Text query for indexed test results by id, test id, kind, outcome, summary, diagnostic ids, and artifact refs."
                 },
                 "model_id": {
                     "type": "string",
@@ -1953,6 +1961,28 @@ mod tests {
         );
         assert_eq!(logs.input_schema["properties"]["limit"]["minimum"], 0);
 
+        assert_debug_search_tool_schema(&tools);
+
+        let rag = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.rag.query")
+            .expect("rag query tool is described");
+        assert_eq!(rag.input_schema["required"], serde_json::json!(["query"]));
+        assert_eq!(rag.input_schema["properties"]["query"]["type"], "string");
+        assert_eq!(rag.input_schema["properties"]["roots"]["type"], "array");
+        assert_eq!(rag.input_schema["properties"]["graph_depth"]["minimum"], 0);
+        assert_eq!(rag.input_schema["properties"]["limit"]["minimum"], 1);
+        assert_eq!(
+            rag.input_schema["properties"]["max_context_bytes"]["minimum"],
+            1
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["max_privacy"]["enum"],
+            serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+    }
+
+    fn assert_debug_search_tool_schema(tools: &[McpToolDescriptor]) {
         let debug_search = tools
             .iter()
             .find(|tool| tool.name == "arcweft.debug.search")
@@ -1979,6 +2009,14 @@ mod tests {
             "string"
         );
         assert_eq!(
+            debug_search.input_schema["properties"]["diagnostic_query"]["type"],
+            "string"
+        );
+        assert_eq!(
+            debug_search.input_schema["properties"]["test_query"]["type"],
+            "string"
+        );
+        assert_eq!(
             debug_search.input_schema["properties"]["model_id"]["type"],
             "string"
         );
@@ -1992,24 +2030,6 @@ mod tests {
         );
         assert_eq!(
             debug_search.input_schema["properties"]["max_privacy"]["enum"],
-            serde_json::json!(["public", "project", "sensitive", "secret"])
-        );
-
-        let rag = tools
-            .iter()
-            .find(|tool| tool.name == "arcweft.rag.query")
-            .expect("rag query tool is described");
-        assert_eq!(rag.input_schema["required"], serde_json::json!(["query"]));
-        assert_eq!(rag.input_schema["properties"]["query"]["type"], "string");
-        assert_eq!(rag.input_schema["properties"]["roots"]["type"], "array");
-        assert_eq!(rag.input_schema["properties"]["graph_depth"]["minimum"], 0);
-        assert_eq!(rag.input_schema["properties"]["limit"]["minimum"], 1);
-        assert_eq!(
-            rag.input_schema["properties"]["max_context_bytes"]["minimum"],
-            1
-        );
-        assert_eq!(
-            rag.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
         );
     }

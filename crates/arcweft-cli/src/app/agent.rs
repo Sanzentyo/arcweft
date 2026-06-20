@@ -1004,6 +1004,22 @@ fn agent_rag_debug_db_candidates(
                 .map(|result| agent_rag_candidate_from_search_result(result, "history"))
                 .collect::<Result<Vec<_>, _>>()?,
         );
+        results.extend(
+            store
+                .diagnostic_search_with_max_privacy(&term, search_limit, options.max_privacy)
+                .map_err(|error| agent_rag_debug_db_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_rag_candidate_from_search_result(result, "diagnostic"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        results.extend(
+            store
+                .test_result_search_with_max_privacy(&term, search_limit, options.max_privacy)
+                .map_err(|error| agent_rag_debug_db_search_error(path, &error))?
+                .into_iter()
+                .map(|result| agent_rag_candidate_from_search_result(result, "test"))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         for result in results {
             if seen.insert(result.chunk.id.clone()) {
                 candidates.push(AgentRagCandidate {
@@ -1765,6 +1781,7 @@ fn agent_trace_rag_ranked_lists(
         SearchChannel::Lexical,
         SearchChannel::Graph,
         SearchChannel::History,
+        SearchChannel::Diagnostics,
         SearchChannel::Trace,
         SearchChannel::Summary,
     ]
@@ -1852,7 +1869,10 @@ fn agent_trace_rag_score(
             ));
             (root_score + channel_score > 0.0).then_some(root_score + channel_score)
         }
-        SearchChannel::History | SearchChannel::Trace | SearchChannel::Summary => {
+        SearchChannel::History
+        | SearchChannel::Diagnostics
+        | SearchChannel::Trace
+        | SearchChannel::Summary => {
             if candidate.preferred_channel != channel {
                 return None;
             }
@@ -1864,7 +1884,7 @@ fn agent_trace_rag_score(
             );
             (token_score > 0.0).then_some(token_score)
         }
-        SearchChannel::Vector | SearchChannel::Diagnostics => None,
+        SearchChannel::Vector => None,
     }
 }
 
