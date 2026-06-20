@@ -156,7 +156,6 @@ pub enum CaptureTarget {
 pub enum CaptureFormat {
     Png,
     RawRgba,
-    Svg,
 }
 
 /// Capture request emitted by a compiled controller.

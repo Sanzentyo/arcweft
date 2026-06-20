@@ -10433,7 +10433,7 @@ fn native_agent_capture_uri(
     report: &AgentObservationReport,
     request: &CaptureRequest,
 ) -> Result<String, NativeAgentScriptSessionError> {
-    let image_kind = native_agent_capture_image_kind(request.format)?;
+    let image_kind = native_agent_capture_image_kind(request.format);
     let capture_kind = native_agent_capture_kind(&request.capture_kind);
     let extension = match image_kind {
         AgentObserveImageKind::Png => "png",
@@ -10458,13 +10458,10 @@ fn native_agent_capture_uri(
     ))
 }
 
-fn native_agent_capture_image_kind(
-    format: CaptureFormat,
-) -> Result<AgentObserveImageKind, NativeAgentScriptSessionError> {
+fn native_agent_capture_image_kind(format: CaptureFormat) -> AgentObserveImageKind {
     match format {
-        CaptureFormat::Png => Ok(AgentObserveImageKind::Png),
-        CaptureFormat::RawRgba => Ok(AgentObserveImageKind::RawRgba),
-        CaptureFormat::Svg => Err(NativeAgentScriptSessionError::Capture),
+        CaptureFormat::Png => AgentObserveImageKind::Png,
+        CaptureFormat::RawRgba => AgentObserveImageKind::RawRgba,
     }
 }
 

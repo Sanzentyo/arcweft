@@ -3043,7 +3043,6 @@ fn parse_capture_format(value: &str) -> Result<CaptureFormat, String> {
     match value.trim_start_matches('.') {
         "png" => Ok(CaptureFormat::Png),
         "raw_rgba" | "raw" => Ok(CaptureFormat::RawRgba),
-        "svg" => Ok(CaptureFormat::Svg),
         _ => Err(format!("unsupported capture format `{value}`")),
     }
 }
@@ -3367,6 +3366,25 @@ mod tests {
             signals: BTreeMap::from([("signal.ready".to_owned(), AgentValue::Bool(ready))]),
             payload: serde_json::json!({}),
         }
+    }
+
+    #[test]
+    fn capture_format_parser_accepts_only_raster_formats() {
+        assert_eq!(
+            parse_capture_format(".png").expect("png is accepted"),
+            CaptureFormat::Png
+        );
+        assert_eq!(
+            parse_capture_format(".raw_rgba").expect("raw rgba is accepted"),
+            CaptureFormat::RawRgba
+        );
+        assert_eq!(
+            parse_capture_format(".raw").expect("raw shorthand is accepted"),
+            CaptureFormat::RawRgba
+        );
+
+        let error = parse_capture_format(".svg").expect_err("svg capture is not an Agent format");
+        assert!(error.contains("unsupported capture format `.svg`"));
     }
 
     fn observation_with_signal(

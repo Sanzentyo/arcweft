@@ -5170,10 +5170,6 @@ fn cli_capture_blob_bytes(request: &CaptureRequest) -> (String, Vec<u8>) {
     match request.format {
         CaptureFormat::Png => ("image/png".to_owned(), CLI_TRANSPARENT_PNG.to_vec()),
         CaptureFormat::RawRgba => ("application/octet-stream".to_owned(), vec![0, 0, 0, 0]),
-        CaptureFormat::Svg => (
-            "image/svg+xml".to_owned(),
-            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><title>arcweft-cli-capture</title></svg>".to_vec(),
-        ),
     }
 }
 
