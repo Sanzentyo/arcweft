@@ -7,18 +7,19 @@ use super::{
     AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat,
     AgentObserveOptions, AgentObserveResourceKind, AgentReplOptions, AgentRunner,
     AgentRunnerConfig, AgentScriptRunInput, AgentScriptRunOptions, AgentScriptRunReport,
-    AgentSession, CliAgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
-    CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
-    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
-    RuntimeStepInput, RuntimeStepResult, agent_cli_session_id, agent_debug_finish_runtime_session,
-    agent_debug_start_runtime_session, agent_program_summary_rag_candidate, agent_rag_program_hash,
-    agent_rag_select_context_chunk, agent_rag_source_paths, agent_script_project_index,
-    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
-    agent_script_runtime_policy, agent_script_runtime_policy_for_bundle, agent_source_rag_index,
-    flow_status_label, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
-    parse_agent_script_signal_arg, parse_agent_script_state_arg, parse_runtime_binding_arg,
-    parse_runtime_pure_workers, print_json, resolve_source_selection,
+    AgentSession, AgentSourceRagIndex, CliAgentSession, CliRuntimeExecutorTier,
+    CliRuntimePureWorkers, CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus,
+    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
+    ProfileOptions, RuntimeStepInput, RuntimeStepResult, agent_cli_session_id,
+    agent_debug_finish_runtime_session, agent_debug_start_runtime_session,
+    agent_program_summary_rag_candidate, agent_rag_index_graph, agent_rag_index_program_graph,
+    agent_rag_program_hash, agent_rag_select_context_chunk, agent_rag_source_paths,
+    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
+    agent_script_run_report_from_result, agent_script_runtime_policy,
+    agent_script_runtime_policy_for_bundle, agent_source_rag_index, flow_status_label, fs,
+    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
+    native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
+    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
@@ -1015,6 +1016,11 @@ mod tests {
 
     #[test]
     fn agent_mcp_rag_query_includes_source_program_summary() {
+        let db_path = std::env::temp_dir().join(format!(
+            "arcweft-agent-mcp-rag-source-program-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&db_path);
         let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let choice_source = workspace_root.join("samples/agent-script/native-choice-dispatch.arcw");
         let rich_text_source = workspace_root.join("samples/rich-text-showcase.arcw");
@@ -1027,6 +1033,7 @@ mod tests {
                     choice_source.display().to_string(),
                     rich_text_source.display().to_string()
                 ],
+                "path": db_path.display().to_string(),
                 "limit": 4,
                 "max_context_bytes": 4096,
                 "max_privacy": "project"
@@ -1052,6 +1059,46 @@ mod tests {
             "MCP source RAG query should include the program-level summary: {pack}"
         );
         assert_eq!(state.rag_context_packs.len(), 1);
+        let program_hash = pack["query"]["program_hash"]
+            .as_str()
+            .expect("program hash");
+        let sources = mcp_text_json(
+            &agent_mcp_call_debug_source_files(&serde_json::json!({
+                "path": db_path.display().to_string(),
+                "program_hash": program_hash
+            }))
+            .expect("MCP source RAG persists source file inventory"),
+        );
+        assert_eq!(sources["sources"].as_array().map(Vec::len), Some(2));
+        let graph = mcp_text_json(
+            &agent_mcp_call_debug_graph_inventory(&serde_json::json!({
+                "path": db_path.display().to_string(),
+                "program_hash": program_hash
+            }))
+            .expect("MCP source RAG persists graph inventory"),
+        );
+        assert!(
+            graph["symbols"].as_array().is_some_and(|symbols| {
+                symbols.iter().any(|symbol| symbol["kind"] == "program")
+                    && symbols
+                        .iter()
+                        .filter(|symbol| symbol["kind"] == "source_file")
+                        .count()
+                        == 2
+            }),
+            "MCP source RAG should persist program and source-file graph symbols: {graph}"
+        );
+        assert!(
+            graph["edges"].as_array().is_some_and(|edges| {
+                edges
+                    .iter()
+                    .filter(|edge| edge["edge_kind"] == "contains_source_file")
+                    .count()
+                    == 2
+            }),
+            "MCP source RAG should persist program-to-source graph edges: {graph}"
+        );
+        let _ = std::fs::remove_file(&db_path);
     }
 
     #[test]
@@ -7275,7 +7322,7 @@ fn agent_mcp_call_rag_query(
     if local_embedding && agent_mcp_optional_debug_store_path(arguments).is_none() {
         return Err("arcweft.rag.query local_embedding requires arguments.path".to_owned());
     }
-    let mut source_candidates = agent_mcp_rag_source_candidates(arguments)?;
+    let mut source_context = agent_mcp_rag_source_context(arguments)?;
     let config = AgentMcpRagQueryConfig {
         roots,
         graph_depth,
@@ -7286,11 +7333,13 @@ fn agent_mcp_call_rag_query(
         local_embedding_model: agent_mcp_rag_local_embedding_model(arguments)?,
     };
     if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
-        source_candidates.extend(agent_mcp_rag_debug_store_candidates(
-            path, query_text, &config,
-        )?);
+        source_context
+            .candidates
+            .extend(agent_mcp_rag_debug_store_candidates(
+                path, query_text, &config,
+            )?);
     }
-    let result = agent_mcp_rag_query_result(state, source_candidates, query_text, config)?;
+    let result = agent_mcp_rag_query_result(state, source_context, query_text, config)?;
     if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
         persist_agent_mcp_rag_query_result(path, &result)?;
     }
@@ -7477,6 +7526,12 @@ struct AgentMcpRagCandidate {
 struct AgentMcpRagQueryResult {
     pack: RagContextPack,
     candidates: Vec<AgentMcpRagCandidate>,
+    source_indexes: Vec<AgentSourceRagIndex>,
+}
+
+struct AgentMcpRagSourceContext {
+    candidates: Vec<AgentMcpRagCandidate>,
+    source_indexes: Vec<AgentSourceRagIndex>,
 }
 
 struct AgentMcpRagQueryConfig {
@@ -7511,17 +7566,26 @@ fn agent_mcp_rag_context_pack(
             dimensions: DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
         },
     };
-    agent_mcp_rag_query_result(state, Vec::new(), query_text, config).map(|result| result.pack)
+    agent_mcp_rag_query_result(
+        state,
+        AgentMcpRagSourceContext {
+            candidates: Vec::new(),
+            source_indexes: Vec::new(),
+        },
+        query_text,
+        config,
+    )
+    .map(|result| result.pack)
 }
 
 fn agent_mcp_rag_query_result(
     state: &AgentMcpState,
-    source_candidates: Vec<AgentMcpRagCandidate>,
+    source_context: AgentMcpRagSourceContext,
     query_text: &str,
     config: AgentMcpRagQueryConfig,
 ) -> Result<AgentMcpRagQueryResult, String> {
     let mut candidates = agent_mcp_rag_candidates(state)?;
-    candidates.extend(source_candidates);
+    candidates.extend(source_context.candidates);
     let candidates = agent_mcp_rag_deduplicate_candidates(candidates);
     let query_candidates = candidates
         .iter()
@@ -7559,7 +7623,11 @@ fn agent_mcp_rag_query_result(
         config.limit,
         config.max_context_bytes,
     );
-    Ok(AgentMcpRagQueryResult { pack, candidates })
+    Ok(AgentMcpRagQueryResult {
+        pack,
+        candidates,
+        source_indexes: source_context.source_indexes,
+    })
 }
 
 fn agent_mcp_rag_debug_store_candidates(
@@ -7918,6 +7986,23 @@ fn persist_agent_mcp_rag_query_result(
             format!("arcweft.rag.query failed to index context chunk in `{path}`: {error}")
         })?;
     }
+    if !result.source_indexes.is_empty() {
+        for source_index in &result.source_indexes {
+            let mut source_file = source_index.source_file.clone();
+            source_file.program_hash = result.pack.query.program_hash.clone();
+            store.upsert_source_file(&source_file).map_err(|error| {
+                format!("arcweft.rag.query failed to index source file in `{path}`: {error}")
+            })?;
+            agent_rag_index_graph(
+                &store,
+                &result.pack.query.program_hash,
+                source_index,
+                result.source_indexes.len() > 1,
+            )?;
+        }
+        let source_index_refs = result.source_indexes.iter().collect::<Vec<_>>();
+        agent_rag_index_program_graph(&store, &result.pack.query.program_hash, &source_index_refs)?;
+    }
     store
         .record_rag_context_pack(&result.pack, Some(&session_id), None, None, "selected", 0)
         .map_err(|error| {
@@ -7982,9 +8067,9 @@ fn agent_mcp_optional_debug_store_path(arguments: &serde_json::Value) -> Option<
         .filter(|path| !path.is_empty())
 }
 
-fn agent_mcp_rag_source_candidates(
+fn agent_mcp_rag_source_context(
     arguments: &serde_json::Value,
-) -> Result<Vec<AgentMcpRagCandidate>, String> {
+) -> Result<AgentMcpRagSourceContext, String> {
     let inputs = agent_mcp_rag_source_inputs(arguments)?;
     let paths = agent_rag_source_paths(&inputs)?;
     let source_indexes = paths
@@ -8007,7 +8092,10 @@ fn agent_mcp_rag_source_candidates(
             agent_program_summary_rag_candidate(&program_hash, &source_index_refs)?,
         ));
     }
-    Ok(candidates)
+    Ok(AgentMcpRagSourceContext {
+        candidates,
+        source_indexes,
+    })
 }
 
 fn agent_mcp_rag_candidate_from_cli_source(
