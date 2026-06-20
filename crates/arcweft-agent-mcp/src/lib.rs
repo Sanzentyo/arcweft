@@ -508,7 +508,14 @@ fn agent_rag_query_tool_descriptor() -> McpToolDescriptor {
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
-                "source": { "type": "string", "description": "Optional .arcw source to observe before querying. Mutually exclusive with profile." },
+                "source": { "type": "string", "description": "Optional .arcw source to observe before querying and include as source/project RAG context. Mutually exclusive with profile." },
+                "sources": {
+                    "description": "Additional .arcw files or directories to parse, lower, and include as source/project RAG context without observing them.",
+                    "oneOf": [
+                        { "type": "string" },
+                        { "type": "array", "items": { "type": "string" } }
+                    ]
+                },
                 "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-query. Defaults to arcw.toml when profile is supplied." },
                 "profile": { "type": "string", "description": "Optional launch profile to resolve before querying. Mutually exclusive with source." },
                 "entry": { "type": "string" },
@@ -1931,6 +1938,24 @@ mod tests {
         assert_eq!(
             rag.input_schema["properties"]["max_privacy"]["enum"],
             serde_json::json!(["public", "project", "sensitive", "secret"])
+        );
+    }
+
+    #[test]
+    fn rag_query_tool_schema_exposes_source_project_inputs() {
+        let tools = agent_tool_descriptors();
+        let rag = tools
+            .iter()
+            .find(|tool| tool.name == "arcweft.rag.query")
+            .expect("rag query tool is described");
+        assert_eq!(rag.input_schema["properties"]["source"]["type"], "string");
+        assert_eq!(
+            rag.input_schema["properties"]["sources"]["oneOf"][0]["type"],
+            "string"
+        );
+        assert_eq!(
+            rag.input_schema["properties"]["sources"]["oneOf"][1]["items"]["type"],
+            "string"
         );
     }
 

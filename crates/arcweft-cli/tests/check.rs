@@ -28400,6 +28400,116 @@ fn agent_mcp_stdio_debug_search_filters_chunks_by_privacy() {
     assert_mcp_debug_search_vector_response(&responses[5]);
 }
 
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
+fn agent_mcp_stdio_rag_query_indexes_source_project_context() {
+    let db_path = workspace_path(&format!(
+        "target/codex-agent-rag-source/mcp-source-rag-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&db_path);
+    fs::create_dir_all(db_path.parent().expect("MCP source RAG DB parent"))
+        .expect("create MCP source RAG DB parent");
+    let requests = agent_mcp_source_rag_requests(&db_path);
+    let output = run_agent_mcp_stdio(&requests);
+    assert!(
+        output.status.success(),
+        "agent mcp source RAG should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 4);
+    let pack = mcp_content_metadata(
+        &responses[1]["result"]["content"][0],
+        "MCP source RAG result is JSON",
+    );
+    assert_eq!(pack["query"]["text"], "choice.opening rich_text");
+    let items = pack["items"].as_array().expect("RAG items array");
+    assert!(
+        items.iter().any(|item| {
+            item["kind"] == "symbol"
+                && item["entity_ids"]
+                    .as_array()
+                    .is_some_and(|ids| ids.contains(&serde_json::json!("flow.rich_text_showcase")))
+                && item["chunk_id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("mcp:source.blake3:"))
+        }),
+        "MCP source RAG should include project symbols with MCP chunk ids: {pack}"
+    );
+    let explanation = mcp_content_metadata(
+        &responses[2]["result"]["content"][0],
+        "MCP source RAG explanation is JSON",
+    );
+    assert_eq!(explanation["item_count"], items.len());
+    let persisted = mcp_content_metadata(
+        &responses[3]["result"]["content"][0],
+        "MCP source RAG debug search is JSON",
+    );
+    assert!(
+        persisted["hits"].as_array().is_some_and(|hits| {
+            hits.iter().any(|hit| {
+                hit["source_kind"] == "source"
+                    && hit["chunk_id"]
+                        .as_str()
+                        .is_some_and(|id| id.starts_with("mcp:source.blake3:"))
+            })
+        }),
+        "MCP source RAG should persist source text chunks for debug search: {persisted}"
+    );
+
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    let _ = fs::remove_file(db_path.with_extension("sqlite3-wal"));
+}
+
+fn agent_mcp_source_rag_requests(db_path: &Path) -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.rag.query",
+                "arguments": {
+                    "sources": [
+                        workspace_path("samples/agent-script/native-choice-dispatch.arcw").display().to_string(),
+                        workspace_path("samples/rich-text-showcase.arcw").display().to_string()
+                    ],
+                    "path": db_path.display().to_string(),
+                    "query": "choice.opening rich_text",
+                    "roots": ["flow.rich_text_showcase"],
+                    "limit": 12
+                }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.rag.explain",
+                "arguments": { "path": db_path.display().to_string() }
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.debug.search",
+                "arguments": {
+                    "path": db_path.display().to_string(),
+                    "query": "rich_text_showcase",
+                    "limit": 20,
+                    "max_privacy": "project"
+                }
+            }
+        }),
+    ]
+}
+
 fn assert_mcp_debug_search_lexical_response(response: &serde_json::Value) {
     assert_eq!(response["result"]["isError"], false);
     let search = mcp_content_metadata(

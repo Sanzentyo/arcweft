@@ -377,6 +377,16 @@ with `model_id` and `model_revision`, `graph_query` with optional
 apply to every selector. It defaults to `.arcweft/cache/agent-debug.sqlite3`
 and returns chunk IDs plus source metadata without requiring a native
 observation.
+MCP `arcweft.rag.query` uses the same `RagContextPack` output shape and can
+combine cached observation context, cached `.arcwx` trace context, and
+source/project context. `source` still observes that `.arcw` file before
+querying and also indexes the source/project chunks; `sources` accepts a string
+or array of `.arcw` files/directories to parse and lower only for RAG context.
+Directory entries expand recursively to `.arcw` files in deterministic path
+order. When `path` is supplied, MCP upserts all observation/trace/source
+candidates into the debug store and records the selected query audit for later
+`arcweft.rag.explain`, `arcweft.rag.context.read`, and
+`arcweft.debug.search` readback.
 `arcw agent rag query [--trace <file.arcwx>] [--source <file-or-dir> ...] --query <text>
 [--max-privacy public|project|sensitive|secret] [--debug-db <path>] [--json]`
 builds the same explainable `RagContextPack` shape used by Agent MCP. At least

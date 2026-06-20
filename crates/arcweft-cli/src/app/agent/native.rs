@@ -11,11 +11,12 @@ use super::{
     CliRuntimeStepMode, CollectingDebugSink, ExitCode, FlowFiberStatus, LineDisplayCatalog,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions,
     RuntimeAgentCapability, RuntimeAgentPolicy, RuntimeStepInput, RuntimeStepResult,
-    agent_cli_session_id, agent_script_project_index, agent_script_run_bundle,
-    agent_script_run_input, agent_script_run_report_from_result, flow_status_label, fs,
-    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
-    native_host_policy_for_selection, parse_agent_script_signal_arg, parse_agent_script_state_arg,
-    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
+    agent_cli_session_id, agent_rag_source_paths, agent_script_project_index,
+    agent_script_run_bundle, agent_script_run_input, agent_script_run_report_from_result,
+    agent_source_rag_index, flow_status_label, fs, load_and_check_selection,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
+    parse_agent_script_signal_arg, parse_agent_script_state_arg, parse_runtime_binding_arg,
+    parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::image_declarations::{
@@ -5726,15 +5727,15 @@ fn agent_mcp_call_rag_query(
     let roots = agent_mcp_rag_roots(arguments)?;
     let max_privacy = agent_mcp_privacy_class_argument(arguments, "max_privacy")?
         .unwrap_or(PrivacyClass::Project);
-    let result = agent_mcp_rag_query_result(
-        state,
-        query_text,
+    let source_candidates = agent_mcp_rag_source_candidates(arguments)?;
+    let config = AgentMcpRagQueryConfig {
         roots,
         graph_depth,
         limit,
         max_context_bytes,
         max_privacy,
-    )?;
+    };
+    let result = agent_mcp_rag_query_result(state, source_candidates, query_text, config)?;
     if let Some(path) = agent_mcp_optional_debug_store_path(arguments) {
         persist_agent_mcp_rag_query_result(path, &result)?;
     }
@@ -5908,6 +5909,14 @@ struct AgentMcpRagQueryResult {
     candidates: Vec<AgentMcpRagCandidate>,
 }
 
+struct AgentMcpRagQueryConfig {
+    roots: Vec<PublicId>,
+    graph_depth: u32,
+    limit: usize,
+    max_context_bytes: usize,
+    max_privacy: PrivacyClass,
+}
+
 fn agent_mcp_rag_context_pack(
     state: &AgentMcpState,
     query_text: &str,
@@ -5917,31 +5926,27 @@ fn agent_mcp_rag_context_pack(
     max_context_bytes: usize,
     max_privacy: PrivacyClass,
 ) -> Result<RagContextPack, String> {
-    agent_mcp_rag_query_result(
-        state,
-        query_text,
+    let config = AgentMcpRagQueryConfig {
         roots,
         graph_depth,
         limit,
         max_context_bytes,
         max_privacy,
-    )
-    .map(|result| result.pack)
+    };
+    agent_mcp_rag_query_result(state, Vec::new(), query_text, config).map(|result| result.pack)
 }
 
 fn agent_mcp_rag_query_result(
     state: &AgentMcpState,
+    source_candidates: Vec<AgentMcpRagCandidate>,
     query_text: &str,
-    roots: Vec<PublicId>,
-    graph_depth: u32,
-    limit: usize,
-    max_context_bytes: usize,
-    max_privacy: PrivacyClass,
+    config: AgentMcpRagQueryConfig,
 ) -> Result<AgentMcpRagQueryResult, String> {
-    let candidates = agent_mcp_rag_candidates(state)?;
+    let mut candidates = agent_mcp_rag_candidates(state)?;
+    candidates.extend(source_candidates);
     let query_candidates = candidates
         .iter()
-        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(max_privacy))
+        .filter(|candidate| candidate.chunk.privacy.is_allowed_by(config.max_privacy))
         .cloned()
         .collect::<Vec<_>>();
     if query_candidates.is_empty() {
@@ -5955,22 +5960,25 @@ fn agent_mcp_rag_query_result(
         "{}:{}:{graph_depth}:{limit}:{max_context_bytes}:{}",
         query_text,
         program_hash.as_str(),
-        max_privacy.as_str()
+        config.max_privacy.as_str(),
+        graph_depth = config.graph_depth,
+        limit = config.limit,
+        max_context_bytes = config.max_context_bytes,
     );
     let query = RagQuery {
         query_id: agent_mcp_content_hash(query_id_seed),
         text: query_text.to_owned(),
         program_hash,
-        roots,
-        graph_depth,
-        limit,
-        max_context_bytes,
+        roots: config.roots,
+        graph_depth: config.graph_depth,
+        limit: config.limit,
+        max_context_bytes: config.max_context_bytes,
     };
     let pack = agent_mcp_rag_context_pack_from_candidates(
         query,
         &query_candidates,
-        limit,
-        max_context_bytes,
+        config.limit,
+        config.max_context_bytes,
     );
     Ok(AgentMcpRagQueryResult { pack, candidates })
 }
@@ -6058,6 +6066,79 @@ fn agent_mcp_optional_debug_store_path(arguments: &serde_json::Value) -> Option<
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|path| !path.is_empty())
+}
+
+fn agent_mcp_rag_source_candidates(
+    arguments: &serde_json::Value,
+) -> Result<Vec<AgentMcpRagCandidate>, String> {
+    let inputs = agent_mcp_rag_source_inputs(arguments)?;
+    let paths = agent_rag_source_paths(&inputs)?;
+    paths
+        .iter()
+        .map(|path| {
+            agent_source_rag_index(path).map(|index| {
+                index
+                    .candidates
+                    .into_iter()
+                    .map(agent_mcp_rag_candidate_from_cli_source)
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|groups| groups.into_iter().flatten().collect())
+}
+
+fn agent_mcp_rag_candidate_from_cli_source(
+    candidate: super::AgentRagCandidate,
+) -> AgentMcpRagCandidate {
+    let mut chunk = candidate.chunk;
+    chunk.id = ChunkId::new(format!(
+        "mcp:{}:{}",
+        chunk.source_key,
+        chunk.content_hash.as_str()
+    ));
+    AgentMcpRagCandidate {
+        chunk,
+        preferred_channel: candidate.preferred_channel,
+    }
+}
+
+fn agent_mcp_rag_source_inputs(arguments: &serde_json::Value) -> Result<Vec<PathBuf>, String> {
+    let mut inputs = Vec::new();
+    if let Some(source) = agent_mcp_non_empty_string_argument(arguments, "source") {
+        inputs.push(PathBuf::from(source));
+    }
+    let Some(sources) = arguments.get("sources") else {
+        return Ok(inputs);
+    };
+    match sources {
+        serde_json::Value::String(source) => {
+            let source = source.trim();
+            if !source.is_empty() {
+                inputs.push(PathBuf::from(source));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                let source = item
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|source| !source.is_empty())
+                    .ok_or_else(|| {
+                        "arcweft.rag.query argument sources must contain non-empty strings"
+                            .to_owned()
+                    })?;
+                inputs.push(PathBuf::from(source));
+            }
+        }
+        _ => {
+            return Err(
+                "arcweft.rag.query argument sources must be a string or an array of strings"
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(inputs)
 }
 
 fn agent_mcp_rag_candidates(state: &AgentMcpState) -> Result<Vec<AgentMcpRagCandidate>, String> {
@@ -6522,18 +6603,17 @@ fn agent_mcp_rag_program_hash(
     state: &AgentMcpState,
     candidates: &[AgentMcpRagCandidate],
 ) -> Result<StableHash, String> {
+    let candidate_hashes = candidates
+        .iter()
+        .map(|candidate| candidate.chunk.content_hash.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
     let seed = state.report.as_ref().map_or_else(
-        || {
-            candidates
-                .iter()
-                .map(|candidate| candidate.chunk.content_hash.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
+        || candidate_hashes.clone(),
         |report| {
             format!(
-                "{}:{}:{}:{}",
-                report.source, report.state_hash, report.render_hash, report.tick
+                "{}:{}:{}:{}\n{}",
+                report.source, report.state_hash, report.render_hash, report.tick, candidate_hashes
             )
         },
     );
