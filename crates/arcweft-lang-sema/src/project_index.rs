@@ -14,6 +14,7 @@ use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::{
+        choice::ChoiceAction,
         flow::FlowKind,
         flow::Stmt,
         ids::EntityRef,
@@ -79,6 +80,7 @@ pub enum ProjectGraphRelationKind {
     ChoiceOptionGoto,
     FlowGoto,
     FlowInclude,
+    ReferencesEntity,
 }
 
 /// Agent-visible semantic action attached to an entity.
@@ -323,6 +325,7 @@ impl ProjectGraphRelationKind {
             Self::ChoiceOptionGoto => "choice_option_goto",
             Self::FlowGoto => "flow_goto",
             Self::FlowInclude => "flow_include",
+            Self::ReferencesEntity => "references_entity",
         }
     }
 }
@@ -724,6 +727,7 @@ fn index_flow_item_relations(
                         index,
                     )?;
                 }
+                index = index_dialogue_dependency_relations(parent, dialogue, index)?;
             }
             HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
                 if let Some(choice_id) = choice.id() {
@@ -737,6 +741,7 @@ fn index_flow_item_relations(
                     }
                     index = index_choice_relations(choice_id, choice.options(), index)?;
                 }
+                index = index_choice_dependency_relations(parent, choice, index)?;
             }
             HirFlowItem::If(block) => {
                 index = index_flow_item_relations(parent, block.body(), index)?;
@@ -798,7 +803,51 @@ fn index_flow_item_relations(
                     )?;
                 }
             }
-            HirFlowItem::LetScope { .. } => {}
+            HirFlowItem::LetScope { scope, .. } => {
+                index = index_stmt_body_relations(parent, scope.statements(), index)?;
+                if let Some(value) = scope.value() {
+                    index = index_expr_dependency_relations(parent, value, index)?;
+                }
+            }
+        }
+    }
+    Ok(index)
+}
+
+fn index_dialogue_dependency_relations(
+    parent: Option<&EntityRef>,
+    dialogue: &arcweft_lang_hir::model::HirDialogue,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for arg in dialogue.args() {
+        index = index_expr_dependency_relations(parent, arg.value(), index)?;
+    }
+    if let Some(rich_text) = dialogue.rich_text() {
+        index = index_expr_dependency_relations(parent, rich_text, index)?;
+    }
+    Ok(index)
+}
+
+fn index_choice_dependency_relations(
+    parent: Option<&EntityRef>,
+    choice: &arcweft_lang_hir::model::HirChoice,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for option in choice.options() {
+        if let Some(condition) = option.condition() {
+            index = index_expr_dependency_relations(parent, condition, index)?;
+        }
+        if let Some(value) = option.value() {
+            index = index_expr_dependency_relations(parent, value, index)?;
+        }
+        match option.action() {
+            ChoiceAction::Out(expr) => {
+                index = index_expr_dependency_relations(parent, expr, index)?;
+            }
+            ChoiceAction::SelectBlock(statements) => {
+                index = index_stmt_body_relations(parent, statements, index)?;
+            }
+            ChoiceAction::Goto(_) | ChoiceAction::None => {}
         }
     }
     Ok(index)
@@ -820,45 +869,67 @@ fn index_stmt_relations(
                 )?;
             }
         }
-        Stmt::LetElse { else_body, .. } => {
+        Stmt::Let { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::LifetimeSet { expr, .. }
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Expr(expr)
+        | Stmt::Goto(expr) => {
+            index = index_expr_dependency_relations(parent, expr, index)?;
+        }
+        Stmt::Signal { target, value } => {
+            index = index_expr_dependency_relations(parent, target, index)?;
+            index = index_expr_dependency_relations(parent, value, index)?;
+        }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            index = index_expr_dependency_relations(parent, expr, index)?;
             index = index_stmt_body_relations(parent, else_body, index)?;
         }
         Stmt::DeferBlock { statements, .. } => {
             index = index_stmt_body_relations(parent, statements, index)?;
         }
-        Stmt::On { body, .. }
-        | Stmt::UnsafeLifetime { body, .. }
-        | Stmt::Loop { body }
-        | Stmt::If { body, .. }
-        | Stmt::While { body, .. }
-        | Stmt::WhileLet { body, .. }
-        | Stmt::For { body, .. } => {
+        Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
+            index = index_stmt_body_relations(parent, body, index)?;
+        }
+        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+            index = index_expr_dependency_relations(parent, condition, index)?;
+            index = index_stmt_body_relations(parent, body, index)?;
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            index = index_expr_dependency_relations(parent, expr, index)?;
+            if let Some(guard) = guard {
+                index = index_expr_dependency_relations(parent, guard, index)?;
+            }
+            index = index_stmt_body_relations(parent, body, index)?;
+        }
+        Stmt::For { source, body, .. } => {
+            index = index_expr_dependency_relations(parent, source, index)?;
             index = index_stmt_body_relations(parent, body, index)?;
         }
         Stmt::Match { arms, .. } => {
             for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    index = index_expr_dependency_relations(parent, guard, index)?;
+                }
                 index = index_stmt_body_relations(parent, arm.body(), index)?;
             }
         }
-        Stmt::Goto(_)
-        | Stmt::Let { .. }
-        | Stmt::Return(_)
-        | Stmt::Out { .. }
-        | Stmt::LetChoice { .. }
+        Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
         | Stmt::Thread(_)
-        | Stmt::Defer { .. }
-        | Stmt::Yield(_)
-        | Stmt::Signal { .. }
-        | Stmt::LifetimeSet { .. }
         | Stmt::Wait(_)
-        | Stmt::Close(_)
-        | Stmt::Select(_)
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
-        | Stmt::Expr(_)
         | Stmt::Raw(_) => {}
     }
     Ok(index)
@@ -871,6 +942,314 @@ fn index_stmt_body_relations(
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for stmt in statements {
         index = index_stmt_relations(parent, stmt, index)?;
+    }
+    Ok(index)
+}
+
+fn index_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    expr: &Expr,
+    index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::EntityRef(target) => {
+            let mut index = index;
+            if let (Some(parent), Some(target)) = (parent, target.as_absolute()) {
+                index = index_entity_relation(
+                    parent,
+                    target,
+                    ProjectGraphRelationKind::ReferencesEntity,
+                    index,
+                )?;
+            }
+            Ok(index)
+        }
+        Expr::Thread { .. }
+        | Expr::Literal(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Raw(_) => Ok(index),
+        _ => index_compound_expr_dependency_relations(parent, expr, index),
+    }
+}
+
+fn index_compound_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    expr: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::EntityRef(_)
+        | Expr::Thread { .. }
+        | Expr::Literal(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Raw(_) => {}
+        Expr::Call { callee, args } => {
+            index = index_call_expr_dependency_relations(parent, callee, args, index)?;
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            index = index_call_expr_dependency_relations(parent, receiver, args, index)?;
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await { expr: target, .. }
+        | Expr::Unary { expr: target, .. } => {
+            index = index_expr_dependency_relations(parent, target, index)?;
+        }
+        Expr::DialogueCall { callee, .. } | Expr::Closure { body: callee, .. } => {
+            index = index_expr_dependency_relations(parent, callee, index)?;
+        }
+        Expr::Index {
+            target,
+            index: item,
+        }
+        | Expr::Pipe {
+            lhs: target,
+            rhs: item,
+        }
+        | Expr::Binary {
+            lhs: target,
+            rhs: item,
+            ..
+        }
+        | Expr::ArrayRepeat {
+            value: target,
+            len: item,
+        } => {
+            index = index_two_expr_dependency_relations(parent, target, item, index)?;
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            index = index_expr_list_dependency_relations(parent, items, index)?;
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            index = index_record_expr_dependency_relations(parent, fields, index)?;
+        }
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => {
+            index =
+                index_expr_block_dependency_relations(parent, statements, value.as_deref(), index)?;
+        }
+        Expr::MemoBlock {
+            options,
+            statements,
+            value,
+        } => {
+            index = index_memo_expr_dependency_relations(
+                parent,
+                options,
+                statements,
+                value.as_deref(),
+                index,
+            )?;
+        }
+        Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } | Expr::Range { .. } => {
+            index = index_control_expr_dependency_relations(parent, expr, index)?;
+        }
+    }
+    Ok(index)
+}
+
+fn index_control_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    expr: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    match expr {
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            index = index_if_expr_dependency_relations(
+                parent,
+                condition,
+                then_branch,
+                else_branch.as_deref(),
+                index,
+            )?;
+        }
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            index = index_if_let_expr_dependency_relations(
+                parent,
+                expr,
+                guard.as_deref(),
+                then_branch,
+                else_branch.as_deref(),
+                index,
+            )?;
+        }
+        Expr::Match { scrutinee, arms } => {
+            index = index_match_expr_dependency_relations(parent, scrutinee, arms, index)?;
+        }
+        Expr::Range { start, end, .. } => {
+            index = index_range_expr_dependency_relations(
+                parent,
+                start.as_deref(),
+                end.as_deref(),
+                index,
+            )?;
+        }
+        _ => {}
+    }
+    Ok(index)
+}
+
+fn index_call_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    callee: &Expr,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_dependency_relations(parent, callee, index)?;
+    index_call_arg_dependency_relations(parent, args, index)
+}
+
+fn index_two_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    first: &Expr,
+    second: &Expr,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_dependency_relations(parent, first, index)?;
+    index_expr_dependency_relations(parent, second, index)
+}
+
+fn index_record_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    fields: &[(String, Expr)],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for (_, value) in fields {
+        index = index_expr_dependency_relations(parent, value, index)?;
+    }
+    Ok(index)
+}
+
+fn index_expr_block_dependency_relations(
+    parent: Option<&EntityRef>,
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_stmt_body_relations(parent, statements, index)?;
+    if let Some(value) = value {
+        index = index_expr_dependency_relations(parent, value, index)?;
+    }
+    Ok(index)
+}
+
+fn index_memo_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    options: &[(String, Expr)],
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for (_, value) in options {
+        index = index_expr_dependency_relations(parent, value, index)?;
+    }
+    index_expr_block_dependency_relations(parent, statements, value, index)
+}
+
+fn index_if_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    condition: &Expr,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_dependency_relations(parent, condition, index)?;
+    index = index_expr_dependency_relations(parent, then_branch, index)?;
+    if let Some(else_branch) = else_branch {
+        index = index_expr_dependency_relations(parent, else_branch, index)?;
+    }
+    Ok(index)
+}
+
+fn index_if_let_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    expr: &Expr,
+    guard: Option<&Expr>,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_dependency_relations(parent, expr, index)?;
+    if let Some(guard) = guard {
+        index = index_expr_dependency_relations(parent, guard, index)?;
+    }
+    index = index_expr_dependency_relations(parent, then_branch, index)?;
+    if let Some(else_branch) = else_branch {
+        index = index_expr_dependency_relations(parent, else_branch, index)?;
+    }
+    Ok(index)
+}
+
+fn index_match_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    scrutinee: &Expr,
+    arms: &[MatchExprArm],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index = index_expr_dependency_relations(parent, scrutinee, index)?;
+    for arm in arms {
+        if let Some(guard) = arm.guard() {
+            index = index_expr_dependency_relations(parent, guard, index)?;
+        }
+        index = index_expr_dependency_relations(parent, arm.value(), index)?;
+    }
+    Ok(index)
+}
+
+fn index_range_expr_dependency_relations(
+    parent: Option<&EntityRef>,
+    start: Option<&Expr>,
+    end: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    if let Some(start) = start {
+        index = index_expr_dependency_relations(parent, start, index)?;
+    }
+    if let Some(end) = end {
+        index = index_expr_dependency_relations(parent, end, index)?;
+    }
+    Ok(index)
+}
+
+fn index_call_arg_dependency_relations(
+    parent: Option<&EntityRef>,
+    args: &[CallArg],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for arg in args {
+        index = index_expr_dependency_relations(parent, arg.value(), index)?;
+    }
+    Ok(index)
+}
+
+fn index_expr_list_dependency_relations(
+    parent: Option<&EntityRef>,
+    items: &[Expr],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for item in items {
+        index = index_expr_dependency_relations(parent, item, index)?;
     }
     Ok(index)
 }
@@ -2308,8 +2687,11 @@ entry game @entry.main {
     start @flow.opening
 }
 
+signal @signal.current_flow: Watch<Ref<Flow>>
+
 flow @flow.opening opening {
     narrator.say(id=@say.opening)[hello]
+    let current = @signal.current_flow
     include @frag.intro
     choice @choice.opening {
         @choice.opening.listen "Listen" -> @flow.listen
@@ -2362,6 +2744,7 @@ flow @flow.listen listen {
         )));
         assert!(relations.contains(&("flow.opening", "frag.intro", "flow_include")));
         assert!(relations.contains(&("flow.opening", "flow.listen", "flow_goto")));
+        assert!(relations.contains(&("flow.opening", "signal.current_flow", "references_entity")));
     }
 
     #[test]

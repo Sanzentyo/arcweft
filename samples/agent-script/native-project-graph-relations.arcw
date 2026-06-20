@@ -2,7 +2,10 @@ pub fragment @frag.intro intro: FlowFragment {
     return "intro"
 }
 
+signal @signal.current_flow: Watch<Ref<Flow>>
+
 flow @flow.opening opening {
+    let current = @signal.current_flow
     include @frag.intro
     goto @flow.next
 }
