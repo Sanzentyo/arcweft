@@ -23,6 +23,7 @@ use super::{
     parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
+use crate::app::debug::debug_project_readback_json;
 use crate::app::image_declarations::{
     DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
     public_image_ref_arg, runtime_arg_name,
@@ -6966,6 +6967,7 @@ fn agent_mcp_debug_script_run_json(run: &DebugScriptRun) -> serde_json::Value {
         "partially_effectful": run.partially_effectful,
         "trace_uri": &run.trace_uri,
         "error": &run.error,
+        "project": debug_project_readback_json(&run.metadata),
         "metadata": &run.metadata,
     })
 }

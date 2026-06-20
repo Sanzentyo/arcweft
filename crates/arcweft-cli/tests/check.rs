@@ -355,6 +355,17 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
         runs[0]["metadata"]["project_graph"]["summary_symbol_id"],
         "project:summary"
     );
+    assert_eq!(runs[0]["project"]["entity_count"], 0);
+    assert_eq!(runs[0]["project"]["graph_symbol_count"], 1);
+    assert_eq!(runs[0]["project"]["graph_edge_count"], 0);
+    assert_eq!(
+        runs[0]["project"]["graph_summary_symbol_id"],
+        "project:summary"
+    );
+    assert_eq!(
+        runs[0]["project"]["project_summary"]["dynamic_control_flow_count"],
+        0
+    );
     assert!(
         runs[0]["started_sequence"].as_u64().expect("sequence")
             > runs[1]["finished_sequence"].as_u64().expect("sequence")
@@ -3671,6 +3682,7 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
     let session_id = SessionId::new("session.product").expect("session id");
     let mut metadata = BTreeMap::new();
     metadata.insert("target".to_owned(), serde_json::json!("native-player"));
+    metadata.extend(project_shape_metadata(2, 3, 2, 1));
     store
         .upsert_session(&DebugSession {
             session_id: session_id.clone(),
@@ -3685,6 +3697,7 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
         .expect("seed session");
     let mut finished_metadata = BTreeMap::new();
     finished_metadata.insert("outcome".to_owned(), serde_json::json!("done"));
+    finished_metadata.extend(project_shape_metadata(2, 3, 2, 1));
     store
         .finish_session(
             &session_id,
@@ -3721,6 +3734,58 @@ fn debug_db_sessions_reports_persisted_product_sessions() {
     assert_eq!(report["sessions"][0]["status"], "finished");
     assert_eq!(report["sessions"][0]["ended_unix_ms"], 25);
     assert_eq!(report["sessions"][0]["metadata"]["outcome"], "done");
+    assert_eq!(report["sessions"][0]["project"]["entity_count"], 2);
+    assert_eq!(
+        report["sessions"][0]["project"]["entity_kind_counts"]["flow"],
+        2
+    );
+    assert_eq!(report["sessions"][0]["project"]["graph_symbol_count"], 3);
+    assert_eq!(report["sessions"][0]["project"]["graph_edge_count"], 2);
+    assert_eq!(
+        report["sessions"][0]["project"]["graph_summary_symbol_id"],
+        "project:summary"
+    );
+    assert_eq!(
+        report["sessions"][0]["project"]["project_summary"]["agent_action_count"],
+        1
+    );
+}
+
+fn project_shape_metadata(
+    entity_count: u64,
+    graph_symbol_count: u64,
+    graph_edge_count: u64,
+    agent_action_count: u64,
+) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([
+        (
+            "project_entities".to_owned(),
+            serde_json::json!({
+                "count": entity_count,
+                "kind_counts": { "flow": entity_count }
+            }),
+        ),
+        (
+            "project_graph".to_owned(),
+            serde_json::json!({
+                "symbol_count": graph_symbol_count,
+                "edge_count": graph_edge_count,
+                "summary_symbol_id": "project:summary",
+                "has_project_summary": true,
+                "symbol_kind_counts": {
+                    "project_summary": 1,
+                    "flow": graph_symbol_count.saturating_sub(1)
+                },
+                "edge_kind_counts": { "contains_entity": graph_edge_count },
+                "project_summary": {
+                    "entity_count": entity_count,
+                    "relation_count": graph_edge_count,
+                    "agent_action_count": agent_action_count,
+                    "dynamic_control_flow_count": 0
+                }
+            }),
+        ),
+    ])
 }
 
 #[test]
@@ -30964,7 +31029,10 @@ fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
     store
         .start_session(&session_id, None, "script", "mcp", 0)
         .expect("seed session");
+    let project_metadata = project_shape_metadata(1, 2, 1, 0);
     for (run_id, started_sequence) in [("run.mcp.first", 1), ("run.mcp.second", 3)] {
+        let mut metadata = project_metadata.clone();
+        metadata.insert("steps".to_owned(), serde_json::json!(2));
         store
             .upsert_script_run(&DebugScriptRun {
                 run_id: AgentRunId::new(run_id).expect("run id"),
@@ -30979,7 +31047,7 @@ fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
                 partially_effectful: started_sequence > 1,
                 trace_uri: Some(format!("target/{run_id}.arcwx")),
                 error: None,
-                metadata: BTreeMap::from([("steps".to_owned(), serde_json::json!(2))]),
+                metadata,
             })
             .expect("seed script run");
     }
@@ -31025,6 +31093,12 @@ fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
     assert_eq!(runs[0]["run_id"], "run.mcp.second");
     assert_eq!(runs[0]["outcome"], "done");
     assert_eq!(runs[0]["partially_effectful"], true);
+    assert_eq!(runs[0]["project"]["entity_count"], 1);
+    assert_eq!(runs[0]["project"]["graph_symbol_count"], 2);
+    assert_eq!(
+        runs[0]["project"]["graph_summary_symbol_id"],
+        "project:summary"
+    );
     assert_eq!(runs[1]["run_id"], "run.mcp.first");
 }
 

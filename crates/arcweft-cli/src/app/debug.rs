@@ -398,6 +398,7 @@ struct DebugDbRunReport {
     partially_effectful: bool,
     trace_uri: Option<String>,
     error: Option<serde_json::Value>,
+    project: Option<serde_json::Value>,
     metadata: BTreeMap<String, serde_json::Value>,
 }
 
@@ -523,6 +524,7 @@ struct DebugDbSessionReport {
     started_unix_ms: i64,
     ended_unix_ms: Option<i64>,
     status: DebugSessionStatus,
+    project: Option<serde_json::Value>,
     metadata: BTreeMap<String, serde_json::Value>,
 }
 
@@ -1551,6 +1553,7 @@ fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
 }
 
 fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
+    let project = debug_project_readback_json(&session.metadata);
     DebugDbSessionReport {
         session_id: session.session_id.as_str().to_owned(),
         program_hash: session.program_hash.map(|hash| hash.as_str().to_owned()),
@@ -1559,11 +1562,13 @@ fn debug_db_session_report(session: DebugSession) -> DebugDbSessionReport {
         started_unix_ms: session.started_unix_ms,
         ended_unix_ms: session.ended_unix_ms,
         status: session.status,
+        project,
         metadata: session.metadata,
     }
 }
 
 fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
+    let project = debug_project_readback_json(&run.metadata);
     DebugDbRunReport {
         run_id: run.run_id.as_str().to_owned(),
         session_id: run.session_id.as_str().to_owned(),
@@ -1577,8 +1582,77 @@ fn debug_db_run_report(run: DebugScriptRun) -> DebugDbRunReport {
         partially_effectful: run.partially_effectful,
         trace_uri: run.trace_uri,
         error: run.error,
+        project,
         metadata: run.metadata,
     }
+}
+
+pub(in crate::app) fn debug_project_readback_json(
+    metadata: &BTreeMap<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let entities = metadata.get("project_entities");
+    let graph = metadata.get("project_graph");
+    if entities.is_none() && graph.is_none() {
+        return None;
+    }
+    let entity_count = entities
+        .and_then(|value| value.get("count"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let entity_kind_counts = entities
+        .and_then(|value| value.get("kind_counts"))
+        .map(json_u64_object)
+        .unwrap_or_default();
+    let graph_symbol_count = graph
+        .and_then(|value| value.get("symbol_count"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let graph_edge_count = graph
+        .and_then(|value| value.get("edge_count"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let graph_symbol_kind_counts = graph
+        .and_then(|value| value.get("symbol_kind_counts"))
+        .map(json_u64_object)
+        .unwrap_or_default();
+    let graph_edge_kind_counts = graph
+        .and_then(|value| value.get("edge_kind_counts"))
+        .map(json_u64_object)
+        .unwrap_or_default();
+    let graph_summary_symbol_id = graph
+        .and_then(|value| value.get("summary_symbol_id"))
+        .and_then(serde_json::Value::as_str);
+    let graph_has_project_summary = graph
+        .and_then(|value| value.get("has_project_summary"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let project_summary = graph
+        .and_then(|value| value.get("project_summary"))
+        .filter(|value| !value.is_null())
+        .cloned();
+    Some(serde_json::json!({
+        "entity_count": entity_count,
+        "entity_kind_counts": entity_kind_counts,
+        "graph_symbol_count": graph_symbol_count,
+        "graph_edge_count": graph_edge_count,
+        "graph_summary_symbol_id": graph_summary_symbol_id,
+        "graph_has_project_summary": graph_has_project_summary,
+        "graph_symbol_kind_counts": graph_symbol_kind_counts,
+        "graph_edge_kind_counts": graph_edge_kind_counts,
+        "project_summary": project_summary,
+    }))
+}
+
+fn json_u64_object(value: &serde_json::Value) -> BTreeMap<String, u64> {
+    value
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(key, value)| value.as_u64().map(|count| (key.clone(), count)))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn debug_db_source_file_report(source: DebugSourceFile) -> DebugDbSourceFileReport {
