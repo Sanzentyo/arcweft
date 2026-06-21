@@ -3,6 +3,9 @@
 This note records the implementation cut for
 `arcweft-zip-gap-audit-2026-06-21.zip`.
 
+For the current requirement-by-requirement open-item ledger, see
+`docs/implementation/zip-gap-open-items-2026-06-21.md`.
+
 ## Implemented in this cut
 
 - Added `arcweft-agent-mcp-client`, a Sans I/O MCP-backed `AgentSession`
