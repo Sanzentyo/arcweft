@@ -126,12 +126,15 @@ For a concise explanation of the concrete unfinished items, see
   during parsing. MsgPack and CBOR now parse directly into budgeted raw values
   through low-level readers. JSON now consumes budget through a
   `serde_json::Deserializer` visitor before `serde_json::Value` shape
-  projection. TOML now consumes budget through serde deserialization before
-  public `toml::Value` shape projection, but strict pre-`DeTable`
-  parser-internal allocation remains unproven. CSV now runs a `csv-core`
-  byte-level preflight before constructing `csv::StringRecord` values, covering
-  row count, record field count, unescaped field string length, header
-  validation, and hex/base64 decoded byte upper bounds for bytes cells. YAML
+  projection. TOML now runs a source-level preflight before
+  `toml::Deserializer::parse` builds its internal `DeTable`, covering input
+  length, source string length, root/table map items, array items, inline-table
+  items, value nodes, and nesting depth; it then consumes budget again through
+  serde deserialization before public `toml::Value` shape projection. CSV now
+  runs a `csv-core` byte-level preflight before constructing
+  `csv::StringRecord` values, covering row count, record field count, unescaped
+  field string length, header validation, and hex/base64 decoded byte upper
+  bounds for bytes cells. YAML
   now uses an event parser budget gate before
   constructing the public `Yaml` loader tree, though scalar event strings are
   still parser-allocated before the receiver observes them. Arrow IPC and
@@ -144,7 +147,6 @@ For a concise explanation of the concrete unfinished items, see
   record/map/array/node/string/bytes budgets before copying materialized
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
-  TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
   YAML needs a scanner-level scalar cap before scalar event `String`
   allocation, if the ZIP requirement is interpreted as strict pre-allocation.
   Arrow IPC still needs row/column/string/binary budget checks before

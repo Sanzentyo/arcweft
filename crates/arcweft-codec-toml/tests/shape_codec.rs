@@ -158,6 +158,40 @@ fn toml_decode_consumes_string_budget_before_value_projection() {
 }
 
 #[test]
+fn toml_decode_preflights_string_budget_before_detable_parse() {
+    let mut input = b"hash = \"00\"\nname = \"".to_vec();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = TomlCodec
+        .decode_value(&input, &asset_shape(), &options)
+        .expect_err("source string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn toml_decode_preflights_bare_key_budget_before_detable_parse() {
+    let mut input = Vec::new();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = TomlCodec
+        .decode_value(&input, &asset_shape(), &options)
+        .expect_err("source bare key budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
 fn toml_decode_consumes_array_budget_before_value_projection() {
     let shape = TypeShape::record(
         "Tags",
@@ -177,6 +211,29 @@ fn toml_decode_consumes_array_budget_before_value_projection() {
     let error = TomlCodec
         .decode_value(b"tags = [\"a\", \"b\", \"c\"]\n", &shape, &options)
         .expect_err("array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn toml_decode_preflights_array_budget_before_detable_parse() {
+    let shape = TypeShape::record(
+        "Tags",
+        [FieldShape::new(
+            "tags",
+            "tags",
+            TypeShape::seq(TypeShape::String),
+        )],
+    );
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = TomlCodec
+        .decode_value(b"tags = [\"a\", \"b\", \"c\"\n", &shape, &options)
+        .expect_err("source array budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
 

@@ -9,7 +9,10 @@ use arcweft_data::{
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use source_preflight::preflight_toml_source_budget;
 use toml::Value as TomlValue;
+
+mod source_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TomlCodec;
@@ -49,6 +52,7 @@ impl Codec for TomlCodec {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let source = std::str::from_utf8(input)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        preflight_toml_source_budget(source, &options.limits)?;
         let deserializer = toml::Deserializer::parse(source)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
         let dynamic_raw = BudgetedTomlRawSeed {

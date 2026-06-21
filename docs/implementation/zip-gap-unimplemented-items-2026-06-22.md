@@ -7,8 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`36aa0af7 Preflight CSV decode budgets` plus the CSV decoded-byte preflight
-cut documented below.
+`c8f5f10e Preflight CSV bytes budgets` plus the TOML source preflight cut
+documented below.
 
 ## Status Model
 
@@ -26,7 +26,6 @@ cut documented below.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001-TOML strict pre-`DeTable` budget | Partial implementation | public `toml::Value` projection 前の budget はあるが、`toml::Deserializer::parse` 内部 `DeTable` 生成より前の source-level cap がない |
 | Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
 | Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
 | Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
@@ -74,12 +73,14 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- TOML/YAML/Arrow/Parquet/Avro already apply some caps or shape validation
+- YAML/Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
-- TOML now consumes `DecodeBudget` through serde deserialization before
-  building public `toml::Value` shape-projection helpers. Strict budget checks
-  before `toml::Deserializer::parse` builds its internal `DeTable` remain open.
+- TOML now runs a source-level preflight before `toml::Deserializer::parse`
+  builds its internal `DeTable`, then consumes `DecodeBudget` again through
+  serde deserialization before building public `toml::Value` shape-projection
+  helpers. The preflight checks input length, source string length, root/table
+  map items, array items, inline-table items, value nodes, and nesting depth.
 - JSON now uses a `serde_json::Deserializer` seed/visitor that consumes
   `DecodeBudget` while parsing dynamic raw values, before any
   `serde_json::Value` shape-projection helper is built.
@@ -107,14 +108,6 @@ Existing implementation:
 
 具体的に未実装または部分実装に残っている動作:
 
-- **TOML strict pre-`DeTable` budget**:
-  `TomlCodec::decode_value` は `toml::Deserializer` と serde visitor 経由で
-  `DecodeBudget` を消費し、public `toml::Value` へ projection する前には
-  node/string/array budget を確認している。しかし現在の入口は
-  `toml::Deserializer::parse(source)` なので、`toml` crate 内部の `DeTable`
-  構築より前に Arcweft budget で止めることは証明できない。必要なのは
-  lower-level TOML tokenizer/parser、crate-supported streaming hook、または
-  `DeTable` より前に source-level cap を適用できる同等実装である。
 - **YAML strict pre-scalar-event allocation**:
   YAML は public `YamlLoader` tree の前に event parser budget gate を通すため、
   巨大 document tree の構築は抑止できる。一方で `MarkedEventReceiver` が
@@ -161,7 +154,7 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。TOML/YAML は巨大 scalar
+- 各 codec に adversarial input tests を追加する。YAML は巨大 scalar
   や巨大 collection、Arrow/Parquet は巨大 row/batch/column buffer、Avro は巨大
   datum array/map/string/bytes を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
@@ -211,10 +204,12 @@ some of them leave related items open:
 - JSON decoding now consumes `DecodeBudget` through a serde visitor before
   `serde_json::Value` shape projection. Focused tests cover input length,
   string length, sequence length, and node budget exhaustion.
-- TOML decoding now consumes `DecodeBudget` through serde deserialization
-  before public `toml::Value` shape projection. Focused tests cover input
-  length, string length, array length, and node budget exhaustion. Strict
-  pre-`DeTable` parser-internal allocation remains tracked under ZG-D-001.
+- TOML decoding now runs a source-level `DecodeBudget` preflight before
+  `toml::Deserializer::parse` can build its internal `DeTable`, then consumes
+  budget again through serde deserialization before public `toml::Value` shape
+  projection. Focused tests cover input length, string length, array length,
+  node budget exhaustion, and malformed oversized string, bare-key, and array
+  inputs that fail with `LimitExceeded` before TOML parse errors.
 - YAML decoding now runs a low-level `yaml-rust2` event parser budget gate
   before constructing the public `Yaml` loader tree. Focused tests cover input
   length, scalar string length, sequence length, and node budget exhaustion.

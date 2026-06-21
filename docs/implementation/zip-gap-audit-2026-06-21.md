@@ -151,19 +151,23 @@ For the current requirement-by-requirement open-item ledger, see
   comments/trivia plus Agent declarations, effects, waits, actions, captures,
   resources, debug recording, and RAG calls. CLI coverage fixes `.awfagent`
   path routing and rejects game-dialect sugar rewrites for Agent sources.
-- Data raw transcoding covers the initial shape/value bridge. Parser-integrated
-  TOML/YAML decode budgets and strict binary raw coverage remain separate
-  data-format tasks; JSON and CSV now have stronger parser/preflight budget
-  coverage as documented below.
+- Data raw transcoding covers the initial shape/value bridge. YAML
+  parser-internal scalar allocation, reader-internal Arrow/Parquet buffers,
+  Avro nested datum materialization, and strict binary raw coverage remain
+  separate data-format tasks; JSON, TOML, and CSV now have stronger
+  parser/preflight budget coverage as documented below.
 - The derive parser now rejects malformed attributes, covers the main
   container/field/variant grammar, uses field-type generic bounds, and rejects
   unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
 - Parse-time budget coverage currently protects Arcweft Binary and provides the
   shared `DecodeBudget` API. MsgPack and CBOR now consume that budget through
   low-level readers before building format-native values. JSON now consumes
-  budget through serde parsing before `serde_json::Value` projection. TOML,
-  YAML have partial budget gates but still have strict pre-allocation caveats
-  documented in `zip-gap-unimplemented-items-2026-06-22.md`. CSV now uses a
+  budget through serde parsing before `serde_json::Value` projection. TOML now
+  runs a source-level preflight before `toml::Deserializer::parse` builds its
+  internal `DeTable`, then consumes budget again through serde deserialization
+  before public `toml::Value` shape projection. YAML has a partial budget gate
+  but still has a strict scalar pre-allocation caveat documented in
+  `zip-gap-unimplemented-items-2026-06-22.md`. CSV now uses a
   `csv-core` preflight before `StringRecord` materialization for rows, field
   counts, unescaped field string length, header validation, and decoded byte
   upper bounds for bytes cells. Arrow IPC
@@ -181,12 +185,12 @@ For the current requirement-by-requirement open-item ledger, see
 - JSON, TOML, and YAML shape decoding now cover the first concrete T-105 cuts,
   including central enum adjacent/internal/repr raw forms. JSON now uses a
   budgeted serde visitor before `serde_json::Value` shape projection. TOML now
-  uses a budgeted serde visitor before public `toml::Value` shape projection,
-  while strict pre-`DeTable` parser allocation remains open. YAML now uses a
-  low-level event parser budget gate before public `Yaml` tree construction,
-  with parser-internal scalar event allocation noted as a residual caveat.
-  Remaining TOML work includes parser-integrated source-level budget gates and
-  deeper enum payload byte-policy coverage.
+  uses a source-level budget preflight before `DeTable` construction and a
+  budgeted serde visitor before public `toml::Value` shape projection. YAML
+  now uses a low-level event parser budget gate before public `Yaml` tree
+  construction, with parser-internal scalar event allocation noted as a
+  residual caveat. Remaining TOML-related work is limited to deeper enum
+  payload byte-policy coverage rather than the pre-`DeTable` budget gate.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
   fidelity. CSV consumes row/field/string budgets in a byte-level preflight
