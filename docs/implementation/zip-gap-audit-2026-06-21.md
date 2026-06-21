@@ -152,10 +152,10 @@ For the current requirement-by-requirement open-item ledger, see
   resources, debug recording, and RAG calls. CLI coverage fixes `.awfagent`
   path routing and rejects game-dialect sugar rewrites for Agent sources.
 - Data raw transcoding covers the initial shape/value bridge.
-  Reader-internal Arrow/Parquet buffers, Avro nested datum materialization, and
-  strict binary raw coverage remain separate data-format tasks; JSON, TOML,
-  YAML, and CSV now have stronger
-  parser/preflight budget coverage as documented below.
+  Reader-internal Arrow/Parquet buffers and Avro nested datum materialization
+  now have pre-materialization budget coverage. JSON, TOML, YAML, CSV,
+  MsgPack, CBOR, Arcweft Binary, Arrow IPC, Parquet, and Avro carry the ZIP
+  budget/shape coverage documented below.
 - The derive parser now rejects malformed attributes, covers the main
   container/field/variant grammar, uses field-type generic bounds, and rejects
   unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
@@ -179,9 +179,9 @@ For the current requirement-by-requirement open-item ledger, see
   row budget during reader iteration and avoids collecting all scalar datums
   before enforcing single-datum scalar decode. Arrow IPC now preflights IPC
   footer/message metadata and Utf8/Binary offset buffers before `FileReader`
-  can materialize record-batch column buffers. Avro still needs strict
-  reader-internal pre-materialization budgets for nested datum materialization
-  where documented.
+  can materialize record-batch column buffers. Avro now preflights OCF
+  null-codec datum bytes before `apache_avro::Reader` can materialize nested
+  `AvroValue` trees, and rejects compressed blocks under Arcweft limits.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
   checksum scope is documented as payload-only; any future header-authenticated
@@ -206,13 +206,19 @@ For the current requirement-by-requirement open-item ledger, see
   column/page buffers before `ParquetRecordBatchReader` materialization and
   consumes row/record/string/bytes budgets before copying Arrow scalar buffers
   into Arcweft values. Avro consumes top-level row budget while iterating the datum stream, enforces
-  scalar single-datum decode without collecting the whole stream, and checks
-  record/string/bytes budgets before copying materialized `AvroValue` contents.
-  Remaining tabular/data-format work is strict Avro pre-materialization budget
-  enforcement for parser-owned nested datum allocation.
+  scalar single-datum decode without collecting the whole stream, checks
+  record/string/bytes budgets before copying materialized `AvroValue` contents,
+  and preflights OCF null-codec datum bytes for nested arrays, maps, records,
+  map keys, strings, bytes, fixed values, unions, and top-level datum streams
+  before `apache_avro::Reader` materialization. Compressed Avro blocks are
+  rejected rather than decompressed outside the Arcweft budget boundary.
+  Remaining tabular/data-format implementation work from the ZIP audit is
+  closed; repository goal completion still needs the platform validation
+  evidence tracked by the open-item ledger.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
-  parameter/body cap matrix for the codec adapter boundary. Remaining data
-  adapter policy work is now concentrated in parser/reader-integrated budgets.
+  parameter/body cap matrix for the codec adapter boundary. Data adapter
+  implementation work from the ZIP audit is now closed in current source; final
+  ZIP goal completion still depends on platform validation evidence.
 - Codec registry uniqueness now covers the D-24 duplicate id/media/extension
   policy. Intentional format aliases remain explicit per-codec media type or
   extension entries and must be distinct after normalization.

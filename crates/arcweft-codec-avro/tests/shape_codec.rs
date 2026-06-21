@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use apache_avro::{
+    Codec as ApacheAvroCodec, Schema as ApacheAvroSchema, Writer as ApacheAvroWriter,
+};
 use arcweft_codec_avro::codec::AvroCodec;
 use arcweft_data::{
     Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
@@ -343,6 +346,145 @@ fn avro_codec_consumes_bytes_budget_before_arcweft_bytes_copy() {
         .decode_value(&encoded, &row_shape(), &options)
         .expect_err("bytes budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_preflights_nested_array_budget_before_avro_value() {
+    let schema = r#"
+    {
+      "type": "record",
+      "name": "TagRow",
+      "fields": [
+        {"name": "tags", "type": {"type": "array", "items": "string"}}
+      ]
+    }
+    "#;
+    let shape = TypeShape::seq(TypeShape::record(
+        "TagRow",
+        [FieldShape::new(
+            "tags",
+            "tags",
+            TypeShape::seq(TypeShape::String),
+        )],
+    ));
+    let value = Value::Seq(vec![record([(
+        "tags",
+        Value::Seq(vec![
+            Value::String("one".to_owned()),
+            Value::String("two".to_owned()),
+        ]),
+    )])]);
+    let codec = AvroCodec::new(schema).expect("schema");
+    let encoded = codec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 1,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = codec
+        .decode_value(&encoded, &shape, &options)
+        .expect_err("nested array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_preflights_nested_string_budget_before_avro_value() {
+    let schema = r#"
+    {
+      "type": "record",
+      "name": "TagRow",
+      "fields": [
+        {"name": "tags", "type": {"type": "array", "items": "string"}}
+      ]
+    }
+    "#;
+    let shape = TypeShape::seq(TypeShape::record(
+        "TagRow",
+        [FieldShape::new(
+            "tags",
+            "tags",
+            TypeShape::seq(TypeShape::String),
+        )],
+    ));
+    let value = Value::Seq(vec![record([(
+        "tags",
+        Value::Seq(vec![Value::String("wide".to_owned())]),
+    )])]);
+    let codec = AvroCodec::new(schema).expect("schema");
+    let encoded = codec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = codec
+        .decode_value(&encoded, &shape, &options)
+        .expect_err("nested string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_preflights_nested_bytes_budget_before_avro_value() {
+    let schema = r#"
+    {
+      "type": "record",
+      "name": "BlobRow",
+      "fields": [
+        {"name": "blob", "type": "bytes"}
+      ]
+    }
+    "#;
+    let shape = TypeShape::seq(TypeShape::record(
+        "BlobRow",
+        [FieldShape::new(
+            "blob",
+            "blob",
+            TypeShape::Bytes {
+                format: BytesFormat::default(),
+            },
+        )],
+    ));
+    let value = Value::Seq(vec![record([(
+        "blob",
+        Value::Bytes(Bytes::from(vec![1_u8; 16])),
+    )])]);
+    let codec = AvroCodec::new(schema).expect("schema");
+    let encoded = codec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = codec
+        .decode_value(&encoded, &shape, &options)
+        .expect_err("nested bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_rejects_compressed_blocks_before_reader_materialization() {
+    let schema = ApacheAvroSchema::parse_str(r#""boolean""#).expect("schema");
+    let mut writer = ApacheAvroWriter::with_codec(&schema, Vec::new(), ApacheAvroCodec::Snappy);
+    writer.append(true).expect("append");
+    let encoded = writer.into_inner().expect("finish");
+    let codec = AvroCodec::new(r#""boolean""#).expect("codec schema");
+
+    let error = codec
+        .decode_value(&encoded, &TypeShape::Bool, &DecodeOptions::default())
+        .expect_err("compressed avro rejected");
+    assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
 }
 
 #[test]

@@ -8,7 +8,7 @@ strict requirement ledger.
 
 Implementation baseline used for this inventory:
 `5b1b6618 Preflight Arrow IPC buffers` plus the current Parquet
-variable-width preflight cut.
+variable-width preflight and Avro OCF datum preflight cuts.
 
 This document is the concrete "what is still not implemented" answer for the
 ZIP gap goal as of that baseline. The current unfinished set is intentionally
@@ -16,9 +16,6 @@ small:
 
 - **ZG-A-004 / T-009 / A-21**: Linux and macOS validation evidence is still
   absent.
-- **ZG-D-001 / T-104 / D-13 / D-19**: Avro still lacks strict nested datum
-  budget enforcement before `apache_avro::Reader` materializes nested
-  `AvroValue` trees.
 
 Everything else from the ZIP is either recorded as resolved in
 `zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
@@ -40,7 +37,6 @@ depends on one of the items above.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001-Avro datum materialization budget | Partial implementation | top-level datum stream と `AvroValue -> Arcweft Value` 変換時の budget はあるが、`apache_avro::Reader` が nested `AvroValue` を materialize する前の visitor/reader policy がない |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -87,9 +83,9 @@ Windows のみの成功では remote process adapter と CLI validation の ZIP 
 ZIP mapping: `T-104`, `D-13`; Parquet related surface: `D-18`; Avro related
 surface: `D-19`.
 
-Status: **Partial implementation**.
+Status: **Resolved implementation evidence**.
 
-Existing implementation:
+Existing implementation/evidence:
 
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
@@ -129,11 +125,14 @@ Existing implementation:
   uncompressed column chunk, unencoded byte-array data, and page buffers by the
   declared string/bytes limit, and consumes row/map/node/string/bytes budgets
   before copying Arrow scalar buffers into Arcweft `Value`.
-- Avro now consumes top-level datum stream row budget while iterating
-  `apache_avro::Reader`, avoids collecting all scalar datums before enforcing
-  the single-datum top-level scalar policy, and consumes record/map/array,
-  node, string, and bytes budgets before copying `AvroValue` contents into
-  Arcweft `Value`.
+- Avro now runs a schema-guided OCF preflight before constructing
+  `apache_avro::Reader`. The preflight parses the container header without
+  allocating `AvroValue`, rejects compressed Avro blocks under Arcweft limits,
+  scans null-codec block datum bytes with the writer schema, consumes
+  `DecodeBudget` for datum nodes, nested arrays/maps/records, map keys,
+  strings, bytes, fixed values, unions, and top-level datum streams, then the
+  normal `AvroValue -> Arcweft Value` conversion consumes the same budgets
+  again before copying public values.
 - CSV now runs a `csv-core` byte-level preflight before constructing
   `csv::StringRecord` values. The preflight consumes input length, top-level
   row sequence budget, per-record field-count budget, and unescaped field
@@ -141,61 +140,16 @@ Existing implementation:
   against `TypeShape` during preflight and checks hex/base64 decoded byte
   upper bounds for bytes cells before `StringRecord` materialization.
 
-具体的に未実装または部分実装に残っている動作は次の 1 つだけ:
+具体的に未実装または部分実装に残っている data behavior:
 
-- **Avro datum materialization budget**:
-  Avro は `max_input_len`、schema validation、top-level datum stream の
-  `sequence_item` 消費、top-level scalar の single-datum streaming check、
-  `AvroValue` から Arcweft `Value` への変換時 budget 消費を持つ。record/map/
-  array length、node count、string length、bytes length は Arcweft `Value`
-  allocation 前に structured error として返る。未実装なのは
-  `apache_avro::Reader` が nested `AvroValue::Array` / `Map` / `Record` /
-  `String` / `Bytes` / payload enum branch を materialize する前に同じ budget
-  で止める reader/visitor policy である。特に単一 datum 内の巨大 array/map/
-  record/payload enum は、`AvroValue` 後の validation では reader 内部 allocation
-  を防げない。
-  つまり、現在は「datum stream の件数が多すぎる」「`AvroValue` から Arcweft
-  `Value` に移す時点で値が大きすぎる」は止められるが、「1 datum の中に巨大な
-  nested array/map/string/bytes がある場合に `AvroValue` を作る前に止める」は
-  まだできていない。
-
-必要な実装:
-
-- Avro:
-  supplied Avro schema と Arcweft `TypeShape` を使った datum scanner / bounded
-  reader / visitor を `apache_avro::Reader` の nested materialization 前に入れ、
-  array/map/record/string/bytes/union branch を読む段階で `DecodeBudget` を
-  消費する。圧縮 codec を許す場合は展開後 byte budget も同じ boundary で扱う。
-- 共通:
-  少なくとも input length、node count、nesting depth、collection length、
-  string length、byte length のうち format が表現できるものを parse/materialize
-  中に数える。
-- Budget 超過は Arcweft data error として structured に返し、panic や allocator
-  failure に依存しない。
-
-必要なテスト・証跡:
-
-- Avro に adversarial input tests を追加する。巨大 datum array/map/string/bytes
-  を対象にする。
-- 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
-  unbounded intermediate allocation 前に失敗することを示す。
-- Arcweft Binary で済んでいる budget tests と同じ意味の matrix を、
-  対象 codec の表現能力に合わせて持つ。
-
-この項目が閉じたと言える条件:
-
-- Avro の adversarial test が、nested `AvroValue` materialization 前またはそれと
-  同等に allocation-bound な reader boundary で Arcweft structured
-  `LimitExceeded` 系の error で失敗する。
-- その実装証跡、focused test、workspace clippy、structural audit が
-  `zip-gap-open-items-2026-06-21.md` に記録される。
+- なし。JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft
+  Binary の ZIP 対象 budget/shape items は current source と focused tests で
+  resolved として記録済み。
 
 なぜ完了扱いにできないか:
 
-`DecodeLimits::validate` のような post-parse validation は、悪意ある入力が
-巨大な native document を先に確保するケースには遅すぎる。ZIP の対象は
-「Arcweft value へ変換した後に弾く」ではなく「parse/materialize 中に弾く」
-ことである。
+data behavior は current implementation evidence で完了扱いにできる。ZIP goal
+全体は、Linux/macOS validation evidence がまだないため完了扱いにしない。
 
 ## Already Covered Slices
 
@@ -269,8 +223,11 @@ some of them leave related items open:
   row budget during reader iteration, avoids collecting all scalar datums before
   enforcing single-datum scalar decode, and checks row/record/string/bytes
   budgets before copying materialized `AvroValue` contents into Arcweft values.
-  Strict pre-`AvroValue` nested datum materialization remains tracked under
-  ZG-D-001.
+  Avro now also scans OCF null-codec datum bytes before `apache_avro::Reader`
+  can materialize nested `AvroValue` trees, including arrays, maps, records,
+  strings, bytes, fixed values, unions, and top-level datum streams. Compressed
+  Avro blocks are rejected rather than decompressed outside the Arcweft budget
+  boundary.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time

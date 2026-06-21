@@ -173,10 +173,11 @@ crates/arcweft-codec-arrow/src/lib.rs,27078,826,776,production,true,false,false,
 crates/arcweft-codec-arrow/src/parquet_preflight.rs,5831,186,166,production,true,false,false,false
 crates/arcweft-codec-arrow/tests/shape_codec.rs,15273,469,426,test,true,true,false,false
 crates/arcweft-codec-avro/Cargo.toml,333,15,13,text,false,false,false,false
-crates/arcweft-codec-avro/src/codec.rs,33945,929,890,production,true,false,false,false
+crates/arcweft-codec-avro/src/avro_preflight.rs,13432,421,393,production,true,false,false,false
+crates/arcweft-codec-avro/src/codec.rs,34194,932,893,production,true,false,false,false
 crates/arcweft-codec-avro/src/enum_value.rs,13239,392,378,production,true,false,false,false
-crates/arcweft-codec-avro/src/lib.rs,56,4,3,production,true,false,false,false
-crates/arcweft-codec-avro/tests/shape_codec.rs,17609,546,517,test,true,true,false,false
+crates/arcweft-codec-avro/src/lib.rs,76,5,4,production,true,false,false,false
+crates/arcweft-codec-avro/tests/shape_codec.rs,21733,688,651,test,true,true,false,false
 crates/arcweft-codec-binary/Cargo.toml,589,20,17,text,false,false,false,false
 crates/arcweft-codec-binary/src/lib.rs,12857,394,358,production,true,false,false,false
 crates/arcweft-codec-binary/tests/strict_decode.rs,3594,127,108,test,true,true,false,false
@@ -898,9 +899,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,20104,292,283,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,21168,381,341,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,16504,289,247,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,20600,298,289,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,21630,387,347,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,13961,246,210,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

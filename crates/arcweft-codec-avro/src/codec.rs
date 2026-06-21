@@ -8,6 +8,7 @@ use arcweft_data::{
     FormatId, Number, RecordPolicy, Result, TypeShape, Value,
 };
 
+use crate::avro_preflight::{AvroTopLevel, preflight_avro_container};
 use crate::enum_value;
 
 #[derive(Clone, Debug)]
@@ -80,6 +81,7 @@ impl Codec for AvroCodec {
         match shape {
             TypeShape::Seq(item_shape) => {
                 validate_schema(item_shape, &self.schema)?;
+                preflight_avro_container(input, &options.limits, AvroTopLevel::Sequence)?;
                 let reader = Reader::new(input).map_err(invalid_encoding_error)?;
                 budget.enter_node()?;
                 let rows = reader
@@ -105,6 +107,7 @@ impl Codec for AvroCodec {
             }
             other => {
                 validate_schema(other, &self.schema)?;
+                preflight_avro_container(input, &options.limits, AvroTopLevel::Scalar)?;
                 let mut reader = Reader::new(input).map_err(invalid_encoding_error)?;
                 let Some(value) = reader.next() else {
                     return Err(DataError::new(

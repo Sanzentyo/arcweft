@@ -152,16 +152,17 @@ For a concise explanation of the concrete unfinished items, see
   stream row budget while iterating `apache_avro::Reader`, avoids collecting all
   scalar datums before enforcing the single-datum scalar policy, and consumes
   record/map/array/node/string/bytes budgets before copying materialized
-  `AvroValue` contents into Arcweft `Value`.
+  `AvroValue` contents into Arcweft `Value`. Avro also runs an OCF null-codec
+  preflight before constructing `apache_avro::Reader`, scanning writer-schema
+  datum bytes for nested arrays, maps, records, map keys, strings, bytes, fixed
+  values, unions, and top-level datum streams. Compressed Avro blocks are
+  rejected rather than decompressed outside the Arcweft budget boundary.
 - Concrete unfinished slices:
-  Avro still needs a datum visitor/reader budget before arrays, maps, records,
-  strings, bytes, and payload enum branches become `AvroValue` intermediates
-  inside a single datum.
+  None in the data codec implementation slice.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
-- Completion evidence needed: parser-integrated visitor/reader or equivalent
-  bounded reader for Avro, plus adversarial input/depth/node/collection tests
-  that fail before unbounded allocation.
+- Completion evidence needed: broader ZIP completion still needs the platform
+  validation evidence tracked under ZG-A-004 and final reviewable-cut gates.
 
 ## Resolved Data Items
 
@@ -188,11 +189,17 @@ For a concise explanation of the concrete unfinished items, see
   passed on Windows. The focused tests cover payload enum roundtrip, native
   enum symbol mismatch, payload schema mismatch, unknown variants, missing
   payloads, top-level scalar versus datum-stream policy, decode input caps,
-  top-level row budget, record-field budget, string budget, bytes budget, and
-  numeric edge policy.
+  top-level row budget, record-field budget, string budget, bytes budget,
+  nested array/string/bytes pre-`AvroValue` preflight, compressed-block
+  rejection before reader materialization, and numeric edge policy. The current
+  reviewable cut also passed `cargo clippy --workspace --all-targets
+  --all-features` and the structural audit script with `0 error(s), 83
+  warning(s)`.
 - Remaining related work: top-level datum-stream and post-`AvroValue`
-  conversion budgets are covered. Strict reader-internal budget enforcement
-  before nested `AvroValue` materialization remains tracked under ZG-D-001.
+  conversion budgets are covered. Strict pre-`AvroValue` nested datum budget
+  enforcement is now covered by the OCF null-codec preflight. Compressed Avro
+  blocks are rejected under Arcweft limits instead of being decompressed before
+  budgeting.
 
 ### ZG-D-004: Arrow IPC and Parquet are schema-driven for scalar rows
 
@@ -259,8 +266,7 @@ For a concise explanation of the concrete unfinished items, see
   `cargo test -p arcweft-data --features derive derive_attribute_ui`, and
   `cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings`
   passed on Windows.
-- Remaining related work: this resolves the derive policy slice. Broader data
-  completion still depends on parser-integrated decode budgets.
+- Remaining related work: this resolves the derive policy slice.
 
 ### ZG-D-003: CSV is schema-driven for scalar row data
 
