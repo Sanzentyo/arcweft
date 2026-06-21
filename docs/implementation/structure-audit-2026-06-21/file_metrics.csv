@@ -1,4 +1,5 @@
 path,bytes,physical_lines,code_lines,classification,is_rust,is_test,is_generated,has_embedded_tests
+.github/workflows/zip-gap-platform-validation.yml,1468,51,42,text,false,false,false,false
 AGENTS.md,13683,255,205,text,false,false,false,false
 Cargo.toml,5460,170,165,text,false,false,false,false
 crates/arcweft/Cargo.toml,642,24,21,text,false,false,false,false
